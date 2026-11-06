@@ -9,8 +9,9 @@ import { assertCan, can } from '../policy/can.ts';
 
 /**
  * A member's notices (SPEC §4.87, D-134, LAI-1136): being added to a space,
- * with the adder's message and first card, and — once LAI-1137 lands — a
- * tool, device or token of theirs revoked by somebody else.
+ * with the adder's message and first card; a tool, device or token of theirs
+ * revoked by somebody else (LAI-1137); and their confirmed time changed by an
+ * owner or admin (D-143, LAI-1165).
  *
  * **Not activity.** §4.8 gains no verb: the adder's `member.added` row is the
  * history, and this is the person being told. **A self-action writes none** —
@@ -64,6 +65,22 @@ export function writeNotice(db: Db, input: WriteNoticeInput): string | null {
     })
     .run();
   return id;
+}
+
+/**
+ * A `time_changed` notice's `subject` (D-143, LAI-1165): what an owner or
+ * admin did to the member's confirmed time, as `<change> <day> <±minutes>` —
+ * `created 2026-11-05 +30`, `edited 2026-11-05 -15`, `deleted 2026-11-05
+ * -60`. A snapshot, as every subject is; the client words it (§11.4), and the
+ * card, when there is one, rides `task_id`.
+ */
+export function timeChangedSubject(
+  change: 'created' | 'edited' | 'deleted',
+  day: string,
+  deltaMinutes: number,
+): string {
+  const sign = deltaMinutes < 0 ? '-' : '+';
+  return `${change} ${day} ${sign}${String(Math.abs(deltaMinutes))}`;
 }
 
 /** One row of `GET /me/notices`. */

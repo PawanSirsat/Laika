@@ -813,6 +813,13 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/me/time-entries': 'the caller’s own time',
   'PATCH /api/v1/me/time-entries/:id': 'the caller’s own time',
   'DELETE /api/v1/me/time-entries/:id': 'the caller’s own time',
+  // D-143 (LAI-1165): an owner's or admin's change to a member's confirmed time.
+  'POST /api/v1/people/:id/time-entries':
+    'session only (time_entries.write_member); a member’s time, not a task',
+  'PATCH /api/v1/people/:id/time-entries/:entryId':
+    'session only (time_entries.write_member); a member’s time, not a task',
+  'DELETE /api/v1/people/:id/time-entries/:entryId':
+    'session only (time_entries.write_member); a member’s time, not a task',
   'PUT /api/v1/me/time/solidtime/links': 'the caller’s own time',
   'PUT /api/v1/me/time/solidtime/import': 'the caller’s own time',
 };

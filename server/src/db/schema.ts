@@ -1447,7 +1447,10 @@ export const memberNotices = sqliteTable(
     kind: text('kind', { enum: MEMBER_NOTICE_KINDS }).notNull(),
     projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
-    /** The tool, device or token name as it was when it happened. */
+    /**
+     * The tool, device or token name as it was when it happened; for
+     * `time_changed` (D-143), what was done: `<change> <day> <±minutes>`.
+     */
     subject: text('subject'),
     /** The adder's own words, as they wrote them. */
     message: text('message'),

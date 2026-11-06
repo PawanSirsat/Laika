@@ -142,8 +142,9 @@ export interface Resource {
   /**
    * For `user.invite`: the role the invite grants. Anyone but an owner may
    * invite only as `member` or `viewer` (D-102 rule 5, LAI-958). For
-   * `user.reset_password`, `agent.revoke_any` and `device.revoke_any`: the
-   * target's own role, so an admin is refused the owner's (D-133, LAI-1137).
+   * `user.reset_password`, `agent.revoke_any`, `device.revoke_any` and
+   * `time_entries.write_member`: the target's own role, so an admin is
+   * refused the owner's (D-133, LAI-1137; D-143, LAI-1165).
    */
   targetOrgRole?: OrgRole | undefined;
   /**
@@ -689,6 +690,22 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'time_entries.read_own':
     case 'time_entries.write_own':
       return true;
+
+    // | Change a member's confirmed time | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
+    //
+    // D-143 (LAI-1165), amending D-102 rule 4 and D-088 items 2 and 6. Owners
+    // and admins, by role as the Solidtime import is: the owner anybody else,
+    // an admin anybody else but the owner — D-133's shape, and as strict: an
+    // absent `targetOrgRole` is a denial, so a caller that forgot to load the
+    // target cannot be read as "not the owner". Never yourself: your own time
+    // is `time_entries.write_own`, with its drafts, timer and Undo.
+    case 'time_entries.write_member':
+      if (!isAdminUp) return false;
+      if (resource.targetUserId === undefined || resource.targetUserId === actor.userId) {
+        return false;
+      }
+      if (resource.targetOrgRole === undefined) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
 
     // | Sync own time with Solidtime | ✓ (session only) | … | ✓ (session only) |
     // | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |

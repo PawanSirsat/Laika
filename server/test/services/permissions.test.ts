@@ -164,6 +164,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'time_drafts.manage_own': 'YYYY',
   'time_entries.read_own': 'YYYY',
   'time_entries.write_own': 'YYYY',
+  // D-143 (LAI-1165): a member's confirmed time, an admin anybody's but the owner's.
+  'time_entries.write_member': 'YCNN',
   'time_sync.own': 'YYYY',
   'time_sync.map': 'YYNN',
   'time_sync.import_all': 'YYNN',

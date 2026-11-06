@@ -7,7 +7,7 @@ import { type TimeEntrySource, type TimeRevisionChange, type TimeEntryKind } fro
 /** Re-exported so the route validates `kind` without importing `db/` (D-108). */
 export { TIME_ENTRY_KINDS } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { projects, tasks, timeEntries, timeEntryRevisions } from '../db/schema.ts';
+import { projects, tasks, timeEntries, timeEntryRevisions, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
@@ -19,10 +19,11 @@ import { recordUndo, type OnUndo } from './time-undo-log.ts';
 /**
  * Confirmed time (D-088 items 2, 6, 11 and 12, SPEC §4.48–§4.49, LAI-787) —
  * what a person confirmed from a draft, typed by hand, or imported. **The only
- * time anybody but the person will ever see**, and in this phase nobody else
- * does: every function here answers to the person's own
- * `time_entries.*_own`, which is web-session only (§3.1), and reads or writes
- * their own rows alone.
+ * time anybody but the person will ever see.** Every route here answers to
+ * the person's own `time_entries.*_own`, which is web-session only (§3.1),
+ * and reads or writes their own rows alone; an owner or admin changing a
+ * member's confirmed time is `time-member-entries.ts` (D-143), which writes
+ * through the same helpers with itself as `changed_by`.
  *
  * ## History is append-only
  *
@@ -89,6 +90,8 @@ export interface TimeRevisionView {
   revision: number;
   change: TimeRevisionChange;
   changed_by: string;
+  /** Who made it, by name (D-143): the person, or an owner or admin. */
+  changed_by_name: string | null;
   day: string;
   tz: string;
   minutes: number;
@@ -304,7 +307,9 @@ function revisionRow(
 /**
  * Write an entry and its first revision, inside the caller's transaction —
  * the one way an entry comes to exist, whether a person typed it or confirmed
- * a draft. Refuses a day that would hold more than a day.
+ * a draft. Refuses a day that would hold more than a day. The revision is by
+ * `changedBy`: the person, unless somebody else made it — an owner or admin
+ * on their day (D-143), or the admin whose Solidtime pull brought it in.
  */
 export function insertEntry(
   tx: Tx,
@@ -313,6 +318,7 @@ export function insertEntry(
   source: TimeEntrySource,
   sourceRef: string | null,
   now: number,
+  changedBy: string = userId,
 ): string {
   assertRoom(tx, userId, fields.day, fields.minutes);
   const id = newId();
@@ -341,7 +347,7 @@ export function insertEntry(
     })
     .run();
   tx.insert(timeEntryRevisions)
-    .values(revisionRow(id, 1, 'created', userId, fields, now))
+    .values(revisionRow(id, 1, 'created', changedBy, fields, now))
     .run();
   return id;
 }
@@ -493,6 +499,30 @@ export function createEntry(
 ): TimeEntryView {
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
+  const fields = newEntryFields(db, actor, input, now);
+  const { id, undoId } = db.transaction((tx) => {
+    const made = insertEntry(tx, actor.userId, fields, 'manual', null, now);
+    // Undo takes it back (LAI-831).
+    return {
+      id: made,
+      undoId: recordUndo(tx, actor.userId, made, { drafts: [], entriesMade: [made] }, now),
+    };
+  });
+  onUndo?.(undoId);
+  return entryById(db, actor.userId, id);
+}
+
+/**
+ * A typed entry's fields, checked: its day in the window, its span (if it
+ * has one) on that day and holding its minutes, and its task or project
+ * readable by `actor` — whoever is typing it.
+ */
+export function newEntryFields(
+  db: Db,
+  actor: ResolvedActor,
+  input: NewEntryInput,
+  now: number,
+): EntryFields {
   assertEntryDay(input.day, input.tz, now);
   const startedAt = input.started_at ?? null;
   const endedAt = input.ended_at ?? null;
@@ -502,40 +532,22 @@ export function createEntry(
     });
   }
   // On its own day, as an edit of a span is already held to be (LAI-897).
-  if (startedAt !== null && endedAt !== null)
+  if (startedAt !== null && endedAt !== null) {
     assertSpanOnDay(input.day, input.tz, startedAt, endedAt);
-  const target = resolveTarget(db, actor, input);
-  const { id, undoId } = db.transaction((tx) => {
-    if (startedAt !== null && endedAt !== null) {
-      assertWithinSpan(startedAt, endedAt, input.minutes);
-    }
-    const made = insertEntry(
-      tx,
-      actor.userId,
-      {
-        target,
-        day: input.day,
-        tz: input.tz,
-        startedAt,
-        endedAt,
-        minutes: input.minutes,
-        note: textOrNull(input.note),
-        kind: input.kind ?? null,
-        title: textOrNull(input.title),
-        description: textOrNull(input.description),
-      },
-      'manual',
-      null,
-      now,
-    );
-    // Undo takes it back (LAI-831).
-    return {
-      id: made,
-      undoId: recordUndo(tx, actor.userId, made, { drafts: [], entriesMade: [made] }, now),
-    };
-  });
-  onUndo?.(undoId);
-  return entryById(db, actor.userId, id);
+    assertWithinSpan(startedAt, endedAt, input.minutes);
+  }
+  return {
+    target: resolveTarget(db, actor, input),
+    day: input.day,
+    tz: input.tz,
+    startedAt,
+    endedAt,
+    minutes: input.minutes,
+    note: textOrNull(input.note),
+    kind: input.kind ?? null,
+    title: textOrNull(input.title),
+    description: textOrNull(input.description),
+  };
 }
 
 export interface EntryPatch {
@@ -559,7 +571,7 @@ export interface EntryPatch {
  * pull brings the change here. Changing it here as well is how one hour came
  * to be deleted from both systems at once.
  */
-function currentFields(tx: Tx, userId: string, id: string) {
+export function currentFields(tx: Tx, userId: string, id: string) {
   const row = tx
     .select()
     .from(timeEntries)
@@ -597,94 +609,122 @@ export function updateEntry(
 ): TimeEntryView {
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
-  const touchesTarget = patch.task !== undefined || patch.project !== undefined;
-  const resolved = touchesTarget
-    ? resolveTarget(db, actor, { task: patch.task ?? null, project: patch.project ?? null })
-    : undefined;
-
-  const touchesSpan = patch.started_at !== undefined || patch.ended_at !== undefined;
-
+  const resolved = patchTarget(db, actor, patch);
   db.transaction((tx) => {
-    const row = currentFields(tx, actor.userId, id);
-    const moves = patch.day !== undefined && patch.day !== row.day;
-    let startedAt = moves ? null : row.startedAt;
-    let endedAt = moves ? null : row.endedAt;
-    if (touchesSpan) {
-      if (moves) {
-        throw new ApiError('unprocessable', 'A new day and a new span are two edits', {
-          reason: 'invalid_span',
-          field: 'day',
-        });
-      }
-      const start = patch.started_at ?? row.startedAt;
-      const end = patch.ended_at ?? row.endedAt;
-      if (start === null || end === null) {
-        throw new ApiError('unprocessable', 'An entry with no set time takes a start and an end', {
-          reason: 'no_span',
-          field: 'started_at',
-        });
-      }
-      assertSpanOnDay(row.day, row.tz, start, end);
-      startedAt = start;
-      endedAt = end;
-    }
-    const next: EntryFields = {
-      target: resolved ?? { taskId: row.taskId, projectId: row.projectId },
-      day: patch.day ?? row.day,
-      tz: row.tz,
-      startedAt,
-      endedAt,
-      minutes: patch.minutes ?? row.minutes,
-      note: patch.note === undefined ? row.note : textOrNull(patch.note),
-      kind: patch.kind === undefined ? row.kind : patch.kind,
-      title: patch.title === undefined ? row.title : textOrNull(patch.title),
-      description:
-        patch.description === undefined ? row.description : textOrNull(patch.description),
-    };
-    if (patch.day !== undefined) assertEntryDay(next.day, next.tz, now);
-    if (
-      next.startedAt !== null &&
-      next.endedAt !== null &&
-      (touchesSpan || patch.minutes !== undefined)
-    ) {
-      assertWithinSpan(next.startedAt, next.endedAt, next.minutes);
-    }
-    const same =
-      next.target.taskId === row.taskId &&
-      next.target.projectId === row.projectId &&
-      next.day === row.day &&
-      next.startedAt === row.startedAt &&
-      next.endedAt === row.endedAt &&
-      next.minutes === row.minutes &&
-      next.note === row.note &&
-      next.kind === row.kind &&
-      next.title === row.title &&
-      next.description === row.description;
-    if (same) return;
-    assertRoom(tx, actor.userId, next.day, next.minutes, id);
-    const revision = row.revision + 1;
-    tx.update(timeEntries)
-      .set({
-        taskId: next.target.taskId,
-        projectId: next.target.projectId,
-        day: next.day,
-        startedAt: next.startedAt,
-        endedAt: next.endedAt,
-        minutes: next.minutes,
-        note: next.note,
-        kind: next.kind ?? null,
-        title: next.title ?? null,
-        description: next.description ?? null,
-        revision,
-        updatedAt: now,
-      })
-      .where(eq(timeEntries.id, id))
-      .run();
-    tx.insert(timeEntryRevisions)
-      .values(revisionRow(id, revision, 'edited', actor.userId, next, now))
-      .run();
+    patchEntry(tx, actor.userId, id, patch, resolved, actor.userId, now);
   });
   return entryById(db, actor.userId, id);
+}
+
+/** A patch's new task or project, resolved for whoever is making it — or none. */
+export function patchTarget(db: Db, actor: ResolvedActor, patch: EntryPatch): Target | undefined {
+  const touchesTarget = patch.task !== undefined || patch.project !== undefined;
+  return touchesTarget
+    ? resolveTarget(db, actor, { task: patch.task ?? null, project: patch.project ?? null })
+    : undefined;
+}
+
+/** What a patch did: the entry's minutes and day before it, and its fields after. */
+export interface PatchApplied {
+  beforeMinutes: number;
+  beforeDay: string;
+  after: EntryFields;
+}
+
+/**
+ * Apply a patch to one of `userId`'s live entries, inside the caller's
+ * transaction, the next revision by `changedBy`. Never an import
+ * (`currentFields`). Returns `null` for a patch that changes nothing, which
+ * writes no revision.
+ */
+export function patchEntry(
+  tx: Tx,
+  userId: string,
+  id: string,
+  patch: EntryPatch,
+  resolved: Target | undefined,
+  changedBy: string,
+  now: number,
+): PatchApplied | null {
+  const touchesSpan = patch.started_at !== undefined || patch.ended_at !== undefined;
+  const row = currentFields(tx, userId, id);
+  const moves = patch.day !== undefined && patch.day !== row.day;
+  let startedAt = moves ? null : row.startedAt;
+  let endedAt = moves ? null : row.endedAt;
+  if (touchesSpan) {
+    if (moves) {
+      throw new ApiError('unprocessable', 'A new day and a new span are two edits', {
+        reason: 'invalid_span',
+        field: 'day',
+      });
+    }
+    const start = patch.started_at ?? row.startedAt;
+    const end = patch.ended_at ?? row.endedAt;
+    if (start === null || end === null) {
+      throw new ApiError('unprocessable', 'An entry with no set time takes a start and an end', {
+        reason: 'no_span',
+        field: 'started_at',
+      });
+    }
+    assertSpanOnDay(row.day, row.tz, start, end);
+    startedAt = start;
+    endedAt = end;
+  }
+  const next: EntryFields = {
+    target: resolved ?? { taskId: row.taskId, projectId: row.projectId },
+    day: patch.day ?? row.day,
+    tz: row.tz,
+    startedAt,
+    endedAt,
+    minutes: patch.minutes ?? row.minutes,
+    note: patch.note === undefined ? row.note : textOrNull(patch.note),
+    kind: patch.kind === undefined ? row.kind : patch.kind,
+    title: patch.title === undefined ? row.title : textOrNull(patch.title),
+    description: patch.description === undefined ? row.description : textOrNull(patch.description),
+  };
+  if (patch.day !== undefined) assertEntryDay(next.day, next.tz, now);
+  if (
+    next.startedAt !== null &&
+    next.endedAt !== null &&
+    (touchesSpan || patch.minutes !== undefined)
+  ) {
+    assertWithinSpan(next.startedAt, next.endedAt, next.minutes);
+  }
+  const same =
+    next.target.taskId === row.taskId &&
+    next.target.projectId === row.projectId &&
+    next.day === row.day &&
+    next.startedAt === row.startedAt &&
+    next.endedAt === row.endedAt &&
+    next.minutes === row.minutes &&
+    next.note === row.note &&
+    next.kind === row.kind &&
+    next.title === row.title &&
+    next.description === row.description;
+  if (same) return null;
+  assertRoom(tx, userId, next.day, next.minutes, id);
+  const revision = row.revision + 1;
+  tx.update(timeEntries)
+    .set({
+      taskId: next.target.taskId,
+      projectId: next.target.projectId,
+      day: next.day,
+      startedAt: next.startedAt,
+      endedAt: next.endedAt,
+      minutes: next.minutes,
+      note: next.note,
+      kind: next.kind ?? null,
+      title: next.title ?? null,
+      description: next.description ?? null,
+      revision,
+      updatedAt: now,
+    })
+    .where(eq(timeEntries.id, id))
+    .run();
+  tx.insert(timeEntryRevisions)
+    .values(revisionRow(id, revision, 'edited', changedBy, next, now))
+    .run();
+  return { beforeMinutes: row.minutes, beforeDay: row.day, after: next };
 }
 
 /**
@@ -839,22 +879,34 @@ export function reviveEntry(tx: Tx, id: string, changedBy: string, now: number):
  */
 export function listRevisions(db: Db, actor: ResolvedActor, id: string): TimeRevisionView[] {
   assertCan(actor, 'time_entries.read_own');
+  return revisionsOf(db, actor.userId, id);
+}
+
+/**
+ * One of `userId`'s entries' history, oldest first, each revision with the
+ * name of whoever made it — the person, or an owner or admin who changed
+ * their time (D-143). Somebody else's entry is `404`. No `can()` here: the
+ * caller has asked.
+ */
+export function revisionsOf(db: Db, userId: string, id: string): TimeRevisionView[] {
   const owned = db
     .select({ id: timeEntries.id })
     .from(timeEntries)
-    .where(and(eq(timeEntries.id, id), eq(timeEntries.userId, actor.userId)))
+    .where(and(eq(timeEntries.id, id), eq(timeEntries.userId, userId)))
     .get();
   if (owned === undefined) throw ApiError.notFound(`No time entry "${id}"`);
   return db
-    .select()
+    .select({ r: timeEntryRevisions, name: users.name })
     .from(timeEntryRevisions)
+    .leftJoin(users, eq(users.id, timeEntryRevisions.changedBy))
     .where(eq(timeEntryRevisions.entryId, id))
     .orderBy(asc(timeEntryRevisions.revision))
     .all()
-    .map((r) => ({
+    .map(({ r, name }) => ({
       revision: r.revision,
       change: r.change,
       changed_by: r.changedBy,
+      changed_by_name: name,
       day: r.day,
       tz: r.tz,
       minutes: r.minutes,

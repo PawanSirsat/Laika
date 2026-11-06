@@ -568,13 +568,16 @@ export type TokenAlertKind = (typeof TOKEN_ALERT_KINDS)[number];
 /**
  * §4.87's `kind` (D-134, LAI-1136): what a member is told about. Being added
  * to a space, and a tool, device or token of theirs revoked by somebody else.
- * A notice is not activity, so none of these is a §4.8 verb.
+ * A notice is not activity, so none of these is a §4.8 verb. `time_changed`
+ * (D-143, LAI-1165): an owner or admin added, changed or deleted one of the
+ * member's confirmed time entries.
  */
 export const MEMBER_NOTICE_KINDS = [
   'added_to_space',
   'tool_revoked',
   'device_unpaired',
   'token_revoked',
+  'time_changed',
 ] as const;
 export type MemberNoticeKind = (typeof MEMBER_NOTICE_KINDS)[number];
 

@@ -113,6 +113,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'time_drafts.manage_own': 'Read and manage own time drafts',
   'time_entries.read_own': 'Read and write own time entries',
   'time_entries.write_own': 'Read and write own time entries',
+  'time_entries.write_member': "Change a member's confirmed time",
   'time_sync.own': 'Sync own time with Solidtime',
   'time_sync.map': 'Map Solidtime projects and people',
   'time_sync.import_all': "Import everyone's Solidtime time",
@@ -186,6 +187,8 @@ const SOMEONE_ELSE = 'someone-else';
  *    or tool credential alike (D-133, LAI-1143).
  *  - `agent.revoke_any`, `device.revoke_any` — an Admin anybody but the
  *    Owner (D-133, LAI-1137); never themselves, whoever asks.
+ *  - `time_entries.write_member` — an Admin anybody but the Owner, the Owner
+ *    anybody; never themselves (D-143, LAI-1165).
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
  *  - `task.delete` — a Lead any task, a Member one they created.
  *  - `task.handoff.approve` — a Lead any, a Member a task assigned to them.
@@ -248,6 +251,11 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
   },
   'device.revoke_any': {
+    text: 'Not for the Owner, nor themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
+  },
+  'time_entries.write_member': {
     text: 'Not for the Owner, nor themselves',
     holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
     fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),

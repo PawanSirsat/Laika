@@ -822,6 +822,15 @@ describe('an owner’s or admin’s pull of everyone', () => {
     ]);
     expect(result).toMatchObject({ created: 2, not_on_laika: { people: 1, minutes: 120 } });
     expect(live(bea.userId).map((e) => [e.sourceRef, e.minutes])).toEqual([['st-b', 60]]);
+    // The pull is the owner's, so the revision is too (D-143): not Bea's.
+    const imported = live(bea.userId)[0]?.id ?? '';
+    expect(
+      t.db
+        .select({ by: timeEntryRevisions.changedBy })
+        .from(timeEntryRevisions)
+        .where(eq(timeEntryRevisions.entryId, imported))
+        .all(),
+    ).toEqual([{ by: owner.userId }]);
     const setup = solidtimeSetup(t.db, owner);
     expect(setup.not_on_laika).toEqual({
       people: 1,
