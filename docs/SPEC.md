@@ -7170,8 +7170,9 @@ anything missing sends the task back.
   on a task yet*; the last turns drafts on, D-142) filter chips, and
   **Member** where everyone is
   shown; **Confirmed only / Include drafts**; **Export CSV**, the server's
-  file. Six figures — *Tracked*, *Confirmed*, *Drafts waiting*, *Meetings*,
-  *Active days* (of the days so far), *Per active day* — and the agents'
+  file. Seven figures — *Tracked*, *Confirmed*, *Drafts waiting*, *Meetings*,
+  *Active days* (of the days so far), *Tasks worked* (distinct tasks with
+  time, *across N spaces*; LAI-1164), *Per active day* — and the agents'
   minutes on their own line, never added to hours. **Hours per day**: a bar
   a day, confirmed solid and drafted hatched **and named**, arrow keys, Home
   and End moving between days, each bar's figures in words, and the same as
@@ -7181,7 +7182,10 @@ anything missing sends the task back.
   itself), and an open one shows its first ten rows in the table's order, then *Show N more*
   (25 at a time) and *Show fewer*, with *N of M* (LAI-1162). **People are
   listed A–Z** unless the reader picks **Most time** beside *Swap*, which
-  orders people by hours for that reader only (D-141); no rank number, no
+  orders people by hours for that reader only (D-141); with **Member**
+  first, each person's **Spaces** and **Tasks** — how many their counted
+  time went to, general time naming no task — sit before the hours (on a
+  phone, under the name), plain counts and never a score (D-142); no rank number, no
   utilisation figure, no money. States: reading, *No time in
   this range* (*Show the last 30 days*), *No time matches these filters*
   (*Clear filters*), *Nothing confirmed* (*Include drafts*), *Drafts only*,

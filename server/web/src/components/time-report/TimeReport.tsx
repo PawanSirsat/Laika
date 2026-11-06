@@ -39,6 +39,8 @@ import {
   firstGroupings,
   groupRows,
   childWindow,
+  spreadOf,
+  spreadWords,
   CHILD_STEP,
   type PeopleOrder,
   hoursCompact,
@@ -1338,6 +1340,9 @@ function Breakdown({
   );
   const slices = slicesOf(groups);
   const split = drafts;
+  // People first: how widely each one's time went, beside their hours (LAI-1164).
+  const spread = first === 'member';
+  const all = useMemo(() => spreadOf(report.rows, drafts), [report.rows, drafts]);
   const sum = groups.reduce(
     (t, g) => ({ c: t.c + g.confirmed, d: t.d + g.drafted, t: t.t + g.total }),
     { c: 0, d: 0, t: 0 },
@@ -1429,13 +1434,23 @@ function Breakdown({
         </div>
 
         <div
-          className={split ? 'trep-table trep-table-split' : 'trep-table'}
+          className={`trep-table${split ? ' trep-table-split' : ''}${spread ? ' trep-table-spread' : ''}`}
           role="table"
           aria-label={tableLabel}
         >
           <div role="rowgroup">
             <div role="row" className="trep-row trep-row-head">
               <span role="columnheader">{DIMENSION_LABELS[first]}</span>
+              {spread && (
+                <>
+                  <span role="columnheader" className="trep-num">
+                    Spaces
+                  </span>
+                  <span role="columnheader" className="trep-num">
+                    Tasks
+                  </span>
+                </>
+              )}
               {split && (
                 <>
                   <span role="columnheader" className="trep-num">
@@ -1501,10 +1516,40 @@ function Breakdown({
                         {g.face.code !== undefined && (
                           <span className="trep-code">{g.face.code}</span>
                         )}
-                        <span className="trep-row-label">{g.face.label}</span>
-                        {meta !== '' && <span className="trep-row-meta">{meta}</span>}
+                        {spread ? (
+                          // The counts are the columns; on a phone, a line under the name.
+                          <span className="trep-row-text">
+                            <span className="trep-row-label">{g.face.label}</span>
+                            <span className="trep-row-spread" data-tr-spread-words>
+                              {spreadWords(g.spread)}
+                            </span>
+                          </span>
+                        ) : (
+                          <>
+                            <span className="trep-row-label">{g.face.label}</span>
+                            {meta !== '' && <span className="trep-row-meta">{meta}</span>}
+                          </>
+                        )}
                       </button>
                     </span>
+                    {spread && (
+                      <>
+                        <span
+                          role="cell"
+                          className="trep-num trep-num-quiet"
+                          data-tr-spread="spaces"
+                        >
+                          {g.spread.spaces}
+                        </span>
+                        <span
+                          role="cell"
+                          className="trep-num trep-num-quiet"
+                          data-tr-spread="tasks"
+                        >
+                          {g.spread.tasks}
+                        </span>
+                      </>
+                    )}
                     {split && (
                       <>
                         <span role="cell" className="trep-num trep-num-quiet">
@@ -1534,6 +1579,12 @@ function Breakdown({
                           )}
                           <span className="trep-row-label trep-quiet-text">{k.face.label}</span>
                         </span>
+                        {spread && (
+                          <>
+                            <span role="cell" className="trep-num" />
+                            <span role="cell" className="trep-num" />
+                          </>
+                        )}
                         {split && (
                           <>
                             <span role="cell" className="trep-num trep-num-muted">
@@ -1596,6 +1647,16 @@ function Breakdown({
           <div role="rowgroup">
             <div role="row" className="trep-row trep-row-total" data-tr-total>
               <span role="rowheader">Total</span>
+              {spread && (
+                <>
+                  <span role="cell" className="trep-num">
+                    {all.spaces}
+                  </span>
+                  <span role="cell" className="trep-num">
+                    {all.tasks}
+                  </span>
+                </>
+              )}
               {split && (
                 <>
                   <span role="cell" className="trep-num">
