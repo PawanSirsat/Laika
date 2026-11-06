@@ -188,7 +188,15 @@ void describe('⋯ on the profile header', () => {
       const menu = h.page.getByRole('menu', { name: 'Manage Bea Builder' });
       await menu.waitFor();
       assert.equal(await more.getAttribute('aria-expanded'), 'true');
-      assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), ['Manage member…']);
+      // LAI-1152 put the profile's two links beside it.
+      assert.deepEqual(
+        (await menu.getByRole('menuitem').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')),
+        [
+          'Manage member… Role, spaces, security, deactivate',
+          'Copy link to profile',
+          'See Bea’s cards in Work',
+        ],
+      );
 
       await h.page.keyboard.press('Escape');
       await menu.waitFor({ state: 'detached' });
@@ -451,12 +459,17 @@ void describe('the profile’s tabs (LAI-1134)', () => {
     }
   });
 
-  void test('your own profile: no tabs, as before', async () => {
+  void test('your own profile: all four tabs, Developer access by its own name (D-139)', async () => {
     const h = await at('/people?user=u1', 1440);
     try {
       await h.page.locator('.prof-head').waitFor({ timeout: 20_000 });
       await h.page.locator('.prof-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('[data-profile-tab]').count(), 0);
+      assert.deepEqual(await h.page.locator('[data-profile-tab]').allInnerTexts(), [
+        'Overview',
+        'Day',
+        'Time report',
+        'Developer access',
+      ]);
     } finally {
       await h.close();
     }
