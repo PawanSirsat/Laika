@@ -1,4 +1,4 @@
-import { and, between, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, between, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { TIME_ENTRY_KINDS, type TimeEntryKind } from '../db/enums.ts';
@@ -57,6 +57,15 @@ export const REPORT_FLOOR_PEOPLE = 3;
 export const REPORT_DRAFTS = ['exclude', 'include'] as const;
 export type ReportDrafts = (typeof REPORT_DRAFTS)[number];
 
+/**
+ * Which time by what it is on (D-142, LAI-1163): on a task, general (logged
+ * on no task on purpose — every confirmed entry without one, and drafts marked
+ * general), or a draft not on a task yet. Absent is all three. Decided on the
+ * raw `task_id`, so a task in a space the reader cannot see is still *on a task*.
+ */
+export const REPORT_LINKS = ['task', 'general', 'untied'] as const;
+export type ReportLink = (typeof REPORT_LINKS)[number];
+
 export type TimeReportScope = 'own' | 'people' | 'space_totals';
 
 export interface TimeReportQuery {
@@ -69,6 +78,7 @@ export interface TimeReportQuery {
   /** Comma-separated `TIME_ENTRY_KINDS`. */
   kinds?: string | undefined;
   drafts?: ReportDrafts | undefined;
+  link?: ReportLink | undefined;
 }
 
 /** The person on a report row. */
@@ -216,6 +226,8 @@ interface Plan {
   projectIds: string[] | null;
   kinds: TimeEntryKind[] | null;
   includeDrafts: boolean;
+  /** `null` = all time, whatever it is on. */
+  link: ReportLink | null;
 }
 
 /**
@@ -228,6 +240,7 @@ function plan(db: Db, actor: ResolvedActor, query: TimeReportQuery): Plan {
   const slugs = listOf(query.spaces);
   const kinds = kindsOf(query.kinds);
   const includeDrafts = query.drafts === 'include';
+  const link = query.link ?? null;
   if (members !== null && members.length > REPORT_MAX_MEMBERS) {
     throw new ApiError(
       'unprocessable',
@@ -249,6 +262,7 @@ function plan(db: Db, actor: ResolvedActor, query: TimeReportQuery): Plan {
       projectIds: slugs?.map((s) => readableSpace(db, actor, s)) ?? null,
       kinds,
       includeDrafts,
+      link,
     };
   }
 
@@ -286,6 +300,7 @@ function plan(db: Db, actor: ResolvedActor, query: TimeReportQuery): Plan {
       projectIds: slugs?.map((s) => readableSpace(db, actor, s)) ?? null,
       kinds,
       includeDrafts,
+      link,
     };
   }
 
@@ -318,7 +333,17 @@ function plan(db: Db, actor: ResolvedActor, query: TimeReportQuery): Plan {
     refuse('kinds', 'kinds_not_allowed', 'A space admin reads all of a week, not a kind');
   if (includeDrafts)
     refuse('drafts', 'drafts_not_allowed', 'A space admin reads confirmed time only');
-  return { scope: 'space_totals', userIds: null, projectIds, kinds: null, includeDrafts: false };
+  // A narrower total beside the whole would let a reader subtract under the floor.
+  if (link !== null)
+    refuse('link', 'link_not_allowed', 'A space admin reads all of a week, whatever it is on');
+  return {
+    scope: 'space_totals',
+    userIds: null,
+    projectIds,
+    kinds: null,
+    includeDrafts: false,
+    link: null,
+  };
 }
 
 // ---------------------------------------------------------------- the reads
@@ -342,45 +367,54 @@ function readRaw(db: Db, p: Plan, from: string, to: string): Raw[] {
   if (p.userIds !== null) entryWhere.push(inArray(timeEntries.userId, p.userIds));
   if (p.projectIds !== null) entryWhere.push(inArray(timeEntries.projectId, p.projectIds));
   if (p.kinds !== null) entryWhere.push(inArray(timeEntries.kind, p.kinds));
+  // A confirmed entry is never *not on a task yet*: on one, or general.
+  if (p.link === 'task') entryWhere.push(isNotNull(timeEntries.taskId));
+  if (p.link === 'general') entryWhere.push(isNull(timeEntries.taskId));
   const minutes = sql<number>`sum(${timeEntries.minutes})`;
-  const out: Raw[] = db
-    .select({
-      day: timeEntries.day,
-      userId: timeEntries.userId,
-      projectId: timeEntries.projectId,
-      taskId: timeEntries.taskId,
-      kind: timeEntries.kind,
-      source: timeEntries.source,
-      minutes,
-    })
-    .from(timeEntries)
-    .where(and(...entryWhere))
-    .groupBy(
-      timeEntries.day,
-      timeEntries.userId,
-      timeEntries.projectId,
-      timeEntries.taskId,
-      timeEntries.kind,
-      timeEntries.source,
-    )
-    .all()
-    .map((r) => ({
-      day: r.day,
-      userId: r.userId,
-      projectId: r.projectId,
-      taskId: r.taskId,
-      untied: false,
-      kind: r.kind,
-      minutes: Number(r.minutes),
-      confirmed: true,
-      manual: r.source === 'manual',
-    }));
+  const out: Raw[] = (
+    p.link === 'untied'
+      ? []
+      : db
+          .select({
+            day: timeEntries.day,
+            userId: timeEntries.userId,
+            projectId: timeEntries.projectId,
+            taskId: timeEntries.taskId,
+            kind: timeEntries.kind,
+            source: timeEntries.source,
+            minutes,
+          })
+          .from(timeEntries)
+          .where(and(...entryWhere))
+          .groupBy(
+            timeEntries.day,
+            timeEntries.userId,
+            timeEntries.projectId,
+            timeEntries.taskId,
+            timeEntries.kind,
+            timeEntries.source,
+          )
+          .all()
+  ).map((r) => ({
+    day: r.day,
+    userId: r.userId,
+    projectId: r.projectId,
+    taskId: r.taskId,
+    untied: false,
+    kind: r.kind,
+    minutes: Number(r.minutes),
+    confirmed: true,
+    manual: r.source === 'manual',
+  }));
 
   // A draft has no kind, so a report narrowed to kinds holds none.
   if (!p.includeDrafts || p.kinds !== null) return out;
   const draftWhere: SQL[] = [eq(timeDrafts.state, 'pending'), between(timeDrafts.day, from, to)];
   if (p.userIds !== null) draftWhere.push(inArray(timeDrafts.userId, p.userIds));
   if (p.projectIds !== null) draftWhere.push(inArray(timeDrafts.projectId, p.projectIds));
+  if (p.link === 'task') draftWhere.push(isNotNull(timeDrafts.taskId));
+  if (p.link === 'general') draftWhere.push(isNull(timeDrafts.taskId), eq(timeDrafts.general, 1));
+  if (p.link === 'untied') draftWhere.push(isNull(timeDrafts.taskId), eq(timeDrafts.general, 0));
   const drafted = sql<number>`sum(${timeDrafts.minutes})`;
   for (const r of db
     .select({
@@ -592,7 +626,7 @@ function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
     addTo(perDay, rowKey(shape, r.day), { ...shape, day: r.day }, r.minutes, r.confirmed);
   }
 
-  const narrowed = p.projectIds !== null || p.kinds !== null;
+  const narrowed = p.projectIds !== null || p.kinds !== null || p.link !== null;
   const agent = narrowed ? null : agentMinutes(db, p.userIds, from, to);
   const view: TimeReportView = {
     from,

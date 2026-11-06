@@ -4,6 +4,7 @@ import { ApiError } from '../../errors.ts';
 import {
   getTimeReport,
   REPORT_DRAFTS,
+  REPORT_LINKS,
   type TimeReportCsv,
   timeReportCsv,
   type TimeReportAnswer,
@@ -16,7 +17,7 @@ import { parseQuery, strictObject, z } from '../validation.ts';
  *
  * Transport only. Which scope the caller gets, and every refusal — `403`,
  * `session_required`, `members_not_allowed`, `drafts_not_allowed`,
- * `kinds_not_allowed`, `one_space_only`, `range_not_whole_weeks`,
+ * `kinds_not_allowed`, `link_not_allowed`, `one_space_only`, `range_not_whole_weeks`,
  * `range_too_long`, `report_too_large` — is the service's, asked of `can()`.
  */
 
@@ -31,6 +32,7 @@ export const TimeReportQuery = strictObject({
   members: list.optional(),
   kinds: list.optional(),
   drafts: z.enum(REPORT_DRAFTS).optional(),
+  link: z.enum(REPORT_LINKS).optional(),
   format: z.enum(['json', 'csv']).optional(),
 });
 
