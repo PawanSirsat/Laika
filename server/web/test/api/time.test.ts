@@ -1,6 +1,7 @@
 /**
  * `src/api/time.ts` — a person's own time (LAI-787, D-088): every call is the
- * caller's own, and nothing names anybody else. The SPA confirms, edits and
+ * caller's own, and nothing names anybody else — but for an owner's or
+ * admin's change to a member's confirmed entries (D-143), which names them. The SPA confirms, edits and
  * types; it never proposes a draft, which is an agent's (`POST
  * /me/time-drafts`) and never sends a collector's blocks (`PUT
  * /me/time-drafts`).
@@ -134,6 +135,22 @@ void describe('the calls — the caller’s own, and nothing names anybody else'
         ['PATCH', '/api/v1/me/time-entries/e1', { minutes: 30, task: null, note: null }],
         ['DELETE', '/api/v1/me/time-entries/e1', undefined],
         ['GET', '/api/v1/me/time-entries/e1/revisions', undefined],
+      ],
+    );
+  });
+
+  void test('somebody else’s entries, for an owner or admin, go to /people/:id (D-143)', async () => {
+    await addEntry({ day: '2026-10-20', tz: 'UTC', minutes: 45 }, undefined, 'u2');
+    await updateEntry('e1', { minutes: 30 }, 'u2');
+    await deleteEntry('e1', undefined, 'u2');
+    await getRevisions('e1', undefined, 'u2');
+    assert.deepEqual(
+      sent.map((s) => [s.method, s.url, s.body]),
+      [
+        ['POST', '/api/v1/people/u2/time-entries', { day: '2026-10-20', tz: 'UTC', minutes: 45 }],
+        ['PATCH', '/api/v1/people/u2/time-entries/e1', { minutes: 30 }],
+        ['DELETE', '/api/v1/people/u2/time-entries/e1', undefined],
+        ['GET', '/api/v1/people/u2/time-entries/e1/revisions', undefined],
       ],
     );
   });

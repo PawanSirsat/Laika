@@ -413,7 +413,7 @@ export function ProfileScreen({
               key={user.id}
               me={me}
               user={user.id}
-              embedded={{ name: user.name }}
+              embedded={{ name: user.name, orgRole: user.org_role }}
               day={day}
               onDay={onDay}
               onNavigate={onNavigate}
@@ -425,7 +425,7 @@ export function ProfileScreen({
               key={user.id}
               me={me}
               user={user.id}
-              embedded={{ name: user.name }}
+              embedded={{ name: user.name, orgRole: user.org_role }}
               day={day}
               onDay={onDay}
               onNavigate={onNavigate}

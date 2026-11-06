@@ -22,7 +22,14 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import {
+  closeBrowser,
+  setTheme,
+  until,
+  type ApiStub,
+  type Harness,
+  type StubCall,
+} from './harness.ts';
 import { NOW, open } from './my-day-clock.ts';
 import {
   at,
@@ -649,4 +656,166 @@ void describe('both themes, both widths', () => {
       });
     }
   }
+});
+
+void describe('an owner changes a member’s confirmed time on her Day tab (D-143, LAI-1165)', () => {
+  const PROFILE = {
+    user: {
+      id: 'u2',
+      name: 'Grace Hopper',
+      email: 'g@example.com',
+      org_role: 'member',
+      is_active: true,
+      profile_kind: 'manager',
+      created_at: NOW - 200 * 86_400_000,
+    },
+    window: { weeks: 12, since: NOW - 84 * 86_400_000, until: NOW },
+    projects: [],
+    review: {
+      accepted: 0,
+      sent_back: 0,
+      last_30_days: 0,
+      per_week: [],
+      time_to_decide: { measured: 0, unmeasured: 0, p50_ms: null },
+      recent: [],
+    },
+    ratings: [],
+    ratings_total: 0,
+    activity_sharing: { org_enabled: false, enabled: false },
+    queue: { projects_led: 0, waiting: 0, oldest_waiting_since: null, projects: [] },
+  };
+  const WRITES = [...HOLDS, 'time_entries.write_member'];
+
+  /** e1 is Grace's 11:30–12:00, added by her and then changed by Ada. */
+  const REVISIONS = {
+    revisions: [
+      {
+        revision: 1,
+        change: 'created',
+        changed_by: 'u2',
+        changed_by_name: 'Grace Hopper',
+        day: TODAY,
+        tz: 'UTC',
+        minutes: 30,
+        task_id: null,
+        project_id: null,
+        note: 'Planning call',
+        started_at: at(TODAY, 11, 30),
+        ended_at: at(TODAY, 12, 0),
+        created_at: at(TODAY, 12, 0),
+      },
+      {
+        revision: 2,
+        change: 'edited',
+        changed_by: 'u1',
+        changed_by_name: 'Ada Lovelace',
+        day: TODAY,
+        tz: 'UTC',
+        minutes: 30,
+        task_id: null,
+        project_id: null,
+        note: 'Planning call',
+        started_at: at(TODAY, 11, 30),
+        ended_at: at(TODAY, 12, 0),
+        created_at: at(TODAY, 12, 30),
+      },
+    ],
+  };
+
+  function editStub(me: typeof ADA, actions: readonly string[], sent: StubCall[]): ApiStub {
+    const routes: Record<string, unknown> = {
+      ...stub(me, actions),
+      '/api/v1/users/u2/profile': PROFILE,
+      '/api/v1/people/u2/time-entries/e1/revisions': REVISIONS,
+    };
+    routes['/api/v1/people/u2/time-entries/e1'] = (call: StubCall) => {
+      if (call.method !== 'GET') sent.push(call);
+      return { id: 'e1' };
+    };
+    return routes;
+  }
+
+  async function openEntry(h: Harness): Promise<ReturnType<Harness['page']['locator']>> {
+    await h.page.locator('[data-profile-tab="day"][aria-current="page"]').waitFor({
+      timeout: 20_000,
+    });
+    await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+    await h.page.locator('[data-day-tab="confirmed"]').click();
+    await h.page.locator('[data-select="e1"]').click();
+    const editor = h.page.locator('[data-inspector="entry"]');
+    await editor.waitFor({ timeout: 10_000 });
+    return editor;
+  }
+
+  void test('the owner lengthens Grace’s entry: the PATCH is hers, and the history names Ada', async () => {
+    const sent: StubCall[] = [];
+    const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, editStub(ADA, WRITES, sent));
+    try {
+      const editor = await openEntry(h);
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /You’re viewing Grace Hopper’s day\. Changes you make are shown to Grace/,
+      );
+      // Her history, read from her entries — and Ada's change named.
+      const history = editor.locator('[data-entry-history]');
+      await history.locator('.editor-history-row').first().waitFor({ timeout: 10_000 });
+      assert.match(await history.innerText(), /Changed by Ada Lovelace · 30 min/);
+      assert.match(await history.innerText(), /Added by hand · 30 min · Grace Hopper/);
+
+      // 11:30–12:00, to 12:15: one edge, one write, to her path.
+      const end = editor.locator('[data-when-end]');
+      await end.fill('12:15pm');
+      await end.press('Enter');
+      await until(() => sent.length === 1);
+      assert.deepEqual(sent, [
+        {
+          method: 'PATCH',
+          path: '/api/v1/people/u2/time-entries/e1',
+          body: { ended_at: at(TODAY, 12, 15), minutes: 45 },
+        },
+      ]);
+      assert.ok(
+        !h.calls.some((c) => c.method !== 'GET' && c.path.startsWith('/api/v1/me/')),
+        'a write went to the reader’s own time',
+      );
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 1);
+      // Her drafts stay hers: a draft opens with nothing to change it with.
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-block-select="d1"]').click();
+      const draft = h.page.locator('[data-inspector="draft"]');
+      await draft.waitFor({ timeout: 5_000 });
+      assert.equal(await draft.locator('.inspector-confirm').count(), 0);
+      assert.equal(await h.page.locator('[data-block-id="d1"] [data-edge]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member who may read her day sees no control to change it', async () => {
+    const linus = { ...ADA, id: 'u3', name: 'Linus Torvalds', org_role: 'member' };
+    const sent: StubCall[] = [];
+    const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, editStub(linus, HOLDS, sent));
+    try {
+      const editor = await openEntry(h);
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /Read-only\. You’re viewing Grace Hopper’s day/,
+      );
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 0);
+      assert.equal(await editor.locator('[data-entry-history]').count(), 0);
+      assert.equal(await editor.locator('[data-when-end]').getAttribute('readonly'), '');
+      await editor
+        .locator('[data-when-end]')
+        .fill('12:15pm')
+        .catch(() => undefined);
+      await editor.locator('[data-when-end]').press('Enter');
+      // A fixed window: nothing *should* happen, so nothing can end it early.
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(sent, []);
+      assert.deepEqual(writes(h), []);
+      assert.ok(!h.calls.some((c) => c.path.includes('/revisions')), 'her history was read');
+    } finally {
+      await h.close();
+    }
+  });
 });

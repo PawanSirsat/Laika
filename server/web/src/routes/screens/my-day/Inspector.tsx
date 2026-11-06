@@ -103,6 +103,17 @@ export interface InspectorProps {
    * own entries).
    */
   readonly readOnly?: boolean;
+  /**
+   * Somebody else's day whose confirmed entries the reader may change (D-143,
+   * LAI-1165): an owner, or an admin on anybody but the owner. Their entries
+   * open as the reader's own do, with their history; drafts, gaps' breaks and
+   * breaks stay read-only. Absent, it follows `readOnly`.
+   */
+  readonly canEdit?: boolean | undefined;
+  /** Whose entries the history is read from: `undefined` is the reader's own. */
+  readonly entrySubject?: string | undefined;
+  /** The reader, so the history says *You* for their own revisions. */
+  readonly readerId?: string | undefined;
   /** Whose day, when read-only: the sub line names them. */
   readonly subject?: string | undefined;
   /** Where the block stands among the drafts, for the head's ‹ n of N › (LAI-504). */
@@ -144,17 +155,34 @@ function agentLine(during: AgentsIn | undefined, who: 'you' | 'they' = 'you'): s
   return `During this time an agent worked ${worked}${onCard}. Counts only — never what ${who} typed, file names or commit messages.`;
 }
 
-/** What a revision did, in the design's words. */
-function revisionWords(r: TimeRevision, source: TimeEntry['source'], first: boolean): string {
-  if (r.change === 'deleted') return 'Deleted';
+/**
+ * What a revision did, in the design's words — and, when it was not the
+ * person's own (D-143), who did it: *Changed by Pawan Sirsat*. `personId` is
+ * whose entry it is.
+ */
+export function revisionWords(
+  r: TimeRevision,
+  source: TimeEntry['source'],
+  first: boolean,
+  personId?: string,
+): string {
+  const by =
+    personId !== undefined && r.changed_by !== personId && source !== 'import'
+      ? (r.changed_by_name ?? 'someone else')
+      : undefined;
+  if (r.change === 'deleted') return by === undefined ? 'Deleted' : `Deleted by ${by}`;
   if (r.change === 'created' || first) {
     return source === 'import'
       ? 'Imported from Solidtime'
-      : source === 'manual'
-        ? `Added by hand · ${duration(r.minutes)}`
-        : `Confirmed · ${duration(r.minutes)}`;
+      : by !== undefined
+        ? `Added by ${by} · ${duration(r.minutes)}`
+        : source === 'manual'
+          ? `Added by hand · ${duration(r.minutes)}`
+          : `Confirmed · ${duration(r.minutes)}`;
   }
-  return `Edited · ${duration(r.minutes)}`;
+  return by === undefined
+    ? `Edited · ${duration(r.minutes)}`
+    : `Changed by ${by} · ${duration(r.minutes)}`;
 }
 
 type History =
@@ -190,6 +218,9 @@ export function Inspector({
   actions,
   onNavigate,
   readOnly = false,
+  canEdit = !readOnly,
+  entrySubject,
+  readerId,
   subject = 'This person',
   position,
   onPrev,
@@ -237,16 +268,17 @@ export function Inspector({
     };
   }, [pending, selectedId]);
 
-  // HISTORY, read as a confirmed entry opens (a `/me` read: the reader's own).
+  // HISTORY, read as a confirmed entry opens: a `/me` read of the reader's
+  // own, or — for an owner or admin who may change it (D-143) — the member's.
   const entryId = selection?.kind === 'entry' ? selection.id : undefined;
   useEffect(() => {
-    if (entryId === undefined || readOnly) {
+    if (entryId === undefined || !canEdit) {
       setHistory({ kind: 'closed' });
       return undefined;
     }
     let live = true;
     setHistory({ kind: 'loading' });
-    getRevisions(entryId)
+    getRevisions(entryId, undefined, entrySubject)
       .then(({ revisions }) => {
         if (live) setHistory({ kind: 'ready', revisions });
       })
@@ -261,7 +293,7 @@ export function Inspector({
     return () => {
       live = false;
     };
-  }, [entryId, readOnly]);
+  }, [entryId, canEdit, entrySubject]);
 
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const placed = (id: string): LaneBlock | undefined => line.blocks.find((b) => b.id === id);
@@ -653,7 +685,7 @@ export function Inspector({
     if (entry !== undefined) {
       const block = placed(entry.id);
       const imported = entry.source === 'import';
-      const changeable = !readOnly && canChange(entry);
+      const changeable = canEdit && canChange(entry);
       const untimedEntry = entry.started_at === null || entry.ended_at === null;
       const held: Held = { kind: 'entry', entry };
       const said =
@@ -681,7 +713,9 @@ export function Inspector({
           : imported
             ? 'This entry came from Solidtime. Change it there; the next import updates it here.'
             : readOnly
-              ? 'Read-only. You can see this because you may read everyone’s day.'
+              ? changeable
+                ? `${subject}’s confirmed time. Changes you make are kept with your name and shown to them.`
+                : 'Read-only. You can see this because you may read everyone’s day.'
               : undefined;
       return (
         <EditorFrame
@@ -700,7 +734,9 @@ export function Inspector({
             imported
               ? 'Imported from Solidtime · read-only here'
               : readOnly
-                ? `Read-only · ${subject}’s entry`
+                ? changeable
+                  ? `${subject}’s entry · confirmed`
+                  : `Read-only · ${subject}’s entry`
                 : 'Confirmed · owners and admins can see it'
           }${entry.note !== null ? ` · “${entry.note}”` : ''}`}
           banner={banner}
@@ -864,7 +900,7 @@ export function Inspector({
               </p>
             </section>
           )}
-          {!readOnly && (
+          {canEdit && (
             <section className="editor-section editor-section-last" data-entry-history>
               <h3 className="editor-label">History</h3>
               {history.kind === 'loading' && <Spinner size="sm" label="Reading the history" />}
@@ -879,8 +915,19 @@ export function Inspector({
                         </time>
                       </span>
                       <span>
-                        {revisionWords(r, entry.source, i === all.length - 1)}
-                        <span className="editor-history-who"> · You</span>
+                        {revisionWords(
+                          r,
+                          entry.source,
+                          i === all.length - 1,
+                          entrySubject ?? readerId,
+                        )}
+                        {/* Somebody else's change names them in the words (D-143). */}
+                        {(entry.source === 'import' ||
+                          r.changed_by === (entrySubject ?? readerId ?? r.changed_by)) && (
+                          <span className="editor-history-who">
+                            {entrySubject === undefined ? ' · You' : ` · ${subject}`}
+                          </span>
+                        )}
                       </span>
                     </li>
                   ))}
@@ -893,7 +940,7 @@ export function Inspector({
     }
   }
 
-  if (selection?.kind === 'gap' && readOnly) {
+  if (selection?.kind === 'gap' && !canEdit) {
     // Somebody else's gap (LAI-959): what it is, and nothing to fill it with.
     const g: Span = { start: selection.start, end: selection.end };
     return (

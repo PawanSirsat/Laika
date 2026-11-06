@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { request } from './client.ts';
+import { formatHours } from './duration.ts';
 
 /**
  * A member's notices (SPEC §6.4, D-134; LAI-1136 serves them, LAI-1139 draws
  * them as *For you* on My day): being added to a space — with the adder's
- * message and first card — and, once LAI-1137 lands, a tool, device or token
- * of theirs revoked by somebody else. Mirrors `services/notices.ts`'
- * `NoticeView`.
+ * message and first card — a tool, device or token of theirs revoked by
+ * somebody else, and their confirmed time changed by an owner or admin
+ * (D-143, LAI-1165). Mirrors `services/notices.ts`' `NoticeView`.
  *
  * **The message is the adder's own free text**, up to 500 characters. It is
  * drawn as text, never as HTML or Markdown — React's text nodes, nothing that
@@ -15,7 +16,8 @@ import { request } from './client.ts';
  * Session only: every read and mark is `notices.own`, the caller's rows.
  */
 
-export type NoticeKind = 'added_to_space' | 'tool_revoked' | 'device_unpaired' | 'token_revoked';
+export type NoticeKind =
+  'added_to_space' | 'tool_revoked' | 'device_unpaired' | 'token_revoked' | 'time_changed';
 
 export interface Notice {
   readonly id: string;
@@ -25,7 +27,10 @@ export interface Notice {
   readonly project: { readonly id: string; readonly slug: string; readonly name: string } | null;
   /** The first card while it exists and the reader can open its space. */
   readonly task: { readonly id: string; readonly key: string; readonly title: string } | null;
-  /** The tool, device or token's name as it was. */
+  /**
+   * The tool, device or token's name as it was; for `time_changed`, what was
+   * done as `<created|edited|deleted> <day> <±minutes>` ({@link timeChangedLine}).
+   */
   readonly subject: string | null;
   readonly message: string | null;
   readonly created_at: number;
@@ -81,7 +86,39 @@ export function noticeLine(notice: Notice): string {
       return `${who} unpaired the device ${what}`;
     case 'token_revoked':
       return `${who} revoked the token ${what}`;
+    case 'time_changed':
+      return timeChangedLine(who, notice);
   }
+}
+
+const TIME_CHANGED = /^(created|edited|deleted) (\d{4}-\d{2}-\d{2}) ([+-])(\d+)$/;
+
+/** `2026-11-05` as `Thu 5 Nov`: a calendar day, so no zone moves it. */
+function noticeDay(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * An owner's or admin's change to the reader's confirmed time (D-143): who,
+ * what, which day, and the card when there is one. A subject this does not
+ * read still says who changed their time, never nothing.
+ */
+function timeChangedLine(who: string, notice: Notice): string {
+  const match = TIME_CHANGED.exec(notice.subject ?? '');
+  if (match === null) return `${who} changed your time`;
+  const [, change, day, sign, minutes] = match;
+  const on = noticeDay(day ?? '');
+  const length = formatHours(Number(minutes));
+  const card = notice.task === null ? '' : ` · ${notice.task.key}`;
+  if (change === 'created') return `${who} added ${length} to your time on ${on}${card}`;
+  if (change === 'deleted') return `${who} removed ${length} of your time on ${on}${card}`;
+  const by = Number(minutes) === 0 ? '' : ` (${sign === '-' ? '−' : '+'}${length})`;
+  return `${who} changed your time on ${on}${by}${card}`;
 }
 
 // ------------------------------------------------------------- the count
