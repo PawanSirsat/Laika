@@ -7,7 +7,11 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { ACTIVITY_RANGES, getPeopleActivity } from '../../src/api/people-activity.ts';
+import {
+  ACTIVITY_RANGES,
+  getOwnActivity,
+  getPeopleActivity,
+} from '../../src/api/people-activity.ts';
 
 function stub(answer: unknown): { url: string; method: string }[] {
   const calls: { url: string; method: string }[] = [];
@@ -27,6 +31,13 @@ void describe('the heatmap read (§6.4)', () => {
     assert.deepEqual(answer, { range: '52w' });
     assert.equal(calls[0]?.method, 'GET');
     assert.ok(calls[0]?.url.endsWith('/api/v1/people/u%201/activity?range=52w'), calls[0]?.url);
+  });
+
+  void test('your own asks /me/activity with the range, and names nobody (LAI-1154)', async () => {
+    const calls = stub({ range: '12w' });
+    await getOwnActivity('12w');
+    assert.equal(calls[0]?.method, 'GET');
+    assert.ok(calls[0]?.url.endsWith('/api/v1/me/activity?range=12w'), calls[0]?.url);
   });
 
   void test('offers exactly the two ranges the server answers', () => {
