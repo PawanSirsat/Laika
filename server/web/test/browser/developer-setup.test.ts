@@ -26,6 +26,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { DAY, NOW as FIXTURE_NOW, setup, token } from '../helpers/developer-setup-fixture.ts';
+import { ownReadsFrom } from '../helpers/own-setup-fixture.ts';
 import type { DeveloperSetup } from '../../src/api/developer-setup.ts';
 
 const NOW = Date.now();
@@ -253,26 +254,6 @@ void describe('who sees the tab', () => {
         .waitFor({ timeout: 20_000 });
       assert.deepEqual(await tabsOf(h.page), ['overview', 'day', 'time']);
       assert.equal(await h.page.locator('[data-ds-ready], [data-ds-loading]').count(), 0);
-      assert.equal(h.calls.filter((c) => c.path.includes('/developer-setup')).length, 0);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('your own is Developer access, pointing at its screen, and reads no one’s setup', async () => {
-    const h = await at('/people?user=u1&tab=dev');
-    try {
-      await h.page.locator('.prof-head').waitFor({ timeout: 20_000 });
-      // D-139: your own profile has the tab, by its own name (LAI-1152); until
-      // LAI-1156 draws it here, it links to the Developer access screen.
-      assert.equal(
-        await h.page.locator('[data-profile-tab="dev"]').innerText(),
-        'Developer access',
-      );
-      assert.equal(
-        await h.page.locator('[data-profile-dev-link]').getAttribute('href'),
-        '/developer',
-      );
       assert.equal(h.calls.filter((c) => c.path.includes('/developer-setup')).length, 0);
     } finally {
       await h.close();
@@ -659,6 +640,327 @@ void describe('both themes, at a phone’s width', () => {
           await h.page.locator('[data-ds-device="d1"] .ds-lbl').first().isVisible(),
           true,
         );
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
+// ------------------------------------------------------------ your own (LAI-1156)
+
+const ME_SETUP = { id: 'u1', name: 'Ada Owner', org_role: 'owner', is_active: true };
+const OWN = '/people?user=u1';
+const OWN_TAB = '/people?user=u1&tab=dev';
+
+const CLAIMED = {
+  id: 'pr2',
+  state: 'claimed',
+  kind: 'local',
+  display_name: 'ada-spare',
+  device_id: null,
+  claimed: {
+    key_fingerprint: 'SHA256:pairkey0002',
+    os: null,
+    cli_version: null,
+    claimed_at: NOW - 60_000,
+  },
+  created_at: NOW - 5 * 60_000,
+  expires_at: NOW + 5 * 60_000,
+  decided_at: null,
+  completed_at: null,
+} as const;
+
+/** The fixture as your own reads answer it — Developer access's endpoints, never the admin read. */
+function ownStub(over: Partial<DeveloperSetup> = {}, extra: ApiStub = {}): ApiStub {
+  const reads = ownReadsFrom(view(over), ME_SETUP);
+  return {
+    '/api/v1/devices': { data: reads.devices },
+    '/api/v1/agents': { data: reads.agents, next_cursor: null },
+    '/api/v1/project-setups': { data: reads.setups },
+    '/api/v1/tokens': { data: reads.tokens, next_cursor: null },
+    '/api/v1/devices/pairing-requests': { data: reads.pending },
+    '/api/v1/me/developer-setup/activity': { now: reads.now, data: reads.activity },
+    ...Object.fromEntries(
+      [...reads.verifications].map(([id, v]) => [`/api/v1/agents/${id}/verification`, v]),
+    ),
+    ...Object.fromEntries(
+      [...reads.consents].map(([id, given]) => [
+        `/api/v1/agents/${id}/checkpoint-consent`,
+        { given, given_by_user_id: null, given_at: null, withdrawn_at: null },
+      ]),
+    ),
+    ...extra,
+  };
+}
+
+/** Never someone else's setup, and never anyone's availability row, for your own. */
+function readsNothingElse(calls: readonly StubCall[]): void {
+  assert.deepEqual(
+    calls
+      .filter((c) => c.path.startsWith('/api/v1/people/'))
+      .filter(
+        (c) => c.path.includes('/developer-setup') || c.path === '/api/v1/people/availability',
+      )
+      .map((c) => c.path),
+    [],
+  );
+}
+
+void describe('your own Developer access (LAI-1156, frame F)', () => {
+  void test('the badge is there before the tab is opened, and the tab draws your own reads', async () => {
+    const h = await at(OWN, ownStub());
+    try {
+      const tab = h.page.locator('[data-profile-tab="dev"]');
+      const badge = tab.locator('[data-profile-tab-badge]');
+      await badge.waitFor({ timeout: 20_000 });
+      // The same two items someone else's health line names for this setup.
+      assert.equal((await badge.innerText()).trim(), '2 to fix');
+      assert.equal(await h.page.locator('[data-ds-ready]').count(), 0, 'the tab is not open');
+
+      await tab.click();
+      const ready = h.page.locator('[data-ds-ready][data-ds-own]');
+      await ready.waitFor({ timeout: 20_000 });
+      assert.equal(
+        (await h.page.locator('[data-ds-notice]').innerText()).trim(),
+        'Your setup · owners and admins see a read-only copy, and you can see when they look',
+      );
+      assert.equal(
+        await h.page.locator('[data-ds-health] [role="status"]').innerText(),
+        '2 things need attention',
+      );
+      assert.match(
+        await h.page.locator('[data-ds-tile="Spaces reachable"]').innerText(),
+        /^Spaces reachable\s+1\s+by your live tools$/,
+      );
+      assert.match(
+        await h.page.locator('[data-ds-tile="Repositories set up"]').innerText(),
+        /^Repositories set up\s+1\s+all visible to you$/,
+      );
+      // Your own acts read *by you*; there is no owner-decision label on your own.
+      assert.match(
+        await h.page.locator('[data-ds-section="activity"]').innerText(),
+        /revoked by you/,
+      );
+      assert.equal(await h.page.locator('[data-ds-owner-note]').count(), 0);
+      assert.doesNotMatch(await ready.innerText(), /notified|owner decision/i);
+      readsNothingElse(h.calls);
+      for (const path of [
+        '/api/v1/devices',
+        '/api/v1/agents',
+        '/api/v1/project-setups',
+        '/api/v1/tokens',
+        '/api/v1/devices/pairing-requests',
+        '/api/v1/me/developer-setup/activity',
+      ]) {
+        assert.ok(
+          h.calls.some((c) => c.path === path),
+          `${path} is read`,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('nothing to fix is no badge', async () => {
+    const tools = view().tools.slice(0, 1);
+    const h = await at(OWN_TAB, ownStub({ tools, repositories: [] }));
+    try {
+      await h.page.locator('[data-ds-ready]').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('[data-ds-health] [role="status"]').innerText(),
+        'All set up',
+      );
+      assert.equal(await h.page.locator('[data-profile-tab-badge]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Approve and Decline echo the fingerprint shown, and no code is ever drawn', async () => {
+    const decided: StubCall[] = [];
+    let listed = 0;
+    const pending = [CLAIMED, { ...CLAIMED, id: 'pr3', display_name: 'ada-other' }];
+    const h = await at(
+      OWN_TAB,
+      ownStub(
+        {},
+        {
+          '/api/v1/devices/pairing-requests': () => {
+            listed += 1;
+            return { data: pending };
+          },
+          '/api/v1/devices/pairing-requests/pr2/approve': (c: StubCall) => {
+            decided.push(c);
+            return { ...CLAIMED, state: 'approved' };
+          },
+          '/api/v1/devices/pairing-requests/pr3/deny': (c: StubCall) => {
+            decided.push(c);
+            return { ...CLAIMED, id: 'pr3', state: 'denied' };
+          },
+        },
+      ),
+    );
+    try {
+      const row = h.page.locator('[data-ds-pairing="pr2"]');
+      await row.waitFor({ timeout: 20_000 });
+      const text = await row.innerText();
+      assert.match(text, /ada-spare/);
+      assert.match(text, /SHA256:pairkey0002/);
+      assert.doesNotMatch(await h.page.locator('[data-ds-pending]').innerText(), /code/i);
+
+      const before = listed;
+      await h.page.getByRole('button', { name: 'Approve ada-spare' }).click();
+      await h.page.locator('[data-ds-done]').waitFor();
+      assert.match(await h.page.locator('[data-ds-done]').innerText(), /ada-spare is approved/);
+      await h.page.getByRole('button', { name: 'Decline ada-other' }).click();
+      await until(() => decided.length === 2);
+      assert.deepEqual(
+        decided.map((c) => [c.method, c.path, c.body]),
+        [
+          [
+            'POST',
+            '/api/v1/devices/pairing-requests/pr2/approve',
+            { key_fingerprint: 'SHA256:pairkey0002' },
+          ],
+          [
+            'POST',
+            '/api/v1/devices/pairing-requests/pr3/deny',
+            { key_fingerprint: 'SHA256:pairkey0002' },
+          ],
+        ],
+      );
+      await until(() => listed > before);
+      assert.ok(listed > before, 'the requests are read again after a decision');
+      readsNothingElse(h.calls);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an open request waits for its device: no Approve, no Decline', async () => {
+    const h = await at(OWN_TAB, ownStub());
+    try {
+      const row = h.page.locator('[data-ds-pairing="pr1"]');
+      await row.waitFor({ timeout: 20_000 });
+      assert.match(await row.innerText(), /waiting for the device to claim it/);
+      assert.equal(await row.getByRole('button').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the health line’s link moves focus to the tool it names', async () => {
+    const h = await at(OWN_TAB, ownStub());
+    try {
+      await h.page.locator('[data-ds-jump="dev-tool-a2"]').click({ timeout: 20_000 });
+      await until(async () => (await focused(h.page)).startsWith('article#dev-tool-a2'));
+      assert.ok((await focused(h.page)).startsWith('article#dev-tool-a2'), await focused(h.page));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Disconnect, Revoke tool and Revoke token use your own endpoints and tell nobody', async () => {
+    const posted: StubCall[] = [];
+    const record = (body: unknown) => (c: StubCall) => {
+      posted.push(c);
+      return body;
+    };
+    const h = await at(
+      OWN_TAB,
+      ownStub(
+        {},
+        {
+          '/api/v1/agents/devices/revoke': record({ revoked_agent_ids: ['a1', 'a2'] }),
+          '/api/v1/agents/a2/revoke': record(view().tools[1]),
+          '/api/v1/tokens/p1': (c: StubCall) => {
+            posted.push(c);
+            return reply(204, null);
+          },
+        },
+      ),
+    );
+    try {
+      const more = h.page.getByRole('button', { name: 'Actions for rowan-box' });
+      await more.click({ timeout: 20_000 });
+      await h.page.getByRole('menuitem', { name: 'Disconnect device…' }).click();
+      const dialog = h.page.getByRole('alertdialog');
+      await dialog.waitFor();
+      const text = await dialog.innerText();
+      assert.match(text, /Disconnect rowan-box\?/);
+      assert.match(text, /It shows in your setup activity/);
+      assert.doesNotMatch(text, /notified|Only the owner/);
+      await dialog.getByRole('button', { name: 'Disconnect rowan-box' }).click();
+      await h.page.locator('[data-ds-done]').waitFor();
+      assert.equal(
+        (await h.page.locator('[data-ds-done]').innerText()).trim(),
+        'rowan-box is disconnected.',
+      );
+
+      await h.page.getByRole('button', { name: /^Actions for Codex on rowan-box/ }).click();
+      await h.page.getByRole('menuitem', { name: 'Revoke tool…' }).click();
+      await h.page.getByRole('alertdialog').getByRole('button', { name: 'Revoke Codex' }).click();
+      await until(() => posted.length === 2);
+
+      await h.page.getByRole('button', { name: 'Actions for deploy-key' }).click();
+      await h.page.getByRole('menuitem', { name: 'Revoke token…' }).click();
+      await h.page.getByRole('alertdialog').getByRole('button', { name: 'Revoke token' }).click();
+      await until(() => posted.length === 3);
+
+      assert.deepEqual(
+        posted.map((c) => [c.method, c.path, c.body ?? null]),
+        [
+          ['POST', '/api/v1/agents/devices/revoke', { device_label: 'rowan-box' }],
+          ['POST', '/api/v1/agents/a2/revoke', null],
+          ['DELETE', '/api/v1/tokens/p1', null],
+        ],
+      );
+      readsNothingElse(h.calls);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('empty: your own words, and how to start', async () => {
+    const h = await at(
+      OWN_TAB,
+      ownStub({
+        devices: [],
+        tools: [],
+        pending_pairing: [],
+        repositories: [],
+        tokens: { personal: [], tool_credentials: [] },
+        activity: [],
+      }),
+    );
+    try {
+      const empty = h.page.locator('[data-ds-empty]');
+      await empty.waitFor({ timeout: 20_000 });
+      assert.match(
+        await empty.innerText(),
+        /You haven’t set up any tools yet[\s\S]*Pair a device with the Laika helper/,
+      );
+      assert.equal(await h.page.locator('[data-profile-tab-badge]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    void test(`your own, ${theme} at 390: the tab fits the page`, async () => {
+      const h = await at(OWN_TAB, ownStub({ pending_pairing: [CLAIMED] as never }), 390);
+      try {
+        await h.page.locator('[data-ds-ready][data-ds-own]').waitFor({ timeout: 20_000 });
+        await setTheme(h.page, theme);
+        await h.page.locator('[data-ds-approve="pr2"]').waitFor();
+        const overflow = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        assert.ok(overflow <= 0, `the page scrolls sideways by ${String(overflow)}px`);
+        const approve = await h.page.locator('[data-ds-approve="pr2"]').boundingBox();
+        assert.ok(approve !== null && approve.x + approve.width <= 390, 'Approve is on the phone');
       } finally {
         await h.close();
       }

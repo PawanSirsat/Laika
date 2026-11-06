@@ -124,6 +124,24 @@ export function getDeveloperSetup(userId: string, signal?: AbortSignal): Promise
   );
 }
 
+/** Your own setup activity, as `activity` lists it for an admin, on the board's clock. */
+export interface OwnSetupActivity {
+  readonly now: number;
+  readonly data: readonly SetupActivity[];
+}
+
+/**
+ * `GET /me/developer-setup/activity` (D-139, LAI-1151): your own last 30 days,
+ * the items an admin's read lists. Session only; **no look is written** — it
+ * is your own.
+ */
+export function getOwnSetupActivity(signal?: AbortSignal): Promise<OwnSetupActivity> {
+  return request<OwnSetupActivity>(
+    '/me/developer-setup/activity',
+    signal === undefined ? {} : { signal },
+  );
+}
+
 /** Revoke one of the member's tools (`agent.revoke_any`); idempotent. */
 export function revokeMemberTool(userId: string, agentId: string): Promise<SetupTool> {
   return request<SetupTool>(

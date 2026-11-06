@@ -5,6 +5,7 @@ import type {
   SetupToken,
   SetupTool,
 } from '../../../api/developer-setup.ts';
+import type { DevicePairing } from '../../../api/device-pairing.ts';
 import type { ProjectSetup } from '../../../api/project-setups.ts';
 import { revokeRefusal } from '../../../api/owner-setup.ts';
 import { timeLabel } from '../../../api/time-label.ts';
@@ -32,7 +33,74 @@ import {
  * rules, not restating them: a tool's status is `listedStatus`, a repository
  * setup's is `repoGroups` (`recordState`), a helper's is `updateStatus`. What
  * the tab adds is only which of those it lists, set out on `attentionItems`.
+ *
+ * **Your own Developer access tab draws the same layout** (LAI-1156, D-139):
+ * `own-setup-derive.ts` assembles a {@link SetupView} from your own reads, and
+ * the few words that differ — whose setup, who is told — are {@link voiceFor}'s.
  */
+
+/**
+ * What the tab draws: the admin read as it comes, or your own reads put into
+ * the same shape (LAI-1156). `unverified` names the live tools whose own
+ * verification could not be read — only your own reads ask for it per tool —
+ * so their status falls back to the agent's stamps rather than to a check
+ * that was never made.
+ */
+export interface SetupView extends DeveloperSetup {
+  readonly unverified?: readonly string[];
+}
+
+/** The words that differ between someone else's setup and your own (frames 2p, F). */
+export interface Voice {
+  readonly own: boolean;
+  /** *Rowan*, or *you* in a sentence about your own. */
+  readonly first: string;
+  readonly notice: string;
+  readonly reading: string;
+  readonly errLead: string;
+  readonly emptyTitle: string;
+  readonly emptyBody: string;
+  readonly emptyItems: readonly string[];
+  readonly reach: string;
+  readonly everySpace: string;
+}
+
+export function voiceFor(own: boolean, name: string): Voice {
+  if (own) {
+    return {
+      own,
+      first: 'you',
+      notice: 'Your setup · owners and admins see a read-only copy, and you can see when they look',
+      reading: 'Reading your setup…',
+      errLead: 'Your setup could not be read.',
+      emptyTitle: 'You haven’t set up any tools yet',
+      emptyBody:
+        'No device is paired and no tool holds a credential, so no agent can pick up or work on cards for you. Your own time and cards are not affected.',
+      emptyItems: [
+        'Pair a device with the Laika helper, then add a tool. Each tool gets its own credential.',
+        'Personal tokens, if you make any, show up under Tokens here.',
+      ],
+      reach: 'by your live tools',
+      everySpace: 'Every space you can open',
+    };
+  }
+  const first = firstName(name);
+  return {
+    own,
+    first,
+    notice: `Owners and admins only · read-only · ${first} can see that you looked`,
+    reading: `Reading ${first}’s setup…`,
+    errLead: `${first}’s setup could not be read.`,
+    emptyTitle: `${first} hasn’t set up any tools yet`,
+    emptyBody: `No device is paired and no tool holds a credential, so no agent can pick up or work on cards for ${first}. Their own time and cards are not affected.`,
+    emptyItems: [
+      `${first} starts from Developer access on their own account. Admins can’t set it up for them.`,
+      'Personal tokens, if any are made later, show up under Tokens here.',
+    ],
+    reach: 'by their live tools',
+    everySpace: 'Every space they can open',
+  };
+}
 
 /** The token search appears only past this many tokens (frame 2p). */
 export const SEARCH_OVER = 8;
@@ -135,9 +203,18 @@ export function verificationOf(tool: SetupTool, now: number): AgentVerification 
   };
 }
 
-/** A tool's status word, from its own verification — the rule Developer access uses. */
-export function toolState(tool: SetupTool, now: number): ListedStatus {
-  return listedStatus(tool, verificationOf(tool, now), now);
+/**
+ * A tool's status word, from its own verification — the rule Developer access
+ * uses. `unverified` is a tool whose verification was not read: then the
+ * agent's own stamps, as Developer access says it while one is missing.
+ */
+export function toolState(tool: SetupTool, now: number, unverified = false): ListedStatus {
+  return listedStatus(tool, unverified ? undefined : verificationOf(tool, now), now);
+}
+
+/** Whether `view` could not read this tool's verification (your own reads only). */
+export function isUnverified(view: Pick<SetupView, 'unverified'>, toolId: string): boolean {
+  return view.unverified?.includes(toolId) === true;
 }
 
 export interface CheckMark {
@@ -231,6 +308,11 @@ export const SETUP_WORDS: Readonly<Record<SetupChipKey, string>> = {
   'update-available': SETUP_CHIPS['update-available'].word,
   missing: SETUP_CHIPS.missing.word,
 };
+
+/** The chip's word: Developer access's own on your own setup, the admin's on someone else's. */
+export function setupWord(chip: SetupChipKey, own: boolean): string {
+  return own ? SETUP_CHIPS[chip].word : SETUP_WORDS[chip];
+}
 
 export interface RepoRow {
   /** An element id: `repoGroups`' key, made safe. */
@@ -334,7 +416,7 @@ function lowerFirst(text: string): string {
  * Only live tools and devices count — a revoked one needs nothing.
  */
 export function attentionItems(
-  view: Pick<DeveloperSetup, 'devices' | 'tools' | 'repositories' | 'now'>,
+  view: Pick<SetupView, 'devices' | 'tools' | 'repositories' | 'now' | 'unverified'>,
   manifest: UpdateManifest | 'failed' | undefined,
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
@@ -344,7 +426,7 @@ export function attentionItems(
   };
   for (const tool of view.tools) {
     if (tool.status !== 'active') continue;
-    const status = toolState(tool, view.now);
+    const status = toolState(tool, view.now, isUnverified(view, tool.id));
     const required = toolUpdate(tool, manifest)?.key === 'required';
     const why = [
       status.key === 'needs-setup' ? lowerFirst(status.reason) : null,
@@ -422,9 +504,9 @@ export function ago(at: number | null, now: number, never = 'Never'): string {
   return at === null ? never : timeLabel(at, now).text;
 }
 
-/** One line of *Recent setup activity*. */
-export function activityLine(entry: SetupActivity): string {
-  const by = entry.by === null ? '' : ` by ${entry.by.name}`;
+/** One line of *Recent setup activity*; `meId` reads your own acts as *by you*. */
+export function activityLine(entry: SetupActivity, meId?: string): string {
+  const by = entry.by === null ? '' : ` by ${entry.by.id === meId ? 'you' : entry.by.name}`;
   switch (entry.kind) {
     case 'paired':
       return `Paired ${entry.subject}`;
@@ -461,13 +543,18 @@ export function notifyLine(first: string): string {
   return `${first} is notified in Laika, and it shows in their setup activity.`;
 }
 
+/** Your own revoke tells nobody; it is in your activity, which an admin's copy shows. */
+export const OWN_NOTIFY_LINE =
+  'It shows in your setup activity, where owners and admins can see it too.';
+
 /** What each confirm says stops working (frames 2v–2x), or undefined when the row is gone. */
 export function confirmCopy(
   pending: Pending,
   view: DeveloperSetup,
   first: string,
+  own = false,
 ): ConfirmCopy | undefined {
-  const notify = notifyLine(first);
+  const notify = own ? OWN_NOTIFY_LINE : notifyLine(first);
   const now = view.now;
   if (pending.kind === 'unpair') {
     const device = view.devices.find((d) => d.id === pending.id);
@@ -476,6 +563,22 @@ export function confirmCopy(
     const creds = tools
       .map((t) => liveCredential(t, now)?.prefix)
       .filter((p): p is string => p !== undefined);
+    if (own) {
+      // Your own is Developer access's *Disconnect* (`POST /agents/devices/revoke`):
+      // every tool on the device is revoked, and the device stays paired.
+      return {
+        title: `Disconnect ${device.display_name}?`,
+        lead: 'This revokes every tool on it. The device stays paired, so a tool can be added to it again.',
+        stops: [
+          `${tools.map(toolName).join(' and ')} on ${device.display_name} stop now. An agent running there is ended.`,
+          creds.length === 0
+            ? 'Their credentials are revoked.'
+            : `${String(creds.length)} tool ${creds.length === 1 ? 'credential is' : 'credentials are'} revoked: ${creds.map((p) => `${p}…`).join(', ')}.`,
+        ],
+        notify,
+        cta: `Disconnect ${device.display_name}`,
+      };
+    }
     const stops =
       tools.length === 0
         ? [
@@ -531,17 +634,35 @@ export function confirmCopy(
   };
 }
 
-/** The success notice after a revoke (frame 2v's follow-on). */
-export function doneLine(pending: Pending, view: DeveloperSetup, first: string): string {
+/** The success notice after a revoke (frame 2v's follow-on); nobody is told about your own. */
+export function doneLine(
+  pending: Pending,
+  view: DeveloperSetup,
+  first: string,
+  own = false,
+): string {
+  const told = own ? '' : ` ${first} was notified.`;
   if (pending.kind === 'unpair') {
     const name = view.devices.find((d) => d.id === pending.id)?.display_name ?? 'The device';
-    return `${name} is unpaired. ${first} was notified.`;
+    return own ? `${name} is disconnected.` : `${name} is unpaired.${told}`;
   }
   if (pending.kind === 'tool') {
     const tool = view.tools.find((t) => t.id === pending.id);
-    return `${tool === undefined ? 'The tool' : toolName(tool)} was revoked. ${first} was notified.`;
+    return `${tool === undefined ? 'The tool' : toolName(tool)} was revoked.${told}`;
   }
-  return `Token revoked. ${first} was notified.`;
+  return `Token revoked.${told}`;
+}
+
+// ------------------------------------------------------------------ pairing (your own)
+
+/** What a pending request still needs, and whether Approve and Decline are offered (D-124). */
+export function pairingStep(p: DevicePairing): { readonly line: string; readonly decide: boolean } {
+  if (p.state === 'claimed' && p.claimed !== null) {
+    return { line: 'compare the key with your terminal, then approve it', decide: true };
+  }
+  if (p.state === 'approved')
+    return { line: 'approved · waiting for the device to finish', decide: false };
+  return { line: 'waiting for the device to claim it', decide: false };
 }
 
 /** A revoke's refusal, in the reader's terms — the shared rule's sentence (`owner-setup.ts`). */

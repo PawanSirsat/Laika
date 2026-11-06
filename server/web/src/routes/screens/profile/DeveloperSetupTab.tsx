@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { revokeAgentDevice } from '../../../api/agent-devices.ts';
+import { revokeAgent } from '../../../api/agents.ts';
 import {
   getDeveloperSetup,
   revokeMemberTool,
   unpairMemberDevice,
-  type DeveloperSetup,
   type SetupDevice,
   type SetupToken,
   type SetupTool,
 } from '../../../api/developer-setup.ts';
 import { getCompatibility } from '../../../api/developer-updates.ts';
+import {
+  approvePairingRequest,
+  denyPairingRequest,
+  type DevicePairing,
+} from '../../../api/device-pairing.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { OWNER_SETUP_NOTE } from '../../../api/owner-setup.ts';
 import { timeLabel } from '../../../api/time-label.ts';
-import { revokeUserToken } from '../../../api/tokens.ts';
+import { revokeToken, revokeUserToken } from '../../../api/tokens.ts';
 import { useProjects } from '../../../api/use-projects.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
@@ -31,12 +37,13 @@ import {
   confirmCopy,
   deviceHelper,
   doneLine,
-  firstName,
   isEmptySetup,
+  isUnverified,
   launcherWord,
   liveCredential,
   looseTools,
   noTokensLine,
+  pairingStep,
   pickupWord,
   reachableSpaces,
   refusalLine,
@@ -45,7 +52,7 @@ import {
   repoNeedsAttention,
   repoRows,
   SEARCH_OVER,
-  SETUP_WORDS,
+  setupWord,
   shownTokens,
   TOKEN_FILTERS,
   TOKEN_STATE_WORDS,
@@ -56,14 +63,13 @@ import {
   toolState,
   toolUpdate,
   type Pending,
+  type SetupView,
   type TokenFilter,
+  type Voice,
+  voiceFor,
 } from './developer-setup-derive.ts';
+import type { OwnSetup, SetupLoad } from './use-own-setup.ts';
 import './developer-setup.css';
-
-type Load =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'error'; readonly error: unknown }
-  | { readonly kind: 'ready'; readonly view: DeveloperSetup };
 
 export interface DeveloperSetupTabProps {
   readonly userId: string;
@@ -80,15 +86,9 @@ export interface DeveloperSetupTabProps {
  * Laika — never by email (D-133).
  */
 export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSetupTabProps) {
-  const first = firstName(name);
-  const [load, setLoad] = useState<Load>({ kind: 'loading' });
+  const [load, setLoad] = useState<SetupLoad>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [manifest, setManifest] = useState<UpdateManifest | 'failed' | undefined>(undefined);
-  const [pending, setPending] = useState<Pending | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<string | undefined>(undefined);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
-  const { projects } = useProjects();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -118,6 +118,103 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
     };
   }, []);
 
+  return (
+    <SetupPanel
+      voice={voiceFor(false, name)}
+      load={load}
+      manifest={manifest}
+      canRevokeTokens={canRevokeTokens}
+      onRetry={() => {
+        setLoad({ kind: 'loading' });
+        setAttempt((n) => n + 1);
+      }}
+      onChanged={() => {
+        setAttempt((n) => n + 1);
+      }}
+      revoke={(target) =>
+        target.kind === 'unpair'
+          ? unpairMemberDevice(userId, target.id)
+          : target.kind === 'tool'
+            ? revokeMemberTool(userId, target.id)
+            : revokeUserToken(userId, target.id)
+      }
+    />
+  );
+}
+
+export interface OwnDeveloperSetupTabProps {
+  /** Read by the profile, which also draws its *N to fix* (`useOwnSetup`). */
+  readonly setup: OwnSetup;
+  readonly meId: string;
+}
+
+/**
+ * *Developer access* on your own profile (LAI-1156, D-139 frame F): the same
+ * layout from your own reads, with your own actions — Approve and Decline on
+ * a pending pairing, and disconnect and revoke through Developer access's own
+ * endpoints, with no owner-decision label. Nobody is notified of your own.
+ */
+export function OwnDeveloperSetupTab({ setup, meId }: OwnDeveloperSetupTabProps) {
+  return (
+    <SetupPanel
+      voice={voiceFor(true, '')}
+      load={setup.load}
+      manifest={setup.manifest}
+      canRevokeTokens
+      meId={meId}
+      onRetry={setup.retry}
+      onChanged={setup.reload}
+      revoke={(target, view) => {
+        if (target.kind === 'unpair') {
+          const device = view.devices.find((d) => d.id === target.id);
+          return device === undefined ? Promise.resolve() : revokeAgentDevice(device.device_label);
+        }
+        return target.kind === 'tool' ? revokeAgent(target.id) : revokeToken(target.id);
+      }}
+      decide={(pairing, approve) => {
+        const fingerprint = pairing.claimed?.key_fingerprint ?? '';
+        return approve
+          ? approvePairingRequest(pairing.id, fingerprint)
+          : denyPairingRequest(pairing.id, fingerprint);
+      }}
+    />
+  );
+}
+
+interface SetupPanelProps {
+  readonly voice: Voice;
+  readonly load: SetupLoad;
+  readonly manifest: UpdateManifest | 'failed' | undefined;
+  readonly canRevokeTokens: boolean;
+  /** Your own id, so your own acts in the activity read *by you*. */
+  readonly meId?: string;
+  readonly onRetry: () => void;
+  /** A write went through: read again behind it. */
+  readonly onChanged: () => void;
+  readonly revoke: (target: Pending, view: SetupView) => Promise<unknown>;
+  /** Your own only: approve or decline a claimed pairing, echoing the fingerprint shown. */
+  readonly decide?: (pairing: DevicePairing, approve: boolean) => Promise<unknown>;
+}
+
+/** The tab itself, for someone else's setup or your own: `voice` says which. */
+function SetupPanel({
+  voice,
+  load,
+  manifest,
+  canRevokeTokens,
+  meId,
+  onRetry,
+  onChanged,
+  revoke,
+  decide,
+}: SetupPanelProps) {
+  const { first, own } = voice;
+  const [pending, setPending] = useState<Pending | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | undefined>(undefined);
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const { projects } = useProjects();
+
   const spaceName = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p.name]));
     return (id: string): string => byId.get(id) ?? 'A space';
@@ -126,7 +223,7 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
   const notice_ = (
     <p className="ds-notice" data-ds-notice>
       <LockGlyph />
-      <span>Owners and admins only · read-only · {first} can see that you looked</span>
+      <span>{voice.notice}</span>
     </p>
   );
 
@@ -135,7 +232,7 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
       <div className="ds" data-ds-loading>
         {notice_}
         <p role="status" className="visually-hidden">
-          Reading {first}’s setup…
+          {voice.reading}
         </p>
         <div className="ds-skeleton" aria-hidden="true">
           {['summary', 'devices', 'tools', 'repos', 'tokens', 'activity'].map((s) => (
@@ -151,7 +248,7 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
   }
 
   if (load.kind === 'error') {
-    if (load.error instanceof ApiError && load.error.code === 'forbidden') {
+    if (!own && load.error instanceof ApiError && load.error.code === 'forbidden') {
       return (
         <PermissionDenied
           resource={`${first}’s developer setup`}
@@ -169,16 +266,9 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
         {notice_}
         <div role="alert" className="ds-error">
           <span>
-            <b>{first}’s setup could not be read.</b> {why} Nothing was changed.
+            <b>{voice.errLead}</b> {why} Nothing was changed.
           </span>
-          <button
-            type="button"
-            className="ds-retry"
-            onClick={() => {
-              setLoad({ kind: 'loading' });
-              setAttempt((n) => n + 1);
-            }}
-          >
+          <button type="button" className="ds-retry" onClick={onRetry}>
             Retry
           </button>
         </div>
@@ -200,20 +290,14 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
   const run = (target: Pending): void => {
     setBusy(true);
     setRefusal(undefined);
-    const done = doneLine(target, view, first);
-    const call: Promise<unknown> =
-      target.kind === 'unpair'
-        ? unpairMemberDevice(userId, target.id)
-        : target.kind === 'tool'
-          ? revokeMemberTool(userId, target.id)
-          : revokeUserToken(userId, target.id);
-    call
+    const done = doneLine(target, view, first, own);
+    revoke(target, view)
       .then(() => {
         // The write is done: say so, and read the setup again behind it. A
         // failed re-read is the tab's own error, never the revoke's.
         setPending(undefined);
         setNotice(done);
-        setAttempt((n) => n + 1);
+        onChanged();
       })
       .catch((error: unknown) => {
         setRefusal(refusalLine(error, 'The revoke did not go through. Nothing was changed.'));
@@ -223,10 +307,15 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
       });
   };
 
-  const copy = pending === undefined ? undefined : confirmCopy(pending, view, first);
+  const copy = pending === undefined ? undefined : confirmCopy(pending, view, first, own);
 
   return (
-    <div className="ds" data-ds-ready data-deactivated={deactivated ? '' : undefined}>
+    <div
+      className="ds"
+      data-ds-ready
+      data-ds-own={own ? '' : undefined}
+      data-deactivated={deactivated ? '' : undefined}
+    >
       {notice_}
       {deactivated && (
         <p role="note" className="ds-deactivated" data-ds-deactivated>
@@ -238,7 +327,8 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
        * Actions follow the server's `can_revoke`, not `mayActOnSetupOf`: the
        * read already asked `can()` about this reader and this person, so the
        * tab draws what the server will allow rather than a second guess at it.
-       * The owner note is said only when the owner is why.
+       * The owner note is said only when the owner is why. Your own is always
+       * yours to change (`can_revoke` true), so it never carries the note.
        */}
       {!canAct && (
         <p role="note" className="ds-owner-note" data-ds-owner-note>
@@ -256,28 +346,40 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
       {isEmptySetup(view) ? (
         <section className="ds-card" aria-labelledby="ds-empty-title" data-ds-empty>
           <h3 className="ds-title" id="ds-empty-title">
-            {first} hasn’t set up any tools yet
+            {voice.emptyTitle}
           </h3>
-          <p className="ds-muted">
-            No device is paired and no tool holds a credential, so no agent can pick up or work on
-            cards for {first}. Their own time and cards are not affected.
-          </p>
+          <p className="ds-muted">{voice.emptyBody}</p>
           <ul className="ds-muted ds-list">
-            <li>
-              {first} starts from Developer access on their own account. Admins can’t set it up for
-              them.
-            </li>
-            <li>Personal tokens, if any are made later, show up under Tokens here.</li>
+            {voice.emptyItems.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
           </ul>
         </section>
       ) : (
         <div className="ds-body">
-          <Summary view={view} manifest={manifest} />
-          <Devices view={view} canAct={canAct} onAsk={ask} first={first} manifest={manifest} />
+          <Summary view={view} manifest={manifest} voice={voice} />
+          <Devices
+            view={view}
+            canAct={canAct}
+            onAsk={ask}
+            voice={voice}
+            manifest={manifest}
+            decide={decide}
+            onDecided={(line) => {
+              setNotice(line);
+              onChanged();
+            }}
+          />
           <Tools view={view} canAct={canAct} onAsk={ask} spaceName={spaceName} />
-          <Repositories view={view} />
-          <Tokens view={view} canAct={canToken} onAsk={ask} spaceName={spaceName} />
-          <Activity view={view} />
+          <Repositories view={view} own={own} />
+          <Tokens
+            view={view}
+            canAct={canToken}
+            onAsk={ask}
+            spaceName={spaceName}
+            everySpace={voice.everySpace}
+          />
+          <Activity view={view} meId={meId} />
         </div>
       )}
 
@@ -370,9 +472,11 @@ function jump(target: string) {
 function Summary({
   view,
   manifest,
+  voice,
 }: {
-  readonly view: DeveloperSetup;
+  readonly view: SetupView;
   readonly manifest: UpdateManifest | 'failed' | undefined;
+  readonly voice: Voice;
 }) {
   const s = view.summary;
   const reach = reachableSpaces(view.tools);
@@ -391,7 +495,7 @@ function Summary({
     [
       'Spaces reachable',
       String(reach.size),
-      reachHidden === 0 ? 'by their live tools' : `+${String(reachHidden)} you can’t see`,
+      reachHidden === 0 ? voice.reach : `+${String(reachHidden)} you can’t see`,
     ],
     ['Active tokens', String(s.tokens_active), `${String(s.tokens_inactive)} expired or revoked`],
     [
@@ -447,14 +551,18 @@ function Devices({
   view,
   canAct,
   onAsk,
-  first,
+  voice,
   manifest,
+  decide,
+  onDecided,
 }: {
-  readonly view: DeveloperSetup;
+  readonly view: SetupView;
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
-  readonly first: string;
+  readonly voice: Voice;
   readonly manifest: UpdateManifest | 'failed' | undefined;
+  readonly decide: ((pairing: DevicePairing, approve: boolean) => Promise<unknown>) | undefined;
+  readonly onDecided: (line: string) => void;
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [revokedOpen, setRevokedOpen] = useState(false);
@@ -493,6 +601,7 @@ function Devices({
                 });
               }}
               canAct={canAct}
+              own={voice.own}
               onAsk={onAsk}
               manifest={manifest}
             />
@@ -532,18 +641,123 @@ function Devices({
           <span className="ds-subhead">
             Pending pairing requests ({view.pending_pairing.length})
           </span>
-          {view.pending_pairing.map((p) => (
-            <span className="ds-pending-row" key={p.id} data-ds-pairing={p.id}>
-              <code>{p.display_name}</code>
-              <span className="ds-muted">
-                {p.kind === 'cloud' ? 'Cloud' : 'Local'} · requested {ago(p.created_at, view.now)}
+          {view.pending_pairing.map((p) =>
+            decide === undefined ? (
+              <span className="ds-pending-row" key={p.id} data-ds-pairing={p.id}>
+                <code>{p.display_name}</code>
+                <span className="ds-muted">
+                  {p.kind === 'cloud' ? 'Cloud' : 'Local'} · requested {ago(p.created_at, view.now)}
+                </span>
+                <span className="ds-caption">waiting for {voice.first} to approve it</span>
               </span>
-              <span className="ds-caption">waiting for {first} to approve it</span>
-            </span>
-          ))}
+            ) : (
+              <OwnPairing
+                key={p.id}
+                pairing={p}
+                now={view.now}
+                decide={decide}
+                onDecided={onDecided}
+              />
+            ),
+          )}
         </div>
       )}
     </Section>
+  );
+}
+
+/**
+ * One of your own pending pairing requests (D-139 frame F): Approve and
+ * Decline once the device has claimed it, each echoing the key fingerprint
+ * drawn here — a key that changed since is refused, not approved (§4.79).
+ * **The code is never shown** (D-124): this list does not carry it.
+ */
+function OwnPairing({
+  pairing,
+  now,
+  decide,
+  onDecided,
+}: {
+  readonly pairing: DevicePairing;
+  readonly now: number;
+  readonly decide: (pairing: DevicePairing, approve: boolean) => Promise<unknown>;
+  readonly onDecided: (line: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const step = pairingStep(pairing);
+  const name = pairing.display_name;
+  const act = (approve: boolean) => (): void => {
+    setBusy(true);
+    setError(undefined);
+    decide(pairing, approve)
+      .then(() => {
+        onDecided(
+          approve
+            ? `${name} is approved. The device finishes pairing on its own.`
+            : `${name}’s pairing request was declined.`,
+        );
+      })
+      .catch((cause: unknown) => {
+        setError(
+          refusalLine(
+            cause,
+            approve
+              ? 'The approval did not go through. Nothing was changed.'
+              : 'Declining did not go through. Nothing was changed.',
+          ),
+        );
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+  return (
+    <span
+      className="ds-pending-row"
+      data-ds-pairing={pairing.id}
+      data-ds-pairing-state={pairing.state}
+    >
+      <code>{name}</code>
+      <span className="ds-muted">
+        {pairing.kind === 'cloud' ? 'Cloud' : 'Local'} · requested {ago(pairing.created_at, now)}
+      </span>
+      {pairing.claimed !== null && (
+        <span className="ds-muted">
+          key <code className="ds-mono">{pairing.claimed.key_fingerprint}</code>
+        </span>
+      )}
+      <span className="ds-caption">{step.line}</span>
+      {step.decide && (
+        <span className="ds-pending-actions">
+          <button
+            type="button"
+            className="ds-approve"
+            disabled={busy}
+            onClick={act(true)}
+            aria-label={`Approve ${name}`}
+            data-ds-approve={pairing.id}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            className="ds-decline"
+            disabled={busy}
+            onClick={act(false)}
+            aria-label={`Decline ${name}`}
+            data-ds-decline={pairing.id}
+          >
+            Decline
+          </button>
+        </span>
+      )}
+      {error !== undefined && (
+        <span role="alert" className="ds-pending-error" data-ds-pairing-error>
+          {error}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -565,18 +779,24 @@ function DeviceRow({
   open,
   onToggle,
   canAct,
+  own,
   onAsk,
   manifest,
 }: {
   readonly device: SetupDevice;
-  readonly view: DeveloperSetup;
+  readonly view: SetupView;
   readonly open: boolean;
   readonly onToggle: () => void;
   readonly canAct: boolean;
+  readonly own: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly manifest: UpdateManifest | 'failed' | undefined;
 }) {
   const tools = toolsOn(device, view.tools);
+  const liveTools = tools.filter((t) => t.status === 'active').length;
+  // Your own is Developer access's *Disconnect*: it revokes the device's tools,
+  // so it is offered only while the device holds one.
+  const offerUnpair = canAct && (!own || liveTools > 0);
   const helper = deviceHelper(tools);
   const update = tools
     .map((t) => toolUpdate(t, manifest))
@@ -635,16 +855,16 @@ function DeviceRow({
         </span>
         <span role="cell">
           <span className="ds-lbl">Tools </span>
-          {tools.filter((t) => t.status === 'active').length}
+          {liveTools}
         </span>
         <span role="cell" className="ds-cell-menu">
-          {canAct && (
+          {offerUnpair && (
             <OverflowMenu
               label={`Actions for ${device.display_name}`}
               items={[
                 {
                   id: 'unpair',
-                  label: 'Unpair device…',
+                  label: own ? 'Disconnect device…' : 'Unpair device…',
                   danger: true,
                   onSelect: () => {
                     onAsk({ kind: 'unpair', id: device.id });
@@ -663,7 +883,7 @@ function DeviceRow({
               <span className="ds-muted">No tool on this device.</span>
             ) : (
               tools.map((t) => {
-                const st = toolState(t, view.now);
+                const st = toolState(t, view.now, isUnverified(view, t.id));
                 return (
                   <span className="ds-inline" key={t.id}>
                     <b>{toolName(t)}</b>
@@ -696,7 +916,7 @@ function Tools({
   onAsk,
   spaceName,
 }: {
-  readonly view: DeveloperSetup;
+  readonly view: SetupView;
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly spaceName: (id: string) => string;
@@ -751,13 +971,14 @@ function ToolCard({
   device,
 }: {
   readonly tool: SetupTool;
-  readonly view: DeveloperSetup;
+  readonly view: SetupView;
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly spaceName: (id: string) => string;
   readonly device: string;
 }) {
-  const st = toolState(tool, view.now);
+  const unverified = isUnverified(view, tool.id);
+  const st = toolState(tool, view.now, unverified);
   const cred = liveCredential(tool, view.now);
   const version =
     tool.checks.tool_request.detail.client_version ?? tool.client_report?.harness_version ?? null;
@@ -804,7 +1025,12 @@ function ToolCard({
           )}
         </span>
       </div>
-      <ul aria-label="Checks" className="ds-checks">
+      {unverified && (
+        <span className="ds-caption" data-ds-unverified>
+          Its checks could not be read just now.
+        </span>
+      )}
+      <ul aria-label="Checks" className="ds-checks" hidden={unverified}>
         {checkMarks(tool).map((c) => (
           <li
             key={c.label}
@@ -873,7 +1099,7 @@ function Check({
   );
 }
 
-function Repositories({ view }: { readonly view: DeveloperSetup }) {
+function Repositories({ view, own }: { readonly view: SetupView; readonly own: boolean }) {
   const rows = repoRows(view.repositories, view.tools, view.devices);
   const hidden = view.summary.repositories_hidden;
   return (
@@ -903,7 +1129,7 @@ function Repositories({ view }: { readonly view: DeveloperSetup }) {
             >
               <span role="rowheader" className="ds-stack ds-cell-main">
                 <span className="ds-mono ds-strong">{r.repo}</span>
-                <StatusChip tone={SETUP_CHIPS[r.chip].tone} word={SETUP_WORDS[r.chip]} />
+                <StatusChip tone={SETUP_CHIPS[r.chip].tone} word={setupWord(r.chip, own)} />
               </span>
               <span role="cell">
                 <code className="ds-mono">{r.projectSlug}</code>
@@ -942,11 +1168,13 @@ function Tokens({
   canAct,
   onAsk,
   spaceName,
+  everySpace,
 }: {
-  readonly view: DeveloperSetup;
+  readonly view: SetupView;
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly spaceName: (id: string) => string;
+  readonly everySpace: string;
 }) {
   const [filter, setFilter] = useState<TokenFilter>('active');
   const [query, setQuery] = useState('');
@@ -1041,6 +1269,7 @@ function Tokens({
               canAct={canAct}
               onAsk={onAsk}
               spaceName={spaceName}
+              everySpace={everySpace}
             />
           ))}
         </div>
@@ -1058,12 +1287,14 @@ function TokenLine({
   canAct,
   onAsk,
   spaceName,
+  everySpace,
 }: {
   readonly token: SetupToken;
   readonly now: number;
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly spaceName: (id: string) => string;
+  readonly everySpace: string;
 }) {
   const state = tokenState(token, now);
   const live = state === 'active' || state === 'idle' || state === 'never';
@@ -1081,7 +1312,7 @@ function TokenLine({
       <span role="cell">
         <span className="ds-lbl">Pinned to </span>
         {token.project_ids === null ? (
-          <span className="ds-muted">Every space they can open</span>
+          <span className="ds-muted">{everySpace}</span>
         ) : (
           <>
             {token.project_ids.map((id) => spaceName(id)).join(', ')}
@@ -1140,7 +1371,13 @@ function TokenLine({
   );
 }
 
-function Activity({ view }: { readonly view: DeveloperSetup }) {
+function Activity({
+  view,
+  meId,
+}: {
+  readonly view: SetupView;
+  readonly meId?: string | undefined;
+}) {
   return (
     <Section id="activity" title="Recent setup activity" caption="last 30 days">
       {view.activity.length === 0 ? (
@@ -1155,7 +1392,7 @@ function Activity({ view }: { readonly view: DeveloperSetup }) {
                 <time dateTime={label.iso} title={label.full}>
                   {label.text}
                 </time>
-                <span>{activityLine(a)}</span>
+                <span>{activityLine(a, meId)}</span>
               </li>
             );
           })}

@@ -57,7 +57,9 @@ import { dayIn, isDay } from '../my-day/my-day-derive.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
 import { PersonLocalActivity } from './PersonLocalActivity.tsx';
-import { DeveloperSetupTab } from './DeveloperSetupTab.tsx';
+import { DeveloperSetupTab, OwnDeveloperSetupTab } from './DeveloperSetupTab.tsx';
+import { toFixLabel } from './own-setup-derive.ts';
+import { useOwnSetup } from './use-own-setup.ts';
 import { ProfileWhoLooked } from './ProfileWhoLooked.tsx';
 import {
   profileNotice,
@@ -191,6 +193,11 @@ export function ProfileScreen({
   // nothing. Your own is the shared store *My availability* reads and saves.
   const theirs = useSharedRow(userId ?? '', allowed && readsSharedRow(userId, me?.id));
   const [mine] = useSharedAvailability();
+  // Your own developer setup (LAI-1156), read beside the profile and not
+  // before it: the Developer access tab draws it, and its *N to fix* is the
+  // tab's badge — on your own only (D-139 item 5). Someone else's is never
+  // read to draw the head.
+  const ownSetup = useOwnSetup(own && allowed ? me : undefined);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [kindBusy, setKindBusy] = useState(false);
@@ -454,6 +461,11 @@ export function ProfileScreen({
                   })}
                 >
                   {profileTabLabel(id, own)}
+                  {id === 'dev' && own && toFixLabel(ownSetup.toFix) !== undefined && (
+                    <span className="prof-tab-badge" data-profile-tab-badge>
+                      {toFixLabel(ownSetup.toFix)}
+                    </span>
+                  )}
                 </a>
               ))}
             </nav>
@@ -587,7 +599,7 @@ export function ProfileScreen({
 
       {shownTab === 'dev' &&
         (own ? (
-          <OwnDeveloperAccess onNavigate={onNavigate} />
+          <OwnDeveloperSetupTab setup={ownSetup} meId={me.id} />
         ) : (
           <DeveloperSetupTab
             key={user.id}
@@ -787,34 +799,6 @@ function AvailabilityLine({
         {updated?.stale === true && ' · may be out of date'}
       </span>
     </p>
-  );
-}
-
-/**
- * *Developer access* on your own profile (LAI-1152): your setup already has a
- * screen, so until LAI-1156 draws it here the tab says where it is and links
- * to it — never an empty tab.
- */
-function OwnDeveloperAccess({ onNavigate }: { readonly onNavigate: (to: string) => void }) {
-  return (
-    <Card name="developer-access" title="Developer access">
-      <p className="prof-time-link">
-        Your devices, tools, tokens and pending pairing requests.{' '}
-        <a
-          href="/developer"
-          data-profile-dev-link
-          onClick={follow(() => {
-            onNavigate('/developer');
-          })}
-        >
-          Open Developer access ›
-        </a>
-        <span className="prof-time-note">
-          {' '}
-          · owners and admins see a read-only copy, and you can see when they look
-        </span>
-      </p>
-    </Card>
   );
 }
 
