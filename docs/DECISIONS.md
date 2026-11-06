@@ -7190,9 +7190,14 @@ owner asked to be able to correct it there, with the member told and the record 
 2. **Nobody uses this path on themselves** (`422 use_own_time`): your own time keeps its
    own path, with its Undo.
 3. **Session only**: no token, an agent's or an admin's own, reaches it.
-4. **What stays read-only**: entries imported from Solidtime (Solidtime is the record,
-   D-088 item 10) and any day in the closed period. Drafts, the timer and breaks stay the
-   person's own; nothing on this path reaches them.
+4. **Imports are editable here too** (the owner, the same day, before release): almost
+   all of the organisation's time is Solidtime imports — one developer's 166 h is all
+   import — so read-only imports would leave nothing to correct. The change stays in
+   Laika: an import is never pushed back to Solidtime. **A later Solidtime re-sync for
+   that person may put the imported original back; the revision history keeps both.**
+   The person's own path still leaves their imports to Solidtime (D-088 item 10).
+   **What stays read-only**: any day in the closed period. Drafts, the timer and breaks
+   stay the person's own; nothing on this path reaches them.
 5. **The editor is on the record.** Every change is a `time_entry_revisions` row with
    `changed_by` the editor (§4.49), and the entry's history names them (*Changed by …*).
    An admin's Solidtime pull of everyone is recorded the same way: the puller, not the

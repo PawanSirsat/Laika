@@ -570,8 +570,14 @@ export interface EntryPatch {
  * record** (D-088 item 10): an import is changed in Solidtime and the next
  * pull brings the change here. Changing it here as well is how one hour came
  * to be deleted from both systems at once.
+ *
+ * `imports: true` is an owner's or admin's change to a member's time (D-143):
+ * almost all of a team's time can be imports, so theirs may be corrected
+ * here. Nothing pushes an import back to Solidtime (`solidtimeOutbox`), so no
+ * second system changes; a later pull of a changed Solidtime entry may put
+ * its version back, and the history keeps both.
  */
-export function currentFields(tx: Tx, userId: string, id: string) {
+export function currentFields(tx: Tx, userId: string, id: string, imports = false) {
   const row = tx
     .select()
     .from(timeEntries)
@@ -580,7 +586,7 @@ export function currentFields(tx: Tx, userId: string, id: string) {
     )
     .get();
   if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
-  if (row.source === 'import') {
+  if (row.source === 'import' && !imports) {
     throw new ApiError(
       'forbidden',
       'This entry came from Solidtime: change it there, and the next laika time pull brings it here',
@@ -633,9 +639,9 @@ export interface PatchApplied {
 
 /**
  * Apply a patch to one of `userId`'s live entries, inside the caller's
- * transaction, the next revision by `changedBy`. Never an import
- * (`currentFields`). Returns `null` for a patch that changes nothing, which
- * writes no revision.
+ * transaction, the next revision by `changedBy`. Never an import, unless
+ * `imports` (`currentFields`). Returns `null` for a patch that changes
+ * nothing, which writes no revision.
  */
 export function patchEntry(
   tx: Tx,
@@ -645,9 +651,10 @@ export function patchEntry(
   resolved: Target | undefined,
   changedBy: string,
   now: number,
+  imports = false,
 ): PatchApplied | null {
   const touchesSpan = patch.started_at !== undefined || patch.ended_at !== undefined;
-  const row = currentFields(tx, userId, id);
+  const row = currentFields(tx, userId, id, imports);
   const moves = patch.day !== undefined && patch.day !== row.day;
   let startedAt = moves ? null : row.startedAt;
   let endedAt = moves ? null : row.endedAt;

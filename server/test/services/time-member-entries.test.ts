@@ -12,7 +12,7 @@ import {
 import { requireOrgId } from '../../src/db/orgs.ts';
 import { ApiError } from '../../src/errors.ts';
 import { createTask } from '../../src/services/tasks.ts';
-import { createEntry, listRevisions } from '../../src/services/time-entries.ts';
+import { createEntry, listRevisions, updateEntry } from '../../src/services/time-entries.ts';
 import {
   createMemberEntry,
   deleteMemberEntry,
@@ -24,7 +24,8 @@ import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 
 /**
  * A member's confirmed time, changed by an owner or admin (D-143, LAI-1165):
- * who may, on whom; imports and the closed period read-only; every change a
+ * who may, on whom; imports editable here (never on the person's own path),
+ * the closed period read-only; every change a
  * revision by the editor; and the person told.
  */
 
@@ -176,7 +177,7 @@ describe('an owner changes a member’s confirmed time', () => {
   });
 });
 
-describe('what stays read-only', () => {
+describe('imports, and what stays read-only', () => {
   function imported(userId: string): string {
     const id = newId();
     t.db
@@ -196,15 +197,24 @@ describe('what stays read-only', () => {
     return id;
   }
 
-  it('an import is changed in Solidtime, not here', () => {
+  it('an import is edited and deleted by the owner, on the record, while its person still may not (D-143)', () => {
     const id = imported(bea.userId);
-    expect(reason(() => updateMemberEntry(t.db, owner, bea.userId, id, { minutes: 5 }))).toBe(
+    // The person's own path leaves an import to Solidtime, as before.
+    expect(reason(() => updateEntry(t.db, bea, id, { minutes: 5 }))).toBe(
       'forbidden:imported_entry',
     );
-    expect(reason(() => deleteMemberEntry(t.db, owner, bea.userId, id))).toBe(
-      'forbidden:imported_entry',
-    );
-    expect(notices(bea.userId)).toEqual([]);
+    const changed = updateMemberEntry(t.db, owner, bea.userId, id, { minutes: 15 }, NOW + 1);
+    expect(changed.minutes).toBe(15);
+    expect(changed.source).toBe('import');
+    expect(revisions(id).map((r) => [r.change, r.changedBy, r.minutes])).toEqual([
+      ['edited', owner.userId, 15],
+    ]);
+    deleteMemberEntry(t.db, owner, bea.userId, id, NOW + 2);
+    expect(revisions(id).at(-1)).toMatchObject({ change: 'deleted', changedBy: owner.userId });
+    expect(notices(bea.userId).map((n) => [n.kind, n.actorUserId, n.subject])).toEqual([
+      ['time_changed', owner.userId, `edited ${DAY} -5`],
+      ['time_changed', owner.userId, `deleted ${DAY} -15`],
+    ]);
   });
 
   it('another person’s entry under this member’s id is not there', () => {

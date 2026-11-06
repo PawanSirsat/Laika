@@ -389,9 +389,12 @@ note, card) or deletes anybody else's **confirmed** entries; an admin anybody
 else's but the owner's (`403 not_for_owner`, D-133's shape). By role, as the
 Solidtime import is, not a grant. **Never yourself** (`422 use_own_time`):
 your own time keeps its own path, with its Undo. **Session only.** An import
-stays Solidtime's (`403 imported_entry`) and a day in the closed period stays
-closed (`403 closed_period`); drafts, the timer and breaks stay the person's
-own, so nothing on this path reaches them. Every change is a §4.49 revision
+may be changed here too — never pushed back to Solidtime, so a later re-sync
+of a Solidtime change may put the imported original back, and the history
+keeps both — while the person's own path still refuses it (`403
+imported_entry`). A day in the closed period stays closed (`403
+closed_period`); drafts, the timer and breaks stay the person's own, so
+nothing on this path reaches them. Every change is a §4.49 revision
 with `changed_by` the editor, the person gets a `time_changed` notice
 (§4.87), and there is no Undo.
 
@@ -4170,7 +4173,7 @@ GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summar
 POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
 POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_ids } — the device revoked, every active tool on it revoked, its live pairing requests cancelled, one device_unpaired notice; idempotent   (as above)
 POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 201 the entry, on the member's day, its revision by the editor, one time_changed notice; no Undo; yourself is 422 use_own_time   (time_entries.write_member: owner, admin not on the owner's — 403 not_for_owner; session only; D-143, LAI-1165)
-PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, never an import (403 imported_entry) nor a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
+PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, an import included (a later Solidtime re-sync may put its original back), never a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
 GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
 GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)

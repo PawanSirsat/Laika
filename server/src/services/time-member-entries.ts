@@ -31,8 +31,12 @@ import { closedThrough } from './time-solidtime.ts';
  * profile.
  *
  * **Confirmed entries only.** Drafts, the timer and breaks stay the person's
- * own, so nothing here reaches them. **Never an import** — Solidtime is the
- * record once an entry is there (`currentFields`) — and **never a day in the
+ * own, so nothing here reaches them. **Imports included** (the owner,
+ * 2026-11-06): most of a team's time comes from Solidtime, and read-only
+ * imports would leave nothing to correct. An import is never pushed back, so
+ * the change stays in Laika; a later pull of that entry, changed in
+ * Solidtime, may put Solidtime's version back — the history keeps both. The
+ * person's own path still leaves imports to Solidtime. **Never a day in the
  * closed period**, which the push to Solidtime has already taken.
  *
  * **The editor is on the record.** Every change is a `time_entry_revisions`
@@ -169,9 +173,9 @@ export function updateMemberEntry(
   assertTimeOn(db);
   const resolved = patchTarget(db, actor, patch);
   db.transaction((tx) => {
-    const row = currentFields(tx, subject.id, entryId);
+    const row = currentFields(tx, subject.id, entryId, true);
     assertOpen(db, row.day, ...(patch.day === undefined ? [] : [patch.day]));
-    const done = patchEntry(tx, subject.id, entryId, patch, resolved, actor.userId, now);
+    const done = patchEntry(tx, subject.id, entryId, patch, resolved, actor.userId, now, true);
     if (done === null) return;
     const delta = done.after.minutes - done.beforeMinutes;
     const taskId = taskOf(tx, done.after.target.taskId);
@@ -195,7 +199,7 @@ export function deleteMemberEntry(
   const subject = requireSubject(db, actor, userId);
   assertTimeOn(db);
   db.transaction((tx) => {
-    const row = currentFields(tx, subject.id, entryId);
+    const row = currentFields(tx, subject.id, entryId, true);
     assertOpen(db, row.day);
     retireEntry(tx, entryId, actor.userId, now);
     tell(db, actor, subject, 'deleted', row.day, -row.minutes, taskOf(tx, row.taskId), now);
