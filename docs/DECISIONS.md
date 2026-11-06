@@ -7220,5 +7220,8 @@ item 1's *A–Z · Most time* switch. Task LAI-1166.
 **Decision.** Every column header of the Time report's table sorts it — the name, *Spaces*,
 *Tasks*, *Confirmed*, *Drafted* and *Total*: the first click A–Z or the largest first, the
 next the other way. The default stays D-141's (people A–Z, everything else largest first);
-time on nothing stays last; the donut's colours follow the order; the order is the reader's
-own and is not stored. D-141 item 2 stands: no rank number, score or efficiency figure.
+time on nothing stays last; the donut's colours stay with the largest groups whatever the
+order; a sort on a column no longer drawn (Spaces and Tasks without people first, Confirmed
+and Drafted with confirmed only) stops ordering the table; on a phone only the name and
+*Total* are drawn, so only they sort; the order is the reader's own and is not stored.
+D-141 item 2 stands: no rank number, score or efficiency figure.

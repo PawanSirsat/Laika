@@ -14,7 +14,7 @@ import type {
  * draws and this decides.
  *
  * **People A–Z by default** (D-088 item 1, D-131 item 3): nothing is sorted
- * by how much a person logged unless the reader asks for *Most time* (D-141).
+ * by how much a person logged unless the reader sorts a column (D-141, D-144).
  * No utilisation figure and no money appear anywhere.
  */
 
@@ -623,7 +623,7 @@ export function faceOf(
       if (row.kind === null) {
         return { key: NO_KIND, label: 'No kind yet', none: true, sort: '\uffff' };
       }
-      return { key: row.kind, label: kindName(row.kind), kind: row.kind, sort: row.kind };
+      return { key: row.kind, label: kindName(row.kind), kind: row.kind, sort: kindName(row.kind) };
     }
   }
 }
@@ -701,7 +701,9 @@ function figure(row: Sortable, key: SortKey): number {
  */
 function ordered<T extends Sortable>(dim: Grouping, list: T[], sort?: TableSort): T[] {
   const none = (a: T, b: T) => Number(a.face.none === true) - Number(b.face.none === true);
-  const name = (a: T, b: T) => a.face.sort.localeCompare(b.face.sort);
+  // As the eye reads it: LAI-9 before LAI-10, case aside.
+  const name = (a: T, b: T) =>
+    a.face.sort.localeCompare(b.face.sort, undefined, { numeric: true, sensitivity: 'base' });
   const usable =
     sort !== undefined &&
     ((sort.key !== 'spaces' && sort.key !== 'tasks') || list.every((r) => r.spread));
@@ -781,17 +783,25 @@ export function groupRows(
       .filter((g) => g.total > 0),
     sort,
   );
+  // Colours go to the largest groups whatever the table's order, so a sort
+  // never hands the donut's names to the smallest and folds the largest into
+  // *Other* (LAI-1166 review). People A–Z keep D-141's colours in name order.
+  const colourOrder =
+    first === 'member' && sort === undefined
+      ? list
+      : [...list].sort((a, b) => b.total - a.total || a.face.sort.localeCompare(b.face.sort));
+  const colours = new Map<string, { color: string; other: boolean }>();
   let slot = 0;
+  for (const g of colourOrder) {
+    if (g.face.kind !== undefined)
+      colours.set(g.face.key, { color: `var(--kind-${g.face.kind})`, other: false });
+    else if (g.face.none === true) colours.set(g.face.key, { color: NONE_COLOR, other: false });
+    else if (slot < SLOT_COLORS.length)
+      colours.set(g.face.key, { color: SLOT_COLORS[slot++] ?? OTHER_COLOR, other: false });
+    else colours.set(g.face.key, { color: OTHER_COLOR, other: true });
+  }
   return list.map((g) => {
-    let color: string;
-    let other = false;
-    if (g.face.kind !== undefined) color = `var(--kind-${g.face.kind})`;
-    else if (g.face.none === true) color = NONE_COLOR;
-    else if (slot < SLOT_COLORS.length) color = SLOT_COLORS[slot++] ?? OTHER_COLOR;
-    else {
-      color = OTHER_COLOR;
-      other = true;
-    }
+    const { color, other } = colours.get(g.face.key) ?? { color: OTHER_COLOR, other: true };
     const children = ordered(
       second,
       [...g.kids.values()]
@@ -819,7 +829,7 @@ export function groupRows(
 /**
  * How many of a group's rows show when it is opened (LAI-1162): a space can
  * hold hundreds of tasks, so the first ten in the table's order (largest
- * first; people A–Z unless *Most time*) and *Show N more* adds up to 25 at a
+ * first; people A–Z unless a column is sorted) and *Show N more* adds up to 25 at a
  * time; never the whole list at once.
  */
 export const CHILD_STEP = 10;

@@ -670,6 +670,22 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       await tr.locator('[data-tr-sort="name"]').click();
       assert.deepEqual(await order(), ['u3', 'u4', 'u1']);
       assert.equal(await sorted('name'), 'descending');
+      // A sort on a column no longer drawn stops ordering the table (review):
+      // fewest tasks first would put Onroute (none) before Laika.
+      await tr.locator('[data-tr-sort="tasks"]').click();
+      await tr.locator('[data-tr-sort="tasks"]').click();
+      assert.equal(await sorted('tasks'), 'ascending');
+      await tr.locator('[data-tr-swap]').click();
+      assert.equal(await tr.locator('[data-tr-sort="tasks"]').count(), 0);
+      const spaces = await order();
+      assert.deepEqual(spaces, ['p1', 'p2'], 'spaces kept a hidden Tasks order');
+      assert.deepEqual(
+        await tr
+          .locator('[role="columnheader"]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('aria-sort'))),
+        ['none', 'none'],
+      );
+      await tr.locator('[data-tr-swap]').click();
       await tr.locator('[data-tr-group="second"]').click();
       await tr.locator('[role="menu"]').waitFor();
       await h.page.keyboard.press('Escape');

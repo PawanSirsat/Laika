@@ -1383,11 +1383,19 @@ function Breakdown({
   const [shown, setShown] = useState<ReadonlyMap<string, number>>(new Map());
   // A column the reader sorted by, up or down (D-141, LAI-1166); none is the default order.
   const [sort, setSort] = useState<TableSort | undefined>();
+  // A sort only orders the table while its column is drawn (review, LAI-1166):
+  // Spaces and Tasks with Member first, Confirmed and Drafted with drafts in.
+  const applied =
+    sort === undefined ||
+    ((sort.key === 'spaces' || sort.key === 'tasks') && first !== 'member') ||
+    ((sort.key === 'confirmed' || sort.key === 'drafted') && !drafts)
+      ? undefined
+      : sort;
   const [menu, setMenu] = useState<string | undefined>();
   const [active, setActive] = useState<string | undefined>();
   const groups = useMemo(
-    () => groupRows(report.rows, first, second, drafts, kindName, sort),
-    [report.rows, first, second, drafts, sort],
+    () => groupRows(report.rows, first, second, drafts, kindName, applied),
+    [report.rows, first, second, drafts, applied],
   );
   const slices = slicesOf(groups);
   const split = drafts;
@@ -1466,20 +1474,20 @@ function Breakdown({
         >
           <div role="rowgroup">
             <div role="row" className="trep-row trep-row-head">
-              <SortHead id="name" label={DIMENSION_LABELS[first]} sort={sort} onSort={setSort} />
+              <SortHead id="name" label={DIMENSION_LABELS[first]} sort={applied} onSort={setSort} />
               {spread && (
                 <>
-                  <SortHead id="spaces" label="Spaces" num sort={sort} onSort={setSort} />
-                  <SortHead id="tasks" label="Tasks" num sort={sort} onSort={setSort} />
+                  <SortHead id="spaces" label="Spaces" num sort={applied} onSort={setSort} />
+                  <SortHead id="tasks" label="Tasks" num sort={applied} onSort={setSort} />
                 </>
               )}
               {split && (
                 <>
-                  <SortHead id="confirmed" label="Confirmed" num sort={sort} onSort={setSort} />
-                  <SortHead id="drafted" label="Drafted" num sort={sort} onSort={setSort} />
+                  <SortHead id="confirmed" label="Confirmed" num sort={applied} onSort={setSort} />
+                  <SortHead id="drafted" label="Drafted" num sort={applied} onSort={setSort} />
                 </>
               )}
-              <SortHead id="total" label="Total" num sort={sort} onSort={setSort} />
+              <SortHead id="total" label="Total" num sort={applied} onSort={setSort} />
             </div>
           </div>
           <div role="rowgroup">

@@ -322,6 +322,36 @@ void describe('grouping on the client', () => {
     assert.equal(spaces.at(-1)?.face.label, 'No space', 'time on nothing moved off the end');
   });
 
+  void test('a sort never hands the donut colours to the smallest groups (LAI-1166 review)', () => {
+    const many = Array.from({ length: 7 }, (_, i) =>
+      row({
+        project: { id: `p${String(i)}`, slug: `s${String(i)}`, name: `Space ${String(i)}` },
+        confirmed_minutes: (i + 1) * 60,
+        drafted_minutes: 0,
+      }),
+    );
+    const up = groupRows(many, 'space', 'none', false, kindName, { key: 'total', dir: 'asc' });
+    assert.equal(up[0]?.face.label, 'Space 0', 'not the least first');
+    assert.equal(up[0]?.other, true, 'the smallest took a named colour');
+    assert.equal(up.at(-1)?.other, false, 'the largest folded into Other');
+    assert.equal(up.at(-1)?.color, 'var(--accent)');
+  });
+
+  void test('names sort as they read: LAI-9 before LAI-10', () => {
+    const tasks = [10, 9, 2].map((n) =>
+      row({
+        task: { id: `t${String(n)}`, key: `LAI-${String(n)}`, title: `T${String(n)}` },
+        confirmed_minutes: 60,
+        drafted_minutes: 0,
+      }),
+    );
+    const g = groupRows(tasks, 'task', 'none', false, kindName, { key: 'name', dir: 'asc' });
+    assert.deepEqual(
+      g.map((x) => x.face.code),
+      ['LAI-2', 'LAI-9', 'LAI-10'],
+    );
+  });
+
   void test('people the most time first only when the reader asks (D-141)', () => {
     const g = groupRows(rows, 'member', 'none', true, kindName, { key: 'total', dir: 'desc' });
     assert.deepEqual(
