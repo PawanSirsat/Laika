@@ -465,10 +465,14 @@ void describe('your own profile (frame C)', () => {
           'Time report',
         );
 
+        // Your own setup in the profile itself (LAI-1156), under its own notice.
         await head.locator('[data-profile-tab="dev"]').click();
-        const link = h.page.locator('[data-profile-dev-link]');
-        await link.waitFor({ timeout: 10_000 });
-        assert.equal(await link.getAttribute('href'), '/developer');
+        const notice = h.page.locator('[data-ds-notice]');
+        await notice.waitFor({ timeout: 10_000 });
+        assert.equal(
+          (await notice.innerText()).trim(),
+          'Your setup · owners and admins see a read-only copy, and you can see when they look',
+        );
         await assertFits(h.page, `1440 ${theme}`);
       } finally {
         await h.close();

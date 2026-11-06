@@ -1504,6 +1504,17 @@
   font-weight: var(--weight-bold);
 }
 
+/* Your own Developer access's *N to fix* (D-139 item 5, LAI-1156). */
+.prof-tab-badge {
+  padding: 0 0.375rem;
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+}
+
 .prof-hours-head {
   display: flex;
   align-items: center;
