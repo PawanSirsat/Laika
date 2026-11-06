@@ -54,7 +54,7 @@ import {
   taskHandoffRoutes,
 } from './http/routes/handoffs.ts';
 import { userRoutes } from './http/routes/users.ts';
-import { profileRoutes } from './http/routes/profiles.ts';
+import { meProfileRoutes, profileRoutes } from './http/routes/profiles.ts';
 import { inviteRoutes } from './http/routes/invites.ts';
 import { passwordResetRoutes } from './http/routes/password-resets.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
@@ -393,6 +393,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
+    // Your own profile and heatmap, every role (D-139 item 1, LAI-1150).
+    app.route(`${API_BASE}/me`, meProfileRoutes({ db }));
     // Your own developer setup's activity (D-139, LAI-1151); no look.
     app.route(`${API_BASE}/me`, meDeveloperSetupRoutes({ db }));
     // A person's own availability (D-131, LAI-1130); the people reads are above.

@@ -2802,6 +2802,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_member_notices$/),
         // LAI-1137's who-looked kind and revoked-by columns.
         expect.stringMatching(/_developer_setup_reads$/),
+        // LAI-1150's profile look: analytics_views rebuilt again.
+        expect.stringMatching(/_analytics_views_profile$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2938,13 +2940,14 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
     const dropped = journal.entries.splice(at);
     // The guard on this guard: the first entry cut is 0075 and the last kept
     // is 0074 — a later migration lands here and says so. LAI-1130's two new
-    // tables, LAI-1136's one and LAI-1137's analytics_views rebuild ride
-    // along and touch no `tasks` row, so a boot applies four.
+    // tables, LAI-1136's one and LAI-1137's and LAI-1150's analytics_views
+    // rebuilds ride along and touch no `tasks` row, so a boot applies five.
     expect(dropped.map((e) => e.tag)).toEqual([
       '0075_task_deliverables',
       '0076_user_availability',
       '0077_member_notices',
       '0078_developer_setup_reads',
+      '0079_analytics_views_profile',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -2996,10 +2999,10 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
           })),
         );
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 4);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 5);
         // And again is a no-op.
         runMigrations(db);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 4);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 5);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });
@@ -3028,6 +3031,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
     expect(dropped.map((e) => e.tag)).toEqual([
       '0077_member_notices',
       '0078_developer_setup_reads',
+      '0079_analytics_views_profile',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3096,7 +3100,10 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
     const at = journal.entries.findIndex((e) => e.tag === '0078_developer_setup_reads');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0078_developer_setup_reads']);
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0078_developer_setup_reads',
+      '0079_analytics_views_profile',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3180,6 +3187,80 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
           sql`SELECT on_delete FROM pragma_foreign_key_list('agents') WHERE "from" = 'revoked_by_user_id'`,
         );
         expect(revokedBy).toEqual([{ on_delete: 'SET NULL' }]);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+/**
+ * LAI-1150 (D-139 item 3): 0079 rebuilds `analytics_views` once more, for the
+ * `profile` kind. A populated 0078 database keeps every look of every kind,
+ * the foreign keys and the subject's cascade still hold, `profile` is
+ * accepted and an unknown kind is still refused.
+ */
+describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => {
+  function folderAt0078(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0079_analytics_views_profile');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0079_analytics_views_profile']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps every look, accepts profile and still refuses an unknown kind',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0078() });
+        const s = seed(db);
+        const now = Date.now();
+        const viewerId = newId();
+        db.run(sql`
+          INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+          VALUES (${viewerId}, 'viewer@example.test', 'Viewer', 'admin', 1, ${now}, ${now})
+        `);
+        const insertLook = (kind: string, day: string | null = null) =>
+          db.run(sql`
+            INSERT INTO analytics_views (id, viewer_id, subject_id, kind, day, viewed_at)
+            VALUES (${newId()}, ${viewerId}, ${s.userId}, ${kind}, ${day}, ${now})
+          `);
+        for (const kind of ['time', 'local_activity', 'activity', 'usage', 'developer_setup']) {
+          insertLook(kind);
+        }
+        insertLook('time', '2026-11-06');
+        // Before 0079 the kind is refused: the CHECK is what the rebuild changes.
+        expectSqliteError(() => insertLook('profile'), /analytics_views_kind_check/);
+        const looksBefore = db.all(sql`SELECT * FROM analytics_views ORDER BY id`);
+        expect(looksBefore).toHaveLength(6);
+
+        runMigrations(db);
+
+        expect(db.all(sql`SELECT * FROM analytics_views ORDER BY id`)).toEqual(looksBefore);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        insertLook('profile');
+        expectSqliteError(() => insertLook('dossier'), /analytics_views_kind_check/);
+        const fks = db.all<{ from: string; table: string; on_delete: string }>(
+          sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('analytics_views') ORDER BY "from"`,
+        );
+        expect(fks).toEqual([
+          { from: 'subject_id', table: 'users', on_delete: 'CASCADE' },
+          { from: 'viewer_id', table: 'users', on_delete: 'NO ACTION' },
+        ]);
+        // Every user row survives the rebuild: nothing cascaded the other way.
+        expect(db.all(sql`SELECT id FROM users WHERE id = ${viewerId}`)).toHaveLength(1);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });

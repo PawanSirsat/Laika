@@ -30,13 +30,16 @@ export const ANALYTICS_VIEW_KINDS = [
   'activity',
   'usage',
   'developer_setup',
+  // D-139 item 3 (LAI-1150): somebody opened your profile.
+  'profile',
 ] as const;
 export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
 
 /** One row of `GET /me/analytics-views`: who looked at the caller, and when. */
 export interface WhoLooked {
   readonly id: string;
-  readonly viewer: { readonly id: string; readonly name: string };
+  /** `org_role` since LAI-1150; LAI-1154's *Who looked* draws it. */
+  readonly viewer: { readonly id: string; readonly name: string; readonly org_role?: string };
   /** Typed open, so a kind this client has not heard of is drawn rather than dropped. */
   readonly kind: AnalyticsViewKind | (string & {});
   /** The day read, for My day; `null` for a range. */
@@ -114,6 +117,7 @@ export const VIEW_KIND_LABELS: Readonly<Record<AnalyticsViewKind, string>> = {
   activity: 'your activity heatmap',
   usage: 'your token usage',
   developer_setup: 'your developer setup',
+  profile: 'your profile',
 };
 
 export function viewKindLabel(kind: WhoLooked['kind']): string {

@@ -237,6 +237,7 @@ be obvious because someone will be asking for it.
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
 | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+| View own profile and activity heatmap | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
 | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
@@ -292,6 +293,16 @@ a read action in the `read_only` sense: no token may do it at all.
 
 **"not themselves"**: an owner or admin cannot rate themselves. They may read
 their own profile, ratings included, and set their own profile kind.
+
+**"View own profile and activity heatmap" is `profile.read_own`** (D-139 item
+1, LAI-1150), behind §6.4's `GET /me/profile` and `GET /me/activity`. Every
+role, because it is **their own record of their own work** — the heartbeat's
+argument — and session only, the profile's rule: a token, the person's own
+agent's included, reads no profile. One row for both reads, because for the
+person there is nothing to split: the heatmap's counts are their own. The
+person's read writes no look (§4.59), and **`ratings` is absent from it unless
+the reader also holds `profile.read`** — what an owner or admin wrote about
+somebody stays theirs.
 
 **The profile kind is a label, not a permission.** `builder` or `manager`
 (§4.1) changes what the profile shows and nothing anybody may do: `can()` never
@@ -2482,7 +2493,11 @@ person **named or shown**: everybody its `members` names, everybody a row
 shows, and everybody whose agent time is in its `agent_minutes`, the reader
 aside, each deduped on its own. A read of somebody's whole developer setup
 (§6.4's `GET /people/:id/developer-setup`, D-132, LAI-1137) is kind
-`developer_setup`. Read by the person alone, `GET /me/analytics-views`. No
+`developer_setup`. **Opening somebody's profile** (§6.4's `GET
+/users/:id/profile`, D-139 item 3, LAI-1150) is kind `profile`, and a `time`
+look beside it with no day, because the profile carries their hours
+(`minutes_14d`); each is deduped on its own. Read by the person alone, `GET
+/me/analytics-views`, each viewer with their org role. No
 `activity` row: §4.8 gains no verb. Kept **400 days** (§11.6's local-activity
 retention, by `viewed_at`).
 
@@ -2491,7 +2506,7 @@ retention, by `viewed_at`).
 | `id` | ULID |
 | `viewer_id` | FK `users` — who looked |
 | `subject_id` | FK `users`, cascade — whose analytics |
-| `kind` | `time` \| `local_activity` \| `activity` \| `usage` \| `developer_setup` (CHECK) |
+| `kind` | `time` \| `local_activity` \| `activity` \| `usage` \| `developer_setup` \| `profile` (CHECK) |
 | `day` | nullable `YYYY-MM-DD` — the day read, for `time`; null for a range |
 | `viewed_at` | |
 
@@ -4126,7 +4141,9 @@ POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at } — a o
 POST   /api/v1/password-resets/consume       body { token, new_password } → { user_id, sessions_ended } — public; new_password as setup's (12–512); ends every session of theirs; refusals 404 unknown, 409 used / revoked / expired, 403 inactive, 429 throttled like sign-in (§6.1)
 POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
-GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
+GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind } — anybody's but yours logged as kinds profile and time   (owner, admin; session only)
+GET    /api/v1/me/profile                    your own profile; ratings only with profile.read; no look   (every role; session only; D-139, LAI-1150)
+GET    /api/v1/me/activity                   ?range=12w|52w — your own heatmap by day; no look   (every role; session only; D-139, LAI-1150)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
@@ -4137,7 +4154,7 @@ GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summar
 POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
 POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_ids } — the device revoked, every active tool on it revoked, its live pairing requests cancelled, one device_unpaired notice; idempotent   (as above)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, LAI-1135)
-GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
+GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)
 GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
 POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
 DELETE /api/v1/me/availability/away/:id      → 204; another person's period is the 404 of one that does not exist   (every role; session only)
@@ -4712,11 +4729,17 @@ carries it**: a sprint from `GET /sprints/:id` or returned from a write is the
 plain §4.15 shape.
 
 **A member's profile is one read** (D-078, LAI-743): `GET /users/:id/profile`
-answers `{ user, window, projects, review, ratings, activity_sharing }`, and
-for a `builder` also `current_work`, `delivery` and `agents` — **absent, not
-empty**, for a `manager` — and for a `manager` also `queue`, absent for a
+answers `{ user, window, projects, review, ratings, activity_sharing,
+current_work, delivery, agents }` — for both kinds since D-139 item 2
+(LAI-1150) — and for a `manager` also `queue`, **absent, not empty**, for a
 `builder` (LAI-750). `PATCH` takes exactly `{ profile_kind }` and answers the whole
-profile, because the kind decides which blocks it carries. `POST …/ratings`
+profile, because the kind decides which blocks it carries. **Anybody's but your
+own is a look** (D-139 item 3, §4.59): the read writes an `analytics_views` row
+of kind `profile` and one of kind `time`, deduped per D-135, in its own
+transaction — the `PATCH`'s answer too, being the same profile. **`GET
+/me/profile` is your own** (D-139 item 1), every role on a session, §3.1's
+`profile.read_own`: the same answer from the same code, no look, and
+`ratings` with `ratings_total` absent unless you hold `profile.read`. `POST …/ratings`
 takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
 characters after trimming — and answers the rating, `201`. With an
 `Idempotency-Key` (at most 255 characters), a retry with the same key and body
@@ -4729,11 +4752,11 @@ on a Monday, 00:00 UTC:
 
 | field | what it counts |
 | --- | --- |
-| `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
+| `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed, and `minutes_14d`: their confirmed and pending drafted minutes there over their last 14 days, today included, by their own today (their §4.46 `place`, else UTC) — My day's own assembly (LAI-1150) |
 | `review` | their moves of a task that is not theirs — someone else's, or nobody's (LAI-751) — into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them, `assignee` null for an unassigned task; `per_week` (both, per week of the window), `last_30_days` (decisions in the thirty days to now) and `time_to_decide` — the median from the task's latest entry into Review to the decision (LAI-750). **The entry** is the latest move into a Review status from another category — a move between two Review statuses is not one — or, when every logged move before it stays inside Review, the task's creation, because it was created there (LAI-751). A decision made from outside Review, or one whose entry the log cannot place, is counted as `unmeasured` |
 | `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
 | `activity_sharing` | `{ org_enabled, enabled }` — since D-102 (amended) both are the organisation's Developer insights (`enabled` kept for older clients) — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
-| `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total` |
+| `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total`; and `due_7d`, how many of their open tasks are due today or in the six days after it, by their own today — overdue work is not counted (LAI-1150) |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
 | `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750). Org owners and admins reading a person's profile (`profile.read`) see that person's token names, registered agents included; this is access oversight, the one exception to D-120's owner-only name rule. |
 | `queue` | a manager's only: projects they lead (membership role `lead`, not archived), the tasks in a Review status there that are not theirs — someone else's or nobody's (`waiting`, in total and per project) — and `oldest_waiting_since`, the entry into Review, by `review`'s rule, of the longest-waiting one (LAI-750, LAI-751) |
@@ -4769,7 +4792,9 @@ reaches SSE, an MCP tool or an export (§4.21).
   the range, most prompts first; `{}` and `[]` while local activity is not
   shown.
 - Owners and admins on a web session only (§3.1), asked **before** the person
-  is looked up, as for the profile. **Every read is a range of one person's
+  is looked up, as for the profile. `GET /me/activity?range=` answers your own
+  in the same shape, every role on a session, with no look (D-139 item 1,
+  LAI-1150). **Every read is a range of one person's
   days on an index that leads with the person** — no read touches `activity`,
   and a year is at most 366 rows per source.
 - Context only: nothing in it feeds a rating or a score (D-079 item 6).

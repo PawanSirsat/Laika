@@ -547,6 +547,13 @@
       "when": 1793878053698,
       "tag": "0078_developer_setup_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1793911668574,
+      "tag": "0079_analytics_views_profile",
+      "breakpoints": true
     }
   ]
 }
