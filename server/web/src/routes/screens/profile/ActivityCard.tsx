@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
+  getMyActivity,
   getPeopleActivity,
   type ActivityRange,
   type PeopleActivity,
@@ -20,20 +21,25 @@ import { InfoTip } from './InfoTip.tsx';
 import {
   activityStats,
   calendarLayout,
+  combined,
   dayLines,
   dayText,
   designKey,
   emptyDays,
   HEAT_DESIGNS,
   heatDays,
+  joinedDay,
+  joinedNote,
   levelScale,
   moveIndex,
-  plural,
+  openingRange,
   rangeDays,
   shortDate,
+  singleBusiest,
   sourceTotals,
   spanLabel,
   storedDesign,
+  totalLine,
   WEEKDAYS,
   weekdayName,
   type HeatDay,
@@ -48,6 +54,14 @@ export interface ActivityCardProps {
   /** Whose activity. */
   readonly userId: string;
   readonly name: string;
+  /**
+   * Your own profile reads `GET /me/activity` (D-139 item 1, LAI-1150), which
+   * any role may and which writes no look; someone else's the logged
+   * `GET /people/:id/activity`.
+   */
+  readonly self: boolean;
+  /** When they joined (`user.created_at`): the days before it are drawn apart (LAI-1154). */
+  readonly joinedAt: number;
   /** Who is looking — the design they chose is remembered per viewer. */
   readonly viewerId: string;
   /** Owners and admins may turn Developer insights on, so they get the link. */
@@ -88,14 +102,13 @@ const DESIGNS: Readonly<Record<HeatDesign, { label: string; hint: string }>> = {
   },
   stacked: {
     label: 'Stacked',
-    hint: 'One grid per source on the same weeks: GitHub, Local, then the board.',
+    hint: 'One grid: each day is GitHub and Local together.',
   },
 };
 
 const SOURCE: Readonly<Record<HeatSource, string>> = {
   github: 'GitHub',
   local: 'Local',
-  board: 'Board',
 };
 
 /** Phones open on 12 weeks: a year is 53 columns, and scrolls there. */
@@ -105,7 +118,7 @@ function readDesign(viewerId: string): HeatDesign {
   try {
     return storedDesign(window.localStorage.getItem(designKey(viewerId)));
   } catch {
-    return 'stacked';
+    return storedDesign(null);
   }
 }
 
@@ -117,12 +130,14 @@ function keepDesign(viewerId: string, design: HeatDesign): void {
   }
 }
 
-function defaultRange(): ActivityRange {
+function defaultRange(joinedAt: number): ActivityRange {
+  let phone = false;
   try {
-    return window.matchMedia(PHONE).matches ? '12w' : '52w';
+    phone = window.matchMedia(PHONE).matches;
   } catch {
-    return '52w';
+    // No media queries: read as wide.
   }
+  return openingRange(phone, joinedAt, Date.now());
 }
 
 /** Today's UTC date: the skeleton's last column, before any answer says. */
@@ -140,15 +155,18 @@ function offReason(sharing: ActivitySwitches): Off {
 }
 
 /**
- * The profile's *Activity* card (D-079, LAI-751): a daily heatmap of three
- * sources — pushed commits (GitHub, violet), local work (prompts, agent
- * sessions, commits not pushed; amber) and board actions (slate) — in two
- * designs a viewer chooses between, over 12 weeks or a year.
+ * The profile's *Activity* card (D-079, LAI-751; D-139, LAI-1154): a daily
+ * heatmap of two sources — pushed commits (GitHub, violet) and local work
+ * (prompts, agent sessions, commits not pushed; amber) — in two designs a
+ * viewer chooses between, over 12 weeks or a year: **Split**, each day cut
+ * GitHub top-left and Local bottom-right, or **Stacked**, one grid of both
+ * together. Days before the person joined are drawn apart and counted in no
+ * stat.
  *
  * ## Every number is the server's, every rule is `activity-derive.ts`'s
  *
- * One request per person and range (`GET /people/:id/activity`), kept by the
- * shared GET cache. This file lays the days out and handles the pointer and
+ * One request per person and range (`GET /people/:id/activity`, or
+ * `GET /me/activity` on your own), kept by the shared GET cache. This file lays the days out and handles the pointer and
  * the keyboard; which day goes where, how dark it is, the streaks and the
  * share pushed are pure functions with their own tests.
  *
@@ -157,8 +175,16 @@ function offReason(sharing: ActivitySwitches): Off {
  * Nothing here is a score and nothing feeds the rating (D-079 item 6); the (i)
  * says so, and says what is never collected.
  */
-export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: ActivityCardProps) {
-  const [range, setRange] = useState<ActivityRange>(defaultRange);
+export function ActivityCard({
+  userId,
+  name,
+  self,
+  joinedAt,
+  viewerId,
+  canManageOrg,
+  sharing,
+}: ActivityCardProps) {
+  const [range, setRange] = useState<ActivityRange>(() => defaultRange(joinedAt));
   const [design, setDesign] = useState<HeatDesign>(() => readDesign(viewerId));
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -170,7 +196,10 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: 
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ kind: 'loading' });
-    getPeopleActivity(userId, range, controller.signal)
+    (self
+      ? getMyActivity(range, controller.signal)
+      : getPeopleActivity(userId, range, controller.signal)
+    )
       .then((activity) => {
         setLoad({ kind: 'ready', activity });
       })
@@ -181,7 +210,7 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: 
     return () => {
       controller.abort();
     };
-  }, [userId, range, attempt]);
+  }, [userId, self, range, attempt]);
 
   const choose = (next: HeatDesign): void => {
     setDesign(next);
@@ -189,9 +218,14 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: 
   };
 
   const activity = load.kind === 'ready' ? load.activity : undefined;
+  // The joining day in the series' zone once it has come, UTC's until then.
+  const joined = joinedDay(joinedAt, activity?.tz ?? 'UTC');
   const days = useMemo(
-    () => (activity === undefined ? emptyDays(todayUtc(), rangeDays(range)) : heatDays(activity)),
-    [activity, range],
+    () =>
+      activity === undefined
+        ? emptyDays(todayUtc(), rangeDays(range), joined)
+        : heatDays(activity, joined),
+    [activity, range, joined],
   );
   // The answer's switches once it has come, the profile's until then — the
   // same two, read a moment apart — so the skeleton is already this shape.
@@ -200,7 +234,9 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: 
     activity !== undefined &&
     off === null &&
     !days.some((d) => (d.github ?? 0) + (d.local ?? 0) > 0);
-  const caption = RANGES.find((r) => r.value === range)?.caption ?? '';
+  const caption = [RANGES.find((r) => r.value === range)?.caption ?? '', joinedNote(days, joined)]
+    .filter((part) => part !== null && part !== '')
+    .join(' · ');
 
   return (
     <section
@@ -258,16 +294,19 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: 
             Try again
           </button>
         </div>
+      ) : off !== null ? (
+        // Nothing the card draws is collected: the notice alone, no empty tiles.
+        <div className="hm-body">
+          <OffPanel off={off} canManageOrg={canManageOrg} />
+        </div>
       ) : (
         <Heatmap
           key={`${userId}-${range}`}
           days={days}
           loading={load.kind === 'loading'}
           design={design}
-          off={off}
           noData={noData}
           name={name}
-          canManageOrg={canManageOrg}
         />
       )}
     </section>
@@ -280,39 +319,33 @@ interface HeatmapProps {
   readonly days: readonly HeatDay[];
   readonly loading: boolean;
   readonly design: HeatDesign;
-  readonly off: Off;
   /** Developer insights on, and nothing from their machines in the range. */
   readonly noData: boolean;
   readonly name: string;
-  readonly canManageOrg: boolean;
 }
 
 interface Hot {
   readonly index: number;
-  readonly source: HeatSource;
   readonly cell: HTMLElement;
 }
 
-function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: HeatmapProps) {
+function Heatmap({ days, loading, design, noData, name }: HeatmapProps) {
   const layout = useMemo(() => calendarLayout(days), [days]);
   const stats = useMemo(() => activityStats(days), [days]);
-  const totals = useMemo(() => sourceTotals(days), [days]);
-  const scales = useMemo(
-    () => ({
-      github: levelScale(days.map((d) => d.github)),
-      local: levelScale(days.map((d) => d.local)),
-      board: levelScale(days.map((d) => d.board)),
-    }),
-    [days],
-  );
-
-  const shown = off === null;
-  // A: board actions live in the tooltip, unless they are all there is.
-  const boardOnly = !shown;
+  const totals = useMemo(() => sourceTotals(days.filter((d) => !d.pre)), [days]);
+  const scales = useMemo(() => {
+    const counted = days.filter((d) => !d.pre);
+    return {
+      github: levelScale(counted.map((d) => d.github)),
+      local: levelScale(counted.map((d) => d.local)),
+      all: levelScale(counted.map(combined)),
+    };
+  }, [days]);
+  const beforeJoining = days.some((d) => d.pre);
 
   const [hot, setHot] = useState<Hot | null>(null);
   const [active, setActive] = useState(() => Math.max(0, days.length - 1));
-  const focusNext = useRef<{ source: HeatSource; index: number } | null>(null);
+  const focusNext = useRef<number | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
 
   // The newest week in view: a year on a phone scrolls, and today is at its end.
@@ -352,7 +385,7 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
     const want = focusNext.current;
     if (want === null) return;
     focusNext.current = null;
-    document.getElementById(cellId(want.source, want.index))?.focus();
+    document.getElementById(cellId(want))?.focus();
   });
 
   /*
@@ -360,14 +393,14 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
    * keyboard (LAI-761). A click focuses the cell too, and when focus also
    * showed the tooltip, the clicked day stayed open and outlined while the
    * mouse went elsewhere. So focus shows it only when the focus is visible —
-   * the keyboard's — and leaving a grid hides it, not leaving the whole card.
+   * the keyboard's — and leaving the grid hides it, not leaving the whole card.
    */
-  const onPoint = useCallback((source: HeatSource, index: number, cell: HTMLElement | null) => {
+  const onPoint = useCallback((index: number, cell: HTMLElement | null) => {
     setHot((now) =>
       cell !== null
-        ? { index, source, cell }
+        ? { index, cell }
         : // A blur closes only its own day: the mouse may be on another.
-          now !== null && now.index === index && now.source === source
+          now !== null && now.index === index
           ? null
           : now,
     );
@@ -378,7 +411,7 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
   }, []);
 
   const onKey = useCallback(
-    (source: HeatSource, index: number, event: KeyboardEvent<HTMLElement>) => {
+    (index: number, event: KeyboardEvent<HTMLElement>) => {
       if (event.key === 'Escape') {
         setHot(null);
         return;
@@ -386,79 +419,56 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
       const next = moveIndex(index, event.key, days.length);
       if (next === null) return;
       event.preventDefault();
-      focusNext.current = { source, index: next };
+      focusNext.current = next;
       setActive(next);
     },
     [days.length],
   );
 
-  // B with GitHub and Local off is the board alone, under one panel saying
-  // why — not two empty grids saying it twice (LAI-751).
-  const sources: HeatSource[] =
-    design === 'split' ? ['github'] : shown ? ['github', 'local', 'board'] : ['board'];
   // Every line that waits on the answer is already there, one line high.
   const total = (source: HeatSource): string =>
-    loading ? '\u00a0' : noData && source !== 'board' ? NOTHING_YET : totalText(source, totals);
+    loading ? ' ' : noData ? NOTHING_YET : totalLine(source, totals);
   const waiting = noData
     ? `Developer insights are on, and nothing has arrived from ${name}’s machines yet — they connect it with laika activity on.`
     : undefined;
 
+  const kind: GridKind = design === 'split' ? 'split' : 'all';
   const style = { '--hm-cols': String(layout.columns) } as CSSProperties;
   const hotDay = hot === null ? undefined : days[hot.index];
 
   return (
     <div className="hm-body">
-      <Stats stats={stats} loading={loading} shown={shown} />
-
-      {off !== null && <OffPanel off={off} canManageOrg={canManageOrg} />}
+      <Stats stats={stats} loading={loading} />
 
       <div className="hm-figure">
         <div className="hm-scroll" ref={scroll}>
           <div className="hm-canvas" style={style}>
             <Months layout={layout} />
-            {sources.map((source) => {
-              const kind: GridKind = design === 'split' ? (boardOnly ? 'board' : 'split') : source;
-              return (
-                <div key={source} className="hm-block" data-source={kind}>
-                  {design === 'stacked' && (
-                    <BlockHead
-                      source={source}
-                      total={total(source)}
-                      hint={source === 'board' ? undefined : waiting}
+            <div className="hm-block" data-source={kind}>
+              <div className="hm-row">
+                <Weekdays />
+                {loading ? (
+                  <Ghost columns={layout.columns} />
+                ) : (
+                  <div className="hm-grid" data-kind={kind} onMouseLeave={onLeave}>
+                    <Cells
+                      placed={layout.placed}
+                      kind={kind}
+                      scales={scales}
+                      active={active}
+                      onPoint={onPoint}
+                      onKey={onKey}
                     />
-                  )}
-                  <div className="hm-row">
-                    <Weekdays />
-                    {loading ? (
-                      <Ghost columns={layout.columns} />
-                    ) : (
-                      <div className="hm-grid" data-kind={kind} onMouseLeave={onLeave}>
-                        <Cells
-                          placed={layout.placed}
-                          kind={kind}
-                          source={design === 'split' ? (boardOnly ? 'board' : 'github') : source}
-                          scales={scales}
-                          active={active}
-                          onPoint={onPoint}
-                          onKey={onKey}
-                        />
-                        {hot !== null && (
-                          <Ring
-                            placed={layout.placed[hot.index]}
-                            twin={hot.source !== source && design === 'stacked'}
-                          />
-                        )}
-                      </div>
-                    )}
+                    {hot !== null && <Ring placed={layout.placed[hot.index]} />}
                   </div>
-                </div>
-              );
-            })}
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {design === 'split' && <SplitLegend boardOnly={boardOnly} total={total} hint={waiting} />}
+      <Legend kind={kind} total={total} hint={waiting} beforeJoining={beforeJoining} />
 
       {hot !== null && hotDay !== undefined && <Tip day={hotDay} cell={hot.cell} />}
     </div>
@@ -467,56 +477,45 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
 
 // ------------------------------------------------------------------ cells
 
-type GridKind = 'split' | HeatSource;
+/** Split: each day cut in two; Stacked (`all`): GitHub and Local together. */
+type GridKind = 'split' | 'all';
 
-function cellId(source: HeatSource, index: number): string {
-  return `hm-${source}-${String(index)}`;
+function cellId(index: number): string {
+  return `hm-day-${String(index)}`;
 }
 
 interface CellsProps {
   readonly placed: readonly Placed[];
   readonly kind: GridKind;
-  /** The source this grid answers for, for focus and the cross-highlight. */
-  readonly source: HeatSource;
-  readonly scales: Readonly<Record<HeatSource, (value: number | null) => HeatLevel>>;
+  readonly scales: Readonly<Record<HeatSource | 'all', (value: number | null) => HeatLevel>>;
   readonly active: number;
-  readonly onPoint: (source: HeatSource, index: number, cell: HTMLElement | null) => void;
-  readonly onKey: (source: HeatSource, index: number, event: KeyboardEvent<HTMLElement>) => void;
+  readonly onPoint: (index: number, cell: HTMLElement | null) => void;
+  readonly onKey: (index: number, event: KeyboardEvent<HTMLElement>) => void;
 }
 
 /**
- * Every day of one grid. Memoised on its data and the focused day, so moving
+ * Every day of the grid. Memoised on its data and the focused day, so moving
  * the pointer — which only moves the ring and the tooltip — draws nothing here.
  */
-const Cells = memo(function Cells({
-  placed,
-  kind,
-  source,
-  scales,
-  active,
-  onPoint,
-  onKey,
-}: CellsProps) {
+const Cells = memo(function Cells({ placed, kind, scales, active, onPoint, onKey }: CellsProps) {
   return (
     <>
       {placed.map(({ day, column, row }) => {
-        const levels =
-          kind === 'split'
+        // A day before they joined carries no level: it is drawn apart.
+        const levels = day.pre
+          ? { 'data-pre': 'true' }
+          : kind === 'split'
             ? {
                 'data-g':
                   day.github === null || day.github === 0 ? undefined : scales.github(day.github),
                 'data-l':
                   day.local === null || day.local === 0 ? undefined : scales.local(day.local),
               }
-            : {
-                'data-v': scales[kind](
-                  kind === 'github' ? day.github : kind === 'local' ? day.local : day.board,
-                ),
-              };
+            : { 'data-v': scales.all(combined(day)) };
         return (
           <span
             key={day.day}
-            id={cellId(source, day.index)}
+            id={cellId(day.index)}
             className="hm-cell"
             data-i={day.index}
             data-day={day.day}
@@ -526,19 +525,19 @@ const Cells = memo(function Cells({
             tabIndex={day.index === active ? 0 : -1}
             style={{ gridColumn: column + 1, gridRow: row + 1 }}
             onMouseEnter={(event) => {
-              onPoint(source, day.index, event.currentTarget);
+              onPoint(day.index, event.currentTarget);
             }}
             onFocus={(event) => {
               // The keyboard's focus, not a click's (LAI-761).
               if (event.currentTarget.matches(':focus-visible')) {
-                onPoint(source, day.index, event.currentTarget);
+                onPoint(day.index, event.currentTarget);
               }
             }}
             onBlur={() => {
-              onPoint(source, day.index, null);
+              onPoint(day.index, null);
             }}
             onKeyDown={(event) => {
-              onKey(source, day.index, event);
+              onKey(day.index, event);
             }}
           />
         );
@@ -547,13 +546,12 @@ const Cells = memo(function Cells({
   );
 });
 
-/** The pointed day, outlined in its own grid and in each of the others (B). */
-function Ring({ placed, twin }: { readonly placed: Placed | undefined; readonly twin: boolean }) {
+/** The pointed day, outlined. */
+function Ring({ placed }: { readonly placed: Placed | undefined }) {
   if (placed === undefined) return null;
   return (
     <span
       className="hm-ring"
-      data-twin={twin}
       aria-hidden="true"
       style={{ gridColumn: placed.column + 1, gridRow: placed.row + 1 }}
     />
@@ -591,7 +589,7 @@ function Weekdays() {
   );
 }
 
-function Ramp({ source }: { readonly source: GridKind }) {
+function Ramp({ source }: { readonly source: HeatSource | 'all' }) {
   return (
     <span className="hm-ramp" data-source={source} aria-hidden="true">
       Less
@@ -603,55 +601,21 @@ function Ramp({ source }: { readonly source: GridKind }) {
   );
 }
 
-type Totals = ReturnType<typeof sourceTotals>;
-
-function totalText(source: HeatSource, totals: Totals): string {
-  if (source === 'github') return plural(totals.pushed, 'commit pushed', 'commits pushed');
-  if (source === 'local') {
-    return [
-      plural(totals.prompts, 'prompt', 'prompts'),
-      plural(totals.sessions, 'session', 'sessions'),
-      `${totals.unpushed.toLocaleString('en-GB')} not pushed`,
-    ].join(' · ');
-  }
-  return [
-    plural(totals.boardSelf, 'action by them', 'actions by them'),
-    `${totals.boardAgent.toLocaleString('en-GB')} by their agents`,
-  ].join(' · ');
-}
-
-function BlockHead({
-  source,
-  total,
-  hint,
-}: {
-  readonly source: HeatSource;
-  readonly total: string;
-  readonly hint?: string | undefined;
-}) {
-  return (
-    <div className="hm-block-head">
-      <span className="hm-block-name">
-        <i className="hm-key" data-source={source} aria-hidden="true" />
-        {SOURCE[source]}
-      </span>
-      <span className="hm-total" title={hint ?? total}>
-        {total}
-      </span>
-      <Ramp source={source} />
-    </div>
-  );
-}
-
-/** A source's name with its scale — never wrapped apart (LAI-751) — and its total. */
+/**
+ * A source's name with its scale — never wrapped apart (LAI-751) — and its
+ * total. Stacked draws neither source in its own colour, so there the item is
+ * its name and total, and the one grey scale is the key's.
+ */
 function LegendItem({
   source,
   total,
   hint,
+  ramp,
 }: {
   readonly source: HeatSource;
   readonly total: string;
   readonly hint?: string | undefined;
+  readonly ramp: boolean;
 }) {
   return (
     <span className="hm-legend-item" data-source={source}>
@@ -660,7 +624,7 @@ function LegendItem({
           <i className="hm-key" data-source={source} aria-hidden="true" />
           {SOURCE[source]}
         </span>
-        <Ramp source={source} />
+        {ramp && <Ramp source={source} />}
       </span>
       <span className="hm-total" title={hint ?? total}>
         {total}
@@ -669,32 +633,42 @@ function LegendItem({
   );
 }
 
-function SplitLegend({
-  boardOnly,
+function Legend({
+  kind,
   total,
   hint,
+  beforeJoining,
 }: {
-  readonly boardOnly: boolean;
+  readonly kind: GridKind;
   readonly total: (source: HeatSource) => string;
   readonly hint?: string | undefined;
+  readonly beforeJoining: boolean;
 }) {
-  if (boardOnly) {
-    return (
-      <p className="hm-legend">
-        <LegendItem source="board" total={total('board')} />
-      </p>
-    );
-  }
   return (
     <p className="hm-legend">
-      <span className="hm-split-key">
-        <i className="hm-sample" aria-hidden="true" />
-        <span>
-          Each day: <b>GitHub</b> top-left, <b>Local</b> bottom-right
-        </span>
+      <span className="hm-split-key" data-key={kind}>
+        <i className="hm-sample" data-kind={kind} aria-hidden="true" />
+        {kind === 'split' ? (
+          <span>
+            Each day: <b>GitHub</b> top-left, <b>Local</b> bottom-right
+          </span>
+        ) : (
+          <span className="hm-all-key">
+            <span>
+              Each day: <b>GitHub</b> and <b>Local</b> together
+            </span>
+            <Ramp source="all" />
+          </span>
+        )}
       </span>
-      <LegendItem source="github" total={total('github')} hint={hint} />
-      <LegendItem source="local" total={total('local')} hint={hint} />
+      <LegendItem source="github" total={total('github')} hint={hint} ramp={kind === 'split'} />
+      <LegendItem source="local" total={total('local')} hint={hint} ramp={kind === 'split'} />
+      {beforeJoining && (
+        <span className="hm-split-key" data-key="pre">
+          <i className="hm-pre-key" aria-hidden="true" />
+          <span>Before joining</span>
+        </span>
+      )}
     </p>
   );
 }
@@ -711,7 +685,8 @@ function OrgLink({ canManageOrg }: { readonly canManageOrg: boolean }) {
 
 /**
  * Why GitHub and Local are not drawn — one sentence for both, and the one way
- * to change it when the viewer has it (LAI-751). The Board grid follows.
+ * to change it when the viewer has it (LAI-751). They are all the card draws
+ * (LAI-1154), so it stands alone.
  */
 function OffPanel({
   off,
@@ -776,25 +751,24 @@ function Tile({
 function Stats({
   stats,
   loading,
-  shown,
 }: {
   readonly stats: ReturnType<typeof activityStats>;
   readonly loading: boolean;
-  readonly shown: boolean;
 }) {
   const dash = (value: string) => (loading ? '—' : value);
   const busiest = stats.busiestWeekday;
-  const tied = busiest?.weekdays ?? [];
+  const single = singleBusiest(stats);
   const longest = stats.longestStreak;
   const pushed = stats.pushedPercent;
+  const since = stats.sinceJoining ? ' since joining' : '';
   return (
     <dl className="prof-stats hm-stats">
       <Tile
         name="active_days"
         label="Active days"
         value={dash(stats.activeDays.toLocaleString('en-GB'))}
-        sub={loading ? undefined : `of ${String(stats.totalDays)}`}
-        hint="Days with anything recorded in a source on show: a commit, a prompt, a session or a board action."
+        sub={loading ? undefined : `of ${stats.totalDays.toLocaleString('en-GB')}${since}`}
+        hint={`Days with a commit, a prompt, a session or a local commit${since ? ', since they joined' : ''}.`}
       />
       <Tile
         name="current_streak"
@@ -810,50 +784,36 @@ function Stats({
         sub={
           loading
             ? undefined
-            : `${longest.days === 1 ? 'day' : 'days'}${
-                longest.from !== null && longest.to !== null
-                  ? ` · ${spanLabel(longest.from, longest.to)}`
-                  : ''
-              }`
+            : longest.from !== null && longest.to !== null
+              ? spanLabel(longest.from, longest.to)
+              : 'days'
         }
         hint="The most active days in a row in this range."
       />
       <Tile
         name="busiest_weekday"
         label="Busiest weekday"
-        // A tie is said, never settled quietly on the first (LAI-751): two
-        // days by name, more as no single busiest day.
-        value={
-          loading || busiest === null || tied.length > 2
-            ? '—'
-            : tied.map((d) => WEEKDAYS[d] ?? '').join(', ')
-        }
+        // One weekday ahead of the rest, or none named: a tie is said, never
+        // settled quietly on the first (LAI-751).
+        value={loading || single === null ? '—' : (WEEKDAYS[single] ?? '')}
         sub={
-          loading || busiest === null
+          loading
             ? undefined
-            : tied.length > 2
-              ? 'no single busiest day'
-              : `${String(busiest.active)} of ${String(busiest.of)}${tied.length > 1 ? ' each' : ''}`
+            : single === null || busiest === null
+              ? 'no single day yet'
+              : `${String(busiest.active)} of ${String(busiest.of)}`
         }
         hint={
-          busiest === null
-            ? 'The weekday with the most active days.'
-            : `${tied.map((d) => weekdayName(d)).join(', ')}: ${tied.length > 1 ? 'each ' : ''}active on ${String(busiest.active)} of the ${String(busiest.of)} in this range.`
+          single === null || busiest === null
+            ? 'The weekday with the most active days, once one is clearly ahead.'
+            : `${weekdayName(single)}: active on ${String(busiest.active)} of the ${String(busiest.of)} in this range.`
         }
       />
       <Tile
         name="pushed_share"
         label="Pushed vs local"
         value={loading || pushed === null ? '—' : `${String(pushed)}%`}
-        sub={
-          loading
-            ? undefined
-            : pushed === null
-              ? shown
-                ? 'no commits'
-                : 'not collected'
-              : `${String(100 - pushed)}% local only`
-        }
+        sub={loading ? undefined : pushed === null ? 'no commits' : 'pushed'}
         hint="Of their commits counted in this range, the share already on a remote; the rest exist only on their machine."
       >
         {/* Drawn empty while there is no share to show: the same height. */}
@@ -887,9 +847,12 @@ function Tip({ day, cell }: { readonly day: HeatDay; readonly cell: HTMLElement 
     setPlace({ left, top: Math.max(8, top) });
   }, [cell, day]);
 
-  const groups: { source: HeatSource; lines: ReturnType<typeof dayLines> }[] = (
-    ['github', 'local', 'board'] as const
-  ).map((source) => ({ source, lines: dayLines(day).filter((l) => l.source === source) }));
+  const groups: { source: HeatSource; lines: ReturnType<typeof dayLines> }[] = day.pre
+    ? []
+    : (['github', 'local'] as const).map((source) => ({
+        source,
+        lines: dayLines(day).filter((l) => l.source === source),
+      }));
 
   return (
     <div
@@ -899,6 +862,11 @@ function Tip({ day, cell }: { readonly day: HeatDay; readonly cell: HTMLElement 
       style={place === null ? { visibility: 'hidden' } : { left: place.left, top: place.top }}
     >
       <p className="hm-tip-date">{shortDate(day.day)}</p>
+      {day.pre && (
+        <p className="hm-tip-row" data-none="true">
+          before joining
+        </p>
+      )}
       {groups.map(({ source, lines }) => (
         <div key={source} className="hm-tip-group" data-source={source}>
           {lines.map((line) => (
@@ -968,17 +936,11 @@ function ActivityDefinitions() {
           </dd>
         </div>
         <div>
-          <dt>Board</dt>
-          <dd>
-            Their actions on this board — by them on the web, and by their agents with their tokens
-            — by UTC day. Always shown.
-          </dd>
-        </div>
-        <div>
           <dt>Active day, streak</dt>
           <dd>
-            A day with anything recorded in a source on show. The current streak runs to today, or
-            to yesterday when today has nothing yet.
+            A day with a commit, a prompt, a session or a local commit. Days before they joined are
+            drawn apart and counted in none of these. The current streak runs to today, or to
+            yesterday when today has nothing yet.
           </dd>
         </div>
       </dl>

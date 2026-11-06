@@ -52,3 +52,14 @@ export function getPeopleActivity(
     signal === undefined ? {} : { signal },
   );
 }
+
+/**
+ * Your own heatmap (D-139 item 1, LAI-1150): the same shape, any org role, on
+ * a session, and no look written — reading your own is not looking at anyone.
+ */
+export function getMyActivity(range: ActivityRange, signal?: AbortSignal): Promise<PeopleActivity> {
+  return request<PeopleActivity>(
+    `/me/activity?range=${range}`,
+    signal === undefined ? {} : { signal },
+  );
+}
