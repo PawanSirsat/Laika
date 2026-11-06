@@ -5,7 +5,7 @@ area: server
 assignee: core
 priority: p2
 depends-on: [LAI-1149]
-status: review
+status: done
 finished: 2026-11-06T13:10:00+05:30
 started: 2026-11-06T12:00:00+05:30
 ---
