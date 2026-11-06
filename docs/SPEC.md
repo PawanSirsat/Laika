@@ -7149,8 +7149,12 @@ anything missing sends the task back.
   and End moving between days, each bar's figures in words, and the same as
   a table for a screen reader. **Group by** two levels with *Swap* (Space →
   Member for everyone, Space → Task for one person), a *Total* row, and a
-  donut with its legend. **People are listed A–Z and never by hours**; no
-  ranking, no utilisation figure, no money. States: reading, *No time in
+  donut with its legend. Every group starts **closed** (one alone opens by
+  itself), and an open one shows its largest ten rows, then *Show N more*
+  (25 at a time) and *Show fewer*, with *N of M* (LAI-1162). **People are
+  listed A–Z** unless the reader picks **Most time** beside *Swap*, which
+  orders people by hours for that reader only (D-141); no rank number, no
+  utilisation figure, no money. States: reading, *No time in
   this range* (*Show the last 30 days*), *No time matches these filters*
   (*Clear filters*), *Nothing confirmed* (*Include drafts*), *Drafts only*,
   and the server's sentence with *Retry*. A **space admin** (D-136, D-138)

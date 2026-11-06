@@ -7127,3 +7127,23 @@ with no change.
    is not changed; its Day frame is simply not built.
 3. **Your own Time report names you** (LAI-1161): with no subject the shared report reads as
    everyone's and was never asked for, so the tab sat on its skeleton.
+
+## D-141 — The Time report may list people by most time, when the reader asks
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Narrows D-088
+item 1 and D-131 item 3 for the Time report's table and donut only. Task LAI-1162.
+
+**Context.** Insights → Time listed everyone A–Z, and the donut coloured the first five
+A–Z, so with many people it read *Other 88%* and said nothing about where the hours went.
+The owner asked to see who has the most time.
+
+**Decision.**
+
+1. **A–Z stays the default.** Beside *Swap*, wherever people are a grouping, **A–Z ·
+   Most time** lets the reader order people by hours, largest first; the donut's colours
+   follow the order. It is the reader's own view, not stored and not shared.
+2. **Still no ranking figure**: no position number, no score, no utilisation, no money.
+   Everywhere else (Availability, Capacity, lists of people) stays A–Z.
+3. **Long groups are capped** (LAI-1162): every group starts closed — one alone opens by
+   itself — and an open one shows its largest ten rows, then *Show N more* in steps of
+   25, with *Show fewer* back to ten.

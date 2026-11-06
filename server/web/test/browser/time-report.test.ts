@@ -318,7 +318,10 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
             await tr.locator('[data-tr-caption]').innerText(),
             /^Everyone in Borealis Labs · /,
           );
-          // Space → Member: Laika first, its people A–Z though Zoe logged the most.
+          // Space → Member: Laika first, closed until opened (LAI-1162), its
+          // people A–Z though Zoe logged the most.
+          assert.equal(await tr.locator('[data-tr-child]').count(), 0, 'a group opened unasked');
+          await tr.locator('[data-tr-row="p1"] .trep-row-toggle').click();
           const kids = await tr
             .locator('[data-tr-row="p1"] [data-tr-child]')
             .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-child')));
@@ -444,6 +447,51 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
     }
   });
 
+  void test('a space with 87 tasks opens to ten, then 25 more at a time, and back (LAI-1162)', async () => {
+    const asked: URL[] = [];
+    const many: TimeReportRow[] = Array.from({ length: 85 }, (_, i) => ({
+      project: SPACE_A,
+      user: ADA,
+      task: { id: `m${String(i)}`, key: `LAI-${String(100 + i)}`, title: `Card ${String(i)}` },
+      untied: false,
+      kind: 'work',
+      confirmed_minutes: 200 - i,
+      drafted_minutes: 0,
+    }));
+    const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => {
+      const r = orgReport(u);
+      return ok({ ...r, rows: [...r.rows, ...many] });
+    });
+    try {
+      const tr = h.page.locator('[data-time-report="org"]');
+      await tr.locator('[data-tr-row="p1"]').waitFor({ timeout: 20_000 });
+      await tr.locator('[data-tr-group="second"]').click();
+      await tr.locator('[role="menuitemradio"]', { hasText: 'Task' }).click();
+      assert.equal(await tr.locator('[data-tr-child]').count(), 0, 'a group opened unasked');
+      await tr.locator('[data-tr-row="p1"] .trep-row-toggle').click();
+      const kids = tr.locator('[data-tr-row="p1"] [data-tr-child]');
+      assert.equal(await kids.count(), 10);
+      // The largest first: Zoe's 900 min card, then 200, 199, …
+      assert.equal(await kids.first().getAttribute('data-tr-child'), 't1');
+      const more = tr.locator('[data-tr-row="p1"] [data-tr-more]');
+      assert.equal(await more.innerText(), 'Show 25 more');
+      await more.click();
+      assert.equal(await kids.count(), 35);
+      await more.click();
+      await more.click();
+      assert.equal(await kids.count(), 85);
+      // 87 in all: the 85 here and Laika's two from the organisation's rows.
+      assert.equal(await more.innerText(), 'Show 2 more');
+      await more.click();
+      assert.equal(await kids.count(), 87);
+      assert.equal(await tr.locator('[data-tr-row="p1"] [data-tr-more]').count(), 0);
+      await tr.locator('[data-tr-row="p1"] [data-tr-fewer]').click();
+      assert.equal(await kids.count(), 10);
+    } finally {
+      await done(h);
+    }
+  });
+
   void test('Group by: Swap turns Space → Member into Member → Space; Escape closes the menu', async () => {
     const asked: URL[] = [];
     const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => ok(orgReport(u)));
@@ -455,7 +503,15 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
         .locator('[data-tr-row]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-row')));
       assert.deepEqual(rows, ['u1', 'u4', 'u3'], 'people are not A–Z');
-      assert.match(await tr.locator('.trep-quiet.trep-small').innerText(), /People are listed A–Z/);
+      // A–Z by default; *Most time* is the reader's choice (D-141).
+      assert.equal(await tr.locator('[data-tr-people="az"]').getAttribute('aria-checked'), 'true');
+      await tr.locator('[data-tr-people="time"]').click();
+      const byTime = await tr
+        .locator('[data-tr-row]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-row')));
+      assert.deepEqual(byTime, ['u3', 'u1', 'u4'], 'Most time does not put Zoe first');
+      assert.match(await tr.locator('[data-tr-slice]').first().innerText(), /Zoe Zimmer/);
+      await tr.locator('[data-tr-people="az"]').click();
       await tr.locator('[data-tr-group="second"]').click();
       await tr.locator('[role="menu"]').waitFor();
       await h.page.keyboard.press('Escape');
