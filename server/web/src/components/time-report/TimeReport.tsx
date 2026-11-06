@@ -521,6 +521,10 @@ export function TimeReport({
                   data-tr-drafts={v ? 'include' : 'exclude'}
                   onClick={() => {
                     setDrafts(v);
+                    // Not on a task yet is drafts only: confirmed only takes the link off.
+                    if (!v && filters.link === 'untied') {
+                      setFilters((f) => ({ ...f, link: undefined }));
+                    }
                   }}
                 >
                   {v ? 'Include drafts' : 'Confirmed only'}
