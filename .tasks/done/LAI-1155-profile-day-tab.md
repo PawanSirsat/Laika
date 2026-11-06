@@ -5,7 +5,7 @@ area: web
 assignee: shell
 priority: p2
 depends-on: [LAI-1150, LAI-1152]
-status: review
+status: done
 started: 2026-11-06T11:15:45+05:30
 finished: 2026-11-06T11:36:50+05:30
 ---
