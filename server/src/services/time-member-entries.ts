@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { loadActor, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole } from '../db/enums.ts';
 import { tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { timeChangedSubject, writeNotice } from './notices.ts';
+import { canSeeProject } from './projects.ts';
 import {
   currentFields,
   entryById,
@@ -17,6 +18,7 @@ import {
   patchTarget,
   retireEntry,
   revisionsOf,
+  type Target,
   type TimeEntryView,
   type TimeRevisionView,
   type Tx,
@@ -108,28 +110,58 @@ function assertOpen(db: Db, ...days: string[]): void {
   }
 }
 
-/** The card's id, for the notice, when the entry is on one that still exists. */
-function taskOf(tx: Tx, taskId: string | null): string | null {
-  if (taskId === null) return null;
-  return tx.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, taskId)).get()?.id ?? null;
+/**
+ * A card or space the person themselves can read, or `422
+ * task_not_visible_to_member` (review M2): the editor may see every space,
+ * and the person's own day would otherwise show a card and a space they
+ * cannot open. Asked of the person as they are, active or not — a
+ * deactivated person's time may still be corrected (D-143), so their
+ * memberships decide, not the switch that stops them signing in.
+ */
+function assertPersonSees(db: Db, subject: Subject, target: Target): void {
+  if (target.projectId === null) return;
+  const person = loadActor(db, subject.id);
+  const sees = person !== null && canSeeProject({ ...person, isActive: true }, target.projectId);
+  if (!sees) {
+    const field = target.taskId === null ? 'project' : 'task';
+    throw new ApiError('unprocessable', 'That is in a space they cannot open', {
+      reason: 'task_not_visible_to_member',
+      field,
+    });
+  }
+}
+
+/**
+ * The card and its space, for the notice, while they exist: the space is
+ * what `listNotices` names the card's key from (review M1).
+ */
+function placeOf(tx: Tx, target: Target): { taskId: string | null; projectId: string | null } {
+  if (target.taskId !== null) {
+    const task = tx
+      .select({ id: tasks.id, projectId: tasks.projectId })
+      .from(tasks)
+      .where(eq(tasks.id, target.taskId))
+      .get();
+    if (task !== undefined) return { taskId: task.id, projectId: task.projectId };
+  }
+  return { taskId: null, projectId: target.projectId };
 }
 
 function tell(
   db: Db,
   actor: ResolvedActor,
   subject: Subject,
-  change: 'created' | 'edited' | 'deleted',
-  day: string,
-  delta: number,
-  taskId: string | null,
+  what: string,
+  place: { taskId: string | null; projectId: string | null },
   now: number,
 ): void {
   writeNotice(db, {
     userId: subject.id,
     actorUserId: actor.userId,
     kind: 'time_changed',
-    taskId,
-    subject: timeChangedSubject(change, day, delta),
+    taskId: place.taskId,
+    projectId: place.projectId,
+    subject: what,
     now,
   });
 }
@@ -145,11 +177,12 @@ export function createMemberEntry(
   const subject = requireSubject(db, actor, userId);
   assertTimeOn(db);
   const fields = newEntryFields(db, actor, input, now);
+  assertPersonSees(db, subject, fields.target);
   assertOpen(db, fields.day);
   const id = db.transaction((tx) => {
     const made = insertEntry(tx, subject.id, fields, 'manual', null, now, actor.userId);
-    const taskId = taskOf(tx, fields.target.taskId);
-    tell(db, actor, subject, 'created', fields.day, fields.minutes, taskId, now);
+    const what = timeChangedSubject('created', fields.day, fields.minutes);
+    tell(db, actor, subject, what, placeOf(tx, fields.target), now);
     return made;
   });
   return entryById(db, subject.id, id);
@@ -172,14 +205,19 @@ export function updateMemberEntry(
   const subject = requireSubject(db, actor, userId);
   assertTimeOn(db);
   const resolved = patchTarget(db, actor, patch);
+  if (resolved !== undefined) assertPersonSees(db, subject, resolved);
   db.transaction((tx) => {
     const row = currentFields(tx, subject.id, entryId, true);
     assertOpen(db, row.day, ...(patch.day === undefined ? [] : [patch.day]));
     const done = patchEntry(tx, subject.id, entryId, patch, resolved, actor.userId, now, true);
     if (done === null) return;
     const delta = done.after.minutes - done.beforeMinutes;
-    const taskId = taskOf(tx, done.after.target.taskId);
-    tell(db, actor, subject, 'edited', done.after.day, delta, taskId, now);
+    // A move names both days (review L2), not a `+0` edit of the new one.
+    const what =
+      done.beforeDay === done.after.day
+        ? timeChangedSubject('edited', done.after.day, delta)
+        : timeChangedSubject('moved', done.after.day, delta, done.beforeDay);
+    tell(db, actor, subject, what, placeOf(tx, done.after.target), now);
   });
   return entryById(db, subject.id, entryId);
 }
@@ -202,7 +240,9 @@ export function deleteMemberEntry(
     const row = currentFields(tx, subject.id, entryId, true);
     assertOpen(db, row.day);
     retireEntry(tx, entryId, actor.userId, now);
-    tell(db, actor, subject, 'deleted', row.day, -row.minutes, taskOf(tx, row.taskId), now);
+    const what = timeChangedSubject('deleted', row.day, -row.minutes);
+    const place = placeOf(tx, { taskId: row.taskId, projectId: row.projectId });
+    tell(db, actor, subject, what, place, now);
   });
 }
 

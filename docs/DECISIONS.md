@@ -7203,5 +7203,11 @@ owner asked to be able to correct it there, with the member told and the record 
    An admin's Solidtime pull of everyone is recorded the same way: the puller, not the
    person.
 6. **The person is told**: a `time_changed` member notice (§4.87) naming who did what, on
-   which day and by how many minutes. **No Undo** for the editor: a mistake is changed
-   back, which is one more revision with their name on it.
+   which day and by how many minutes — a move names both days. **No Undo** for the editor:
+   a mistake is changed back, which is one more revision with their name on it.
+7. **Only on what the person can open**: time goes on a card or space the person can read
+   themselves, or it is `422 task_not_visible_to_member` — an admin sees every space, and
+   the person's own day must not show one they cannot open.
+8. **A deactivated person's time can still be corrected.**
+9. **The right is by role, not a grant**: owners and admins, as the Solidtime import is;
+   no capability switch turns it off for admins.

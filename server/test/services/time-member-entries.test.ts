@@ -5,12 +5,14 @@ import { newId } from '../../src/db/ids.ts';
 import {
   memberNotices,
   orgTimeSettings,
+  projectMemberships,
   timeEntries,
   timeEntryRevisions,
   users,
 } from '../../src/db/schema.ts';
 import { requireOrgId } from '../../src/db/orgs.ts';
 import { ApiError } from '../../src/errors.ts';
+import { listNotices } from '../../src/services/notices.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { createEntry, listRevisions, updateEntry } from '../../src/services/time-entries.ts';
 import {
@@ -96,10 +98,23 @@ const SPAN = { started_at: NOW - 4 * 3_600_000, ended_at: NOW - 3.5 * 3_600_000 
 
 beforeEach(() => {
   t = freshDb();
-  owner = load(seed(t.db, NOW).userId);
+  const s = seed(t.db, NOW);
+  owner = load(s.userId);
   al = person('Al', 'admin');
   bea = person('Bea', 'member');
   cy = person('Cy', 'member');
+  // Bea is in the private space LAI-1 is in; Cy is not.
+  t.db
+    .insert(projectMemberships)
+    .values({
+      id: newId(),
+      projectId: s.projectId,
+      userId: bea.userId,
+      role: 'member',
+      createdAt: NOW,
+    })
+    .run();
+  bea = load(bea.userId);
   createTask(t.sqlite, t.db, owner, 'laika', { title: 'Time', now: NOW }); // LAI-1
   setOrgTimeMode(t.db, owner, 'manual', NOW);
 });
@@ -128,6 +143,57 @@ describe('an owner changes a member’s confirmed time', () => {
       ['time_changed', owner.userId, `created ${DAY} +30`],
     ]);
     expect(told[0]?.taskId).toBe(made.task?.id);
+    // Listed for Bea, the card keeps its own space's key (review M1).
+    const listed = listNotices(t.db, bea, { limit: 10, cursor: null, unread: false });
+    expect(listed.map((n) => [n.kind, n.task?.key, n.project?.slug])).toEqual([
+      ['time_changed', 'LAI-1', 'laika'],
+    ]);
+  });
+
+  it('never puts a member’s time on a card or space they cannot open (review M2)', () => {
+    expect(
+      reason(() =>
+        createMemberEntry(
+          t.db,
+          owner,
+          cy.userId,
+          { day: DAY, tz: 'UTC', minutes: 30, task: 'LAI-1' },
+          NOW,
+        ),
+      ),
+    ).toBe('unprocessable:task_not_visible_to_member');
+    expect(
+      reason(() =>
+        createMemberEntry(
+          t.db,
+          owner,
+          cy.userId,
+          { day: DAY, tz: 'UTC', minutes: 30, project: 'laika' },
+          NOW,
+        ),
+      ),
+    ).toBe('unprocessable:task_not_visible_to_member');
+    const cys = createEntry(t.db, cy, { day: DAY, tz: 'UTC', minutes: 30 }, NOW);
+    expect(
+      reason(() => updateMemberEntry(t.db, owner, cy.userId, cys.id, { task: 'LAI-1' }, NOW)),
+    ).toBe('unprocessable:task_not_visible_to_member');
+    expect(revisions(cys.id)).toHaveLength(1);
+    expect(notices(cy.userId)).toEqual([]);
+    // General stays open, and Bea, who is in the space, may be put on it.
+    createMemberEntry(t.db, owner, cy.userId, { day: DAY, tz: 'UTC', minutes: 5 }, NOW);
+    createMemberEntry(
+      t.db,
+      owner,
+      bea.userId,
+      { day: DAY, tz: 'UTC', minutes: 5, task: 'LAI-1' },
+      NOW,
+    );
+  });
+
+  it('a move to another day names both days (review L2)', () => {
+    const own = createEntry(t.db, bea, { day: DAY, tz: 'UTC', minutes: 30 }, NOW);
+    updateMemberEntry(t.db, owner, bea.userId, own.id, { day: '2026-10-19' }, NOW + 1);
+    expect(notices(bea.userId).map((n) => n.subject)).toEqual([`moved ${DAY} 2026-10-19 +0`]);
   });
 
   it('lengthens one, the revision the owner’s and the notice saying by how much', () => {

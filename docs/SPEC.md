@@ -393,8 +393,10 @@ may be changed here too — never pushed back to Solidtime, so a later re-sync
 of a Solidtime change may put the imported original back, and the history
 keeps both — while the person's own path still refuses it (`403
 imported_entry`). A day in the closed period stays closed (`403
-closed_period`); drafts, the timer and breaks stay the person's own, so
-nothing on this path reaches them. Every change is a §4.49 revision
+closed_period`); a card or space the person cannot open themselves is `422
+task_not_visible_to_member`; drafts, the timer and breaks stay the person's
+own, so nothing on this path reaches them. A deactivated person's time can
+still be corrected. Every change is a §4.49 revision
 with `changed_by` the editor, the person gets a `time_changed` notice
 (§4.87), and there is no Undo.
 
@@ -3714,9 +3716,9 @@ owner or admin (D-143, LAI-1165).
 | `user_id` | FK `users`, cascade — who is told |
 | `actor_user_id` | FK `users`, cascade — who did it |
 | `kind` | `added_to_space` \| `tool_revoked` \| `device_unpaired` \| `token_revoked` \| `time_changed` (CHECK) |
-| `project_id` | nullable, FK `projects`, set null — the space |
-| `task_id` | nullable, FK `tasks`, set null — the first card; for `time_changed`, the entry's card |
-| `subject` | nullable, ≤ 120 (CHECK) — the tool, device or token name **as it was**; for `time_changed`, `<created\|edited\|deleted> <day> <±minutes>` |
+| `project_id` | nullable, FK `projects`, set null — the space; for `time_changed`, the entry's space |
+| `task_id` | nullable, FK `tasks`, set null — the first card; for `time_changed`, the entry's card (its key is named from the card's own space) |
+| `subject` | nullable, ≤ 120 (CHECK) — the tool, device or token name **as it was**; for `time_changed`, `<created\|edited\|deleted> <day> <±minutes>`, or `moved <from> <to> <±minutes>` |
 | `message` | nullable, ≤ 500 (CHECK) — the adder's own words |
 | `created_at` | |
 | `read_at` | nullable — set once, by the person |
@@ -4172,7 +4174,7 @@ GET    /api/v1/me/developer-setup/activity   → { now, data: [{ at, kind: 'pair
 GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summary, devices, tools, pending_pairing, repositories, tokens: { personal, tool_credentials }, activity } — the member's whole setup; no pairing code or token secret; a space the reader cannot open counted, never named; logged as kind developer_setup; yourself is 422 use_developer_access   (owner, admin by default; session only; D-132, LAI-1137)
 POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
 POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_ids } — the device revoked, every active tool on it revoked, its live pairing requests cancelled, one device_unpaired notice; idempotent   (as above)
-POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 201 the entry, on the member's day, its revision by the editor, one time_changed notice; no Undo; yourself is 422 use_own_time   (time_entries.write_member: owner, admin not on the owner's — 403 not_for_owner; session only; D-143, LAI-1165)
+POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 201 the entry, on the member's day, its revision by the editor, one time_changed notice; no Undo; yourself is 422 use_own_time; a card or space the member cannot open is 422 task_not_visible_to_member   (time_entries.write_member: owner, admin not on the owner's — 403 not_for_owner; session only; D-143, LAI-1165)
 PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, an import included (a later Solidtime re-sync may put its original back), never a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
 GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
