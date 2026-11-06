@@ -16,6 +16,7 @@ import {
   type SpaceWeeksReport,
   type TimeReport as TimeReportData,
   type TimeReportAnswer,
+  type ReportLink,
   type TimeReportQuery,
 } from '../../api/time.ts';
 import { avatarColorSolid } from '../../theme/avatar-color.ts';
@@ -114,9 +115,19 @@ interface Filters {
   readonly spaces: readonly string[];
   readonly members: readonly string[];
   readonly kinds: readonly EntryKind[];
+  /** By what the time is on (D-142, LAI-1163); absent is all of it. */
+  readonly link?: ReportLink | undefined;
 }
 
 const NO_FILTERS: Filters = { spaces: [], members: [], kinds: [] };
+
+/** The Task link chip's words. */
+const LINK_WORDS: readonly (readonly [ReportLink | undefined, string])[] = [
+  [undefined, 'All'],
+  ['task', 'On a task'],
+  ['general', 'General'],
+  ['untied', 'Not on a task yet'],
+];
 
 /** Kind words as the design's chips say them. */
 const KIND_WORDS: Readonly<Record<EntryKind, string>> = {
@@ -213,6 +224,7 @@ export function TimeReport({
             spaces: filters.spaces,
             members: scope === 'org' || subject === undefined ? filters.members : [subject.id],
             kinds: filters.kinds,
+            link: filters.link,
             drafts: own || drafts,
           };
   const key = query === undefined ? '' : `${JSON.stringify(query)}|${version ?? ''}`;
@@ -266,7 +278,9 @@ export function TimeReport({
   const unit = stepUnit(range, shownRange);
   const nextDisabled = (weekly ? stretch : shownRange).to >= today;
   const ranges = weekly ? REPORT_RANGES.filter((r) => r !== 'day') : REPORT_RANGES;
-  const filtersOn = filters.spaces.length + filters.members.length + filters.kinds.length > 0;
+  const filtersOn =
+    filters.spaces.length + filters.members.length + filters.kinds.length > 0 ||
+    filters.link !== undefined;
   const answer = load.kind === 'ready' && load.key === key ? load.answer : undefined;
   const ready = answer !== undefined;
   const nothing =
@@ -465,6 +479,33 @@ export function TimeReport({
                 setFilters((f) => ({ ...f, kinds: kinds as EntryKind[] }));
               }}
             />
+            <Chip
+              id="link"
+              name="Task link"
+              value={LINK_WORDS.find(([v]) => v === filters.link)?.[1] ?? 'All'}
+              on={filters.link !== undefined}
+              open={pop === 'link'}
+              onToggle={setPop}
+            >
+              <div role="radiogroup" aria-label="Task link">
+                {LINK_WORDS.map(([v, words]) => (
+                  <label key={v ?? 'all'} className="trep-option" data-tr-link={v ?? 'all'}>
+                    <input
+                      type="radio"
+                      name={`${ids}-link`}
+                      checked={filters.link === v}
+                      onChange={() => {
+                        setFilters((f) => ({ ...f, link: v }));
+                        // Time not on a task yet is only ever a draft.
+                        if (v === 'untied') setDrafts(true);
+                        setPop(undefined);
+                      }}
+                    />
+                    <span className="trep-option-label">{words}</span>
+                  </label>
+                ))}
+              </div>
+            </Chip>
           </>
         )}
         <div className="trep-bar-end">
@@ -480,6 +521,10 @@ export function TimeReport({
                   data-tr-drafts={v ? 'include' : 'exclude'}
                   onClick={() => {
                     setDrafts(v);
+                    // Not on a task yet is drafts only: confirmed only takes the link off.
+                    if (!v && filters.link === 'untied') {
+                      setFilters((f) => ({ ...f, link: undefined }));
+                    }
                   }}
                 >
                   {v ? 'Include drafts' : 'Confirmed only'}

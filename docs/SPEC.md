@@ -4172,7 +4172,7 @@ POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_
 POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 201 the entry, on the member's day, its revision by the editor, one time_changed notice; no Undo; yourself is 422 use_own_time   (time_entries.write_member: owner, admin not on the owner's — 403 not_for_owner; session only; D-143, LAI-1165)
 PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, never an import (403 imported_entry) nor a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
 GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
-GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, LAI-1135)
+GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
 GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)
 GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
 POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
@@ -5391,7 +5391,11 @@ parameter names anybody else.
   narrowed by `spaces` (comma slugs; one the caller cannot open is `404`),
   `members` (comma user ids, at most 200, `422 too_many_members`; an unknown
   id is `404`), `kinds` (comma `TIME_ENTRY_KINDS`; drafts have none, so a
-  kinds filter holds none) and `drafts` (`exclude`, the default, or
+  kinds filter holds none), `link` (D-142: `task` — on a task, by the raw
+  `task_id`, so one the caller cannot open still counts; `general` — a
+  confirmed entry on no task, or a draft marked general; `untied` — a draft
+  on no task and not marked general, so it holds drafts only; absent is all
+  three, and the three add up to it) and `drafts` (`exclude`, the default, or
   `include`). **The server decides `scope`**: `members` naming exactly the
   caller is `own`, under *Read and write own time entries* (and own drafts
   with `drafts=include`), logged nowhere; otherwise `people`, under
@@ -5407,8 +5411,8 @@ parameter names anybody else.
   confirmed_minutes, drafted_minutes }`, largest first, for the client to
   group by any two of space, member, task and kind; `agent_minutes` the
   agent's working minutes for those people, shown beside human time and never
-  added to it (D-088 item 8) — `null` when `spaces` or `kinds` narrow the
-  report. A space or task the caller cannot open is never named: its minutes
+  added to it (D-088 item 8) — `null` when `spaces`, `kinds` or `link`
+  narrow the report. A space or task the caller cannot open is never named: its minutes
   are `project: null` / `task: null`. **One person's totals and `by_day`
   equal `GET /me/time/summary` for the same stretch** with `drafts=include`,
   a test holding both. In `people`, **each person `members` names and each
@@ -5425,7 +5429,7 @@ parameter names anybody else.
   confirmed_minutes, people }` by each entry's filed day — the space's
   confirmed minutes that week, `null` unless three of `people`, the week's
   full head count, are people other than the caller; `members`,
-  `kinds` and `drafts=include` are refused, and nothing is logged.
+  `kinds`, `link` and `drafts=include` are refused, and nothing is logged.
   `format=csv` answers the same report as a file, streamed, no row cap,
   logged the same: `text/csv; charset=utf-8`, attachment
   `laika-time-<from>-<to>.csv`. For `own` and `people` the columns are `day,
@@ -7159,7 +7163,9 @@ anything missing sends the task back.
   Insights → *Time*. **Day · Week · Month · Range**, ‹ › stepping a day, a
   week, a month or the range's own length, the Range quick picks and two
   dates (92 days at most, a backward or longer range said, not read).
-  **Space** and **Kind** filter chips, and **Member** where everyone is
+  **Space**, **Kind** and **Task link** (*All · On a task · General · Not
+  on a task yet*; the last turns drafts on, D-142) filter chips, and
+  **Member** where everyone is
   shown; **Confirmed only / Include drafts**; **Export CSV**, the server's
   file. Six figures — *Tracked*, *Confirmed*, *Drafts waiting*, *Meetings*,
   *Active days* (of the days so far), *Per active day* — and the agents'
@@ -7179,8 +7185,8 @@ anything missing sends the task back.
   and the server's sentence with *Retry*. A **space admin** (D-136, D-138)
   reads one space they lead, whole weeks, one bar a week with its people
   count, a week fewer than three people besides them worked in reading
-  *withheld — fewer than 3 others*; no table, donut, drafts switch or Member
-  and Kind filters. On a person's tab it says *Visible to owners and admins ·
+  *withheld — fewer than 3 others*; no table, donut, drafts switch or Member,
+  Kind and Task link filters. On a person's tab it says *Visible to owners and admins ·
   they can see you looked*. Light and dark; one column on a phone with
   nothing scrolling sideways.
 - **Time** (Insights' third tab, `/insights?tab=time`, LAI-1138) — the Time

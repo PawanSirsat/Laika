@@ -7149,6 +7149,28 @@ The owner asked to see who has the most time.
    people A–Z unless *Most time*), then *Show N more* in steps of 25, with *Show fewer*
    back to ten.
 
+## D-142 — The Time report separates time on a task from general time
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Extends D-130.
+Tasks LAI-1163 (the filter) and LAI-1164 (the spread).
+
+**Context.** Comparing two developers' reports, the owner's hours sat on tasks while
+most others' were general — a title and no task, drafted or imported. Mixed together the
+report could not show the difference.
+
+**Decision.**
+
+1. **Task link: All · On a task · General · Not on a task yet** narrows the whole report
+   — figures, bars, table, donut and CSV — on the server (`link`, §6.4). *On a task* is
+   decided on the raw `task_id`, so a task in a space the reader cannot see still counts;
+   *General* is a confirmed entry on no task, or a draft marked general; *Not on a task
+   yet* is a draft on neither, so choosing it turns drafts on. The three add up to all.
+2. **A space admin's weeks take no `link`**: a narrower total beside the whole would let
+   a reader subtract under the three-person floor (D-136).
+3. **Spread** (LAI-1164): how many spaces and tasks a person's hours went to, as plain
+   counts beside the hours — never a score, a rank or an efficiency figure (D-088 item 1
+   stands for those).
+
 ## D-143 — Owners and admins may change a member's confirmed time
 
 **Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Amends D-102

@@ -543,7 +543,13 @@ export interface TimeReportQuery {
   readonly members?: readonly string[] | undefined;
   readonly kinds?: readonly EntryKind[] | undefined;
   readonly drafts?: boolean | undefined;
+  /** By what the time is on (D-142); absent is all of it. */
+  readonly link?: ReportLink | undefined;
 }
+
+/** On a task, general, or a draft not on a task yet. Mirrors the server's `REPORT_LINKS`. */
+export const REPORT_LINKS = ['task', 'general', 'untied'] as const;
+export type ReportLink = (typeof REPORT_LINKS)[number];
 
 /** The query string for a report, in a fixed order so one report is one address. */
 export function timeReportParams(query: TimeReportQuery): URLSearchParams {
@@ -554,6 +560,7 @@ export function timeReportParams(query: TimeReportQuery): URLSearchParams {
   list('spaces', query.spaces);
   list('members', query.members);
   list('kinds', query.kinds);
+  if (query.link !== undefined) params.set('link', query.link);
   if (query.drafts === true) params.set('drafts', 'include');
   return params;
 }
