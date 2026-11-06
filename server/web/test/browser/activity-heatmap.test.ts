@@ -804,9 +804,17 @@ void describe('before joining (LAI-1154)', () => {
           const style = getComputedStyle(el);
           return { bg: style.backgroundColor, image: style.backgroundImage, ring: style.boxShadow };
         });
-        assert.equal(look.bg, 'rgba(0, 0, 0, 0)', 'a day before joining is filled');
+        assert.equal(
+          look.bg,
+          'rgba(0, 0, 0, 0)',
+          'a day before joining must be transparent, and it has a fill',
+        );
         assert.equal(look.image, 'none');
-        assert.match(look.ring, /inset/, 'a day before joining has no ring');
+        assert.match(
+          look.ring,
+          /inset/,
+          'a day before joining must carry an inset ring, and it has none',
+        );
 
         assert.match(await activityCard.locator('.hm-legend').innerText(), /Before joining/);
         const tile = (name: string) =>
