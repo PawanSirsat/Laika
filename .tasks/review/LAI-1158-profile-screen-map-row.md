@@ -6,8 +6,9 @@ assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1152
-status: in-progress
+status: review
 started: 2026-11-06T11:17:29+05:30
+finished: 2026-11-06T11:17:29+05:30
 ---
 
 ## Goal
@@ -19,10 +20,10 @@ redesigned screen (LAI-1148), as LAI-1152's builder flagged.
 
 ## Acceptance criteria
 
-- [ ] The row says your own profile is for everyone, names every read the
+- [x] The row says your own profile is for everyone, names every read the
       redesigned screen makes (own and someone else's, per tab), and says the
       rating and Current load are off the profile while their endpoints stay.
-- [ ] Every route it names exists in §6.4.
+- [x] Every route it names exists in §6.4.
 
 ## Notes / context
 
