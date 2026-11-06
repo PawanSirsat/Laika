@@ -7211,3 +7211,17 @@ owner asked to be able to correct it there, with the member told and the record 
 8. **A deactivated person's time can still be corrected.**
 9. **The right is by role, not a grant**: owners and admins, as the Solidtime import is;
    no capability switch turns it off for admins.
+
+## D-144 — The Time report sorts by any column
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Replaces D-141
+item 1's *A–Z · Most time* switch. Task LAI-1166.
+
+**Decision.** Every column header of the Time report's table sorts it — the name, *Spaces*,
+*Tasks*, *Confirmed*, *Drafted* and *Total*: the first click A–Z or the largest first, the
+next the other way. The default stays D-141's (people A–Z, everything else largest first);
+time on nothing stays last; the donut's colours stay with the largest groups whatever the
+order; a sort on a column no longer drawn (Spaces and Tasks without people first, Confirmed
+and Drafted with confirmed only) stops ordering the table; on a phone only the name and
+*Total* are drawn, so only they sort; the order is the reader's own and is not stored.
+D-141 item 2 stands: no rank number, score or efficiency figure.

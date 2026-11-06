@@ -645,15 +645,47 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
         .locator('[data-tr-row]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-row')));
       assert.deepEqual(rows, ['u1', 'u4', 'u3'], 'people are not A–Z');
-      // A–Z by default; *Most time* is the reader's choice (D-141).
-      assert.equal(await tr.locator('[data-tr-people="az"]').getAttribute('aria-checked'), 'true');
-      await tr.locator('[data-tr-people="time"]').click();
-      const byTime = await tr
-        .locator('[data-tr-row]')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-row')));
-      assert.deepEqual(byTime, ['u3', 'u1', 'u4'], 'Most time does not put Zoe first');
+      // A–Z by default; sorting a column is the reader's choice (D-141, LAI-1166).
+      const order = () =>
+        tr
+          .locator('[data-tr-row]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-row')));
+      const sorted = (key: string) =>
+        tr.locator(`[role="columnheader"]:has([data-tr-sort="${key}"])`).getAttribute('aria-sort');
+      assert.equal(await sorted('total'), 'none');
+      // Total: the most first, then the least first.
+      await tr.locator('[data-tr-sort="total"]').click();
+      assert.deepEqual(await order(), ['u3', 'u1', 'u4'], 'Total does not put Zoe first');
+      assert.equal(await sorted('total'), 'descending');
       assert.match(await tr.locator('[data-tr-slice]').first().innerText(), /Zoe Zimmer/);
-      await tr.locator('[data-tr-people="az"]').click();
+      await tr.locator('[data-tr-sort="total"]').click();
+      assert.deepEqual(await order(), ['u4', 'u1', 'u3']);
+      assert.equal(await sorted('total'), 'ascending');
+      // Tasks: Ben's meeting is on no task, so he is last; Ada before Zoe by name.
+      await tr.locator('[data-tr-sort="tasks"]').click();
+      assert.deepEqual(await order(), ['u1', 'u3', 'u4']);
+      // The name column: Z–A on a second click.
+      await tr.locator('[data-tr-sort="name"]').click();
+      assert.deepEqual(await order(), ['u1', 'u4', 'u3']);
+      await tr.locator('[data-tr-sort="name"]').click();
+      assert.deepEqual(await order(), ['u3', 'u4', 'u1']);
+      assert.equal(await sorted('name'), 'descending');
+      // A sort on a column no longer drawn stops ordering the table (review):
+      // fewest tasks first would put Onroute (none) before Laika.
+      await tr.locator('[data-tr-sort="tasks"]').click();
+      await tr.locator('[data-tr-sort="tasks"]').click();
+      assert.equal(await sorted('tasks'), 'ascending');
+      await tr.locator('[data-tr-swap]').click();
+      assert.equal(await tr.locator('[data-tr-sort="tasks"]').count(), 0);
+      const spaces = await order();
+      assert.deepEqual(spaces, ['p1', 'p2'], 'spaces kept a hidden Tasks order');
+      assert.deepEqual(
+        await tr
+          .locator('[role="columnheader"]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('aria-sort'))),
+        ['none', 'none'],
+      );
+      await tr.locator('[data-tr-swap]').click();
       await tr.locator('[data-tr-group="second"]').click();
       await tr.locator('[role="menu"]').waitFor();
       await h.page.keyboard.press('Escape');

@@ -42,7 +42,9 @@ import {
   spreadOf,
   spreadWords,
   CHILD_STEP,
-  type PeopleOrder,
+  nextSort,
+  type SortKey,
+  type TableSort,
   hoursCompact,
   hoursWords,
   presetRange,
@@ -1297,6 +1299,54 @@ function GroupMenu({
   );
 }
 
+/**
+ * A column header that sorts the table (LAI-1166): the first click names A–Z
+ * or the largest first, the next turns it round. `aria-sort` says which.
+ */
+function SortHead({
+  id,
+  label,
+  num = false,
+  sort,
+  onSort,
+}: {
+  readonly id: SortKey;
+  readonly label: string;
+  readonly num?: boolean;
+  readonly sort: TableSort | undefined;
+  readonly onSort: (next: TableSort) => void;
+}) {
+  const on = sort?.key === id;
+  const dir = on ? sort.dir : undefined;
+  return (
+    <span
+      role="columnheader"
+      className={num ? 'trep-num' : undefined}
+      aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
+    >
+      <button
+        type="button"
+        className={on ? 'trep-sort trep-sort-on' : 'trep-sort'}
+        data-tr-sort={id}
+        onClick={() => {
+          onSort(nextSort(sort, id));
+        }}
+      >
+        {label}
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="trep-sort-mark">
+          {dir === 'asc' ? (
+            <path d="m7 14 5-5 5 5" />
+          ) : dir === 'desc' ? (
+            <path d="m7 10 5 5 5-5" />
+          ) : (
+            <path d="m8 9 4-4 4 4M8 15l4 4 4-4" />
+          )}
+        </svg>
+      </button>
+    </span>
+  );
+}
+
 /** Run after React has drawn the change a click asked for. */
 function afterPaint(go: () => void): void {
   requestAnimationFrame(() => {
@@ -1331,12 +1381,21 @@ function Breakdown({
   const [open, setOpen] = useState<ReadonlyMap<string, boolean>>(new Map());
   // How many of an open group's rows show (LAI-1162): ten, then *Show N more*.
   const [shown, setShown] = useState<ReadonlyMap<string, number>>(new Map());
-  const [people, setPeople] = useState<PeopleOrder>('az');
+  // A column the reader sorted by, up or down (D-141, LAI-1166); none is the default order.
+  const [sort, setSort] = useState<TableSort | undefined>();
+  // A sort only orders the table while its column is drawn (review, LAI-1166):
+  // Spaces and Tasks with Member first, Confirmed and Drafted with drafts in.
+  const applied =
+    sort === undefined ||
+    ((sort.key === 'spaces' || sort.key === 'tasks') && first !== 'member') ||
+    ((sort.key === 'confirmed' || sort.key === 'drafted') && !drafts)
+      ? undefined
+      : sort;
   const [menu, setMenu] = useState<string | undefined>();
   const [active, setActive] = useState<string | undefined>();
   const groups = useMemo(
-    () => groupRows(report.rows, first, second, drafts, kindName, people),
-    [report.rows, first, second, drafts, people],
+    () => groupRows(report.rows, first, second, drafts, kindName, applied),
+    [report.rows, first, second, drafts, applied],
   );
   const slices = slicesOf(groups);
   const split = drafts;
@@ -1406,31 +1465,6 @@ function Breakdown({
             </svg>
             Swap
           </button>
-          {(first === 'member' || second === 'member') && (
-            // A–Z unless the reader asks for the most time first (D-141).
-            <div className="trep-segments" role="radiogroup" aria-label="List people">
-              {(
-                [
-                  ['az', 'A–Z'],
-                  ['time', 'Most time'],
-                ] as const
-              ).map(([v, name]) => (
-                <button
-                  key={v}
-                  type="button"
-                  role="radio"
-                  aria-checked={people === v}
-                  className={people === v ? 'trep-segment trep-segment-on' : 'trep-segment'}
-                  data-tr-people={v}
-                  onClick={() => {
-                    setPeople(v);
-                  }}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div
@@ -1440,30 +1474,20 @@ function Breakdown({
         >
           <div role="rowgroup">
             <div role="row" className="trep-row trep-row-head">
-              <span role="columnheader">{DIMENSION_LABELS[first]}</span>
+              <SortHead id="name" label={DIMENSION_LABELS[first]} sort={applied} onSort={setSort} />
               {spread && (
                 <>
-                  <span role="columnheader" className="trep-num">
-                    Spaces
-                  </span>
-                  <span role="columnheader" className="trep-num">
-                    Tasks
-                  </span>
+                  <SortHead id="spaces" label="Spaces" num sort={applied} onSort={setSort} />
+                  <SortHead id="tasks" label="Tasks" num sort={applied} onSort={setSort} />
                 </>
               )}
               {split && (
                 <>
-                  <span role="columnheader" className="trep-num">
-                    Confirmed
-                  </span>
-                  <span role="columnheader" className="trep-num">
-                    Drafted
-                  </span>
+                  <SortHead id="confirmed" label="Confirmed" num sort={applied} onSort={setSort} />
+                  <SortHead id="drafted" label="Drafted" num sort={applied} onSort={setSort} />
                 </>
               )}
-              <span role="columnheader" className="trep-num">
-                Total
-              </span>
+              <SortHead id="total" label="Total" num sort={applied} onSort={setSort} />
             </div>
           </div>
           <div role="rowgroup">
