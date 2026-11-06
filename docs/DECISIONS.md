@@ -7145,5 +7145,6 @@ The owner asked to see who has the most time.
 2. **Still no ranking figure**: no position number, no score, no utilisation, no money.
    Everywhere else (Availability, Capacity, lists of people) stays A–Z.
 3. **Long groups are capped** (LAI-1162): every group starts closed — one alone opens by
-   itself — and an open one shows its largest ten rows, then *Show N more* in steps of
-   25, with *Show fewer* back to ten.
+   itself — and an open one shows its first ten rows in the table's order (largest first;
+   people A–Z unless *Most time*), then *Show N more* in steps of 25, with *Show fewer*
+   back to ten.

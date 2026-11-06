@@ -475,6 +475,7 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       assert.equal(await kids.first().getAttribute('data-tr-child'), 't1');
       const more = tr.locator('[data-tr-row="p1"] [data-tr-more]');
       assert.equal(await more.innerText(), 'Show 25 more');
+      assert.match(await tr.locator('[data-tr-row="p1"] .trep-row-more').innerText(), /10 of 87/);
       await more.click();
       assert.equal(await kids.count(), 35);
       await more.click();
@@ -485,8 +486,44 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       await more.click();
       assert.equal(await kids.count(), 87);
       assert.equal(await tr.locator('[data-tr-row="p1"] [data-tr-more]').count(), 0);
+      // The last step took its button away: focus is on Show fewer, not lost.
+      const onFewer = () =>
+        h.page.evaluate(() => document.activeElement?.hasAttribute('data-tr-fewer') === true);
+      await until(onFewer);
+      assert.ok(await onFewer(), 'focus was lost when Show 2 more went away');
       await tr.locator('[data-tr-row="p1"] [data-tr-fewer]').click();
       assert.equal(await kids.count(), 10);
+      // Show fewer went with the rows: focus is back on the group.
+      const onGroup = () =>
+        h.page.evaluate(
+          () =>
+            document.activeElement?.classList.contains('trep-row-toggle') === true &&
+            document.activeElement.closest('[data-tr-row="p1"]') !== null,
+        );
+      await until(onGroup);
+      assert.ok(await onGroup(), 'focus was lost when Show fewer went away');
+      // Closed and opened again, it starts from ten.
+      await more.click();
+      assert.equal(await kids.count(), 35);
+      await tr.locator('[data-tr-row="p1"] .trep-row-toggle').click();
+      await tr.locator('[data-tr-row="p1"] .trep-row-toggle').click();
+      assert.equal(await kids.count(), 10);
+    } finally {
+      await done(h);
+    }
+  });
+
+  void test('a lone group opens by itself (LAI-1162)', async () => {
+    const asked: URL[] = [];
+    const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => {
+      const r = orgReport(u);
+      return ok({ ...r, rows: r.rows.filter((x) => x.project?.id === SPACE_A.id) });
+    });
+    try {
+      const tr = h.page.locator('[data-time-report="org"]');
+      await tr.locator('[data-tr-row="p1"]').waitFor({ timeout: 20_000 });
+      assert.equal(await tr.locator('[data-tr-row]').count(), 1);
+      assert.equal(await tr.locator('[data-tr-row="p1"] [data-tr-child]').count(), 2);
     } finally {
       await done(h);
     }

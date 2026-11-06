@@ -7150,7 +7150,7 @@ anything missing sends the task back.
   a table for a screen reader. **Group by** two levels with *Swap* (Space →
   Member for everyone, Space → Task for one person), a *Total* row, and a
   donut with its legend. Every group starts **closed** (one alone opens by
-  itself), and an open one shows its largest ten rows, then *Show N more*
+  itself), and an open one shows its first ten rows in the table's order, then *Show N more*
   (25 at a time) and *Show fewer*, with *N of M* (LAI-1162). **People are
   listed A–Z** unless the reader picks **Most time** beside *Swap*, which
   orders people by hours for that reader only (D-141); no rank number, no

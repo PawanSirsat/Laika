@@ -741,8 +741,9 @@ export function groupRows(
 
 /**
  * How many of a group's rows show when it is opened (LAI-1162): a space can
- * hold hundreds of tasks, so the largest ten first and *Show N more* adds up
- * to 25 at a time; never the whole list at once.
+ * hold hundreds of tasks, so the first ten in the table's order (largest
+ * first; people A–Z unless *Most time*) and *Show N more* adds up to 25 at a
+ * time; never the whole list at once.
  */
 export const CHILD_STEP = 10;
 /** What *Show N more* adds each time. */

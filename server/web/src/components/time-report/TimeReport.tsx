@@ -1250,6 +1250,21 @@ function GroupMenu({
   );
 }
 
+/** Run after React has drawn the change a click asked for. */
+function afterPaint(go: () => void): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(go);
+  });
+}
+
+/** Focus `selector` inside `scope`; scroll it into view when `show`. */
+function focusIn(scope: Element | null, selector: string, show = false): void {
+  const el = scope?.querySelector<HTMLElement>(selector);
+  if (el === null || el === undefined) return;
+  el.focus({ preventScroll: true });
+  if (show) el.scrollIntoView({ block: 'nearest' });
+}
+
 function Breakdown({
   report,
   scope,
@@ -1409,6 +1424,14 @@ function Breakdown({
                         disabled={leaf}
                         onClick={() => {
                           setOpen((m) => new Map(m).set(g.face.key, !isOpen));
+                          // Closed and opened again, it starts from ten.
+                          if (isOpen) {
+                            setShown((m) => {
+                              const next = new Map(m);
+                              next.delete(g.face.key);
+                              return next;
+                            });
+                          }
                         }}
                       >
                         <svg
@@ -1489,8 +1512,12 @@ function Breakdown({
                             type="button"
                             className="trep-more"
                             data-tr-more
-                            onClick={() => {
+                            onClick={(event) => {
+                              const at = event.currentTarget.closest('[data-tr-row]');
+                              const last = win.draw + win.more >= g.children.length;
                               setShown((m) => new Map(m).set(g.face.key, win.draw + win.more));
+                              // The last step takes this button away: keep focus on the row's other one.
+                              if (last) afterPaint(() => focusIn(at, '[data-tr-fewer]'));
                             }}
                           >
                             Show {win.more} more
@@ -1504,8 +1531,11 @@ function Breakdown({
                             type="button"
                             className="trep-more"
                             data-tr-fewer
-                            onClick={() => {
+                            onClick={(event) => {
+                              const at = event.currentTarget.closest('[data-tr-row]');
                               setShown((m) => new Map(m).set(g.face.key, CHILD_STEP));
+                              // This button goes with the rows: focus and view go back to the group.
+                              afterPaint(() => focusIn(at, '.trep-row-toggle', true));
                             }}
                           >
                             Show fewer
