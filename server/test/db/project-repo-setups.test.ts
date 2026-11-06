@@ -44,6 +44,7 @@ function folderBefore0073(): string {
     '0076_user_availability',
     '0077_member_notices',
     '0078_developer_setup_reads',
+    '0079_analytics_views_profile',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));
