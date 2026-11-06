@@ -1,38 +1,25 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  profileAvailabilityMode,
-  type ModeInput,
-} from '../../../../src/routes/screens/profile/profile-availability.ts';
+import { readsSharedRow } from '../../../../src/routes/screens/profile/profile-availability.ts';
 
-const base: ModeInput = {
-  userId: 'u2',
-  meId: 'u1',
-  allowed: true,
-  settled: true,
-  readsAnalytics: true,
-};
-
-void describe('which availability read a profile makes (D-137, LAI-1139)', () => {
-  void test('your own profile reads your own record, whatever the gates', () => {
-    assert.equal(profileAvailabilityMode({ ...base, meId: 'u2', settled: false }), 'self');
+/**
+ * Which profiles read someone's row of `GET /people/availability` for the
+ * head card's pill (D-137, LAI-1152). The load read that logs a look is gone
+ * from the profile (D-139 item 8), so the list — which logs nothing — is the
+ * only read, and never for yourself: your own is *My availability*'s.
+ */
+void describe('whose availability the head card reads from the list (LAI-1152)', () => {
+  void test('someone else’s profile reads their row', () => {
+    assert.equal(readsSharedRow('u2', 'u1'), true);
   });
 
-  void test('an analytics reader reads the load — the one read that logs the look', () => {
-    assert.equal(profileAvailabilityMode(base), 'load');
+  void test('your own never does — My availability reads and saves it', () => {
+    assert.equal(readsSharedRow('u1', 'u1'), false);
   });
 
-  void test('any other reader reads the narrowed row, never the load', () => {
-    assert.equal(profileAvailabilityMode({ ...base, readsAnalytics: false }), 'shared');
-  });
-
-  void test('nothing before the server has said what the reader may do', () => {
-    assert.equal(profileAvailabilityMode({ ...base, settled: false }), undefined);
-  });
-
-  void test('nothing for a reader refused the profile, or before anyone is named', () => {
-    assert.equal(profileAvailabilityMode({ ...base, allowed: false }), undefined);
-    assert.equal(profileAvailabilityMode({ ...base, userId: undefined }), undefined);
-    assert.equal(profileAvailabilityMode({ ...base, meId: undefined }), undefined);
+  void test('nothing before anyone is named, or before /me has answered', () => {
+    assert.equal(readsSharedRow(undefined, 'u1'), false);
+    assert.equal(readsSharedRow('', 'u1'), false);
+    assert.equal(readsSharedRow('u2', undefined), false);
   });
 });

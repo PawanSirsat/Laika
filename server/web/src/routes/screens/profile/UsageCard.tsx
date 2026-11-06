@@ -44,6 +44,7 @@ export function UsageCard({
   self,
   section = 'tokens',
   className = 'prof-card',
+  definitions = true,
 }: {
   readonly userId: string;
   readonly name: string;
@@ -51,6 +52,8 @@ export function UsageCard({
   readonly self: boolean;
   readonly section?: string;
   readonly className?: string;
+  /** The (i) beside the title; the profile draws none (D-139 item 8, LAI-1152). */
+  readonly definitions?: boolean;
 }) {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
 
@@ -86,15 +89,17 @@ export function UsageCard({
           {title}
         </h3>
         <span className="prof-card-caption">12 weeks · at least</span>
-        <InfoTip label="About these LLM tokens">
-          <p className="usage-info">
-            Counted on {self ? 'your' : `${name}’s`} machines from the agents’ own session files —
-            Claude Code, Codex, Gemini CLI — and sent as totals per day. <strong>At least</strong>:
-            those files miss an agent’s background calls. <strong>LLM tokens</strong> are input,
-            output and cache writes; cache reads, most of the raw count, are shown apart. Context
-            only — never a rating or a ranking of people.
-          </p>
-        </InfoTip>
+        {definitions && (
+          <InfoTip label="About these LLM tokens">
+            <p className="usage-info">
+              Counted on {self ? 'your' : `${name}’s`} machines from the agents’ own session files —
+              Claude Code, Codex, Gemini CLI — and sent as totals per day. <strong>At least</strong>
+              : those files miss an agent’s background calls. <strong>LLM tokens</strong> are input,
+              output and cache writes; cache reads, most of the raw count, are shown apart. Context
+              only — never a rating or a ranking of people.
+            </p>
+          </InfoTip>
+        )}
       </header>
 
       {load.kind === 'loading' && <p className="prof-empty">Reading tokens…</p>}

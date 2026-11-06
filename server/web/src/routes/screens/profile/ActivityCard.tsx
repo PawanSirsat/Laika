@@ -58,6 +58,8 @@ export interface ActivityCardProps {
    * moves when it does.
    */
   readonly sharing: ActivitySwitches;
+  /** The (i) beside the title; the profile draws none (D-139 item 8, LAI-1152). */
+  readonly definitions?: boolean;
 }
 
 interface ActivitySwitches {
@@ -157,7 +159,14 @@ function offReason(sharing: ActivitySwitches): Off {
  * Nothing here is a score and nothing feeds the rating (D-079 item 6); the (i)
  * says so, and says what is never collected.
  */
-export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: ActivityCardProps) {
+export function ActivityCard({
+  userId,
+  name,
+  viewerId,
+  canManageOrg,
+  sharing,
+  definitions = true,
+}: ActivityCardProps) {
   const [range, setRange] = useState<ActivityRange>(defaultRange);
   const [design, setDesign] = useState<HeatDesign>(() => readDesign(viewerId));
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
@@ -216,9 +225,11 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: 
           Activity
         </h3>
         <span className="prof-card-caption">{caption}</span>
-        <InfoTip label="About activity">
-          <ActivityDefinitions />
-        </InfoTip>
+        {definitions && (
+          <InfoTip label="About activity">
+            <ActivityDefinitions />
+          </InfoTip>
+        )}
         <span className="prof-card-actions hm-controls">
           <Segmented
             label="Design"
