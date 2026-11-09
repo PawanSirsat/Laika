@@ -10,15 +10,38 @@ import {
 import type { ProjectTag } from '../../../api/tags.ts';
 import './tag-picker.css';
 
-export interface TagPickerProps {
+interface TagPickerBase {
   readonly slug: string;
-  readonly taskId: string;
   readonly tags: readonly string[];
   /** False for a Viewer — they see the tags and get no way to change them. */
   readonly mayEdit: boolean;
+}
+
+/** On a task: every change is saved at once, and the server's list is the result. */
+export interface TagPickerSavedProps extends TagPickerBase {
+  readonly taskId: string;
   /** Called with the task the server returned, so the board can follow. */
   readonly onChanged: (tags: readonly string[]) => void;
+  readonly onChange?: undefined;
+  readonly known?: undefined;
+  readonly heading?: undefined;
 }
+
+/**
+ * Controlled, with no task yet (LAI-1167): the Create task dialog holds the
+ * list and sends it with the create. Nothing is saved from here.
+ */
+export interface TagPickerControlledProps extends TagPickerBase {
+  readonly taskId?: undefined;
+  readonly onChanged?: undefined;
+  readonly onChange: (tags: readonly string[]) => void;
+  /** The project's tags, already fetched by the caller: no read of its own. */
+  readonly known?: readonly ProjectTag[] | undefined;
+  /** `false` when the caller labels the control itself (a `Field`). */
+  readonly heading?: boolean | undefined;
+}
+
+export type TagPickerProps = TagPickerSavedProps | TagPickerControlledProps;
 
 /**
  * Apply and remove a task's tags (LAI-081).
@@ -35,9 +58,14 @@ export interface TagPickerProps {
  * A regex here would be a second copy of that rule, and the copy is the one that
  * goes stale when the server tightens it.
  */
-export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerProps) {
+export function TagPicker(props: TagPickerProps) {
+  const { slug, tags, mayEdit } = props;
+  const taskId = props.taskId;
+  const given = props.known;
+  const showHeading = props.heading !== false;
   const [draft, setDraft] = useState('');
-  const [known, setKnown] = useState<readonly ProjectTag[]>([]);
+  const [fetched, setFetched] = useState<readonly ProjectTag[]>([]);
+  const known = given ?? fetched;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,11 +80,12 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
   }, [adding]);
 
   useEffect(() => {
-    if (!mayEdit) return;
+    // The caller's list stands in for the read (the dialog has it already).
+    if (!mayEdit || given !== undefined) return;
     const controller = new AbortController();
 
     listProjectTags(slug, controller.signal)
-      .then(setKnown)
+      .then(setFetched)
       .catch(() => {
         // Only the suggestions are lost. Typing a tag still works, so this is
         // not worth an error state in front of the reader.
@@ -65,15 +94,21 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
     return () => {
       controller.abort();
     };
-  }, [slug, mayEdit, tags]);
+  }, [slug, mayEdit, tags, given]);
 
   const save = (next: readonly string[]): void => {
+    if (taskId === undefined) {
+      // Controlled: the list is the caller's; the server judges it on create.
+      props.onChange(next);
+      setDraft('');
+      return;
+    }
     setBusy(true);
     setError(undefined);
 
     setTaskTags(taskId, next)
       .then((task) => {
-        onChanged(task.tags);
+        props.onChanged(task.tags);
         setDraft('');
       })
       .catch((cause: unknown) => {
@@ -116,7 +151,7 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
   if (!mayEdit) {
     return tags.length === 0 ? null : (
       <div className="tagp">
-        <h3 className="tagp-head">Tags</h3>
+        {showHeading && <h3 className="tagp-head">Tags</h3>}
         <ul className="tagp-list">
           {tags.map((tag) => (
             <li key={tag} className="tagp-chip">
@@ -130,7 +165,7 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
 
   return (
     <div className="tagp">
-      <h3 className="tagp-head">Tags</h3>
+      {showHeading && <h3 className="tagp-head">Tags</h3>}
 
       <ul className="tagp-list">
         {tags.map((tag) => (

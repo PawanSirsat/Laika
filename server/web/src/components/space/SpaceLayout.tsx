@@ -6,6 +6,8 @@ import { listMembers, type Member } from '../../api/tasks.ts';
 import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
+import { CreateTaskProvider } from '../create-task/CreateTaskProvider.tsx';
+import { useCreateTask } from '../create-task/use-create-task.ts';
 import { SpaceLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
 import { SpaceFilterClaim } from './SpaceSlot.tsx';
@@ -170,6 +172,70 @@ function SpaceFrame({
     setParams(next);
   };
 
+  const mayCreate = spaceId !== undefined && gates.project(spaceId, 'task.create');
+
+  return (
+    <CreateTaskProvider
+      slug={slug}
+      spaceId={spaceId}
+      mayCreate={mayCreate}
+      settled={gates.settled}
+      members={members}
+      tags={tags}
+    >
+      <SpaceFrameBody
+        path={path}
+        slug={slug}
+        params={params}
+        navigate={navigate}
+        setParam={setParam}
+        members={members}
+        tags={tags}
+        pendingReviews={pendingReviews}
+        mayCreate={mayCreate}
+        holds={permissionHolder(permissions?.me.actions)}
+      >
+        {children}
+      </SpaceFrameBody>
+    </CreateTaskProvider>
+  );
+}
+
+interface SpaceFrameBodyProps {
+  readonly path: string;
+  readonly slug: string | undefined;
+  readonly params: URLSearchParams;
+  readonly navigate: (to: string) => void;
+  readonly setParam: (key: string, value: string | undefined) => void;
+  readonly members: readonly Member[];
+  readonly tags: readonly ProjectTag[];
+  readonly pendingReviews: number | undefined;
+  readonly mayCreate: boolean;
+  readonly holds: ReturnType<typeof permissionHolder>;
+  readonly children: ReactNode;
+}
+
+/**
+ * The frame's markup, under the Create task provider so the bar's *+ Create*
+ * can open the dialog (LAI-1167) — the same dialog the List's row and the
+ * `c` key open, rather than a navigation to the board with a form the board
+ * never had.
+ */
+function SpaceFrameBody({
+  path,
+  slug,
+  params,
+  navigate,
+  setParam,
+  members,
+  tags,
+  pendingReviews,
+  mayCreate,
+  holds,
+  children,
+}: SpaceFrameBodyProps) {
+  const createTask = useCreateTask();
+
   return (
     <SpaceFilterClaim>
       <div className="space">
@@ -208,16 +274,10 @@ function SpaceFrame({
               onReady={(value) => {
                 setParam('ready', value ? 'true' : undefined);
               }}
-              {...(spaceId !== undefined && gates.project(spaceId, 'task.create')
+              {...(mayCreate
                 ? {
                     onCreate: () => {
-                      // The board owns task creation; Create from any view goes
-                      // there with the form open rather than duplicating it.
-                      navigate(
-                        slug === undefined
-                          ? '/board?new=task'
-                          : `/board?project=${encodeURIComponent(slug)}&new=task`,
-                      );
+                      createTask.open();
                     },
                   }
                 : {})}
@@ -228,7 +288,7 @@ function SpaceFrame({
               projectSlug={slug}
               params={params}
               onNavigate={navigate}
-              holds={permissionHolder(permissions?.me.actions)}
+              holds={holds}
               counts={{ '/meeting-review': pendingReviews }}
             />
           </div>
