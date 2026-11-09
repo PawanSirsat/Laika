@@ -171,7 +171,7 @@ export function CreateTaskFields({
               aria-invalid={invalid}
               noun="statuses"
               value={draft.statusId ?? ''}
-              placeholder={statuses.length === 0 ? 'Loading…' : 'Default'}
+              placeholder="Default"
               disabled={busy || statuses.length === 0}
               options={statusOptions(statuses)}
               onChange={(value) => {
@@ -253,7 +253,6 @@ export function CreateTaskFields({
               aria-invalid={invalid}
               noun="sprints"
               value={draft.sprintId ?? ''}
-              placeholder={sprints === undefined ? 'Loading…' : undefined}
               disabled={busy || sprints === undefined}
               options={[
                 { value: '', label: 'No sprint', pinned: true },
@@ -489,7 +488,6 @@ export function CreateTaskFields({
                   searchable
                   value={draft.parentId ?? ''}
                   disabled={busy || tasks === undefined}
-                  placeholder={tasks === undefined ? 'Loading…' : undefined}
                   options={[
                     { value: '', label: 'None', pinned: true },
                     // One level only (D-066): a child cannot be a parent.
@@ -511,7 +509,7 @@ export function CreateTaskFields({
                     noun="tasks"
                     searchable
                     value=""
-                    placeholder={tasks === undefined ? 'Loading…' : 'Add a blocker'}
+                    placeholder="Add a blocker"
                     disabled={busy || tasks === undefined}
                     options={blockers.map(taskOption)}
                     onChange={(value) => {

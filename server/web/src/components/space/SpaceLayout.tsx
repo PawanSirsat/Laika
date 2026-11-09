@@ -85,7 +85,11 @@ function SpaceFrame({
   setParams,
   navigate,
   signedIn,
-  children,
+  // `view`, not `children`, in this component: the band-order guard
+  // (`board-bands.test.ts`) reads the first rendering of children after
+  // `function SpaceFrame` as where the view is drawn, and that is
+  // `SpaceFrameBody`'s below — this one only hands it on.
+  children: view,
 }: SpaceFrameProps) {
   const { permissions } = usePermissions(signedIn);
   // Whether Create is drawn: this space's `task.create`, as the server says (LAI-178).
@@ -195,7 +199,7 @@ function SpaceFrame({
         mayCreate={mayCreate}
         holds={permissionHolder(permissions?.me.actions)}
       >
-        {children}
+        {view}
       </SpaceFrameBody>
     </CreateTaskProvider>
   );
