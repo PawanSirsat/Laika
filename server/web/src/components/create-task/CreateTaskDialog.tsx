@@ -15,6 +15,7 @@ import type {
   MentionCandidate,
   RichEditorHandle,
 } from '../../routes/screens/task/LazyRichEditor.tsx';
+import { useConfirm } from '../ConfirmProvider.tsx';
 import { Button } from '../forms/Button.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
@@ -103,6 +104,7 @@ export function CreateTaskDialog({
   restore,
 }: CreateTaskDialogProps) {
   const { spaceName } = useShell();
+  const confirm = useConfirm();
   const box = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const descriptionRef = useRef<RichEditorHandle | null>(null);
@@ -126,6 +128,53 @@ export function CreateTaskDialog({
   useEffect(() => {
     if (editorKey > 0) titleRef.current?.focus();
   }, [editorKey]);
+
+  /*
+   * A refusal puts focus on the first field it names — after the render that
+   * marks it (review round 1: a microtask ran before `aria-invalid` existed
+   * and before the controls were enabled again, and focus fell to `<body>`).
+   * A control first; a group — an editor, the tag picker — only when no
+   * control is marked, through the editor's handle or its first button.
+   */
+  useEffect(() => {
+    if (Object.keys(errors.fields).length === 0) return;
+    const marked = [...(box.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"]') ?? [])];
+    const control = marked.find((el) => el.matches('input, textarea, select, button'));
+    if (control !== undefined) {
+      control.focus();
+      return;
+    }
+    const group = marked[0];
+    if (group === undefined) return;
+    if (group.dataset.ctEditor === 'description') descriptionRef.current?.focus();
+    else if (group.dataset.ctEditor === 'acceptance') acceptanceRef.current?.focus();
+    else group.querySelector<HTMLElement>('input, button, textarea')?.focus();
+  }, [errors]);
+
+  /*
+   * Close, asking first when something has been typed (review round 1): an
+   * Escape or a click past the box is easy to make by accident, and a filled
+   * form thrown away is the one thing this dialog must not do silently. An
+   * empty draft closes at once.
+   */
+  const requestClose = async (): Promise<void> => {
+    if (busy) return;
+    const typed =
+      draft.title.trim() !== '' ||
+      !(descriptionRef.current?.empty() ?? true) ||
+      !(acceptanceRef.current?.empty() ?? true);
+    if (typed) {
+      const discard = await confirm({
+        title: 'Discard this task?',
+        body: 'Nothing has been created yet. What you typed here will be lost.',
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep editing',
+        danger: true,
+      });
+      if (!discard) return;
+    }
+    onClose();
+  };
 
   // ---------------------------------------------------------------- loading
   const statuses = useProjectStatuses(slug);
@@ -187,18 +236,11 @@ export function CreateTaskDialog({
   );
 
   // ----------------------------------------------------------------- submit
-  const focusFirstInvalid = (): void => {
-    queueMicrotask(() => {
-      box.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-    });
-  };
-
   const submit = async (): Promise<void> => {
     if (busy) return;
     const title = draft.title.trim();
     if (title === '') {
       setErrors({ fields: { title: 'Give it a title.' } });
-      titleRef.current?.focus();
       return;
     }
     for (const [key, value] of [
@@ -207,7 +249,6 @@ export function CreateTaskDialog({
     ] as const) {
       if (value !== '' && dateInputToMs(value) === null) {
         setErrors({ fields: { [key]: 'Not a date.' } });
-        focusFirstInvalid();
         return;
       }
     }
@@ -239,7 +280,6 @@ export function CreateTaskDialog({
       // The form stays as it was: a refusal must never cost what was typed.
       setErrors(errorsByField(cause));
       setBusy(false);
-      focusFirstInvalid();
       return;
     }
 
@@ -283,7 +323,7 @@ export function CreateTaskDialog({
       if (event.defaultPrevented) return;
       if (!(event.target instanceof Node) || box.current?.contains(event.target) !== true) return;
       event.preventDefault();
-      onClose();
+      void requestClose();
       return;
     }
     if (event.key !== 'Enter') return;
@@ -292,12 +332,13 @@ export function CreateTaskDialog({
       void submit();
       return;
     }
-    // Implicit submission from the Title only: a date or an outside id is
-    // filled in, not sent.
+    // Implicit submission from the Title only: a date, an outside id or the
+    // *Create another* box is filled in, not sent. An input inside an editor
+    // (the link popover's address) is the editor's and handles Enter itself.
     if (
       event.target instanceof HTMLInputElement &&
       event.target !== titleRef.current &&
-      event.target.type !== 'checkbox'
+      event.target.closest('.rich-editor') === null
     ) {
       event.preventDefault();
     }
@@ -307,7 +348,13 @@ export function CreateTaskDialog({
 
   return createPortal(
     <>
-      <div className="ct-scrim" aria-hidden="true" onClick={onClose} />
+      <div
+        className="ct-scrim"
+        aria-hidden="true"
+        onClick={() => {
+          void requestClose();
+        }}
+      />
       <div
         ref={box}
         className="ct-dialog"
@@ -337,7 +384,14 @@ export function CreateTaskDialog({
                 </p>
               )}
             </div>
-            <button type="button" className="ct-close" aria-label="Close" onClick={onClose}>
+            <button
+              type="button"
+              className="ct-close"
+              aria-label="Close"
+              onClick={() => {
+                void requestClose();
+              }}
+            >
               <span aria-hidden="true">×</span>
             </button>
           </header>
@@ -351,7 +405,9 @@ export function CreateTaskDialog({
               }}
               errors={errors.fields}
               busy={busy}
-              onEscape={onClose}
+              onEscape={() => {
+                void requestClose();
+              }}
               titleRef={titleRef}
               descriptionRef={descriptionRef}
               acceptanceRef={acceptanceRef}
@@ -386,7 +442,13 @@ export function CreateTaskDialog({
               <span className="checkbox-label">Create another</span>
             </label>
             <span className="ct-foot-actions">
-              <Button variant="secondary" disabled={busy} onClick={onClose}>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  void requestClose();
+                }}
+              >
                 Cancel
               </Button>
               <Button type="submit" busy={busy} disabled={!canCreate}>

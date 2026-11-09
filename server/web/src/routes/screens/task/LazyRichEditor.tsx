@@ -46,6 +46,8 @@ export type RichEditorWritten =
 export interface RichEditorHandle {
   readonly read: () => RichEditorWritten;
   readonly focus: () => void;
+  /** Nothing written yet — so a close need not ask. */
+  readonly empty: () => boolean;
 }
 
 interface RichEditorBaseProps {

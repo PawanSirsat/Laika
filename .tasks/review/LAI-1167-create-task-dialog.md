@@ -50,7 +50,8 @@ Board card LAIKA-1030 (`external_ref: LAI-1167`).
       → `reloadProjectTasks`. A refused create lays `errorsByField` on the
       fields (zod `issues` paths and service `details.field`; `status` and
       `status_id` both land on Status), keeps the form, focuses the first
-      invalid control, shows no toast. A failed step after the create closes
+      invalid control (after the render that marks it: a control first, else
+      the editor through its handle), shows no toast. A failed step after the create closes
       the dialog as on success and the toast is `role="alert"`: *LC-7 created,
       but could not add it to Sprint 4*, the server's sentence under it, with
       *Open*. Success: `role="status"` *LC-7 created · Open*, gone in 6 s.
@@ -59,10 +60,21 @@ Board card LAIKA-1030 (`external_ref: LAI-1167`).
       rest, remounts both editors, puts focus back on the Title, and the next
       create carries the kept four.
 - [x] Keyboard: focus starts on the Title; Tab and Shift+Tab stay inside
-      (`useDialogFocus`); Enter in the Title creates and in no other one-line
-      field; ⌘/Ctrl+Enter creates from anywhere, the editors included; Escape
-      closes unless consumed, from inside the ProseMirror document too; focus
-      returns to the opener, falling back to `.space-create`.
+      (`useDialogFocus`, which leaves Tab inside a Dropdown's portaled panel
+      to the Dropdown); Enter in the Title creates and in no other one-line
+      field, nor on the *Create another* box; ⌘/Ctrl+Enter creates from
+      anywhere, the editors included; Escape, the scrim, × and Cancel close —
+      asking *Discard this task?* first when a title, description or
+      acceptance has been typed, at once otherwise — from inside the
+      ProseMirror document too; focus returns to the opener, falling back to
+      `.space-create`.
+- [x] Review round 1: the editor's link popover is no longer a `<form>`
+      (nested in the dialog's form it submitted the page as a GET); Enter in
+      its address applies the link and the dialog's Enter guard exempts inputs
+      inside `.rich-editor`; a change of space closes the dialog; Description,
+      Acceptance, Labels, Agent and the Ships rows carry `aria-labelledby` /
+      `aria-describedby` / `aria-invalid`; the Labels control stays drawn,
+      locked, during the POST.
 - [x] Shape: `.ct-scrim` z 60, `.ct-dialog` z 61 at
       `width: min(42.5rem, calc(100vw - 2rem))`, `top: 8vh`,
       `max-height: 84vh`, scrolling body, pinned footer; `≤900px` a full sheet
@@ -77,10 +89,13 @@ Board card LAIKA-1030 (`external_ref: LAI-1167`).
       mount; `LazyRichEditor` carries the props union and tolerates no
       `onClose` in its load-failure boundary; `AgentPicker` used as is.
 - [x] Tests: `test/browser/create-task-dialog.test.ts` (ways in, gate, Tab
-      trap, Escape from the editor, phone sheet, both themes, shots),
+      trap, Escape from the editor and the scrim with the discard question, a
+      change of space, phone sheet, both themes, shots),
       `test/browser/create-task-submit.test.ts` (body deep-equal, call order,
-      task-list GET after the POST, toast and Open, zod and service 422s,
-      partial failure, Create another), `test/browser/create-task-fixtures.ts`;
+      task-list GET after the POST, toast and Open, zod and service 422s with
+      focus on the first refused control, partial failure, a link applied via
+      Enter and via Apply with no navigation, Create another and Enter on its
+      box), `test/browser/create-task-fixtures.ts`;
       unit `test/components/create-task/create-task-form.test.ts`,
       `test/components/typing-in.test.ts`,
       `test/routes/screens/board/assignee-options.test.ts`;
@@ -89,7 +104,8 @@ Board card LAIKA-1030 (`external_ref: LAI-1167`).
 - [x] Mutation-checked: removing the `typingIn` guard reddens the `c` key
       test; removing the `mayCreate` gate reddens the member test; sending
       `status` beside `status_id` reddens the body-shape unit tests and both
-      submit-body assertions. Each restored byte-for-byte.
+      submit-body assertions; the link popover as a nested `<form>` again
+      reddens both link tests. Each restored byte-for-byte.
 - [x] Docs (named edits, D-033): `docs/SPEC.md` — a *Creating a task is one
       dialog* bullet in the Board section after *A new task lands at the
       bottom of its lane*, and the §11.4.2.1 **Board** bullet; `docs/DECISIONS.md`

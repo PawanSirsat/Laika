@@ -77,6 +77,12 @@ export function CreateTaskProvider({
     setOpening(null);
   }, []);
 
+  // A dialog opened for one space is not a dialog for the next (review round
+  // 1): its status, sprint and parent belong to the space it opened in.
+  useEffect(() => {
+    setOpening(null);
+  }, [slug]);
+
   // `?new=task`, as the bar's Create navigated to before the dialog existed:
   // honoured once the permissions can say whether this reader may, then
   // taken out of the address whether or not it opened.

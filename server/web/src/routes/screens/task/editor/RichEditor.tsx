@@ -447,8 +447,10 @@ export function RichEditor({
         if (mode === 'rich') editor.commands.focus();
         else sourceField.current?.focus();
       },
+      // Nothing typed: the form asks before discarding only when there is.
+      empty: (): boolean => (mode === 'rich' ? editor.isEmpty : source.trim() === ''),
     }),
-    [written, toSource, mode, editor],
+    [written, toSource, mode, editor, source],
   );
 
   const mentionMatches =
@@ -841,13 +843,14 @@ export function RichEditor({
       )}
 
       {picker?.kind === 'link' && (
-        <form
-          className="rte-popover rte-link"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applyLink(picker.href);
-          }}
-        >
+        /*
+         * **Not a `<form>`** (LAI-1167 review). Embedded in the Create task
+         * dialog the editor sits inside the dialog's form, and a nested form
+         * is not one: Apply submitted the page as a GET and reloaded it with
+         * the draft lost. Enter is the input's own, stopped before the dialog
+         * can read it as its submit.
+         */
+        <div className="rte-popover rte-link">
           <input
             className="rte-input"
             aria-label="Link address"
@@ -859,14 +862,24 @@ export function RichEditor({
               setPicker({ kind: 'link', href: event.target.value });
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                applyLink(picker.href);
+              } else if (event.key === 'Escape') {
                 event.preventDefault();
                 setPicker(null);
                 editor.commands.focus();
               }
             }}
           />
-          <Button type="submit">Apply</Button>
+          <Button
+            onClick={() => {
+              applyLink(picker.href);
+            }}
+          >
+            Apply
+          </Button>
           {state.link && (
             <Button
               variant="secondary"
@@ -883,7 +896,7 @@ export function RichEditor({
               {picker.error}
             </p>
           )}
-        </form>
+        </div>
       )}
 
       {picker?.kind === 'card' && (

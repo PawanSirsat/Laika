@@ -7248,7 +7248,10 @@ as typed. The sprint (`POST /sprints/:id/tasks`) and each blocker (`POST
 the dialog closes exactly as on success and the toast says *created, but could not add it to
 Sprint 4* with the server's sentence and *Open*. The form is never left filled after a task
 exists — that invites the same task twice. *Create another* keeps status, priority, sprint
-and assignee and clears the rest; focus returns to the Title.
+and assignee and clears the rest; focus returns to the Title. Closing a dialog with a title,
+description or acceptance typed — by Escape, the scrim, × or Cancel — asks *Discard this
+task?* first; an empty one closes at once. A change of space closes it: the draft belonged to
+the space it opened in.
 
 **Not in the URL.** The task drawer is content and lives in `?task=`; the dialog is an
 action. A half-typed form cannot survive a refresh, and Back closing a filled form is a trap.

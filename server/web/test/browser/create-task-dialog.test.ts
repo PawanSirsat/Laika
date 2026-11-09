@@ -13,8 +13,16 @@ import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
-import { ADA, adminsOnly, DIALOG, stub, TOMAS } from './create-task-fixtures.ts';
+import {
+  closeBrowser,
+  navigateInApp,
+  open,
+  setTheme,
+  until,
+  type ApiStub,
+  type Harness,
+} from './harness.ts';
+import { ADA, adminsOnly, CORE, DIALOG, stub, task, TOMAS } from './create-task-fixtures.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -204,7 +212,7 @@ void describe('the dialog’s keyboard and shape', () => {
     }
   });
 
-  void test('Escape from inside the Description editor closes the dialog too', async () => {
+  void test('Escape from inside the Description editor asks before discarding what was typed; Keep editing keeps it, Discard closes', async () => {
     const h = await at('/board?project=laika-core', stub(ADA));
     try {
       await h.page.locator('.space-create').click();
@@ -215,7 +223,107 @@ void describe('the dialog’s keyboard and shape', () => {
       await doc.click();
       await h.page.keyboard.type('hello');
       await h.page.keyboard.press('Escape');
+      // Something was typed (review round 1): the question, not a silent loss.
+      const ask = h.page.locator('[data-confirm-dialog]');
+      await ask.waitFor({ timeout: 5_000 });
+      assert.match(await ask.innerText(), /Discard this task\?/);
+      await ask.getByRole('button', { name: 'Keep editing' }).click();
+      await ask.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await box.count(), 1, 'Keep editing closed the dialog');
+      assert.match(await doc.innerText(), /hello/);
+
+      await h.page.locator('.ct-title-input').fill('Keep?');
+      await h.page.keyboard.press('Escape');
+      await ask.waitFor({ timeout: 5_000 });
+      await ask.getByRole('button', { name: 'Discard' }).click();
       await box.waitFor({ state: 'detached', timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the scrim asks too when something is typed, and an empty draft closes at once', async () => {
+    const h = await at('/board?project=laika-core', stub(ADA));
+    try {
+      await h.page.locator('.space-create').click();
+      const box = dialog(h);
+      await box.waitFor({ timeout: 5_000 });
+      await h.page.locator('.ct-title-input').fill('Typed');
+      await h.page.locator('.ct-scrim').click({ position: { x: 5, y: 5 } });
+      const ask = h.page.locator('[data-confirm-dialog]');
+      await ask.waitFor({ timeout: 5_000 });
+      await ask.getByRole('button', { name: 'Keep editing' }).click();
+      await ask.waitFor({ state: 'detached', timeout: 5_000 });
+      await h.page.locator('.ct-title-input').fill('');
+      await h.page.locator('.ct-scrim').click({ position: { x: 5, y: 5 } });
+      await box.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await ask.count(), 0, 'an empty draft was asked about');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a change of space closes it: the draft belonged to the space it opened in', async () => {
+    const SHELL = {
+      ...CORE,
+      id: 'laika-shell',
+      slug: 'laika-shell',
+      name: 'Laika Shell',
+      prefix: 'LS',
+    };
+    const extra: ApiStub = {
+      // A lead in both spaces, so the second one offers Create as well.
+      '/api/v1/me': {
+        ...ADA,
+        memberships: [
+          { project_id: 'laika-core', role: 'lead' },
+          { project_id: 'laika-shell', role: 'lead' },
+        ],
+      },
+      '/api/v1/projects': {
+        data: [CORE, SHELL].map((p) => ({
+          ...p,
+          task_counts: { backlog: 0, todo: 1, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+          blocked_count: 0,
+          member_count: 1,
+          members: [{ user_id: 'u1', name: 'Ada Lovelace' }],
+          last_activity_at: 2,
+        })),
+        next_cursor: null,
+      },
+      '/api/v1/projects/laika-shell': SHELL,
+      '/api/v1/projects/laika-shell/tasks': {
+        data: [task(9, { project_id: 'laika-shell', key: 'LS-9' })],
+        next_cursor: null,
+      },
+      '/api/v1/projects/laika-shell/members': {
+        members: [
+          {
+            user_id: 'u1',
+            name: 'Ada Lovelace',
+            email: 'u1@example.com',
+            role: 'lead',
+            created_at: 1,
+          },
+        ],
+      },
+      '/api/v1/projects/laika-shell/sprints': { data: [], next_cursor: null },
+      '/api/v1/projects/laika-shell/activity': { data: [], next_cursor: null },
+      '/api/v1/projects/laika-shell/tags': { tags: [] },
+    };
+    const h = await at('/board?project=laika-core', stub(ADA, extra));
+    try {
+      await h.page.locator('.space-create').click();
+      const box = dialog(h);
+      await box.waitFor({ timeout: 5_000 });
+      await h.page.locator('.ct-title-input').fill('For Core');
+      await navigateInApp(h.page, '/board?project=laika-shell');
+      await box.waitFor({ state: 'detached', timeout: 5_000 });
+      // And the next one is the new space's, from nothing.
+      await h.page.locator('.space-create').waitFor({ timeout: 10_000 });
+      await h.page.locator('.space-create').click();
+      await box.waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.locator('.ct-title-input').inputValue(), '');
     } finally {
       await h.close();
     }

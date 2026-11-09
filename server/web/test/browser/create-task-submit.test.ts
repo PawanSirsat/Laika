@@ -164,6 +164,15 @@ void describe('a refused create', () => {
 
       assert.equal(await d.count(), 1, 'the dialog closed on a refusal');
       assert.equal(await d.locator('.ct-title-input').inputValue(), 'Keep me');
+      // Focus is on the first refused control (review round 1): the Outside
+      // id input — Labels is a group, and a control comes first.
+      assert.equal(
+        await d
+          .getByLabel('Outside id', { exact: true })
+          .evaluate((el) => el === document.activeElement),
+        true,
+        'focus is not on the first refused field',
+      );
       assert.equal(await h.page.locator('[data-created-toast]').count(), 0, 'a toast on a refusal');
       assert.equal(posts(h, '/sprints/s1/tasks').length, 0);
     } finally {
@@ -239,6 +248,57 @@ void describe('a step after the create that fails', () => {
   });
 });
 
+void describe('the link popover inside the dialog', () => {
+  /*
+   * **Not a form inside the form** (review round 1, measured): Apply used to
+   * submit the page as a GET — a reload, the draft gone — and Enter in the
+   * address was read by the dialog as its own submit. Both ways of applying
+   * a link now leave the dialog open with the title kept and no navigation,
+   * and the link reaches the create body.
+   */
+  for (const via of ['Enter', 'Apply'] as const) {
+    void test(`a link applied via ${via} stays in the description; nothing navigates`, async () => {
+      const h = await openDialog();
+      try {
+        let navigations = 0;
+        h.page.on('framenavigated', (frame) => {
+          if (frame === h.page.mainFrame()) navigations += 1;
+        });
+        const d = box(h);
+        await d.locator('.ct-title-input').fill('Keep me');
+        const doc = d.locator('[data-ct-editor="description"] .rich-editor-doc');
+        await doc.waitFor({ timeout: 10_000 });
+        await doc.click();
+        await h.page.keyboard.type('see docs');
+        await h.page.keyboard.press('ControlOrMeta+a');
+        await d.getByRole('button', { name: 'Link', exact: true }).click();
+        const address = d.getByLabel('Link address');
+        await address.fill('https://example.com');
+        if (via === 'Enter') await address.press('Enter');
+        else await d.getByRole('button', { name: 'Apply' }).click();
+        await address.waitFor({ state: 'detached', timeout: 5_000 });
+
+        assert.equal(await d.count(), 1, 'the dialog closed');
+        assert.equal(await d.locator('.ct-title-input').inputValue(), 'Keep me');
+        assert.equal(navigations, 0, 'the page navigated');
+        assert.equal(
+          posts(h, '/projects/laika-core/tasks').length,
+          0,
+          'applying a link created the task',
+        );
+        assert.equal(await doc.locator('a[href="https://example.com"]').count(), 1);
+
+        await d.getByRole('button', { name: 'Create', exact: true }).click();
+        await d.waitFor({ state: 'detached', timeout: 10_000 });
+        const body = posts(h, '/projects/laika-core/tasks')[0]?.body as { description_md?: string };
+        assert.match(body.description_md ?? '', /\[see docs\]\(https:\/\/example\.com\/?\)/);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
 void describe('Create another', () => {
   void test('the dialog stays with status, priority, sprint and assignee kept, the rest cleared, focus on the Title; the next create carries the kept four', async () => {
     const h = await openDialog('/board?project=laika-core', {
@@ -247,6 +307,16 @@ void describe('Create another', () => {
     try {
       const d = box(h);
       await d.locator('.ct-title-input').fill('First');
+      // Enter on the Create another box toggles nothing and sends nothing (review).
+      await d.getByLabel('Create another').focus();
+      await h.page.keyboard.press('Enter');
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(
+        posts(h, '/projects/laika-core/tasks').length,
+        0,
+        'Enter on the checkbox submitted',
+      );
+      assert.equal(await d.getByLabel('Create another').isChecked(), false);
       await pick(d.getByLabel('Priority', { exact: true }), 'p1');
       await pick(d.getByLabel('Status', { exact: true }), 'st-in_progress');
       await pick(d.getByLabel('Assignee', { exact: true }), 'u2');

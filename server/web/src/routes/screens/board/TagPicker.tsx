@@ -25,6 +25,7 @@ export interface TagPickerSavedProps extends TagPickerBase {
   readonly onChange?: undefined;
   readonly known?: undefined;
   readonly heading?: undefined;
+  readonly disabled?: undefined;
 }
 
 /**
@@ -39,6 +40,8 @@ export interface TagPickerControlledProps extends TagPickerBase {
   readonly known?: readonly ProjectTag[] | undefined;
   /** `false` when the caller labels the control itself (a `Field`). */
   readonly heading?: boolean | undefined;
+  /** Drawn but locked — while the form around it is being sent. */
+  readonly disabled?: boolean | undefined;
 }
 
 export type TagPickerProps = TagPickerSavedProps | TagPickerControlledProps;
@@ -67,6 +70,8 @@ export function TagPicker(props: TagPickerProps) {
   const [fetched, setFetched] = useState<readonly ProjectTag[]>([]);
   const known = given ?? fetched;
   const [busy, setBusy] = useState(false);
+  /** Saving, or held by the caller: every control is locked, none goes away. */
+  const locked = busy || props.disabled === true;
   const [error, setError] = useState<string | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   /*
@@ -174,7 +179,7 @@ export function TagPicker(props: TagPickerProps) {
             <button
               type="button"
               className="tagp-remove"
-              disabled={busy}
+              disabled={locked}
               aria-label={`Remove ${tag}`}
               onClick={() => {
                 save(tags.filter((t) => t !== tag));
@@ -190,6 +195,7 @@ export function TagPicker(props: TagPickerProps) {
             <button
               type="button"
               className="tagp-open"
+              disabled={locked}
               onClick={() => {
                 setAdding(true);
               }}
@@ -209,7 +215,7 @@ export function TagPicker(props: TagPickerProps) {
               className="input tagp-input"
               placeholder="Add a tag"
               value={draft}
-              disabled={busy}
+              disabled={locked}
               maxLength={64}
               onChange={(event) => {
                 setDraft(event.target.value);
@@ -232,7 +238,7 @@ export function TagPicker(props: TagPickerProps) {
             <button
               type="button"
               className="tagp-apply"
-              disabled={busy || normaliseTagInput(draft) === ''}
+              disabled={locked || normaliseTagInput(draft) === ''}
               onClick={() => {
                 add(draft);
               }}
@@ -249,7 +255,7 @@ export function TagPicker(props: TagPickerProps) {
                   <button
                     type="button"
                     className="tagp-suggestion"
-                    disabled={busy}
+                    disabled={locked}
                     onClick={() => {
                       add(tag.name);
                     }}

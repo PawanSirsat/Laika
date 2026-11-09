@@ -57,16 +57,22 @@ function Labelled({
 }: {
   readonly label: string;
   readonly error: string | undefined;
-  readonly children: (ids: { readonly labelId: string; readonly errorId: string }) => ReactNode;
+  readonly children: (ids: {
+    readonly labelId: string;
+    /** `aria-describedby` for the control: the error line, once there is one. */
+    readonly describedBy: string | undefined;
+    readonly invalid: boolean;
+  }) => ReactNode;
 }) {
   const labelId = useId();
   const errorId = `${labelId}-error`;
+  const invalid = error !== undefined;
   return (
-    <div className={error === undefined ? 'field' : 'field field-invalid'}>
+    <div className={invalid ? 'field field-invalid' : 'field'}>
       <p className="field-label" id={labelId}>
         {label}
       </p>
-      {children({ labelId, errorId })}
+      {children({ labelId, describedBy: invalid ? errorId : undefined, invalid })}
       <p className="field-error" id={errorId} role="status" aria-live="polite">
         {error}
       </p>
@@ -109,6 +115,8 @@ export function CreateTaskFields({
 }: CreateTaskFieldsProps) {
   const [more, setMore] = useState(false);
   const deliverableSeq = useRef(0);
+  const agentErrorId = useId();
+  const deliverablesErrorId = useId();
   const prio = priorityWords(draft.priority);
 
   const candidates = openTasks(tasks);
@@ -146,19 +154,27 @@ export function CreateTaskFields({
       </Field>
 
       <Labelled label="Description" error={errors.description}>
-        {() => (
-          <LazyRichEditor
-            key={`description-${String(editorKey)}`}
-            mode="embedded"
-            handle={descriptionRef}
-            onEscape={onEscape}
-            value=""
-            label="Description"
-            placeholder="What this is about, for whoever picks it up."
-            people={people}
-            meId={meId}
-            cards={[]}
-          />
+        {({ labelId, describedBy, invalid }) => (
+          <div
+            role="group"
+            aria-labelledby={labelId}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            data-ct-editor="description"
+          >
+            <LazyRichEditor
+              key={`description-${String(editorKey)}`}
+              mode="embedded"
+              handle={descriptionRef}
+              onEscape={onEscape}
+              value=""
+              label="Description"
+              placeholder="What this is about, for whoever picks it up."
+              people={people}
+              meId={meId}
+              cards={[]}
+            />
+          </div>
         )}
       </Labelled>
 
@@ -230,15 +246,21 @@ export function CreateTaskFields({
         <div
           className={errors.agent === undefined ? 'field ct-agent' : 'field ct-agent field-invalid'}
         >
-          <AgentPicker
-            agents={agents ?? []}
-            value={draft.agentId ?? NO_AGENT}
-            disabled={busy || agents === undefined}
-            onChange={(id) => {
-              onChange({ agentId: id === NO_AGENT ? null : id });
-            }}
-          />
-          <p className="field-error" role="status" aria-live="polite">
+          <div
+            role="group"
+            aria-describedby={errors.agent === undefined ? undefined : agentErrorId}
+            aria-invalid={errors.agent === undefined ? undefined : true}
+          >
+            <AgentPicker
+              agents={agents ?? []}
+              value={draft.agentId ?? NO_AGENT}
+              disabled={busy || agents === undefined}
+              onChange={(id) => {
+                onChange({ agentId: id === NO_AGENT ? null : id });
+              }}
+            />
+          </div>
+          <p className="field-error" id={agentErrorId} role="status" aria-live="polite">
             {errors.agent}
           </p>
         </div>
@@ -290,17 +312,27 @@ export function CreateTaskFields({
       </div>
 
       <Labelled label="Labels" error={errors.tags}>
-        {() => (
-          <TagPicker
-            slug={slug}
-            tags={draft.tags}
-            mayEdit={!busy}
-            known={knownTags}
-            heading={false}
-            onChange={(tags) => {
-              onChange({ tags });
-            }}
-          />
+        {({ labelId, describedBy, invalid }) => (
+          <div
+            role="group"
+            aria-labelledby={labelId}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+          >
+            {/* Drawn throughout, locked while the create is in flight: a
+                control that vanished mid-send would read as lost (review). */}
+            <TagPicker
+              slug={slug}
+              tags={draft.tags}
+              mayEdit
+              disabled={busy}
+              known={knownTags}
+              heading={false}
+              onChange={(tags) => {
+                onChange({ tags });
+              }}
+            />
+          </div>
         )}
       </Labelled>
 
@@ -323,19 +355,27 @@ export function CreateTaskFields({
 
         <div className="ct-more-body">
           <Labelled label="Acceptance" error={errors.acceptance}>
-            {() => (
-              <LazyRichEditor
-                key={`acceptance-${String(editorKey)}`}
-                mode="embedded"
-                handle={acceptanceRef}
-                onEscape={onEscape}
-                value=""
-                label="Acceptance"
-                placeholder="How we will know it is done — one criterion per line."
-                people={people}
-                meId={meId}
-                cards={[]}
-              />
+            {({ labelId, describedBy, invalid }) => (
+              <div
+                role="group"
+                aria-labelledby={labelId}
+                aria-describedby={describedBy}
+                aria-invalid={invalid || undefined}
+                data-ct-editor="acceptance"
+              >
+                <LazyRichEditor
+                  key={`acceptance-${String(editorKey)}`}
+                  mode="embedded"
+                  handle={acceptanceRef}
+                  onEscape={onEscape}
+                  value=""
+                  label="Acceptance"
+                  placeholder="How we will know it is done — one criterion per line."
+                  people={people}
+                  meId={meId}
+                  cards={[]}
+                />
+              </div>
             )}
           </Labelled>
 
@@ -350,6 +390,10 @@ export function CreateTaskFields({
                       <input
                         className="input ct-ships-title"
                         aria-label="What it ships"
+                        aria-describedby={
+                          errors.deliverables === undefined ? undefined : deliverablesErrorId
+                        }
+                        aria-invalid={errors.deliverables === undefined ? undefined : true}
                         value={item.title}
                         maxLength={500}
                         disabled={busy}
@@ -394,7 +438,7 @@ export function CreateTaskFields({
                 + Add what it ships
               </button>
               {errors.deliverables !== undefined && (
-                <p className="field-error" role="status">
+                <p className="field-error" id={deliverablesErrorId} role="status">
                   {errors.deliverables}
                 </p>
               )}
