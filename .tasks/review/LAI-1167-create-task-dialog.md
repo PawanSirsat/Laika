@@ -99,9 +99,10 @@ Board card LAIKA-1030 (`external_ref: LAI-1167`).
 
 ## Notes
 
-- Deviation from the plan, stated: the Sprint field is drawn disabled with
-  *Loading…* while the sprints load rather than hidden, so the layout does not
-  jump when they arrive. The Escape path needed an `onEscape` the plan did not
+- Deviation from the plan, stated: the Sprint field is drawn disabled while
+  the sprints load rather than hidden, so the layout does not jump when they
+  arrive (no *Loading…* label: the loading sweep forbids the swap, CI round
+  1). The Escape path needed an `onEscape` the plan did not
   foresee: ProseMirror `preventDefault`s every Escape it is handed
   (`captureKeyDown`), so a form that respects a consumed Escape never sees the
   editor's; the embedded editor reports it instead.
