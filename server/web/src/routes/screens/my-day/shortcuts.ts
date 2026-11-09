@@ -11,6 +11,8 @@
  * or a link presses *that* — it never confirms behind the reader's back.
  */
 
+import { typingIn, type TypingTarget } from '../../../components/typing-in.ts';
+
 export type Shortcut =
   | 'confirm'
   | 'general'
@@ -30,27 +32,15 @@ export interface KeyLike {
   readonly metaKey: boolean;
   readonly ctrlKey: boolean;
   readonly altKey: boolean;
-  readonly target: {
-    readonly tagName?: string;
-    readonly type?: string;
-    readonly isContentEditable?: boolean;
-  } | null;
+  readonly target: TypingTarget | null;
 }
 
 /**
- * Inputs that take a click, not typing. A range is not one of them: its ← →
- * move its own thumb (the Timeline's zoom slider, LAI-891), so every key on
- * it is its own.
+ * Shared with the Create task dialog's `c` (LAI-1167): the rule lives in
+ * `components/typing-in.ts` and is re-exported here for the tests and the
+ * callers that knew it by this name.
  */
-const PRESSED = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'color']);
-
-export function typingIn(target: KeyLike['target']): boolean {
-  if (target === null) return false;
-  if (target.isContentEditable === true) return true;
-  const tag = (target.tagName ?? '').toUpperCase();
-  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  return tag === 'INPUT' && !PRESSED.has((target.type ?? 'text').toLowerCase());
-}
+export { typingIn };
 
 /** Elements whose own ↵ means something. */
 const ACTS_ON_ENTER = new Set(['BUTTON', 'A', 'INPUT', 'SUMMARY', 'SELECT', 'TEXTAREA']);

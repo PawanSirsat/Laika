@@ -7225,3 +7225,44 @@ order; a sort on a column no longer drawn (Spaces and Tasks without people first
 and Drafted with confirmed only) stops ordering the table; on a phone only the name and
 *Total* are drawn, so only they sort; the order is the reader's own and is not stored.
 D-141 item 2 stands: no rank number, score or efficiency figure.
+
+## D-145 — One Create task dialog for a space
+
+**Date:** 2026-11-09 · **Decided by:** Pawan (owner); recorded by build-1167 for Belka.
+Task LAI-1167.
+
+**Decision.** A space has one way to create a task from the browser: a centred **Create
+task** modal over the dimmed space (a full-height sheet on a phone), opened by the space
+bar's *+ Create*, the List view's *Create task* row and the `c` key — not while typing, not
+while another modal is open, and nothing at all for a reader the space does not grant
+`task.create`. Always shown: Title, Description (rich), Status, Priority, Assignee, Agent,
+Sprint, Due date, Labels. Under a *More* fold: Acceptance (rich), What this delivers
+(ships / solves / unlocks), Planned start, Effort, Parent, Blocked by, Outside id. A lane's
+*Add task* keeps its inline composer: title and priority in the column you clicked.
+
+**The create is one `POST`, then the steps that need a task id.** The body carries every
+field the server takes and sends `status_id` only — never `status`, so the pair can never
+disagree (LAI-738). A refused create lays its `422` on the fields it names and keeps the form
+as typed. The sprint (`POST /sprints/:id/tasks`) and each blocker (`POST
+/tasks/:id/dependencies`) follow, one call each; a failure there cannot undo the create, so
+the dialog closes exactly as on success and the toast says *created, but could not add it to
+Sprint 4* with the server's sentence and *Open*. The form is never left filled after a task
+exists — that invites the same task twice. *Create another* keeps status, priority, sprint
+and assignee and clears the rest; focus returns to the Title. Closing a dialog with a title,
+description or acceptance typed — by Escape, the scrim, × or Cancel — asks *Discard this
+task?* first; an empty one closes at once. A change of space closes it: the draft belonged to
+the space it opened in.
+
+**Not in the URL.** The task drawer is content and lives in `?task=`; the dialog is an
+action. A half-typed form cannot survive a refresh, and Back closing a filled form is a trap.
+`?new=task`, the address the old *+ Create* navigated to, stays honoured as a way in and is
+then removed from the address with a replace.
+
+**A toast of its own, for now.** The *created* pill is built beside My day's toast
+(`my-day/Toast.tsx`) in the same recipe, not shared: that one is sticky inside the My day
+column and carries Undo; this one is fixed to the window because the dialog it reports on has
+closed and the view beneath may be any of the space's. Unifying the two is a later task.
+
+**The server is unchanged.** `POST /projects/:slug/tasks` already took every field; the
+browser simply never offered them.
+

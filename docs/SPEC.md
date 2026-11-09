@@ -6662,6 +6662,21 @@ the lead names. An empty status is still a column.
   its status — and Alt with an arrow key does the same from the keyboard. The
   card moves on drop and returns if the server refuses. A new task lands at the
   bottom of its lane. A reader who may not write tasks cannot drag one.
+- **Creating a task is one dialog** (D-145): *+ Create* in the space bar, the
+  List's *Create task* row and the `c` key (not while typing, not over another
+  modal, nothing for a reader without `task.create`) open a centred **Create
+  task** modal over the dimmed space — a full-height sheet on a phone. Always:
+  Title, Description (rich), Status, Priority, Assignee, Agent, Sprint, Due
+  date, Labels; under *More*: Acceptance (rich), What this delivers, Planned
+  start, Effort, Parent, Blocked by, Outside id. One `POST` carries everything
+  the body takes, with `status_id` and never `status`; the sprint and the
+  blockers are set after it, one call each, and a failure there says *created,
+  but…* with the server's sentence and *Open* — the task exists, so the dialog
+  closes as on success. A refused create lays its `422` on the fields it names
+  and keeps the form. *Create another* keeps status, priority, sprint and
+  assignee. `?new=task` is honoured as a way in and then removed from the
+  address; the dialog itself is not in the URL. A lane's *Add task* keeps its
+  inline composer.
 - **Live changes apply in place** (D-071): a stream frame, Refresh or drawer
   edit merges into the board on screen and never swaps it for a skeleton. A
   card that changes place glides there in 200ms; one someone else changed
@@ -6803,7 +6818,9 @@ anything missing sends the task back.
   with counts; cards showing key, title, assignee, priority, **blocked / ready
   markers**, subtasks and a due date that is today or past; drag between columns issuing a real status call with snap-back
   on rejection; filters by assignee/priority/ready; live update over SSE;
-  agent-authored badge; empty column states.
+  agent-authored badge; empty column states; **one Create task dialog**
+  (D-145) from *+ Create*, the List's *Create task* row and `c`, with every
+  field the create takes and the sprint and blockers set after.
 - **Task detail** — laid out as a Jira issue view (D-066), restyled to the
   owner's 2026-11-04 design (D-129, LAI-1117) with nothing below removed: a
   header with the breadcrumb `↳ PARENT-KEY / KEY` (the parent key opens the

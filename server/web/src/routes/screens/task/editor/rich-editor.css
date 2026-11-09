@@ -168,6 +168,19 @@
   min-height: 2.75rem;
 }
 
+/*
+ * A field of a form (the Create task dialog, LAI-1167): flush with the
+ * fields beside it rather than bleeding into the panel's gutter, and tall
+ * enough at rest to read as a place to write.
+ */
+.rich-editor-embedded {
+  margin: 0;
+}
+
+.rich-editor-embedded .rich-editor-doc {
+  min-height: 5rem;
+}
+
 .rich-editor-doc pre {
   white-space: pre-wrap;
 }
