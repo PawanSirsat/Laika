@@ -7321,3 +7321,13 @@ open unlisted notes: a number about the organisation, not about the reader.
 **What this does not decide.** The dialog's exact keys and the hand-offs section's shape
 (LAI-1169's task file holds them); whether a space admin's accept should need a second
 pair of eyes on the assignee's own agent; a server-side *mine* filter.
+
+**Addendum, LAI-1169 (2026-11-10).** Items 3, 4 and 5 landed. The badge's hand-offs
+part is **`needs_approval` alone** — `handoffsWaiting` reads one count — and the Review
+tab's count is the same sum the sidebar shows for it: *for you to decide* plus the
+hand-offs needing approval, so the tabs still add up to the badge. `?tab=handoffs` is an
+alias (`inboxAlias`) to `?tab=review&view=handoffs`, applied in place. The dialog's keys
+are `j`/`↓`, `k`/`↑`, `a`, `s`, Escape, read only inside the dialog's own box (DOM
+containment, since the Send back dialog is portaled and React would bubble its keys
+through); the *Needs your approval* section, once drawn, stays for the page's life so
+approving the last offer does not unmount the row the reader is on.
