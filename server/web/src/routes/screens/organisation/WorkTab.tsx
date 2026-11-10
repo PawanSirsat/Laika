@@ -3,10 +3,12 @@ import type { MeProfile } from '../../../api/me.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { useGates } from '../../../api/permissions.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
-import { listSprints, type Sprint } from '../../../api/sprints.ts';
+import { listSprints, sprintLabelsOf, type Sprint } from '../../../api/sprints.ts';
+import { listStatuses, type ProjectStatus } from '../../../api/statuses.ts';
 import {
   getTasksSummary,
   listAllTasks,
+  type Member,
   type TasksSummary,
   type TaskSummary,
 } from '../../../api/tasks.ts';
@@ -18,6 +20,17 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
+import { BulkBar } from '../list/BulkBar.tsx';
+import { runBulkAction, type BulkAction, type BulkRun } from '../list/list-bulk.ts';
+import {
+  effectiveSelection,
+  NO_SELECTION,
+  pageState,
+  selectAll,
+  toggleOne,
+  togglePage,
+} from '../list/list-select.ts';
+import { bulkScope } from './work-bulk.ts';
 import {
   allTasksFilter,
   PAGE_SIZES,
@@ -97,6 +110,14 @@ type Count =
  *
  * The filters live in the URL, so a filtered view is a link. A row opens the
  * task in its own space's drawer.
+ *
+ * **Rows select, and the List's bar acts on them** (D-147, LAI-1170): a
+ * checkbox on every row the reader may change (`task.write` in its space —
+ * absent otherwise, as the List's are for a viewer), select-all in the head,
+ * and `BulkBar` over the card's foot once anything is selected. One request
+ * per task, the same run as the List's (`runBulkAction`). *Status* and
+ * *Sprint* are a space's own, so they are offered only within one space
+ * (`bulkScope`); Priority, Assignee and Cancel always.
  */
 export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkTabProps) {
   const filter = useMemo(() => readWorkFilter(params), [params]);
@@ -189,28 +210,96 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
       controller.abort();
     };
   }, []);
+  const spacesById = useMemo(
+    () => new Map(spaces.map((s) => [s.id, { slug: s.slug, name: s.name }])),
+    [spaces],
+  );
+  const tasks = useMemo(() => (load.status === 'ready' ? load.tasks : []), [load]);
+
+  /*
+   * **The selection belongs to one page of one query** (LAI-1170), as the
+   * List's belongs to one space (`BoardScreen`): a different filter, size or
+   * page is a different set of rows, and a selection made on the last is
+   * simply not this one's. Held with the run, so the report outlives the
+   * refetch the action ends with.
+   */
+  const pageKey = `${queryKey}#${String(pageIndex)}`;
+  const [selection, setSelection] = useState<{
+    readonly key: string;
+    readonly ids: ReadonlySet<string>;
+    readonly run: BulkRun | undefined;
+  }>({ key: pageKey, ids: NO_SELECTION, run: undefined });
+  const selected = selection.key === pageKey ? selection.ids : NO_SELECTION;
+  const bulkRun = selection.key === pageKey ? selection.run : undefined;
+  const select = (ids: ReadonlySet<string>): void => {
+    setSelection((s) => ({ key: pageKey, ids, run: s.key === pageKey ? s.run : undefined }));
+  };
+  const setRun = (run: BulkRun | undefined): void => {
+    setSelection((s) => ({ key: pageKey, ids: s.key === pageKey ? s.ids : NO_SELECTION, run }));
+  };
+
+  /*
+   * The rows the reader may change: `task.write` in each row's own space,
+   * the server's answer (`GET /permissions`), never the org role. A row they
+   * may not change has no checkbox — absent, not disabled (LAI-082).
+   */
+  const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const writable = useMemo(
+    () => new Set(tasks.filter((t) => gates.project(t.project_id, 'task.write')).map((t) => t.id)),
+    [tasks, gates],
+  );
+  const writableIds = tasks.filter((t) => writable.has(t.id)).map((t) => t.id);
+  const effective = effectiveSelection(
+    selected,
+    tasks.filter((t) => writable.has(t.id)),
+  );
+  const headState = pageState(effective, writableIds);
+  const chosen = [...effective].flatMap((id) => {
+    const task = byId.get(id);
+    return task === undefined ? [] : [task];
+  });
+
+  /*
+   * Which space *Status* and *Sprint* would act in (`bulkScope`): the
+   * `?space=` filter, or the one space every selected task is in. Its
+   * statuses are read once per space, as its sprints are below.
+   */
+  const scope = bulkScope(chosen, filter.space, spacesById);
+  const scopeSlug = scope?.slug;
+  const [statusesBySpace, setStatusesBySpace] = useState<
+    ReadonlyMap<string, readonly ProjectStatus[]>
+  >(() => new Map());
+  const askedStatuses = useRef(new Set<string>());
+  useEffect(() => {
+    if (scopeSlug === undefined || askedStatuses.current.has(scopeSlug)) return;
+    askedStatuses.current.add(scopeSlug);
+    listStatuses(scopeSlug)
+      .then(({ data }) => {
+        setStatusesBySpace((current) => new Map(current).set(scopeSlug, data));
+      })
+      .catch(() => undefined);
+  }, [scopeSlug]);
 
   /*
    * Sprint names, per space, read only for spaces that are shown with a
-   * sprint or chosen in the filter — a sprint id means nothing without its
-   * space, and most spaces on a page need none.
+   * sprint, chosen in the filter, or the one space a selection is in (its
+   * *Sprint* menu, LAI-1170) — a sprint id means nothing without its space,
+   * and most spaces on a page need none.
    */
   const [sprintsBySpace, setSprintsBySpace] = useState<ReadonlyMap<string, readonly Sprint[]>>(
     () => new Map(),
   );
   const asked = useRef(new Set<string>());
-  const slugById = useMemo(() => new Map(spaces.map((s) => [s.id, s.slug])), [spaces]);
   const wanted = useMemo(() => {
     const slugs = new Set<string>();
     if (filter.space !== undefined) slugs.add(filter.space);
-    if (load.status === 'ready') {
-      for (const task of load.tasks) {
-        const slug = task.sprint_id === null ? undefined : slugById.get(task.project_id);
-        if (slug !== undefined) slugs.add(slug);
-      }
+    if (scopeSlug !== undefined) slugs.add(scopeSlug);
+    for (const task of tasks) {
+      const slug = task.sprint_id === null ? undefined : spacesById.get(task.project_id)?.slug;
+      if (slug !== undefined) slugs.add(slug);
     }
     return [...slugs].filter((slug) => !asked.current.has(slug));
-  }, [filter.space, load, slugById]);
+  }, [filter.space, scopeSlug, tasks, spacesById]);
   useEffect(() => {
     for (const slug of wanted) {
       asked.current.add(slug);
@@ -221,19 +310,46 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
         .catch(() => undefined);
     }
   }, [wanted]);
+  const scopeSprints = scope === undefined ? undefined : sprintsBySpace.get(scope.slug);
+  const sprintLabels = useMemo(() => sprintLabelsOf(scopeSprints ?? []), [scopeSprints]);
+  /** The Assignee menu: the organisation's active people, as `Member`s. */
+  const members = useMemo(
+    () =>
+      new Map<string, Member>(
+        people
+          .filter((p) => p.is_active)
+          .map((p) => [
+            p.id,
+            {
+              user_id: p.id,
+              name: p.name,
+              email: p.email,
+              role: p.org_role,
+              created_at: p.created_at,
+            },
+          ]),
+      ),
+    [people],
+  );
+
+  const runBulk = (action: BulkAction): void => {
+    // One request per task, in selection order, the report by key — then the
+    // list and the figures are read again, so every row is the server's.
+    void runBulkAction(action, chosen, setRun).then(() => {
+      setAttempt((n) => n + 1);
+    });
+  };
 
   const lookups = useMemo(
     () => ({
-      spaces: new Map(spaces.map((s) => [s.id, { slug: s.slug, name: s.name }])),
+      spaces: spacesById,
       people: new Map(people.map((p) => [p.id, p.name])),
       sprints: new Map([...sprintsBySpace.values()].flat().map((s) => [s.id, s.name])),
     }),
-    [spaces, people, sprintsBySpace],
+    [spacesById, people, sprintsBySpace],
   );
-  const rows = useMemo(
-    () => (load.status === 'ready' ? workRows(load.tasks, lookups) : []),
-    [load, lookups],
-  );
+  const rows = useMemo(() => workRows(tasks, lookups), [tasks, lookups]);
+  const selectable = writableIds.length > 0;
 
   const set = (change: Parameters<typeof withWorkFilter>[1]): void => {
     setParams(withWorkFilter(params, change));
@@ -270,7 +386,7 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
   const seesPeople = gates.org('people.analytics.read');
 
   return (
-    <div className="work">
+    <div className={selectable ? 'work work-selectable' : 'work'}>
       <p className="work-lead">
         Everyone’s work, across every space you can read — oldest change first.
       </p>
@@ -378,85 +494,161 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
         )
       ) : (
         <>
-          <div className="work-head" aria-hidden="true">
-            <span>Key</span>
-            <span>Title</span>
-            <span>Space</span>
-            <span>Status</span>
-            <span>Assignee</span>
-            <span>Sprint</span>
-            <span>Updated</span>
+          <div className="work-head">
+            {selectable && (
+              <span className="work-check work-check-all">
+                <input
+                  type="checkbox"
+                  className="list-checkbox"
+                  aria-label="Select every task on this page you may change"
+                  checked={headState === 'all'}
+                  // `indeterminate` is a property, not an attribute, so React
+                  // has no prop for it; the ref sets it on every render.
+                  ref={(box) => {
+                    if (box !== null) box.indeterminate = headState === 'some';
+                  }}
+                  onChange={() => {
+                    select(togglePage(effective, writableIds));
+                  }}
+                />
+              </span>
+            )}
+            <span className="work-head-labels" aria-hidden="true">
+              <span>Key</span>
+              <span>Title</span>
+              <span>Space</span>
+              <span>Status</span>
+              <span>Assignee</span>
+              <span>Sprint</span>
+              <span>Updated</span>
+            </span>
           </div>
-          <ul className="work-list" aria-label="Tasks">
-            {rows.map((row) => {
-              const updated = timeLabel(row.updatedAt, now);
-              return (
-                <li key={row.id} className="work-item">
-                  {/*
+          {/*
+            The card and what floats over it (LAI-1170): the bar is positioned
+            from this box's foot, as the List's is from `.list-card`, and the
+            room at the end keeps the last row clear of it.
+          */}
+          <div className="work-card">
+            <ul className="work-list" aria-label="Tasks">
+              {rows.map((row) => {
+                const updated = timeLabel(row.updatedAt, now);
+                const isSelected = effective.has(row.id);
+                return (
+                  <li key={row.id} className="work-item">
+                    {/*
                     The row opens its task — the title's button covers it
                     (`::after`) — and the assignee's name is its own link to
                     their profile, above that, for a reader who may open it
-                    (LAI-959): a link cannot sit inside a button.
+                    (LAI-959): a link cannot sit inside a button. The checkbox
+                    sits above it the same way (LAI-1170).
                   */}
-                  <div className="work-row">
-                    <span className="work-key">{row.key}</span>
-                    <button
-                      type="button"
-                      className="work-title work-open"
-                      data-task-id={row.id}
-                      onClick={() => {
-                        onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
-                      }}
+                    <div
+                      className={isSelected ? 'work-row work-row-selected' : 'work-row'}
+                      aria-selected={writable.has(row.id) ? isSelected : undefined}
                     >
-                      {row.title}
-                    </button>
-                    <span className="work-meta">
-                      <span className="work-space">
-                        {row.space === undefined ? (
-                          '—'
-                        ) : (
-                          <>
-                            <SpaceBadge slug={row.space.slug} name={row.space.name} />
-                            <span className="work-space-name">{row.space.name}</span>
-                          </>
-                        )}
-                      </span>
-                      <span className="work-status" data-status={row.status}>
-                        {row.statusName}
-                      </span>
-                      <span
-                        className={
-                          row.assignee === 'Unassigned'
-                            ? 'work-assignee work-muted'
-                            : 'work-assignee'
-                        }
+                      {selectable && (
+                        <span className="work-check">
+                          {writable.has(row.id) && (
+                            <input
+                              type="checkbox"
+                              className="list-checkbox"
+                              aria-label={`Select ${row.key}`}
+                              checked={isSelected}
+                              onChange={() => {
+                                select(toggleOne(effective, row.id));
+                              }}
+                            />
+                          )}
+                        </span>
+                      )}
+                      <span className="work-key">{row.key}</span>
+                      <button
+                        type="button"
+                        className="work-title work-open"
+                        data-task-id={row.id}
+                        onClick={() => {
+                          onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
+                        }}
                       >
-                        {row.assigneeId === null ? (
-                          row.assignee
-                        ) : (
-                          <PersonLink
-                            userId={row.assigneeId}
-                            className="work-person"
-                            label={`${row.assignee}’s profile`}
-                          >
-                            {row.assignee}
-                          </PersonLink>
-                        )}
+                        {row.title}
+                      </button>
+                      <span className="work-meta">
+                        <span className="work-space">
+                          {row.space === undefined ? (
+                            '—'
+                          ) : (
+                            <>
+                              <SpaceBadge slug={row.space.slug} name={row.space.name} />
+                              <span className="work-space-name">{row.space.name}</span>
+                            </>
+                          )}
+                        </span>
+                        <span className="work-status" data-status={row.status}>
+                          {row.statusName}
+                        </span>
+                        <span
+                          className={
+                            row.assignee === 'Unassigned'
+                              ? 'work-assignee work-muted'
+                              : 'work-assignee'
+                          }
+                        >
+                          {row.assigneeId === null ? (
+                            row.assignee
+                          ) : (
+                            <PersonLink
+                              userId={row.assigneeId}
+                              className="work-person"
+                              label={`${row.assignee}’s profile`}
+                            >
+                              {row.assignee}
+                            </PersonLink>
+                          )}
+                        </span>
+                        <span
+                          className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}
+                        >
+                          {row.sprint ?? 'No sprint'}
+                        </span>
+                        <time className="work-updated" dateTime={updated.iso} title={updated.full}>
+                          {updated.text}
+                        </time>
                       </span>
-                      <span
-                        className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}
-                      >
-                        {row.sprint ?? 'No sprint'}
-                      </span>
-                      <time className="work-updated" dateTime={updated.iso} title={updated.full}>
-                        {updated.text}
-                      </time>
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {effective.size > 0 && <div className="list-bulk-room" aria-hidden="true" />}
+            {effective.size > 0 && (
+              <BulkBar
+                count={effective.size}
+                total={writableIds.length}
+                onSelectAll={() => {
+                  select(selectAll(tasks.filter((t) => writable.has(t.id))));
+                }}
+                onClear={() => {
+                  select(NO_SELECTION);
+                  setRun(undefined);
+                }}
+                // A space's own, so only within one space (`bulkScope`): held
+                // with a title otherwise, and absent while that space's
+                // statuses are still on their way.
+                statuses={scope === undefined ? undefined : statusesBySpace.get(scope.slug)}
+                members={members}
+                sprints={scopeSprints}
+                sprintLabels={sprintLabels}
+                maySetSprint={
+                  scope === undefined ? true : gates.project(scope.projectId, 'task.assign_sprint')
+                }
+                run={bulkRun}
+                onAction={runBulk}
+                onDismissReport={() => {
+                  setRun(undefined);
+                }}
+              />
+            )}
+          </div>
         </>
       )}
 

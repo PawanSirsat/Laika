@@ -51,6 +51,48 @@
   --work-columns: 6rem minmax(0, 1fr) 9rem 7.5rem 9rem 8rem 8.5rem;
 }
 
+/* ---------------------------------------------------- selecting (LAI-1170) */
+
+/*
+ * A checkbox column leads the rows once any row may be changed by this
+ * reader; a page of rows they may only read keeps the seven columns.
+ */
+.work-selectable {
+  --work-columns: 2.25rem 6rem minmax(0, 1fr) 9rem 7.5rem 9rem 8rem 8.5rem;
+}
+
+/* The head's labels are grid cells of the head; the wrapper is for `aria-hidden`. */
+.work-head-labels {
+  display: contents;
+}
+
+/* Above the title button's cover (`.work-open::after`), as the profile link is. */
+.work-check {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.25rem;
+}
+
+/*
+ * The card the bar floats over: `BulkBar` reads these as it reads the
+ * List's (`.list-card`) — no Create row under it, and the first frame's room
+ * before the bar has measured itself.
+ */
+.work-card {
+  position: relative;
+  display: grid;
+  --list-create-h: 0px;
+  --list-bulk-room: 4.25rem;
+}
+
+.work-row-selected,
+.work-row-selected:hover {
+  background: var(--accent-bg);
+}
+
 .work-head,
 .work-row {
   display: grid;
@@ -406,6 +448,10 @@ button.work-person-chip:hover {
     grid-template-columns: auto minmax(0, 1fr);
     row-gap: var(--space-1);
     padding-block: var(--space-3);
+  }
+
+  .work-selectable .work-row {
+    grid-template-columns: auto auto minmax(0, 1fr);
   }
 
   .work-meta {

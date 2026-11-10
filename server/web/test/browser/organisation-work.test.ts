@@ -11,6 +11,8 @@
  */
 
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { LAIKA, ONROUTE, task } from './capacity-org.ts';
@@ -23,8 +25,22 @@ import {
   until,
   type ApiStub,
   type Harness,
+  type StubCall,
   watchFor,
 } from './harness.ts';
+
+/** Set `LAIKA_SHOTS` to a directory to keep a picture of the tab with its bar. */
+const SHOTS = process.env.LAIKA_SHOTS;
+
+async function shoot(page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return;
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+}
+
+/** `innerText` breaks a flex row's children onto lines; one space is what a reader sees. */
+const text = async (locator: { innerText: () => Promise<string> }) =>
+  (await locator.innerText()).replace(/\s+/g, ' ').trim();
 
 const NOW = Date.now();
 
@@ -882,6 +898,250 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       assert.equal(await h.page.locator('.work-range').innerText(), '1–3');
     } finally {
       await h.close();
+    }
+  });
+});
+
+/*
+ * Selecting rows and acting on them (D-147, LAI-1170): the List's checkboxes
+ * and bar, on everyone's work. Every assertion is on a request the page made
+ * or a word on the screen — what a bulk action *sent*, which rows could be
+ * selected at all, and when *Status* was offered.
+ */
+
+/** Laika's columns, named as a project names them, so a menu item is unmistakably this space's. */
+const LAIKA_STATUSES = {
+  data: [
+    ['backlog', 'Backlog'],
+    ['todo', 'To do'],
+    ['in_progress', 'Building'],
+    ['review', 'QA'],
+    ['done', 'Done'],
+    ['cancelled', 'Cancelled'],
+  ].map(([category, name], position) => ({
+    id: `st-${String(category)}`,
+    project_id: 'p1',
+    name,
+    category,
+    position,
+    hidden: false,
+    created_at: 1,
+    task_count: 0,
+  })),
+};
+
+/** `PATCH /tasks/:id` for every served task: LAI-12 refuses, the rest answer the task as asked. */
+const PATCH_ROUTES: Record<string, unknown> = Object.fromEntries(
+  [...PAGE_ONE, ...PAGE_TWO].map((served) => [
+    `/api/v1/tasks/${served.id}`,
+    (call: StubCall) =>
+      served.key === 'LAI-12'
+        ? refuse(422, 'unprocessable', 'A task in review keeps its priority')
+        : { ...served, ...(call.body as Record<string, unknown>) },
+  ]),
+);
+
+const BULK_STUB: ApiStub = {
+  ...OWNER_STUB,
+  '/api/v1/projects/laika/statuses': LAIKA_STATUSES,
+  ...PATCH_ROUTES,
+};
+
+const check = (page: Page, key: string) => page.getByLabel(`Select ${key}`, { exact: true });
+
+void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
+  for (const theme of ['Light', 'Dark']) {
+    for (const width of [1440, 390]) {
+      void test(`${theme} at ${String(width)}: two rows across two spaces selected, the bar up, Status held`, async () => {
+        const h = await openWork('/organisation?tab=work', BULK_STUB, width);
+        try {
+          await setTheme(h.page, theme);
+          await keys(h.page);
+          // The gates settle a beat after the rows: the checkboxes come then.
+          await check(h.page, 'ONR-356').waitFor({ timeout: 10_000 });
+          await check(h.page, 'ONR-356').check();
+          await check(h.page, 'LAI-12').check();
+          await h.page.locator('.list-bulk').waitFor({ timeout: 10_000 });
+          assert.equal(await text(h.page.locator('.list-bulk-count')), '2 selected');
+          const status = h.page.locator('.list-bulk-action', { hasText: 'Status' });
+          assert.ok(await status.isDisabled(), 'Status offered across two spaces');
+          assert.equal(await status.getAttribute('title'), 'Choose one space to change status');
+          assert.ok(
+            (await h.page.locator('.work-row').first().getAttribute('class'))?.includes(
+              'work-row-selected',
+            ),
+            'the selected row is not tinted',
+          );
+          const overflow = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          );
+          assert.ok(overflow <= 0, `the page scrolls sideways by ${String(overflow)}px`);
+          // The bar floats over the card's foot, inside it, never past its edge.
+          const bar = await h.page.locator('.list-bulk').boundingBox();
+          const card = await h.page.locator('.work-card').boundingBox();
+          assert.ok(bar !== null && card !== null);
+          assert.ok(bar.x >= card.x - 0.5 && bar.x + bar.width <= card.x + card.width + 0.5);
+          // The rows sit below the figures on a phone: the picture is of the bar.
+          await h.page.locator('.list-bulk').scrollIntoViewIfNeeded();
+          await shoot(h.page, `work-tab-bar-${theme.toLowerCase()}-${String(width)}`);
+        } finally {
+          await h.close();
+        }
+      });
+    }
+  }
+
+  void test('select-all takes the rows the reader may change; Priority is one PATCH each, and names the refusal', async () => {
+    const h = await openWork('/organisation?tab=work', BULK_STUB);
+    try {
+      await keys(h.page);
+      const all = h.page.getByLabel('Select every task on this page you may change', {
+        exact: true,
+      });
+      await all.waitFor({ timeout: 10_000 });
+      await all.check();
+      assert.equal(await text(h.page.locator('.list-bulk-count')), '3 selected');
+      // Every row on the page is selected, so there is nothing more to select.
+      assert.equal(await h.page.locator('.list-bulk-all').count(), 0);
+
+      const before = h.calls.length;
+      await h.page.locator('.list-bulk-action', { hasText: 'Priority' }).click();
+      await h.page.locator('.list-menu-item', { hasText: 'P1 — highest' }).click();
+
+      const summary = h.page.locator('.list-bulk-summary');
+      await summary.waitFor({ timeout: 10_000 });
+      assert.equal((await text(summary)).replace(' Dismiss', ''), '2 updated, 1 refused');
+      const refusals = h.page.locator('.list-bulk-refusal');
+      await until(
+        async () =>
+          (await refusals.allInnerTexts()).join('|') ===
+          'LAI-12 — A task in review keeps its priority',
+      );
+      assert.deepEqual(await refusals.allInnerTexts(), [
+        'LAI-12 — A task in review keeps its priority',
+      ]);
+
+      // One request per task, in the order the rows are served.
+      const patches = h.calls
+        .slice(before)
+        .filter((c) => c.method === 'PATCH')
+        .map((c) => [c.path, c.body]);
+      assert.deepEqual(patches, [
+        ['/api/v1/tasks/t6', { priority: 'p1' }],
+        ['/api/v1/tasks/t2', { priority: 'p1' }],
+        ['/api/v1/tasks/t3', { priority: 'p1' }],
+      ]);
+
+      // The list and the figures were read again, so every row is the server's.
+      await until(() => reads(h).length >= 2 && counts(h).length >= 2);
+      // The selection and the report both survived that reload.
+      assert.equal(await text(h.page.locator('.list-bulk-count')), '3 selected');
+      await h.page.locator('.list-bulk-dismiss').click();
+      assert.equal(await summary.count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Status is offered within one space: by narrowing the selection, or by the space filter', async () => {
+    const h = await openWork('/organisation?tab=work', BULK_STUB);
+    try {
+      await keys(h.page);
+      await check(h.page, 'ONR-356').waitFor({ timeout: 10_000 });
+      await check(h.page, 'ONR-356').check();
+      await check(h.page, 'LAI-12').check();
+      const status = h.page.locator('.list-bulk-action', { hasText: 'Status' });
+      await status.waitFor({ timeout: 10_000 });
+      assert.ok(await status.isDisabled());
+      const statusReads = () =>
+        h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/projects/laika/statuses');
+      assert.equal(statusReads().length, 0, 'statuses read before there was a space to read');
+
+      // Only Laika's row left: that space's columns, read once.
+      await check(h.page, 'ONR-356').uncheck();
+      await until(async () => !(await status.isDisabled()));
+      assert.equal(await status.getAttribute('title'), null);
+      await until(() => statusReads().length === 1);
+      await status.click();
+      const items = h.page.locator('.list-menu-item');
+      await items.first().waitFor({ timeout: 10_000 });
+      assert.ok(
+        (await items.allInnerTexts()).some((t) => t.includes('QA')),
+        'not Laika’s columns',
+      );
+      await h.page.keyboard.press('Escape');
+
+      // Back across two spaces: held again.
+      await check(h.page, 'ONR-356').check();
+      await until(() => status.isDisabled());
+      assert.equal(statusReads().length, 1, 'read again for the same space');
+    } finally {
+      await h.close();
+    }
+
+    // The filter names the space before anything is selected.
+    const filtered = await openWork('/organisation?tab=work&space=laika', {
+      ...BULK_STUB,
+      '/api/v1/tasks?fields=slim&project=laika': {
+        data: [PAGE_ONE[1], PAGE_ONE[2]],
+        next_cursor: null,
+      },
+    });
+    try {
+      await keys(filtered.page);
+      await check(filtered.page, 'LAI-15').waitFor({ timeout: 10_000 });
+      await check(filtered.page, 'LAI-15').check();
+      const status = filtered.page.locator('.list-bulk-action', { hasText: 'Status' });
+      await status.waitFor({ timeout: 10_000 });
+      await until(async () => !(await status.isDisabled()));
+      assert.equal(
+        filtered.calls.filter((c) => c.path === '/api/v1/projects/laika/statuses').length,
+        1,
+      );
+    } finally {
+      await filtered.close();
+    }
+  });
+
+  void test('a row the reader may only read has no checkbox; a reader with none has no column', async () => {
+    // A member of Laika who may only read Onroute: both spaces are served,
+    // and only Laika's rows can be selected.
+    const reader = {
+      ...MEMBER,
+      memberships: [...MEMBER.memberships, { project_id: 'p2', role: 'viewer' }],
+    };
+    const h = await openWork('/organisation?tab=work', {
+      ...shell(reader),
+      '/api/v1/projects': { data: [LAIKA, ONROUTE], next_cursor: null },
+      '/api/v1/tasks?fields=slim': { data: PAGE_ONE, next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      await check(h.page, 'LAI-12').waitFor({ timeout: 10_000 });
+      assert.equal(await check(h.page, 'ONR-356').count(), 0, 'a viewer’s row can be selected');
+      assert.equal(await h.page.locator('.work-row input[type="checkbox"]').count(), 2);
+      // Select-all takes the two it may, and says so.
+      await h.page
+        .getByLabel('Select every task on this page you may change', { exact: true })
+        .check();
+      assert.equal(await text(h.page.locator('.list-bulk-count')), '2 selected');
+    } finally {
+      await h.close();
+    }
+
+    // A viewer everywhere: no checkbox, no head checkbox, no column.
+    const viewer = await openWork('/organisation?tab=work', {
+      ...shell({ ...MEMBER, memberships: [{ project_id: 'p1', role: 'viewer' }] }),
+      '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
+    });
+    try {
+      await keys(viewer.page);
+      await until(() => viewer.calls.some((c) => c.path === '/api/v1/permissions'));
+      await viewer.page.waitForTimeout(300);
+      assert.equal(await viewer.page.locator('.work input[type="checkbox"]').count(), 0);
+      assert.equal(await viewer.page.locator('.work-selectable').count(), 0);
+    } finally {
+      await viewer.close();
     }
   });
 });
