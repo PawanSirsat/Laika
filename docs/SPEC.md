@@ -6745,12 +6745,12 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **My day** and **Inbox** (its count is Review's waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (everyone, their own — D-139; only owners and admins open someone else's), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
+| the sidebar | **My day** and **Inbox** (its count is Review's *for you to decide* — the queue rows the reader may accept or send back, D-146 — plus Hand-offs' waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (everyone, their own — D-139; only owners and admins open someone else's), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
 | the icon rail | a toggle in the sidebar's head collapses it to icons — each entry's icon, its count on the icon's corner, its name in a tooltip on hover and keyboard focus — remembered per browser; automatic between the phone's off-canvas width and a laptop's; never on a phone, where the sidebar is off-canvas | **LAI-796** |
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer; `min(1280px, 94vw)` wide since the redesign (D-129) | D-059.2, amended by **D-063**, width by **D-129** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept — D-146), *Hand-offs* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-507** |
 | Organisation | four tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **People** (members and invites), **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins) | **LAI-796** |
 
@@ -7097,22 +7097,41 @@ anything missing sends the task back.
   loading skeleton is the final layout; no matches has its own state. With
   `presence_enabled = 0` it says so, keeps the workload and draws no status.
   **No unlisted notes on this screen** — they are on their own page.
-- **Inbox** (`/inbox`, LAI-796) — *Review* and *Unlisted work* as tabs, each
-  with its count; Unlisted work only for owners and admins. The sidebar's
-  Inbox count is the two added.
-- **Review** (Inbox's first tab, `/inbox?tab=review`, everyone signed in, D-082) — the queue of tasks in a
-  review status on every project the reader can act on, **oldest waiting
-  first**: key, title, project, assignee, the agent that finished it, time
-  waiting, the proof in brief (commits, PR, tests passed and failed, or *no
-  proof*) and the round. A summary card of tiles — waiting, oldest, failing
-  tests, no proof — with an (i). Filters: project, assignee, *Failing tests*,
-  *No proof*, *CI failed*, *CI confirmed* (D-083). Each row's proof in brief
-  carries the CI result when GitHub reported one. A row opens the full proof (the task panel's Proof section) with
-  **Accept** and **Send back…**, the second asking for a required reason in a
-  dialog; both are disabled, saying why, for a reader who may not decide.
-  *Open on board* opens the task. The waiting count is on the tab and in the
-  sidebar's Inbox count. There is no organisation-wide stream, so the page re-reads
-  every 20 seconds, when the tab returns and after each decision.
+- **Inbox** (`/inbox`, LAI-796) — *Review*, *Hand-offs* (LAI-550) and
+  *Unlisted work* as tabs, each with its count; Unlisted work only for owners
+  and admins. The sidebar's Inbox count is the three added, Review's being
+  its *for you to decide* count (D-146).
+- **Review** (Inbox's first tab, `/inbox?tab=review`, everyone signed in, D-082,
+  a decision queue since D-146) — the tasks in a review status on every project
+  the reader can act on, **oldest waiting first**: key, title, assignee, the
+  agent that finished it, time waiting, the proof in brief (commits, PR, tests
+  passed and failed, or *no proof*) and the round. **It opens on *For you to
+  decide*** — the rows the server marks `can_decide`, the reader's own and
+  every one on a space they administer — **grouped by space**, the space with
+  the longest-waiting task first and the queue's order kept inside each group;
+  each group heads with its name, its count and a select-all box. ***Everything
+  in review*** is the other half of a two-button toggle, first in the filter
+  row, and lists the whole queue at `?view=all` (the default view is not in
+  the address); a row the reader may not decide is drawn there with no
+  checkbox and no decisions, only *Open on board* and why. The header says
+  *N for you to decide · M in review* (*· first 200* when the server capped).
+  A summary card of tiles — waiting, oldest, failing tests, no proof, check
+  these — counts the open view and says which, with an (i). Filters: project,
+  assignee, *Failing tests*, *No proof*, *CI failed*, *CI confirmed* (D-083),
+  *Check this one* (LAI-772); they narrow the view without leaving it, and
+  *Clear filters* keeps it. Each row's proof in brief carries the CI result
+  when GitHub reported one. A row opens the full proof (the task panel's Proof
+  section) with **Accept** and **Send back…**, the second asking for a required
+  reason in a dialog. **A checkbox beside each decidable row and a bulk bar**
+  — *N selected · Accept N · ×*, stuck to the foot of the page — accept the
+  ticked rows **one `POST /tasks/:id/accept` each, in page order**, with a
+  progress line, then a report naming each refusal by key with the server's
+  sentence; the refused rows stay ticked so a retry is one click. Send back
+  stays one at a time: it needs a reason. The selection clears on a view
+  change. The *for you to decide* count is on the tab and in the sidebar's
+  Inbox count; Capacity's *Waiting for review* tile keeps the whole queue's.
+  There is no organisation-wide stream, so the page re-reads every 20 seconds,
+  when the tab returns and after each decision.
 - **Unlisted work** (Inbox's tab, `/inbox?tab=unlisted`, owners and admins, LAI-754) — **one line per
   note**: repo, who, when and the note's first line, newest first; a click opens
   the full text with **Promote to task** and **Dismiss** under it; the first

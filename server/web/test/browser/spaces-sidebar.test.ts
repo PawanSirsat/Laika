@@ -626,8 +626,9 @@ void describe('the prototype geometry (LAI-249)', () => {
   void test('the toggle collapses the sidebar to a 60px icon rail and back, remembered', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
-      // Two waiting for review: the Inbox count the rail must keep.
-      '/api/v1/review': { tasks: [{}, {}], truncated: false },
+      // Two waiting for review, both this reader's to decide (D-146): the
+      // Inbox count the rail must keep.
+      '/api/v1/review': { tasks: [{ can_decide: true }, { can_decide: true }], truncated: false },
     });
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });

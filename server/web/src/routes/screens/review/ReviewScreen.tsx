@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   acceptReview,
-  ciLine,
-  ciVerdict,
+  decidableCount,
   evidenceSummary,
-  roundAgentName,
-  filterQueue,
   getReviewQueue,
   NO_FILTER,
   proofStamp,
@@ -21,15 +18,30 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { buildLabel } from '../../../api/estimates.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { SCREEN_COPY } from '../screen-copy.ts';
+import { applyToEach, type BulkRun } from '../list/list-bulk.ts';
+import { effectiveSelection, NO_SELECTION } from '../list/list-select.ts';
+import { ReviewBulkBar } from './ReviewBulkBar.tsx';
+import { ReviewGroups } from './ReviewGroups.tsx';
+import {
+  acceptSummary,
+  flatOrder,
+  groupBySpace,
+  reviewView,
+  visibleQueue,
+  withView,
+  type ReviewView,
+} from './review-derive.ts';
 import { SendBackDialog } from './SendBackDialog.tsx';
 import '../profile/profile.css';
 import './review.css';
 
 export interface ReviewScreenProps {
+  /** The address's query: `?view=all` lists everything in review (D-146). */
+  readonly params: URLSearchParams;
+  readonly setParams: (next: URLSearchParams) => void;
   /** Go somewhere in the app — the board, for "Open on board". */
   readonly onNavigate: (to: string) => void;
   /** An accept or a send-back changed the queue — the sidebar's count re-reads. */
@@ -53,16 +65,21 @@ function boardHref(item: ReviewQueueItem): string {
 }
 
 /**
- * The review queue (§11.4, D-082, LAI-758): every task waiting in a review
- * status on the projects this person can act on, oldest waiting first, with
- * the proof each finish carried. A person accepts it into done or sends it
- * back with a reason; nothing else on the board can mark agent work done.
+ * The review queue (§11.4, D-082, LAI-758) as a decision queue (D-146,
+ * LAI-1168): the tasks waiting in a review status on the projects this
+ * person can act on, oldest waiting first, with the proof each finish
+ * carried. It opens on what *this* reader may decide, grouped by space;
+ * *Everything in review* is one toggle away. A person accepts a task into
+ * done — one or many at once — or sends it back with a reason; nothing else
+ * on the board can mark agent work done.
  */
-export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
+export function ReviewScreen({ params, setParams, onNavigate, onChanged }: ReviewScreenProps) {
   const [queue, setQueue] = useState<ReviewQueue | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<QueueFilter>(NO_FILTER);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(NO_SELECTION);
+  const [run, setRun] = useState<BulkRun | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ taskId: string; message: string } | null>(null);
   const [sending, setSending] = useState<ReviewQueueItem | null>(null);
@@ -70,6 +87,9 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
   const [now, setNow] = useState(() => Date.now());
   const loaded = useRef(false);
   const opener = useRef<HTMLButtonElement | null>(null);
+
+  const view = reviewView(params);
+  const decidable = view === 'mine';
 
   const load = useCallback((signal?: AbortSignal) => {
     getReviewQueue(signal)
@@ -103,8 +123,33 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
     };
   }, [load]);
 
+  // A selection belongs to the view it was made in.
+  useEffect(() => {
+    setSelected(NO_SELECTION);
+  }, [view]);
+
   const items = useMemo(() => queue?.tasks ?? [], [queue]);
-  const shown = useMemo(() => filterQueue(items, filter), [items, filter]);
+  const mine = useMemo(() => decidableCount(items), [items]);
+  /** The view's rows before the filters: what the tiles count. */
+  const viewItems = useMemo(
+    () => (decidable ? items.filter((item) => item.can_decide) : items),
+    [items, decidable],
+  );
+  const shown = useMemo(
+    () => visibleQueue(items, { decidable, filter }),
+    [items, decidable, filter],
+  );
+  const groups = useMemo(() => groupBySpace(shown), [shown]);
+  const order = useMemo(() => flatOrder(groups), [groups]);
+  // What a bulk Accept reaches: the ticked rows still on screen and decidable.
+  const effective = useMemo(
+    () =>
+      effectiveSelection(
+        selected,
+        shown.filter((item) => item.can_decide).map((item) => ({ id: item.task.id })),
+      ),
+    [selected, shown],
+  );
 
   const names = useMemo(() => {
     const map = new Map<string, string>();
@@ -134,18 +179,22 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
   );
 
   const figures = useMemo(() => {
-    const summaries = items.map((i) => evidenceSummary(i.round));
+    const summaries = viewItems.map((i) => evidenceSummary(i.round));
     return {
-      waiting: items.length,
-      oldest: items[0] === undefined ? '—' : waitingFor(items[0].waiting_since, now),
+      waiting: viewItems.length,
+      oldest: viewItems[0] === undefined ? '—' : waitingFor(viewItems[0].waiting_since, now),
       failing: summaries.filter((s) => s.testsFailed > 0).length,
       bare: summaries.filter((s) => s.empty).length,
-      fast: items.filter((i) => i.cue !== null).length,
+      fast: viewItems.filter((i) => i.cue !== null).length,
     };
-  }, [items, now]);
+  }, [viewItems, now]);
+
+  const setView = (next: ReviewView): void => {
+    setParams(withView(params, next));
+  };
 
   const decided = (): void => {
-    setSelected(null);
+    setExpanded(null);
     load();
     onChanged?.();
   };
@@ -161,6 +210,32 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
       .finally(() => {
         setBusy(null);
       });
+  };
+
+  /**
+   * Accept every ticked row, **one request each, in the order the page draws
+   * them** (`applyToEach`). The refused ids stay selected when it ends, so a
+   * retry after reading the report is one click; the accepted rows leave
+   * with the re-read.
+   */
+  const acceptSelected = (): void => {
+    const ids = order.filter((id) => effective.has(id));
+    if (ids.length === 0) return;
+    const keyOf = new Map(items.map((item) => [item.task.id, item.task.key]));
+    setRun({ phase: 'running', completed: 0, total: ids.length });
+    setExpanded(null);
+    void applyToEach(ids, acceptReview, (completed) => {
+      setRun({ phase: 'running', completed, total: ids.length });
+    }).then((outcome) => {
+      setRun({
+        phase: 'done',
+        summary: acceptSummary(outcome),
+        refusals: outcome.failed.map((f) => ({ key: keyOf.get(f.id) ?? f.id, message: f.message })),
+      });
+      setSelected(new Set(outcome.failed.map((f) => f.id)));
+      load();
+      onChanged?.();
+    });
   };
 
   const sendBack = (reason: string): void => {
@@ -196,7 +271,9 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
       context={
         queue === undefined
           ? 'Work agents handed back'
-          : `${String(items.length)} waiting · oldest first${queue.truncated ? ' · first 200' : ''}`
+          : `${String(mine)} for you to decide · ${String(items.length)} in review${
+              queue.truncated ? ' · first 200' : ''
+            }`
       }
     />
   );
@@ -220,6 +297,72 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
   }
 
   const copy = SCREEN_COPY['/review'];
+  const running = run?.phase === 'running';
+
+  const detail = (item: ReviewQueueItem) => {
+    const deciding = busy === item.task.id;
+    return (
+      <div className="rev-detail" id={`rev-detail-${item.task.id}`}>
+        <EvidenceSection
+          taskId={item.task.id}
+          // GitHub's confirmations move no task, so the queue's own
+          // re-read is what notices them (D-083).
+          refreshKey={item.task.updated_at + proofStamp(item.round)}
+          sendBack={item.task.send_back}
+          nameOf={nameOf}
+        />
+        {failure?.taskId === item.task.id && (
+          <p className="rev-error" role="alert">
+            {failure.message}
+          </p>
+        )}
+        <div className="rev-actions">
+          {item.can_decide && (
+            <>
+              <button
+                type="button"
+                className="bar-control bar-control-primary"
+                disabled={deciding || running}
+                onClick={() => {
+                  accept(item);
+                }}
+              >
+                {deciding && sending === null && <Spinner size="sm" />}
+                Accept
+              </button>
+              <button
+                type="button"
+                className="bar-control"
+                disabled={deciding || running}
+                onClick={(event) => {
+                  opener.current = event.currentTarget;
+                  setSendError(undefined);
+                  setSending(item);
+                }}
+              >
+                Send back…
+              </button>
+            </>
+          )}
+          <a
+            className="rev-open"
+            href={boardHref(item)}
+            onClick={(event) => {
+              event.preventDefault();
+              onNavigate(boardHref(item));
+            }}
+          >
+            Open on board
+          </a>
+          {!item.can_decide && (
+            <span className="rev-why">
+              Only the assignee, a space admin or an organisation admin decides this one.
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="rev">
@@ -230,9 +373,18 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           <h3 className="prof-card-title" id="rev-summary-title">
             Waiting for a person
           </h3>
-          <span className="prof-card-caption">across every project you can act on</span>
+          <span className="prof-card-caption">
+            {decidable ? 'for you to decide' : 'everything in review'}
+          </span>
           <InfoTip label="About the review queue">
             <dl className="prof-defs">
+              <div>
+                <dt>For you to decide</dt>
+                <dd>
+                  The tasks you may accept or send back: your own, and every one on a space you
+                  administer. <em>Everything in review</em> lists the rest, read-only.
+                </dd>
+              </div>
               <div>
                 <dt>Waiting</dt>
                 <dd>Tasks in a review status, oldest first: since each last entered review.</dd>
@@ -255,8 +407,9 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
               <div>
                 <dt>Accept · Send back</dt>
                 <dd>
-                  Only a person signed in here decides. Accept moves it to done; send back returns
-                  it to in progress with your reason, which the next agent reads first.
+                  Only a person signed in here decides. Accept moves it to done — tick several and
+                  accept them together; send back returns one to in progress with your reason, which
+                  the next agent reads first.
                 </dd>
               </div>
             </dl>
@@ -288,6 +441,29 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
 
       {items.length > 0 && (
         <div className="rev-filters" role="group" aria-label="Filter the queue">
+          {/* The view first (D-146): what the page is about before how it is narrowed. */}
+          <span className="rev-views" role="group" aria-label="Which tasks">
+            <button
+              type="button"
+              className={decidable ? 'bar-control bar-control-on' : 'bar-control'}
+              aria-pressed={decidable}
+              onClick={() => {
+                setView('mine');
+              }}
+            >
+              For you to decide ({String(mine)})
+            </button>
+            <button
+              type="button"
+              className={!decidable ? 'bar-control bar-control-on' : 'bar-control'}
+              aria-pressed={!decidable}
+              onClick={() => {
+                setView('all');
+              }}
+            >
+              Everything in review ({String(items.length)})
+            </button>
+          </span>
           <Dropdown
             className="rev-filter"
             aria-label="Project"
@@ -375,6 +551,17 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           headline={copy?.headline ?? 'Nothing waiting for review'}
           {...(copy?.body === undefined ? {} : { body: copy.body })}
         />
+      ) : decidable && mine === 0 && !filtered ? (
+        <EmptyState
+          headline="Nothing for you to decide"
+          body={`${String(items.length)} ${items.length === 1 ? 'task waits' : 'tasks wait'} on someone else.`}
+          action={{
+            label: 'Show everything in review',
+            onClick: () => {
+              setView('all');
+            },
+          }}
+        />
       ) : shown.length === 0 && filtered ? (
         <EmptyState
           headline="Nothing matches these filters"
@@ -387,148 +574,34 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           }}
         />
       ) : (
-        <ul className="rev-list" aria-label="Tasks waiting for review">
-          {shown.map((item) => {
-            const open = selected === item.task.id;
-            const summary = evidenceSummary(item.round);
-            const ci = ciVerdict(item.round);
-            const agent = item.round === null ? null : roundAgentName(item.round);
-            const deciding = busy === item.task.id;
-            return (
-              <li
-                key={item.task.id}
-                className={open ? 'rev-row rev-row-open' : 'rev-row'}
-                data-task={item.task.key}
-              >
-                <button
-                  type="button"
-                  className="rev-line"
-                  aria-expanded={open}
-                  aria-controls={`rev-detail-${item.task.id}`}
-                  onClick={() => {
-                    setSelected(open ? null : item.task.id);
-                    setFailure(null);
-                  }}
-                >
-                  <span className="rev-key">{item.task.key}</span>
-                  <span className="rev-title">{item.task.title}</span>
-                  <span className="rev-wait" title="Waiting since it entered review">
-                    {waitingFor(item.waiting_since, now)}
-                  </span>
-                  <span className="rev-meta">
-                    <span>{item.project.name}</span>
-                    <span>{item.assignee_name ?? 'Unassigned'}</span>
-                    {agent !== null && <span className="rev-agent">{agent}</span>}
-                    {item.round !== null && <span>round {item.round.number}</span>}
-                  </span>
-                  <span className="rev-proof">
-                    {item.cue !== null && (
-                      <span
-                        className="rev-chip rev-chip-check"
-                        data-cue={item.cue.kind}
-                        title={`Finished in ${buildLabel(item.cue.build_ms)} against a forecast of ${buildLabel(
-                          item.cue.forecast_p50_ms,
-                        )}, and CI has not confirmed it`}
-                      >
-                        check this one
-                      </span>
-                    )}
-                    {summary.empty ? (
-                      <span className="rev-chip rev-chip-none">no proof</span>
-                    ) : (
-                      <>
-                        {summary.commits > 0 && (
-                          <span className="rev-chip">
-                            {summary.commits} {summary.commits === 1 ? 'commit' : 'commits'}
-                          </span>
-                        )}
-                        {summary.pullRequest !== null && <span className="rev-chip">PR</span>}
-                        {summary.testsPassed > 0 && (
-                          <span className="rev-chip rev-chip-pass">
-                            ✓ {summary.testsPassed} passed
-                          </span>
-                        )}
-                        {summary.testsFailed > 0 && (
-                          <span className="rev-chip rev-chip-fail">
-                            ✗ {summary.testsFailed} failed
-                          </span>
-                        )}
-                        {ci !== 'none' && item.round?.ci != null && (
-                          <span
-                            className={`rev-chip rev-chip-ci rev-chip-ci-${ci}`}
-                            title={ciLine(item.round.ci)}
-                            data-ci={ci}
-                          >
-                            {ci === 'failed' ? '✗ CI' : ci === 'confirmed' ? '✓ CI' : '… CI'}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </span>
-                </button>
+        <ReviewGroups
+          groups={groups}
+          now={now}
+          selected={effective}
+          onSelect={setSelected}
+          busy={running}
+          expanded={expanded}
+          onToggle={(item) => {
+            setExpanded(expanded === item.task.id ? null : item.task.id);
+            setFailure(null);
+          }}
+          detail={detail}
+        />
+      )}
 
-                {open && (
-                  <div className="rev-detail" id={`rev-detail-${item.task.id}`}>
-                    <EvidenceSection
-                      taskId={item.task.id}
-                      // GitHub's confirmations move no task, so the queue's own
-                      // re-read is what notices them (D-083).
-                      refreshKey={item.task.updated_at + proofStamp(item.round)}
-                      sendBack={item.task.send_back}
-                      nameOf={nameOf}
-                    />
-                    {failure?.taskId === item.task.id && (
-                      <p className="rev-error" role="alert">
-                        {failure.message}
-                      </p>
-                    )}
-                    <div className="rev-actions">
-                      <button
-                        type="button"
-                        className="bar-control bar-control-primary"
-                        disabled={!item.can_decide || deciding}
-                        onClick={() => {
-                          accept(item);
-                        }}
-                      >
-                        {deciding && sending === null && <Spinner size="sm" />}
-                        Accept
-                      </button>
-                      <button
-                        type="button"
-                        className="bar-control"
-                        disabled={!item.can_decide || deciding}
-                        onClick={(event) => {
-                          opener.current = event.currentTarget;
-                          setSendError(undefined);
-                          setSending(item);
-                        }}
-                      >
-                        Send back…
-                      </button>
-                      <a
-                        className="rev-open"
-                        href={boardHref(item)}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          onNavigate(boardHref(item));
-                        }}
-                      >
-                        Open on board
-                      </a>
-                      {!item.can_decide && (
-                        <span className="rev-why">
-                          Only the assignee, a space admin or an organisation admin decides this
-                          one.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+      {(effective.size > 0 || run !== undefined) && (
+        <ReviewBulkBar
+          count={effective.size}
+          run={run}
+          onAccept={acceptSelected}
+          onClear={() => {
+            setSelected(NO_SELECTION);
+            setRun(undefined);
+          }}
+          onDismissReport={() => {
+            setRun(undefined);
+          }}
+        />
       )}
 
       {sending !== null && (
