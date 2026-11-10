@@ -182,14 +182,15 @@ void describe('the SPACES section', () => {
       const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
       const trimmed = async (group: typeof home) =>
         (await group.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim());
-      // Work joined them in LAI-952: everyone's work across every space.
-      await until(async () => (await trimmed(home)).join('|') === 'My day|Inbox|Work');
+      // Work joined them in LAI-952 and left for the Organisation page's tabs
+      // in LAI-1170 (D-147).
+      await until(async () => (await trimmed(home)).join('|') === 'My day|Inbox');
       await until(
         async () => (await trimmed(org)).join('|') === 'Insights|Organisation|Developer access',
       );
       assert.deepEqual(
         (await home.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
-        ['My day', 'Inbox', 'Work'],
+        ['My day', 'Inbox'],
       );
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),

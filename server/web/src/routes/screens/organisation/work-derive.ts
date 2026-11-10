@@ -1,14 +1,22 @@
 import type { AllTasksFilter, TaskStatus, TasksSummary, TaskSummary } from '../../../api/tasks.ts';
 
 /**
- * The Work page (LAI-952): everyone's work across every space, read from
- * `GET /tasks` (LAI-887).
+ * Work (LAI-952): everyone's work across every space, read from `GET /tasks`
+ * (LAI-887) — the Organisation page's second tab since D-147 (LAI-1170).
  *
  * **Which tasks a reader sees is the server's answer, never this file's.** An
  * owner is sent every space's tasks and a member only the spaces they may
  * read; the rows here are the page as served, in its order, with ids turned
  * into names and nothing added or dropped.
  */
+
+/** Where Work lives: the Organisation page's tab (D-147). */
+export const WORK_HREF = '/organisation?tab=work';
+
+/** Work filtered to one person's cards — the profile's link to it (LAI-959). */
+export function workHref(userId: string): string {
+  return `${WORK_HREF}&person=${encodeURIComponent(userId)}`;
+}
 
 /** One page at a time (LAI-975): the reader picks how many, and the URL keeps it. */
 export const PAGE_SIZES = [25, 50, 100] as const;

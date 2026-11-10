@@ -756,9 +756,11 @@ void describe('someone else’s busy profile (frame A)', () => {
       await h.page.goBack();
       const work = await card(h.page, 'work');
       await work.locator('[data-card-link="work"]').click();
-      await until(() => new URL(h.page.url()).pathname === '/work');
+      // Work is the Organisation page's tab since D-147 (LAI-1170).
+      await until(() => new URL(h.page.url()).pathname === '/organisation');
       const at = new URL(h.page.url());
-      assert.equal(at.pathname, '/work');
+      assert.equal(at.pathname, '/organisation');
+      assert.equal(at.searchParams.get('tab'), 'work');
       assert.equal(at.searchParams.get('person'), 'u2');
     } finally {
       await h.close();

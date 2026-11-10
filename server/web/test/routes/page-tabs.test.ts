@@ -54,11 +54,14 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Organisation is Overview, People, Roles & permissions, Integrations, Security, Activity', () => {
+  void test('Organisation is Overview, Work, People, Roles & permissions, Integrations, Security, Activity', () => {
+    // Work second, after Overview (D-147, LAI-1170), and ungated as its
+    // sidebar entry was.
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
+      ['Overview', 'Work', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
     );
+    assert.equal(ORGANISATION_TABS.find((t) => t.id === 'work')?.requires, undefined);
   });
 
   void test('ids are unique within a page', () => {

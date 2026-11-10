@@ -1,7 +1,15 @@
 import { ALL_STATUSES } from '../../../api/board-derive.ts';
 import { ApiError } from '../../../api/errors.ts';
+import { addTasksToSprint, removeTaskFromSprint } from '../../../api/sprints.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import type { TaskSummary, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
+import {
+  assignTask,
+  changeStatus,
+  updateTask,
+  type TaskSummary,
+  type TaskPriority,
+  type TaskStatus,
+} from '../../../api/tasks.ts';
 
 /**
  * Acting on many tasks at once (LAI-496).
@@ -185,3 +193,67 @@ export interface BulkRefusal {
 export type BulkRun =
   | { readonly phase: 'running'; readonly completed: number; readonly total: number }
   | { readonly phase: 'done'; readonly summary: string; readonly refusals: readonly BulkRefusal[] };
+
+/** One task's request for a bulk action. */
+export function applyAction(action: BulkAction, task: TaskSummary): Promise<unknown> {
+  switch (action.kind) {
+    case 'status':
+      return changeStatus(task.id, { status_id: action.statusId });
+    case 'cancel':
+      // The kind, not a status: the server files it under the project's
+      // first cancelled status, whatever this board calls it.
+      return changeStatus(task.id, { status: 'cancelled' });
+    case 'priority':
+      return updateTask(task.id, { priority: action.priority });
+    case 'assignee':
+      return assignTask(task.id, action.assigneeId);
+    case 'sprint':
+      // The sprint endpoint's POST is all-or-nothing over a list; sent one id
+      // at a time so a refusal names the task (`bulkPlan` has already dropped
+      // the tasks with nothing to change, so `sprint_id` is set here).
+      return action.sprintId === null
+        ? removeTaskFromSprint(task.sprint_id ?? '', task.id)
+        : addTasksToSprint(action.sprintId, [task.id]);
+  }
+}
+
+/**
+ * The whole of a bulk action, from the selected tasks to the report
+ * (LAI-1170): `bulkPlan` → `applyToEach` → `bulkSummary`, with `onRun` told
+ * the phase at every step — `running` before the first request and after each
+ * one, `done` with the summary and the refusals at the end. Shared by the
+ * List and the organisation's Work tab, so the two cannot count differently.
+ *
+ * A refusal is reported by the task's **key**, not its id: `LC-4 — Cannot
+ * move…` is something a person can find; a ULID is not (LAI-271's lesson).
+ */
+export async function runBulkAction(
+  action: BulkAction,
+  tasks: readonly TaskSummary[],
+  onRun: (run: BulkRun) => void,
+  /** The request per task — `applyAction`; a test hands in its own. */
+  apply: (action: BulkAction, task: TaskSummary) => Promise<unknown> = applyAction,
+): Promise<BulkOutcome> {
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const plan = bulkPlan(action, tasks);
+  onRun({ phase: 'running', completed: 0, total: plan.ids.length });
+  const outcome = await applyToEach(
+    plan.ids,
+    (id) => {
+      const task = byId.get(id);
+      return task === undefined ? Promise.resolve() : apply(action, task);
+    },
+    (completed) => {
+      onRun({ phase: 'running', completed, total: plan.ids.length });
+    },
+  );
+  onRun({
+    phase: 'done',
+    summary: bulkSummary(outcome, plan.skipped),
+    refusals: outcome.failed.map((f) => ({
+      key: byId.get(f.id)?.key ?? f.id,
+      message: f.message,
+    })),
+  });
+  return outcome;
+}

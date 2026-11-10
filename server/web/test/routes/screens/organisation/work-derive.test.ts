@@ -1,6 +1,7 @@
 /**
- * The Work page's derivations (LAI-952): the filters as they live in the URL,
- * what they ask the server for, and how a served row reads.
+ * The Work tab's derivations (LAI-952; the Organisation page's tab since
+ * D-147): the filters as they live in the URL, what they ask the server for,
+ * and how a served row reads.
  *
  * **Nothing here decides which tasks a reader may see.** That is the server's
  * answer (`GET /tasks`, LAI-887); the rows are drawn from the page as served,
@@ -24,7 +25,8 @@ import {
   withPageSize,
   withWorkFilter,
   workRows,
-} from '../../../../src/routes/screens/work/work-derive.ts';
+  workHref,
+} from '../../../../src/routes/screens/organisation/work-derive.ts';
 import type { TaskSummary } from '../../../../src/api/tasks.ts';
 
 function task(over: Partial<TaskSummary> & { id: string }): TaskSummary {
@@ -245,5 +247,12 @@ void describe('pages (LAI-975)', () => {
     assert.equal(pageRange(5, 25, 17, 142), '126–142 of 142');
     assert.equal(pageRange(1, 50, 50, undefined), '51–100');
     assert.equal(pageRange(0, 25, 0, 0), '0 of 0');
+  });
+});
+
+void describe('workHref — the profile’s way into Work (LAI-959, D-147)', () => {
+  void test('is the Organisation page’s Work tab, filtered to the person', () => {
+    assert.equal(workHref('u2'), '/organisation?tab=work&person=u2');
+    assert.equal(workHref('a b'), '/organisation?tab=work&person=a%20b');
   });
 });
