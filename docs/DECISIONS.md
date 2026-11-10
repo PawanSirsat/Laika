@@ -7266,3 +7266,41 @@ closed and the view beneath may be any of the space's. Unifying the two is a lat
 **The server is unchanged.** `POST /projects/:slug/tasks` already took every field; the
 browser simply never offered them.
 
+<!-- D-146 (Inbox → Review as a decision queue, LAI-1168) is being written in
+parallel and lands with that task; D-147 below keeps its number either way. -->
+
+## D-147 — Work is the organisation's register
+
+**Date:** 2026-11-10 · **Decided by:** Pawan (owner); recorded by build-1170 for Belka.
+Task LAI-1170. Amends LAI-952's placing of Work.
+
+**Decision.** Work — everyone's tasks across every space the reader can read (LAI-952,
+`GET /tasks`) — is a **tab of the Organisation page**, second after Overview, at
+`/organisation?tab=work`, and not a sidebar entry. It is the organisation's register, so it
+sits with the organisation's other pages; the sidebar keeps the reader's own places and the
+three organisation pages. `/work` redirects there and keeps its query (`person`, `status`,
+`space`, `sprint`, `size`), as every moved address does (LAI-796). The tab is open to every
+signed-in role, as the page was: the server decides whose tasks each reader is sent.
+
+**It gains the List's selection and bulk bar**, as one shared piece rather than a second
+bar: a checkbox on every row the reader may change (`task.write` in that row's space; absent
+otherwise, not disabled), select-all in the head, and `BulkBar` over the card's foot once
+anything is selected. **One request per task, in order** — the server has no bulk endpoint
+and §7.2 keeps it that way — with a progress line and a report that names each refusal by
+key; the list and the figures are read again when the run ends.
+
+**The mixed-space rule.** *Priority*, *Assignee* and *Cancel tasks* are the same request in
+every space and are always offered. *Status* and *Sprint* are a space's own — a status id or
+a sprint id means nothing outside its space — so they are offered **only within one space**:
+when the `?space=` filter names one, or when every selected row is in one space. Otherwise
+each is drawn disabled with a title saying what would enable it (*Choose one space to change
+status*), rather than absent: "not yet", not "cannot". *Sprint* further needs
+`task.assign_sprint` in that space, as on the List.
+
+**The Review tile** keeps filtering to `?status=review` and carries *Decide in Inbox ›*
+(`/inbox?tab=review`): the register shows what is in review; deciding stays Inbox's. The
+profile's *See their cards in Work* links follow the tab.
+
+**The server is unchanged.** Every endpoint the tab calls existed; the bar's requests are
+the List's. Work is now defined in SPEC §11.4.2 (the Organisation row and its endpoints) and
+§11.4.2.1; it was built from LAI-952 without a SPEC entry.
