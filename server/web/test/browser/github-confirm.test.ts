@@ -460,7 +460,7 @@ void describe('the proof GitHub confirmed (D-083)', () => {
       await until(async () => (await dialog.getAttribute('data-task')) === 'LC-2');
       assert.equal(await dialog.getAttribute('data-task'), 'LC-2');
       await until(async () =>
-        /3 of 3 checks passed/.test(await proof.locator('.ev-ci').innerText()),
+        (await proof.locator('.ev-ci').innerText()).includes('3 of 3 checks passed'),
       );
       assert.match(await proof.locator('.ev-ci').innerText(), /CI: 3 of 3 checks passed/);
       assert.equal(await proof.locator('.ev-merged-yes').innerText(), 'merged');
