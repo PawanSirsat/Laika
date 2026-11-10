@@ -32,7 +32,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     signingOut,
     orgName,
     unlistedOpen,
-    reviewWaiting,
+    reviewDecidable,
     tokenAlerts,
     handoffCounts,
   } = useShell();
@@ -69,13 +69,13 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       onTogglePin={togglePinnedSpace}
       orgName={orgName}
       spaceName={spaceName}
-      // Inbox is what waits on its tabs (LAI-796): the review queue (D-082),
-      // the hand-offs waiting on this person (LAI-550, the server's live
+      // Inbox is what waits on its tabs (LAI-796): the review queue — only
+      // what this person may decide (D-082, D-146) — the hand-offs waiting on this person (LAI-550, the server's live
       // counts) and the open unlisted count (LAI-754), which is `undefined`
       // for a reader it is not for. A person's
       // open token alerts (LAI-773) are on Insights, where Usage now is.
       counts={{
-        '/inbox': inboxCount(reviewWaiting, unlistedOpen, handoffsWaiting(handoffCounts)),
+        '/inbox': inboxCount(reviewDecidable, unlistedOpen, handoffsWaiting(handoffCounts)),
         '/insights': tokenAlerts?.length,
         '/my-day': unreadNotices,
       }}

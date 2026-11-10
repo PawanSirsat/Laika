@@ -340,6 +340,20 @@ export function filterQueue(
   });
 }
 
+/**
+ * How many of the queue this reader may decide (D-146, LAI-1168): what the
+ * sidebar's Inbox badge and the Review tab count. The queue lists every
+ * review task on the spaces the reader holds `task.write` on, which is the
+ * organisation's pile; `can_decide` is the server's word on which of them
+ * wait on *this* person, and a badge that counts the rest is a number the
+ * page cannot act on.
+ */
+export function decidableCount(items: readonly Pick<ReviewQueueItem, 'can_decide'>[]): number {
+  let count = 0;
+  for (const item of items) if (item.can_decide) count += 1;
+  return count;
+}
+
 const MINUTE = 60_000;
 
 /** How long something has waited: `just now`, `12 min`, `3 h 12 min`, `2 d 5 h` (LAI-830). */
