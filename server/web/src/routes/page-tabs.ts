@@ -66,7 +66,7 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
 ];
 
 /**
- * The organisation's settings, grouped. **Security is everyone's tokens**, so
+ * The organisation's register and settings, grouped. **Security is everyone's tokens**, so
  * it is an owner's or an admin's (§3.1 `token.list_any`); everyone else can
  * read the other three, and each section inside them keeps its own gate.
  * **Activity is every space's history** (LAI-951), behind the gate
@@ -74,6 +74,10 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
  */
 export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
+  // Everyone's work across every space (LAI-952), a tab since D-147
+  // (LAI-1170): ungated, as the sidebar entry it replaces was — the server
+  // decides whose tasks each reader is sent.
+  { id: 'work', label: 'Work' },
   { id: 'people', label: 'People' },
   // Who may do what, for everyone: the endpoint is `org.read` (LAI-950).
   { id: 'roles', label: 'Roles & permissions' },

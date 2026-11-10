@@ -34,7 +34,7 @@ import {
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
-import { WorkScreen, type WorkTaskLink } from '../../routes/screens/work/WorkScreen.tsx';
+import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
@@ -133,7 +133,8 @@ function openTaskByKey(navigate: (to: string) => void) {
  * Open a task **in its own space**, by id (LAI-755). Without `?project=` the
  * board falls back to the space last opened, which on a page across every
  * space is usually another one. A key search remains the fallback when the
- * space is not known.
+ * space is not known. Work's rows use it (LAI-952; the Organisation tab since
+ * LAI-1170).
  */
 function openTaskInItsSpace(navigate: (to: string) => void) {
   return ({ id, key, projectSlug }: WorkTaskLink) => {
@@ -281,25 +282,6 @@ function MyDayRoute() {
         else next.set('user', userId);
         setParams(next, { push: true });
       }}
-    />
-  );
-}
-
-/**
- * Everyone's work (LAI-952). The filters are the URL, replaced rather than
- * pushed, as a filter is; a row opens the task in its own space's drawer.
- */
-function WorkRoute() {
-  const {
-    route: { params, setParams, navigate },
-    me,
-  } = useShell();
-  return (
-    <WorkScreen
-      me={me}
-      params={params}
-      setParams={setParams}
-      onOpenTask={openTaskInItsSpace(navigate)}
     />
   );
 }
@@ -468,6 +450,8 @@ function OrganisationRoute() {
       params={params}
       setParams={setParams}
       onNavigate={navigate}
+      // The Work tab (LAI-1170): a row opens its task in its own space's drawer.
+      onOpenTask={openTaskInItsSpace(navigate)}
     />
   );
 }
@@ -552,7 +536,6 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
   '/inbox': { Component: InboxRoute, layout: 'plain' },
-  '/work': { Component: WorkRoute, layout: 'plain' },
   '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/developer': { Component: DeveloperRoute, layout: 'plain' },

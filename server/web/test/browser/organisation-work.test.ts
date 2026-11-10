@@ -1,6 +1,7 @@
 /**
- * The Work page in a real browser (LAI-952): everyone's work across every
- * space, from `GET /tasks` (LAI-887).
+ * The Work tab in a real browser (LAI-952; the Organisation page's second
+ * tab since D-147, LAI-1170): everyone's work across every space, from
+ * `GET /tasks` (LAI-887).
  *
  * **The server decides whose work is on the page.** The stub plays it: an
  * owner is sent tasks from both spaces, a member only Laika's. What is
@@ -203,7 +204,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
   for (const theme of ['Light', 'Dark']) {
     for (const width of [1440, 390]) {
       void test(`${theme} at ${String(width)}: the rows served, each column named, no sideways scroll`, async () => {
-        const h = await openWork('/work', OWNER_STUB, width);
+        const h = await openWork('/organisation?tab=work', OWNER_STUB, width);
         try {
           await setTheme(h.page, theme);
           assert.deepEqual(await keys(h.page), ['ONR-356', 'LAI-12', 'LAI-15']);
@@ -278,16 +279,31 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
     }
   }
 
-  void test('Work is in the sidebar for every signed-in role', async () => {
+  void test('the tab is offered to every signed-in role, and there is no sidebar entry (D-147)', async () => {
     for (const me of [OWNER, MEMBER]) {
-      const h = await openWork('/work', {
+      const h = await openWork('/organisation?tab=work', {
         ...shell(me),
         '/api/v1/tasks?fields=slim': { data: [], next_cursor: null },
       });
       try {
-        const link = h.page.locator('a[href="/work"]');
-        await link.first().waitFor({ state: 'attached', timeout: 10_000 });
-        assert.ok((await link.count()) > 0, `no Work entry for a ${me.org_role}`);
+        const tab = h.page.locator('.page-tab[data-tab="work"]');
+        await tab.waitFor({ timeout: 10_000 });
+        assert.ok((await tab.getAttribute('class'))?.includes('page-tab-active'), me.org_role);
+        // Second, after Overview, for everyone.
+        assert.deepEqual(
+          (await h.page.locator('.page-tab').allInnerTexts()).slice(0, 2).map((t) => t.trim()),
+          ['Overview', 'Work'],
+        );
+        await h.page.locator('#sidebar .sidebar-link-label').first().waitFor({ timeout: 10_000 });
+        assert.equal(
+          await h.page.locator('a[href="/work"]').count(),
+          0,
+          'Work is still in the sidebar',
+        );
+        assert.equal(
+          (await h.page.locator('#sidebar .sidebar-link-active').innerText()).trim(),
+          'Organisation',
+        );
       } finally {
         await h.close();
       }
@@ -295,7 +311,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
   });
 
   void test('a member sees exactly the rows the server sent, and asked for no more', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...shell(MEMBER),
       '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
     });
@@ -315,14 +331,17 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
   });
 
   void test('the filters are the URL, and each is sent to the server', async () => {
-    const h = await openWork('/work?person=none&status=todo&space=laika&sprint=none', {
-      ...OWNER_STUB,
-      '/api/v1/tasks?fields=slim&assignee=none&status=todo&project=laika&sprint=none': {
-        data: [PAGE_ONE[2]],
-        next_cursor: null,
+    const h = await openWork(
+      '/organisation?tab=work&person=none&status=todo&space=laika&sprint=none',
+      {
+        ...OWNER_STUB,
+        '/api/v1/tasks?fields=slim&assignee=none&status=todo&project=laika&sprint=none': {
+          data: [PAGE_ONE[2]],
+          next_cursor: null,
+        },
+        '/api/v1/tasks?fields=slim&assignee=u1': { data: [PAGE_ONE[0]], next_cursor: null },
       },
-      '/api/v1/tasks?fields=slim&assignee=u1': { data: [PAGE_ONE[0]], next_cursor: null },
-    });
+    );
     try {
       assert.deepEqual(await keys(h.page), ['LAI-15']);
       assert.deepEqual(Object.fromEntries(reads(h)[0] ?? []), {
@@ -372,7 +391,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
         projects: [],
       },
     });
-    const owner = await openWork('/work', {
+    const owner = await openWork('/organisation?tab=work', {
       ...OWNER_STUB,
       '/api/v1/permissions': permissions('owner', ['people.analytics.read', 'profile.read']),
     });
@@ -392,7 +411,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
     }
 
     // A member the owner granted nothing: the name, and no link.
-    const member = await openWork('/work', {
+    const member = await openWork('/organisation?tab=work', {
       ...shell(MEMBER),
       '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
       '/api/v1/permissions': permissions('member', ['local_activity.read_own']),
@@ -409,7 +428,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
   });
 
   void test('a row opens the task in its own space’s drawer', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...OWNER_STUB,
       '/api/v1/projects/onroute': ONROUTE,
       '/api/v1/projects/onroute/tasks': { data: [PAGE_ONE[0]], next_cursor: null },
@@ -446,7 +465,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
 
   void test('loading, then empty: nothing in any space says so', async () => {
     const h = await openWork(
-      '/work',
+      '/organisation?tab=work',
       {
         ...shell(OWNER),
         '/api/v1/tasks?fields=slim': { data: [], next_cursor: null },
@@ -469,7 +488,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const h = await open('/work', OWNER_STUB, {
+    const h = await open('/organisation?tab=work', OWNER_STUB, {
       before: async (page) => {
         await track(page);
         await page.route(/\/api\/v1\/tasks\?/, async (route) => {
@@ -490,7 +509,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
   });
 
   void test('filtered to nothing: says so and offers to clear the filters', async () => {
-    const h = await openWork('/work?status=cancelled', {
+    const h = await openWork('/organisation?tab=work&status=cancelled', {
       ...OWNER_STUB,
       '/api/v1/tasks?fields=slim&status=cancelled': { data: [], next_cursor: null },
     });
@@ -501,8 +520,9 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
         'No work matches these filters',
       );
       await h.page.getByRole('button', { name: 'Clear filters' }).click();
-      await until(() => new URL(h.page.url()).search === '');
-      assert.equal(new URL(h.page.url()).search, '');
+      // Every filter goes; the tab stays, or the reader would land on Overview.
+      await until(() => new URL(h.page.url()).search === '?tab=work');
+      assert.equal(new URL(h.page.url()).search, '?tab=work');
       assert.deepEqual(await keys(h.page), ['ONR-356', 'LAI-12', 'LAI-15']);
     } finally {
       await h.close();
@@ -510,7 +530,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
   });
 
   void test('a failed read shows an error, not an empty list', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...shell(OWNER),
       '/api/v1/tasks?fields=slim': refuse(500, 'internal', 'the database is locked'),
     });
@@ -554,29 +574,23 @@ async function tile(page: Page, label: string) {
 }
 
 void describe('Work: the header, the figures and the pages (LAI-975)', () => {
-  void test('the page header the other pages have: title and its sentence', async () => {
-    const h = await openWork('/work', OWNER_STUB);
+  void test('under the Organisation page’s header: no band of its own, its sentence as a lead', async () => {
+    const h = await openWork('/organisation?tab=work', OWNER_STUB);
     try {
       await keys(h.page);
-      assert.equal(
-        await h.page.locator('.work .screen-page .screen-page-title').innerText(),
-        'Work',
-      );
-      assert.equal(
-        await h.page.locator('.work .screen-bar').count(),
-        0,
-        'the old band is still drawn',
-      );
-      assert.ok(
-        (await h.page.locator('.work .screen-page-desc').innerText()).includes('every space'),
-      );
+      // The page's header is the Organisation's (no `GET /org` in this stub,
+      // so its fallback name); the tab draws no header of its own.
+      assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Organisation');
+      assert.equal(await h.page.locator('.work .screen-bar, .work .screen-page').count(), 0);
+      assert.ok((await h.page.locator('.work-lead').innerText()).includes('every space'));
+      assert.match(await h.page.locator('.page-tab-active').innerText(), /Work/);
     } finally {
       await h.close();
     }
   });
 
   void test('the strip draws the server’s figures, and a tile is the status filter', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...OWNER_STUB,
       '/api/v1/tasks?fields=slim&status=review': { data: [PAGE_ONE[1]], next_cursor: null },
     });
@@ -602,6 +616,21 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       // The figures are asked with the page's filters — none here.
       assert.deepEqual(Object.fromEntries(counts(h)[0] ?? []), {});
 
+      // The Review tile filters, and says where a review is decided (D-147):
+      // one link, under that tile alone.
+      const decide = h.page.locator('.work-summary [data-decide-link]');
+      assert.equal(await decide.count(), 1);
+      assert.equal(await decide.getAttribute('href'), '/inbox?tab=review');
+      assert.equal(
+        await decide.evaluate((el) =>
+          el
+            .closest('.work-tile-cell')
+            ?.querySelector('.work-tile')
+            ?.textContent?.includes('Review'),
+        ),
+        true,
+      );
+
       const review = await tile(h.page, 'Review');
       await review.click();
       await until(() => new URL(h.page.url()).searchParams.get('status') === 'review');
@@ -623,7 +652,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('the figures follow the other filters', async () => {
-    const h = await openWork('/work?space=laika&person=none', {
+    const h = await openWork('/organisation?tab=work&space=laika&person=none', {
       ...OWNER_STUB,
       '/api/v1/tasks?fields=slim&assignee=none&project=laika': {
         data: [PAGE_ONE[2]],
@@ -643,7 +672,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('an owner sees who holds the work, and a name filters to them', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...OWNER_STUB,
       // The server's ranking, with everyone past its top ten folded (LAI-974).
       '/api/v1/tasks/summary': {
@@ -676,7 +705,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('a member sees the figures but no “by person” row', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...shell(MEMBER),
       '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
     });
@@ -709,7 +738,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('a member the owner granted everyone’s analytics sees the “by person” row', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...shell(MEMBER),
       '/api/v1/permissions': analytics('member', ['org.read', 'people.analytics.read']),
       '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
@@ -724,7 +753,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
 
   void test('an admin the owner withdrew it from is never shown the row', async () => {
     const h = await open(
-      '/work',
+      '/organisation?tab=work',
       {
         ...OWNER_STUB,
         '/api/v1/me': { ...OWNER, org_role: 'admin' },
@@ -744,7 +773,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('Next, then Previous: page two’s rows, then page one’s again, counted', async () => {
-    const h = await openWork('/work', PAGED_STUB);
+    const h = await openWork('/organisation?tab=work', PAGED_STUB);
     try {
       assert.equal((await keys(h.page)).length, 25);
       await until(async () => (await h.page.locator('.work-range').innerText()) === '1–25 of 30');
@@ -772,7 +801,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('a filter change goes back to page one; the page size is the URL', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...PAGED_STUB,
       '/api/v1/tasks?fields=slim&status=todo': { data: many(1, 25), next_cursor: 'P2' },
       '/api/v1/tasks?fields=slim&limit=50': { data: many(1, 30), next_cursor: null },
@@ -806,7 +835,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       release = resolve;
     });
     const h = await open(
-      '/work',
+      '/organisation?tab=work',
       {
         ...shell(OWNER),
         '/api/v1/tasks/summary': {
@@ -843,7 +872,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   });
 
   void test('a failed count leaves the list alone', async () => {
-    const h = await openWork('/work', {
+    const h = await openWork('/organisation?tab=work', {
       ...OWNER_STUB,
       '/api/v1/tasks/summary': refuse(500, 'internal', 'the database is locked'),
     });

@@ -33,6 +33,17 @@ const STUB: ApiStub = {
   '/api/v1/tokens': { data: [], next_cursor: null },
   '/api/v1/capacity': { enabled: true, people: [] },
   '/api/v1/presence': { enabled: true, present: [] },
+  '/api/v1/users': { data: [], next_cursor: null },
+  '/api/v1/invites': { data: [], next_cursor: null },
+  '/api/v1/tasks': { data: [], next_cursor: null },
+  '/api/v1/tasks/summary': {
+    total: 0,
+    by_status: { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+    by_assignee: [],
+    overdue: 0,
+    blocked: 0,
+    unassigned: 0,
+  },
 };
 
 void after(async () => {
@@ -47,6 +58,16 @@ const MOVES: readonly (readonly [string, string, string, string, string | null])
   ['/usage', '/insights', '?tab=usage', 'Insights', 'Usage & cost'],
   // Developer access is tabs since LAI-507 (five since LAI-537): Tokens is one of them.
   ['/tokens', '/developer', '?tab=tokens', 'Developer access', 'Tokens'],
+  // Work is the Organisation page's tab since D-147 (LAI-1170); its filters travel.
+  // The page's title is the organisation's name (`GET /org`), as on every tab.
+  ['/work', '/organisation', '?tab=work', 'Borealis Labs', 'Work'],
+  [
+    '/work?space=laika&status=review',
+    '/organisation',
+    '?tab=work&space=laika&status=review',
+    'Borealis Labs',
+    'Work',
+  ],
 ];
 
 void describe('a bookmark to an old page opens its new home', () => {

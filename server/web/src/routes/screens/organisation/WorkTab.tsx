@@ -17,9 +17,7 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
-import { SCREEN_COPY } from '../screen-copy.ts';
 import {
   allTasksFilter,
   PAGE_SIZES,
@@ -37,7 +35,7 @@ import {
   workRows,
   type WorkFilter,
 } from './work-derive.ts';
-import './work.css';
+import './work-tab.css';
 
 /** A task to open, in its own space — the board's drawer (`?task=`). */
 export interface WorkTaskLink {
@@ -46,12 +44,22 @@ export interface WorkTaskLink {
   readonly projectSlug: string | undefined;
 }
 
-export interface WorkScreenProps {
-  readonly me: MeProfile | undefined;
+export interface WorkTabProps {
+  readonly me: MeProfile;
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams) => void;
   readonly onOpenTask: (task: WorkTaskLink) => void;
+  readonly onNavigate: (to: string) => void;
 }
+
+/**
+ * The empty tab, before any space has a task. It was keyed by `/work` in
+ * `screen-copy.ts` while Work was a route; a tab has no path to key it by.
+ */
+const EMPTY = {
+  headline: 'No work in your spaces yet',
+  body: 'Work lists every task in the spaces you can read, across all of them at once. It fills in as tasks are created on any board.',
+} as const;
 
 function aborted(cause: unknown): boolean {
   return cause instanceof DOMException && cause.name === 'AbortError';
@@ -76,6 +84,12 @@ type Count =
  * (LAI-887) — one page at a time, Previous and Next (LAI-975), with the
  * figures for the same filters from `GET /tasks/summary` (LAI-974) above it.
  *
+ * **A tab of the Organisation page, not a screen** (D-147, LAI-1170). The
+ * name matters: `screen-header.test.ts` holds every `*Screen.tsx` to drawing
+ * its own header band, and this must not — the page above it already does.
+ * The filters keep their place in the address beside `?tab=work`, as
+ * `OrgActivity`'s do.
+ *
  * **The server decides whose work is here.** An owner or admin is sent every
  * space; anyone else the spaces they may read. The rows are that answer, in
  * its order: the filters are sent to the server, never applied on top, so a
@@ -84,7 +98,7 @@ type Count =
  * The filters live in the URL, so a filtered view is a link. A row opens the
  * task in its own space's drawer.
  */
-export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProps) {
+export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkTabProps) {
   const filter = useMemo(() => readWorkFilter(params), [params]);
   const size = readPageSize(params);
   const query = useMemo(() => allTasksFilter(filter, size), [filter, size]);
@@ -224,7 +238,7 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
   const set = (change: Parameters<typeof withWorkFilter>[1]): void => {
     setParams(withWorkFilter(params, change));
   };
-  const mode = personMode(filter, me?.id);
+  const mode = personMode(filter, me.id);
   const now = Date.now();
 
   const personOptions = [
@@ -232,7 +246,7 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
     { value: 'none', label: 'Unassigned' },
     ...people
       .filter((p) => p.is_active || p.id === filter.person)
-      .map((p) => ({ value: p.id, label: p.id === me?.id ? `${p.name} (you)` : p.name })),
+      .map((p) => ({ value: p.id, label: p.id === me.id ? `${p.name} (you)` : p.name })),
   ];
   const spaceOptions = [
     { value: '', label: 'Every space' },
@@ -255,17 +269,19 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
    */
   const seesPeople = gates.org('people.analytics.read');
 
-  const copy = SCREEN_COPY['/work'];
-
   return (
     <div className="work">
-      <ScreenHeader
-        variant="page"
-        title="Work"
-        description="Everyone’s work, across every space you can read — oldest change first."
-      />
+      <p className="work-lead">
+        Everyone’s work, across every space you can read — oldest change first.
+      </p>
 
-      <WorkSummary count={count} filter={filter} seesPeople={seesPeople} onFilter={set} />
+      <WorkSummary
+        count={count}
+        filter={filter}
+        seesPeople={seesPeople}
+        onFilter={set}
+        onNavigate={onNavigate}
+      />
 
       <div className="work-filters" role="group" aria-label="Filter the work">
         <div className="work-toggle" role="group" aria-label="Whose work">
@@ -273,9 +289,8 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
             type="button"
             className={mode === 'me' ? 'bar-control bar-control-on' : 'bar-control'}
             aria-pressed={mode === 'me'}
-            disabled={me === undefined}
             onClick={() => {
-              if (me !== undefined) set({ person: me.id });
+              set({ person: me.id });
             }}
           >
             Me
@@ -359,7 +374,7 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
             }}
           />
         ) : (
-          <EmptyState headline={copy?.headline ?? ''} body={copy?.body ?? ''} />
+          <EmptyState headline={EMPTY.headline} body={EMPTY.body} />
         )
       ) : (
         <>
@@ -493,7 +508,11 @@ interface WorkSummaryProps {
   readonly filter: WorkFilter;
   readonly seesPeople: boolean;
   readonly onFilter: (change: Parameters<typeof withWorkFilter>[1]) => void;
+  readonly onNavigate: (to: string) => void;
 }
+
+/** Where a review is decided: Inbox's Review tab (D-147's tile link). */
+const DECIDE_HREF = '/inbox?tab=review';
 
 /**
  * The strip under the header (LAI-975): the server's figures for the page's
@@ -501,7 +520,7 @@ interface WorkSummaryProps {
  * it is on, and pressing it again clears it. An owner or admin also sees who
  * holds the work, and a name is that person filter.
  */
-function WorkSummary({ count, filter, seesPeople, onFilter }: WorkSummaryProps) {
+function WorkSummary({ count, filter, seesPeople, onFilter, onNavigate }: WorkSummaryProps) {
   if (count.status === 'loading') {
     return (
       <div className="work-summary" role="status" aria-busy="true" aria-label="Loading the figures">
@@ -552,19 +571,36 @@ function WorkSummary({ count, filter, seesPeople, onFilter }: WorkSummaryProps) 
         {STATUS_TILES.map((tile) => {
           const on = filter.status === tile.value;
           return (
-            <button
-              key={tile.value}
-              type="button"
-              className="work-tile"
-              data-status={tile.value}
-              aria-pressed={on}
-              onClick={() => {
-                onFilter({ status: on ? '' : tile.value });
-              }}
-            >
-              <span className="work-tile-label">{tile.label}</span>
-              <span className="work-tile-value">{summary.by_status[tile.value]}</span>
-            </button>
+            <span key={tile.value} className="work-tile-cell">
+              <button
+                type="button"
+                className="work-tile"
+                data-status={tile.value}
+                aria-pressed={on}
+                onClick={() => {
+                  onFilter({ status: on ? '' : tile.value });
+                }}
+              >
+                <span className="work-tile-label">{tile.label}</span>
+                <span className="work-tile-value">{summary.by_status[tile.value]}</span>
+              </button>
+              {/* The Review tile filters, as the rest do; deciding happens in
+                  Inbox, and the tile says where (D-147). */}
+              {tile.value === 'review' && (
+                <a
+                  className="work-tile-link"
+                  href={DECIDE_HREF}
+                  data-decide-link
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onNavigate(DECIDE_HREF);
+                  }}
+                >
+                  Decide in Inbox ›
+                </a>
+              )}
+            </span>
           );
         })}
         {summary.overdue > 0 && (
