@@ -387,7 +387,8 @@ void describe('someone else’s profile (frame A)', () => {
 
       await more.click();
       await h.page.getByRole('menuitem', { name: 'See Hemant’s cards in Work' }).click();
-      await h.page.waitForURL(/\/work\?person=u2$/, { timeout: 10_000 });
+      // Work is the Organisation page's tab since D-147 (LAI-1170).
+      await h.page.waitForURL(/\/organisation\?tab=work&person=u2$/, { timeout: 10_000 });
     } finally {
       await h.close();
     }

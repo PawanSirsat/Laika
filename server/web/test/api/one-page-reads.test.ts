@@ -84,10 +84,10 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       { names: ['listProjects'], why: 'the Projects screen pages on purpose, with Load more' },
     ],
     [
-      'routes/screens/work/WorkScreen.tsx',
+      'routes/screens/organisation/WorkTab.tsx',
       {
         names: ['listAllTasks'],
-        why: 'everyone’s work pages on purpose, with Load more (LAI-952)',
+        why: 'everyone’s work pages on purpose, Previous and Next (LAI-952; a tab since LAI-1170)',
       },
     ],
     [

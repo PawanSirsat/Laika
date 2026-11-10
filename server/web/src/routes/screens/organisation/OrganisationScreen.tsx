@@ -40,6 +40,7 @@ import { InviteDialog } from './InviteDialog.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
 import { OrgPulse } from './OrgPulse.tsx';
+import { WorkTab, type WorkTaskLink } from './WorkTab.tsx';
 import { BoardBuildLine } from './BoardBuildLine.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
@@ -52,7 +53,7 @@ export interface OrganisationScreenProps {
   readonly me: MeProfile;
   /** The tabs this reader is offered — Security is an owner's or an admin's. */
   readonly tabs: readonly PageTab[];
-  /** The open tab: `overview`, `people`, `roles`, `integrations`, `security` or `activity`. */
+  /** The open tab: `overview`, `work`, `people`, `roles`, `integrations`, `security` or `activity`. */
   readonly tab: string;
   /**
    * The address named `tab` and this reader may not open it — the not-allowed
@@ -63,6 +64,8 @@ export interface OrganisationScreenProps {
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams) => void;
   readonly onNavigate: (to: string) => void;
+  /** Work's rows (LAI-1170): open a task in its own space's drawer. */
+  readonly onOpenTask: (task: WorkTaskLink) => void;
 }
 
 /** `3 Mar 2026` — when the organisation was made, in the reader's own calendar. */
@@ -111,6 +114,10 @@ function createdLabel(ms: number): string {
  *
  * **Activity** (LAI-951) is the admin activity log that reference showed, now
  * that `GET /activity/history` serves it: an owner's or an admin's.
+ *
+ * **Work** (D-147, LAI-1170) is the organisation's register — everyone's
+ * tasks across every space, with the List's selection and bulk bar — second,
+ * after Overview. It was a sidebar page from LAI-952; `/work` redirects here.
  */
 export function OrganisationScreen({
   me,
@@ -120,6 +127,7 @@ export function OrganisationScreen({
   params,
   setParams,
   onNavigate,
+  onOpenTask,
 }: OrganisationScreenProps) {
   const confirm = useConfirm();
   // The server's answer, denied until it has one (LAI-970) — never the role.
@@ -495,6 +503,16 @@ export function OrganisationScreen({
             {/* Which build this board is (LAI-1069): owners and admins only. */}
             {(me.org_role === 'owner' || me.org_role === 'admin') && <BoardBuildLine />}
           </>
+        )}
+
+        {tab === 'work' && (
+          <WorkTab
+            me={me}
+            params={params}
+            setParams={setParams}
+            onOpenTask={onOpenTask}
+            onNavigate={onNavigate}
+          />
         )}
 
         {tab === 'people' && (

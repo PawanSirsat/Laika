@@ -36,7 +36,7 @@ import { SprintStats } from './board/SprintStats.tsx';
 import { statsScope } from './board/sprint-stats.ts';
 import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
-import { listSprints, type Sprint } from '../../api/sprints.ts';
+import { listSprints, sprintLabelsOf, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { executionSignal } from '../../components/agent/execution-derive.ts';
@@ -704,13 +704,7 @@ export function BoardScreen({
    * from different hooks with different refresh rates — columns change almost
    * never, tasks constantly.
    */
-  const sprintLabels = useMemo(() => {
-    const map = new Map<string, { label: string; active: boolean }>();
-    sprints.forEach((sprint, index) => {
-      map.set(sprint.id, { label: `S${String(index + 1)}`, active: sprint.status === 'active' });
-    });
-    return map;
-  }, [sprints]);
+  const sprintLabels = useMemo(() => sprintLabelsOf(sprints), [sprints]);
 
   const group = params.get('group') ?? 'column';
   const grouped = isGroupBy(group);

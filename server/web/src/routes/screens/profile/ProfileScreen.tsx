@@ -20,6 +20,7 @@ import { useSharedAvailability, type AvailabilitySeen } from '../../../api/avail
 import { ApiError } from '../../../api/errors.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import type { MeProfile } from '../../../api/me.ts';
+import { workHref } from '../organisation/work-derive.ts';
 import {
   getOwnProfile,
   getProfile,
@@ -341,7 +342,7 @@ export function ProfileScreen({
       id: 'work',
       label: `See ${first}’s cards in Work`,
       onSelect: () => {
-        onNavigate(`/work?person=${encodeURIComponent(user.id)}`);
+        onNavigate(workHref(user.id));
       },
     },
   ];
@@ -469,9 +470,9 @@ export function ProfileScreen({
           availability={own ? mine : theirs}
           today={dayIn(readerZone(), now)}
           now={now}
-          workHref={`/work?person=${encodeURIComponent(user.id)}`}
+          workHref={workHref(user.id)}
           onWork={() => {
-            onNavigate(`/work?person=${encodeURIComponent(user.id)}`);
+            onNavigate(workHref(user.id));
           }}
           timeReport={
             offered.includes('time')
