@@ -80,6 +80,9 @@ void describe('a bookmark to an old page opens its new home', () => {
         });
         const heading = h.page.locator('.screen-page-title');
         await heading.waitFor({ timeout: 20_000 });
+        // The Organisation page's title is the org's name once `GET /org`
+        // answers, a beat after the heading first draws (CI saw the fallback).
+        await until(async () => (await heading.innerText()) === title, 10_000);
         assert.equal(await heading.innerText(), title);
         if (tab !== null) {
           assert.match(await h.page.locator('.page-tab-active').innerText(), new RegExp(tab));
