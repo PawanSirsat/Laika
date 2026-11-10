@@ -7266,8 +7266,61 @@ closed and the view beneath may be any of the space's. Unifying the two is a lat
 **The server is unchanged.** `POST /projects/:slug/tasks` already took every field; the
 browser simply never offered them.
 
-<!-- D-146 (Inbox → Review as a decision queue, LAI-1168) is being written in
-parallel and lands with that task; D-147 below keeps its number either way. -->
+
+## D-146 — Inbox → Review is a decision queue
+
+**Date:** 2026-11-10 · **Decided by:** Pawan (owner); recorded by build-1168 for Belka.
+Tasks LAI-1168 (this half) and LAI-1169 (the dialog, the hand-offs fold and the
+*Accept* wording). Amends D-082 item 7.
+
+**What it was.** `GET /review` lists every review task on the spaces the reader holds
+`task.write` on — the organisation's pile — and the page drew it flat, rows the reader
+could not decide included with their buttons disabled, Accept and Send back only after
+expanding a row. The sidebar's **99+** was that whole queue plus every hand-off plus the
+open unlisted notes: a number about the organisation, not about the reader.
+
+**Decision.** Six things, the owner's on 2026-11-10:
+
+1. **Review opens on *For you to decide*** — the rows the server marks `can_decide` —
+   **grouped by space**, the space with the longest-waiting task first and the queue's
+   oldest-first order kept inside each group. A two-button toggle, first in the filter
+   row, shows ***Everything in review*** read-only at `?view=all`; the default is not in
+   the address. **The badge and the tab count only what the reader can decide.**
+   Capacity's *Waiting for review* tile keeps the whole queue's count; it is a tile about
+   the organisation's load, and says so.
+2. **Multi-select and a bulk bar: Accept only.** A checkbox beside each decidable row,
+   a select-all per group, *N selected · Accept N · ×*. One `POST /tasks/:id/accept` per
+   task, in page order, a progress line, a report naming each refusal by key with the
+   server's sentence, the refused rows left ticked. **Send back stays single** — it
+   needs a reason, and a reason written once for twelve tasks is not one.
+3. **A Review dialog** (LAI-1169): a centred modal in the Create task dialog's house
+   shape — proof, the *Ships* checklist, Accept / Send back / Open on board, Prev / Next,
+   keys — replacing the inline expand.
+4. **Hand-offs fold into Review** (LAI-1169) as a *Needs your approval (N)* section; the
+   Hand-offs tab goes, `?tab=handoffs` aliases to `?tab=review&view=handoffs`.
+5. **One word, *Accept***, everywhere a person takes agent work into done (LAI-1169; the
+   task drawer says *Approve* today). Hand-off approval and device-pairing approval are
+   different acts and keep their word.
+6. **Work moves into the Organisation page as a tab** — D-147, LAI-1170.
+
+**No server change.** `can_decide` was already on every row; the page now reads it.
+
+**Three judgement calls, recorded so the owner can say otherwise.**
+
+- **The hand-offs part of the badge becomes `needs_approval` only** (LAI-1169). An
+  offer `received` waits on the reader's *agent*, not on a click here; counting it in a
+  badge while not listing it on the page is the same badge/page mismatch item 1 removes.
+  *All hand-offs* stays one link away.
+- **The server's 200 cap is applied before `can_decide`.** If a reader's decidable rows
+  ever sit beyond the 200 oldest, they see *0 for you to decide · 200 in review · first
+  200*. Recorded as **not decided**: a precise `GET /review?mine=1` (CORE) would fix it,
+  and nothing here would need to change.
+- **The assignee may still accept their own agent's work** (D-082 left it open). Bulk
+  Accept makes that easier. Unchanged here, flagged.
+
+**What this does not decide.** The dialog's exact keys and the hand-offs section's shape
+(LAI-1169's task file holds them); whether a space admin's accept should need a second
+pair of eyes on the assignee's own agent; a server-side *mine* filter.
 
 ## D-147 — Work is the organisation's register
 

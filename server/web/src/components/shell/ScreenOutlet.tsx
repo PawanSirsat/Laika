@@ -288,11 +288,18 @@ function MyDayRoute() {
 
 function ReviewRoute() {
   const {
-    route: { navigate },
+    route: { navigate, params, setParams },
     refreshReview,
   } = useShell();
   // An accept or a send-back changes the sidebar's count; it re-reads (D-082).
-  return <ReviewScreen onNavigate={navigate} onChanged={refreshReview} />;
+  return (
+    <ReviewScreen
+      params={params}
+      setParams={setParams}
+      onNavigate={navigate}
+      onChanged={refreshReview}
+    />
+  );
 }
 
 /**
@@ -304,7 +311,7 @@ function InboxRoute() {
   const {
     route: { params, navigate },
     me,
-    reviewWaiting,
+    reviewDecidable,
     unlistedOpen,
     handoffCounts,
     refreshHandoffs,
@@ -317,7 +324,7 @@ function InboxRoute() {
       tabs={visibleTabs(INBOX_TABS, holds)}
       current={tab}
       counts={{
-        review: reviewWaiting,
+        review: reviewDecidable,
         handoffs: handoffsWaiting(handoffCounts),
         unlisted: unlistedOpen,
       }}
