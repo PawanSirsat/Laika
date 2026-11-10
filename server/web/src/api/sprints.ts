@@ -160,6 +160,22 @@ export function removeTaskFromSprint(id: string, taskId: string): Promise<unknow
 
 // ------------------------------------------------- the forecast (LAI-772)
 
+/**
+ * `S1`, `S2`, … for a project's sprints in list order, and whether each is
+ * active — the short label the board's cards, the List and the bulk bar's
+ * *Sprint* menu all print (LAI-1170: lifted from `BoardScreen` so Work can
+ * label another space's sprints the same way).
+ */
+export function sprintLabelsOf(
+  sprints: readonly Sprint[],
+): Map<string, { readonly label: string; readonly active: boolean }> {
+  const map = new Map<string, { label: string; active: boolean }>();
+  sprints.forEach((sprint, index) => {
+    map.set(sprint.id, { label: `S${String(index + 1)}`, active: sprint.status === 'active' });
+  });
+  return map;
+}
+
 export interface SprintForecastFigures {
   /** The share of draws inside `[low, high]`. */
   readonly probability: number;
