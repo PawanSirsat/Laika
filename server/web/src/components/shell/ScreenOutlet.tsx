@@ -1,4 +1,3 @@
-import { HandoffsTab } from '../../routes/screens/inbox/HandoffsTab.tsx';
 import { handoffsWaiting } from '../agent/person-handoffs.ts';
 import { useEffect, type ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
@@ -43,6 +42,8 @@ import {
   developerAlias,
   developerTabs,
   INBOX_TABS,
+  inboxAlias,
+  inboxCount,
   INSIGHTS_TABS,
   ORGANISATION_TABS,
   refusedTab,
@@ -307,59 +308,58 @@ function WorkRoute() {
 function ReviewRoute() {
   const {
     route: { navigate, params, setParams },
+    me,
     refreshReview,
+    handoffCounts,
+    refreshHandoffs,
   } = useShell();
   // An accept or a send-back changes the sidebar's count; it re-reads (D-082).
+  // The hand-offs waiting on this person sit at the top of the same tab
+  // (D-146 item 4): their counts and their re-read are the shell's too.
   return (
     <ReviewScreen
       params={params}
       setParams={setParams}
       onNavigate={navigate}
       onChanged={refreshReview}
+      handoffs={{ meId: me?.id, counts: handoffCounts, onChanged: refreshHandoffs }}
     />
   );
 }
 
 /**
- * Inbox (LAI-796): Review, Hand-offs (LAI-550) and Unlisted work as tabs. The
- * counts are the shell's — the same numbers the sidebar adds up for Inbox's
- * badge.
+ * Inbox (LAI-796): Review — with the hand-offs needing approval folded in
+ * (D-146, LAI-1169) — and Unlisted work as tabs. The counts are the shell's —
+ * the same numbers the sidebar adds up for Inbox's badge. The Hand-offs tab
+ * of LAI-550 is an alias now: `?tab=handoffs` is rewritten in place to
+ * Review's *All hand-offs* view, so an old link still lands on its rows.
  */
 function InboxRoute() {
   const {
-    route: { params, navigate },
+    route: { params, navigate, setParams },
     me,
     reviewDecidable,
     unlistedOpen,
     handoffCounts,
-    refreshHandoffs,
   } = useShell();
   const { permissions } = usePermissions(me !== undefined);
   const holds = permissionHolder(permissions?.me.actions);
+  const alias = inboxAlias(params);
+  useEffect(() => {
+    if (alias !== undefined) setParams(alias);
+  }, [alias?.toString()]);
   const tab = currentTab(INBOX_TABS, params, holds);
   return (
     <InboxScreen
       tabs={visibleTabs(INBOX_TABS, holds)}
       current={tab}
       counts={{
-        review: reviewDecidable,
-        handoffs: handoffsWaiting(handoffCounts),
+        review: inboxCount(reviewDecidable, undefined, handoffsWaiting(handoffCounts)),
         unlisted: unlistedOpen,
       }}
       onNavigate={navigate}
     >
-      {tab === 'unlisted' ? (
-        <UnlistedRoute />
-      ) : tab === 'handoffs' ? (
-        <HandoffsTab
-          meId={me?.id}
-          counts={handoffCounts}
-          onChanged={refreshHandoffs}
-          onNavigate={navigate}
-        />
-      ) : (
-        <ReviewRoute />
-      )}
+      {tab === 'unlisted' ? <UnlistedRoute /> : <ReviewRoute />}
     </InboxScreen>
   );
 }

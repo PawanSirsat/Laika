@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PersonInboxCounts } from '../../../api/handoffs.ts';
 import {
   acceptReview,
   decidableCount,
   evidenceSummary,
   getReviewQueue,
   NO_FILTER,
-  proofStamp,
   sendBackReview,
   waitingFor,
   type QueueFilter,
@@ -17,20 +17,25 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
-import { Spinner } from '../../../components/Spinner.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
-import { EvidenceSection } from '../task/EvidenceSection.tsx';
+import { HandoffsTab } from '../inbox/HandoffsTab.tsx';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { applyToEach, type BulkRun } from '../list/list-bulk.ts';
 import { effectiveSelection, NO_SELECTION } from '../list/list-select.ts';
+import { NeedsApprovalSection } from './NeedsApprovalSection.tsx';
 import { ReviewBulkBar } from './ReviewBulkBar.tsx';
+import { ReviewDialog } from './ReviewDialog.tsx';
 import { ReviewGroups } from './ReviewGroups.tsx';
 import {
   acceptSummary,
+  advanceAfterDecide,
   flatOrder,
   groupBySpace,
+  itemParam,
+  positionOf,
   reviewView,
   visibleQueue,
+  withItem,
   withView,
   type ReviewView,
 } from './review-derive.ts';
@@ -39,13 +44,23 @@ import '../profile/profile.css';
 import './review.css';
 
 export interface ReviewScreenProps {
-  /** The address's query: `?view=all` lists everything in review (D-146). */
+  /**
+   * The address's query: `?view=all` lists everything in review, `?view=handoffs`
+   * every hand-off (D-146), `?item=<taskId>` the task open in the dialog.
+   */
   readonly params: URLSearchParams;
-  readonly setParams: (next: URLSearchParams) => void;
+  /** `push` for opening the dialog, so Back closes it; a replace otherwise. */
+  readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   /** Go somewhere in the app — the board, for "Open on board". */
   readonly onNavigate: (to: string) => void;
   /** An accept or a send-back changed the queue — the sidebar's count re-reads. */
   readonly onChanged?: () => void;
+  /** The hand-offs folded into this tab (D-146 item 4): who reads, the shell's counts, its re-read. */
+  readonly handoffs: {
+    readonly meId: string | undefined;
+    readonly counts: PersonInboxCounts | undefined;
+    readonly onChanged: () => void;
+  };
 }
 
 /**
@@ -71,14 +86,23 @@ function boardHref(item: ReviewQueueItem): string {
  * carried. It opens on what *this* reader may decide, grouped by space;
  * *Everything in review* is one toggle away. A person accepts a task into
  * done — one or many at once — or sends it back with a reason; nothing else
- * on the board can mark agent work done.
+ * on the board can mark agent work done. A row opens in the Review dialog
+ * (LAI-1169), `?item=` in the address; the hand-offs waiting on the reader's
+ * approval head the page, and *All hand-offs* is `?view=handoffs`.
  */
-export function ReviewScreen({ params, setParams, onNavigate, onChanged }: ReviewScreenProps) {
+export function ReviewScreen({
+  params,
+  setParams,
+  onNavigate,
+  onChanged,
+  handoffs,
+}: ReviewScreenProps) {
   const [queue, setQueue] = useState<ReviewQueue | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<QueueFilter>(NO_FILTER);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(NO_SELECTION);
+  /** A deep link to a task no longer waiting: said once above the queue. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [run, setRun] = useState<BulkRun | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ taskId: string; message: string } | null>(null);
@@ -86,10 +110,13 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
   const [sendError, setSendError] = useState<string | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
   const loaded = useRef(false);
-  const opener = useRef<HTMLButtonElement | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  /** The key of the last task the dialog drew — where focus goes when it closes. */
+  const openedKey = useRef<string | null>(null);
 
   const view = reviewView(params);
   const decidable = view === 'mine';
+  const openId = itemParam(params);
 
   const load = useCallback((signal?: AbortSignal) => {
     getReviewQueue(signal)
@@ -151,6 +178,26 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
     [selected, shown],
   );
 
+  /** The task the dialog shows; `undefined` while it is not in the queue. */
+  const openItem = useMemo(
+    () => (openId === null ? undefined : items.find((item) => item.task.id === openId)),
+    [items, openId],
+  );
+  if (openItem !== undefined) openedKey.current = openItem.task.key;
+  /**
+   * `?item=` names a task the loaded queue does not have. Opened on it — a
+   * re-read took it out from under the dialog — the dialog says so and offers
+   * Next. Arrived at by link, there is nothing to show: the param goes and
+   * the page says so once.
+   */
+  const vanished =
+    openId !== null && openItem === undefined && queue !== undefined && openedKey.current !== null;
+  useEffect(() => {
+    if (openId === null || openItem !== undefined || queue === undefined || vanished) return;
+    setNotice('That task is no longer waiting for review.');
+    setParams(withItem(params, null));
+  }, [openId, openItem, queue, vanished]);
+
   const names = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of items) {
@@ -193,8 +240,22 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
     setParams(withView(params, next));
   };
 
-  const decided = (): void => {
-    setExpanded(null);
+  const openTask = (id: string | null, push = false): void => {
+    setParams(withItem(params, id), push ? { push: true } : undefined);
+  };
+
+  /**
+   * After a decision in the dialog: the row leaves at once rather than with
+   * the re-read, and the dialog moves to the next row **as the page drew them
+   * before the decision** — or closes at the end (`advanceAfterDecide`). The
+   * re-read and the sidebar's count follow either way.
+   */
+  const decided = (id: string): void => {
+    const next = advanceAfterDecide(order, id);
+    setQueue((q) =>
+      q === undefined ? q : { ...q, tasks: q.tasks.filter((item) => item.task.id !== id) },
+    );
+    if (openId === id) openTask(next);
     load();
     onChanged?.();
   };
@@ -203,7 +264,9 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
     setBusy(item.task.id);
     setFailure(null);
     acceptReview(item.task.id)
-      .then(decided)
+      .then(() => {
+        decided(item.task.id);
+      })
       .catch((cause: unknown) => {
         setFailure({ taskId: item.task.id, message: errorText(cause) });
       })
@@ -223,7 +286,6 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
     if (ids.length === 0) return;
     const keyOf = new Map(items.map((item) => [item.task.id, item.task.key]));
     setRun({ phase: 'running', completed: 0, total: ids.length });
-    setExpanded(null);
     void applyToEach(ids, acceptReview, (completed) => {
       setRun({ phase: 'running', completed, total: ids.length });
     }).then((outcome) => {
@@ -246,7 +308,7 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
     sendBackReview(item.task.id, reason)
       .then(() => {
         setSending(null);
-        decided();
+        decided(item.task.id);
       })
       .catch((cause: unknown) => {
         setSendError(errorText(cause));
@@ -298,71 +360,48 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
 
   const copy = SCREEN_COPY['/review'];
   const running = run?.phase === 'running';
+  const position = openId === null ? null : positionOf(order, openId);
 
-  const detail = (item: ReviewQueueItem) => {
-    const deciding = busy === item.task.id;
+  /** Where focus goes when the dialog closes: the row, else the first row, else a heading. */
+  const restoreFromDialog = (): HTMLElement | null => {
+    const key = openedKey.current;
+    const row =
+      key === null
+        ? null
+        : document.querySelector<HTMLElement>(`.rev-row[data-task="${CSS.escape(key)}"] .rev-line`);
     return (
-      <div className="rev-detail" id={`rev-detail-${item.task.id}`}>
-        <EvidenceSection
-          taskId={item.task.id}
-          // GitHub's confirmations move no task, so the queue's own
-          // re-read is what notices them (D-083).
-          refreshKey={item.task.updated_at + proofStamp(item.round)}
-          sendBack={item.task.send_back}
-          nameOf={nameOf}
-        />
-        {failure?.taskId === item.task.id && (
-          <p className="rev-error" role="alert">
-            {failure.message}
-          </p>
-        )}
-        <div className="rev-actions">
-          {item.can_decide && (
-            <>
-              <button
-                type="button"
-                className="bar-control bar-control-primary"
-                disabled={deciding || running}
-                onClick={() => {
-                  accept(item);
-                }}
-              >
-                {deciding && sending === null && <Spinner size="sm" />}
-                Accept
-              </button>
-              <button
-                type="button"
-                className="bar-control"
-                disabled={deciding || running}
-                onClick={(event) => {
-                  opener.current = event.currentTarget;
-                  setSendError(undefined);
-                  setSending(item);
-                }}
-              >
-                Send back…
-              </button>
-            </>
-          )}
-          <a
-            className="rev-open"
-            href={boardHref(item)}
-            onClick={(event) => {
-              event.preventDefault();
-              onNavigate(boardHref(item));
-            }}
-          >
-            Open on board
-          </a>
-          {!item.can_decide && (
-            <span className="rev-why">
-              Only the assignee, a space admin or an organisation admin decides this one.
-            </span>
-          )}
-        </div>
-      </div>
+      row ??
+      document.querySelector<HTMLElement>('.rev-line') ??
+      document.querySelector<HTMLElement>('.rev-group-title') ??
+      document.querySelector<HTMLElement>('#rev-summary-title')
     );
   };
+
+  /** The whole Hand-offs tab in the queue's place (D-146 item 4): `?view=handoffs`. */
+  if (view === 'handoffs') {
+    return (
+      <div className="rev">
+        {header}
+        <div className="rev-back">
+          <button
+            type="button"
+            className="bar-control"
+            onClick={() => {
+              setView('mine');
+            }}
+          >
+            ← Back to review
+          </button>
+        </div>
+        <HandoffsTab
+          meId={handoffs.meId}
+          counts={handoffs.counts}
+          onChanged={handoffs.onChanged}
+          onNavigate={onNavigate}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="rev">
@@ -438,6 +477,19 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
           </div>
         </dl>
       </section>
+
+      {notice !== null && (
+        <p className="rev-notice" role="status">
+          {notice}
+        </p>
+      )}
+
+      <NeedsApprovalSection
+        meId={handoffs.meId}
+        counts={handoffs.counts}
+        onChanged={handoffs.onChanged}
+        onNavigate={onNavigate}
+      />
 
       {items.length > 0 && (
         <div className="rev-filters" role="group" aria-label="Filter the queue">
@@ -554,7 +606,14 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
       ) : decidable && mine === 0 && !filtered ? (
         <EmptyState
           headline="Nothing for you to decide"
-          body={`${String(items.length)} ${items.length === 1 ? 'task waits' : 'tasks wait'} on someone else.`}
+          // The server sends the 200 oldest before marking who may decide
+          // (D-146's second judgement call): past the cap, "someone else" is
+          // only true of the first 200.
+          body={
+            queue.truncated
+              ? `The first ${String(items.length)} tasks in review wait on someone else; yours may sit beyond them.`
+              : `${String(items.length)} ${items.length === 1 ? 'task waits' : 'tasks wait'} on someone else.`
+          }
           action={{
             label: 'Show everything in review',
             onClick: () => {
@@ -580,13 +639,61 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
           selected={effective}
           onSelect={setSelected}
           busy={running}
-          expanded={expanded}
-          onToggle={(item) => {
-            setExpanded(expanded === item.task.id ? null : item.task.id);
+          open={openId}
+          onOpen={(item) => {
             setFailure(null);
+            setNotice(null);
+            openTask(item.task.id, true);
           }}
-          detail={detail}
         />
+      )}
+
+      {openId !== null && (openItem !== undefined || vanished) && (
+        <ReviewDialog
+          item={openItem}
+          taskKey={openedKey.current ?? openId}
+          position={position}
+          now={now}
+          deciding={busy === openId}
+          held={running}
+          failure={failure?.taskId === openId ? failure.message : undefined}
+          nameOf={nameOf}
+          boardHref={boardHref}
+          onNavigate={onNavigate}
+          onPrev={() => {
+            if (position?.prev != null) openTask(position.prev);
+          }}
+          onNext={() => {
+            // From a vanished item the next row is the first still drawn
+            // after where it stood; with none left, close.
+            const next = openItem === undefined ? (order[0] ?? null) : (position?.next ?? null);
+            openTask(next);
+          }}
+          onClose={() => {
+            openTask(null);
+          }}
+          onAccept={accept}
+          onSendBack={(item, from) => {
+            opener.current = from;
+            setSendError(undefined);
+            setSending(item);
+          }}
+          restore={restoreFromDialog}
+        >
+          {sending !== null && (
+            <SendBackDialog
+              taskKey={sending.task.key}
+              title={sending.task.title}
+              busy={busy === sending.task.id}
+              error={sendError}
+              onSend={sendBack}
+              onClose={() => {
+                setSending(null);
+              }}
+              restoreFocus={() => opener.current}
+            />
+          )}
+        </ReviewDialog>
       )}
 
       {(effective.size > 0 || run !== undefined) && (
@@ -601,20 +708,6 @@ export function ReviewScreen({ params, setParams, onNavigate, onChanged }: Revie
           onDismissReport={() => {
             setRun(undefined);
           }}
-        />
-      )}
-
-      {sending !== null && (
-        <SendBackDialog
-          taskKey={sending.task.key}
-          title={sending.task.title}
-          busy={busy === sending.task.id}
-          error={sendError}
-          onSend={sendBack}
-          onClose={() => {
-            setSending(null);
-          }}
-          restoreFocus={() => opener.current}
         />
       )}
     </div>

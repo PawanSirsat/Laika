@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import {
   ciLine,
   ciVerdict,
@@ -20,11 +19,10 @@ export interface ReviewGroupsProps {
   readonly onSelect: (next: ReadonlySet<string>) => void;
   /** A bulk run is under way: the boxes hold still. */
   readonly busy: boolean;
-  /** The row whose proof is open, if any. */
-  readonly expanded: string | null;
-  readonly onToggle: (item: ReviewQueueItem) => void;
-  /** The open row's proof and decisions, drawn under its line. */
-  readonly detail: (item: ReviewQueueItem) => ReactNode;
+  /** The row open in the Review dialog, if any — tinted so the place is kept. */
+  readonly open: string | null;
+  /** A row's line was pressed: open it in the dialog (LAI-1169). */
+  readonly onOpen: (item: ReviewQueueItem) => void;
 }
 
 /**
@@ -34,8 +32,8 @@ export interface ReviewGroupsProps {
  * align whichever view is open.
  *
  * **The checkbox is outside the row button.** The line is a button that opens
- * the proof; a box inside it would be a control inside a control, and a near
- * miss on a 16px box must tick, not expand.
+ * the Review dialog (LAI-1169); a box inside it would be a control inside a
+ * control, and a near miss on a 16px box must tick, not open.
  */
 export function ReviewGroups({
   groups,
@@ -43,9 +41,8 @@ export function ReviewGroups({
   selected,
   onSelect,
   busy,
-  expanded,
-  onToggle,
-  detail,
+  open,
+  onOpen,
 }: ReviewGroupsProps) {
   return (
     <div className="rev-groups">
@@ -79,7 +76,9 @@ export function ReviewGroups({
                   />
                 )}
               </span>
-              <h3 className="rev-group-title" id={headingId}>
+              {/* Focusable, not in the Tab order: where focus lands when the
+                  dialog closes on a row that has since left the queue. */}
+              <h3 className="rev-group-title" id={headingId} tabIndex={-1}>
                 {group.project.name}
               </h3>
               <span className="rev-group-count">
@@ -92,7 +91,7 @@ export function ReviewGroups({
               aria-label={`Tasks waiting for review in ${group.project.name}`}
             >
               {group.items.map((item) => {
-                const open = expanded === item.task.id;
+                const opened = open === item.task.id;
                 const ticked = selected.has(item.task.id);
                 const summary = evidenceSummary(item.round);
                 const ci = ciVerdict(item.round);
@@ -102,7 +101,7 @@ export function ReviewGroups({
                     key={item.task.id}
                     className={[
                       'rev-row',
-                      open ? 'rev-row-open' : '',
+                      opened ? 'rev-row-open' : '',
                       ticked ? 'rev-row-selected' : '',
                     ]
                       .filter((c) => c !== '')
@@ -126,10 +125,9 @@ export function ReviewGroups({
                     <button
                       type="button"
                       className="rev-line"
-                      aria-expanded={open}
-                      aria-controls={`rev-detail-${item.task.id}`}
+                      aria-haspopup="dialog"
                       onClick={() => {
-                        onToggle(item);
+                        onOpen(item);
                       }}
                     >
                       <span className="rev-key">{item.task.key}</span>
@@ -187,7 +185,6 @@ export function ReviewGroups({
                         )}
                       </span>
                     </button>
-                    {open && detail(item)}
                   </li>
                 );
               })}

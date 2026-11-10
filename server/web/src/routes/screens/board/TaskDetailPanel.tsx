@@ -395,7 +395,7 @@ export function TaskDetailPanel({
   const rounds = roundsRead.rounds;
 
   /*
-   * **Approve and Send back from the panel** (D-129 item 5): the Review
+   * **Accept and Send back from the panel** (D-129 item 5; *Accept*, D-146): the Review
    * screen's endpoints and dialog, offered to the reader the server lets
    * decide. A refusal is shown as the server words it.
    */
@@ -409,7 +409,7 @@ export function TaskDetailPanel({
     detail.refresh();
     onReviewDecided?.();
   };
-  const approve = (): void => {
+  const accept = (): void => {
     setDeciding('accept');
     setDecideError(undefined);
     acceptReview(task.id)
@@ -865,7 +865,7 @@ export function TaskDetailPanel({
             mayDecide={mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
             deciding={deciding}
             decideError={decideError}
-            onApprove={approve}
+            onAccept={accept}
             onSendBack={(opener) => {
               sendBackOpener.current = opener;
               setSendBackError(undefined);

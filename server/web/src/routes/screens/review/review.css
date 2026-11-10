@@ -481,3 +481,55 @@
     max-width: calc(100% - var(--space-4) * 2);
   }
 }
+
+/* ------------------------------------------- the dialog's neighbours (LAI-1169) */
+
+/* The Send back dialog opens over the Review dialog (scrim 60, box 61), so
+   its own pair sits one layer up; the dropdown menus and the toast stay at 70. */
+.rev-scrim {
+  z-index: 62;
+}
+
+.rev-dialog {
+  z-index: 63;
+}
+
+/* *Needs your approval (N)* (D-146 item 4): the Hand-offs tab fixed on one
+   view, under a group heading like the spaces below it. */
+.rev-approvals {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.rev-approvals-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-right: var(--space-2);
+}
+
+.rev-approvals-all {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.rev-approvals .handoffs-tab {
+  margin: 0;
+}
+
+/* *All hand-offs*: the whole Hand-offs tab in the queue's place, with the way back. */
+.rev-back {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* A deep link to a task no longer waiting: said once, quietly, above the queue. */
+.rev-notice {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
