@@ -8,7 +8,7 @@ depends-on: []
 discovered-from:
 status: review
 started: 2026-11-10T07:46:00Z
-finished: 2026-11-10T11:30:00Z
+finished: 2026-11-10T13:05:00Z
 ---
 
 ## Goal
@@ -83,6 +83,32 @@ LAIKA-1033 (`external_ref: LAI-1170`).
       (`/work`), the Organisation row (seven tabs incl. Work), §11.4.2's
       Organisation endpoints (Work's reads and the bar's writes), §11.4.2.1's
       Organisation entry (a Work paragraph). `docs/DECISIONS.md` D-147.
+
+## Review round 1 (CHIEF, 2026-11-10, PR #311 on eddab356)
+
+Five notes; the fixes:
+
+- [x] (1) After a run the rows just changed leave page one (the server orders
+      `GET /tasks` oldest change first) and the report vanished with the
+      unmounted list. Now a refetch of the same page keeps its rows until the
+      new page lands (`pageShown`), and the bar stays mounted while `bulkRun`
+      is defined — report and *Dismiss* with nothing selected, in the empty
+      branches too. The test's stub re-orders the rows after the run as the
+      server does, asserts the report, its count and *Dismiss* after the
+      refetch, and a `MutationObserver` asserts the loading state never came
+      back. Mutation: unconditional `setLoad({ status: 'loading' })` → red.
+- [x] (2) `.work-row-selected` moved after `.work-row:hover`; the test
+      asserts the computed background under the pointer, not the class.
+- [x] (3) Scoped but not loaded: *Status* / *Sprint* held with
+      `title="Loading statuses…"` / `"Loading sprints…"` and `aria-busy`
+      (`statusesLoading` / `sprintsLoading` on `BulkBar`, `LOADING_SCOPE`);
+      the label never changes. A refused read is dropped from `askedStatuses`
+      (and `asked` for sprints) so the next selection reads again; tested with
+      a gated route that refuses once.
+- [x] (4) `aria-selected` dropped from the role-less row; the checkbox's
+      checked state says it.
+- [x] (5) The viewer-everywhere case waits for the permissions answer, the
+      *Total* tile and the pager before asserting no checkbox.
 
 ## Notes / context
 

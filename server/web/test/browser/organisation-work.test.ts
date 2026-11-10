@@ -947,6 +947,24 @@ const BULK_STUB: ApiStub = {
   ...PATCH_ROUTES,
 };
 
+/**
+ * What the real server does after a run (review round 1): `GET /tasks` is
+ * ordered oldest change first, so the two tasks just changed are the newest
+ * and leave page one; the refused LAI-12 stays where it was, page two's rows
+ * move up. A stub that answered the same rows twice let the report vanish
+ * unseen.
+ */
+const PAGE_ONE_AFTER = [PAGE_ONE[1], ...PAGE_TWO];
+function reorderingTasks(): (call: StubCall) => unknown {
+  let reads = 0;
+  return () => {
+    reads += 1;
+    return reads === 1
+      ? { data: PAGE_ONE, next_cursor: 'C2' }
+      : { data: PAGE_ONE_AFTER, next_cursor: 'C2' };
+  };
+}
+
 const check = (page: Page, key: string) => page.getByLabel(`Select ${key}`, { exact: true });
 
 void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
@@ -966,12 +984,18 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
           const status = h.page.locator('.list-bulk-action', { hasText: 'Status' });
           assert.ok(await status.isDisabled(), 'Status offered across two spaces');
           assert.equal(await status.getAttribute('title'), 'Choose one space to change status');
-          assert.ok(
-            (await h.page.locator('.work-row').first().getAttribute('class'))?.includes(
-              'work-row-selected',
-            ),
-            'the selected row is not tinted',
-          );
+          // The tint is the accent's and stays under the pointer; an
+          // unselected row under the pointer is the card's hover.
+          const first = h.page.locator('.work-row').first();
+          const third = h.page.locator('.work-row').nth(2);
+          const bg = (row: typeof first) =>
+            row.evaluate((el) => getComputedStyle(el).backgroundColor);
+          const selectedBg = await bg(first);
+          await first.hover();
+          assert.equal(await bg(first), selectedBg, 'the selected tint lost to the hover');
+          await third.hover();
+          assert.notEqual(await bg(third), selectedBg, 'an unselected row wears the tint');
+          await h.page.mouse.move(0, 0);
           const overflow = await h.page.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );
@@ -992,9 +1016,27 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
   }
 
   void test('select-all takes the rows the reader may change; Priority is one PATCH each, and names the refusal', async () => {
-    const h = await openWork('/organisation?tab=work', BULK_STUB);
+    const h = await openWork('/organisation?tab=work', {
+      ...BULK_STUB,
+      '/api/v1/tasks?fields=slim': reorderingTasks(),
+    });
     try {
       await keys(h.page);
+      // Watches for the list being torn down after this point: the refetch a
+      // run ends with must keep the rows, or the bar and its report go too.
+      await h.page.evaluate(() => {
+        const w = window as unknown as { __sawLoading: boolean };
+        w.__sawLoading = false;
+        new MutationObserver(() => {
+          if (
+            [...document.querySelectorAll('[role="status"]')].some((el) =>
+              (el.textContent ?? '').includes('Loading everyone'),
+            )
+          ) {
+            w.__sawLoading = true;
+          }
+        }).observe(document.body, { subtree: true, childList: true });
+      });
       const all = h.page.getByLabel('Select every task on this page you may change', {
         exact: true,
       });
@@ -1032,12 +1074,26 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
         ['/api/v1/tasks/t3', { priority: 'p1' }],
       ]);
 
-      // The list and the figures were read again, so every row is the server's.
+      // The list and the figures were read again, so every row is the server's
+      // — and the server's page one no longer holds the two it changed.
       await until(() => reads(h).length >= 2 && counts(h).length >= 2);
-      // The selection and the report both survived that reload.
-      assert.equal(await text(h.page.locator('.list-bulk-count')), '3 selected');
+      await until(async () => (await keys(h.page)).join() === 'LAI-12,ONR-360,LAI-18');
+      assert.equal(
+        await h.page.evaluate(() => (window as unknown as { __sawLoading: boolean }).__sawLoading),
+        false,
+        'the list was torn down for the refetch',
+      );
+      // The report is still up to be read, with the one row still selected.
+      assert.equal((await text(summary)).replace(' Dismiss', ''), '2 updated, 1 refused');
+      assert.deepEqual(await refusals.allInnerTexts(), [
+        'LAI-12 — A task in review keeps its priority',
+      ]);
+      assert.equal(await text(h.page.locator('.list-bulk-count')), '1 selected');
       await h.page.locator('.list-bulk-dismiss').click();
       assert.equal(await summary.count(), 0);
+      // Clearing the one selection takes the bar away, report already gone.
+      await check(h.page, 'LAI-12').uncheck();
+      assert.equal(await h.page.locator('.list-bulk').count(), 0);
     } finally {
       await h.close();
     }
@@ -1077,6 +1133,62 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
       assert.equal(statusReads().length, 1, 'read again for the same space');
     } finally {
       await h.close();
+    }
+
+    // While the one space's columns are on their way, Status is held as
+    // loading — never told to choose a space it already has — and a refused
+    // read is asked again on the next selection rather than held for ever.
+    let statusReads = 0;
+    let releaseStatuses: () => void = () => undefined;
+    const statusGate = new Promise<void>((resolve) => {
+      releaseStatuses = resolve;
+    });
+    const slow = await open(
+      '/organisation?tab=work',
+      {
+        ...BULK_STUB,
+        '/api/v1/projects/laika/statuses': () => {
+          statusReads += 1;
+          return statusReads === 1
+            ? refuse(500, 'internal', 'the database is locked')
+            : LAIKA_STATUSES;
+        },
+      },
+      {
+        before: async (page) => {
+          await page.route(/\/api\/v1\/projects\/laika\/statuses/, async (route) => {
+            await statusGate;
+            await route.continue();
+          });
+        },
+      },
+    );
+    try {
+      await slow.page.locator('.work').waitFor({ timeout: 20_000 });
+      await keys(slow.page);
+      await check(slow.page, 'LAI-12').waitFor({ timeout: 10_000 });
+      await check(slow.page, 'LAI-12').check();
+      const status = slow.page.locator('.list-bulk-action', { hasText: 'Status' });
+      await status.waitFor({ timeout: 10_000 });
+      assert.ok(await status.isDisabled());
+      assert.equal(await status.getAttribute('title'), 'Loading statuses…');
+      assert.equal(await status.getAttribute('aria-busy'), 'true');
+      assert.equal(await text(status), 'Status', 'the button swapped its label');
+      // The first read is refused: still held as loading, not "choose a space".
+      releaseStatuses();
+      await until(() => statusReads === 1);
+      await slow.page.waitForTimeout(200);
+      assert.equal(await status.getAttribute('title'), 'Loading statuses…');
+      // Selecting the space again asks again, and this time it answers.
+      await check(slow.page, 'LAI-12').uncheck();
+      await check(slow.page, 'LAI-12').check();
+      await until(() => statusReads === 2);
+      await until(async () => !(await status.isDisabled()));
+      assert.equal(await status.getAttribute('title'), null);
+      assert.equal(await status.getAttribute('aria-busy'), null);
+    } finally {
+      releaseStatuses();
+      await slow.close();
     }
 
     // The filter names the space before anything is selected.
@@ -1136,8 +1248,13 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
     });
     try {
       await keys(viewer.page);
+      // Positive signals first — the gates answered and the page drew its
+      // figures and pager — so the absence below is a settled page's, not
+      // the frame before the permissions arrived.
       await until(() => viewer.calls.some((c) => c.path === '/api/v1/permissions'));
-      await viewer.page.waitForTimeout(300);
+      await tile(viewer.page, 'Total');
+      await viewer.page.locator('.work-pager').waitFor({ timeout: 10_000 });
+      await viewer.page.waitForTimeout(200);
       assert.equal(await viewer.page.locator('.work input[type="checkbox"]').count(), 0);
       assert.equal(await viewer.page.locator('.work-selectable').count(), 0);
     } finally {

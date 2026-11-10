@@ -142,9 +142,23 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
+  /*
+   * **A refetch of the same page keeps its rows until the new ones land**
+   * (LAI-1170 review). A bulk run ends with one, and the real server orders
+   * `GET /tasks` oldest change first — so every task just changed becomes
+   * the newest and leaves page one. Unmounting the list for the refetch took
+   * the bar, and with it the report, before anyone could read "3 updated".
+   * Only a different page — another filter, size or cursor — starts from the
+   * loading state.
+   */
+  const pageShown = useRef<string | undefined>(undefined);
   useEffect(() => {
     const controller = new AbortController();
-    setLoad({ status: 'loading' });
+    const key = `${queryKey}#${cursor ?? ''}`;
+    setLoad((current) =>
+      current.status === 'ready' && pageShown.current === key ? current : { status: 'loading' },
+    );
+    pageShown.current = key;
     listAllTasks(cursor === null ? query : { ...query, cursor }, controller.signal)
       .then((page) => {
         setLoad({ status: 'ready', tasks: page.data, next: page.next_cursor });
@@ -277,8 +291,14 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
       .then(({ data }) => {
         setStatusesBySpace((current) => new Map(current).set(scopeSlug, data));
       })
-      .catch(() => undefined);
+      .catch(() => {
+        // Forgotten, not remembered as asked: the next selection of this
+        // space reads again, rather than holding *Status* for ever.
+        askedStatuses.current.delete(scopeSlug);
+      });
   }, [scopeSlug]);
+  /** Scoped, and that space's columns not here yet — on their way, or refused. */
+  const scopeStatuses = scope === undefined ? undefined : statusesBySpace.get(scope.slug);
 
   /*
    * Sprint names, per space, read only for spaces that are shown with a
@@ -307,7 +327,10 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
         .then(({ items }) => {
           setSprintsBySpace((current) => new Map(current).set(slug, items));
         })
-        .catch(() => undefined);
+        .catch(() => {
+          // As the statuses: a refused read is asked again next time.
+          asked.current.delete(slug);
+        });
     }
   }, [wanted]);
   const scopeSprints = scope === undefined ? undefined : sprintsBySpace.get(scope.slug);
@@ -350,6 +373,48 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
   );
   const rows = useMemo(() => workRows(tasks, lookups), [tasks, lookups]);
   const selectable = writableIds.length > 0;
+
+  /*
+   * **The bar outlives the selection while there is a report to read.** The
+   * rows a run changed leave this page (they are the newest now), so after
+   * the refetch nothing may be selected — and "2 updated, 1 refused" with its
+   * *Dismiss* is exactly what the reader is waiting for. Closing it is
+   * theirs (`onDismissReport`, or ×).
+   */
+  const barUp = effective.size > 0 || bulkRun !== undefined;
+  const bar = barUp && (
+    <>
+      <div className="list-bulk-room" aria-hidden="true" />
+      <BulkBar
+        count={effective.size}
+        total={writableIds.length}
+        onSelectAll={() => {
+          select(selectAll(tasks.filter((t) => writable.has(t.id))));
+        }}
+        onClear={() => {
+          select(NO_SELECTION);
+          setRun(undefined);
+        }}
+        // A space's own, so only within one space (`bulkScope`): held with a
+        // title otherwise, and held as *loading* while that space's columns
+        // or sprints are still on their way.
+        statuses={scopeStatuses}
+        statusesLoading={scope !== undefined && scopeStatuses === undefined}
+        members={members}
+        sprints={scopeSprints}
+        sprintsLoading={scope !== undefined && scopeSprints === undefined}
+        sprintLabels={sprintLabels}
+        maySetSprint={
+          scope === undefined ? true : gates.project(scope.projectId, 'task.assign_sprint')
+        }
+        run={bulkRun}
+        onAction={runBulk}
+        onDismissReport={() => {
+          setRun(undefined);
+        }}
+      />
+    </>
+  );
 
   const set = (change: Parameters<typeof withWorkFilter>[1]): void => {
     setParams(withWorkFilter(params, change));
@@ -478,20 +543,25 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
       ) : load.status === 'loading' ? (
         <LoadingState shape="row" count={6} label="Loading everyone’s work" />
       ) : rows.length === 0 ? (
-        filtered ? (
-          <EmptyState
-            headline="No work matches these filters"
-            body="Nothing in the spaces you can read has this person, status, space and sprint together."
-            action={{
-              label: 'Clear filters',
-              onClick: () => {
-                set({ person: '', status: '', space: '', sprint: '' });
-              },
-            }}
-          />
-        ) : (
-          <EmptyState headline={EMPTY.headline} body={EMPTY.body} />
-        )
+        // A run can empty a filtered page (every row moved out of the
+        // status); the report still has to be read, so it floats here too.
+        <div className="work-card">
+          {filtered ? (
+            <EmptyState
+              headline="No work matches these filters"
+              body="Nothing in the spaces you can read has this person, status, space and sprint together."
+              action={{
+                label: 'Clear filters',
+                onClick: () => {
+                  set({ person: '', status: '', space: '', sprint: '' });
+                },
+              }}
+            />
+          ) : (
+            <EmptyState headline={EMPTY.headline} body={EMPTY.body} />
+          )}
+          {bar}
+        </div>
       ) : (
         <>
           <div className="work-head">
@@ -542,10 +612,7 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
                     (LAI-959): a link cannot sit inside a button. The checkbox
                     sits above it the same way (LAI-1170).
                   */}
-                    <div
-                      className={isSelected ? 'work-row work-row-selected' : 'work-row'}
-                      aria-selected={writable.has(row.id) ? isSelected : undefined}
-                    >
+                    <div className={isSelected ? 'work-row work-row-selected' : 'work-row'}>
                       {selectable && (
                         <span className="work-check">
                           {writable.has(row.id) && (
@@ -619,35 +686,7 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
                 );
               })}
             </ul>
-            {effective.size > 0 && <div className="list-bulk-room" aria-hidden="true" />}
-            {effective.size > 0 && (
-              <BulkBar
-                count={effective.size}
-                total={writableIds.length}
-                onSelectAll={() => {
-                  select(selectAll(tasks.filter((t) => writable.has(t.id))));
-                }}
-                onClear={() => {
-                  select(NO_SELECTION);
-                  setRun(undefined);
-                }}
-                // A space's own, so only within one space (`bulkScope`): held
-                // with a title otherwise, and absent while that space's
-                // statuses are still on their way.
-                statuses={scope === undefined ? undefined : statusesBySpace.get(scope.slug)}
-                members={members}
-                sprints={scopeSprints}
-                sprintLabels={sprintLabels}
-                maySetSprint={
-                  scope === undefined ? true : gates.project(scope.projectId, 'task.assign_sprint')
-                }
-                run={bulkRun}
-                onAction={runBulk}
-                onDismissReport={() => {
-                  setRun(undefined);
-                }}
-              />
-            )}
+            {bar}
           </div>
         </>
       )}

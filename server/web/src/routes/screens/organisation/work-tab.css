@@ -88,11 +88,6 @@
   --list-bulk-room: 4.25rem;
 }
 
-.work-row-selected,
-.work-row-selected:hover {
-  background: var(--accent-bg);
-}
-
 .work-head,
 .work-row {
   display: grid;
@@ -141,6 +136,13 @@
 
 .work-row:hover {
   background: var(--bg-card-hover);
+}
+
+/* After the hover rule at equal specificity, so a selected row keeps its
+   tint under the pointer (as `list.css` orders it). */
+.work-row-selected,
+.work-row-selected:hover {
+  background: var(--accent-bg);
 }
 
 /* The title is the row's button, and its hit area is the whole row. */
