@@ -1731,6 +1731,11 @@
 }
 
 /* The icon actions: one square each, no words, the count beside the eye. */
+/* The Workroom's *Expand* is a link (LAI-1199), drawn as the row's buttons. */
+.panel-expand {
+  text-decoration: none;
+}
+
 .panel-head-actions .panel-head-action {
   display: inline-flex;
   align-items: center;
