@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EmptyState } from '../../../components/EmptyState.tsx';
+import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
@@ -231,15 +231,23 @@ export function ListView({
     return (
       <div className="list-pane">
         <div className="list-scroll list-scroll-empty">
-          <EmptyState
-            headline={filtered ? 'Nothing here for this filter' : 'No tasks in this project yet'}
-            {...(filtered
-              ? {
-                  body: 'Widen the range or switch the filter.',
-                  action: { label: 'Clear filters', onClick: onClearFilters },
-                }
-              : {})}
-          />
+          {/* LAI-1207: the kit's two variants. Filtered keeps its wording and
+              gains the reason; first use points at the Create row beneath it,
+              which is the action, so it carries no button of its own. */}
+          {filtered ? (
+            <EmptyPanel
+              variant="filtered"
+              title="Nothing here for this filter"
+              why="Widen the range or switch the filter."
+              onClearFilters={onClearFilters}
+            />
+          ) : (
+            <EmptyPanel
+              variant="first-use"
+              title="No tasks in this project yet"
+              why="Add the first one below, and it appears here and on the board."
+            />
+          )}
           {createRow}
         </div>
       </div>
