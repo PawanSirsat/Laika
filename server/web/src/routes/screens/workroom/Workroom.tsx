@@ -647,8 +647,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
                 : `Round ${String(rounds.rounds[0].number)} is waiting for a decision.`}
             </p>
             <div className="wr-review-actions" ref={sendBackButton}>
-              <Button variant="primary" disabled={review.deciding !== null} onClick={review.accept}>
-                {review.deciding === 'accept' ? 'Accepting…' : 'Accept'}
+              <Button
+                variant="primary"
+                disabled={review.deciding === 'send_back'}
+                busy={review.deciding === 'accept'}
+                onClick={review.accept}
+              >
+                Accept
               </Button>
               <Button
                 variant="secondary"

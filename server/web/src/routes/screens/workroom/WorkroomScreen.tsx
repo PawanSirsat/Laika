@@ -7,6 +7,7 @@ import { reloadProjectTasks, useProjectTasks } from '../../../api/use-project-ta
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { workroomReturn } from '../../workroom-return.ts';
 import { Workroom } from './Workroom.tsx';
 import { findByKey, prefixOf, spaceOfKey } from './workroom-resolve.ts';
@@ -198,21 +199,21 @@ function WorkroomState({
   readonly children: React.ReactNode;
 }) {
   return (
-    <section className="wr-state" aria-labelledby="wr-state-title">
-      <p className="wr-state-key">{taskKey}</p>
-      <h1 id="wr-state-title" className="wr-state-title">
-        {title}
-      </h1>
-      {children}
-      <Button
-        variant="secondary"
-        onClick={() => {
-          navigate('/projects');
-        }}
-      >
-        Go to your spaces
-      </Button>
-    </section>
+    <>
+      {/* The app's own header band, as every in-app screen has (LAI-251). */}
+      <ScreenHeader variant="page" title={title} context={taskKey} />
+      <section className="wr-state" aria-label={title}>
+        {children}
+        <Button
+          variant="secondary"
+          onClick={() => {
+            navigate('/projects');
+          }}
+        >
+          Go to your spaces
+        </Button>
+      </section>
+    </>
   );
 }
 
