@@ -19,7 +19,7 @@ import type { BulkOutcome } from '../list/list-bulk.ts';
  * on *this* reader; everything else is one toggle away, read-only.
  */
 
-/** What the page lists. `handoffs` is reserved for LAI-1169's fold. */
+/** What the page lists: the decision queue, the whole queue, or — LAI-1169 — the hand-offs. */
 export type ReviewView = 'mine' | 'all' | 'handoffs';
 
 /** The default view is not in the address; `?view=all` and `?view=handoffs` are. */
@@ -97,4 +97,97 @@ export function acceptSummary(outcome: BulkOutcome): string {
   const parts = [`${String(outcome.done.length)} accepted`];
   if (outcome.failed.length > 0) parts.push(`${String(outcome.failed.length)} refused`);
   return parts.join(', ');
+}
+
+/* ------------------------------------------------------- the dialog (LAI-1169) */
+
+/** The open item: `?item=<taskId>`, or none. */
+export function itemParam(params: URLSearchParams): string | null {
+  const asked = params.get('item');
+  return asked === null || asked === '' ? null : asked;
+}
+
+/** The address with `item` set, or without it. Other params survive. */
+export function withItem(params: URLSearchParams, id: string | null): URLSearchParams {
+  const next = new URLSearchParams(params);
+  if (id === null) next.delete('item');
+  else next.set('item', id);
+  return next;
+}
+
+export interface ItemPosition {
+  /** Zero-based, as the page draws the rows. */
+  readonly index: number;
+  readonly total: number;
+  readonly prev: string | null;
+  readonly next: string | null;
+}
+
+/** Where `id` sits in the drawn order, with its neighbours; `null` when it is not drawn. */
+export function positionOf(order: readonly string[], id: string): ItemPosition | null {
+  const index = order.indexOf(id);
+  if (index === -1) return null;
+  return {
+    index,
+    total: order.length,
+    prev: index === 0 ? null : (order[index - 1] ?? null),
+    next: index === order.length - 1 ? null : (order[index + 1] ?? null),
+  };
+}
+
+/**
+ * Where the dialog goes once `id` is decided: the next row after it in the
+ * order **captured before the decision**, or `null` at the end — close. A row
+ * no longer `present` (a poll took it meanwhile) is skipped, never shown as
+ * vanished the moment it opens.
+ */
+export function advanceAfterDecide(
+  order: readonly string[],
+  id: string,
+  present?: ReadonlySet<string>,
+): string | null {
+  const at = order.indexOf(id);
+  if (at === -1) return null;
+  for (const candidate of order.slice(at + 1)) {
+    if (candidate !== id && (present === undefined || present.has(candidate))) return candidate;
+  }
+  return null;
+}
+
+export type DialogCommand = 'next' | 'prev' | 'accept' | 'send_back' | 'close';
+
+/** What of a key event the dialog reads — a real one, or a test's. */
+export interface DialogKey {
+  readonly key: string;
+  readonly metaKey?: boolean;
+  readonly ctrlKey?: boolean;
+  readonly altKey?: boolean;
+  readonly defaultPrevented?: boolean;
+}
+
+/**
+ * The dialog's keys: `j` / `↓` next, `k` / `↑` previous, `a` accept, `s`
+ * send back, Escape close. **Nothing while typing** — a reason being written
+ * says "as" — except Escape, which is the one key a field expects to give up;
+ * and nothing with a modifier held, so ⌘A still selects text. Escape a control
+ * inside has already spent (`defaultPrevented`) is left to it.
+ */
+export function dialogCommand(event: DialogKey, typing: boolean): DialogCommand | null {
+  if (event.key === 'Escape') return event.defaultPrevented === true ? null : 'close';
+  if (typing) return null;
+  if (event.metaKey === true || event.ctrlKey === true || event.altKey === true) return null;
+  switch (event.key) {
+    case 'j':
+    case 'ArrowDown':
+      return 'next';
+    case 'k':
+    case 'ArrowUp':
+      return 'prev';
+    case 'a':
+      return 'accept';
+    case 's':
+      return 'send_back';
+    default:
+      return null;
+  }
 }

@@ -4684,7 +4684,8 @@ event not addressed to the agent, or one it may no longer read, is `404` with
 `event_ids`; `session_id` must be its own open session (§4.65). It is
 presence, as a heartbeat is: `heartbeat.send_own`, no activity row. Both are
 an agent's: any other token is `403`, `reason: not_an_agent`. **`GET /handoff-offers` is a
-person's inbox** (LAI-1009), the one the web Inbox's *Hand-offs* tab reads: an
+person's inbox** (LAI-1009), the one the web Inbox's Review tab reads — its
+*Needs your approval* section and its *All hand-offs* view (D-146, LAI-1169): an
 agent's token is `403` with `reason: use_agent_inbox` and keeps `GET
 /agents/me/inbox`. Each row is a hand-off or recovery offer with its task (`id`,
 `key`, `title`, project), `from_agent` and `to_agent` as the task's selected
@@ -6750,12 +6751,12 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **My day** and **Inbox** (its count is Review's *for you to decide* — the queue rows the reader may accept or send back, D-146 — plus Hand-offs' waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (everyone, their own — D-139; only owners and admins open someone else's), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries — *Work* (LAI-952) sat after Inbox until it moved to Organisation (D-147) | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20); **D-146**; **D-147** |
+| the sidebar | **My day** and **Inbox** (its count is Review's *for you to decide* — the queue rows the reader may accept or send back, D-146 — plus the hand-offs needing the reader's approval (LAI-1169) plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (everyone, their own — D-139; only owners and admins open someone else's), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries — *Work* (LAI-952) sat after Inbox until it moved to Organisation (D-147) | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20); **D-146**; **D-147** |
 | the icon rail | a toggle in the sidebar's head collapses it to icons — each entry's icon, its count on the icon's corner, its name in a tooltip on hover and keyboard focus — remembered per browser; automatic between the phone's off-canvas width and a laptop's; never on a phone, where the sidebar is off-canvas | **LAI-796** |
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer; `min(1280px, 94vw)` wide since the redesign (D-129) | D-059.2, amended by **D-063**, width by **D-129** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept — D-146), *Hand-offs* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept, the hand-offs needing approval at its head and the whole Hand-offs list at `?view=handoffs` — D-146; `?tab=handoffs` is an alias to it, LAI-1169) and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`), `/work` → `/organisation?tab=work` (keeping its `person`, `status`, `space`, `sprint` and `size`) | **LAI-796**; **LAI-507**; **D-147** |
 | Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
 
@@ -7119,10 +7120,12 @@ anything missing sends the task back.
   loading skeleton is the final layout; no matches has its own state. With
   `presence_enabled = 0` it says so, keeps the workload and draws no status.
   **No unlisted notes on this screen** — they are on their own page.
-- **Inbox** (`/inbox`, LAI-796) — *Review*, *Hand-offs* (LAI-550) and
-  *Unlisted work* as tabs, each with its count; Unlisted work only for owners
-  and admins. The sidebar's Inbox count is the three added, Review's being
-  its *for you to decide* count (D-146).
+- **Inbox** (`/inbox`, LAI-796) — *Review* and *Unlisted work* as tabs, each
+  with its count; Unlisted work only for owners and admins. The Hand-offs tab
+  (LAI-550) folded into Review (D-146 item 4, LAI-1169): `?tab=handoffs` is
+  rewritten in place to `?tab=review&view=handoffs`. The sidebar's Inbox count
+  is the two added, Review's being its *for you to decide* count plus the
+  hand-offs needing the reader's approval (D-146).
 - **Review** (Inbox's first tab, `/inbox?tab=review`, everyone signed in, D-082,
   a decision queue since D-146) — the tasks in a review status on every project
   the reader can act on, **oldest waiting first**: key, title, assignee, the
@@ -7142,9 +7145,22 @@ anything missing sends the task back.
   assignee, *Failing tests*, *No proof*, *CI failed*, *CI confirmed* (D-083),
   *Check this one* (LAI-772); they narrow the view without leaving it, and
   *Clear filters* keeps it. Each row's proof in brief carries the CI result
-  when GitHub reported one. A row opens the full proof (the task panel's Proof
-  section) with **Accept** and **Send back…**, the second asking for a required
-  reason in a dialog. **A checkbox beside each decidable row and a bulk bar**
+  when GitHub reported one. **A row opens the Review dialog** (D-146 item 3,
+  LAI-1169) — the Create task dialog's house shape, `?item=<taskId>` in the
+  address so Back closes it and a link opens one: key, title, space, assignee,
+  agent, round and time waiting; the finish summary; the full proof (the task
+  panel's Proof section); the *Ships* checklist read-only; then *Prev* ·
+  *n of N* · *Next* along the rows as drawn, *Open on board*, **Send back…**
+  (a required reason in a dialog over it) and **Accept**. Keys: `j`/`↓` next,
+  `k`/`↑` previous, `a` accept, `s` send back, Escape close — none while
+  typing, none with a modifier. A decision removes the row and moves to the
+  next, or closes at the end; a link to a task no longer waiting says so and
+  drops the param. A row the reader may not decide opens with no decisions
+  and why. **One word, *Accept***, here, in the bulk bar, on the task drawer
+  and in the feed (D-146 item 5). At the top of the tab, ***Needs your
+  approval (N)*** (D-146 item 4): the hand-offs between agents that wait on
+  this person, with their Approve, and *All hand-offs →* to `?view=handoffs`,
+  the whole Hand-offs list in the queue's place with *← Back to review*. **A checkbox beside each decidable row and a bulk bar**
   — *N selected · Accept N · ×*, stuck to the foot of the page — accept the
   ticked rows **one `POST /tasks/:id/accept` each, in page order**, with a
   progress line, then a report naming each refusal by key with the server's

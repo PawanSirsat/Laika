@@ -62,12 +62,12 @@ const row = (over: Partial<PersonHandoffView>): PersonHandoffView => ({
 });
 
 void describe('the badge is the server’s counts', () => {
-  void test('received plus needs approval — the two that wait on the reader', () => {
-    assert.equal(handoffsWaiting({ received: 2, sent: 5, needs_approval: 1, recovery: 7 }), 3);
+  void test('needs approval alone — the one view that waits on a click here (D-146, LAI-1169)', () => {
+    assert.equal(handoffsWaiting({ received: 2, sent: 5, needs_approval: 1, recovery: 7 }), 1);
   });
 
-  void test('sent and recovery alone are not the reader’s move', () => {
-    assert.equal(handoffsWaiting({ received: 0, sent: 4, needs_approval: 0, recovery: 3 }), 0);
+  void test('received waits on the reader’s agent, not on them; sent and recovery are not theirs', () => {
+    assert.equal(handoffsWaiting({ received: 3, sent: 4, needs_approval: 0, recovery: 3 }), 0);
   });
 
   void test('not read yet is no badge, never zero', () => {

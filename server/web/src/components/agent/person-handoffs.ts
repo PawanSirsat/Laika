@@ -23,16 +23,18 @@ import { ageWords } from './execution-derive.ts';
  */
 
 /**
- * What the sidebar and the Hand-offs tab count: offers to your agents and
- * offers waiting for your approval — the two views that wait on you. Sent
- * waits on the receiver, and Recovery is every space's. **The server's
- * counts are live and unexpired only** (LAI-1009), so an expired, declined,
- * withdrawn or accepted offer never reaches the badge; nothing is counted
- * from rows here. `undefined` until read.
+ * What the sidebar's Inbox badge and the Review tab count from the hand-offs:
+ * **the offers waiting for your approval, alone** (D-146, LAI-1169). An offer
+ * `received` waits on your *agent* to accept it, not on a click here, and a
+ * badge that counts what the page does not list is the mismatch D-146
+ * removes; Sent waits on the receiver, and Recovery is every space's. **The
+ * server's counts are live and unexpired only** (LAI-1009), so an expired,
+ * declined, withdrawn or accepted offer never reaches the badge; nothing is
+ * counted from rows here. `undefined` until read.
  */
 export function handoffsWaiting(counts: PersonInboxCounts | undefined): number | undefined {
   if (counts === undefined) return undefined;
-  return counts.received + counts.needs_approval;
+  return counts.needs_approval;
 }
 
 /** *Claude Code · Belka* — harness · device — or what the row is when it names none. */

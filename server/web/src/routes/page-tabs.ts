@@ -43,14 +43,35 @@ export interface PageTab {
 }
 
 /**
- * Work handed back for a person, hand-offs between agents that concern them
- * (LAI-550), then work nobody filed (admin-up, §4.14).
+ * Work handed back for a person — with the hand-offs waiting on their
+ * approval folded in (D-146 item 4, LAI-1169) — then work nobody filed
+ * (admin-up, §4.14). The Hand-offs tab of LAI-550 is gone: `?tab=handoffs`
+ * is an alias, {@link inboxAlias}.
  */
 export const INBOX_TABS: readonly PageTab[] = [
   { id: 'review', label: 'Review' },
-  { id: 'handoffs', label: 'Hand-offs' },
   { id: 'unlisted', label: 'Unlisted work', requires: 'audit_log.export' },
 ];
+
+/**
+ * Where an old Inbox address lives since the Hand-offs tab folded into
+ * Review (D-146 item 4, LAI-1169): `?tab=handoffs` is Review's *All hand-offs*
+ * view, `?tab=review&view=handoffs`. `undefined` when the address needs no
+ * change. Applied as a `replace`, the shape of {@link developerAlias}; the
+ * target is a tab with no alias of its own, so applying it twice changes
+ * nothing. Everything else in the query is kept, in its order.
+ */
+export function inboxAlias(params: URLSearchParams): URLSearchParams | undefined {
+  if (params.get('tab') !== 'handoffs') return undefined;
+  const next = new URLSearchParams();
+  next.set('tab', 'review');
+  next.set('view', 'handoffs');
+  for (const [key, value] of params) {
+    if (key === 'tab' || key === 'view') continue;
+    next.append(key, value);
+  }
+  return next;
+}
 
 /**
  * Who is working on what, then what the agents spent — open to everyone —
@@ -361,11 +382,12 @@ export function tabHref(path: string, id: string): string {
 }
 
 /**
- * The sidebar's Inbox count: what waits on Review, on Hand-offs (LAI-550) and
- * on Unlisted work. `undefined` for a count that is not this reader's or not
- * read yet, so a reader who may not triage unlisted work counts the others
- * alone — and nothing read at all is no badge rather than a zero that was
- * never measured.
+ * The sidebar's Inbox count: what waits on Review — the rows the reader may
+ * decide (D-146) and the hand-offs that need their approval (LAI-550,
+ * LAI-1169) — and on Unlisted work. `undefined` for a count that is not this
+ * reader's or not read yet, so a reader who may not triage unlisted work
+ * counts the others alone — and nothing read at all is no badge rather than a
+ * zero that was never measured.
  */
 export function inboxCount(
   reviewWaiting: number | undefined,

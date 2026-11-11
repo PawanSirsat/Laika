@@ -4,7 +4,8 @@
  * section and the card's "sent back" marker. Since D-146 (LAI-1168) the page
  * is a decision queue: it opens on what this reader may decide, grouped by
  * space, with a bulk Accept; *Everything in review* is a toggle away, and
- * the badge counts the decidable rows alone.
+ * the badge counts the decidable rows alone. A row opens the Review dialog
+ * (LAI-1169; its keys and its walk are `review-dialog.test.ts`).
  *
  * With `LAIKA_SHOTS` set, the grouped queue with two rows ticked and the bar
  * showing lands there light and dark at 1440 and 390.
@@ -328,8 +329,12 @@ void describe('the Review page', () => {
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
-      const detail = h.page.locator('.rev-detail');
+      // The proof opens in the Review dialog (LAI-1169), not under the row.
+      const detail = h.page.locator('[data-dialog="review"]');
       await detail.locator('.ev-round').first().waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.locator('.rev-detail').count(), 0);
+      assert.equal(new URL(h.page.url()).searchParams.get('item'), 't1');
+      assert.match(await detail.locator('.rd-summary').innerText(), /Fixed the lint run/);
       const round2 = (cls: string) => detail.locator(`.ev-round[data-round="2"] ${cls}`);
       await until(
         async () =>
@@ -369,10 +374,14 @@ void describe('the Review page', () => {
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-2' }).click();
-      await h.page.getByRole('button', { name: 'Accept', exact: true }).click();
+      const dialog = h.page.locator('[data-dialog="review"]');
+      await dialog.getByRole('button', { name: 'Accept', exact: true }).click();
       await h.page
         .locator('.rev-key', { hasText: 'LC-2' })
         .waitFor({ state: 'detached', timeout: 10_000 });
+      // LC-2 was the first of two: the dialog moved on to LC-1.
+      await until(async () => (await dialog.getAttribute('data-task')) === 'LC-1');
+      assert.equal(await dialog.getAttribute('data-task'), 'LC-1');
       assert.deepEqual(
         s.calls().map((c) => [c.method, c.path]),
         [['POST', '/api/v1/tasks/t2/accept']],
@@ -388,7 +397,10 @@ void describe('the Review page', () => {
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
-      await h.page.getByRole('button', { name: 'Send back…' }).click();
+      await h.page
+        .locator('[data-dialog="review"]')
+        .getByRole('button', { name: 'Send back…' })
+        .click();
       const dialog = h.page.getByRole('dialog', { name: 'Send back LC-1' });
       await dialog.waitFor({ timeout: 10_000 });
 
@@ -401,6 +413,11 @@ void describe('the Review page', () => {
 
       const call = s.calls().find((c) => c.path === '/api/v1/tasks/t1/send-back');
       assert.deepEqual(call?.body, { reason: 'The lint run exits 1: fix it before review.' });
+      // LC-1 was the last row: the Review dialog closed with it.
+      await h.page
+        .locator('[data-dialog="review"]')
+        .waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(new URL(h.page.url()).searchParams.get('item'), null);
     } finally {
       await h.close();
     }
@@ -500,11 +517,14 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
       assert.equal(await theirs.locator('.rev-check').count(), 0);
       assert.equal(await h.page.locator('.rev-row[data-task="LC-1"] .rev-check').count(), 1);
       await theirs.locator('.rev-line').click();
-      await theirs.locator('.rev-detail').waitFor({ timeout: 10_000 });
-      assert.equal(await theirs.getByRole('button', { name: 'Accept', exact: true }).count(), 0);
-      assert.equal(await theirs.getByRole('button', { name: 'Send back…' }).count(), 0);
-      assert.equal(await theirs.getByRole('link', { name: 'Open on board' }).count(), 1);
-      assert.match(await theirs.locator('.rev-why').innerText(), /Only the assignee/);
+      const dialog = h.page.locator('[data-dialog="review"]');
+      await dialog.waitFor({ timeout: 10_000 });
+      assert.equal(await dialog.getByRole('button', { name: 'Accept', exact: true }).count(), 0);
+      assert.equal(await dialog.getByRole('button', { name: 'Send back…' }).count(), 0);
+      assert.equal(await dialog.getByRole('link', { name: 'Open on board' }).count(), 1);
+      assert.match(await dialog.locator('.rev-why').innerText(), /Only the assignee/);
+      await h.page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached', timeout: 10_000 });
       // The badge did not move: the view is the page's, the count is the reader's.
       assert.match(await inboxBadge(h.page).innerText(), /^4/);
 
@@ -641,6 +661,45 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
       await bar.getByRole('button', { name: 'Clear selection' }).click();
       await bar.waitFor({ state: 'detached', timeout: 5_000 });
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a ticked row hidden by a filter or a view change is not posted, and the count drops', async () => {
+    const s = server(WIDE);
+    const h = await open('/inbox?tab=review', s.stub);
+    try {
+      await h.page.locator('.rev-group').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.rev-row').count()) === 4);
+      await h.page.getByRole('checkbox', { name: 'Select LC-2' }).click();
+      await h.page.getByRole('checkbox', { name: 'Select LC-1' }).click();
+      const bar = h.page.getByRole('region', { name: 'Selected tasks' });
+      await until(async () => /2\s+selected/.test(await bar.innerText()));
+      assert.match(await bar.innerText(), /2\s+selected/);
+
+      // *No proof* hides LC-1: the bar counts one and Accept 1 posts one.
+      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+      await h.page.locator('.rev-row[data-task="LC-1"]').waitFor({ state: 'detached' });
+      await until(async () => /1\s+selected/.test(await bar.innerText()));
+      assert.match(await bar.innerText(), /1\s+selected/);
+      await bar.getByRole('button', { name: 'Accept 1' }).click();
+      await bar.locator('.rev-bulk-report').waitFor({ timeout: 10_000 });
+      assert.deepEqual(
+        s.calls().map((c) => [c.method, c.path]),
+        [['POST', '/api/v1/tasks/t2/accept']],
+        'a hidden row was posted',
+      );
+      await bar.getByRole('button', { name: 'Dismiss' }).click();
+      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+
+      // A view change clears the selection outright.
+      await h.page.getByRole('checkbox', { name: 'Select OR-5' }).click();
+      await until(async () => /1\s+selected/.test(await bar.innerText()));
+      await h.page.getByRole('button', { name: /Everything in review/ }).click();
+      await h.page.locator('.rev-row[data-task="LC-4"]').waitFor({ timeout: 10_000 });
+      await bar.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await h.page.getByRole('checkbox', { name: 'Select OR-5' }).isChecked(), false);
     } finally {
       await h.close();
     }

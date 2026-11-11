@@ -12,10 +12,15 @@ import { NO_FILTER, type ReviewQueueItem } from '../../../../src/api/review.ts';
 import type { Task } from '../../../../src/api/tasks.ts';
 import {
   acceptSummary,
+  advanceAfterDecide,
+  dialogCommand,
   flatOrder,
   groupBySpace,
+  itemParam,
+  positionOf,
   reviewView,
   visibleQueue,
+  withItem,
   withView,
 } from '../../../../src/routes/screens/review/review-derive.ts';
 
@@ -155,5 +160,89 @@ void describe('acceptSummary', () => {
       '0 accepted, 1 refused',
     );
     assert.equal(acceptSummary({ done: [], failed: [] }), '0 accepted');
+  });
+});
+
+void describe('the dialog’s address (LAI-1169)', () => {
+  void test('?item= names the open task; empty or absent is none', () => {
+    assert.equal(itemParam(new URLSearchParams('tab=review&item=t1')), 't1');
+    assert.equal(itemParam(new URLSearchParams('tab=review')), null);
+    assert.equal(itemParam(new URLSearchParams('item=')), null);
+  });
+
+  void test('withItem sets or removes it and keeps the rest, on a copy', () => {
+    const from = new URLSearchParams('tab=review&view=all');
+    assert.equal(withItem(from, 't1').toString(), 'tab=review&view=all&item=t1');
+    assert.equal(
+      withItem(new URLSearchParams('tab=review&item=t1'), null).toString(),
+      'tab=review',
+    );
+    assert.equal(from.toString(), 'tab=review&view=all');
+  });
+});
+
+void describe('positionOf', () => {
+  const order = ['a', 'b', 'c'];
+
+  void test('index, total and both neighbours, the ends open', () => {
+    assert.deepEqual(positionOf(order, 'b'), { index: 1, total: 3, prev: 'a', next: 'c' });
+    assert.deepEqual(positionOf(order, 'a'), { index: 0, total: 3, prev: null, next: 'b' });
+    assert.deepEqual(positionOf(order, 'c'), { index: 2, total: 3, prev: 'b', next: null });
+  });
+
+  void test('a row not drawn has no position', () => {
+    assert.equal(positionOf(order, 'z'), null);
+    assert.equal(positionOf([], 'a'), null);
+  });
+});
+
+void describe('advanceAfterDecide', () => {
+  const order = ['a', 'b', 'c', 'd'];
+
+  void test('the next row in the order captured before the decision — never the same id', () => {
+    assert.equal(advanceAfterDecide(order, 'b'), 'c');
+    assert.notEqual(advanceAfterDecide(order, 'b'), 'b');
+  });
+
+  void test('the last row closes; an unknown id closes', () => {
+    assert.equal(advanceAfterDecide(order, 'd'), null);
+    assert.equal(advanceAfterDecide(order, 'z'), null);
+  });
+
+  void test('a row a poll took meanwhile is skipped', () => {
+    assert.equal(advanceAfterDecide(order, 'b', new Set(['a', 'd'])), 'd');
+    assert.equal(advanceAfterDecide(order, 'b', new Set(['a'])), null);
+  });
+});
+
+void describe('dialogCommand', () => {
+  void test('the letters and the arrows', () => {
+    assert.equal(dialogCommand({ key: 'j' }, false), 'next');
+    assert.equal(dialogCommand({ key: 'ArrowDown' }, false), 'next');
+    assert.equal(dialogCommand({ key: 'k' }, false), 'prev');
+    assert.equal(dialogCommand({ key: 'ArrowUp' }, false), 'prev');
+    assert.equal(dialogCommand({ key: 'a' }, false), 'accept');
+    assert.equal(dialogCommand({ key: 's' }, false), 'send_back');
+    assert.equal(dialogCommand({ key: 'Escape' }, false), 'close');
+    assert.equal(dialogCommand({ key: 'x' }, false), null);
+    assert.equal(dialogCommand({ key: 'Enter' }, false), null);
+  });
+
+  void test('nothing while typing — except Escape', () => {
+    for (const key of ['j', 'k', 'a', 's', 'ArrowDown', 'ArrowUp']) {
+      assert.equal(dialogCommand({ key }, true), null, key);
+    }
+    assert.equal(dialogCommand({ key: 'Escape' }, true), 'close');
+  });
+
+  void test('nothing with a modifier held, so ⌘A still selects', () => {
+    assert.equal(dialogCommand({ key: 'a', metaKey: true }, false), null);
+    assert.equal(dialogCommand({ key: 'j', ctrlKey: true }, false), null);
+    assert.equal(dialogCommand({ key: 's', altKey: true }, false), null);
+  });
+
+  void test('an Escape something inside already spent is left to it', () => {
+    assert.equal(dialogCommand({ key: 'Escape', defaultPrevented: true }, false), null);
+    assert.equal(dialogCommand({ key: 'Escape', defaultPrevented: false }, true), 'close');
   });
 });
