@@ -3,16 +3,32 @@ import { Brand } from '../../components/Brand.tsx';
 import { ThemeSwitch } from '../../components/ThemeSwitch.tsx';
 import { SystemStatus } from './SystemStatus.tsx';
 import type { SetupSystemStatus } from '../../api/setup.ts';
+import { GlassSurface } from '../../components/glass/GlassSurface.tsx';
+import { AuthAlert, AuthSummary } from '../../components/auth/AuthSummary.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
 import {
+  useFocusOnServerAnswer,
+  useValidatedForm,
+} from '../../components/forms/use-validated-form.ts';
+import {
   email as validateEmail,
+  PASSWORD_RULE,
   password as validatePassword,
   passwordsMatch,
   required,
 } from '../../components/forms/validation.ts';
 import './auth.css';
+
+type StepState = 'done' | 'current' | 'todo';
+
+/** What a screen reader hears after each step's name — never colour alone. */
+const STEP_WORDS: Readonly<Record<StepState, string>> = {
+  done: 'done',
+  current: 'current step',
+  todo: 'not started',
+};
 
 export interface FirstBootSubmit {
   readonly ownerName: string;
@@ -70,6 +86,13 @@ export interface FirstBootScreenProps {
  *
  * The closing line still says new people arrive by invite, because that is
  * D-004 describing how the instance works, not an instruction to go and do it.
+ *
+ * **Progress** (LAI-1203). The form is two groups and a button, and a
+ * three-step tracker above it says which are done — computed from the same
+ * checks that gate the submit, so it can never call a group done that the
+ * button would refuse. While the request is in flight the status line says what
+ * is happening and where: the database name is the instance's own
+ * (`system.database`, from its PRAGMAs), never a word typed here.
  */
 export function FirstBootScreen({
   host,
@@ -86,14 +109,24 @@ export function FirstBootScreen({
   const [confirm, setConfirm] = useState('');
   const [orgName, setOrgName] = useState('');
   const [projectName, setProjectName] = useState('');
-  const [touched, setTouched] = useState(false);
+  const form = useValidatedForm();
+  useFocusOnServerAnswer(form.focusFirstInvalid, { serverError, fieldErrors });
 
   const nameCheck = required(ownerName, 'Full name');
   const emailCheck = validateEmail(ownerEmail);
   const passwordCheck = validatePassword(password);
   const matchCheck = passwordsMatch(password, confirm);
   const orgCheck = required(orgName, 'Org name');
-  const valid = nameCheck.ok && emailCheck.ok && passwordCheck.ok && matchCheck.ok && orgCheck.ok;
+  const ownerDone = nameCheck.ok && emailCheck.ok && passwordCheck.ok && matchCheck.ok;
+  const orgDone = orgCheck.ok;
+  const valid = ownerDone && orgDone;
+
+  const steps: readonly { readonly label: string; readonly state: StepState }[] = [
+    { label: 'Owner account', state: ownerDone ? 'done' : 'current' },
+    { label: 'Organisation', state: orgDone ? 'done' : ownerDone ? 'current' : 'todo' },
+    { label: 'Create instance', state: submitting || valid ? 'current' : 'todo' },
+  ];
+  const database = system?.database;
 
   return (
     <div className="boot">
@@ -112,7 +145,7 @@ export function FirstBootScreen({
         </div>
 
         <ol className="boot-steps">
-          <li>
+          <li aria-current="step">
             <span className="boot-step-n" aria-hidden="true">
               1
             </span>
@@ -143,117 +176,162 @@ export function FirstBootScreen({
         <SystemStatus system={system} />
       </aside>
 
-      <form
-        className="boot-form"
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          setTouched(true);
-          if (valid) {
-            onSubmit?.({ ownerName, ownerEmail, password, orgName, projectName });
-          }
-        }}
-      >
-        <p className="boot-eyebrow">
-          <span className="boot-eyebrow-label">FIRST BOOT</span>
-          <span className="boot-host">{host}</span>
-        </p>
+      <div className="boot-main">
+        <GlassSurface level={2} className="boot-card">
+          <form
+            ref={form.formRef}
+            className="boot-form"
+            noValidate
+            aria-label="Create this instance"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (submitting || !form.attempt(valid)) return;
+              onSubmit?.({ ownerName, ownerEmail, password, orgName, projectName });
+            }}
+          >
+            <div className="boot-form-head">
+              <ol className="boot-progress" aria-label="Setup progress">
+                {steps.map((step, i) => (
+                  <li
+                    key={step.label}
+                    className={`boot-progress-step boot-progress-${step.state}`}
+                    aria-current={step.state === 'current' ? 'step' : undefined}
+                  >
+                    <span className="boot-progress-n" aria-hidden="true">
+                      {step.state === 'done' ? (
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none">
+                          <path
+                            d="m5 12.5 4.5 4.5L19 7.5"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : (
+                        String(i + 1)
+                      )}
+                    </span>
+                    <span>{step.label}</span>
+                    <span className="visually-hidden">{`, ${STEP_WORDS[step.state]}`}</span>
+                  </li>
+                ))}
+              </ol>
+              <span className="boot-host">{host}</span>
+            </div>
 
-        {serverError !== undefined && (
-          <p className="auth-alert" role="alert">
-            {serverError}
-          </p>
-        )}
+            <AuthSummary>
+              {serverError !== undefined && <AuthAlert>{serverError}</AuthAlert>}
+            </AuthSummary>
 
-        <fieldset className="boot-group">
-          <legend className="boot-group-title">
-            <span>Owner account</span>
-            <span className="boot-rule" aria-hidden="true" />
-            <span className="boot-chip">FULL CONTROL</span>
-          </legend>
+            <fieldset className="boot-group" disabled={submitting}>
+              <legend className="boot-group-title">
+                <span>Owner account</span>
+                <span className="boot-rule" aria-hidden="true" />
+                <span className="boot-chip">FULL CONTROL</span>
+              </legend>
 
-          <div className="boot-grid">
-            <TextInput
-              label="Full name"
-              value={ownerName}
-              onChange={setOwnerName}
-              autoComplete="name"
-              required
-              disabled={submitting}
-              error={touched && !nameCheck.ok ? nameCheck.message : fieldErrors.owner_name}
-            />
-            <TextInput
-              label="Email"
-              type="email"
-              value={ownerEmail}
-              onChange={setOwnerEmail}
-              autoComplete="username"
-              required
-              disabled={submitting}
-              help="Used for sign-in and agent attribution."
-              error={touched && !emailCheck.ok ? emailCheck.message : fieldErrors.owner_email}
-            />
-            <PasswordInput
-              label="Password"
-              value={password}
-              onChange={setPassword}
-              autoComplete="new-password"
-              showStrength
-              required
-              disabled={submitting}
-              error={
-                touched && !passwordCheck.ok ? passwordCheck.message : fieldErrors.owner_password
-              }
-            />
-            <PasswordInput
-              label="Confirm password"
-              value={confirm}
-              onChange={setConfirm}
-              autoComplete="new-password"
-              required
-              disabled={submitting}
-              {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
-              error={touched && !matchCheck.ok ? matchCheck.message : undefined}
-            />
-          </div>
-        </fieldset>
+              <div className="boot-grid">
+                <TextInput
+                  label="Full name"
+                  value={ownerName}
+                  onChange={setOwnerName}
+                  onBlur={() => {
+                    form.blur('owner_name', ownerName);
+                  }}
+                  autoComplete="name"
+                  required
+                  disabled={submitting}
+                  error={form.shown('owner_name', nameCheck) ?? fieldErrors.owner_name}
+                />
+                <TextInput
+                  label="Email"
+                  type="email"
+                  value={ownerEmail}
+                  onChange={setOwnerEmail}
+                  onBlur={() => {
+                    form.blur('owner_email', ownerEmail);
+                  }}
+                  autoComplete="username"
+                  required
+                  disabled={submitting}
+                  help="Used for sign-in and agent attribution."
+                  error={form.shown('owner_email', emailCheck) ?? fieldErrors.owner_email}
+                />
+                <PasswordInput
+                  label="Password"
+                  value={password}
+                  onChange={setPassword}
+                  onBlur={() => {
+                    form.blur('owner_password', password);
+                  }}
+                  autoComplete="new-password"
+                  help={PASSWORD_RULE}
+                  showStrength
+                  required
+                  disabled={submitting}
+                  error={form.shown('owner_password', passwordCheck) ?? fieldErrors.owner_password}
+                />
+                <PasswordInput
+                  label="Confirm password"
+                  value={confirm}
+                  onChange={setConfirm}
+                  onBlur={() => {
+                    form.blur('confirm', confirm);
+                  }}
+                  autoComplete="new-password"
+                  required
+                  disabled={submitting}
+                  {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
+                  error={form.shown('confirm', matchCheck)}
+                />
+              </div>
+            </fieldset>
 
-        <fieldset className="boot-group">
-          <legend className="boot-group-title">
-            <span>Organisation</span>
-            <span className="boot-rule" aria-hidden="true" />
-          </legend>
+            <fieldset className="boot-group" disabled={submitting}>
+              <legend className="boot-group-title">
+                <span>Organisation</span>
+                <span className="boot-rule" aria-hidden="true" />
+              </legend>
 
-          <div className="boot-grid">
-            <TextInput
-              label="Org name"
-              value={orgName}
-              onChange={setOrgName}
-              required
-              disabled={submitting}
-              error={touched && !orgCheck.ok ? orgCheck.message : fieldErrors.org_name}
-            />
-            <TextInput
-              label="First project"
-              value={projectName}
-              onChange={setProjectName}
-              disabled={submitting}
-              help="Optional. Private by default — you can add more later."
-              error={fieldErrors.project_name}
-            />
-          </div>
-        </fieldset>
+              <div className="boot-grid">
+                <TextInput
+                  label="Org name"
+                  value={orgName}
+                  onChange={setOrgName}
+                  onBlur={() => {
+                    form.blur('org_name', orgName);
+                  }}
+                  required
+                  disabled={submitting}
+                  error={form.shown('org_name', orgCheck) ?? fieldErrors.org_name}
+                />
+                <TextInput
+                  label="First project"
+                  value={projectName}
+                  onChange={setProjectName}
+                  disabled={submitting}
+                  help="Optional. Private by default — you can add more later."
+                  error={fieldErrors.project_name}
+                />
+              </div>
+            </fieldset>
 
-        <footer className="boot-footer">
-          <Button type="submit" busy={submitting}>
-            Create instance
-          </Button>
-          <p className="boot-footnote">
-            Takes about two seconds. This page never appears again — after this, new people arrive
-            by invite.
-          </p>
-        </footer>
-      </form>
+            <footer className="boot-footer">
+              <Button type="submit" busy={submitting}>
+                Create instance
+              </Button>
+              {/* Honest about what is happening and where (LAI-1203): the
+                  database is named by the instance, never typed here. */}
+              <p className="boot-footnote" role="status">
+                {submitting
+                  ? `Creating the owner account and org in ${database ?? 'this instance’s database'}. This takes a few seconds.`
+                  : 'Takes a few seconds. This page never appears again — after this, you land on the board signed in, and new people arrive by invite.'}
+              </p>
+            </footer>
+          </form>
+        </GlassSurface>
+      </div>
     </div>
   );
 }
