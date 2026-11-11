@@ -1,0 +1,402 @@
+/*
+ * The Create task dialog (LAI-1167, D-145): a centred box about 680px wide
+ * over the dimmed space, on the layer the Organisation dialogs use (scrim
+ * 60, box 61; the dropdown menus at 70 and the app's toast at 90, above both). The
+ * body scrolls; the header and the footer stay. On a phone it is a sheet
+ * that fills the screen.
+ */
+.ct-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+}
+
+.ct-dialog {
+  position: fixed;
+  top: 8vh;
+  left: 50%;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(42.5rem, calc(100vw - 2rem));
+  max-height: 84vh;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+}
+
+/* The form is the box's whole height, so the body can take what is left. */
+.ct-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ct-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 1.125rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ct-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.ct-title {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.ct-sub {
+  margin: 0.125rem 0 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.ct-space {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ct-close {
+  flex: none;
+  width: 1.875rem;
+  height: 1.875rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-heading-sm);
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ct-close:hover {
+  background: var(--bg-column);
+}
+
+/* ---------------------------------------------------------------- the body */
+
+.ct-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.25rem 0.5rem;
+  overscroll-behavior: contain;
+}
+
+.ct-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Two fields side by side; the form's own gap under each `.field` keeps the rows apart. */
+.ct-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 1rem;
+}
+
+.ct-row .dd-trigger,
+.ct-row .agent-picker .dd-trigger {
+  width: 100%;
+}
+
+/* The agent picker's own label and help, laid out as the fields beside it. */
+.ct-agent .agent-picker {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.ct-agent .agent-row-label {
+  padding-top: 0;
+  color: var(--text-primary);
+}
+
+.ct-title-input {
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.ct-date {
+  font-family: inherit;
+}
+
+.ct-lines {
+  resize: vertical;
+  font-family: inherit;
+  line-height: var(--leading-body);
+}
+
+/* The *created, but…* that no field can carry, at the form's foot. */
+.ct-form-error {
+  margin: 0 0 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
+  background: var(--bg-column);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--overdue);
+}
+
+/* ---------------------------------------------------------------- the fold */
+
+.ct-more {
+  margin: 0.25rem 0 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ct-more-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ct-more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ct-more-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.ct-more-caret {
+  display: inline-block;
+  color: var(--text-secondary);
+  transition: transform 120ms ease;
+}
+
+.ct-more[open] .ct-more-caret {
+  transform: rotate(90deg);
+}
+
+.ct-more-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-normal);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ct-more[open] .ct-more-hint {
+  display: none;
+}
+
+.ct-more-body {
+  display: flex;
+  flex-direction: column;
+  padding-top: 0.25rem;
+}
+
+/* ----------------------------------------------------- what this delivers */
+
+.ct-delivers {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.ct-ships {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-column);
+}
+
+.ct-ships-head {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ct-ships-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ct-ships-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ct-ships-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.ct-ships-remove,
+.ct-chip-remove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ct-ships-remove:hover:not(:disabled),
+.ct-chip-remove:hover:not(:disabled) {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.ct-ships-add {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.25rem 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.ct-ships-add:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- blockers */
+
+.ct-blockers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.ct-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ct-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------- the foot */
+
+.ct-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-column) var(--radius-column);
+  background: var(--bg-column);
+}
+
+/* The form's checkbox, without the field-stack margin under it. */
+.ct-another {
+  margin: 0;
+  align-items: center;
+  cursor: pointer;
+}
+
+.ct-foot-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ------------------------------------------------------------------ phone */
+
+@media (max-width: 900px) {
+  .ct-dialog {
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    transform: none;
+    border: none;
+    border-radius: 0;
+  }
+
+  .ct-head,
+  .ct-body,
+  .ct-foot {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .ct-foot {
+    border-radius: 0;
+    /* Clear of the home indicator. */
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .ct-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ct-more-hint {
+    display: none;
+  }
+}

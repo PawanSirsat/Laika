@@ -42,10 +42,12 @@ function messageOf(cause: unknown): string {
 /**
  * The app's one toast (LAI-1129; `docs/ux/architecture/component-architecture.md`
  * §2 *Toast*). Mounted once, in `App.tsx`, so every screen says what happened
- * the same way: `useToast().show({ text, tone, undo })`.
+ * the same way: `useToast().show({ text, tone, undo })`, or with an `action`
+ * (*Open*) where the toast reports something made elsewhere (LAI-1167).
  *
  * - The sentence alone is announced — `role="status"` for info and success,
- *   `role="alert"` for an error — never "Undo ×" read out with it.
+ *   `role="alert"` for an error — never "Undo ×" read out with it; a `detail` is read with
+ *   the sentence, as part of it.
  * - **It never takes focus.** It sits last in the tab order; Escape on a
  *   focused toast dismisses it, and focus goes back to where it came from.
  * - Hover or focus anywhere on the stack pauses every timer
@@ -212,6 +214,7 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
               {toast.tone !== 'info' && <span className="toast-dot" aria-hidden="true" />}
               <span className="toast-text" role={toast.tone === 'error' ? 'alert' : 'status'}>
                 {toast.text}
+                {toast.detail !== undefined && <span className="toast-detail">{toast.detail}</span>}
               </span>
               {toast.undo !== undefined && (
                 <button
@@ -231,6 +234,18 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
                       {left}s
                     </span>
                   )}
+                </button>
+              )}
+              {toast.action !== undefined && (
+                <button
+                  type="button"
+                  className="toast-action"
+                  onClick={() => {
+                    toast.action?.run();
+                    close(toast.id);
+                  }}
+                >
+                  {toast.action.label}
                 </button>
               )}
               <button

@@ -72,13 +72,14 @@ const ORG_MATRIX: OrgRow[] = [
   ['member_list.read', true, true, true, true],
   // | Generate own tokens | ✓ | ✓ | ✓ | ✓ (read_only forced) |
   ['token.create_own', true, true, true, true],
-  // | List / revoke anyone's token | ✓ | ✓ | — | — |
+  // | List anyone's tokens | ✓ | ✓ | — | — |
   ['token.list_any', true, true, false, false],
   // D-114 (LAI-534): a person's own agents, every role — the service reaches
   // only the caller's rows, and managing is session only.
   ['agent.read_own', true, true, true, true],
   ['agent.manage_own', true, true, true, true],
-  ['token.revoke_any', true, true, false, false],
+  // | Revoke anyone's token | ✓ | ✓ (not for the owner) | — | — |
+  // Depends on the target's role (D-133, LAI-1143): asserted below.
   // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // Every role: it is your own record about your own work, creating nothing in
   // any project. The Viewer ✓ is the role's answer — their credential is what
@@ -101,6 +102,10 @@ const ORG_MATRIX: OrgRow[] = [
   // | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
   // Its own row, the profile's rule (D-079, LAI-751).
   ['profile.activity.read', true, true, false, false],
+  // | View own profile and activity heatmap | ✓ (session only) | … | ✓ (session only) |
+  // D-139 item 1 (LAI-1150): every role reads its own; a token is refused in
+  // `can.test.ts`.
+  ['profile.read_own', true, true, true, true],
   // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
   // The organisation's half of D-079's consent; a token is refused it in
   // `can.test.ts` (LAI-751 review).
@@ -120,6 +125,9 @@ const ORG_MATRIX: OrgRow[] = [
   ['usage.read_org', true, true, false, false],
   // | View anyone's token usage, per person | ✓ (session only) | ✓ (session only) | — | — |
   ['usage.read_people', true, true, false, false],
+  // | View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
+  // D-130 (LAI-1135): *See everyone's analytics*.
+  ['time.report.read', true, true, false, false],
   // | View own token usage | ✓ (session only) | … | ✓ (session only) |
   ['usage.read_own', true, true, true, true],
   // | Set API-equivalent prices | ✓ (session only) | ✓ (session only) | — | — |
@@ -152,6 +160,17 @@ const ORG_MATRIX: OrgRow[] = [
   ['time_sync.map', true, true, false, false],
   // | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
   ['time_sync.import_all', true, true, false, false],
+  // | Set own availability | ✓ (session only) | … | ✓ (session only) |
+  // D-131 (LAI-1130): the person's own declaration, every role.
+  ['availability.set_own', true, true, true, true],
+  // | See availability of people in your spaces | ✓ (session only) | … | ✓ (session only) |
+  ['availability.read', true, true, true, true],
+  // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
+  // D-134 (LAI-1136): the person's own, every role.
+  ['notices.own', true, true, true, true],
+  // | View own developer setup | ✓ (session only) | … | ✓ (session only) |
+  // D-139 (LAI-1151): the person's own, every role.
+  ['developer_setup.read_own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -230,6 +249,86 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
       expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(false);
     }
   });
+
+  // | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+  it("Owner and Admin read anyone's developer setup but their own (D-132, LAI-1137)", () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u2' }), role).toBe(true);
+      expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u1' }), role).toBe(
+        false,
+      );
+      expect(can(actor(role), 'developer_setup.read_any', {}), role).toBe(false);
+    }
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u2' }), role).toBe(
+        false,
+      );
+    }
+  });
+
+  // | Revoke anyone's token | ✓ | ✓ (not for the owner) | — | — |
+  it("Owner revokes anyone's token; Admin anyone's but the owner's, their own included (D-133, LAI-1143)", () => {
+    const action = 'token.revoke_any';
+    for (const role of ['owner', 'admin'] as const) {
+      for (const target of ['member', 'viewer', 'admin'] as const) {
+        expect(can(actor(role), action, { targetOrgRole: target }), `${role} → ${target}`).toBe(
+          true,
+        );
+      }
+    }
+    expect(can(actor('owner'), action, { targetOrgRole: 'owner' }), 'owner → owner').toBe(true);
+    expect(can(actor('admin'), action, { targetOrgRole: 'owner' }), 'admin → owner').toBe(false);
+    // Below the owner, a target whose role was never loaded is refused.
+    expect(can(actor('admin'), action, {}), 'admin, no role').toBe(false);
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), action, { targetOrgRole: 'member' }), role).toBe(false);
+    }
+  });
+
+  // | Revoke a member's tool or unpair their device | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
+  it("Owner revokes anyone's but their own; Admin anyone's but the owner's and their own (D-133)", () => {
+    for (const action of ['agent.revoke_any', 'device.revoke_any'] as const) {
+      const member = { targetUserId: 'u2', targetOrgRole: 'member' as const };
+      const admin = { targetUserId: 'u2', targetOrgRole: 'admin' as const };
+      const owner = { targetUserId: 'u2', targetOrgRole: 'owner' as const };
+      for (const role of ['owner', 'admin'] as const) {
+        expect(can(actor(role), action, member), `${role} ${action} member`).toBe(true);
+        expect(can(actor(role), action, admin), `${role} ${action} admin`).toBe(true);
+        // Yourself, or a target whose role was never loaded, is refused.
+        expect(can(actor(role), action, { targetUserId: 'u1', targetOrgRole: role })).toBe(false);
+        expect(can(actor(role), action, { targetUserId: 'u2' }), `${role} no role`).toBe(false);
+        expect(can(actor(role), action, {}), `${role} no target`).toBe(false);
+      }
+      expect(can(actor('owner'), action, owner), `owner ${action} owner-role`).toBe(true);
+      expect(can(actor('admin'), action, owner), `admin ${action} the owner`).toBe(false);
+      for (const role of ['member', 'viewer'] as const) {
+        expect(can(actor(role), action, member), `${role} ${action}`).toBe(false);
+      }
+    }
+  });
+
+  // | Change a member's confirmed time | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
+  it("Owner changes anyone's time but their own; Admin anyone's but the owner's and their own (D-143)", () => {
+    const action = 'time_entries.write_member';
+    const member = { targetUserId: 'u2', targetOrgRole: 'member' as const };
+    const admin = { targetUserId: 'u2', targetOrgRole: 'admin' as const };
+    const owner = { targetUserId: 'u2', targetOrgRole: 'owner' as const };
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), action, member), `${role} → member`).toBe(true);
+      expect(can(actor(role), action, admin), `${role} → admin`).toBe(true);
+      // Yourself, or a target whose role was never loaded, is refused.
+      expect(can(actor(role), action, { targetUserId: 'u1', targetOrgRole: role }), 'self').toBe(
+        false,
+      );
+      expect(can(actor(role), action, { targetUserId: 'u2' }), `${role} no role`).toBe(false);
+      expect(can(actor(role), action, {}), `${role} no target`).toBe(false);
+    }
+    expect(can(actor('owner'), action, owner), 'owner → owner-role').toBe(true);
+    expect(can(actor('admin'), action, owner), 'admin → the owner').toBe(false);
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), action, member), role).toBe(false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- SPEC §3.2
@@ -291,6 +390,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | Leave a project | ✓ | ✓ | ✓ |
   // D-103 item 5; the last lead is the service's 409, not a cell.
   ['project.leave', true, true, true],
+  // | View the space's time totals | ✓ (session only) | — | — |
+  // D-130 item 3 (LAI-1135); the three-person floor is the service's.
+  ['time.report.read_project', true, false, false],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */
@@ -388,6 +490,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.handoff.recover', {}],
     ['system.handoff.expire', {}],
     ['system.checkpoint.prune', {}],
+    ['system.notices.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],
@@ -463,6 +566,11 @@ describe('completeness', () => {
       'task.handoff.cancel',
       'profile.rate',
       'people.analytics.read',
+      'developer_setup.read_any',
+      'token.revoke_any',
+      'agent.revoke_any',
+      'device.revoke_any',
+      'time_entries.write_member',
       // §3.4's own, asserted in full by the describe above.
       ...SYSTEM_ACTIONS,
     ]);

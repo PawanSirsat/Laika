@@ -22,6 +22,9 @@ void describe('every old address has a new home', () => {
     ['/tokens', '', '/developer?tab=tokens'],
     ['/connect', '', '/developer?tab=connect'],
     ['/developer/connect', '', '/developer?tab=connect'],
+    // Work is the Organisation page's tab since D-147 (LAI-1170); its filters travel.
+    ['/work', '', '/organisation?tab=work'],
+    ['/work', '?space=laika&status=review', '/organisation?tab=work&space=laika&status=review'],
   ];
 
   for (const [from, search, to] of cases) {
@@ -50,7 +53,7 @@ void describe('every old address has a new home', () => {
     }
   });
 
-  void test('the table is exactly the seven pages that moved', () => {
+  void test('the table is exactly the eight pages that moved', () => {
     assert.deepEqual(Object.keys(REDIRECTS).sort(), [
       '/capacity',
       '/connect',
@@ -59,6 +62,7 @@ void describe('every old address has a new home', () => {
       '/tokens',
       '/unlisted',
       '/usage',
+      '/work',
     ]);
   });
 });

@@ -9,8 +9,9 @@
  *   no secret anywhere.
  * - Device details: when one of its tools needs it, and not when all are up
  *   to date.
- * - Overview: a quiet notice when a tool is Update required or never
- *   reported; none when every tool is up to date.
+ * - Overview: no notice of its own since LAI-1096. A tool whose helper is
+ *   Update required is behind the Connection status card's tools chip, and
+ *   its link opens that tool's Details, where the guide is.
  * - Add device and Add tool: *Already have Laika installed?* before the
  *   `laika` command.
  * - An older CLI (LAI-1093): where `laika` comes from, then a fresh install
@@ -37,6 +38,7 @@ import {
   compat,
   report,
   stub,
+  unfold,
   verification,
   type StubOver,
 } from './developer-v3-fixtures.ts';
@@ -73,7 +75,10 @@ async function openTools(over: StubOver = {}, options: OpenOptions = {}): Promis
   return h;
 }
 
-/** Open one tool's details, closing any other first. */
+/**
+ * Open one tool's details, closing any other first, and its Helper section —
+ * one folded row since LAI-1100 — where the guide is offered.
+ */
 async function details(page: Page, id: string): Promise<Locator> {
   const panel = page.locator('.side-panel[data-panel="tool"]');
   if ((await toolPanel(page, id).count()) > 0) return toolPanel(page, id);
@@ -83,6 +88,7 @@ async function details(page: Page, id: string): Promise<Locator> {
   }
   await tool(page, id).locator(`[data-details="tools:${id}"]`).click();
   await toolPanel(page, id).waitFor({ timeout: 10_000 });
+  await unfold(toolPanel(page, id), 'helper');
   return toolPanel(page, id);
 }
 
@@ -297,30 +303,43 @@ void describe('Device details', () => {
 
 void describe('Overview', () => {
   const overview = (page: Page) => page.locator('[data-testid="dev-overview"]');
-  const notice = (page: Page) => page.locator('[data-cli-notice]');
+  const chip = (page: Page) => page.locator('[data-status] [data-attention] > button');
+  /** Every report read, and the board's own answer: nothing left to arrive. */
+  const settled = async (h: Harness, reports: number) => {
+    await until(
+      () =>
+        h.calls.filter((c) => c.path.endsWith('/verification')).length >= reports &&
+        h.calls.some((c) => c.path === '/api/v1/developer/compatibility'),
+      15_000,
+    );
+    await h.page.waitForLoadState('networkidle');
+  };
 
-  void test('a quiet notice when a tool is Update required or never reported, opening the guide', async () => {
+  void test('no notice: the tool to update is behind the tools chip, its Details one click on (LAI-1096)', async () => {
     const h = await open('/developer?tab=overview', stub());
     try {
       await overview(h.page).waitFor({ timeout: 20_000 });
-      await notice(h.page).waitFor({ timeout: 15_000 });
-      assert.equal(
-        await notice(h.page).locator('p').first().innerText(),
-        '1 tool runs a Laika CLI this board needs updated; 1 tool has never reported a CLI version.',
-      );
-      // Quiet: the neutral note, not the warning one.
-      assert.equal(
-        await h.page.locator('[data-note="cli-update"]').getAttribute('data-tone'),
-        'neutral',
-      );
-      const guide = await openGuide(notice(h.page));
-      assert.equal(await guide.locator('[data-guide-step]').count(), 4);
+      await settled(h, 3);
+      // Update required (a2) needs the reader; Version unknown (a3) does not.
+      assert.equal(await chip(h.page).textContent(), '1 needs an update▾');
+      assert.equal(await h.page.locator('[data-cli-notice], [data-update-cli]').count(), 0);
+      await chip(h.page).click();
+      const items = h.page.locator('[data-attention] li');
+      assert.deepEqual(await items.evaluateAll((els) => els.map((el) => el.dataset.agent)), ['a2']);
+      await items.getByRole('link', { name: /^Open details →\s*: Codex · Belka$/ }).click();
+      // Tool details, where the guide is offered (as the first describe asserts)
+      // once the panel has read the tool's report again — in its Helper section.
+      await unfold(toolPanel(h.page, 'a2'), 'helper');
+      await toolPanel(h.page, 'a2')
+        .locator('[data-update-cli="tool"]')
+        .waitFor({ timeout: 20_000 });
+      assert.equal(await toolPanel(h.page, 'a2').locator('[data-update-cli="tool"]').count(), 1);
     } finally {
       await h.close();
     }
   });
 
-  void test('no notice when every tool is up to date', async () => {
+  void test('no notice and no chip to open when every tool is up to date', async () => {
     const h = await open(
       '/developer?tab=overview',
       stub({
@@ -334,15 +353,13 @@ void describe('Overview', () => {
     try {
       await overview(h.page).waitFor({ timeout: 20_000 });
       // Both reports read, and nothing to say.
-      await until(
-        () =>
-          h.calls.filter((c) => c.path.endsWith('/verification')).length >= 2 &&
-          h.calls.some((c) => c.path === '/api/v1/developer/compatibility'),
-        15_000,
+      await settled(h, 2);
+      assert.equal(await h.page.locator('[data-cli-notice], [data-update-cli]').count(), 0);
+      assert.equal(await h.page.locator('[data-attention]').count(), 0);
+      assert.equal(
+        await h.page.locator('[data-status] [data-stat="tools"] .dx-chip').textContent(),
+        'Connected',
       );
-      await h.page.waitForLoadState('networkidle');
-      assert.equal(await notice(h.page).count(), 0);
-      assert.equal(await h.page.locator('[data-update-cli]').count(), 0);
     } finally {
       await h.close();
     }
@@ -467,9 +484,14 @@ void describe('the wizards: before the laika command', () => {
     try {
       const wizard = h.page.locator('[data-wizard="device"]');
       await wizard.waitFor({ timeout: 20_000 });
-      // The option's own label, as a person clicks it: its styling covers the input.
-      await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+      // The choice's own label, as a person clicks it: its styling covers the input
+      // (one compact line since LAI-1097, its sub-text the help line under it).
+      await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
       assert.equal(await h.page.getByRole('radio', { name: /^Yes/ }).isChecked(), true);
+      assert.equal(
+        (await wizard.locator('[data-installed-choice] .conn-note').innerText()).trim(),
+        'It has a laika command, or a ~/laika folder already',
+      );
       const step = await toPairCommand(h.page);
       // Review round 1, N3: no `git -C ~/laika fetch && laika update` an old helper cannot run.
       assert.equal(
@@ -579,7 +601,9 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
     assert.deepEqual(hazardsIn(commands), [], where);
   };
 
-  void test('Tool details, Device details, the Overview, Add device and Add tool', async () => {
+  // The Overview has no placement of its own since LAI-1096: its describe above
+  // asserts there is none, and that its chip leads to Tool details.
+  void test('Tool details, Device details, Add device and Add tool', async () => {
     const t = await openTools();
     try {
       for (const id of ['a2', 'a3']) {
@@ -594,20 +618,12 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
     const d = await open('/developer?tab=devices&device=d1', stub());
     try {
       const panel = devicePanel(d.page);
+      await unfold(panel, 'helpers');
       await panel.locator('[data-update-cli="device"]').waitFor({ timeout: 20_000 });
       await openGuide(panel);
       await check(panel, 'device');
     } finally {
       await d.close();
-    }
-
-    const o = await open('/developer?tab=overview', stub());
-    try {
-      await o.page.locator('[data-cli-notice]').waitFor({ timeout: 20_000 });
-      await openGuide(o.page.locator('[data-cli-notice]'));
-      await check(o.page.locator('[data-cli-notice]'), 'overview');
-    } finally {
-      await o.close();
     }
 
     for (const installed of [false, true]) {
@@ -616,7 +632,7 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
         const wizard = w.page.locator('[data-wizard="device"]');
         await wizard.waitFor({ timeout: 20_000 });
         if (installed) {
-          await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+          await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
         }
         const step = await toPairCommand(w.page);
         await openGuide(step);
@@ -760,6 +776,7 @@ void describe(
           const d = await open('/developer?tab=devices&device=d1', stub(), sized);
           try {
             await setTheme(d.page, theme);
+            await unfold(devicePanel(d.page), 'helpers');
             await devicePanel(d.page)
               .locator('[data-update-cli="device"]')
               .waitFor({ timeout: 20_000 });
@@ -790,24 +807,20 @@ void describe(
             await a.close();
           }
 
-          const o = await open('/developer?tab=overview', stub(), sized);
+          // The guide itself, opened in Tool details (the Overview has no notice
+          // since LAI-1096). The app scrolls an inner container, so the window is
+          // made tall enough for all of it; the width is the one under test.
+          const g = await openTools({}, sized);
           try {
-            await setTheme(o.page, theme);
-            await o.page.locator('[data-cli-notice]').waitFor({ timeout: 20_000 });
-            await o.page.screenshot({
-              path: join(dir, `overview-notice-${tag}.png`),
-              fullPage: true,
-            });
-            // The guide itself, opened from the notice. The app scrolls an inner
-            // container, so the window is made tall enough for all of it; the width
-            // is the one under test.
-            await openGuide(o.page.locator('[data-cli-notice]'));
-            await o.page.setViewportSize({ width, height: 2800 });
-            await o.page.locator('[data-note="cli-update"]').screenshot({
+            await setTheme(g.page, theme);
+            const required = await details(g.page, 'a2');
+            await openGuide(required);
+            await g.page.setViewportSize({ width, height: 2800 });
+            await required.locator('[data-update-cli="tool"]').screenshot({
               path: join(dir, `guide-${tag}.png`),
             });
           } finally {
-            await o.close();
+            await g.close();
           }
         }
       }
@@ -863,7 +876,7 @@ void describe(
             await setTheme(w.page, theme);
             const wizard = w.page.locator('[data-wizard="device"]');
             await wizard.waitFor({ timeout: 20_000 });
-            await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+            await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
             await wizard.screenshot({ path: join(dir, `add-device-installed-option-${tag}.png`) });
             const step = await toPairCommand(w.page);
             await openGuide(step);

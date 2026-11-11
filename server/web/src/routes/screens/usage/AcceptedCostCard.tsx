@@ -10,6 +10,7 @@ import {
 } from '../../../api/usage.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
+import { AcceptedSide } from './AcceptedSide.tsx';
 import { CostCaveats } from './CostCaveats.tsx';
 
 /**
@@ -24,7 +25,7 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
   const { accepted } = usage;
   return (
     <section
-      className="prof-card usage-card"
+      className="prof-card usage-card usage-accepted"
       data-section="accepted"
       aria-labelledby="usage-accepted-title"
     >
@@ -42,73 +43,78 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
           </p>
         </InfoTip>
       </header>
-      {accepted.by_project.length === 0 ? (
-        <p className="prof-empty">No task was accepted in this range.</p>
-      ) : (
-        <table className="usage-table" aria-label="Cost per accepted task, by space">
-          <thead>
-            <tr>
-              <th scope="col">Space</th>
-              <th scope="col">Accepted</th>
-              <th scope="col">Per task</th>
-              <th scope="col">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {accepted.by_project.map((p) => (
-              <tr key={p.project.slug}>
-                <th scope="row">{p.project.name}</th>
-                <td>{p.tasks}</td>
-                <td className="usage-money">{perTaskText(p.cost, p.cost_per_task)}</td>
-                <td className="usage-money" title={`${compactTokens(p.tokens)} tokens`}>
-                  {costText(p.cost)}
-                  <CostCaveats cost={p.cost} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {accepted.by_agent.length > 0 && (
-        <table className="usage-table" aria-label="Cost per accepted task, by agent">
-          <thead>
-            <tr>
-              <th scope="col">Agent</th>
-              <th scope="col">Tasks</th>
-              <th scope="col">Per task</th>
-              <th scope="col">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {accepted.by_agent.map((a) => (
-              <tr
-                key={isFewPeople(a) ? 'few-people' : a.agent}
-                data-few-people={isFewPeople(a) ? 'true' : undefined}
-              >
-                <th scope="row">
-                  <span className="usage-row-name">
-                    <AgentMark client={a.agent} size="sm" />{' '}
-                    {isFewPeople(a) ? FEW_PEOPLE_LABEL : agentClientName(a.agent)}
-                  </span>
-                </th>
-                <td>{a.tasks}</td>
-                <td className="usage-money">{perTaskText(a.cost, a.cost_per_task)}</td>
-                <td className="usage-money">
-                  {costText(a.cost)}
-                  <CostCaveats cost={a.cost} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {accepted.agents_withheld > 0 && (
-        <p className="usage-cost-caveat" data-withheld>
-          {accepted.agents_withheld === 1
-            ? '1 agent is in “Other”: fewer than three people used it on these tasks.'
-            : `${String(accepted.agents_withheld)} agents are in “Other”: fewer than three people used each on these tasks.`}
-        </p>
-      )}
+      <div className="usage-accepted-body">
+        <div className="usage-accepted-main">
+          {accepted.by_project.length === 0 ? (
+            <p className="prof-empty">No task was accepted in this range.</p>
+          ) : (
+            <table className="usage-table" aria-label="Cost per accepted task, by space">
+              <thead>
+                <tr>
+                  <th scope="col">Space</th>
+                  <th scope="col">Accepted</th>
+                  <th scope="col">Per task</th>
+                  <th scope="col">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accepted.by_project.map((p) => (
+                  <tr key={p.project.slug}>
+                    <th scope="row">{p.project.name}</th>
+                    <td>{p.tasks}</td>
+                    <td className="usage-money">{perTaskText(p.cost, p.cost_per_task)}</td>
+                    <td className="usage-money" title={`${compactTokens(p.tokens)} tokens`}>
+                      {costText(p.cost)}
+                      <CostCaveats cost={p.cost} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {accepted.by_agent.length > 0 && (
+            <table className="usage-table" aria-label="Cost per accepted task, by agent">
+              <thead>
+                <tr>
+                  <th scope="col">Agent</th>
+                  <th scope="col">Tasks</th>
+                  <th scope="col">Per task</th>
+                  <th scope="col">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accepted.by_agent.map((a) => (
+                  <tr
+                    key={isFewPeople(a) ? 'few-people' : a.agent}
+                    data-few-people={isFewPeople(a) ? 'true' : undefined}
+                  >
+                    <th scope="row">
+                      <span className="usage-row-name">
+                        <AgentMark client={a.agent} size="sm" />{' '}
+                        {isFewPeople(a) ? FEW_PEOPLE_LABEL : agentClientName(a.agent)}
+                      </span>
+                    </th>
+                    <td>{a.tasks}</td>
+                    <td className="usage-money">{perTaskText(a.cost, a.cost_per_task)}</td>
+                    <td className="usage-money">
+                      {costText(a.cost)}
+                      <CostCaveats cost={a.cost} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {accepted.agents_withheld > 0 && (
+            <p className="usage-cost-caveat" data-withheld>
+              {accepted.agents_withheld === 1
+                ? '1 agent is in “Other”: fewer than three people used it on these tasks.'
+                : `${String(accepted.agents_withheld)} agents are in “Other”: fewer than three people used each on these tasks.`}
+            </p>
+          )}
+        </div>
+        <AcceptedSide usage={usage} />
+      </div>
     </section>
   );
 }

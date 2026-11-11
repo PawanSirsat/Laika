@@ -36,6 +36,11 @@ export const ORG_ACTIONS = [
   'token.revoke_own',
   'token.list_any',
   'token.revoke_any',
+  // D-132, D-133 (LAI-1137): another member's whole developer setup, read;
+  // and revoking one of their tools or unpairing one of their devices.
+  'developer_setup.read_any',
+  'agent.revoke_any',
+  'device.revoke_any',
   // D-114 (LAI-534): a person's registered agents — reading them, and
   // registering, renaming, granting, rotating and revoking them.
   'agent.read_own',
@@ -48,6 +53,8 @@ export const ORG_ACTIONS = [
   'profile.set_kind',
   'profile.rate',
   'profile.activity.read',
+  // D-139 item 1 (LAI-1150): a person's own profile and heatmap, every role.
+  'profile.read_own',
   // D-102 rule 1 (LAI-957): a person's day, hours and shared local activity,
   // read by somebody else in the shape the person reads them.
   'people.analytics.read',
@@ -76,12 +83,29 @@ export const ORG_ACTIONS = [
   'time_drafts.manage_own',
   'time_entries.read_own',
   'time_entries.write_own',
+  // D-143 (LAI-1165): an owner or admin adds, changes or deletes a member's
+  // confirmed time — never the owner's for an admin, never their own here.
+  'time_entries.write_member',
   // LAI-788: the Solidtime bridge (D-088 item 10) — a person's own CLI
   // writing their confirmed time to Solidtime and bringing back what they
   // logged there, and an owner's or admin's mapping and pull of everyone.
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // D-130 (LAI-1135): the organisation's Time report, everyone's time per
+  // person over a stretch — *See everyone's analytics*.
+  'time.report.read',
+  // D-131 (LAI-1130): a person's own availability — status, hours, note,
+  // tags, working week and away periods — and reading it for people who
+  // share a space with the reader.
+  'availability.set_own',
+  'availability.read',
+  // D-134 (LAI-1136): a person's own notices — being added to a space, and
+  // their tool, device or token revoked by somebody else.
+  'notices.own',
+  // D-139 (LAI-1151): a person's own developer setup — their pending pairing
+  // requests and their recent setup activity, as Developer access draws them.
+  'developer_setup.read_own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -122,6 +146,10 @@ export const PROJECT_ACTIONS = [
   'budget.set',
   // D-103 item 5 (LAI-976): any member may leave a space.
   'project.leave',
+  // D-130 item 3 as D-136 amends it (LAI-1135): a space admin reads one
+  // space's confirmed minutes a week, a week of fewer than three people
+  // other than the reader withheld — no per-person split, nothing else.
+  'time.report.read_project',
 ] as const;
 
 /**
@@ -162,6 +190,8 @@ export const SYSTEM_ACTIONS = [
   'system.handoff.expire',
   'system.checkpoint.verify',
   'system.checkpoint.prune',
+  // §11.6: member notices older than 90 days (D-134, LAI-1136).
+  'system.notices.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -271,6 +301,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'profile.rate',
   // The heatmap is part of the profile, and follows its rule (D-078, D-079).
   'profile.activity.read',
+  // **Your own profile** (D-139 item 1, LAI-1150): the profile's rule, for
+  // the person — a token, their own agent's included, reads no profile.
+  'profile.read_own',
   // **A person's day, drafts included, and their local activity** (D-102,
   // LAI-957): the profile's rule, and the rule the person's own `/me` reads
   // follow — a token, an agent's included, reads nobody's day.
@@ -316,6 +349,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_drafts.manage_own',
   'time_entries.read_own',
   'time_entries.write_own',
+  // **Somebody else's confirmed time is changed signed in** (D-143,
+  // LAI-1165): the rule above, and an agent's token that could rewrite a
+  // member's hours would put words in a person's record that nobody typed.
+  'time_entries.write_member',
   // **The Solidtime bridge reads and writes hours per person** (LAI-788), so
   // it follows the rule above: the person's CLI signs in for it, with their
   // password, and keeps no session — a token, an agent's included, never
@@ -324,6 +361,16 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // **The Time report is hours per person, or a space's hours** (D-130,
+  // LAI-1135): the rule above, so no token reads it, its own person's
+  // included.
+  'time.report.read',
+  'time.report.read_project',
+  // **Availability is the person's own declaration** (D-131, LAI-1130): set
+  // signed in, as their time settings are — an agent must not say its person
+  // is open to more work — and read on the web app's screens, never by a token.
+  'availability.set_own',
+  'availability.read',
   // **Who may do what is the owner's, signed in** (D-102, LAI-958): an
   // agent's token that could grant its own role a capability would hand its
   // person whatever it was refused.
@@ -342,6 +389,22 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // **Approving a transfer is a person's, signed in** (§3.2, §4.73, LAI-546):
   // an agent that could approve could hand its own work across owners.
   'task.handoff.approve',
+  // **Somebody else's developer setup is read and revoked signed in**
+  // (D-132, D-133, LAI-1137): the read carries every device, tool and token
+  // the member has, and a revoke ends another person's credentials. An
+  // agent's token must do neither — not even one of an admin's own agents.
+  'developer_setup.read_any',
+  'agent.revoke_any',
+  'device.revoke_any',
+  // **A person's notices are their own, signed in** (D-134, LAI-1136): the
+  // message an adder wrote to them is addressed to the person, not to an
+  // agent acting for them, and marking one read is the person having seen it.
+  'notices.own',
+  // **Your own developer setup is read signed in** (D-139, LAI-1151): the
+  // pairing requests an agent's token could approve for itself are the
+  // person's to see, and `developer_setup.read_any`'s reason holds for one's
+  // own — an agent reads no picture of every device and tool its person has.
+  'developer_setup.read_own',
 ]);
 
 /**

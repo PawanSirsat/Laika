@@ -66,8 +66,11 @@ export interface TimeSummaryView {
   by_kind: SummaryKindView[];
 }
 
-/** Days `from` to `to`, both kept, refused when out of order or longer than a quarter. */
-function stretch(from: string | undefined, to: string | undefined): string[] {
+/**
+ * Days `from` to `to`, both kept, refused when out of order or longer than a
+ * quarter — the Time report's bounds too (D-130, LAI-1135).
+ */
+export function stretch(from: string | undefined, to: string | undefined): string[] {
   if (from === undefined || !isCalendarDay(from)) {
     throw new ApiError('unprocessable', 'from is a calendar date, YYYY-MM-DD', { field: 'from' });
   }

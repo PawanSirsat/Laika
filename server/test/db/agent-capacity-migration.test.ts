@@ -111,21 +111,22 @@ describe('0074 agent_capacity', () => {
     // An agent granted the project, so a context change is delivered to it:
     // envelopes and deliveries that the rebuild's cascade could take.
     const agentId = newId();
-    db.insert(agents)
-      .values({
-        id: agentId,
-        orgId: s.orgId,
-        ownerUserId: s.userId,
-        displayName: 'Pre-0074',
-        harness: 'claude-code',
-        deviceLabel: null,
-        deviceId: null,
-        status: 'active',
-        createdAt: 1,
-        revokedAt: null,
-        lastSeenAt: null,
-      })
-      .run();
+    // Raw SQL: a Drizzle insert names every column the schema has, and a 0073
+    // `agents` and `devices` have none of 0078's `revoked_by_user_id`
+    // (LAI-1137). The agent is linked to its device, as every agent on a real
+    // 0073 database is (0070 and the boot backfill), so the boot step that
+    // runs after this cut-back upgrade has nothing to link — its whole-row
+    // device reads would name the 0078 column, which only a database held
+    // back before it lacks.
+    const deviceId = newId();
+    db.run(sql`
+      INSERT INTO devices (id, org_id, owner_user_id, display_name, label_key, kind, origin, status, created_at)
+      VALUES (${deviceId}, ${s.orgId}, ${s.userId}, 'Unnamed device', '', 'local', 'imported', 'active', 1)
+    `);
+    db.run(sql`
+      INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, device_label, device_id, status, created_at, revoked_at, last_seen_at)
+      VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'Pre-0074', 'claude-code', NULL, ${deviceId}, 'active', 1, NULL, NULL)
+    `);
     db.insert(agentProjectGrants)
       .values({ agentId, projectId: s.projectId, scope: 'full', createdAt: 1 })
       .run();

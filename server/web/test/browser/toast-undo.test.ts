@@ -1,6 +1,6 @@
 /**
  * The app's one toast, SaveStatus and InlineConfirm in a real browser
- * (LAI-1129): Review's Accept asks and reports the server's answer, with no
+ * (LAI-1129): Review's Accept posts at once (D-146) and reports the server's answer, with no
  * Undo it cannot honour; *Open on board* leaves a modified click to the
  * browser; Space settings says *Saving… / Saved / Couldn't save — Retry* and
  * guards unsaved General changes; the inline confirm takes focus in and gives
@@ -90,21 +90,15 @@ async function openRow(h: Harness): Promise<void> {
 }
 
 void describe('Review: Accept is honest about what it can take back', () => {
-  void test('Accept asks; Not yet sends nothing; yes posts, then the toast says the server’s answer — and offers no Undo', async () => {
+  void test('Accept posts at once (D-146), then the toast says the server’s answer — and offers no Undo', async () => {
     const seen: StubCall[] = [];
     const h = await open('/inbox?tab=review', reviewStub(seen));
     try {
       await openRow(h);
-      const accept = h.page.getByRole('button', { name: 'Accept', exact: true });
-      await accept.click();
-      const asked = await answerConfirm(h.page, false);
-      assert.match(asked, /Accept LC-2\?/);
-      assert.match(asked, /cannot be undone here/);
-      await h.page.waitForTimeout(200);
-      assert.equal(seen.length, 0, 'accepted without a yes');
-
-      await accept.click();
-      await answerConfirm(h.page, true);
+      const dialog = h.page.locator('[data-dialog="review"]');
+      await dialog.getByRole('button', { name: 'Accept', exact: true }).click();
+      // No yes-or-no in front of a decision queue's Accept (LAI-1169).
+      assert.equal(await h.page.locator('[data-confirm-dialog]').count(), 0, 'Accept asked first');
       await until(() => seen.length === 1);
       const toast = h.page.locator('[data-toast][data-review-accepted]');
       await toast.waitFor({ timeout: 5_000 });

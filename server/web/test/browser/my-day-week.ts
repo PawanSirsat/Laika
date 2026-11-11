@@ -11,7 +11,14 @@
  * does.
  */
 
-import type { TimeDraft, TimeEntry, TimeSummary } from '../../src/api/time.ts';
+import type {
+  TimeDraft,
+  TimeEntry,
+  TimeReport,
+  TimeReportRow,
+  TimeSummary,
+} from '../../src/api/time.ts';
+import { monthOf } from '../../src/components/time-report/time-report-derive.ts';
 import {
   presetRange,
   summaryOfDay,
@@ -262,6 +269,8 @@ export function weekStub(data: Map<string, DayData> = weekData()): ApiStub {
   return {
     // Overview's week and quick picks (LAI-526), from the same days.
     ...summaryRoutes(data),
+    // The Time report for Week, Month and Range (LAI-1138), from the same days.
+    ...reportRoutes(data),
     '/api/v1/me': {
       id: 'u1',
       email: 'a@example.com',
@@ -411,5 +420,119 @@ export function summaryRoutes(
   ];
   return Object.fromEntries(
     ranges.map((r) => [`${base}?from=${r.from}&to=${r.to}`, () => summaryFor(r, data)]),
+  );
+}
+
+/** The reader the fixtures are: `GET /me`'s `u1`. */
+export const READER = { id: 'u1', name: 'Ada Lovelace', deactivated: false } as const;
+
+/**
+ * `GET /time/report` over `range` for one person, from `data` (LAI-1138): the
+ * server's shape — one row per space, task, kind and whether it is drafted
+ * nobody-knows-where, summed — built from the same days My day draws.
+ */
+export function reportFor(
+  range: DayRange,
+  data: Map<string, DayData> = weekData(),
+  user: TimeReportRow['user'] = READER,
+): TimeReport {
+  const days: string[] = [];
+  for (let d = range.from; d <= range.to; d = addDays(d, 1)) days.push(d);
+  const rows = new Map<string, TimeReportRow>();
+  let meeting = 0;
+  let manual = 0;
+  const add = (
+    row: Omit<TimeReportRow, 'confirmed_minutes' | 'drafted_minutes'>,
+    c: number,
+    d: number,
+  ) => {
+    const key = [row.project?.id, row.task?.id, row.kind, row.untied].join('|');
+    const was = rows.get(key);
+    rows.set(key, {
+      ...row,
+      confirmed_minutes: (was?.confirmed_minutes ?? 0) + c,
+      drafted_minutes: (was?.drafted_minutes ?? 0) + d,
+    });
+  };
+  const byDay = days.map((day) => {
+    const own = data.get(day);
+    let c = 0;
+    let d = 0;
+    for (const e of (own?.entries ?? []) as unknown as TimeEntry[]) {
+      c += e.minutes;
+      if (e.kind === 'meeting') meeting += e.minutes;
+      if (e.source === 'manual') manual += e.minutes;
+      add(
+        { project: e.project, user, task: e.task, untied: false, kind: e.kind ?? null },
+        e.minutes,
+        0,
+      );
+    }
+    for (const x of (own?.drafts ?? []) as unknown as TimeDraft[]) {
+      d += x.minutes;
+      add(
+        {
+          project: x.project,
+          user,
+          task: x.task,
+          untied: x.task === null && !x.general,
+          kind: null,
+        },
+        0,
+        x.minutes,
+      );
+    }
+    return { day, confirmed_minutes: c, drafted_minutes: d };
+  });
+  const confirmed = byDay.reduce((n, x) => n + x.confirmed_minutes, 0);
+  const drafted = byDay.reduce((n, x) => n + x.drafted_minutes, 0);
+  return {
+    from: range.from,
+    to: range.to,
+    days: days.length,
+    scope: user.id === READER.id ? 'own' : 'people',
+    include_drafts: true,
+    totals: {
+      confirmed_minutes: confirmed,
+      drafted_minutes: drafted,
+      meeting_minutes: meeting,
+      manual_minutes: manual,
+      active_days: byDay.filter((x) => x.confirmed_minutes + x.drafted_minutes > 0).length,
+      people: confirmed + drafted > 0 ? 1 : 0,
+    },
+    agent_minutes: 42,
+    by_day: byDay,
+    rows: [...rows.values()],
+  };
+}
+
+/**
+ * The report routes My day's Overview asks for around today (LAI-1138): this
+ * week and the two either side, this month and the last, every quick pick,
+ * plus any `extra` — each keyed by its stretch, so a stretch nobody stubbed
+ * is refused and recorded rather than answered with the wrong days.
+ */
+export function reportRoutes(
+  data: Map<string, DayData> = weekData(),
+  extra: readonly DayRange[] = [],
+  user: TimeReportRow['user'] = READER,
+): ApiStub {
+  const ranges: DayRange[] = [
+    weekOf(addDays(TODAY, -14)),
+    weekOf(addDays(TODAY, -7)),
+    weekOf(TODAY),
+    monthOf(TODAY),
+    monthOf(addDays(monthOf(TODAY).from, -1)),
+    presetRange('last7', TODAY),
+    presetRange('last30', TODAY),
+    presetRange('thisMonth', TODAY),
+    presetRange('lastMonth', TODAY),
+    ...extra,
+  ];
+  return Object.fromEntries(
+    ranges.map((r) => [
+      `/api/v1/time/report?from=${r.from}&to=${r.to}`,
+      () => reportFor(r, data, user),
+    ]),
   );
 }

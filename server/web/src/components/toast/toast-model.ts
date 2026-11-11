@@ -22,11 +22,23 @@ export type ToastTone = 'info' | 'success' | 'error';
 /** Takes a change back on the server, and resolves to what to say after. */
 export type UndoAction = () => Promise<string>;
 
+/**
+ * A way on from what the toast reports — *LC-7 created · Open* (LAI-1167).
+ * Pressing it runs `run` and puts the toast away.
+ */
+export interface ToastAction {
+  readonly label: string;
+  readonly run: () => void;
+}
+
 export interface ToastInput {
   readonly text: string;
   readonly tone?: ToastTone | undefined;
   /** Offered only where the server can really reverse the change (LAI-1129 rule 2). */
   readonly undo?: UndoAction | undefined;
+  /** The server's own sentence, under the headline, announced with it. */
+  readonly detail?: string | undefined;
+  readonly action?: ToastAction | undefined;
   /** Overrides the default stay, in ms; errors ignore it and persist. */
   readonly duration?: number | undefined;
   /** A `data-*` attribute name for tests and screens that look for their own toast. */
@@ -38,6 +50,8 @@ export interface ToastItem {
   readonly text: string;
   readonly tone: ToastTone;
   readonly undo?: UndoAction | undefined;
+  readonly detail?: string | undefined;
+  readonly action?: ToastAction | undefined;
   readonly mark?: string | undefined;
   /** How long it stays in all; `null` for one that persists. */
   readonly duration: number | null;
@@ -99,6 +113,8 @@ export function push(
     text: input.text,
     tone: input.tone ?? 'info',
     ...(input.undo === undefined ? {} : { undo: input.undo }),
+    ...(input.detail === undefined ? {} : { detail: input.detail }),
+    ...(input.action === undefined ? {} : { action: input.action }),
     ...(input.mark === undefined ? {} : { mark: input.mark }),
     duration,
     expiresAt: null,

@@ -26,6 +26,17 @@ void describe('durations say their units', () => {
     }
   });
 
+  void test('a day and more stays hours and minutes — 28 h, never 1 d 4 h (LAI-1147)', () => {
+    assert.equal(duration(28 * 60), '28 h');
+    assert.equal(duration(53 * 60 + 12), '53 h 12 min');
+    assert.equal(duration(24 * 60), '24 h');
+    assert.equal(duration(16 * 60 + 15), '16 h 15 min');
+    for (const m of [1440, 1500, 1680, 3192, 10_000]) {
+      assert.doesNotMatch(duration(m), / d\b/, `${String(m)} printed in days`);
+      assert.doesNotMatch(duration(m), /\d:\d/, `${String(m)} printed as h:mm`);
+    }
+  });
+
   void test('an agent’s time stays minutes, however long', () => {
     assert.equal(agentDuration(142), '142 min');
     assert.equal(agentDuration(600), '600 min');

@@ -80,7 +80,15 @@
   text-wrap: pretty;
 }
 
+.toast-detail {
+  display: block;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: color-mix(in srgb, var(--bg-card) 72%, var(--text-primary));
+}
+
 .toast-undo,
+.toast-action,
 .toast-close {
   flex: none;
   display: inline-flex;
@@ -97,7 +105,8 @@
 }
 
 /* The accent on the pill: the theme's accent, lifted toward the card. */
-.toast-undo {
+.toast-undo,
+.toast-action {
   padding: 0 var(--space-2);
   font-weight: var(--weight-heavy);
   color: color-mix(in srgb, var(--accent) 50%, var(--bg-card));
@@ -116,6 +125,7 @@
 }
 
 .toast-undo:hover:not(:disabled),
+.toast-action:hover,
 .toast-close:hover {
   background: color-mix(in srgb, var(--bg-card) 14%, transparent);
 }

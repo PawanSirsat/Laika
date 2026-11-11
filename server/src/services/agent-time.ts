@@ -471,3 +471,81 @@ export function agentDay(db: Db, userId: string, day: string, tz = 'UTC'): Agent
     lane,
   };
 }
+
+/**
+ * Every agent minute tied to one card, across every person and day (the task
+ * panel's *Tracked on this task*, owner, 2026-11-10): `cli` seconds only, split
+ * by the same rule {@link agentDay} uses — a session's seconds on a day follow
+ * that session's token split between cards that day, and a session with no
+ * split is unattributed, never guessed. So the card's figure and the sum of
+ * every day's `by_task` line for it agree.
+ *
+ * Three reads whatever the history: the card's ties, every tie of those
+ * sessions on those days (the denominator), and those sessions' seconds.
+ */
+export function taskAgentMinutes(db: Db, taskId: string): number {
+  const ties = db
+    .select({
+      userId: tokenSessionTasks.userId,
+      day: tokenSessionTasks.day,
+      sessionKey: tokenSessionTasks.sessionKey,
+      tokens: tokenSessionTasks.tokens,
+    })
+    .from(tokenSessionTasks)
+    .where(eq(tokenSessionTasks.taskId, taskId))
+    .all();
+  const key = (userId: string, day: string, session: string): string =>
+    `${userId}\u0000${day}\u0000${session}`;
+  const mine = new Map<string, number>();
+  for (const t of ties) {
+    if (t.tokens <= 0) continue;
+    const k = key(t.userId, t.day, t.sessionKey);
+    mine.set(k, (mine.get(k) ?? 0) + t.tokens);
+  }
+  if (mine.size === 0) return 0;
+
+  const userIds = [...new Set(ties.map((t) => t.userId))];
+  const days = [...new Set(ties.map((t) => t.day))];
+  // The denominator counts only ties to a card that still exists — the inner
+  // join `agentDay` makes — so a deleted card's share is not silently ours.
+  const total = new Map<string, number>();
+  for (const s of db
+    .select({
+      userId: tokenSessionTasks.userId,
+      day: tokenSessionTasks.day,
+      sessionKey: tokenSessionTasks.sessionKey,
+      tokens: tokenSessionTasks.tokens,
+    })
+    .from(tokenSessionTasks)
+    .innerJoin(tasks, eq(tasks.id, tokenSessionTasks.taskId))
+    .where(and(inArray(tokenSessionTasks.userId, userIds), inArray(tokenSessionTasks.day, days)))
+    .all()) {
+    const k = key(s.userId, s.day, s.sessionKey);
+    if (mine.has(k)) total.set(k, (total.get(k) ?? 0) + s.tokens);
+  }
+
+  let seconds = 0;
+  for (const row of db
+    .select({
+      userId: agentTimeDays.userId,
+      day: agentTimeDays.day,
+      sessionKey: agentTimeDays.sessionKey,
+      seconds: agentTimeDays.seconds,
+    })
+    .from(agentTimeDays)
+    .where(
+      and(
+        inArray(agentTimeDays.userId, userIds),
+        inArray(agentTimeDays.day, days),
+        eq(agentTimeDays.kind, 'cli'),
+      ),
+    )
+    .all()) {
+    const k = key(row.userId, row.day, row.sessionKey);
+    const share = mine.get(k);
+    const whole = total.get(k);
+    if (share === undefined || whole === undefined || whole <= 0) continue;
+    seconds += (row.seconds * share) / whole;
+  }
+  return Math.round(seconds / 60);
+}

@@ -51,6 +51,12 @@ export interface ProjectSetupView {
   project_id: string;
   project_slug: string;
   repo_label: string | null;
+  /**
+   * The repository's key: the CLI's SHA-256 of its normalised remote, `''` on
+   * a browser record. Served to its owner so one repository's records group
+   * across devices and tools (LAI-321) — two repositories can share a label.
+   */
+  repo_key: string;
   instructions_path: string | null;
   block_found: boolean;
   /** The instructions template's revision — never the brief's `context_revision`. */
@@ -302,6 +308,36 @@ function listAcrossProjects(
   return rows.map(({ row, slug }) => toView(db, row, slug, presence));
 }
 
+/**
+ * `ownerUserId`'s records in the projects `readable` names, newest first, and
+ * how many more they hold in projects outside it — counted, never named
+ * (D-132 item 5, LAI-1137). **No `can()` here**: the caller,
+ * `developer-setup.ts`, has asked `developer_setup.read_any` and computed
+ * `readable` from the reader's own `project.read`.
+ */
+export function projectSetupsOf(
+  db: Db,
+  ownerUserId: string,
+  readable: readonly string[],
+): { visible: ProjectSetupView[]; hidden: number } {
+  const allowed = new Set(readable);
+  const rows = db
+    .select({ row: projectRepoSetups, slug: projects.slug })
+    .from(projectRepoSetups)
+    .innerJoin(projects, eq(projects.id, projectRepoSetups.projectId))
+    .where(eq(projectRepoSetups.ownerUserId, ownerUserId))
+    .orderBy(desc(projectRepoSetups.id))
+    .all();
+  const presence = presenceEnabled(db);
+  const visible: ProjectSetupView[] = [];
+  let hidden = 0;
+  for (const { row, slug } of rows) {
+    if (allowed.has(row.projectId)) visible.push(toView(db, row, slug, presence));
+    else hidden += 1;
+  }
+  return { visible, hidden };
+}
+
 /** The one agent a read is narrowed to, if any — the token's own, or the owner's named one. */
 function onlyAgent(db: Db, actor: ResolvedActor, agentId: string | undefined): string | undefined {
   const self = registeredAgent(actor);
@@ -328,6 +364,7 @@ function toView(db: Db, row: Row, projectSlug: string, presence: boolean): Proje
     project_id: row.projectId,
     project_slug: projectSlug,
     repo_label: row.repoLabel,
+    repo_key: row.repoKey,
     instructions_path: row.instructionsPath,
     block_found: row.blockFound,
     template_revision: row.templateRevision,
