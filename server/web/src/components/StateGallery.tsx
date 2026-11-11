@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { BrandSpinner } from './brand/BrandSpinner.tsx';
 import { ConnectionBanner } from './ConnectionBanner.tsx';
 import { EmptyState } from './EmptyState.tsx';
 import { ErrorState } from './ErrorState.tsx';
@@ -76,6 +77,17 @@ const SPECIMENS: readonly Specimen[] = [
     title: 'Loading — rows',
     note: 'Shaped like a table row: avatar, key, title.',
     render: () => <LoadingState shape="row" count={4} label="Loading activity" />,
+  },
+  {
+    title: 'Loading — whole panel',
+    note: 'The brand loader (LAI-1126), for a panel with no shape to stand in for. Stills under reduced motion.',
+    render: () => (
+      <div className="gallery-brand-spinners">
+        <BrandSpinner size="sm" label="Loading, small" />
+        <BrandSpinner size="md" label="Loading, medium" />
+        <BrandSpinner size="lg" label="Loading, large" />
+      </div>
+    ),
   },
   {
     title: 'Error — retryable',

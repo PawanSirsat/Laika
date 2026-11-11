@@ -1,3 +1,4 @@
+import { BrandMark } from '../../components/brand/BrandMark.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { DEFAULT_PATH } from '../route-table.ts';
@@ -18,6 +19,11 @@ export function NotFound({
   return (
     <>
       <ScreenHeader title="Not found" context="404" />
+
+      {/* The mark, decorative (LAI-1126): a wrong address is still Laika. */}
+      <div className="brand-not-found">
+        <BrandMark size={48} />
+      </div>
 
       <EmptyState
         headline="There is no screen at this address"

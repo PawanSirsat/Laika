@@ -254,15 +254,19 @@
 }
 
 /*
- * The wordmark takes the inverted ground's text colour. The mark keeps its
- * accent fill: design 6a draws a 30px white tile with a glyph inside it, and
- * `Brand` has no glyph — scaled up and filled flat it reads as a missing image
- * rather than a logo. The accent dot is legible on both inverted grounds.
+ * The lockup on the inverted rail (LAI-1126). The wordmark takes the rail's
+ * text colour; the glass mark sits on a canvas-coloured tile, because its pale
+ * gradient is drawn for the theme's own ground and the rail is the opposite one.
  */
-.boot-rail .sidebar-wordmark {
-  font-size: var(--text-heading-sm);
-  letter-spacing: -0.02em;
+.boot-rail .brand-wordmark {
   color: var(--bg-canvas);
+}
+
+.boot-rail .brand-mark {
+  box-sizing: content-box;
+  padding: 0.25rem;
+  border-radius: 0.5625rem;
+  background: var(--bg-canvas);
 }
 
 .boot-version {
@@ -546,28 +550,17 @@
   gap: 1.0625rem;
 }
 
-/* The tile mark: `--text-primary` ground, glyph stroked in `--bg-card`, so it inverts with
-   the theme exactly as the rest of the card does. */
-.brand-tile {
-  width: 1.875rem;
-  height: 1.875rem;
-  flex: none;
-  border-radius: 0.5625rem;
-  background: var(--text-primary);
+/* The brand lockup heads every auth card (LAI-1126) — the one place a
+   signed-out page says "Laika"; the shell header leaves its copy out here. */
+.auth-brand {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  width: max-content;
+  margin-bottom: var(--space-4);
 }
 
-.brand-tile svg {
-  stroke: var(--bg-card);
-}
-
-.auth-signin .sidebar-wordmark {
-  font-size: var(--text-heading-sm);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
-  letter-spacing: -0.02em;
+/* The sign-in card is a flex column whose gap already spaces it. */
+.auth-signin .auth-brand {
+  margin-bottom: 0;
 }
 
 .auth-signin .auth-head {

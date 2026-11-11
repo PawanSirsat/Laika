@@ -1,3 +1,4 @@
+import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { useState } from 'react';
 import { Button } from '../../components/forms/Button.tsx';
@@ -85,6 +86,7 @@ export function InviteScreen({
     return (
       <div className="auth">
         <div className="auth-card auth-card-invite">
+          <BrandLockup size="md" className="auth-brand" />
           <p className="auth-kicker auth-kicker-warn">INVITE REFUSED</p>
           <header className="auth-head">
             <span className="auth-expired-glyph" aria-hidden="true">
@@ -131,6 +133,7 @@ export function InviteScreen({
     return (
       <div className="auth">
         <div className="auth-card auth-card-invite">
+          <BrandLockup size="md" className="auth-brand" />
           <p className="auth-kicker">ACCEPT INVITE</p>
           <p className="auth-note" role="status">
             <Spinner size="sm" />
@@ -172,6 +175,7 @@ export function InviteScreen({
           });
         }}
       >
+        <BrandLockup size="md" className="auth-brand" />
         <p className="auth-kicker">ACCEPT INVITE</p>
 
         <div className="auth-inviter">
