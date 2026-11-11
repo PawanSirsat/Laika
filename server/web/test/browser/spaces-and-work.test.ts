@@ -528,7 +528,9 @@ void describe('Work (Organisation tab): filters and grouping are the URL (LAI-11
         ['Laika', 'Onroute'],
       );
 
-      await h.page.goto(`${h.origin}/organisation?tab=work&space=laika&status=todo&person=none&group=status`);
+      await h.page.goto(
+        `${h.origin}/organisation?tab=work&space=laika&status=todo&person=none&group=status`,
+      );
       await h.page.locator('.work-row').first().waitFor({ timeout: 20_000 });
       await h.page.reload();
       await h.page.locator('.work-row').first().waitFor({ timeout: 20_000 });
