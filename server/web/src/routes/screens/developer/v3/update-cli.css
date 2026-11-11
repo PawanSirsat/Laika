@@ -114,12 +114,3 @@
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
-
-/* The Overview's quiet notice: one line, and the guide behind it. */
-.dx-overview-cli {
-  min-width: 0;
-}
-
-.dx-overview-cli > p {
-  margin: 0;
-}

@@ -9,9 +9,13 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { AGENT_CLIENTS } from '../../../../../src/api/agent-clients.ts';
 import {
+  MODE_WORDS,
   TOOL_CATALOG,
   catalogGroups,
   catalogTool,
+  featuredTools,
+  moreTools,
+  toolSub,
 } from '../../../../../src/routes/screens/developer/v3/tool-catalog.ts';
 
 void describe('the tool catalog held in the web', () => {
@@ -49,6 +53,48 @@ void describe('the tool catalog held in the web', () => {
       catalogGroups().map((group) => group.mode),
       ['automatic', 'mcp-only', 'manual', 'unverified'],
     );
+  });
+
+  void test('the picker’s first tiles are every automatic and MCP-only tool; More tools has the rest (LAI-1097)', () => {
+    const featured = featuredTools().map((t) => t.harness);
+    const more = moreTools().map((t) => t.harness);
+    // Derived from the modes, in the catalog's order — never a count typed in.
+    assert.deepEqual(
+      featured,
+      TOOL_CATALOG.filter((t) => t.mode === 'automatic' || t.mode === 'mcp-only').map(
+        (t) => t.harness,
+      ),
+    );
+    assert.deepEqual(
+      more,
+      TOOL_CATALOG.filter((t) => t.mode === 'manual' || t.mode === 'unverified').map(
+        (t) => t.harness,
+      ),
+    );
+    assert.deepEqual([...featured, ...more].sort(), TOOL_CATALOG.map((t) => t.harness).sort());
+    assert.ok(featured.includes('claude-code') && featured.includes('omnigent'));
+    assert.ok(more.includes('antigravity') && more.includes('zed'));
+    // Every featured tool is one the helper sets up: it gets a command.
+    assert.ok(featuredTools().every((t) => t.cliSetup));
+  });
+
+  void test('every tile has one line: its kind, and how its mode is set up', () => {
+    for (const t of TOOL_CATALOG) {
+      assert.ok(t.kind.trim().length > 0, `${t.harness} has a kind`);
+      assert.ok(toolSub(t).startsWith(`${t.kind} · `), t.harness);
+    }
+    const claude = catalogTool('claude-code');
+    const omnigent = catalogTool('omnigent');
+    assert.ok(claude && omnigent);
+    assert.equal(toolSub(claude), 'Direct coding tool · set up automatically');
+    assert.equal(toolSub(omnigent), 'Orchestration tool · MCP entry by hand');
+    // The line follows the mode, so a tile cannot claim a setup its mode does not have.
+    const lines = new Set(
+      (Object.keys(MODE_WORDS) as (keyof typeof MODE_WORDS)[]).map((mode) =>
+        toolSub({ kind: 'X', mode }),
+      ),
+    );
+    assert.equal(lines.size, Object.keys(MODE_WORDS).length, 'each mode its own words');
   });
 
   void test('the tool-specific notes the plan names are there', () => {

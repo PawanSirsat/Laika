@@ -4,7 +4,13 @@ import { PageTabs } from '../../../components/PageTabs.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import type { DeveloperAccessMode } from '../../../api/developer-compat.ts';
-import { ADVANCED_ACTIVITY_SECTION, isV3OnlyTab, type PageTab } from '../../page-tabs.ts';
+import {
+  ADVANCED_ACTIVITY_SECTION,
+  isV3OnlyTab,
+  splitTabs,
+  tabHref,
+  type PageTab,
+} from '../../page-tabs.ts';
 import { ConnectScreen } from '../connect/ConnectScreen.tsx';
 import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
@@ -28,6 +34,14 @@ const PREVIEW_SETUP_HREF = `/developer?tab=projects&setup=${PREVIEW_SETUP}`;
 /** The page's sentence in the owner's design (LAI-1078). */
 const V3_DESCRIPTION =
   'Pair your computer once, connect your coding tools, then set up each project repository. Project setup is where work becomes connected.';
+
+/**
+ * The page's name, which every Laika page titles itself with — and, in the
+ * owner's V3 design, the eyebrow over a title that says what the page is for
+ * (LAI-1096). Either way it is the first thing read under the sidebar's entry.
+ */
+const PAGE_NAME = 'Developer access';
+const V3_TITLE = 'Connect your work to Laika';
 
 export interface DeveloperScreenProps {
   /** How this deployment shows the page (LAI-1048); `classic` is today's. */
@@ -67,11 +81,12 @@ export interface DeveloperScreenProps {
  * - **`preview`** keeps it, Connect still the default, and adds Overview,
  *   Devices and Advanced after the classic tabs, each marked *Preview*, with
  *   a banner on Connect pointing at them and one on each saying it is one.
- * - **`v3`** is Overview · Project setup · Devices · Tools · Advanced,
- *   Overview first, in the owner's design (LAI-1078, LAI-1080). The old tab
- *   ids are aliases (`developerAlias`), applied before this renders;
- *   *Activity* is the second card on Advanced, and `?section=activity`
- *   scrolls to it.
+ * - **`v3`** is Overview · Project setup · Devices · Tools, Overview first,
+ *   then *Advanced* as a quieter link at the end of the row (LAI-1096), in
+ *   the owner's design (LAI-1078, LAI-1080) — its eyebrow *Developer access*
+ *   over the title *Connect your work to Laika*. The old tab ids are aliases
+ *   (`developerAlias`), applied before this renders; *Activity* is the
+ *   second card on Advanced, and `?section=activity` scrolls to it.
  *
  * `projects` and `activity` are one id in every mode, so they render the same
  * content everywhere: Project setup re-hosts Projects, Activity moves as is.
@@ -80,6 +95,11 @@ export interface DeveloperScreenProps {
  * the reader's personal credentials only (LAI-1058, `v3/AdvancedTab.tsx`);
  * in `v3` Activity says *Once per device* and points at Project setup, its
  * rules, scope and history unchanged.
+ *
+ * Advanced is **two flat sections, one after the other and never one inside
+ * the other** (LAI-1100 #11): the credentials card, which `AdvancedTab` draws
+ * itself, and the activity card, compact — what explains either is a closed
+ * fold inside it.
  */
 export function DeveloperScreen({
   mode,
@@ -100,11 +120,21 @@ export function DeveloperScreen({
     event.preventDefault();
     onNavigate(to);
   };
+  const { drawn, secondary } = splitTabs(tabs);
+  const pageTabs = (
+    <PageTabs
+      label="Developer access sections"
+      path="/developer"
+      tabs={drawn}
+      current={current}
+      onNavigate={onNavigate}
+    />
+  );
   return (
     <div className={`page dev-page dev-page-${current}`} data-developer-access={mode}>
       <ScreenHeader
         variant="page"
-        title="Developer access"
+        {...(v3Here ? { eyebrow: PAGE_NAME, title: V3_TITLE } : { title: PAGE_NAME })}
         description={
           v3Here
             ? V3_DESCRIPTION
@@ -112,13 +142,21 @@ export function DeveloperScreen({
         }
         onActionsSlot={setSlot}
         below={
-          <PageTabs
-            label="Developer access sections"
-            path="/developer"
-            tabs={tabs}
-            current={current}
-            onNavigate={onNavigate}
-          />
+          secondary.length === 0 ? (
+            pageTabs
+          ) : (
+            <div className="dx-tabrow">
+              {pageTabs}
+              {secondary.map((tab) => (
+                <SecondaryTab
+                  key={tab.id}
+                  tab={tab}
+                  active={tab.id === current}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          )
         }
       />
       {preview && current === 'connect' && (
@@ -183,12 +221,11 @@ export function DeveloperScreen({
       )}
       {current === 'advanced' && (
         <div className="dx dev-advanced-page">
-          <div className="dev-card dev-tokens dev-advanced">
-            <AdvancedTab me={me} onNavigate={onNavigate} />
-          </div>
+          <AdvancedTab me={me} onNavigate={onNavigate} />
           {mode === 'v3' && (
             <ActivityCard
               v3
+              compact
               canSetInsights={gates.org('org.developer_insights.set')}
               origin={origin}
               focus={params.get('section') === ADVANCED_ACTIVITY_SECTION}
@@ -243,18 +280,62 @@ export function DeveloperScreen({
 }
 
 /**
+ * A `secondary` tab (LAI-1096): V3's *Advanced*, drawn after the four tabs as
+ * a quieter link — *Advanced ›* — and at a phone's width as *⋯*, the word
+ * still its name for a screen reader and in its tooltip, so the four tabs fit
+ * the row. On its own page it is marked as the tabs mark theirs: the accent,
+ * the underline, `aria-current` and `page-tab-active`.
+ */
+function SecondaryTab({
+  tab,
+  active,
+  onNavigate,
+}: {
+  readonly tab: PageTab;
+  readonly active: boolean;
+  readonly onNavigate: (to: string) => void;
+}) {
+  const href = tabHref('/developer', tab.id);
+  return (
+    <a
+      href={href}
+      className={active ? 'dx-tab-secondary page-tab-active' : 'dx-tab-secondary'}
+      data-tab={tab.id}
+      title={tab.label}
+      aria-current={active ? 'page' : undefined}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onNavigate(href);
+      }}
+    >
+      <span className="dx-tab-secondary-word">{tab.label}</span>
+      <span className="dx-tab-secondary-mark" aria-hidden="true">
+        ›
+      </span>
+      <span className="dx-tab-secondary-more" aria-hidden="true">
+        ⋯
+      </span>
+    </a>
+  );
+}
+
+/**
  * *Share local activity* (D-079, D-102 amended): its own tab in classic and
  * preview, and Advanced's second card in `v3` (LAI-1078), where an address
  * naming it (`?section=activity`, which the old `?tab=activity` becomes)
- * scrolls it into view and puts focus on its title.
+ * scrolls it into view and puts focus on its title. On Advanced it is
+ * `compact` (LAI-1100 #11); the classic tab is not.
  */
 function ActivityCard({
   v3,
+  compact = false,
   canSetInsights,
   origin,
   focus,
 }: {
   readonly v3: boolean;
+  readonly compact?: boolean;
   readonly canSetInsights: boolean;
   readonly origin: string;
   readonly focus: boolean;
@@ -288,6 +369,7 @@ function ActivityCard({
         canSetInsights={canSetInsights}
         origin={origin}
         {...(v3 ? { setupTabName: 'Project setup' } : {})}
+        compact={compact}
       />
     </section>
   );

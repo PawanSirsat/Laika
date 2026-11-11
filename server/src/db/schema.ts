@@ -48,6 +48,7 @@ import {
   GRANTABLE_ROLES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
+  MEMBER_NOTICE_KINDS,
   ORG_ROLES,
   PLAN_KINDS,
   PLAN_WINDOWS,
@@ -77,6 +78,7 @@ import {
   PROJECT_SETUP_SOURCES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
+  AVAILABILITY_STATUSES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -994,6 +996,10 @@ export const devices = sqliteTable(
     pairedAt: integer('paired_at'),
     status: text('status', { enum: DEVICE_STATUSES }).notNull(),
     revokedAt: integer('revoked_at'),
+    /** Who unpaired it, when an owner or admin did (D-133, LAI-1137); else null. */
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     lastSeenAt: integer('last_seen_at'),
     createdAt,
   },
@@ -1098,6 +1104,14 @@ export const agents = sqliteTable(
     status: text('status', { enum: AGENT_STATUSES }).notNull().default('active'),
     createdAt,
     revokedAt: integer('revoked_at'),
+    /**
+     * Who revoked it when that was not its owner (D-133, LAI-1137): an owner
+     * or admin acting on the member's setup. Null for the owner's own revoke
+     * and for one made before this column existed.
+     */
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     /** Stamped on authenticated requests, at most once a minute (§4.63). */
     lastSeenAt: integer('last_seen_at'),
   },
@@ -1324,6 +1338,131 @@ export const capacityPings = sqliteTable(
     index('capacity_pings_agent_created_idx').on(t.agentId, t.createdAt),
     index('capacity_pings_created_at_idx').on(t.createdAt),
     check('capacity_pings_answer_check', sql`(answered_at IS NULL) = (reply_json IS NULL)`),
+  ],
+);
+
+// --------------------------------------------------- §4.85 user_availability
+
+/**
+ * What a person says about their own availability (§4.85, D-131, LAI-1130):
+ * whether they are open to more work, optional hours a week, a note, tags and
+ * their working week. **Set only by the person, on a web session** — nobody
+ * else writes it, as `user_time_settings` (§4.46). No row is *not set*.
+ *
+ * Nothing here is a computed figure: no free hours, no utilisation (D-088
+ * item 1, D-131 item 4). The working week's minutes are the person's own
+ * declaration, multiplied out.
+ */
+export const userAvailability = sqliteTable(
+  'user_availability',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `open` or `capacity`; null until the person says either. */
+    status: text('status', { enum: AVAILABILITY_STATUSES }),
+    hoursPerWeek: integer('hours_per_week'),
+    note: text('note'),
+    /** Up to eight tags, de-duplicated case-insensitively by the service. */
+    tags: text('tags', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    /** ISO weekdays, 1 Monday to 7 Sunday, ascending. */
+    workDays: text('work_days', { mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    /** Wall-clock `HH:MM` with no zone; both or neither. */
+    workStart: text('work_start'),
+    workEnd: text('work_end'),
+    updatedAt,
+  },
+  () => [
+    check('user_availability_status_check', oneOfOrNull('status', AVAILABILITY_STATUSES)),
+    check(
+      'user_availability_hours_check',
+      sql.raw('hours_per_week IS NULL OR hours_per_week BETWEEN 1 AND 80'),
+    ),
+    check(
+      'user_availability_note_check',
+      sql.raw('note IS NULL OR length(note) BETWEEN 1 AND 140'),
+    ),
+    check(
+      'user_availability_work_hours_check',
+      sql.raw(
+        "(work_start IS NULL AND work_end IS NULL) OR (work_start GLOB '[0-2][0-9]:[0-5][0-9]' AND work_end GLOB '[0-2][0-9]:[0-5][0-9]' AND work_end > work_start)",
+      ),
+    ),
+  ],
+);
+
+// -------------------------------------------------- §4.86 user_away_periods
+
+/**
+ * A stretch of days a person is away (§4.86, D-131, LAI-1130), inclusive at
+ * both ends, in their own local dates. Set only by the person. Periods that
+ * ended more than 30 days ago are deleted by §11.6's time retention.
+ */
+export const userAwayPeriods = sqliteTable(
+  'user_away_periods',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    fromDay: text('from_day').notNull(),
+    toDay: text('to_day').notNull(),
+    createdAt,
+  },
+  (t) => [
+    index('user_away_periods_user_to_idx').on(t.userId, t.toDay),
+    // §11.6's retention deletes by day alone.
+    index('user_away_periods_to_day_idx').on(t.toDay),
+    check('user_away_periods_range_check', sql.raw('to_day >= from_day')),
+  ],
+);
+
+// ----------------------------------------------------- §4.87 member_notices
+
+/**
+ * A notice for one member (§4.87, D-134, LAI-1136): being added to a space,
+ * with the adder's message and first card if they gave them, and later a
+ * tool, device or token of theirs revoked by somebody else. **Not activity**
+ * (§4.8 gains no verb) and **never written for a self-action**. Read only by
+ * the person it names; kept 90 days (§11.6).
+ */
+export const memberNotices = sqliteTable(
+  'member_notices',
+  {
+    id: text('id').primaryKey(),
+    /** Who is told. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Who did it. Never the same person: a self-action writes no notice. */
+    actorUserId: text('actor_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: MEMBER_NOTICE_KINDS }).notNull(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /**
+     * The tool, device or token name as it was when it happened; for
+     * `time_changed` (D-143), what was done: `<change> <day> <±minutes>`.
+     */
+    subject: text('subject'),
+    /** The adder's own words, as they wrote them. */
+    message: text('message'),
+    createdAt,
+    readAt: integer('read_at'),
+  },
+  (t) => [
+    index('member_notices_user_idx').on(t.userId, t.readAt, t.createdAt),
+    index('member_notices_created_at_idx').on(t.createdAt),
+    check('member_notices_kind_check', oneOf('kind', MEMBER_NOTICE_KINDS)),
+    check('member_notices_subject_check', sql.raw('subject IS NULL OR length(subject) <= 120')),
+    check('member_notices_message_check', sql.raw('message IS NULL OR length(message) <= 500')),
   ],
 );
 
@@ -4012,3 +4151,6 @@ export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;
 export type PasswordReset = typeof passwordResets.$inferSelect;
 export type AgentLauncherReport = typeof agentLauncherReports.$inferSelect;
 export type CapacityPing = typeof capacityPings.$inferSelect;
+export type UserAvailability = typeof userAvailability.$inferSelect;
+export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
+export type MemberNotice = typeof memberNotices.$inferSelect;

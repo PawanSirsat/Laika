@@ -8,7 +8,6 @@ import { changeStatus, getTask, type Member, type TaskSummary } from '../../api/
 import { taskStore } from '../../api/store.ts';
 import { reloadProjectTasks, useProjectTasks } from '../../api/use-project-tasks.ts';
 import { useProjectStatuses } from '../../api/use-statuses.ts';
-import { NewTaskForm } from '../../routes/screens/board/NewTaskForm.tsx';
 import { TaskDetailPanel } from '../../routes/screens/board/TaskDetailPanel.tsx';
 import { ApiErrorState } from '../ApiErrorState.tsx';
 import { LoadingState } from '../LoadingState.tsx';
@@ -21,8 +20,6 @@ export interface TaskDrawerHostProps {
   readonly slug: string | undefined;
   /** `?task=` — a task id, or a key (`LAI-12`) from a link that knew only that. */
   readonly taskRef: string | undefined;
-  /** `?new=task`: the new-task form, in place (B19). */
-  readonly creating: boolean;
   /** The view's live copy, when it offers one (Board, List). */
   readonly source: TaskSource | undefined;
   /**
@@ -37,7 +34,6 @@ export interface TaskDrawerHostProps {
   /** A key resolved to its id: rewrite `?task=` in place, not a new entry. */
   readonly onResolved: (taskId: string) => void;
   readonly onClose: () => void;
-  readonly onCloseCreate: () => void;
 }
 
 /**
@@ -56,38 +52,9 @@ export interface TaskDrawerHostProps {
  *   set does not have.
  */
 export function TaskDrawerHost(props: TaskDrawerHostProps) {
-  const { slug, taskRef, creating, onCloseCreate } = props;
-  const headingId = useId();
-
-  if (taskRef !== undefined) {
-    return <TaskDrawerTask {...props} taskRef={taskRef} />;
-  }
-  if (creating && slug !== undefined) {
-    return (
-      <TaskDrawer taskId="" onClose={onCloseCreate} labelledBy={headingId}>
-        <section className="drawer-create">
-          <header className="drawer-create-head">
-            <h2 id={headingId} className="drawer-create-title">
-              New task
-            </h2>
-            <button type="button" className="panel-close" onClick={onCloseCreate}>
-              <span className="visually-hidden">Close</span>
-              <span aria-hidden="true">×</span>
-            </button>
-          </header>
-          <NewTaskForm
-            slug={slug}
-            onCreated={() => {
-              reloadProjectTasks(slug);
-              props.source?.refresh();
-            }}
-            onCancel={onCloseCreate}
-          />
-        </section>
-      </TaskDrawer>
-    );
-  }
-  return null;
+  // Creating a task is the Create task dialog's (LAI-1167), not the drawer's.
+  if (props.taskRef === undefined) return null;
+  return <TaskDrawerTask {...props} taskRef={props.taskRef} />;
 }
 
 /** A display key, `LAI-12`, as opposed to an id (a ULID has no dash). */

@@ -5,7 +5,8 @@
  * board filled it — the Calendar and the Timeline opened an empty box. B3/B22:
  * the drawer said it was modal and held nothing, and Escape in its ⋯ menu
  * closed the whole drawer. B2/B18: a task link with no space. B4: Detach
- * fired at once and failed in silence. B19: Create left the view.
+ * fired at once and failed in silence. (B19, Create leaving the view, is the
+ * Create task dialog's since LAI-1167: create-task-dialog.test.ts.)
  *
  * Every property here is about focus, layering or history — none of it is
  * visible to a source scan, which is why it is a browser test.
@@ -366,40 +367,6 @@ void describe('task links open the task in its own space (B2)', () => {
       assert.equal(url.searchParams.get('project'), 'laika-core');
       assert.equal(url.searchParams.get('task'), 't1');
       assert.equal(url.searchParams.get('q'), null);
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-void describe('Create opens in place (B19)', () => {
-  void test('from the Calendar, the form opens over it and the reader stays there', async () => {
-    let created = 0;
-    const h = await open('/calendar?project=laika-core', {
-      ...SPACE,
-      [TASKS]: (call: { method: string }) => {
-        if (call.method === 'POST') {
-          created += 1;
-          return task({ id: 't9', key: 'LC-9', number: 9, title: 'Made from the calendar' });
-        }
-        return { data: [T1, T2, T3], next_cursor: null };
-      },
-    });
-    try {
-      await h.page.locator('.cal-task').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.space-create').click();
-      const form = h.page.locator('.drawer .new-task');
-      await form.waitFor({ timeout: 5_000 });
-      assert.equal(new URL(h.page.url()).pathname, '/calendar', 'Create left the Calendar');
-      await dialogNamed(h, /New task/).waitFor({ timeout: 5_000 });
-
-      await form.getByPlaceholder('What needs doing?').fill('Made from the calendar');
-      await form.getByRole('button', { name: 'Create' }).click();
-      await drawer(h).waitFor({ state: 'detached', timeout: 5_000 });
-      assert.equal(created, 1);
-      const url = new URL(h.page.url());
-      assert.equal(url.pathname, '/calendar');
-      assert.equal(url.searchParams.get('new'), null);
     } finally {
       await h.close();
     }

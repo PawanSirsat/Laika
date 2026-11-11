@@ -1,6 +1,6 @@
 import type { SelectedAgent } from './selected-agent.ts';
 import type { CheckpointVerification } from './handoffs.ts';
-import { type TaskSize } from './estimates.ts';
+import { type SizeLevel, type TaskSize } from './estimates.ts';
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
 
@@ -509,6 +509,30 @@ export interface CreateTaskInput {
   readonly status_id?: string | undefined;
   /** Files it as a subtask of that task (D-066). */
   readonly parent_task_id?: string | undefined;
+  /*
+   * The rest of what `POST /projects/:slug/tasks` takes (§6.4), reached from
+   * the browser by the Create task dialog (LAI-1167, D-145). Every one is
+   * sent only when given: the server body is a `strictObject`, and an
+   * `undefined` key would be serialised away in any case, but a caller
+   * reading this should not have to know that.
+   */
+  readonly description_md?: string | undefined;
+  readonly acceptance_md?: string | undefined;
+  /** The Ships list (§4.5); items without an `id`, since nothing exists yet. */
+  readonly deliverables?: readonly DeliverableEdit[] | undefined;
+  readonly solves?: readonly string[] | undefined;
+  readonly unlocks?: readonly string[] | undefined;
+  readonly tags?: readonly string[] | undefined;
+  readonly assignee_id?: string | undefined;
+  /** unix-ms at a UTC midnight (`api/date-only.ts`). */
+  readonly due_on?: number | undefined;
+  readonly planned_start?: number | undefined;
+  /** A person's effort from the start (D-085). */
+  readonly size?: SizeLevel | undefined;
+  /** An outside id (LAI-780). */
+  readonly external_ref?: string | undefined;
+  /** The agent meant to do it, from the start (LAI-1027). */
+  readonly selected_agent_id?: string | undefined;
 }
 
 /**
@@ -531,6 +555,20 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
       ...(input.status === undefined ? {} : { status: input.status }),
       ...(input.status_id === undefined ? {} : { status_id: input.status_id }),
       ...(input.parent_task_id === undefined ? {} : { parent_task_id: input.parent_task_id }),
+      ...(input.description_md === undefined ? {} : { description_md: input.description_md }),
+      ...(input.acceptance_md === undefined ? {} : { acceptance_md: input.acceptance_md }),
+      ...(input.deliverables === undefined ? {} : { deliverables: [...input.deliverables] }),
+      ...(input.solves === undefined ? {} : { solves: [...input.solves] }),
+      ...(input.unlocks === undefined ? {} : { unlocks: [...input.unlocks] }),
+      ...(input.tags === undefined ? {} : { tags: [...input.tags] }),
+      ...(input.assignee_id === undefined ? {} : { assignee_id: input.assignee_id }),
+      ...(input.due_on === undefined ? {} : { due_on: input.due_on }),
+      ...(input.planned_start === undefined ? {} : { planned_start: input.planned_start }),
+      ...(input.size === undefined ? {} : { size: input.size }),
+      ...(input.external_ref === undefined ? {} : { external_ref: input.external_ref }),
+      ...(input.selected_agent_id === undefined
+        ? {}
+        : { selected_agent_id: input.selected_agent_id }),
     },
   });
 }

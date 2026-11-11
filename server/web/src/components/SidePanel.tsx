@@ -16,6 +16,13 @@ export interface SidePanelProps {
   readonly footer?: ReactNode;
   /** A `data-panel` hook naming what the panel is about. */
   readonly panel?: string;
+  /** The × button's name; *Close details* unless the panel is not details. */
+  readonly closeLabel?: string;
+  /**
+   * `false` while the panel holds something a stray click must not throw away
+   * — a reset link shown once (LAI-1134). Escape and × still close it.
+   */
+  readonly scrimCloses?: boolean;
   readonly children: ReactNode;
 }
 
@@ -37,6 +44,8 @@ export function SidePanel({
   restore,
   footer,
   panel,
+  closeLabel = 'Close details',
+  scrimCloses = true,
   children,
 }: SidePanelProps) {
   const ref = useRef<HTMLElement | null>(null);
@@ -49,13 +58,23 @@ export function SidePanel({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     // A control inside that uses Escape itself (an open menu) has had it first.
     if (event.key !== 'Escape' || event.defaultPrevented) return;
+    // A modal opened from inside the panel (an offboarding question, LAI-1134)
+    // is portaled out of it, but React still bubbles its keys here: its
+    // Escape closes that modal, never the panel under it.
+    if (!(event.target instanceof Node) || ref.current?.contains(event.target) !== true) return;
     event.preventDefault();
     onClose();
   };
 
   return createPortal(
     <>
-      <div className="side-panel-scrim" aria-hidden="true" onClick={onClose} />
+      <div
+        className="side-panel-scrim"
+        aria-hidden="true"
+        onClick={() => {
+          if (scrimCloses) onClose();
+        }}
+      />
       <aside
         ref={ref}
         className="side-panel"
@@ -75,7 +94,7 @@ export function SidePanel({
           <button
             type="button"
             className="side-panel-close"
-            aria-label="Close details"
+            aria-label={closeLabel}
             ref={closeRef}
             onClick={onClose}
           >

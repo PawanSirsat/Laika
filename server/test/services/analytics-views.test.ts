@@ -6,7 +6,14 @@ import { newId } from '../../src/db/ids.ts';
 import { analyticsViews, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { pruneLocalActivity } from '../../src/jobs/jobs.ts';
-import { listAnalyticsViews, readLogged } from '../../src/services/analytics-views.ts';
+import {
+  countAnalyticsViews,
+  listAnalyticsViews,
+  LOOK_DEDUPE_MS,
+  readLogged,
+  readLoggedKinds,
+  readLoggedMany,
+} from '../../src/services/analytics-views.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -104,6 +111,112 @@ describe('readLogged', () => {
   });
 });
 
+describe('one row per look (D-135, LAI-1135)', () => {
+  const look = (viewer: string, kind: 'time' | 'usage', day: string | null, at: number) =>
+    readLogged(
+      t.db,
+      actor(viewer),
+      bea,
+      kind,
+      () => null,
+      () => day,
+      at,
+    );
+
+  it('writes a repeat inside ten minutes once, and again at ten minutes', () => {
+    look(admin, 'time', null, NOW);
+    look(admin, 'time', null, NOW + 60_000);
+    look(admin, 'time', null, NOW + LOOK_DEDUPE_MS - 1);
+    expect(views().map((v) => v.viewedAt)).toEqual([NOW]);
+    // Ten minutes on is a new look.
+    look(admin, 'time', null, NOW + LOOK_DEDUPE_MS);
+    expect(views().map((v) => v.viewedAt)).toEqual([NOW, NOW + LOOK_DEDUPE_MS]);
+  });
+
+  it('keeps a different viewer, kind or day its own look', () => {
+    look(admin, 'time', null, NOW);
+    look(owner, 'time', null, NOW + 1);
+    look(admin, 'usage', null, NOW + 2);
+    look(admin, 'time', '2026-10-20', NOW + 3);
+    look(admin, 'time', '2026-10-21', NOW + 4);
+    // The same day again is the same look; null and a day are not the same.
+    look(admin, 'time', '2026-10-21', NOW + 5);
+    look(admin, 'time', null, NOW + 6);
+    expect(views().map((v) => [v.viewerId, v.kind, v.day, v.viewedAt])).toEqual([
+      [admin, 'time', null, NOW],
+      [owner, 'time', null, NOW + 1],
+      [admin, 'usage', null, NOW + 2],
+      [admin, 'time', '2026-10-20', NOW + 3],
+      [admin, 'time', '2026-10-21', NOW + 4],
+    ]);
+  });
+});
+
+describe('readLoggedMany (LAI-1135)', () => {
+  it('logs every person the answer shows, once each, and never the reader', () => {
+    const answer = readLoggedMany(
+      t.db,
+      actor(admin),
+      'time',
+      () => ({ shown: [bea, owner, bea, admin] }),
+      (v) => v.shown,
+      undefined,
+      NOW,
+    );
+    expect(answer.shown).toHaveLength(4);
+    expect(
+      views()
+        .map((v) => [v.viewerId, v.subjectId, v.kind, v.day])
+        .sort(),
+    ).toEqual(
+      [
+        [admin, bea, 'time', null],
+        [admin, owner, 'time', null],
+      ].sort(),
+    );
+  });
+
+  it('dedupes each person on their own: a second read logs only who is new', () => {
+    readLoggedMany(
+      t.db,
+      actor(admin),
+      'time',
+      () => [bea],
+      (v) => v,
+      undefined,
+      NOW,
+    );
+    readLoggedMany(
+      t.db,
+      actor(admin),
+      'time',
+      () => [bea, owner],
+      (v) => v,
+      undefined,
+      NOW + 1,
+    );
+    expect(views().map((v) => [v.subjectId, v.viewedAt])).toEqual([
+      [bea, NOW],
+      [owner, NOW + 1],
+    ]);
+  });
+
+  it('writes nothing when the read fails', () => {
+    expect(() =>
+      readLoggedMany(
+        t.db,
+        actor(admin),
+        'time',
+        (): string[] => {
+          throw ApiError.badRequest('no');
+        },
+        (v) => v,
+      ),
+    ).toThrow(ApiError);
+    expect(views()).toEqual([]);
+  });
+});
+
 describe('listAnalyticsViews (GET /me/analytics-views)', () => {
   beforeEach(() => {
     readLogged(
@@ -137,7 +250,21 @@ describe('listAnalyticsViews (GET /me/analytics-views)', () => {
       ['Ari', 'time', '2026-10-21', NOW],
     ]);
     expect(Object.keys(rows[0]!).sort()).toEqual(['day', 'id', 'kind', 'viewed_at', 'viewer']);
-    expect(rows[2]!.viewer).toEqual({ id: admin, name: 'Ari' });
+    // Each viewer with their org role (D-139 item 3, LAI-1150).
+    expect(rows[2]!.viewer).toEqual({ id: admin, name: 'Ari', org_role: 'admin' });
+    expect(rows[0]!.viewer.org_role).toBe('owner');
+  });
+
+  it('narrows to ?since= and counts what is there (LAI-1150)', () => {
+    // NOW, NOW + 1 and NOW + 2 are the three looks above.
+    const since = listAnalyticsViews(t.db, actor(bea), { limit: 50, cursor: null, since: NOW + 1 });
+    expect(since.map((r) => r.viewed_at)).toEqual([NOW + 2, NOW + 1]);
+    expect(countAnalyticsViews(t.db, actor(bea), NOW + 1)).toBe(2);
+    expect(countAnalyticsViews(t.db, actor(bea), null)).toBe(3);
+    expect(countAnalyticsViews(t.db, actor(bea), NOW + 3)).toBe(0);
+    // Somebody else's looks are never counted for you: Ari's one is hers.
+    expect(countAnalyticsViews(t.db, actor(admin), null)).toBe(1);
+    expect(countAnalyticsViews(t.db, actor(owner), null)).toBe(0);
   });
 
   it('pages on (viewed_at, id) without skipping or repeating', () => {
@@ -164,6 +291,29 @@ describe('listAnalyticsViews (GET /me/analytics-views)', () => {
       code: 'forbidden',
       details: { action: 'local_activity.read_own', reason: 'session_required' },
     });
+  });
+});
+
+describe('readLoggedKinds (D-139 items 3 and 4, LAI-1150)', () => {
+  it('writes one look per kind for somebody else, each deduped on its own', () => {
+    readLoggedKinds(t.db, actor(admin), bea, ['profile', 'time'], () => null, NOW);
+    readLoggedKinds(t.db, actor(admin), bea, ['profile', 'time'], () => null, NOW + 60_000);
+    expect(
+      views()
+        .map((v) => [v.kind, v.day, v.viewedAt])
+        .sort(),
+    ).toEqual([
+      ['profile', null, NOW],
+      ['time', null, NOW],
+    ]);
+    // Past ten minutes it is a new look, of both kinds.
+    readLoggedKinds(t.db, actor(admin), bea, ['profile', 'time'], () => null, NOW + LOOK_DEDUPE_MS);
+    expect(views()).toHaveLength(4);
+  });
+
+  it('writes none for the person reading their own', () => {
+    expect(readLoggedKinds(t.db, actor(bea), bea, ['profile', 'time'], () => 7, NOW)).toBe(7);
+    expect(views()).toEqual([]);
   });
 });
 

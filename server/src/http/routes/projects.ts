@@ -29,6 +29,7 @@ import {
 import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
 import { getEstimateAccuracy, type EstimateAccuracyView } from '../../services/estimates.ts';
 import { mentionableUsers } from '../../services/mentions.ts';
+import { NOTICE_MESSAGE_MAX } from '../../services/notices.ts';
 import {
   type ContextDeliveriesView,
   type ContextDiffView,
@@ -161,6 +162,10 @@ const DeliveriesQuery = strictObject({
 const MemberBody = strictObject({
   user_id: z.string().min(1),
   role: z.enum(PROJECT_ROLES),
+  // D-134 (LAI-1136): a note to the person and their first card, both optional.
+  // A blank message is no message.
+  message: z.string().trim().max(NOTICE_MESSAGE_MAX).optional(),
+  assign_task_id: z.string().min(1).optional(),
 });
 
 function parseJsonOrNull(text: string): unknown {
@@ -403,7 +408,12 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     const body = parseBody(MemberBody, await c.req.json().catch(() => null));
 
     return c.json(
-      { members: addMember(db, actor, c.req.param('slug'), body.user_id, body.role) },
+      {
+        members: addMember(db, actor, c.req.param('slug'), body.user_id, body.role, Date.now(), {
+          message: body.message,
+          assignTaskId: body.assign_task_id,
+        }),
+      },
       201,
     );
   });

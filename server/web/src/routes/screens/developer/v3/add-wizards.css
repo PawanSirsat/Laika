@@ -13,21 +13,58 @@
   margin-bottom: var(--space-5);
 }
 
-/* The tool tiles: the design's two-line tiles, three to a row in a card. */
-.dx-wizard .conn-agents {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+/*
+ * The option cards are the design's 77 px (`dx-option`'s min-height) only as a
+ * border box; this page does not set one, and as a content box they were 107.
+ */
+.dv3w .dx-option {
+  box-sizing: border-box;
 }
 
-@media (max-width: 75rem) {
-  .dx-wizard .conn-agents {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+/*
+ * Add tool's picker (LAI-1097): the design's option cards (`dx-options`, two
+ * to a row) for the tools the helper sets up, the rest behind *More tools*.
+ */
+.dv3w-picker > legend {
+  margin-bottom: var(--space-3);
+  padding: 0;
 }
 
-@media (max-width: 600px) {
-  .dx-wizard .conn-agents {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.dv3w .dv3w-more {
+  align-self: flex-start;
+  margin-top: var(--space-3);
+}
+
+.dv3w-more-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.dv3w-more-tools .conn-note {
+  margin: 0;
+}
+
+/* The device a tool goes on, under the tools as the design has it: one paired
+   device is a line, more a dropdown. */
+.dv3w-set[data-device-choice] {
+  margin-top: var(--space-2);
+}
+
+.dv3w-on-device {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.dv3w-on-device strong {
+  color: var(--text-primary);
+}
+
+.dv3w-device-pick {
+  width: min(100%, 22rem);
 }
 
 /* Verify & finish's head: the tool's status in words beside the orb. */
@@ -94,15 +131,54 @@
 .dv3w-name {
   /* Connect's input grows along a row; in this column it must not grow down. */
   flex: none;
-  width: min(100%, 22rem);
+  width: 100%;
 }
 
-.dv3w-mode-meaning {
-  margin-left: var(--space-2);
-  font-weight: normal;
+/* Add device's *helper installed?*: a compact radio line, not a second pair of cards. */
+.dv3w-segments {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-canvas);
+}
+
+.dv3w-segment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-control);
   color: var(--text-secondary);
-  text-transform: none;
-  letter-spacing: normal;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.dv3w-segment input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dv3w-segment:has(input:checked) {
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+}
+
+.dv3w-segment:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dv3w-set > .conn-note {
+  margin: 0;
 }
 
 .dv3w-picker {
@@ -118,13 +194,8 @@
   gap: var(--space-1);
 }
 
-.dv3w-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.dv3w-deny {
+/* `.dx-btn` sets a colour of its own, so this needs both classes to win. */
+.dx-btn.dv3w-deny {
   color: var(--overdue);
   border-color: var(--overdue-border);
 }
@@ -196,27 +267,11 @@
 
 /* ------------------------------------------------------------------ checks */
 
+/* Four lines under the status head, no box of their own (LAI-1097). */
 .dv3w-checks {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-}
-
-.dv3w-checks-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.dv3w-checks-title {
-  margin: 0;
-  font-size: var(--text-body);
-  font-weight: var(--weight-heavy);
-  color: var(--text-primary);
 }
 
 .dv3w-check-list {
@@ -273,22 +328,22 @@
   line-height: 1.5;
 }
 
-.dv3w-honest {
-  margin-top: var(--space-1);
+.dv3w-verify-head {
+  margin-bottom: 0;
 }
 
-.dv3w-consent {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.dv3w-consent .conn-label {
-  margin: 0;
+/* The link is the line's size: the line is `dv3w-quiet`'s small step. */
+.dv3w-consent-line .conn-link-button {
+  font-size: var(--text-small);
 }
 
 @media (max-width: 600px) {
   .dv3w .conn-card-foot {
+    flex-wrap: wrap;
+  }
+
+  /* Add device's step 3 has three: Cancel pairing, Deny, Approve. */
+  .dv3w[data-wizard='device'] .dx-wizard-foot .dx-actions {
     flex-wrap: wrap;
   }
 

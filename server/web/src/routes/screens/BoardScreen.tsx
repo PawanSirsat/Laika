@@ -5,7 +5,7 @@ import { LoadingState } from '../../components/LoadingState.tsx';
 import { useDelayed } from '../../components/use-delayed.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
-import { NewTaskForm } from './board/NewTaskForm.tsx';
+import { useCreateTask } from '../../components/create-task/use-create-task.ts';
 import { SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
@@ -36,7 +36,7 @@ import { SprintStats } from './board/SprintStats.tsx';
 import { statsScope } from './board/sprint-stats.ts';
 import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
-import { listSprints, type Sprint } from '../../api/sprints.ts';
+import { listSprints, sprintLabelsOf, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { executionSignal } from '../../components/agent/execution-derive.ts';
 import {
@@ -169,7 +169,6 @@ export function BoardScreen({
    * leaving the board, so coming back opens on the active sprint again.
    */
   const [sprintDecidedFor, setSprintDecidedFor] = useState<string | undefined>(undefined);
-  const [creating, setCreating] = useState(false);
   /**
    * The List's selection and its bulk run (LAI-496), **held here** because a
    * new filter or project unmounts `ListView` (the LAI-485 lesson) — a refresh
@@ -497,7 +496,7 @@ export function BoardScreen({
   }, []);
   const boardView = view === 'kanban';
   // The drawer is the space's now (LAI-1190); the URL still says it is open.
-  const drawerOpen = params.get('task') !== null || params.get('new') === 'task';
+  const drawerOpen = params.get('task') !== null;
   useLayoutEffect(() => {
     presenter.current = (change, apply) => {
       if (change.origin === 'refresh' && change.changed !== undefined) {
@@ -631,6 +630,7 @@ export function BoardScreen({
    * gate for both offered members a create that answered `403`.
    */
   const mayCreate = project !== undefined && gates.project(project.id, 'task.create');
+  const createTask = useCreateTask();
   const mayWrite = project !== undefined && gates.project(project.id, 'task.write');
 
   /** Lead-only — a narrower rule than creating a task. */
@@ -699,13 +699,7 @@ export function BoardScreen({
    * from different hooks with different refresh rates — columns change almost
    * never, tasks constantly.
    */
-  const sprintLabels = useMemo(() => {
-    const map = new Map<string, { label: string; active: boolean }>();
-    sprints.forEach((sprint, index) => {
-      map.set(sprint.id, { label: `S${String(index + 1)}`, active: sprint.status === 'active' });
-    });
-    return map;
-  }, [sprints]);
+  const sprintLabels = useMemo(() => sprintLabelsOf(sprints), [sprints]);
 
   const group = params.get('group') ?? 'column';
   const grouped = isGroupBy(group);
@@ -1467,22 +1461,6 @@ export function BoardScreen({
       )}
 
       {/*
-        **The List view only** (LAI-290). A list has no columns, so a banner is
-        the right shape there; the board creates in the column you clicked. The
-        `view ===` guard stops it leaking onto the board when somebody opens it
-        from the list and then switches tabs.
-      */}
-      {mayCreate && creating && view === 'list' && (
-        <NewTaskForm
-          slug={slug}
-          onCreated={refresh}
-          onCancel={() => {
-            setCreating(false);
-          }}
-        />
-      )}
-
-      {/*
         **One alert region, not two stacked banners.** A refused card move and a
         refused column edit are the same kind of news — the server said no and
         gave a reason — and two boxes for it would compete for the same corner
@@ -1660,8 +1638,10 @@ export function BoardScreen({
                 boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
               }
               onOpen={openTaskInUrl}
+              // The space's one Create task dialog (LAI-1167); the List's
+              // inline banner of a form (LAI-290) went with it.
               onAdd={() => {
-                setCreating(true);
+                createTask.open();
               }}
               movingId={board.movingId}
               onMove={(id, to) => {

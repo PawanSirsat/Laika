@@ -40,6 +40,11 @@ export interface ToolCapability {
   readonly name: string;
   readonly mode: SetupMode;
   /**
+   * What kind of tool it is — the owner's design's *Direct coding tool*,
+   * *Orchestration tool* — for the picker tile's line (`toolSub`).
+   */
+  readonly kind: string;
+  /**
    * Its hooks open sessions, which is what claims and automatic checkpoints
    * hang off. Only Claude Code and Codex (§M's UI rules); `Ready` then needs
    * a session as well as the tool's own request.
@@ -69,6 +74,7 @@ function unverified(harness: CatalogTool): ToolCapability {
     harness,
     name: name(harness),
     mode: 'unverified',
+    kind: 'Coding tool',
     sessions: false,
     tested: false,
     cliSetup: false,
@@ -86,6 +92,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('claude-code'),
     cliSetup: true,
     mode: 'automatic',
+    kind: 'Direct coding tool',
     sessions: true,
     tested: true,
     notes: [
@@ -99,6 +106,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('codex'),
     cliSetup: true,
     mode: 'automatic',
+    kind: 'Direct coding tool',
     sessions: true,
     tested: false,
     notes: [
@@ -112,6 +120,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('cursor'),
     cliSetup: true,
     mode: 'mcp-only',
+    kind: 'Editor',
     sessions: false,
     tested: false,
     notes: [
@@ -125,6 +134,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('gemini-cli'),
     cliSetup: true,
     mode: 'mcp-only',
+    kind: 'Direct coding tool',
     sessions: false,
     tested: false,
     notes: [
@@ -138,6 +148,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('vscode'),
     cliSetup: true,
     mode: 'mcp-only',
+    kind: 'Editor, with Copilot',
     sessions: false,
     tested: false,
     notes: [
@@ -151,6 +162,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('omnigent'),
     cliSetup: true,
     mode: 'mcp-only',
+    kind: 'Orchestration tool',
     sessions: false,
     tested: false,
     notes: [
@@ -163,6 +175,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     name: name('antigravity'),
     cliSetup: false,
     mode: 'manual',
+    kind: 'Editor, beta',
     sessions: false,
     tested: false,
     notes: [
@@ -211,6 +224,36 @@ export const MODE_MEANING: Readonly<Record<SetupMode, string>> = {
   manual: 'The helper cannot set it up safely; you connect it by hand.',
   unverified: 'Not tested with Laika, and the helper has no setup for it: by hand.',
 };
+
+/** How each mode is set up, in a few words, for a tile's line. */
+const MODE_SUB: Readonly<Record<SetupMode, string>> = {
+  automatic: 'set up automatically',
+  'mcp-only': 'MCP entry by hand',
+  manual: 'connected by hand',
+  unverified: 'not tested with Laika',
+};
+
+/**
+ * A picker tile's one line under the name (LAI-1097): its kind, and how it is
+ * set up — from its mode, so the tile and the mode cannot disagree.
+ */
+export function toolSub(tool: Pick<ToolCapability, 'kind' | 'mode'>): string {
+  return `${tool.kind} · ${MODE_SUB[tool.mode]}`;
+}
+
+/**
+ * The picker's first tiles (LAI-1097, the owner's design shows a few option
+ * cards): every tool `laika tool add` sets up, automatic or MCP only. The
+ * rest — manual and unverified — are behind *More tools*.
+ */
+export function featuredTools(): readonly ToolCapability[] {
+  return TOOL_CATALOG.filter((tool) => tool.mode === 'automatic' || tool.mode === 'mcp-only');
+}
+
+/** Every tool not featured: the ones you connect by hand. */
+export function moreTools(): readonly ToolCapability[] {
+  return TOOL_CATALOG.filter((tool) => !featuredTools().includes(tool));
+}
 
 /** The picker's groups, each with what its mode means. */
 export function catalogGroups(): readonly {

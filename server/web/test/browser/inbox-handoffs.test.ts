@@ -1,10 +1,14 @@
 /**
- * Inbox → Hand-offs and the space's hand-off policy (LAI-550; server LAI-546,
- * LAI-1009), against the built SPA and a stubbed API in the shapes
- * `PersonHandoffInbox` and `HandoffPolicyView` serve.
+ * Inbox → Review's hand-offs and the space's hand-off policy (LAI-550; server
+ * LAI-546, LAI-1009; folded into Review by D-146 item 4, LAI-1169), against
+ * the built SPA and a stubbed API in the shapes `PersonHandoffInbox` and
+ * `HandoffPolicyView` serve.
  *
- * - The badge and the filter counts are the server's `counts` — live and
- *   unexpired only — so an expired offer on screen never reaches them.
+ * - The badge counts the hand-offs needing the reader's approval alone; the
+ *   filter counts are the server's `counts` — live and unexpired only — so an
+ *   expired offer on screen never reaches them.
+ * - *Needs your approval (N)* heads the Review tab; the old `?tab=handoffs`
+ *   address lands on *All hand-offs*.
  * - Kinds read apart in words and in shape; approval and acceptance are two
  *   lines; *Approve* never appears for the receiving agent's owner.
  * - Approving holds the row in place while the list re-reads.
@@ -351,8 +355,9 @@ const rowsOf = (page: Page) => tab(page).locator('.handoff-row');
 const idsOf = async (page: Page) =>
   rowsOf(page).evaluateAll((els) => els.map((el) => el.getAttribute('data-offer-id')));
 
+/** Review's *All hand-offs* view: the whole Hand-offs tab in the queue's place. */
 async function inbox(w: World) {
-  const h = await open('/inbox?tab=handoffs', w.stub);
+  const h = await open('/inbox?tab=review&view=handoffs', w.stub);
   await rowsOf(h.page).first().waitFor({ timeout: 20_000 });
   return h;
 }
@@ -363,11 +368,15 @@ void describe('Inbox → Hand-offs', () => {
     const h = await inbox(w);
     try {
       const badge = h.page.locator('.sidebar-link', { hasText: 'Inbox' }).locator('.sidebar-count');
-      // received 2 + needs approval 2; the review queue is empty.
-      await eventually(async () => (await badge.innerText()).startsWith('4'));
-      const tabCount = h.page.locator('[data-tab="handoffs"] .page-tab-count');
-      assert.match(await tabCount.innerText(), /^4/);
+      // Needs approval 2 — received waits on the reader's agent, not on them
+      // (D-146); the review queue is empty. The Review tab carries the same.
+      await eventually(async () => (await badge.innerText()).startsWith('2'));
+      assert.match(await badge.innerText(), /^2(?!\d)/);
+      const tabCount = h.page.locator('[data-tab="review"] .page-tab-count');
+      assert.match(await tabCount.innerText(), /^2/);
+      assert.equal(await h.page.locator('[data-tab="handoffs"]').count(), 0, 'the tab is gone');
       assert.match(await tab(h.page).locator('[data-count="needs_approval"]').innerText(), /^2/);
+      assert.match(await tab(h.page).locator('[data-count="received"]').innerText(), /^2/);
 
       await tab(h.page).getByLabel('Show closed and expired').check();
       await eventually(async () => (await idsOf(h.page)).includes('o-expired'));
@@ -377,7 +386,7 @@ void describe('Inbox → Hand-offs', () => {
         /Expired before anyone accepted/,
       );
       assert.equal(await expired.locator('[data-approve], [data-withdraw]').count(), 0);
-      assert.match(await badge.innerText(), /^4/, 'an expired row on screen changed the badge');
+      assert.match(await badge.innerText(), /^2/, 'an expired row on screen changed the badge');
       assert.deepEqual(h.unmatched, []);
     } finally {
       await h.close();
@@ -459,7 +468,7 @@ void describe('Inbox → Hand-offs', () => {
       await eventually(async () => (await target.innerText()).includes('No longer in this view'));
       assert.deepEqual(await idsOf(h.page), ['o-approve', 'o-mine-approve']);
       const badge = h.page.locator('.sidebar-link', { hasText: 'Inbox' }).locator('.sidebar-count');
-      await eventually(async () => (await badge.innerText()).startsWith('3'));
+      await eventually(async () => (await badge.innerText()).startsWith('1'));
       assert.ok(
         h.calls.some(
           (c) => c.method === 'POST' && c.path === '/api/v1/handoff-offers/o-approve/approve',
@@ -648,10 +657,80 @@ void describe('Inbox → Hand-offs', () => {
     }
   });
 
+  void test('the old address lands on All hand-offs, and Back to review returns to the queue', async () => {
+    const w = world();
+    const h = await open('/inbox?tab=handoffs&utm=x', w.stub);
+    try {
+      await rowsOf(h.page).first().waitFor({ timeout: 20_000 });
+      const url = new URL(h.page.url());
+      assert.equal(url.pathname, '/inbox');
+      assert.equal(url.search, '?tab=review&view=handoffs&utm=x');
+      assert.equal(
+        await h.page.locator('.page-tab[data-tab="review"]').getAttribute('aria-current'),
+        'page',
+      );
+      // The whole tab, with every view, in the queue's place — no section heading.
+      assert.equal(await tab(h.page).getByRole('tab').count(), 4);
+      assert.equal(await h.page.locator('[data-needs-approval]').count(), 0);
+      await h.page.getByRole('button', { name: '← Back to review' }).click();
+      await h.page.locator('[data-needs-approval]').waitFor({ timeout: 10_000 });
+      assert.equal(new URL(h.page.url()).searchParams.get('view'), null);
+      // Rewritten in place, as CapacityRoute drops `?project=`: one Back
+      // leaves the app rather than landing on the old address again.
+      await h.page.goBack();
+      await h.page.waitForURL('about:blank', { timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Needs your approval heads the Review tab with its count, and Approve posts from there', async () => {
+    const w = world();
+    const h = await open('/inbox?tab=review', w.stub);
+    try {
+      const section = h.page.locator('[data-needs-approval]');
+      await section.waitFor({ timeout: 20_000 });
+      assert.match(await section.locator('h3').innerText(), /Needs your approval\s*\(2\)/);
+      // The tab fixed on one view: no tablist, no Show closed; its two rows.
+      assert.equal(await section.getByRole('tab').count(), 0);
+      assert.equal(await section.getByLabel('Show closed and expired').count(), 0);
+      await eventually(async () => (await section.locator('.handoff-row').count()) === 2);
+      assert.equal(
+        await section.getByRole('link', { name: 'All hand-offs →' }).getAttribute('href'),
+        '/inbox?tab=review&view=handoffs',
+      );
+      // The sidebar's badge is the same two.
+      const badge = h.page.locator('.sidebar-link', { hasText: 'Inbox' }).locator('.sidebar-count');
+      await eventually(async () => (await badge.innerText()).startsWith('2'));
+
+      await section.locator('[data-offer-id="o-approve"] [data-approve]').click();
+      await eventually(() =>
+        h.calls.some(
+          (c) => c.method === 'POST' && c.path === '/api/v1/handoff-offers/o-approve/approve',
+        ),
+      );
+      assert.ok(
+        h.calls.some(
+          (c) => c.method === 'POST' && c.path === '/api/v1/handoff-offers/o-approve/approve',
+        ),
+      );
+      await eventually(async () => (await badge.innerText()).startsWith('1'));
+      await eventually(async () => (await section.locator('h3').innerText()).includes('(1)'));
+      assert.match(await section.locator('h3').innerText(), /Needs your approval\s*\(1\)/);
+
+      // The link opens the whole tab.
+      await section.getByRole('link', { name: 'All hand-offs →' }).click();
+      await h.page.waitForURL((u) => u.search === '?tab=review&view=handoffs', { timeout: 10_000 });
+      assert.equal(await tab(h.page).getByRole('tab').count(), 4);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a failed first read is an error; a failed re-read keeps the rows, stale', async () => {
     const w = world();
     w.reachable = false;
-    const h = await open('/inbox?tab=handoffs', w.stub);
+    const h = await open('/inbox?tab=review&view=handoffs', w.stub);
     try {
       const retry = tab(h.page).getByRole('button', { name: /Try again|Retry/ });
       await retry.first().waitFor({ timeout: 20_000 });
@@ -798,6 +877,24 @@ void describe('screenshots', () => {
             }
           } finally {
             await h.close();
+          }
+          // The Review tab with *Needs your approval* at its head (LAI-1169).
+          const r = await open('/inbox?tab=review', world().stub);
+          try {
+            await r.page.setViewportSize({ width, height: 1000 });
+            await setTheme(r.page, theme);
+            const section = r.page.locator('[data-needs-approval]');
+            await section.locator('.handoff-row').first().waitFor({ timeout: 20_000 });
+            const scroll = await r.page.evaluate(
+              () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            );
+            assert.ok(scroll <= 0, `the Review tab scrolls sideways at ${String(width)}px`);
+            await r.page.screenshot({
+              path: join(dir, `review-needs-approval-${theme}-${String(width)}.png`),
+              fullPage: true,
+            });
+          } finally {
+            await r.close();
           }
           const p = await open('/spaces/laika/settings?tab=access', world().stub);
           try {

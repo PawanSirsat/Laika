@@ -7,6 +7,7 @@
  * *Device paired* fails, which `readiness()` never asks for (review round 1).
  */
 
+import type { Locator } from 'playwright';
 import type { ApiStub } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
@@ -267,4 +268,21 @@ export function stub(over: StubOver = {}): ApiStub {
     ...perAgent,
     ...over.routes,
   };
+}
+
+/**
+ * Open one of Tool details' or Device details' folded sections (LAI-1100) —
+ * `checks`, `helper`, `projects`, `credential`, `checkpoints`, `launcher`,
+ * `device`, `tools`, `helpers`, `name` — by its summary row, as a person
+ * does, and wait until it is open. Already open, it is left open. Returns
+ * the section.
+ */
+export async function unfold(scope: Locator, name: string): Promise<Locator> {
+  const fold = scope.locator(`details[data-fold="${name}"]`);
+  await fold.locator(':scope > summary').waitFor({ timeout: 20_000 });
+  if (!(await fold.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await fold.locator(':scope > summary').click();
+  }
+  await fold.locator(':scope > .dv3-fold-body').waitFor({ state: 'visible', timeout: 10_000 });
+  return fold;
 }
