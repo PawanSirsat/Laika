@@ -1,7 +1,8 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from './forms/Button.tsx';
-import { useDialogFocus } from './use-dialog-focus.ts';
+import { useModalLayer } from './overlay/layer-stack.ts';
+import './overlay/overlay.css';
 import './confirm-dialog.css';
 
 /** The mark in the dialog's corner: a bin for a delete, a warning for any other loss. */
@@ -53,8 +54,13 @@ function Mark({ icon }: { readonly icon: Exclude<ConfirmIcon, 'none'> }) {
 /**
  * The one confirmation the app asks with (LAI-522; Organisation's, LAI-987,
  * moved here): a title, a sentence on what happens, the thing affected, Cancel
- * and the action — red when it takes something away. Escape and the backdrop
+ * and the action — red when it takes something away. Escape and Cancel
  * cancel; focus starts on Cancel, stays inside, and goes back where it was.
+ *
+ * The `alertdialog` on the shared overlay contract (`useModalLayer`,
+ * LAI-1205): Escape is its only while it is the top layer, it sits above any
+ * modal it was asked from, and **its backdrop does not answer it** — a click
+ * beside a question about a loss is not a decision.
  * It replaces `window.confirm`, which cannot be themed, cannot name what is
  * kept, carry a typed confirmation, or show the server's refusal without
  * losing the question. Screens that only need a yes or a no await
@@ -79,7 +85,7 @@ export function ConfirmDialog({
   const [text, setText] = useState('');
   const id = useId();
   const mark: ConfirmIcon = icon ?? (danger ? 'delete' : 'none');
-  useDialogFocus(box, {
+  const { depth, onKeyDown } = useModalLayer(box, {
     // The button itself: a selector list would answer its wrapper, first in
     // document order, and a span takes no focus.
     initial: () =>
@@ -87,6 +93,7 @@ export function ConfirmDialog({
         ? box.current?.querySelector<HTMLElement>('[data-confirm-cancel] button')
         : box.current?.querySelector<HTMLElement>('input'),
     restore: () => (opener.current instanceof HTMLElement ? opener.current : null),
+    onEscape: busy ? undefined : onClose,
   });
 
   const matches =
@@ -96,14 +103,13 @@ export function ConfirmDialog({
   };
 
   return createPortal(
-    <div className="confirm-layer" data-confirm-layer>
-      <div
-        className="confirm-scrim"
-        aria-hidden="true"
-        onClick={() => {
-          if (!busy) onClose();
-        }}
-      />
+    <div
+      className="confirm-layer"
+      data-confirm-layer
+      // Above whatever modal asked it (`overlay.css`), written through the CSSOM.
+      style={{ '--overlay-depth': String(depth) } as CSSProperties}
+    >
+      <div className="confirm-scrim" aria-hidden="true" />
       <div
         ref={box}
         className={danger ? 'confirm confirm-danger' : 'confirm'}
@@ -112,10 +118,11 @@ export function ConfirmDialog({
         aria-labelledby={`${id}-title`}
         aria-describedby={`${id}-body`}
         data-confirm-dialog
+        tabIndex={-1}
         onKeyDown={(event) => {
+          onKeyDown(event);
           // The dialog's keys are its own: never also the page's shortcuts behind it.
           event.stopPropagation();
-          if (event.key === 'Escape' && !busy) onClose();
         }}
       >
         <div className="confirm-head">

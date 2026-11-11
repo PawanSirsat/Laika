@@ -1,13 +1,16 @@
 /*
  * The confirmation (LAI-522): a card over a dimmed page, the mark in a
- * tinted circle, the words, the thing affected, and the two buttons. Above
- * every other layer (the drawer and the sheet are 60–61). Tokens only.
+ * tinted circle, the words, the thing affected, and the two buttons. On the
+ * dialog layer (`overlay.css`, LAI-1205), above any modal it was asked from.
+ * Tokens only.
  */
 
 .confirm-layer {
+  /* Modals beneath it; `ConfirmDialog` sets it from the stack. */
+  --overlay-depth: 0;
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: calc(var(--layer-dialog) + var(--overlay-depth) * 2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,7 +22,7 @@
   inset: 0;
   background: var(--scrim);
   backdrop-filter: blur(2px);
-  animation: confirm-fade 140ms ease-out;
+  transition: opacity var(--overlay-scrim-in) var(--overlay-ease-out);
 }
 
 .confirm {
@@ -35,7 +38,13 @@
   background: var(--bg-card);
   box-shadow: var(--shadow-modal);
   color: var(--text-primary);
-  animation: confirm-in 160ms ease-out;
+  transition:
+    opacity var(--overlay-in) var(--overlay-ease-out),
+    transform var(--overlay-in) var(--overlay-ease-out);
+}
+
+.confirm:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .confirm-head {
@@ -175,22 +184,25 @@
   }
 }
 
-@keyframes confirm-fade {
-  from {
+/*
+ * Open motion, the Dialog's (LAI-1205): a fade and a small rise, from a
+ * starting style so a reopen mid-entrance retargets rather than restarts.
+ * None under reduced motion. It leaves at once — the caller unmounts it.
+ */
+@starting-style {
+  .confirm-scrim {
     opacity: 0;
   }
-}
 
-@keyframes confirm-in {
-  from {
+  .confirm {
     opacity: 0;
-    transform: translateY(0.5rem) scale(0.98);
+    transform: translateY(var(--overlay-rise)) scale(var(--overlay-scale));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .confirm,
   .confirm-scrim {
-    animation: none;
+    transition: none;
   }
 }

@@ -25,6 +25,8 @@ import {
   type Move,
   type OpenAt,
 } from './dropdown-model.ts';
+import { useLayer } from './overlay/layer-stack.ts';
+import './overlay/overlay.css';
 import './dropdown.css';
 
 export interface DropdownOption<V extends string = string> {
@@ -196,6 +198,9 @@ export function Dropdown<V extends string = string>({
   searchOnType = false,
 }: DropdownProps<V>) {
   const [open, setOpen] = useState(false);
+  // On the overlay stack while open (LAI-1205), so the modal or panel it sits
+  // in knows it is not the top layer; its own Escape handling is unchanged.
+  useLayer('menu', open);
   const [query, setQuery] = useState('');
   /** The search box has focus — so it, and not the trigger, names the active option. */
   const [inSearchBox, setInSearchBox] = useState(false);
