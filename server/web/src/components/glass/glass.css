@@ -32,8 +32,8 @@
  *   is already frosted behind them, so they need no blur of their own — one
  *   blurred layer per modal, and Dropdowns opened inside stay real glass.
  * - **Tinted, not blurred:** board lanes, dashboard / organisation / capacity
- *   cards. All that sits behind them is the ambient gradient, which is already
- *   smooth — a blur would cost GPU and change nothing visible.
+ *   cards. All that sits behind them is the near-flat ambient ground — a
+ *   blur would cost GPU and change nothing visible.
  * - **Solid, always:** task cards, rows, tables, documents, code, inputs.
  *
  * ## Never nest a blur
@@ -48,12 +48,10 @@
 /* ------------------------------------------------------------ ambient */
 
 /*
- * The fixed layer behind the shell, matched to the brand board
- * (docs/design/laika-brand-board.png): the diagonal navy base, a haze in
- * the top-left and on the right, and two great discs in the corners — each
- * lighter toward its rim, where a soft line of light runs. One
- * pseudo-element, painted once and never animated, so nothing above it
- * re-blurs.
+ * The fixed layer behind the shell: a calm, near-flat ground — brand Ink in
+ * dark, Paper in light, with one faint, large tonal lift and nothing else
+ * (v3, the owner: "keep it simple"). One pseudo-element, one gradient,
+ * painted once and never animated, so nothing above it re-blurs.
  */
 body::before {
   content: '';
@@ -62,25 +60,7 @@ body::before {
   z-index: -1;
   pointer-events: none;
   contain: strict;
-  background:
-    radial-gradient(
-      circle 38rem at -8% -34%,
-      transparent 58%,
-      var(--ambient-arc) 93%,
-      var(--ambient-rim) 98.6%,
-      transparent 100%
-    ),
-    radial-gradient(
-      circle 44rem at 108% 142%,
-      transparent 60%,
-      var(--ambient-arc) 93%,
-      var(--ambient-rim) 98.6%,
-      transparent 100%
-    ),
-    radial-gradient(52rem 36rem at 4% 0%, var(--ambient-orb-1), transparent 70%),
-    radial-gradient(48rem 34rem at 100% 92%, var(--ambient-orb-2), transparent 70%),
-    radial-gradient(60rem 30rem at 55% 115%, var(--ambient-orb-3), transparent 70%),
-    var(--ambient-base);
+  background: var(--ambient-base);
 }
 
 /* ------------------------------------------------------- primitives */

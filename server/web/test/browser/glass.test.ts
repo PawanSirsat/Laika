@@ -7,7 +7,7 @@
  * a real screen (the runtime half of "never nest"); that reduced transparency
  * and forced colours take the blur away; that a Dropdown opened over a
  * SidePanel paints above it (B16); that focus stays visible on glass; and
- * that the sign-in card is glass over the ambient layer in both themes.
+ * that the sign-in card is glass over the calm ambient ground in both themes.
  *
  * Set `GLASS_SHOTS=<dir>` to also write the review screenshots — off by
  * default, so the gate never writes files.
@@ -290,6 +290,15 @@ void describe('the board at 1440', () => {
       assert.equal(slot.own, 'none');
       assert.equal(alpha(slot.bg), 1, 'the document column is on glass');
       assert.deepEqual((await blurCensus(h.page)).nested, []);
+      if (SHOTS !== undefined && SHOTS !== '') {
+        for (const theme of ['dark', 'light']) {
+          await setTheme(h.page, theme);
+          await h.page.setViewportSize({ width: 1440, height: 900 });
+          await shoot(h.page, `drawer-${theme}-1440`);
+          await h.page.setViewportSize({ width: 390, height: 844 });
+          await shoot(h.page, `drawer-${theme}-390`);
+        }
+      }
     } finally {
       await h.close();
     }
@@ -364,11 +373,24 @@ void describe('sign-in, the brand’s showcase', () => {
         await setTheme(h.page, theme);
         const ambient = await h.page.evaluate(() => {
           const cs = getComputedStyle(document.body, '::before');
-          return { position: cs.position, image: cs.backgroundImage, events: cs.pointerEvents };
+          return {
+            position: cs.position,
+            image: cs.backgroundImage,
+            events: cs.pointerEvents,
+            animation: cs.animationName,
+          };
         });
         assert.equal(ambient.position, 'fixed');
         assert.equal(ambient.events, 'none');
-        assert.match(ambient.image, /radial-gradient[\s\S]*linear-gradient/, 'no ambient layer');
+        // v3: one calm linear gradient — no discs, arcs or hazes, no drift.
+        assert.match(ambient.image, /^linear-gradient\(/, 'no ambient layer');
+        assert.equal(
+          ambient.image.match(/gradient\(/g)?.length,
+          1,
+          'the ambient layer stacks gradients',
+        );
+        assert.doesNotMatch(ambient.image, /radial-gradient/, 'the ambient layer has discs again');
+        assert.equal(ambient.animation, 'none', 'the ambient layer moves');
         // Nothing opaque between it and the glass: a body or shell background
         // paints over a negative-z pseudo-element, and hid it once already.
         const grounds = await h.page.evaluate(() =>

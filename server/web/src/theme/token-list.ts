@@ -133,16 +133,8 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
   },
   {
     title: 'Ambient',
-    note: 'The fixed layer behind the shell (LAI-1132): the diagonal base, three soft hazes, the corner discs and the line of light on their rims, and the brightest (dark) or darkest (light) colour it reaches — the backdrop the glass AA pairs are measured against.',
-    tokens: [
-      '--ambient-base',
-      '--ambient-orb-1',
-      '--ambient-orb-2',
-      '--ambient-orb-3',
-      '--ambient-arc',
-      '--ambient-rim',
-      '--ambient-peak',
-    ],
+    note: 'The fixed layer behind the shell (LAI-1132): a near-flat Ink (dark) or Paper (light) ground with one faint tonal lift, and its lightest (dark) or darkest (light) stop — the backdrop the glass AA pairs are measured against.',
+    tokens: ['--ambient-base', '--ambient-peak'],
   },
   {
     title: 'Priority',
@@ -333,8 +325,8 @@ export const LAYER_TOKENS = [
  * Text on glass, composited over the worst-case backdrop (LAI-1132).
  *
  * A glass level is translucent, so its effective colour depends on what is
- * behind it. The worst case is `--ambient-peak` — the brightest point of the
- * dark ambient layer, the darkest of the light — and every level carrying
+ * behind it. The worst case is `--ambient-peak` — the lightest stop of the
+ * dark ambient ground, the darkest of the light — and every level carrying
  * text must clear AA over it. Blur is ignored: it lowers local contrast and
  * can never be relied on to raise it.
  */

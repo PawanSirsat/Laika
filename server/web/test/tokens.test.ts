@@ -302,34 +302,57 @@ void describe('glass (LAI-1132)', () => {
     }
   }
 
-  void test('the worst-case backdrop is really the extreme of the ambient layer', () => {
-    // `--ambient-peak` is only a worst case if no orb composited over the
-    // base can pass it: brighter in dark, darker in light.
+  void test('the ambient ground is one calm gradient and --ambient-peak is its extreme', () => {
+    // v3 (owner: "keep it simple"): a single linear gradient of at most two
+    // stops, each within a hair of the brand canvas — no radial discs, arcs
+    // or hazes — and `--ambient-peak` is its worst case: the lightest stop in
+    // dark, the darkest in light.
     for (const [name, vars, worse] of [
       ['dark', () => dark, (a: number, b: number) => a > b],
       ['light', () => light, (a: number, b: number) => a < b],
     ] as const) {
       const v = vars();
-      const peak = luminance(parse(v.get('--ambient-peak') ?? ''));
-      const base = (v.get('--ambient-base') ?? '').match(/#[0-9a-f]{6}/gi) ?? [];
-      assert.ok(base.length >= 2, `--ambient-base in ${name} names no stops`);
-      for (const stop of base) {
-        // Every orb and the arc at full strength, stacked on one stop: the
-        // gradients fade from there, so nothing on screen goes further.
-        let lit = parse(stop);
-        for (const orb of [
-          '--ambient-orb-1',
-          '--ambient-orb-2',
-          '--ambient-orb-3',
-          '--ambient-arc',
-          '--ambient-rim',
-        ]) {
-          lit = over(parse(v.get(orb) ?? ''), lit);
-        }
+      const raw = v.get('--ambient-base') ?? '';
+      assert.match(
+        raw,
+        /^linear-gradient\(/,
+        `--ambient-base in ${name} is not one linear gradient`,
+      );
+      assert.equal(
+        raw.match(/gradient\(/g)?.length,
+        1,
+        `--ambient-base in ${name} stacks gradients`,
+      );
+      assert.doesNotMatch(raw, /radial|conic|rgba/, `--ambient-base in ${name} is not simple`);
+      const stops = raw.match(/#[0-9a-f]{6}/gi) ?? [];
+      assert.ok(
+        stops.length >= 1 && stops.length <= 2,
+        `--ambient-base in ${name} has ${String(stops.length)} stops`,
+      );
+      const canvas = parse(v.get('--bg-canvas') ?? '');
+      const peakHex = v.get('--ambient-peak') ?? '';
+      const peak = luminance(parse(peakHex));
+      assert.ok(
+        stops.some((st) => st.toLowerCase() === peakHex.toLowerCase()),
+        `--ambient-peak in ${name} is not one of the ground's stops`,
+      );
+      for (const stop of stops) {
+        const c = parse(stop);
+        assert.ok(!worse(luminance(c), peak), `${stop} in ${name} passes --ambient-peak`);
+        // Low contrast: a tonal shift you sense rather than see.
         assert.ok(
-          !worse(luminance(lit), peak),
-          `the ambient stack over ${stop} in ${name} passes --ambient-peak — raise the peak`,
+          ratio(c, canvas) <= 1.1,
+          `${stop} in ${name} is ${ratio(c, canvas).toFixed(3)}:1 from the canvas — keep it calm`,
         );
+      }
+      for (const gone of [
+        '--ambient-orb-1',
+        '--ambient-orb-2',
+        '--ambient-orb-3',
+        '--ambient-arc',
+        '--ambient-rim',
+      ]) {
+        assert.equal(v.get(gone), undefined, `${gone} is back in ${name}`);
       }
     }
   });
