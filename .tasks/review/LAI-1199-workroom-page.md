@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-11-11T10:30:00Z
+finished: 2026-11-11T12:45:00Z
 ---
 
 ## Goal
@@ -26,35 +27,35 @@ Stacked on LAI-1140's drawer host (PR #289). Spec:
 
 ## Acceptance criteria
 
-- [ ] `/task/:key` is a route (route table + ScreenOutlet) that resolves a
+- [x] `/task/:key` is a route (route table + ScreenOutlet) that resolves a
       key through the existing API, with loading skeleton, error + Retry,
       not-found and permission-denied states.
-- [ ] The drawer has an *Expand* control that opens `/task/:key` (a pushed
+- [x] The drawer has an *Expand* control that opens `/task/:key` (a pushed
       entry; Back returns to the view with the drawer open); the page has
       *Back to <view>*.
-- [ ] Left: parent, subtasks, dependencies both ways, related work, section
+- [x] Left: parent, subtasks, dependencies both ways, related work, section
       nav. Section switching replaces history; opening the page pushes.
-- [ ] Centre: description and acceptance through the existing renderer; an
+- [x] Centre: description and acceptance through the existing renderer; an
       execution timeline from checkpoints, rounds and claim activity; evidence
       with claimed / confirmed / failed provenance; discussion and activity.
-- [ ] Right: four agent lanes from real data only (never "assigned to an
+- [x] Right: four agent lanes from real data only (never "assigned to an
       agent"); status; assignee; Accept / Send back through the existing
       flows; decisions and open questions from checkpoint fields, labelled
       agent-reported.
-- [ ] Dividers are `role="separator"`, drag- and keyboard-resizable (arrows,
+- [x] Dividers are `role="separator"`, drag- and keyboard-resizable (arrows,
       Shift, Home/End, Enter collapses), panels collapsible, widths kept in
       localStorage (preferences only), storage that throws falls back to
       defaults.
-- [ ] Focus mode hides the side panels and the app sidebar, on a shortcut
+- [x] Focus mode hides the side panels and the app sidebar, on a shortcut
       that clashes with no existing key; Escape leaves it.
-- [ ] No nested same-axis scroll: the page scrolls the centre; side panels
+- [x] No nested same-axis scroll: the page scrolls the centre; side panels
       are sticky.
-- [ ] Responsive: ≥1280 three panels; 1024 two (left behind a button);
+- [x] Responsive: ≥1280 three panels; 1024 two (left behind a button);
       ≤768 one column with a section switcher; 390 full-screen. Both themes,
       reduced motion, landmarks, headings, labelled separators, tokens only.
-- [ ] The drawer keeps working identically; shared reads are extracted, not
+- [x] The drawer keeps working identically; shared reads are extracted, not
       duplicated.
-- [ ] Unit tests for lane derivation and the layout maths; Playwright for
+- [x] Unit tests for lane derivation and the layout maths; Playwright for
       Expand and direct URL, Back/history, keyboard resize + persistence
       across reload, focus mode, breakpoints, not-found, lanes from fixture
       data only. Each key behaviour mutated once to prove its test fails.
@@ -64,3 +65,18 @@ Stacked on LAI-1140's drawer host (PR #289). Spec:
 Server gaps found are reported, not built: there is no REST key lookup
 (`GET /tasks/:id` takes an id only), so the page resolves a key through the
 space list and the space's task set.
+
+## Builder notes (SHELL, 2026-11-11)
+
+- The 1024 breakpoint is two panels from 1024 to 1279; below 1024 it is one
+  column (the spec's 768 and 390 rows), since the centre's 560px floor plus
+  the right panel's 280px does not fit beside the app rail under 1024.
+- Sprint is shown read-only in the Workroom's rail (`maySetSprint={false}`):
+  the sprint write lives inside `TaskDetailPanel` and was not extracted in
+  this task. The drawer still sets it.
+- No live stream on the page: it re-reads on writes and on the shared set's
+  refreshes. Phase D's org-wide stream is where it would come from.
+- Server gaps, not built: a REST key lookup (`GET /tasks/:id` takes ids only,
+  so a key resolves through the project list and the space's task set), and a
+  claims-history read (`GET /tasks/:id/claims`) — runs are rebuilt from the
+  newest activity page and the timeline says so.
