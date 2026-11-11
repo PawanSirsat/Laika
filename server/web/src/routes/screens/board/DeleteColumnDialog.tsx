@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
+import { Dialog } from '../../../components/overlay/Dialog.tsx';
 import { statusOptions } from './status-options.ts';
 import { defaultMoveTarget, deleteBlockedReason } from '../../../api/status-derive.ts';
 import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
@@ -68,102 +67,32 @@ export function DeleteColumnDialog({
     setMoveTo(defaultMoveTarget(column, all)?.id ?? '');
   }, [all, column, moveTo, others]);
 
-  const box = useRef<HTMLDivElement>(null);
   const needsTarget = taskCount > 0;
-  // On the choice when there is one to make; otherwise on the way out.
-  useDialogFocus(box, {
-    initial: () =>
-      blocked === undefined && needsTarget
-        ? box.current?.querySelector<HTMLElement>('[role="combobox"]')
-        : box.current?.querySelector<HTMLElement>('.cd-cancel'),
-    restore: restoreFocus,
-  });
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
 
   // The server takes a destination even for an empty column (LAI-738), so one
   // is always chosen — by the reader when there is work to move, by default
   // when there is none.
   const ready = blocked === undefined && target !== undefined && !busy;
 
-  return createPortal(
-    <>
-      <div className="column-dialog-scrim" aria-hidden="true" onClick={onClose} />
-      <div
-        ref={box}
-        className="column-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-column-title"
-      >
-        <header className="cd-head">
-          <h2 className="cd-title" id="delete-column-title">
-            Delete “{column.name}”?
-          </h2>
-          <button type="button" className="cd-close" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-
-        {error !== undefined && (
-          <p className="cd-error" role="alert">
-            {error}
-          </p>
-        )}
-
-        {blocked !== undefined ? (
-          <section className="cd-section">
-            <p className="cd-blocked" data-testid="delete-blocked">
-              {blocked}
-            </p>
-          </section>
-        ) : (
-          <section className="cd-section">
-            {needsTarget ? (
-              <label className="cd-field">
-                <span className="cd-label">Move its {tasks(taskCount)} to</span>
-                <Dropdown
-                  variant="bare"
-                  className="cd-select"
-                  noun="columns"
-                  value={moveTo}
-                  onChange={(value) => {
-                    setMoveTo(value);
-                    setLost(undefined);
-                  }}
-                  options={statusOptions(others, { kind: true })}
-                />
-              </label>
-            ) : null}
-            {needsTarget && lost !== undefined && target !== undefined ? (
-              <p className="cd-hint cd-lost" role="status">
-                “{lost}” is no longer on this board, so its tasks would go to “{target.name}”
-                instead. Pick another if that is wrong.
-              </p>
-            ) : null}
-            {needsTarget ? null : <p className="cd-hint">This column has no tasks.</p>}
-            <p className="cd-hint cd-consequence">
-              {needsTarget && target !== undefined
-                ? `Its ${tasks(taskCount)} ${taskCount === 1 ? 'moves' : 'move'} to “${target.name}”${
-                    target.category === column.category
-                      ? ''
-                      : ` and become ${CATEGORY_COPY[target.category].label}`
-                  }. `
-                : ''}
-              The column is removed from this board for everyone. No task is deleted.
-            </p>
-          </section>
-        )}
-
-        <footer className="cd-actions">
+  /*
+   * The shared Dialog (LAI-1205). Focus starts on the choice when there is one
+   * to make, otherwise on the way out. A delete: the backdrop does not answer
+   * it — Escape, × and Cancel do.
+   */
+  return (
+    <Dialog
+      title={<>Delete “{column.name}”?</>}
+      size="sm"
+      onClose={onClose}
+      backdropCloses={false}
+      restore={restoreFocus}
+      initialFocus={(dialog) =>
+        blocked === undefined && needsTarget
+          ? dialog.querySelector<HTMLElement>('[role="combobox"]')
+          : dialog.querySelector<HTMLElement>('.cd-cancel')
+      }
+      footer={
+        <>
           <button type="button" className="cd-cancel" onClick={onClose}>
             Cancel
           </button>
@@ -178,9 +107,58 @@ export function DeleteColumnDialog({
             {busy && <Spinner size="sm" />}
             Delete column
           </button>
-        </footer>
-      </div>
-    </>,
-    document.body,
+        </>
+      }
+    >
+      {error !== undefined && (
+        <p className="cd-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {blocked !== undefined ? (
+        <section className="cd-section">
+          <p className="cd-blocked" data-testid="delete-blocked">
+            {blocked}
+          </p>
+        </section>
+      ) : (
+        <section className="cd-section">
+          {needsTarget ? (
+            <label className="cd-field">
+              <span className="cd-label">Move its {tasks(taskCount)} to</span>
+              <Dropdown
+                variant="bare"
+                className="cd-select"
+                noun="columns"
+                value={moveTo}
+                onChange={(value) => {
+                  setMoveTo(value);
+                  setLost(undefined);
+                }}
+                options={statusOptions(others, { kind: true })}
+              />
+            </label>
+          ) : null}
+          {needsTarget && lost !== undefined && target !== undefined ? (
+            <p className="cd-hint cd-lost" role="status">
+              “{lost}” is no longer on this board, so its tasks would go to “{target.name}” instead.
+              Pick another if that is wrong.
+            </p>
+          ) : null}
+          {needsTarget ? null : <p className="cd-hint">This column has no tasks.</p>}
+          <p className="cd-hint cd-consequence">
+            {needsTarget && target !== undefined
+              ? `Its ${tasks(taskCount)} ${taskCount === 1 ? 'moves' : 'move'} to “${target.name}”${
+                  target.category === column.category
+                    ? ''
+                    : ` and become ${CATEGORY_COPY[target.category].label}`
+                }. `
+              : ''}
+            The column is removed from this board for everyone. No task is deleted.
+          </p>
+        </section>
+      )}
+    </Dialog>
   );
 }

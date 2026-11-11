@@ -5,71 +5,11 @@
  * lane, it does not present a document.
  */
 
-.column-dialog-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  background: var(--scrim);
-}
-
-.column-dialog {
-  position: fixed;
-  z-index: 41;
-  /*
-   * **Centred by its margins, not a transform** (LAI-726 round 1): a
-   * transform would make this scrolling box the containing block of the
-   * dropdown list drawn inside it (it is `aria-modal`, so the list must be),
-   * and clip it. `fit-content` keeps the height its content's, as before.
-   */
-  inset: 0;
-  margin: auto;
-  height: fit-content;
-  /* The whole box, padding and border included, or a phone's 1rem gutters
-     come out 20px short on the right (round 2). */
-  box-sizing: border-box;
-  width: min(24rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 4rem);
-  overflow-y: auto;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: 0.875rem 1rem 1rem;
-}
-
-.column-dialog:focus {
-  outline: none;
-}
-
-.cd-head {
-  display: flex;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.cd-title {
-  margin: 0;
-  font-size: var(--text-heading-sm);
-  font-weight: var(--weight-bold);
-  color: var(--text-primary);
-}
-
-.cd-close {
-  margin-left: auto;
-  border: 0;
-  background: none;
-  color: var(--text-muted);
-  font-size: var(--text-heading-md);
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 0.25rem;
-  border-radius: var(--radius-chip);
-}
-
-.cd-close:hover {
-  color: var(--text-primary);
-  background: var(--bg-column);
-}
+/*
+ * The dialog's shell — layer, scrim, card, header, × and footer — is the
+ * shared Dialog's since LAI-1205 (`components/overlay/overlay.css`). What is
+ * left here is the column dialogs' own content.
+ */
 
 .cd-error {
   margin: 0 0 0.5rem;
@@ -141,12 +81,6 @@
   border-radius: var(--radius-card);
   padding: 0.3125rem 0.625rem;
   cursor: pointer;
-}
-
-.cd-actions {
-  display: flex;
-  gap: 0.375rem;
-  margin-top: 0.625rem;
 }
 
 .cd-cancel {

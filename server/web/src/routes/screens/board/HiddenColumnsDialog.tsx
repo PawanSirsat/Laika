@@ -1,6 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
-import { createPortal } from 'react-dom';
+import { Dialog } from '../../../components/overlay/Dialog.tsx';
 import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
 import './column-editor.css';
 
@@ -35,86 +33,59 @@ export function HiddenColumnsDialog({
   onClose,
   restoreFocus,
 }: HiddenColumnsDialogProps) {
-  const box = useRef<HTMLDivElement>(null);
-  useDialogFocus(box, {
-    initial: () =>
-      box.current?.querySelector<HTMLElement>('.cd-show') ??
-      box.current?.querySelector<HTMLElement>('.cd-close'),
-    restore: restoreFocus,
-  });
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
-
-  return createPortal(
-    <>
-      <div className="column-dialog-scrim" aria-hidden="true" onClick={onClose} />
-      <div
-        ref={box}
-        className="column-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="hidden-columns-title"
-      >
-        <header className="cd-head">
-          <h2 className="cd-title" id="hidden-columns-title">
-            Hidden columns ({hidden.length})
-          </h2>
-          <button type="button" className="cd-close" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-
-        <section className="cd-section">
-          {hidden.length === 0 ? (
-            <p className="cd-hint">Every column is on the board.</p>
-          ) : (
-            <ul className="cd-hidden-list">
-              {hidden.map((column) => (
-                <li key={column.id} className="cd-hidden-row">
-                  <span className={`dd-dot dd-dot-${column.category}`} aria-hidden="true" />
-                  <span className="cd-kind-text">
-                    <span className="cd-kind-label">{column.name}</span>
-                    <span className="cd-kind-hint">{rowHint(column)}</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="cd-show"
-                    disabled={busy}
-                    aria-label={`Show ${column.name}`}
-                    onClick={(event) => {
-                      // The row goes; focus moves to the next Show, or the ✕.
-                      const rows = [
-                        ...(box.current?.querySelectorAll<HTMLElement>('.cd-show') ?? []),
-                      ];
-                      const next =
-                        rows[rows.indexOf(event.currentTarget) + 1] ??
-                        rows[rows.indexOf(event.currentTarget) - 1];
-                      onShow(column.id);
-                      requestAnimationFrame(() => {
-                        (next ?? box.current?.querySelector<HTMLElement>('.cd-close'))?.focus();
-                      });
-                    }}
-                  >
-                    Show
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="cd-hint">
-            A hidden column keeps its tasks; they are just not on the board.
-          </p>
-        </section>
-      </div>
-    </>,
-    document.body,
+  /*
+   * The shared Dialog (LAI-1205): focus on the first Show, or the × when
+   * nothing is hidden; back to the entry that opened it on close.
+   */
+  return (
+    <Dialog
+      title={`Hidden columns (${String(hidden.length)})`}
+      size="sm"
+      onClose={onClose}
+      restore={restoreFocus}
+      initialFocus={(box) =>
+        box.querySelector<HTMLElement>('.cd-show') ??
+        box.querySelector<HTMLElement>('.overlay-dialog-close')
+      }
+    >
+      <section className="cd-section">
+        {hidden.length === 0 ? (
+          <p className="cd-hint">Every column is on the board.</p>
+        ) : (
+          <ul className="cd-hidden-list">
+            {hidden.map((column) => (
+              <li key={column.id} className="cd-hidden-row">
+                <span className={`dd-dot dd-dot-${column.category}`} aria-hidden="true" />
+                <span className="cd-kind-text">
+                  <span className="cd-kind-label">{column.name}</span>
+                  <span className="cd-kind-hint">{rowHint(column)}</span>
+                </span>
+                <button
+                  type="button"
+                  className="cd-show"
+                  disabled={busy}
+                  aria-label={`Show ${column.name}`}
+                  onClick={(event) => {
+                    // The row goes; focus moves to the next Show, or the ✕.
+                    const box = event.currentTarget.closest('[role="dialog"]');
+                    const rows = [...(box?.querySelectorAll<HTMLElement>('.cd-show') ?? [])];
+                    const next =
+                      rows[rows.indexOf(event.currentTarget) + 1] ??
+                      rows[rows.indexOf(event.currentTarget) - 1];
+                    onShow(column.id);
+                    requestAnimationFrame(() => {
+                      (next ?? box?.querySelector<HTMLElement>('.overlay-dialog-close'))?.focus();
+                    });
+                  }}
+                >
+                  Show
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="cd-hint">A hidden column keeps its tasks; they are just not on the board.</p>
+      </section>
+    </Dialog>
   );
 }
