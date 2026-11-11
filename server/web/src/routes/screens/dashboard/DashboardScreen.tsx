@@ -42,9 +42,17 @@ import {
   workloadByPerson,
 } from './summary-derive.ts';
 import { Throughput } from './Throughput.tsx';
+import { listHref } from './DashLink.tsx';
 import { useDashboard } from './use-dashboard.ts';
 import { clockTime } from '../../../api/time-label.ts';
 import './dashboard.css';
+
+/** The List's `?updated=` window for each dashboard range; all time has none. */
+const UPDATED_FOR_RANGE: Readonly<Record<string, string | undefined>> = {
+  '24h': 'today',
+  '7d': '7d',
+  '30d': '30d',
+};
 
 /**
  * Dashboard (SPEC §11.4.2.1 — LAI-085, reshaped by LAI-711, D-072).
@@ -71,7 +79,7 @@ import './dashboard.css';
  * change, a Retry, a live frame — swaps the numbers in place.
  */
 export function DashboardScreen() {
-  const { params, setParams } = useRoute();
+  const { params, setParams, navigate } = useRoute();
   const { theme } = useTheme();
   /*
    * **The bar's task filters do nothing here** (LAI-711): Priority, Assignee,
@@ -195,6 +203,12 @@ export function DashboardScreen() {
         <EmptyState
           headline="No space to summarise"
           body="Create a space, and its dashboard appears here."
+          action={{
+            label: 'Go to Spaces',
+            onClick: () => {
+              navigate('/projects');
+            },
+          }}
         />
       </div>
     );
@@ -446,6 +460,32 @@ export function DashboardScreen() {
   // so all-time done is the task list's own count.
   const done = range.ms === null ? breakdown.done : metricsDone;
 
+  /*
+   * **Every figure opens the work it counts** (LAI-1195). The List reads
+   * `?updated=` as a window (`filter-keys.ts`): the dashboard's 24 hours is
+   * the nearest it has, Today. `sprint=all` because the dashboard counts the
+   * whole space, and the List would otherwise open on the board's scope.
+   */
+  const updated = UPDATED_FOR_RANGE[range.id];
+  const inList = (query: Record<string, string>): string =>
+    listHref(slug, { sprint: 'all', ...query });
+  const statLinks = {
+    done: inList({
+      status: 'done',
+      ...(updated === undefined ? {} : { updated }),
+      sort: 'updated',
+      dir: 'desc',
+    }),
+    touched: inList({
+      ...(updated === undefined ? {} : { updated }),
+      sort: 'updated',
+      dir: 'desc',
+    }),
+    created: inList({ sort: 'created', dir: 'desc' }),
+    due: inList({ sort: 'due', dir: 'asc' }),
+    overdue: inList({ overdue: 'true', sort: 'due', dir: 'asc' }),
+  };
+
   return (
     <div className="dash" aria-busy={refreshing || undefined}>
       <SpaceSlot
@@ -472,7 +512,12 @@ export function DashboardScreen() {
         </p>
       )}
 
-      <StatCards done={done} counts={windowCounts(tasks, since, clock)} window={window} />
+      <StatCards
+        done={done}
+        counts={windowCounts(tasks, since, clock)}
+        window={window}
+        links={statLinks}
+      />
 
       <div className="dash-grid">
         <StatusOverview
@@ -499,6 +544,8 @@ export function DashboardScreen() {
         <Throughput
           metrics={dashboard.metrics}
           window={range.ms === null ? 'in the last 30 days' : window}
+          doneHref={statLinks.done}
+          onRetry={dashboard.reload}
         />
       </div>
     </div>
