@@ -11,6 +11,7 @@ import { useDialogFocus } from '../use-dialog-focus.ts';
 import { LiveRegion } from '../wizard/LiveRegion.tsx';
 import { useLiveRegion } from '../wizard/live-region.ts';
 import {
+  allSpacesItem,
   emptySuggestion,
   filterItems,
   goToItems,
@@ -163,7 +164,7 @@ export function CommandPalette() {
   }, [granted, projectSlug, spaceName, query]);
 
   const spaceRows = useMemo(
-    () => filterItems(spaceItems(spaces, projectSlug, path), query),
+    () => filterItems([...spaceItems(spaces, projectSlug, path), allSpacesItem()], query),
     [spaces, projectSlug, path, query],
   );
 

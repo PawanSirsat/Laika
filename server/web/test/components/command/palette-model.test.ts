@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { TaskSummary } from '../../../src/api/tasks.ts';
 import {
+  allSpacesItem,
   emptySuggestion,
   filterItems,
   goToItems,
@@ -20,10 +21,10 @@ import {
   spaceHref,
   spaceItems,
   taskHref,
-  typingIn,
   type PaletteKey,
 } from '../../../src/components/command/palette-model.ts';
 import { navRoutes, ROUTES, spaceTabs } from '../../../src/routes/route-table.ts';
+import { dialogCommand } from '../../../src/routes/screens/review/review-derive.ts';
 import { SHORTCUT_GROUPS, shortcutFor } from '../../../src/routes/screens/my-day/shortcuts.ts';
 
 const key = (k: string, mods: Partial<PaletteKey> = {}): PaletteKey => ({
@@ -91,27 +92,25 @@ void describe('the ⌘K shortcut', () => {
     }
   });
 
+  /**
+   * The Review dialog's keys (LAI-1169: `j` `k` `a` `s`, arrows, Escape) and
+   * the page's `c` (Create task, LAI-1167): none opens the palette, and ⌘K /
+   * Ctrl+K is none of the Review dialog's commands.
+   */
+  void test("collides with neither the Review dialog's keys nor Create task's c", () => {
+    for (const k of ['j', 'k', 'a', 's', 'c', 'ArrowDown', 'ArrowUp', 'Escape']) {
+      assert.equal(isPaletteShortcut(key(k)), false, `${k} would open the palette`);
+      assert.equal(isPaletteShortcut(key(k.toUpperCase())), false, `Shift+${k} would open it`);
+    }
+    assert.equal(dialogCommand({ key: 'k' }, false), 'prev', 'the Review dialog stopped reading k');
+    for (const mods of [{ metaKey: true }, { ctrlKey: true }]) {
+      assert.equal(dialogCommand(key('k', mods), false), null, 'the Review dialog acts on ⌘K');
+    }
+  });
+
   void test('prints ⌘K on a Mac and Ctrl K elsewhere', () => {
     assert.equal(shortcutLabel(true), '⌘K');
     assert.equal(shortcutLabel(false), 'Ctrl K');
-  });
-});
-
-void describe('where the shortcut does not fire', () => {
-  void test('in text inputs, textareas, selects and rich editors', () => {
-    assert.equal(typingIn({ tagName: 'INPUT', type: 'text' }), true);
-    assert.equal(typingIn({ tagName: 'INPUT' }), true);
-    assert.equal(typingIn({ tagName: 'input', type: 'search' }), true);
-    assert.equal(typingIn({ tagName: 'TEXTAREA' }), true);
-    assert.equal(typingIn({ tagName: 'SELECT' }), true);
-    assert.equal(typingIn({ tagName: 'DIV', isContentEditable: true }), true);
-  });
-
-  void test('but does on buttons, checkboxes and the page', () => {
-    assert.equal(typingIn({ tagName: 'BUTTON' }), false);
-    assert.equal(typingIn({ tagName: 'INPUT', type: 'checkbox' }), false);
-    assert.equal(typingIn({ tagName: 'BODY' }), false);
-    assert.equal(typingIn(null), false);
   });
 });
 
@@ -170,6 +169,15 @@ void describe('Spaces', () => {
     assert.deepEqual(
       rows.map((r) => [r.label, r.href]),
       [['Laika Web', '/list?project=laika-web']],
+    );
+  });
+
+  void test('All spaces opens the spaces index, which is a shipped route', () => {
+    const item = allSpacesItem();
+    assert.equal(item.href, '/projects');
+    assert.ok(
+      ROUTES.some((r) => r.path === '/projects' && r.status !== undefined),
+      '/projects is no longer a shipped route',
     );
   });
 

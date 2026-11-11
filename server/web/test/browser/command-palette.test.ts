@@ -285,7 +285,7 @@ void describe('the groups', () => {
       await ready(h.page);
       await openWithKeys(h.page);
       const listed = await options(h.page);
-      for (const label of ['My day', 'Inbox', 'Work', 'Board', 'List']) {
+      for (const label of ['My day', 'Inbox', 'Insights', 'Board', 'List', 'All spaces']) {
         assert.ok(listed.includes(label), `${label} missing from: ${listed.join(', ')}`);
       }
       // textContent: the heading is upper-cased by CSS, the words are not.
@@ -434,8 +434,12 @@ void describe('the groups', () => {
       await h.page.locator(INPUT).fill('create');
       await until(async () => (await options(h.page)).includes('Create task'));
       await h.page.keyboard.press('Enter');
-      await until(() => new URL(h.page.url()).searchParams.get('new') === 'task');
-      assert.equal(new URL(h.page.url()).searchParams.get('new'), 'task');
+      // `?new=task` is the board's contract (LAI-1167): the space opens its
+      // Create task dialog and takes the parameter back out of the address.
+      const dialog = h.page.locator('[data-dialog="create-task"]');
+      await dialog.waitFor({ timeout: 10_000 });
+      assert.equal(await dialog.getAttribute('aria-modal'), 'true');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), 'laika-core');
     } finally {
       await h.close();
     }

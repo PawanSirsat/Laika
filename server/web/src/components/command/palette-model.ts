@@ -30,39 +30,6 @@ export function isPaletteShortcut(event: PaletteKey): boolean {
   return event.key.toLowerCase() === 'k';
 }
 
-/** Input types that are pressed rather than typed into — a checkbox, a button. */
-const PRESSED = new Set([
-  'button',
-  'checkbox',
-  'radio',
-  'submit',
-  'reset',
-  'file',
-  'color',
-  'range',
-]);
-
-/** The bits of an event target `typingIn` reads; an `Element` satisfies it. */
-export interface TypingTarget {
-  readonly tagName?: string;
-  readonly type?: string;
-  readonly isContentEditable?: boolean;
-}
-
-/**
- * Whether a key landed in something a person types into: a text input, a
- * textarea, a select, or a rich editor (`contenteditable`). The palette's
- * shortcut does not fire there — a field keeps its own keys, and the editor's
- * ⌘K is the editor's.
- */
-export function typingIn(target: TypingTarget | null | undefined): boolean {
-  if (target === null || target === undefined) return false;
-  if (target.isContentEditable === true) return true;
-  const tag = (target.tagName ?? '').toUpperCase();
-  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  return tag === 'INPUT' && !PRESSED.has((target.type ?? 'text').toLowerCase());
-}
-
 /** The shortcut as the trigger prints it. */
 export function shortcutLabel(mac: boolean): string {
   return mac ? '⌘K' : 'Ctrl K';
@@ -142,6 +109,19 @@ export function spaceItems(
       keywords: [space.slug, 'space', 'switch'],
       href: spaceHref(space.slug, currentPath),
     }));
+}
+
+/**
+ * The spaces index (`/projects`), which the sidebar reaches as *More spaces*:
+ * every space, archived ones included, for when the one wanted is not listed.
+ */
+export function allSpacesItem(): PaletteItem {
+  return {
+    id: 'go:/projects',
+    label: 'All spaces',
+    keywords: ['spaces', 'projects', 'more', 'archived'],
+    href: navHref('/projects', undefined),
+  };
 }
 
 /** Whether a row answers a query: every word appears in its label, hint or keywords. */

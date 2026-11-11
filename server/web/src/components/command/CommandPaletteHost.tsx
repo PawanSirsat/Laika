@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { isPaletteShortcut, typingIn } from './palette-model.ts';
+import { typingIn } from '../typing-in.ts';
+import { isPaletteShortcut } from './palette-model.ts';
 import { closePalette, isPaletteOpen, openPalette, usePaletteOpen } from './palette-store.ts';
 // The layer's styles ship with the shell, so the loading frame is styled too.
 import './command-palette.css';
@@ -32,7 +33,8 @@ export function CommandPaletteHost() {
         closePalette();
         return;
       }
-      if (typingIn(event.target as Element | null)) return;
+      // The shared rule every single-key shortcut uses (`typing-in.ts`).
+      if (typingIn(event.target instanceof Element ? event.target : null)) return;
       event.preventDefault();
       openPalette();
     };
