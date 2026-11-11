@@ -68,6 +68,20 @@ export function createPairingRequest(body: NewPairing): Promise<CreatedPairing> 
   return request<CreatedPairing>('/devices/pairing-requests', { method: 'POST', body });
 }
 
+/**
+ * Your own requests still waiting — open, claimed or approved, and not past
+ * their ten minutes — newest first (D-139, LAI-1151). Each carries the
+ * fingerprint approving echoes back, and never a code (D-124). Session only.
+ */
+export function listPendingPairingRequests(
+  signal?: AbortSignal,
+): Promise<{ data: DevicePairing[] }> {
+  return request<{ data: DevicePairing[] }>(
+    '/devices/pairing-requests',
+    signal === undefined ? {} : { signal },
+  );
+}
+
 export function getPairingRequest(id: string, signal?: AbortSignal): Promise<DevicePairing> {
   return request<DevicePairing>(
     `/devices/pairing-requests/${encodeURIComponent(id)}`,

@@ -6,8 +6,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  alertRows,
   axisDays,
   barHeight,
+  breakdownTab,
+  breakdownTabs,
   defaultScope,
   offeredSpaces,
   scopeFor,
@@ -125,5 +128,49 @@ void describe('the trend', () => {
     assert.deepEqual(axisDays(days), ['2026-09-18', '2026-10-02', '2026-10-17']);
     assert.deepEqual(axisDays(['2026-10-17']), ['2026-10-17']);
     assert.deepEqual(axisDays([]), []);
+  });
+});
+
+void describe('LAI-1127: the Budget alerts card and the Breakdown tabs', () => {
+  const alert = (id: string, kind: 'budget' | 'runaway', tokens: number, limit: number) => ({
+    id,
+    kind,
+    scope: 'task' as const,
+    threshold: kind === 'runaway' ? 95 : 80,
+    tokens,
+    limit_tokens: limit,
+    created_at: 0,
+    project: { slug: 'laika', name: 'Laika' },
+    task: { id: `t-${id}`, key: `LAI-${id}`, title: id },
+    sprint: null,
+  });
+
+  void test('alerts: most spent against the limit first; over is a budget at or past it', () => {
+    const rows = alertRows([
+      alert('1', 'budget', 80, 100),
+      alert('2', 'budget', 100, 100),
+      alert('3', 'runaway', 300, 100),
+      alert('4', 'budget', 0, 0),
+    ]);
+    assert.deepEqual(
+      rows.map((r) => [r.alert.id, r.share, r.over]),
+      [
+        ['3', 3, false],
+        ['2', 1, true],
+        ['1', 0.8, false],
+        ['4', 0, false],
+      ],
+    );
+  });
+
+  void test('tabs: Space only with by_project; the picked one while offered, else the first with figures', () => {
+    assert.deepEqual(breakdownTabs(true), ['space', 'developer', 'agent', 'model']);
+    assert.deepEqual(breakdownTabs(false), ['developer', 'agent', 'model']);
+    assert.equal(breakdownTab(undefined, breakdownTabs(true), true), 'space');
+    assert.equal(breakdownTab(undefined, breakdownTabs(false), true), 'developer');
+    assert.equal(breakdownTab(undefined, breakdownTabs(false), false), 'agent');
+    assert.equal(breakdownTab('model', breakdownTabs(false), false), 'model');
+    // Space picked on the organisation, then a space chosen: Space is gone.
+    assert.equal(breakdownTab('space', breakdownTabs(false), true), 'developer');
   });
 });

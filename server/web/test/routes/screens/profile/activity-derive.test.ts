@@ -1,7 +1,7 @@
 /**
- * The activity heatmap's rules (D-079, LAI-751): where a day sits, how dark it
- * is, the streaks, the busiest weekday, the share pushed, and what a day says
- * aloud. Each fixture is built so the wrong rule gives a different answer —
+ * The activity heatmap's rules (D-079, LAI-751; LAI-1154): where a day sits,
+ * how dark it is, the streaks, the busiest weekday, the share pushed, the
+ * days before joining, and what a day says aloud. Each fixture is built so the wrong rule gives a different answer —
  * a Thursday start, a tie between weekdays, an empty today.
  */
 
@@ -12,17 +12,24 @@ import {
   activityStats,
   agentLabel,
   calendarLayout,
+  combined,
   dayLines,
   dayText,
   designKey,
   emptyDays,
   heatDays,
+  joinedDay,
+  joinedNote,
   levelScale,
   moveIndex,
+  openingRange,
   rangeDays,
   shortDate,
+  singleBusiest,
+  sourceTotals,
   spanLabel,
   storedDesign,
+  totalLine,
   weekdayOf,
   type HeatDay,
 } from '../../../../src/routes/screens/profile/activity-derive.ts';
@@ -70,9 +77,7 @@ const day = (over: Partial<HeatDay>): HeatDay => ({
   prompts: 0,
   sessions: 0,
   local: 0,
-  boardSelf: 0,
-  boardAgent: 0,
-  board: 0,
+  pre: false,
   promptsByAgent: {},
   ...over,
 });
@@ -90,11 +95,11 @@ void describe('days from the response', () => {
       }),
     );
     assert.deepEqual(
-      days.map((d) => [d.day, d.weekday, d.github, d.local, d.board]),
+      days.map((d) => [d.day, d.weekday, d.github, d.local, d.pre]),
       [
-        ['2026-10-12', 0, 1, 6, 2],
-        ['2026-10-13', 1, 0, 2, 1],
-        ['2026-10-14', 2, 4, 0, 0],
+        ['2026-10-12', 0, 1, 6, false],
+        ['2026-10-13', 1, 0, 2, false],
+        ['2026-10-14', 2, 4, 0, false],
       ],
     );
   });
@@ -247,7 +252,7 @@ void describe('the stats row', () => {
   const run = (activeFlags: readonly boolean[], start = '2026-10-05') =>
     heatDays(
       activity(start, activeFlags.length, {
-        board_self: activeFlags.map((on) => (on ? 1 : 0)),
+        github: activeFlags.map((on) => (on ? 1 : 0)),
       }),
     );
 
@@ -326,6 +331,106 @@ void describe('the stats row', () => {
   });
 });
 
+void describe('Stacked and the legends (LAI-1154)', () => {
+  void test('Stacked is GitHub and Local together, on one scale; nothing shown is null', () => {
+    assert.equal(combined(day({ github: 3, local: 4 })), 7);
+    assert.equal(combined(day({ github: null, local: 2 })), 2);
+    assert.equal(combined(day({ github: null, local: null })), null);
+  });
+
+  void test('a board action alone is not an active day — the board is not on the card', () => {
+    const days = heatDays(
+      activity('2026-10-05', 3, { board_self: [5, 5, 5], board_agent: [2, 2, 2] }),
+    );
+    assert.equal(activityStats(days).activeDays, 0);
+  });
+
+  void test('each source’s line: commits pushed; prompts · sessions · not pushed, or none yet', () => {
+    const days = heatDays(
+      activity('2026-10-05', 3, {
+        github: [6000, 6, 0],
+        prompts: [80, 5, 0],
+        sessions: [83, 0, 0],
+        local_commits: [0, 0, 9],
+      }),
+    );
+    const totals = sourceTotals(days);
+    assert.equal(totalLine('github', totals), '6,006 commits pushed');
+    assert.equal(totalLine('local', totals), '85 prompts · 83 sessions · 9 not pushed');
+    const quiet = sourceTotals(heatDays(activity('2026-10-05', 3, { github: [3, 0, 0] })));
+    assert.equal(totalLine('github', quiet), '3 commits pushed');
+    assert.equal(totalLine('local', quiet), 'No local activity yet');
+  });
+
+  void test('the busiest weekday is named only when one is ahead on three days or more', () => {
+    // Three weeks from Monday 5 Oct.
+    const weeks = (on: (i: number) => boolean) =>
+      activityStats(
+        heatDays(
+          activity('2026-10-05', 21, {
+            github: Array.from({ length: 21 }, (_, i) => (on(i) ? 1 : 0)),
+          }),
+        ),
+      );
+    // Every Friday: three of three.
+    const fridays = weeks((i) => i % 7 === 4);
+    assert.equal(singleBusiest(fridays), 4);
+    assert.deepEqual(fridays.busiestWeekday, { weekdays: [4], active: 3, of: 3 });
+    // Fridays and Mondays tie: no single day.
+    assert.equal(singleBusiest(weeks((i) => i % 7 === 4 || i % 7 === 0)), null);
+    // Two Fridays only: too few to call.
+    assert.equal(singleBusiest(weeks((i) => i === 4 || i === 11)), null);
+  });
+});
+
+void describe('before joining (LAI-1154)', () => {
+  void test('the joining day is the series’ zone’s date, not UTC’s', () => {
+    // 22:30 UTC on 1 Nov is 2 Nov in Johannesburg, still 1 Nov in UTC.
+    const at = Date.parse('2026-11-01T22:30:00Z');
+    assert.equal(joinedDay(at, 'Africa/Johannesburg'), '2026-11-02');
+    assert.equal(joinedDay(at, 'UTC'), '2026-11-01');
+    assert.equal(joinedDay(at, 'Not/AZone'), '2026-11-01');
+  });
+
+  void test('days before it are marked, say so aloud, and count in no stat', () => {
+    // Mon 26 Oct … Fri 6 Nov; joined Mon 2 Nov, active every day since.
+    const days = heatDays(
+      activity('2026-10-26', 12, {
+        github: [9, 9, 9, 9, 9, 9, 1, 1, 1, 1, 1, 0],
+        prompts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+      }),
+      '2026-11-02',
+    );
+    assert.deepEqual(
+      days.map((d) => d.pre),
+      [true, true, true, true, true, true, true, false, false, false, false, false],
+    );
+    assert.equal(dayText(days[0]!), 'Monday 26 Oct 2026 · before joining');
+    const stats = activityStats(days);
+    assert.equal(stats.activeDays, 5);
+    assert.equal(stats.totalDays, 5);
+    assert.equal(stats.sinceJoining, true);
+    assert.equal(stats.currentStreak, 5);
+    assert.deepEqual(stats.longestStreak, { days: 5, from: '2026-11-02', to: '2026-11-06' });
+    // 9s before joining are not their commits on the card.
+    assert.equal(stats.pushed, 4);
+    // The skeleton marks the same days.
+    assert.equal(emptyDays('2026-11-06', 12, '2026-11-02').filter((d) => d.pre).length, 7);
+  });
+
+  void test('with no day before it, nothing is “since joining”', () => {
+    const stats = activityStats(heatDays(activity('2026-10-26', 7), '2026-01-01'));
+    assert.equal(stats.sinceJoining, false);
+    assert.equal(stats.totalDays, 7);
+  });
+
+  void test('the caption names the joining day only when it is inside the range', () => {
+    const days = emptyDays('2026-11-06', 84);
+    assert.equal(joinedNote(days, '2026-11-02'), 'joined Mon 2 Nov');
+    assert.equal(joinedNote(days, '2025-01-01'), null);
+  });
+});
+
 void describe('what a day says', () => {
   void test('every source, the agents by name — Gemini CLI, and other as Other agent', () => {
     const d = day({
@@ -334,14 +439,11 @@ void describe('what a day says', () => {
       prompts: 23,
       sessions: 3,
       local: 28,
-      boardSelf: 1,
-      boardAgent: 6,
-      board: 7,
       promptsByAgent: { 'gemini-cli': 5, 'claude-code': 18, other: 1 },
     });
     assert.equal(
       dayText(d),
-      'Thursday 15 Oct 2026: 4 commits pushed, 2 local commits not pushed, 23 prompts (Claude Code 18, Gemini CLI 5, Other agent 1), 3 agent sessions, 1 board action by them, 6 board actions by their agents',
+      'Thursday 15 Oct 2026: 4 commits pushed, 2 local commits not pushed, 23 prompts (Claude Code 18, Gemini CLI 5, Other agent 1), 3 agent sessions',
     );
     assert.equal(agentLabel('other'), 'Other agent');
     assert.equal(agentLabel('gemini-cli'), 'Gemini CLI');
@@ -352,7 +454,7 @@ void describe('what a day says', () => {
       day({ github: null, localCommits: null, prompts: null, sessions: null, local: null }),
     );
     assert.deepEqual(
-      lines.filter((l) => l.source !== 'board').map((l) => [l.n, l.text]),
+      lines.map((l) => [l.n, l.text]),
       [
         [null, 'pushed commits not collected'],
         [null, 'local activity not collected'],
@@ -362,18 +464,31 @@ void describe('what a day says', () => {
 
   void test('dates read as a person writes them', () => {
     assert.equal(shortDate('2026-10-07'), 'Wed 7 Oct');
-    assert.equal(spanLabel('2026-03-02', '2026-03-20'), '2–20 Mar');
+    // The design writes a streak's span with the month on both ends.
+    assert.equal(spanLabel('2026-01-11', '2026-01-16'), '11 Jan – 16 Jan');
     assert.equal(spanLabel('2026-02-28', '2026-03-03'), '28 Feb – 3 Mar');
+    assert.equal(spanLabel('2026-10-07', '2026-10-07'), '7 Oct');
   });
 });
 
 void describe('the viewer’s choices', () => {
-  void test('the design is remembered per viewer, and B — stacked — by default', () => {
+  void test('the design is remembered per viewer, and Split by default, as the design opens', () => {
     assert.equal(designKey('u1'), 'laika.profile.activity-design.u1');
     assert.notEqual(designKey('u1'), designKey('u2'));
-    assert.equal(storedDesign(null), 'stacked');
-    assert.equal(storedDesign('rubbish'), 'stacked');
-    assert.equal(storedDesign('split'), 'split');
+    assert.equal(storedDesign(null), 'split');
+    assert.equal(storedDesign('rubbish'), 'split');
+    assert.equal(storedDesign('stacked'), 'stacked');
+  });
+
+  void test('opens on 12 weeks on a phone or for a member of under 12 weeks, else a year', () => {
+    const now = Date.parse('2026-11-06T09:00:00Z');
+    const days = (n: number) => now - n * 86_400_000;
+    assert.equal(openingRange(false, days(400), now), '52w');
+    assert.equal(openingRange(true, days(400), now), '12w');
+    assert.equal(openingRange(false, days(4), now), '12w');
+    // Twelve weeks to the day is no longer under twelve weeks.
+    assert.equal(openingRange(false, days(84), now), '52w');
+    assert.equal(openingRange(false, days(83), now), '12w');
   });
 
   void test('arrow keys move a week sideways and a day up and down, held at the edges', () => {

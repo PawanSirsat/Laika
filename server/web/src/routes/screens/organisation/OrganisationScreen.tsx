@@ -5,6 +5,7 @@ import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
 import { DEVELOPER_ACTIVITY_HREF, ownTokensHref, type PageTab } from '../../page-tabs.ts';
 import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
+import { mayActOnSetupOf, OWNER_SETUP_NOTE, revokeRefusal } from '../../../api/owner-setup.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
@@ -39,6 +40,7 @@ import { InviteDialog } from './InviteDialog.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
 import { OrgPulse } from './OrgPulse.tsx';
+import { WorkTab, type WorkTaskLink } from './WorkTab.tsx';
 import { BoardBuildLine } from './BoardBuildLine.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
@@ -51,7 +53,7 @@ export interface OrganisationScreenProps {
   readonly me: MeProfile;
   /** The tabs this reader is offered — Security is an owner's or an admin's. */
   readonly tabs: readonly PageTab[];
-  /** The open tab: `overview`, `people`, `roles`, `integrations`, `security` or `activity`. */
+  /** The open tab: `overview`, `work`, `people`, `roles`, `integrations`, `security` or `activity`. */
   readonly tab: string;
   /**
    * The address named `tab` and this reader may not open it — the not-allowed
@@ -62,6 +64,8 @@ export interface OrganisationScreenProps {
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams) => void;
   readonly onNavigate: (to: string) => void;
+  /** Work's rows (LAI-1170): open a task in its own space's drawer. */
+  readonly onOpenTask: (task: WorkTaskLink) => void;
 }
 
 /** `3 Mar 2026` — when the organisation was made, in the reader's own calendar. */
@@ -110,6 +114,10 @@ function createdLabel(ms: number): string {
  *
  * **Activity** (LAI-951) is the admin activity log that reference showed, now
  * that `GET /activity/history` serves it: an owner's or an admin's.
+ *
+ * **Work** (D-147, LAI-1170) is the organisation's register — everyone's
+ * tasks across every space, with the List's selection and bulk bar — second,
+ * after Overview. It was a sidebar page from LAI-952; `/work` redirects here.
  */
 export function OrganisationScreen({
   me,
@@ -119,6 +127,7 @@ export function OrganisationScreen({
   params,
   setParams,
   onNavigate,
+  onOpenTask,
 }: OrganisationScreenProps) {
   const confirm = useConfirm();
   // The server's answer, denied until it has one (LAI-970) — never the role.
@@ -249,7 +258,7 @@ export function OrganisationScreen({
         reloadTokens();
       })
       .catch((cause: unknown) => {
-        setTokenError(cause instanceof Error ? cause.message : 'Could not revoke that token.');
+        setTokenError(revokeRefusal(cause, 'Could not revoke that token.'));
       });
   };
 
@@ -545,6 +554,16 @@ export function OrganisationScreen({
           </>
         )}
 
+        {tab === 'work' && (
+          <WorkTab
+            me={me}
+            params={params}
+            setParams={setParams}
+            onOpenTask={onOpenTask}
+            onNavigate={onNavigate}
+          />
+        )}
+
         {tab === 'people' && (
           <>
             <PeopleTab
@@ -788,6 +807,13 @@ export function OrganisationScreen({
                         </span>
                       </p>
 
+                      {canRevokeTokens && !mayActOnSetupOf(me.org_role, person.org_role) && (
+                        // D-133, LAI-1143: the server refuses an admin the owner's tokens.
+                        <p className="org-tokens-note" data-owner-tokens>
+                          {OWNER_SETUP_NOTE}
+                        </p>
+                      )}
+
                       {tokens?.status === 'loading' && (
                         <LoadingState
                           shape="row"
@@ -832,7 +858,8 @@ export function OrganisationScreen({
                                       token={token}
                                       now={now}
                                       onRevoke={
-                                        canRevokeTokens
+                                        canRevokeTokens &&
+                                        mayActOnSetupOf(me.org_role, person.org_role)
                                           ? (revoked) => {
                                               revoke(person, revoked);
                                             }

@@ -9,7 +9,10 @@ import { RenameForm } from '../AgentsTab.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DetailTiles } from './DetailTiles.tsx';
+import { DetailsFold, useFolds } from './DetailsFold.tsx';
+import { NoteBlock } from './NoteBlock.tsx';
 import { pairedDevice } from './add-flow.ts';
+import { deviceNext, deviceToolsSummary, helperSummary } from './details-sections.ts';
 import {
   CLOUD_NOTE,
   chipTone,
@@ -22,9 +25,13 @@ import {
   toolLabel,
   type Conflict,
 } from './devices-view.ts';
-import { DeviceUpdate, useVerification } from './ToolUpdate.tsx';
+import { DeviceUpdate, useDeviceUpdate, useVerification } from './ToolUpdate.tsx';
 
 export const DEVICE_PANEL_TITLE = 'dv3-device-panel-title';
+
+type DeviceFold = 'tools' | 'helpers' | 'device';
+
+const HELPERS_FOLD = `${DEVICE_PANEL_TITLE}-helpers`;
 
 export interface DeviceDetailsProps {
   /** `undefined` once the list is in and holds no such device. */
@@ -52,19 +59,28 @@ export interface DeviceDetailsProps {
 /**
  * A device's details (LAI-1080), at `?tab=devices&device=<id>`: what its
  * one-line row on Devices has no room for — and what the device card said
- * before (LAI-1054, LAI-1065), moved here unchanged.
+ * before (LAI-1054, LAI-1065).
  *
- * - Its kind, how it got here, when it was last seen, and its key's
- *   fingerprint; a Cloud runner's one-day note.
- * - **Rename…** an active device (LAI-1095): its tools are relabelled with it.
- * - Its tools' helper updates, summarised, worst first.
- * - An imported device nobody claimed asks *confirm it's yours*, through the
- *   same `POST /agents/devices/confirm` as before.
- * - Its tools, each opening that tool's details; revoked ones after them.
- * - Two active agents of one tool on it — from before one per pair — under
- *   *Needs your attention*, both intact, each with *Rename*.
- * - **Disconnect device…** at the foot: every tool on it, behind a
- *   confirmation naming each.
+ * **The top is short** (LAI-1100, the owner's V3): its status under the
+ * title, then what needs the owner, open and never folded —
+ *
+ * - an imported device nobody claimed asks *confirm it's yours*, through the
+ *   same `POST /agents/devices/confirm` as before;
+ * - two active agents of one tool on it — from before one per pair — under
+ *   *Needs your attention*, both intact, each with *Rename*;
+ *
+ * — or, when nothing does, its one next action (`deviceNext`): *Add a tool*
+ * on a paired device with none, or the steps for a helper the board refuses.
+ * The rest is one summary row a section, each opening in place:
+ *
+ * - **Tools**, each opening that tool's details; revoked ones after them.
+ * - **Helper updates**: its tools' statuses, worst first, and the guide.
+ * - **Device**: its kind, how it got here, when it was last seen, and its
+ *   key's fingerprint; a Cloud runner's one-day note; **Rename…** an active
+ *   device (LAI-1095), its tools relabelled with it.
+ *
+ * **Disconnect device…** stays at the foot: every tool on it, behind a
+ * confirmation naming each.
  */
 export function DeviceDetails({
   device,
@@ -113,7 +129,16 @@ export function DeviceDetails({
     setRenaming(undefined);
   };
 
-  if (device === undefined) {
+  const split = device === undefined ? undefined : deviceTools(device);
+  const activeIds =
+    split === undefined
+      ? []
+      : [...split.tools, ...split.conflicts.flatMap((c) => c.agents)].map((a) => a.id);
+  const live = device?.status === 'active';
+  const helpers = useDeviceUpdate(live ? activeIds : []);
+  const folds = useFolds<DeviceFold>();
+
+  if (device === undefined || split === undefined) {
     return (
       <SidePanel
         title="Device not found"
@@ -129,13 +154,24 @@ export function DeviceDetails({
     );
   }
 
-  const { tools, conflicts, revoked } = deviceTools(device);
-  const live = device.status === 'active';
+  const { tools, conflicts, revoked } = split;
   const cloud = device.kind === 'cloud';
   const chip = deviceChip(device);
-  const activeIds = [...tools, ...conflicts.flatMap((c) => c.agents)].map((a) => a.id);
   const conflictCount = conflicts.length;
   const seen = device.last_seen_at === null ? undefined : timeLabel(device.last_seen_at, now);
+  const confirm = needsConfirm(device);
+  const next = deviceNext({
+    live,
+    attention: confirm || conflictCount > 0,
+    tools: activeIds.length,
+    canAddTool: canManage && pairedDevice(device),
+    worst: helpers?.worst,
+  });
+  // The helpers' steps are their section's: open it, and take focus to its row.
+  const showHelpers = (): void => {
+    folds.setOpen('helpers', true);
+    document.getElementById(HELPERS_FOLD)?.querySelector('summary')?.focus();
+  };
 
   const toolButton = (agent: RegisteredAgent) => (
     <PanelTool key={agent.id} device={device} agent={agent} now={now} onOpen={onOpenTool} />
@@ -179,105 +215,8 @@ export function DeviceDetails({
         data-status={device.status}
         data-confirmed={device.confirmed}
       >
-        <section className="side-panel-section" aria-labelledby="dv3-device-facts">
-          <h3 className="side-panel-label" id="dv3-device-facts">
-            Device
-          </h3>
-          <DetailTiles
-            items={[
-              { label: 'Kind', value: kindName(device), id: 'kind' },
-              {
-                label: 'Origin',
-                value: device.origin === 'paired' ? 'Paired' : 'Imported',
-                id: 'origin',
-              },
-              {
-                label: 'Last seen',
-                value:
-                  seen === undefined ? (
-                    'Never'
-                  ) : (
-                    <time dateTime={seen.iso} title={seen.full}>
-                      {seen.text.replace(/^just now$/, 'Just now')}
-                    </time>
-                  ),
-                id: 'last-seen',
-              },
-              ...(live
-                ? [
-                    {
-                      label: 'Auto-pickup',
-                      value: (
-                        <AutoPickupChip
-                          launcher={device.launcher}
-                          now={now}
-                          device={device.display_name}
-                          layout="panel"
-                        />
-                      ),
-                      id: 'auto-pickup',
-                    },
-                  ]
-                : []),
-              ...(device.key_fingerprint === null
-                ? []
-                : [
-                    {
-                      label: 'Key fingerprint',
-                      value: <code>{device.key_fingerprint}</code>,
-                      id: 'fingerprint',
-                    },
-                  ]),
-            ]}
-          />
-          {cloud && live && <p className="dv3-note">{CLOUD_NOTE}</p>}
-          {live && <DeviceUpdate agentIds={activeIds} />}
-        </section>
-
-        {canManage && live && (
-          <section
-            className="side-panel-section"
-            aria-labelledby="dv3-device-name"
-            data-rename-device
-          >
-            <h3 className="side-panel-label" id="dv3-device-name">
-              Name
-            </h3>
-            {renamingDevice ? (
-              <DeviceRenameForm
-                device={device}
-                onSaved={(next) => {
-                  onRenamed(next);
-                  announce(`Renamed to ${next.display_name}.`);
-                  stopRenamingDevice();
-                }}
-                onCancel={stopRenamingDevice}
-              />
-            ) : (
-              <>
-                <p className="dv3-note">
-                  What Laika calls this computer. Every tool on it is shown under this name.
-                </p>
-                <div className="dx-actions dv3-panel-actions">
-                  <button
-                    type="button"
-                    ref={renameDeviceButton}
-                    className="dx-btn dx-btn-sm"
-                    aria-label={`Rename ${device.display_name}`}
-                    onClick={() => {
-                      setRenamingDevice(true);
-                    }}
-                  >
-                    Rename…
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
-        )}
-
-        {needsConfirm(device) && (
-          <section className="side-panel-section">
+        <div className="dv3-details-top">
+          {confirm && (
             <div className="dv3-imported" role="note" data-imported>
               <p>
                 <strong>Imported device — confirm it’s yours.</strong> Laika made this device from
@@ -297,124 +236,239 @@ export function DeviceDetails({
                 </button>
               )}
             </div>
-          </section>
-        )}
+          )}
 
-        <section className="side-panel-section" aria-labelledby="dv3-device-tools">
-          <h3 className="side-panel-label" id="dv3-device-tools">
-            Tools
-          </h3>
-          {tools.length > 0 && (
-            <ul className="dv3-panel-tools" aria-label={`Tools on ${device.display_name}`}>
-              {tools.map(toolButton)}
-            </ul>
-          )}
-          {tools.length === 0 && conflictCount === 0 && (
-            <p className="dv3-none">
-              {live ? 'No tools yet' : 'None active'}
-              {live && canManage && pairedDevice(device) && (
-                <>
-                  {' — '}
-                  <button type="button" className="conn-link-button" onClick={onAddTool}>
-                    Add a tool
-                  </button>
-                </>
-              )}
-            </p>
-          )}
-          {revoked.length > 0 && (
-            <>
-              <h4 className="dv3-panel-sub">Revoked</h4>
-              <ul
-                className="dv3-panel-tools"
-                aria-label={`Revoked tools on ${device.display_name}`}
-              >
-                {revoked.map(toolButton)}
-              </ul>
-            </>
-          )}
-        </section>
-
-        {conflictCount > 0 && (
-          <section
-            className="side-panel-section"
-            aria-labelledby="dv3-device-conflicts"
-            data-conflicts
-          >
-            <h3 className="dv3-panel-sub dv3-attention" id="dv3-device-conflicts">
-              Needs your attention: {conflictCount} {conflictCount === 1 ? 'conflict' : 'conflicts'}
-            </h3>
-            <p className="dv3-note">
-              These were registered before one agent per tool per device. Each keeps working and
-              nothing here revokes either: disconnect the one you do not want, or rename them to
-              tell them apart.
-            </p>
-            {conflicts.map((conflict: Conflict) => (
-              <div key={conflict.harness} className="dv3-conflict" data-conflict={conflict.harness}>
-                <h4 className="dv3-panel-sub">
-                  {conflict.label}: {conflict.agents.length} active
-                </h4>
-                <ul
-                  className="dv3-panel-tools"
-                  aria-label={`${conflict.label}, ${String(conflict.agents.length)} active`}
+          {conflictCount > 0 && (
+            <section aria-labelledby="dv3-device-conflicts" data-conflicts>
+              <h3 className="dv3-panel-sub dv3-attention" id="dv3-device-conflicts">
+                Needs your attention: {conflictCount}{' '}
+                {conflictCount === 1 ? 'conflict' : 'conflicts'}
+              </h3>
+              <p className="dv3-note">
+                These were registered before one agent per tool per device. Each keeps working and
+                nothing here revokes either: disconnect the one you do not want, or rename them to
+                tell them apart.
+              </p>
+              {conflicts.map((conflict: Conflict) => (
+                <div
+                  key={conflict.harness}
+                  className="dv3-conflict"
+                  data-conflict={conflict.harness}
                 >
-                  {conflict.agents.map((agent) => (
-                    <li key={agent.id} className="dv3-panel-conflict" data-agent={agent.id}>
-                      {renaming === agent.id ? (
-                        <RenameForm
-                          agent={agent}
-                          onSaved={(next) => {
-                            onChanged(next);
-                            announce(`Renamed to ${next.display_name}.`);
-                            stopRenaming();
-                          }}
-                          onCancel={stopRenaming}
-                        />
-                      ) : (
-                        <div className="dv3-panel-conflict-row">
-                          <AgentMark client={agentHarness(agent)} size="sm" />
-                          <span className="dv3-panel-tool-name">{toolLabel(device, agent)}</span>
-                          <span className="dx-actions">
-                            {canManage && (
+                  <h4 className="dv3-panel-sub">
+                    {conflict.label}: {conflict.agents.length} active
+                  </h4>
+                  <ul
+                    className="dv3-panel-tools"
+                    aria-label={`${conflict.label}, ${String(conflict.agents.length)} active`}
+                  >
+                    {conflict.agents.map((agent) => (
+                      <li key={agent.id} className="dv3-panel-conflict" data-agent={agent.id}>
+                        {renaming === agent.id ? (
+                          <RenameForm
+                            agent={agent}
+                            onSaved={(saved) => {
+                              onChanged(saved);
+                              announce(`Renamed to ${saved.display_name}.`);
+                              stopRenaming();
+                            }}
+                            onCancel={stopRenaming}
+                          />
+                        ) : (
+                          <div className="dv3-panel-conflict-row">
+                            <AgentMark client={agentHarness(agent)} size="sm" />
+                            <span className="dv3-panel-tool-name">{toolLabel(device, agent)}</span>
+                            <span className="dx-actions">
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  className="dx-btn dx-btn-sm"
+                                  data-rename-for={agent.id}
+                                  aria-label={`Rename ${toolLabel(device, agent)}`}
+                                  onClick={() => {
+                                    setRenaming(agent.id);
+                                  }}
+                                >
+                                  Rename…
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                className="dx-btn dx-btn-sm"
-                                data-rename-for={agent.id}
-                                aria-label={`Rename ${toolLabel(device, agent)}`}
+                                className="dx-btn dx-btn-sm dx-btn-ghost"
+                                data-details={`tools:${agent.id}`}
+                                aria-label={`${toolLabel(device, agent)}: details`}
                                 onClick={() => {
-                                  setRenaming(agent.id);
+                                  onOpenTool(agent.id);
                                 }}
                               >
-                                Rename…
+                                Details
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              className="dx-btn dx-btn-sm dx-btn-ghost"
-                              data-details={`tools:${agent.id}`}
-                              aria-label={`${toolLabel(device, agent)}: details`}
-                              onClick={() => {
-                                onOpenTool(agent.id);
-                              }}
-                            >
-                              Details
-                            </button>
-                          </span>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </section>
-        )}
+                            </span>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </section>
+          )}
 
-        {error !== undefined && (
-          <p className="agents-error" role="alert">
-            {error}
-          </p>
-        )}
+          {next === 'add-tool' && (
+            <p className="dv3-none" data-next="add-tool">
+              No tools yet —{' '}
+              <button type="button" className="conn-link-button" onClick={onAddTool}>
+                Add a tool
+              </button>
+            </p>
+          )}
+          {next === 'update' && helpers !== undefined && (
+            <div data-next="update">
+              <NoteBlock tone="warn" title={helperSummary(helpers.worst)}>
+                <p>{helpers.line}.</p>
+                <div className="dx-actions">
+                  <button type="button" className="dx-btn dx-btn-sm" onClick={showHelpers}>
+                    Show how to update
+                  </button>
+                </div>
+              </NoteBlock>
+            </div>
+          )}
+
+          {error !== undefined && (
+            <p className="agents-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="dv3-folds">
+          <DetailsFold
+            {...folds.fold('tools')}
+            title="Tools"
+            summary={deviceToolsSummary(activeIds.length, revoked.length)}
+          >
+            {tools.length > 0 && (
+              <ul className="dv3-panel-tools" aria-label={`Tools on ${device.display_name}`}>
+                {tools.map(toolButton)}
+              </ul>
+            )}
+            {tools.length === 0 && conflictCount === 0 && (
+              <p className="dv3-none">{live ? 'No tools yet' : 'None active'}</p>
+            )}
+            {revoked.length > 0 && (
+              <>
+                <h4 className="dv3-panel-sub">Revoked</h4>
+                <ul
+                  className="dv3-panel-tools"
+                  aria-label={`Revoked tools on ${device.display_name}`}
+                >
+                  {revoked.map(toolButton)}
+                </ul>
+              </>
+            )}
+          </DetailsFold>
+
+          {live && helpers !== undefined && (
+            <DetailsFold
+              {...folds.fold('helpers')}
+              id={HELPERS_FOLD}
+              title="Helper updates"
+              summary={helperSummary(helpers.worst)}
+            >
+              <DeviceUpdate agentIds={activeIds} />
+            </DetailsFold>
+          )}
+
+          <DetailsFold
+            {...folds.fold('device')}
+            title="Device"
+            summary={`${kindName(device)} · ${device.origin === 'paired' ? 'Paired' : 'Imported'}`}
+          >
+            <DetailTiles
+              items={[
+                { label: 'Kind', value: kindName(device), id: 'kind' },
+                {
+                  label: 'Origin',
+                  value: device.origin === 'paired' ? 'Paired' : 'Imported',
+                  id: 'origin',
+                },
+                {
+                  label: 'Last seen',
+                  value:
+                    seen === undefined ? (
+                      'Never'
+                    ) : (
+                      <time dateTime={seen.iso} title={seen.full}>
+                        {seen.text.replace(/^just now$/, 'Just now')}
+                      </time>
+                    ),
+                  id: 'last-seen',
+                },
+                ...(live
+                  ? [
+                      {
+                        label: 'Auto-pickup',
+                        value: (
+                          <AutoPickupChip
+                            launcher={device.launcher}
+                            now={now}
+                            device={device.display_name}
+                            layout="panel"
+                          />
+                        ),
+                        id: 'auto-pickup',
+                      },
+                    ]
+                  : []),
+                ...(device.key_fingerprint === null
+                  ? []
+                  : [
+                      {
+                        label: 'Key fingerprint',
+                        value: <code>{device.key_fingerprint}</code>,
+                        id: 'fingerprint',
+                      },
+                    ]),
+              ]}
+            />
+            {cloud && live && <p className="dv3-note">{CLOUD_NOTE}</p>}
+            {canManage && live && (
+              <div data-rename-device>
+                {renamingDevice ? (
+                  <DeviceRenameForm
+                    device={device}
+                    onSaved={(saved) => {
+                      onRenamed(saved);
+                      announce(`Renamed to ${saved.display_name}.`);
+                      stopRenamingDevice();
+                    }}
+                    onCancel={stopRenamingDevice}
+                  />
+                ) : (
+                  <>
+                    <p className="dv3-note">
+                      What Laika calls this computer. Every tool on it is shown under this name.
+                    </p>
+                    <div className="dx-actions dv3-panel-actions">
+                      <button
+                        type="button"
+                        ref={renameDeviceButton}
+                        className="dx-btn dx-btn-sm"
+                        aria-label={`Rename ${device.display_name}`}
+                        onClick={() => {
+                          setRenamingDevice(true);
+                        }}
+                      >
+                        Rename…
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </DetailsFold>
+        </div>
       </div>
     </SidePanel>
   );

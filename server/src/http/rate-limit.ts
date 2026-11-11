@@ -84,6 +84,13 @@ export const LIMITS = {
    * shared key here to drain.
    */
   toolRedeem: { perMinute: 10 },
+  /**
+   * The Time report (D-130, LAI-1135): every filter a person clicks is a read
+   * over up to a quarter of the organisation's time, so **30 a minute per
+   * person, a burst of 30**, on its own bucket — a browsing session never
+   * meets it, a loop does, and it never spends the session's budget.
+   */
+  timeReport: { perMinute: 30, burst: 30 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;

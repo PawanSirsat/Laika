@@ -20,6 +20,7 @@ import {
 } from './filter-keys.ts';
 import type { FilterChip } from './filter-chips.ts';
 import { FilterChips } from './FilterChips.tsx';
+import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -307,10 +308,13 @@ export function BoardToolbar({
   hiddenColumns,
   onHiddenColumns,
 }: BoardToolbarProps) {
-  const [open, setOpen] = useState<'filter' | 'group' | undefined>(undefined);
+  const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
   const filterButton = filterButtonRef;
   const groupButton = useRef<HTMLButtonElement>(null);
+  const membersButton = useRef<HTMLButtonElement>(null);
   const filterPop = useRef<HTMLDivElement>(null);
+  const membersPop = useRef<HTMLDivElement>(null);
+  const membersPopId = useId();
   const filterPopId = useId();
   const filterTitleId = useId();
 
@@ -322,7 +326,14 @@ export function BoardToolbar({
   const close = (returnFocus: boolean): void => {
     const was = open;
     setOpen(undefined);
-    if (returnFocus) (was === 'group' ? groupButton : filterButton).current?.focus();
+    if (returnFocus) {
+      (was === 'group'
+        ? groupButton
+        : was === 'members'
+          ? membersButton
+          : filterButton
+      ).current?.focus();
+    }
   };
   const box = useDismiss(open !== undefined, (reason) => {
     close(reason === 'escape');
@@ -344,8 +355,10 @@ export function BoardToolbar({
    * overhang, so it slides back by the overhang before it is painted.
    */
   useLayoutEffect(() => {
-    const pop = filterPop.current;
-    if (open !== 'filter' || pop === null) return;
+    // The Members popover (LAI-1146) hangs from the `+N` the same way.
+    const pop =
+      open === 'filter' ? filterPop.current : open === 'members' ? membersPop.current : null;
+    if (pop === null) return;
     const place = (): void => {
       // Measured from where it hangs, not from where it was last slid to.
       pop.style.translate = '';
@@ -586,7 +599,43 @@ export function BoardToolbar({
                 </button>
               );
             })}
-            {overflow > 0 && <span className="bt-member-more">+{overflow}</span>}
+            {/*
+            **The count opens the whole list** (LAI-1146). It was a figure,
+            and the owner clicked it on a space of twelve expecting the other
+            eight. A button now, anchored so its popover hangs from it.
+          */}
+            {overflow > 0 && (
+              <span className="bt-anchor">
+                <button
+                  ref={membersButton}
+                  type="button"
+                  className="bt-member-more"
+                  aria-label={`+${String(overflow)} more — show all ${String(members.length)} members`}
+                  aria-expanded={open === 'members'}
+                  aria-haspopup="dialog"
+                  aria-controls={open === 'members' ? membersPopId : undefined}
+                  onClick={() => {
+                    if (open === 'members') close(true);
+                    else setOpen('members');
+                  }}
+                >
+                  +{overflow}
+                </button>
+                {open === 'members' && (
+                  <MembersPopover
+                    id={membersPopId}
+                    popRef={membersPop}
+                    members={members}
+                    assignee={assignee}
+                    theme={theme}
+                    onAssignee={onAssignee}
+                    onClose={() => {
+                      close(true);
+                    }}
+                  />
+                )}
+              </span>
+            )}
           </div>
         )}
 

@@ -472,40 +472,6 @@
   outline-offset: 2px;
 }
 
-/* The create form sits under the header rather than over the board: it is
-   short, and a modal for two fields buys a focus trap and nothing else. */
-.new-task {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  margin-bottom: var(--space-4);
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-}
-
-.new-task-title {
-  flex: 1 1 18rem;
-  min-width: 0;
-}
-
-.new-task-title .input {
-  width: 100%;
-}
-
-/* The priority field is a `Dropdown` (LAI-726): its field look, at its own width. */
-.new-task-priority .dd-field {
-  width: auto;
-  min-width: 4.5rem;
-}
-
-.new-task .state {
-  flex: 1 1 100%;
-}
-
 /* ------------------------------------------- board header (prototype band B) */
 
 /* 186px × 31px with the magnifier and the `/` hint inside the field. */

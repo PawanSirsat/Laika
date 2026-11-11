@@ -62,6 +62,19 @@
   cursor: pointer;
 }
 
+.overflow-menu-label,
+.overflow-menu-hint {
+  display: block;
+}
+
+/* An item's second line (LAI-1152): what *Manage member…* leads to. */
+.overflow-menu-hint {
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
 .overflow-menu-item:hover:not([aria-disabled='true']),
 .overflow-menu-item:focus-visible {
   background: var(--bg-card-hover);

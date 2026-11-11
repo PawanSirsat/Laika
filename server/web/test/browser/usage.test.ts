@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import { PROTOTYPE_SAMPLES } from '../helpers/prototype-samples.ts';
 import { LAIKA, ONROUTE } from './capacity-org.ts';
 import { offered, pick } from './dropdown.ts';
 import {
@@ -415,9 +416,7 @@ const stat = async (page: Page, name: string): Promise<string> =>
 
 const rows = async (page: Page, section: string): Promise<string[]> =>
   (
-    await page
-      .locator(`.usage-card[data-section="${section}"] .usage-row .usage-row-name`)
-      .allInnerTexts()
+    await page.locator(`[data-section="${section}"] .usage-row .usage-row-name`).allInnerTexts()
   ).map((t) => t.trim());
 
 void describe('an owner', () => {
@@ -432,7 +431,17 @@ void describe('an owner', () => {
         await h.page.locator('.usage-tiles [data-stat="tokens"]').innerText(),
         /at least/i,
       );
-      assert.match(await h.page.locator('.usage-floor').innerText(), /at least/i);
+      // The floor is behind *How we count* (LAI-1127), named on the context line.
+      assert.match(await h.page.locator('.usage-context').innerText(), /counts are minimums/);
+      assert.equal(await h.page.locator('.usage-floor').count(), 0);
+      const how = h.page.getByRole('button', { name: 'How we count' });
+      assert.equal(await how.getAttribute('aria-expanded'), 'false');
+      await how.click();
+      assert.match(await h.page.locator('#usage-how.usage-floor').innerText(), /at least/i);
+      assert.equal(
+        await h.page.getByRole('button', { name: 'Hide details' }).getAttribute('aria-expanded'),
+        'true',
+      );
       // One bar a day of the range, each with its words for a screen reader.
       assert.equal(await h.page.locator('.usage-trend .usage-bar').count(), 30);
       assert.match(
@@ -463,9 +472,7 @@ void describe('an owner', () => {
       const agents = await rows(h.page, 'agents');
       assert.deepEqual(agents.slice(0, 2), ['Claude Code', 'Codex']);
       // Agents with no token source say so, not zero.
-      const noData = await h.page
-        .locator('.usage-card[data-section="agents"] [data-no-data]')
-        .allInnerTexts();
+      const noData = await h.page.locator('[data-section="agents"] [data-no-data]').allInnerTexts();
       assert.equal(noData.length, 2);
       for (const line of noData) assert.match(line, /no token data/);
       assert.deepEqual(await rows(h.page, 'models'), [
@@ -479,10 +486,120 @@ void describe('an owner', () => {
       );
       // A name is the way into their profile, for a reader who may open it.
       assert.equal(
-        await h.page
-          .locator('.usage-card[data-section="developers"] a[href="/people?user=u2"]')
-          .count(),
+        await h.page.locator('[data-section="developers"] a[href="/people?user=u2"]').count(),
         1,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Breakdown is one card with tabs — Space, Developer, Agent, Model — arrow keys move between them (LAI-1127)', async () => {
+    const h = await open('/insights?tab=usage', ownerStub());
+    try {
+      await ready(h.page);
+      const card = h.page.locator('.usage-card[data-section="breakdown"]');
+      const list = card.getByRole('tablist', { name: 'Break down by' });
+      const tabs = (await list.getByRole('tab').allInnerTexts()).map((t) => t.trim());
+      assert.deepEqual(tabs, ['Space', 'Developer', 'Agent', 'Model']);
+      // By space first, and the only panel drawn.
+      const space = card.getByRole('tab', { name: 'Space' });
+      assert.equal(await space.getAttribute('aria-selected'), 'true');
+      assert.equal(await card.locator('[role="tabpanel"]:visible').count(), 1);
+      assert.ok(await card.locator('[data-section="spaces"]').isVisible());
+      // One tab stop: only the chosen tab is in the order.
+      assert.deepEqual(
+        await list.getByRole('tab').evaluateAll((els) => els.map((el) => el.tabIndex)),
+        [0, -1, -1, -1],
+      );
+
+      await space.focus();
+      await h.page.keyboard.press('ArrowRight');
+      const developer = card.getByRole('tab', { name: 'Developer' });
+      assert.equal(await developer.getAttribute('aria-selected'), 'true');
+      assert.ok(await developer.evaluate((el) => el === document.activeElement));
+      assert.ok(await card.locator('[data-section="developers"]').isVisible());
+      assert.ok(!(await card.locator('[data-section="spaces"]').isVisible()));
+      assert.match(await text(h.page, '[data-section="developers"]'), /By name/);
+
+      await h.page.keyboard.press('End');
+      assert.equal(
+        await card.getByRole('tab', { name: 'Model' }).getAttribute('aria-selected'),
+        'true',
+      );
+      await h.page.keyboard.press('ArrowRight');
+      assert.equal(
+        await space.getAttribute('aria-selected'),
+        'true',
+        'the last wraps to the first',
+      );
+      await card.getByRole('tab', { name: 'Agent' }).click();
+      assert.ok(await card.locator('[data-section="agents"]').isVisible());
+      // The panel is named by its tab.
+      assert.equal(
+        await card.locator('[data-section="agents"]').getAttribute('aria-labelledby'),
+        await card.getByRole('tab', { name: 'Agent' }).getAttribute('id'),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the design’s order, and none of its sample data on the page (LAI-1127)', async () => {
+    const h = await open('/insights?tab=usage', {
+      ...ownerStub(),
+      '/api/v1/me/token-alerts': () => ({ alerts: ALERTS }),
+    });
+    try {
+      await ready(h.page);
+      await h.page.locator('.usage-alert').first().waitFor({ timeout: 10_000 });
+      // KPI strip, then the day chart, alerts beside top tasks, the breakdown
+      // beside cache, accepted cost, budgets — then only the reader's own.
+      const order = await h.page
+        .locator(
+          '.usage > *, .usage .usage-pair > *, .usage .usage-you > *, .usage .usage-you .usage-pair > *',
+        )
+        .evaluateAll((els: Element[]): string[] =>
+          els
+            .map((el) => el.getAttribute('data-section') ?? el.classList.item(0) ?? '')
+            .filter((name) => name !== 'usage-pair' && name !== ''),
+        );
+      assert.deepEqual(order, [
+        'usage-context',
+        'usage-tiles',
+        'usage-telemetry',
+        'trend',
+        'alerts',
+        'tasks',
+        'breakdown',
+        'cache',
+        'accepted',
+        'budgets',
+        'usage-you',
+        'usage-you-divider',
+        'mine',
+        'plan-limit',
+      ]);
+      assert.deepEqual(await h.page.locator('.usage-tiles .usage-stat-label').allInnerTexts(), [
+        'Tokens',
+        'Cache reads',
+        'Unattributed',
+        'Per day',
+        'Cost',
+        'From cache',
+      ]);
+      assert.match(await text(h.page, '.usage-you-divider'), /you · visible only to you/i);
+      // Rework and runaway counts sit beside accepted cost, as designed.
+      const accepted = h.page.locator('.usage-card[data-section="accepted"]');
+      assert.equal(await accepted.locator('.usage-side [data-section="rework"]').count(), 1);
+      assert.equal(await accepted.locator('.usage-side [data-section="runaway"]').count(), 1);
+
+      // Every panel and the folded text included: nothing from the prototype.
+      const all = (await h.page.locator('.usage-page').textContent()) ?? '';
+      assert.ok(all.includes('Breakdown'), 'the page was not read');
+      assert.deepEqual(
+        PROTOTYPE_SAMPLES.filter((n) => all.includes(n)),
+        [],
       );
     } finally {
       await h.close();
@@ -525,7 +642,7 @@ void describe('an owner', () => {
     const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
-      const card = h.page.locator('.usage-card[data-section="spaces"]');
+      const card = h.page.locator('[data-section="spaces"]');
       assert.deepEqual(await rows(h.page, 'spaces'), ['Laika', 'Onroute', 'Outside any space']);
       const values = (await card.locator('.usage-row-value').allInnerTexts()).map((v) =>
         v.replace(/\s+/g, ' ').trim(),
@@ -586,7 +703,7 @@ void describe('an owner', () => {
     });
     try {
       await ready(h.page);
-      const card = h.page.locator('.usage-card[data-section="spaces"]');
+      const card = h.page.locator('[data-section="spaces"]');
       await card.locator('.usage-row').first().waitFor();
       // Wait for the count it asserts, not the first row (LAI-715).
       await until(async () => (await card.locator('.usage-row').count()) === 4);
@@ -617,7 +734,7 @@ void describe('an owner', () => {
     try {
       await ready(h.page);
       assert.equal(await stat(h.page, 'tokens'), '12M');
-      assert.equal(await h.page.locator('.usage-card[data-section="spaces"]').count(), 0);
+      assert.equal(await h.page.locator('[data-section="spaces"]').count(), 0);
       await pick(h.page.getByRole('combobox', { name: 'Space' }), '');
       await until(async () => (await stat(h.page, 'tokens')) === '255M');
       assert.equal(await stat(h.page, 'tokens'), '255M');
@@ -704,10 +821,7 @@ void describe('a member', () => {
       const space = h.page.getByRole('combobox', { name: 'Space' });
       assert.deepEqual(await offered(space), ['Laika', 'Onroute']);
       await h.page.keyboard.press('Escape');
-      assert.equal(
-        await h.page.locator('.usage-card[data-section="developers"] .usage-row').count(),
-        0,
-      );
+      assert.equal(await h.page.locator('[data-section="developers"] .usage-row').count(), 0);
       assert.match(await h.page.locator('.usage-page').innerText(), /owners and admins/i);
       // Every read named a space: the organisation is never asked for.
       const reads = h.calls.filter((c) => c.path === '/api/v1/usage');
@@ -820,9 +934,9 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       );
       assert.match(await text(h.page, '[data-telemetry]'), /nothing is counted twice/);
       // Each model priced; each person's, for an owner only.
-      assert.match(await text(h.page, '.usage-card[data-section="models"]'), /\$0\.42/);
-      assert.match(await text(h.page, '.usage-card[data-section="models"]'), /API-equivalent/);
-      assert.match(await text(h.page, '.usage-card[data-section="developers"]'), /\$2,400/);
+      assert.match(await text(h.page, '[data-section="models"]'), /\$0\.42/);
+      assert.match(await text(h.page, '[data-section="models"]'), /API-equivalent/);
+      assert.match(await text(h.page, '[data-section="developers"]'), /\$2,400/);
 
       const accepted = await text(h.page, '.usage-card[data-section="accepted"]');
       assert.match(accepted, /Laika\s+6\s+\$10\.40\s+\$62\.40/);
@@ -830,7 +944,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       // An owner on a session: every agent its own row, nothing folded.
       assert.doesNotMatch(accepted, /fewer than 3 people/);
       assert.equal(await h.page.locator('[data-withheld]').count(), 0);
-      assert.doesNotMatch(await text(h.page, '.usage-card[data-section="agents"]'), /fewer than/);
+      assert.doesNotMatch(await text(h.page, '[data-section="agents"]'), /fewer than/);
 
       assert.match(
         await text(h.page, '.usage-card[data-section="cache"]'),
@@ -848,7 +962,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       // All spaces: read-only.
       assert.equal(await budgets.locator('.budget-editor').count(), 0);
 
-      const runaway = await text(h.page, '.usage-card[data-section="runaway"]');
+      const runaway = await text(h.page, '[data-section="runaway"]');
       assert.match(runaway, /Laika\s+2 alerts/);
       assert.doesNotMatch(runaway, /LAI-769|Ada|Bea/);
     } finally {
@@ -860,7 +974,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
     const h = await open('/insights?tab=usage', memberStub());
     try {
       await ready(h.page);
-      assert.equal(await h.page.locator('.usage-card[data-section="runaway"]').count(), 0);
+      assert.equal(await h.page.locator('[data-section="runaway"]').count(), 0);
       assert.equal(await h.page.locator('[data-telemetry]').count(), 0);
       await h.page.locator('.usage-card[data-section="budgets"]').waitFor();
       await until(() => h.calls.some((c) => c.path === '/api/v1/projects/laika/budgets'));
@@ -868,7 +982,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
         await h.page.locator('.usage-card[data-section="budgets"] .budget-editor').count(),
         0,
       );
-      assert.doesNotMatch(await text(h.page, '.usage-card[data-section="developers"]'), /\$/);
+      assert.doesNotMatch(await text(h.page, '[data-section="developers"]'), /\$/);
     } finally {
       await h.close();
     }
@@ -891,8 +1005,10 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
         'claude-opus-5-5',
         'Other (fewer than 3 people)',
       ]);
-      // A model with no price and only cache reads (review, ALSO FIX 7).
-      const models = await text(h.page, '.usage-card[data-section="models"]');
+      // A model with no price and only cache reads (review, ALSO FIX 7) — on
+      // the Model tab, drawn, so its words are laid out (LAI-1127).
+      await h.page.getByRole('tab', { name: 'Model' }).click();
+      const models = await text(h.page, '[data-section="models"]');
       assert.match(models, /Other \(fewer than 3 people\)\s+0\s+no price/);
       const folded = h.page.locator('.usage-card[data-section="accepted"] tr[data-few-people]');
       assert.equal(await folded.count(), 1);
@@ -970,7 +1086,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
     }
   });
 
-  void test('alerts for the person: a banner with a way to each, put away one at a time, and the rail’s count', async () => {
+  void test('Budget alerts: the person’s own, most spent first, a way to each, put away one at a time, and the rail’s count', async () => {
     let open_ = [...ALERTS];
     const dismissed: string[] = [];
     const h = await open('/insights?tab=usage', {
@@ -984,18 +1100,34 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
     });
     try {
       await ready(h.page);
-      const banner = h.page.locator('[data-section="alerts"]');
-      await banner.waitFor({ timeout: 10_000 });
-      assert.match(await banner.innerText(), /For you · 2 alerts/);
-      assert.match(
-        await banner.innerText(),
-        /LAI-769: your agent passed the task’s p95 of 5\.99M at 7M with nothing landed for an hour\./,
+      const card = h.page.locator('.usage-card[data-section="alerts"]');
+      await card.locator('.usage-alert').first().waitFor({ timeout: 10_000 });
+      assert.match(await card.innerText(), /Budget alerts/);
+      // Two alerts; the 80% one has not reached its budget, so none is over.
+      assert.equal(await text(h.page, '[data-alert-summary]'), '2 alerts · 0 over budget');
+      // Most spent against its limit first: the runaway (117% of its p95), then 84%.
+      const marks = (await card.locator('.usage-alert-mark').allInnerTexts()).map((t) => t.trim());
+      assert.deepEqual(marks, ['p95', '84%']);
+      const lines = (await card.locator('.usage-alert-line').allInnerTexts()).map((t) =>
+        t.replace(/\s+/g, ' ').trim(),
       );
-      assert.match(
-        await banner.innerText(),
-        /LAI-770 reached 80% of its budget — 2\.1M of 2\.5M\./,
+      assert.deepEqual(lines, [
+        'LAI-769 Token usage, phase 1 · runaway agent',
+        'LAI-770 Attribution',
+      ]);
+      assert.match(await card.locator('.usage-alert').nth(1).innerText(), /2\.1M \/ 2\.5M/);
+      // The whole sentence is still the row's title, for a pointer.
+      assert.equal(
+        await card.locator('.usage-alert').nth(1).getAttribute('title'),
+        'LAI-770 reached 80% of its budget — 2.1M of 2.5M.',
       );
-      assert.match(await banner.innerText(), /never reported on you/);
+      assert.equal(
+        await card.locator('.usage-alert-line').nth(1).getAttribute('href'),
+        '/board?project=laika&task=t2',
+      );
+      assert.match(await text(h.page, '.usage-alerts-foot'), /Soft alerts · nothing is blocked/);
+      // Two alerts fit: nothing is folded away.
+      assert.equal(await card.getByRole('button', { name: /^Show all/ }).count(), 0);
       // Usage is Insights' tab since LAI-796; the badge rides on Insights.
       const badge = h.page.locator('a[href="/insights"] .sidebar-count');
       // The figure, then the visually hidden name the rail adds for a reader.
@@ -1003,15 +1135,70 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       await until(async () => (await badge.count()) > 0);
       assert.equal(await count(), '2');
 
-      await banner
+      await card
         .locator('.usage-alert', { hasText: 'LAI-770' })
-        .getByRole('button', { name: 'Dismiss' })
+        .getByRole('button', { name: 'Dismiss LAI-770' })
         .click();
       await until(() => dismissed.length === 1);
       assert.deepEqual(dismissed, ['POST']);
       await until(async () => (await count()) === '1');
       assert.equal(await count(), '1');
-      assert.equal(await banner.locator('.usage-alert').count(), 1);
+      assert.equal(await card.locator('.usage-alert').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Budget alerts: over budget is said in words, eight fold to six with Show all 8, and Dismiss all puts each away', async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      id: `b-${String(i)}`,
+      kind: 'budget',
+      scope: 'task',
+      threshold: i < 3 ? 100 : 80,
+      tokens: (i < 3 ? 3_000_000 : 2_100_000) - i * 10_000,
+      limit_tokens: 2_500_000,
+      created_at: NOW_MS - 600_000,
+      project: { slug: 'laika', name: 'Laika' },
+      task: { id: `t${String(i)}`, key: `LAI-90${String(i)}`, title: `Task ${String(i)}` },
+      sprint: null,
+    }));
+    let open_ = [...many];
+    const dismissed: string[] = [];
+    const routes: Record<string, ApiStub[string]> = {
+      ...ownerStub(),
+      '/api/v1/me/token-alerts': () => ({ alerts: open_ }),
+    };
+    for (const a of many) {
+      routes[`/api/v1/me/token-alerts/${a.id}/dismiss`] = () => {
+        dismissed.push(a.id);
+        open_ = open_.filter((o) => o.id !== a.id);
+        return reply(204, null);
+      };
+    }
+    const h = await open('/insights?tab=usage', routes);
+    try {
+      await ready(h.page);
+      const card = h.page.locator('.usage-card[data-section="alerts"]');
+      await card.locator('.usage-alert').first().waitFor({ timeout: 10_000 });
+      assert.equal(await text(h.page, '[data-alert-summary]'), '8 alerts · 3 over budget');
+      assert.equal(await card.locator('.usage-alert').count(), 6);
+      // Over budget is in the words, not only the red.
+      assert.match(
+        (await card.locator('.usage-alert[data-over="true"]').first().textContent()) ?? '',
+        /over budget/,
+      );
+      const more = card.getByRole('button', { name: 'Show all 8' });
+      assert.equal(await more.getAttribute('aria-expanded'), 'false');
+      await more.click();
+      assert.equal(await card.locator('.usage-alert').count(), 8);
+      await card.getByRole('button', { name: 'Show fewer' }).click();
+      assert.equal(await card.locator('.usage-alert').count(), 6);
+
+      await card.getByRole('button', { name: 'Dismiss all' }).click();
+      await until(() => dismissed.length === 8);
+      assert.deepEqual([...dismissed].sort(), many.map((a) => a.id).sort());
+      await until(async () => (await card.locator('.usage-alert').count()) === 0);
+      assert.match(await card.innerText(), /No budget alerts for you/);
     } finally {
       await h.close();
     }
@@ -1180,9 +1367,7 @@ void describe('both themes, laptop and phone', () => {
             .evaluate((el) => getComputedStyle(el).backgroundColor);
           assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the bars have no colour`);
           // By space (LAI-814): drawn at every width, its bars in colour.
-          const spaceBar = h.page
-            .locator('.usage-card[data-section="spaces"] .usage-row-bar')
-            .first();
+          const spaceBar = h.page.locator('[data-section="spaces"] .usage-row-bar').first();
           assert.ok(
             (await spaceBar.evaluate((el) => el.getBoundingClientRect().width)) > 0,
             `${theme} at ${String(width)}: By space draws no bar`,
