@@ -340,12 +340,29 @@ export function ProjectContextPanel({
 
             {mayEdit ? (
               <div className="ctx-actions">
-                {dirty && <span className="ctx-dirty">Unsaved changes</span>}
-                {savedAt !== undefined && !dirty && (
-                  <span className="ctx-saved" role="status">
-                    Saved
-                  </span>
-                )}
+                {/*
+                  **One status, always in the DOM** (LAI-1196): Saving…, then
+                  Saved as rN, or Unsaved changes — so a screen reader hears
+                  each change and a sighted reader sees which revision their
+                  text became, the one the history below lists first.
+                */}
+                <span
+                  className={
+                    saving ? 'ctx-status' : dirty ? 'ctx-status ctx-dirty' : 'ctx-status ctx-saved'
+                  }
+                  role="status"
+                  data-save-state={
+                    saving ? 'saving' : dirty ? 'dirty' : savedAt !== undefined ? 'saved' : 'idle'
+                  }
+                >
+                  {saving
+                    ? 'Saving…'
+                    : dirty
+                      ? 'Unsaved changes'
+                      : savedAt !== undefined
+                        ? `Saved as r${String(loaded.revision)}`
+                        : ''}
+                </span>
                 <button
                   type="button"
                   className="ctx-save"
@@ -363,7 +380,7 @@ export function ProjectContextPanel({
                  told why the editor is read-only, which is a fact about their
                  role rather than a fault. */
               <p className="ctx-readonly">
-                Read-only. Editing the context document needs the lead role on this project.
+                Read-only. Editing the context document needs the Space admin role on this space.
               </p>
             )}
           </footer>
