@@ -331,6 +331,24 @@ function InboxRoute() {
     if (alias !== undefined) setParams(alias);
   }, [alias?.toString()]);
   const tab = currentTab(INBOX_TABS, params, holds);
+  // An aliased address is rewritten before anything is read: mounting the
+  // queue for the one render before the effect would fetch it and flash it
+  // (review round 1, item 6). The target is always Review.
+  if (alias !== undefined) {
+    return (
+      <InboxScreen
+        tabs={visibleTabs(INBOX_TABS, holds)}
+        current="review"
+        counts={{
+          review: inboxCount(reviewDecidable, undefined, handoffsWaiting(handoffCounts)),
+          unlisted: unlistedOpen,
+        }}
+        onNavigate={navigate}
+      >
+        <LoadingState shape="row" count={3} label="Loading hand-offs" />
+      </InboxScreen>
+    );
+  }
   return (
     <InboxScreen
       tabs={visibleTabs(INBOX_TABS, holds)}

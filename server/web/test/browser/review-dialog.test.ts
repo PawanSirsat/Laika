@@ -134,9 +134,13 @@ function server(
     { task: PROVEN, round: ROUND, waiting_since: NOW - 3 * HOUR },
     { task: LAST, round: null, waiting_since: NOW - HOUR },
   ],
-): { stub: ApiStub; posts: () => string[] } {
+): { stub: ApiStub; posts: () => string[]; drop: (id: string) => void } {
   const posts: string[] = [];
   let rows = first;
+  /** Another reader decided it: the next read no longer lists it. */
+  const drop = (id: string): void => {
+    rows = rows.filter((r) => r.task.id !== id);
+  };
   const decide = (id: string) => (call: { method: string; path: string }) => {
     posts.push(`${call.method} ${call.path}`);
     const row = rows.find((r) => r.task.id === id);
@@ -167,7 +171,26 @@ function server(
     '/api/v1/tasks/t3/accept': decide('t3'),
     '/api/v1/tasks/t2/send-back': decide('t2'),
   };
-  return { stub, posts: () => posts };
+  return { stub, posts: () => posts, drop };
+}
+
+/** The page re-reads the queue when the tab comes back; this is that signal. */
+const reread = (page: Page) =>
+  page.evaluate(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+
+/** Hold every accept until the returned release is called. */
+async function holdAccepts(page: Page): Promise<() => void> {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  await page.route('**/api/v1/tasks/*/accept', async (route) => {
+    await held;
+    await route.continue().catch(() => undefined);
+  });
+  return release;
 }
 
 const dialog = (page: Page) => page.locator('[data-dialog="review"]');
@@ -415,6 +438,117 @@ void describe('the Review dialog (LAI-1169)', () => {
       );
       assert.equal(await d.count(), 0);
       assert.equal(new URL(h.page.url()).searchParams.get('item'), null);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('keys work after a click on the text, and after a — Escape closes an in-flight accept, which does not reopen it', async () => {
+    const s = server();
+    const h = await openOn('LC-1', s.stub);
+    try {
+      const d = dialog(h.page);
+      // A click on the summary text: focus stays in the box, so j and Escape still read.
+      await d.locator('.rd-sub').click();
+      assert.equal(await focusedIn(h.page), true, 'a click on the text dropped focus to the page');
+      await h.page.keyboard.press('j');
+      await eventually(async () => (await d.getAttribute('data-task')) === 'LC-2');
+
+      // a, with the request held: Accept is disabled, focus is on the heading, Escape closes.
+      const release = await holdAccepts(h.page);
+      await h.page.keyboard.press('a');
+      await eventually(async () => (await d.getAttribute('aria-busy')) === 'true');
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.classList.contains('rd-title')),
+        true,
+        'focus left the box when Accept was disabled',
+      );
+      // Prev / Next and their keys are held while the decision is out (item 4).
+      assert.equal(await d.getByRole('button', { name: 'Next' }).isDisabled(), true);
+      await h.page.keyboard.press('j');
+      await new Promise((done) => setTimeout(done, 150));
+      assert.equal(await d.getAttribute('data-task'), 'LC-2', 'j moved during a decision');
+      await h.page.keyboard.press('Escape');
+      await d.waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(new URL(h.page.url()).searchParams.get('item'), null);
+
+      // The decision lands after the close: the row leaves, the dialog stays closed.
+      release();
+      await h.page
+        .locator('.rev-row[data-task="LC-2"]')
+        .waitFor({ state: 'detached', timeout: 10_000 });
+      await new Promise((done) => setTimeout(done, 500));
+      assert.equal(await d.count(), 0, 'a closed dialog reopened when the decision landed');
+      assert.equal(new URL(h.page.url()).searchParams.get('item'), null);
+      assert.deepEqual(s.posts(), ['POST /api/v1/tasks/t2/accept']);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('the × during an in-flight accept keeps it closed', async () => {
+    const s = server();
+    const h = await openOn('LC-1', s.stub);
+    try {
+      const d = dialog(h.page);
+      const release = await holdAccepts(h.page);
+      await d.getByRole('button', { name: 'Accept', exact: true }).click();
+      await eventually(async () => (await d.getAttribute('aria-busy')) === 'true');
+      await d.getByRole('button', { name: 'Close' }).click();
+      await d.waitFor({ state: 'detached', timeout: 10_000 });
+      release();
+      await h.page
+        .locator('.rev-row[data-task="LC-1"]')
+        .waitFor({ state: 'detached', timeout: 10_000 });
+      await new Promise((done) => setTimeout(done, 500));
+      assert.equal(await d.count(), 0, 'reopened after ×');
+      assert.equal(new URL(h.page.url()).searchParams.get('item'), null);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a row a poll took before the decision landed is skipped on advance', async () => {
+    const s = server();
+    const h = await openOn('LC-1', s.stub);
+    try {
+      const d = dialog(h.page);
+      const release = await holdAccepts(h.page);
+      await h.page.keyboard.press('a');
+      await eventually(async () => (await d.getAttribute('aria-busy')) === 'true');
+      // Meanwhile somebody else decides LC-2, and the page re-reads.
+      s.drop('t2');
+      await reread(h.page);
+      await h.page
+        .locator('.rev-row[data-task="LC-2"]')
+        .waitFor({ state: 'detached', timeout: 10_000 });
+      release();
+      await eventually(async () => (await d.getAttribute('data-task')) === 'LC-3');
+      assert.equal(await d.getAttribute('data-task'), 'LC-3');
+      assert.equal(new URL(h.page.url()).searchParams.get('item'), 't3');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a poll that takes the open item: the dialog says so, and Next goes to the row that was after it', async () => {
+    const s = server();
+    const h = await openOn('LC-2', s.stub);
+    try {
+      const d = dialog(h.page);
+      s.drop('t2');
+      await reread(h.page);
+      await d.locator('.rd-gone').waitFor({ timeout: 10_000 });
+      assert.match(await d.locator('.rd-gone').innerText(), /This task left the queue/);
+      assert.equal(await d.getAttribute('data-task'), 'LC-2');
+      assert.equal(await d.getByRole('button', { name: 'Accept', exact: true }).count(), 0);
+      assert.equal(await d.getByRole('button', { name: 'Next' }).isDisabled(), false);
+      await d.getByRole('button', { name: 'Next' }).click();
+      await eventually(async () => (await d.getAttribute('data-task')) === 'LC-3');
+      assert.match(await position(h.page).innerText(), /^2 of 2$/);
     } finally {
       await h.close();
     }

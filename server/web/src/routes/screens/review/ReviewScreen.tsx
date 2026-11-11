@@ -104,7 +104,12 @@ export function ReviewScreen({
   /** A deep link to a task no longer waiting: said once above the queue. */
   const [notice, setNotice] = useState<string | null>(null);
   const [run, setRun] = useState<BulkRun | undefined>(undefined);
-  const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Every decision in flight, by task id (review round 1, item 4): one id let
+   * `a`, `j`, `a` re-enable the second Accept when the first answered. The
+   * dialog holds Prev/Next and its keys while the set is not empty.
+   */
+  const [inFlight, setInFlight] = useState<ReadonlySet<string>>(() => new Set());
   const [failure, setFailure] = useState<{ taskId: string; message: string } | null>(null);
   const [sending, setSending] = useState<ReviewQueueItem | null>(null);
   const [sendError, setSendError] = useState<string | undefined>(undefined);
@@ -117,6 +122,18 @@ export function ReviewScreen({
   const view = reviewView(params);
   const decidable = view === 'mine';
   const openId = itemParam(params);
+  /*
+   * Read at response time, not at click time (review round 1, item 2): a
+   * decision's `.then` ran 2.5 s after `a`, with the `openId` of the render
+   * it was made in — so a dialog the reader had closed meanwhile reopened on
+   * the next row. These are the live values.
+   */
+  const openIdRef = useRef(openId);
+  openIdRef.current = openId;
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  /** Where the open item last stood, for Next once a poll has taken it. */
+  const lastIndex = useRef(0);
 
   const load = useCallback((signal?: AbortSignal) => {
     getReviewQueue(signal)
@@ -168,6 +185,8 @@ export function ReviewScreen({
   );
   const groups = useMemo(() => groupBySpace(shown), [shown]);
   const order = useMemo(() => flatOrder(groups), [groups]);
+  const orderRef = useRef(order);
+  orderRef.current = order;
   // What a bulk Accept reaches: the ticked rows still on screen and decidable.
   const effective = useMemo(
     () =>
@@ -241,37 +260,53 @@ export function ReviewScreen({
   };
 
   const openTask = (id: string | null, push = false): void => {
-    setParams(withItem(params, id), push ? { push: true } : undefined);
+    setParams(withItem(paramsRef.current, id), push ? { push: true } : undefined);
+  };
+
+  const begin = (id: string): void => {
+    setInFlight((s) => new Set([...s, id]));
+  };
+  const end = (id: string): void => {
+    setInFlight((s) => {
+      const next = new Set(s);
+      next.delete(id);
+      return next;
+    });
   };
 
   /**
    * After a decision in the dialog: the row leaves at once rather than with
    * the re-read, and the dialog moves to the next row **as the page drew them
-   * before the decision** — or closes at the end (`advanceAfterDecide`). The
-   * re-read and the sidebar's count follow either way.
+   * when the decision was made** (`before`) — skipping any a poll has taken
+   * since (`present`, the rows drawn now) — or closes at the end
+   * (`advanceAfterDecide`). Only if the dialog is **still on that task**: a
+   * reader who closed it while the request was out is not shown it again.
+   * The re-read and the sidebar's count follow either way.
    */
-  const decided = (id: string): void => {
-    const next = advanceAfterDecide(order, id);
+  const decided = (id: string, before: readonly string[]): void => {
+    const present = new Set(orderRef.current.filter((other) => other !== id));
+    const next = advanceAfterDecide(before, id, present);
     setQueue((q) =>
       q === undefined ? q : { ...q, tasks: q.tasks.filter((item) => item.task.id !== id) },
     );
-    if (openId === id) openTask(next);
+    if (openIdRef.current === id) openTask(next);
     load();
     onChanged?.();
   };
 
   const accept = (item: ReviewQueueItem): void => {
-    setBusy(item.task.id);
+    const before = order;
+    begin(item.task.id);
     setFailure(null);
     acceptReview(item.task.id)
       .then(() => {
-        decided(item.task.id);
+        decided(item.task.id, before);
       })
       .catch((cause: unknown) => {
         setFailure({ taskId: item.task.id, message: errorText(cause) });
       })
       .finally(() => {
-        setBusy(null);
+        end(item.task.id);
       });
   };
 
@@ -303,18 +338,19 @@ export function ReviewScreen({
   const sendBack = (reason: string): void => {
     if (sending === null) return;
     const item = sending;
-    setBusy(item.task.id);
+    const before = order;
+    begin(item.task.id);
     setSendError(undefined);
     sendBackReview(item.task.id, reason)
       .then(() => {
         setSending(null);
-        decided(item.task.id);
+        decided(item.task.id, before);
       })
       .catch((cause: unknown) => {
         setSendError(errorText(cause));
       })
       .finally(() => {
-        setBusy(null);
+        end(item.task.id);
       });
   };
 
@@ -361,6 +397,7 @@ export function ReviewScreen({
   const copy = SCREEN_COPY['/review'];
   const running = run?.phase === 'running';
   const position = openId === null ? null : positionOf(order, openId);
+  if (position !== null) lastIndex.current = position.index;
 
   /** Where focus goes when the dialog closes: the row, else the first row, else a heading. */
   const restoreFromDialog = (): HTMLElement | null => {
@@ -654,8 +691,8 @@ export function ReviewScreen({
           taskKey={openedKey.current ?? openId}
           position={position}
           now={now}
-          deciding={busy === openId}
-          held={running}
+          deciding={openId !== null && inFlight.has(openId)}
+          held={running || inFlight.size > 0}
           failure={failure?.taskId === openId ? failure.message : undefined}
           nameOf={nameOf}
           boardHref={boardHref}
@@ -664,9 +701,12 @@ export function ReviewScreen({
             if (position?.prev != null) openTask(position.prev);
           }}
           onNext={() => {
-            // From a vanished item the next row is the first still drawn
-            // after where it stood; with none left, close.
-            const next = openItem === undefined ? (order[0] ?? null) : (position?.next ?? null);
+            // From a vanished item: the row now drawn where it stood — the one
+            // that was after it — else the first; with none left, close.
+            const next =
+              openItem === undefined
+                ? (order[lastIndex.current] ?? order[0] ?? null)
+                : (position?.next ?? null);
             openTask(next);
           }}
           onClose={() => {
@@ -684,13 +724,21 @@ export function ReviewScreen({
             <SendBackDialog
               taskKey={sending.task.key}
               title={sending.task.title}
-              busy={busy === sending.task.id}
+              busy={inFlight.has(sending.task.id)}
               error={sendError}
               onSend={sendBack}
               onClose={() => {
                 setSending(null);
               }}
-              restoreFocus={() => opener.current}
+              // The Send back… button, unless the decision it sent has
+              // disabled it meanwhile — then the dialog's heading, so focus
+              // stays in the box (review round 1, item 1).
+              restoreFocus={() => {
+                const button = opener.current;
+                return button !== null && button.isConnected && !button.matches(':disabled')
+                  ? button
+                  : document.querySelector<HTMLElement>('[data-dialog="review"] .rd-title');
+              }}
             />
           )}
         </ReviewDialog>

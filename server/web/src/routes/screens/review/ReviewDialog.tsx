@@ -118,13 +118,13 @@ export function ReviewDialog({
         onClose();
         return;
       case 'next':
-        if (item === undefined || position?.next != null) onNext();
+        if (!busy && (item === undefined || position?.next != null)) onNext();
         return;
       case 'prev':
-        if (position?.prev != null) onPrev();
+        if (!busy && position?.prev != null) onPrev();
         return;
       case 'accept':
-        if (item !== undefined && decidable && !busy) onAccept(item);
+        if (item !== undefined && decidable && !busy) accept(item);
         return;
       case 'send_back':
         // Focus comes back to Send back… when that dialog closes, wherever
@@ -134,6 +134,18 @@ export function ReviewDialog({
         }
         return;
     }
+  };
+
+  /*
+   * Focus moves to the heading **before** Accept is disabled by the request
+   * (review round 1, item 1): a disabled control drops focus to `<body>`, and
+   * from there no key — Escape included — reaches this box. The box itself
+   * is focusable (`tabIndex={-1}`) for the same reason: a click on its text
+   * must leave focus inside it, not on the page behind.
+   */
+  const accept = (target: ReviewQueueItem): void => {
+    heading.current?.focus();
+    onAccept(target);
   };
 
   const agent = item?.round === null || item === undefined ? null : roundAgentName(item.round);
@@ -151,6 +163,7 @@ export function ReviewDialog({
         aria-busy={busy || undefined}
         data-dialog="review"
         data-task={taskKey}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <header className="rd-head">
@@ -225,7 +238,7 @@ export function ReviewDialog({
             <button
               type="button"
               className="bar-control"
-              disabled={position?.prev == null}
+              disabled={busy || position?.prev == null}
               onClick={onPrev}
             >
               Prev
@@ -240,7 +253,7 @@ export function ReviewDialog({
             <button
               type="button"
               className="bar-control"
-              disabled={item !== undefined && position?.next == null}
+              disabled={busy || (item !== undefined && position?.next == null)}
               onClick={onNext}
             >
               Next
@@ -278,7 +291,7 @@ export function ReviewDialog({
                   className="bar-control bar-control-primary"
                   disabled={busy}
                   onClick={() => {
-                    onAccept(item);
+                    accept(item);
                   }}
                 >
                   {deciding && <Spinner size="sm" />}
