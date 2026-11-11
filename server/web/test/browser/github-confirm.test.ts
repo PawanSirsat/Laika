@@ -424,7 +424,9 @@ void describe('the proof GitHub confirmed (D-083)', () => {
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
-      const proof = h.page.locator('.rev-detail [data-section="proof"]');
+      // The proof opens in the Review dialog (LAI-1169), not under the row.
+      const dialog = h.page.locator('[data-dialog="review"]');
+      const proof = dialog.locator('[data-section="proof"]');
       await proof.locator('.ev-round').waitFor({ timeout: 10_000 });
 
       await until(
@@ -442,9 +444,9 @@ void describe('the proof GitHub confirmed (D-083)', () => {
 
       for (const theme of ['Light', 'Dark']) {
         await setTheme(h.page, theme);
-        const [gr, gg, gb] = await colourOf(h.page, '.rev-detail .ev-state-confirmed');
-        const [rr, rg, rb] = await colourOf(h.page, '.rev-detail .ev-state-failed');
-        const [cr, cg, cb] = await colourOf(h.page, '.rev-detail .ev-state-claimed');
+        const [gr, gg, gb] = await colourOf(h.page, '[data-dialog="review"] .ev-state-confirmed');
+        const [rr, rg, rb] = await colourOf(h.page, '[data-dialog="review"] .ev-state-failed');
+        const [cr, cg, cb] = await colourOf(h.page, '[data-dialog="review"] .ev-state-claimed');
         assert.ok(gg > gr && gg > gb, `${theme}: confirmed is green, got ${String([gr, gg, gb])}`);
         assert.ok(rr > rg && rr > rb, `${theme}: failed is red, got ${String([rr, rg, rb])}`);
         assert.ok(
@@ -453,9 +455,13 @@ void describe('the proof GitHub confirmed (D-083)', () => {
         );
       }
 
-      await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
-      await h.page.locator('.rev-line', { hasText: 'LC-2' }).click();
-      await proof.locator('.ev-ci').waitFor({ timeout: 10_000 });
+      // The next row, from inside the dialog.
+      await dialog.getByRole('button', { name: 'Next' }).click();
+      await until(async () => (await dialog.getAttribute('data-task')) === 'LC-2');
+      assert.equal(await dialog.getAttribute('data-task'), 'LC-2');
+      await until(async () =>
+        (await proof.locator('.ev-ci').innerText()).includes('3 of 3 checks passed'),
+      );
       assert.match(await proof.locator('.ev-ci').innerText(), /CI: 3 of 3 checks passed/);
       assert.equal(await proof.locator('.ev-merged-yes').innerText(), 'merged');
     } finally {

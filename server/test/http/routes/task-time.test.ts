@@ -73,7 +73,13 @@ afterEach(() => {
 describe('GET /api/v1/tasks/:id/time', () => {
   it('answers zeros for a task with no time', async () => {
     const res = await must(req(`/api/v1/tasks/${taskId}/time`));
-    expect(await res.json()).toEqual({ total_minutes: 0, people: 0, entries: 0 });
+    expect(await res.json()).toEqual({
+      total_minutes: 0,
+      people: 0,
+      entries: 0,
+      agent_minutes: 0,
+      my_draft_minutes: 0,
+    });
   });
 
   it('counts the time a person confirmed on the task, and a read-only token reads the totals', async () => {
@@ -90,11 +96,16 @@ describe('GET /api/v1/tasks/:id/time', () => {
         201,
       );
     }
-    const expected = { total_minutes: 130, people: 1, entries: 2 };
-    expect(await (await must(req(`/api/v1/tasks/${taskId}/time`))).json()).toEqual(expected);
-    expect(await (await must(req(`/api/v1/tasks/${taskId}/time`, {}, readOnly))).json()).toEqual(
-      expected,
-    );
+    const expected = { total_minutes: 130, people: 1, entries: 2, agent_minutes: 0 };
+    expect(await (await must(req(`/api/v1/tasks/${taskId}/time`))).json()).toEqual({
+      ...expected,
+      my_draft_minutes: 0,
+    });
+    // A token reads the totals, and never anyone's drafts — not even its own person's.
+    expect(await (await must(req(`/api/v1/tasks/${taskId}/time`, {}, readOnly))).json()).toEqual({
+      ...expected,
+      my_draft_minutes: null,
+    });
   });
 
   it('is 404 not_found for a task that does not exist', async () => {

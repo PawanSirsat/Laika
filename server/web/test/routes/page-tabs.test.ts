@@ -10,6 +10,7 @@ import { redirectFor } from '../../src/routes/redirects.ts';
 import {
   DEVELOPER_TABS,
   developerAlias,
+  inboxAlias,
   developerTabs,
   isV3OnlyTab,
   INBOX_TABS,
@@ -18,6 +19,7 @@ import {
   currentTab,
   inboxCount,
   refusedTab,
+  splitTabs,
   tabHref,
   visibleTabs,
 } from '../../src/routes/page-tabs.ts';
@@ -38,25 +40,28 @@ const admin = as('admin');
 const member = as('member');
 
 void describe('the tabs are the owner’s grouping', () => {
-  void test('Inbox is Review, Hand-offs, then Unlisted work', () => {
+  void test('Inbox is Review, then Unlisted work — Hand-offs folded into Review (D-146, LAI-1169)', () => {
     assert.deepEqual(
       INBOX_TABS.map((t) => t.label),
-      ['Review', 'Hand-offs', 'Unlisted work'],
+      ['Review', 'Unlisted work'],
     );
   });
 
-  void test('Insights is Capacity then Usage & cost', () => {
+  void test('Insights is Capacity, Usage & cost, then Time (LAI-1138)', () => {
     assert.deepEqual(
       INSIGHTS_TABS.map((t) => t.label),
-      ['Capacity', 'Usage & cost'],
+      ['Capacity', 'Usage & cost', 'Time'],
     );
   });
 
-  void test('Organisation is Overview, People, Roles & permissions, Integrations, Security, Activity', () => {
+  void test('Organisation is Overview, Work, People, Roles & permissions, Integrations, Security, Activity', () => {
+    // Work second, after Overview (D-147, LAI-1170), and ungated as its
+    // sidebar entry was.
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
+      ['Overview', 'Work', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
     );
+    assert.equal(ORGANISATION_TABS.find((t) => t.id === 'work')?.requires, undefined);
   });
 
   void test('ids are unique within a page', () => {
@@ -71,11 +76,11 @@ void describe('a gated tab is absent, not disabled', () => {
   void test('Unlisted work is offered to an admin and not to a member (LAI-754’s gate)', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS, admin).map((t) => t.id),
-      ['review', 'handoffs', 'unlisted'],
+      ['review', 'unlisted'],
     );
     assert.deepEqual(
       visibleTabs(INBOX_TABS, member).map((t) => t.id),
-      ['review', 'handoffs'],
+      ['review'],
     );
   });
 
@@ -112,12 +117,21 @@ void describe('a gated tab is absent, not disabled', () => {
   void test('no predicate hides every gated tab rather than revealing it', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS).map((t) => t.id),
-      ['review', 'handoffs'],
+      ['review'],
     );
   });
 
-  void test('Insights is the same for everyone — the screens decide what each is sent', () => {
-    assert.deepEqual(visibleTabs(INSIGHTS_TABS, member), visibleTabs(INSIGHTS_TABS, admin));
+  void test('Insights is the same for everyone but Time, which the time report gate holds', () => {
+    const open = (tabs: readonly { id: string }[]) =>
+      tabs.map((t) => t.id).filter((id) => id !== 'time');
+    assert.deepEqual(
+      open(visibleTabs(INSIGHTS_TABS, member)),
+      open(visibleTabs(INSIGHTS_TABS, admin)),
+    );
+    assert.deepEqual(
+      INSIGHTS_TABS.filter((t) => t.requires !== undefined).map((t) => [t.id, t.requires]),
+      [['time', 'time.report.read']],
+    );
   });
 });
 
@@ -233,6 +247,37 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
       false,
       'Share local activity is Advanced’s second card in v3 (LAI-1078)',
     );
+  });
+
+  void test('v3 draws the design’s four tabs; Advanced is the quieter link after them (LAI-1096)', () => {
+    const { drawn, secondary } = splitTabs(developerTabs('v3'));
+    assert.deepEqual(
+      drawn.map((t) => t.label),
+      ['Overview', 'Project setup', 'Devices', 'Tools'],
+    );
+    assert.deepEqual(
+      secondary.map((t) => t.id),
+      ['advanced'],
+    );
+    // Still a tab to the address: ?tab=advanced opens it, not the Overview.
+    assert.equal(currentTab(developerTabs('v3'), new URLSearchParams('tab=advanced')), 'advanced');
+    assert.equal(
+      currentTab(developerTabs('v3'), new URLSearchParams('tab=advanced&section=activity')),
+      'advanced',
+    );
+  });
+
+  void test('only v3 has a secondary tab: classic, preview and every other page draw all theirs', () => {
+    for (const tabs of [
+      developerTabs('classic'),
+      developerTabs('preview'),
+      INBOX_TABS,
+      INSIGHTS_TABS,
+      ORGANISATION_TABS,
+    ]) {
+      assert.deepEqual(splitTabs(tabs).secondary, []);
+      assert.equal(splitTabs(tabs).drawn.length, tabs.length);
+    }
   });
 
   void test('the default tab is Connect in classic and preview, Overview in v3', () => {
@@ -364,5 +409,31 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     assert.equal(alias('v3', query(connect)), 'tab=tools&add=tool&tool=codex');
     assert.equal(alias('v3', query(tokens)), 'tab=advanced');
     assert.equal(alias('v3', query(deep)), 'tab=tools&add=tool&tool=cursor');
+  });
+});
+
+void describe('the old Hand-offs tab address (D-146 item 4, LAI-1169)', () => {
+  const alias = (query: string) => inboxAlias(new URLSearchParams(query))?.toString();
+
+  void test('?tab=handoffs is Review’s All hand-offs view', () => {
+    assert.equal(alias('tab=handoffs'), 'tab=review&view=handoffs');
+  });
+
+  void test('the rest of the query survives, in its order; a stale view is replaced', () => {
+    assert.equal(alias('tab=handoffs&item=t1'), 'tab=review&view=handoffs&item=t1');
+    assert.equal(alias('utm=x&tab=handoffs&view=all'), 'tab=review&view=handoffs&utm=x');
+  });
+
+  void test('every other address is left alone, the target included', () => {
+    for (const query of ['tab=review', 'tab=review&view=handoffs', 'tab=unlisted', '', 'tab=']) {
+      assert.equal(alias(query), undefined, query);
+    }
+  });
+
+  void test('the target has no alias of its own, so applying it twice changes nothing', () => {
+    const once = inboxAlias(new URLSearchParams('tab=handoffs'));
+    assert.ok(once !== undefined);
+    assert.equal(inboxAlias(once), undefined);
+    assert.equal(currentTab(INBOX_TABS, once), 'review');
   });
 });

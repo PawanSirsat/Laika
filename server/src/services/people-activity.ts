@@ -107,6 +107,21 @@ export function getPeopleActivity(
   );
 }
 
+/**
+ * `GET /me/activity?range=` (D-139 item 1, LAI-1150): the caller's own
+ * heatmap, whatever their role, on a web session — the same answer from the
+ * same code, and no look: nobody else looked.
+ */
+export function getOwnActivity(
+  db: Db,
+  actor: ResolvedActor,
+  range: ActivityRange,
+  now: number = Date.now(),
+): PeopleActivityView {
+  assertCan(actor, 'profile.read_own');
+  return activityOf(db, actor.userId, range, now);
+}
+
 function activityOf(db: Db, userId: string, range: ActivityRange, now: number): PeopleActivityView {
   // The organisation's switch alone (D-102 amended): the person's own is not asked.
   const sharing = collectionView(db);

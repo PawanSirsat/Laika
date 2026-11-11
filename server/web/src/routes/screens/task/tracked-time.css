@@ -1,0 +1,168 @@
+/*
+ * *Tracked on this task* (owner, 2026-11-10): one slim bar pinned to the task
+ * panel's foot, as `.panel-head` is pinned to its top — the panel is a column
+ * and this sits after `.panel-columns`, the part that scrolls, so it never
+ * moves. One row: the total, what it is made of, and the timer at the end.
+ * Tokens only, so both themes hold it.
+ */
+
+.tt {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-4);
+  box-sizing: border-box;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* The design's spaced capitals, in the mono face like a key. */
+.tt-label {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tt-total {
+  flex: none;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-heavy);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* What the total is made of, on one line; trimmed rather than wrapped. */
+.tt-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+.tt-item + .tt-item::before {
+  content: '·';
+  margin: 0 var(--space-2);
+  color: var(--text-muted);
+}
+
+.tt-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.tt-note {
+  color: var(--text-muted);
+}
+
+.tt-failed {
+  color: var(--overdue);
+}
+
+/* Start / Stop: a small outlined pill in the accent. */
+.tt-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.tt-timer:hover:not(:disabled) {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.tt-timer:focus-visible,
+.tt-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tt-timer:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.tt-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* The running clock, in the face a key is in, so its digits never jump. */
+.tt-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* A slow breath on the running dot — and none for a reader who asked for less. */
+.tt-dot-live {
+  animation: tt-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes tt-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tt-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* A phone: the breakdown goes, the total and the timer stay on one row. */
+@media (max-width: 600px) {
+  .tt-meta {
+    display: none;
+  }
+
+  .tt-end {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-timer {
+    transition: none;
+  }
+
+  .tt-dot-live {
+    animation: none;
+  }
+}

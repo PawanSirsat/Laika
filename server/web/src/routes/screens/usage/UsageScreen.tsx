@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { agentClientName } from '../../../api/agent-clients.ts';
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import { isProject, listProjects } from '../../../api/projects.ts';
@@ -10,10 +9,7 @@ import {
   costCaveats,
   costText,
   exactTokens,
-  FEW_PEOPLE_LABEL,
   getUsage,
-  isFewPeople,
-  modelCostText,
   OUTSIDE_ANY_SPACE,
   percent,
   readerZone,
@@ -22,23 +18,18 @@ import {
   USAGE_RANGES,
   type Usage,
   type UsageRange,
-  reworkLine,
 } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
-import { PersonLink } from '../../../components/PersonLink.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
-import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
-import { InfoTip } from '../profile/InfoTip.tsx';
 import { UsageCard } from '../profile/UsageCard.tsx';
-import { AlertsBanner } from './AlertsBanner.tsx';
+import { AlertsCard } from './AlertsCard.tsx';
 import { BarRows } from './BarRows.tsx';
+import { BreakdownCard } from './BreakdownCard.tsx';
 import { BudgetsCard } from './BudgetsCard.tsx';
-import { BySpaceCard } from './BySpaceCard.tsx';
 import { AcceptedCostCard } from './AcceptedCostCard.tsx';
 import { CacheCard } from './CacheCard.tsx';
-import { RunawayCard } from './RunawayCard.tsx';
 import { PlanLimitCard } from './PlanLimitCard.tsx';
 import { Columns, dayPoints } from './Columns.tsx';
 import {
@@ -185,18 +176,22 @@ export function UsageScreen({
     };
   }, [scope, range, asked]);
 
+  const [about, setAbout] = useState(false);
   const scopeName = options.find((o) => o.value === scope)?.label;
-  const context = `${scopeName ?? 'Tokens'} · last ${String(range)} days · at least`;
   const noSpace = reader !== undefined && projects !== undefined && options.length === 0;
+  const alertsCard = (
+    <AlertsCard alerts={alerts} onNavigate={onNavigate} onChanged={onAlertsChanged} />
+  );
 
   return (
     <div className="usage-page">
       {/*
         The space and the range are this screen's header controls (LAI-796),
         so on Insights they sit in the page's header, where the period of a
-        page is chosen.
+        page is chosen. The range is the design's segmented 7d / 30d / 90d
+        (LAI-1127), each a toggle named in full.
       */}
-      <ScreenHeader title="Usage" context={context}>
+      <ScreenHeader title="Usage">
         {options.length > 0 && (
           <span className="usage-select">
             <span className="usage-select-label" aria-hidden="true">
@@ -213,46 +208,70 @@ export function UsageScreen({
             />
           </span>
         )}
-        <div className="usage-chips" role="group" aria-label="Range">
+        <div className="usage-segmented" role="group" aria-label="Range">
           {USAGE_RANGES.map((r) => (
             <button
               key={r.days}
               type="button"
-              className="usage-chip"
+              className="usage-segment"
               aria-pressed={range === r.days}
               onClick={() => {
                 setRange(r.days);
               }}
             >
-              {r.label}
+              <span aria-hidden="true">{String(r.days)}d</span>
+              <span className="visually-hidden">{r.label}</span>
             </button>
           ))}
         </div>
       </ScreenHeader>
       <div className="usage">
-        <p className="usage-floor">
-          <strong>At least.</strong> Counted on developers’ machines from the agents’ own session
-          files — Claude Code, Codex, Gemini CLI — which miss an agent’s background calls, and from
-          Claude Code’s own telemetry where a developer sends it. Cache reads, most of the raw
-          count, are shown apart and are not in the tokens. Costs are <strong>{COST_LABEL}</strong>:
-          list prices on the vendor’s API, for comparing work.
+        <p className="usage-context">
+          <span>
+            {scopeName ?? 'Tokens'} · last {String(range)} days · counts are minimums
+          </span>
+          <button
+            type="button"
+            className="usage-link-button"
+            aria-expanded={about}
+            aria-controls="usage-how"
+            onClick={() => {
+              setAbout((a) => !a);
+            }}
+          >
+            {about ? 'Hide details' : 'How we count'}
+          </button>
         </p>
-
-        <AlertsBanner alerts={alerts} onNavigate={onNavigate} onChanged={onAlertsChanged} />
+        {about && (
+          <p className="usage-floor" id="usage-how">
+            <strong>At least.</strong> Counted on developers’ machines from the agents’ own session
+            files — Claude Code, Codex, Gemini CLI — which miss an agent’s background calls, and
+            from Claude Code’s own telemetry where a developer sends it. Cache reads, most of the
+            raw count, are shown apart and are not in the tokens. Costs are{' '}
+            <strong>{COST_LABEL}</strong>: list prices on the vendor’s API, for comparing work.
+          </p>
+        )}
 
         {noSpace ? (
-          <EmptyState
-            headline="No space to show"
-            body="Token totals are per space for members, and you are not in one yet."
-          />
+          <>
+            <EmptyState
+              headline="No space to show"
+              body="Token totals are per space for members, and you are not in one yet."
+            />
+            {(alerts ?? []).length > 0 && alertsCard}
+          </>
         ) : load.kind === 'error' ? (
-          <ApiErrorState error={load.error} resource="token usage" scope="organisation" />
+          <>
+            <ApiErrorState error={load.error} resource="token usage" scope="organisation" />
+            {(alerts ?? []).length > 0 && alertsCard}
+          </>
         ) : load.kind === 'loading' ? (
           <UsageSkeleton />
         ) : (
           <UsageBody
             usage={load.usage}
             offered={offered}
+            alertsCard={alertsCard}
             onNavigate={onNavigate}
             onChanged={() => {
               setAsked((n) => n + 1);
@@ -268,16 +287,22 @@ export function UsageScreen({
         )}
 
         {me !== undefined && (
-          <div className="usage-grid usage-mine">
-            <UsageCard
-              userId={me.id}
-              name={me.name}
-              self
-              section="mine"
-              className="prof-card usage-card"
-            />
-            <PlanLimitCard />
-          </div>
+          <section className="usage-you" aria-labelledby="usage-you-title">
+            {/* Below this line, only the reader's own figures (LAI-1127). */}
+            <h2 className="usage-you-divider" id="usage-you-title">
+              You · visible only to you
+            </h2>
+            <div className="usage-pair usage-mine">
+              <UsageCard
+                userId={me.id}
+                name={me.name}
+                self
+                section="mine"
+                className="prof-card usage-card"
+              />
+              <PlanLimitCard />
+            </div>
+          </section>
         )}
       </div>
     </div>
@@ -287,6 +312,7 @@ export function UsageScreen({
 function UsageBody({
   usage,
   offered,
+  alertsCard,
   onNavigate,
   onChanged,
   onAllSpaces,
@@ -294,6 +320,8 @@ function UsageBody({
   readonly usage: Usage;
   /** The spaces the selector offers; `null` with no list. */
   readonly offered: ReadonlySet<string> | null;
+  /** The reader's own Budget alerts card, drawn beside Top tasks. */
+  readonly alertsCard: ReactNode;
   readonly onNavigate: (to: string) => void;
   /** A budget changed: read the page again. */
   readonly onChanged: () => void;
@@ -318,17 +346,18 @@ function UsageBody({
 
   return (
     <>
+      {/* One strip of six figures, as the owner's design draws them (LAI-1127). */}
       <dl className="usage-tiles">
         <div
           className="usage-stat"
           data-stat="tokens"
-          title={`${exactTokens(totals.tokens)} tokens`}
+          title={`At least · ${exactTokens(totals.tokens)} tokens`}
         >
           <dt className="usage-stat-label">Tokens</dt>
           <dd className="usage-stat-value">{compactTokens(totals.tokens)}</dd>
           <dd className="usage-stat-sub">
             {space === null
-              ? 'at least · input, output and cache writes'
+              ? 'at least · input, output, cache writes'
               : 'at least · tied to this space’s tasks'}
           </dd>
         </div>
@@ -339,7 +368,7 @@ function UsageBody({
         >
           <dt className="usage-stat-label">Cache reads</dt>
           <dd className="usage-stat-value">{compactTokens(totals.cache_read)}</dd>
-          <dd className="usage-stat-sub">shown apart, not in tokens</dd>
+          <dd className="usage-stat-sub">not in tokens</dd>
         </div>
         {space === null ? (
           <div className="usage-stat" data-stat="unattributed">
@@ -360,7 +389,7 @@ function UsageBody({
             <dd className="usage-stat-sub">
               {org === null
                 ? 'the organisation’s, for owners and admins'
-                : 'of all tokens, tied to no task'}
+                : 'of all tokens, no task'}
             </dd>
           </div>
         )}
@@ -369,7 +398,7 @@ function UsageBody({
           <dd className="usage-stat-value">
             {compactTokens(usage.days > 0 ? totals.tokens / usage.days : 0)}
           </dd>
-          <dd className="usage-stat-sub">tokens, on average</dd>
+          <dd className="usage-stat-sub">average</dd>
         </div>
         {/* LAI-773: what the same tokens would cost on the API — never the bill. */}
         <div className="usage-stat" data-stat="cost" title={costCaveats(totals.cost).join(' · ')}>
@@ -382,13 +411,13 @@ function UsageBody({
             </dd>
           ))}
         </div>
-        <div className="usage-stat" data-stat="cache">
+        <div className="usage-stat" data-stat="cache" title="Of input-side tokens">
           <dt className="usage-stat-label">From cache</dt>
           <dd className="usage-stat-value">{percent(usage.cache.share)}</dd>
           <dd className="usage-stat-sub">
             {usage.cache.saving_usd === null
               ? 'of input-side tokens'
-              : `of input-side tokens · saved ${usd(usage.cache.saving_usd)}`}
+              : `saved ${usd(usage.cache.saving_usd)}`}
           </dd>
         </div>
       </dl>
@@ -419,14 +448,23 @@ function UsageBody({
       )}
 
       {nothing && space !== null ? (
-        <div data-state="space-empty">
-          <EmptyState
-            headline={`No tokens are tied to ${space.name}’s tasks yet`}
-            body={`A space counts the tokens agents spend on its tasks. Until agents mark the task they work on, tokens are tied to no task and count only across all spaces${org === null ? ', which owners and admins see' : ''}.`}
-          />
-        </div>
+        <>
+          <div data-state="space-empty">
+            <EmptyState
+              headline={`No tokens are tied to ${space.name}’s tasks yet`}
+              body={`A space counts the tokens agents spend on its tasks. Until agents mark the task they work on, tokens are tied to no task and count only across all spaces${org === null ? ', which owners and admins see' : ''}.`}
+            />
+          </div>
+          {alertsCard}
+        </>
       ) : (
-        <UsageDetail usage={usage} link={link} offered={offered} onChanged={onChanged} />
+        <UsageDetail
+          usage={usage}
+          link={link}
+          offered={offered}
+          alertsCard={alertsCard}
+          onChanged={onChanged}
+        />
       )}
     </>
   );
@@ -436,11 +474,13 @@ function UsageDetail({
   usage,
   link,
   offered,
+  alertsCard,
   onChanged,
 }: {
   readonly usage: Usage;
   readonly link: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
   readonly offered: ReadonlySet<string> | null;
+  readonly alertsCard: ReactNode;
   readonly onChanged: () => void;
 }) {
   const { totals } = usage;
@@ -477,126 +517,8 @@ function UsageDetail({
         />
       </section>
 
-      <div className="usage-grid">
-        <BySpaceCard usage={usage} link={link} offered={offered} />
-
-        <section
-          className="prof-card usage-card"
-          data-section="developers"
-          aria-labelledby="usage-developers-title"
-        >
-          <header className="prof-card-head">
-            <h3 className="prof-card-title" id="usage-developers-title">
-              By developer
-            </h3>
-            <span className="prof-card-caption">by name</span>
-            <InfoTip label="About by developer">
-              <p className="usage-info">
-                Each person’s tokens from their own machines, in name order. Owners and admins see
-                it; members see totals only. Context, never a ranking or a rating (D-084).
-              </p>
-            </InfoTip>
-          </header>
-          {usage.by_developer === null ? (
-            <p className="prof-empty">
-              Per-person figures are for owners and admins; you see the space’s totals.
-            </p>
-          ) : usage.by_developer.length === 0 ? (
-            <p className="prof-empty">Nobody’s tokens arrived in this range.</p>
-          ) : (
-            <BarRows
-              label="Tokens by developer"
-              rows={usage.by_developer.map((p) => ({
-                key: p.user_id,
-                name: (
-                  <PersonLink userId={p.user_id} className="usage-person-link">
-                    {p.name}
-                  </PersonLink>
-                ),
-                tokens: p.tokens,
-                cacheRead: p.cache_read,
-                note: `${shareOf(p.attributed_tokens, p.tokens)} on a task · ${costText(p.cost)}`,
-              }))}
-            />
-          )}
-        </section>
-
-        <section
-          className="prof-card usage-card"
-          data-section="agents"
-          aria-labelledby="usage-agents-title"
-        >
-          <header className="prof-card-head">
-            <h3 className="prof-card-title" id="usage-agents-title">
-              By agent
-            </h3>
-          </header>
-          {usage.by_agent.length === 0 && usage.no_token_data.length === 0 ? (
-            <p className="prof-empty">No agent reported tokens in this range.</p>
-          ) : (
-            <>
-              <BarRows
-                label="Tokens by agent"
-                rows={usage.by_agent.map((a) => ({
-                  // The fold's `agent` is `other`, as the `other` kind's is (D-087 item 7).
-                  key: isFewPeople(a) ? 'few-people' : a.agent,
-                  name: (
-                    <>
-                      <AgentMark client={a.agent} size="sm" />{' '}
-                      {isFewPeople(a) ? FEW_PEOPLE_LABEL : agentClientName(a.agent)}
-                    </>
-                  ),
-                  tokens: a.tokens,
-                  cacheRead: a.cache_read,
-                }))}
-              />
-              {usage.no_token_data.length > 0 && (
-                <ul className="usage-rows usage-no-data" aria-label="Agents with no token data">
-                  {usage.no_token_data.map((agent) => (
-                    <li className="usage-row" key={agent} data-no-data="true">
-                      <span className="usage-row-name">
-                        <AgentMark client={agent} size="sm" /> {agentClientName(agent)}
-                      </span>
-                      <span className="usage-row-quiet">no token data</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </section>
-
-        <section
-          className="prof-card usage-card"
-          data-section="models"
-          aria-labelledby="usage-models-title"
-        >
-          <header className="prof-card-head">
-            <h3 className="prof-card-title" id="usage-models-title">
-              By model
-            </h3>
-            <span className="prof-card-caption">cost is {COST_LABEL}</span>
-          </header>
-          {usage.by_model.length === 0 ? (
-            <p className="prof-empty">No model reported tokens in this range.</p>
-          ) : (
-            <BarRows
-              label="Tokens by model"
-              rows={usage.by_model.map((m) => ({
-                key: isFewPeople(m) ? 'few-people' : m.model,
-                name: isFewPeople(m) ? (
-                  FEW_PEOPLE_LABEL
-                ) : (
-                  <code className="usage-model">{m.model}</code>
-                ),
-                tokens: m.tokens,
-                cacheRead: m.cache_read,
-                note: modelCostText(m.cost),
-              }))}
-            />
-          )}
-        </section>
-
+      <div className="usage-pair">
+        {alertsCard}
         <section
           className="prof-card usage-card"
           data-section="tasks"
@@ -636,41 +558,15 @@ function UsageDetail({
             />
           )}
         </section>
-
-        {/* LAI-772: what send-backs cost, per project — the cost of a false
-            done, in tokens and time. Nobody is named or counted. */}
-        <section
-          className="prof-card usage-card"
-          data-section="rework"
-          aria-labelledby="usage-rework-title"
-        >
-          <header className="prof-card-head">
-            <h3 className="prof-card-title" id="usage-rework-title">
-              Rework
-            </h3>
-            <span className="prof-card-caption">
-              after a send-back · per space, never per person
-            </span>
-          </header>
-          {usage.rework.length === 0 ? (
-            <p className="prof-empty">Nothing was sent back in this range.</p>
-          ) : (
-            <ul className="usage-rework">
-              {usage.rework.map((r) => (
-                <li key={r.project.slug} className="usage-rework-row">
-                  <span className="usage-rework-name">{r.project.name}</span>
-                  <span className="usage-rework-line">{reworkLine(r)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <AcceptedCostCard usage={usage} />
-        <CacheCard usage={usage} />
-        <BudgetsCard budgets={usage.budgets} space={usage.project} onChanged={onChanged} />
-        <RunawayCard usage={usage} />
       </div>
+
+      <div className="usage-pair">
+        <BreakdownCard usage={usage} link={link} offered={offered} />
+        <CacheCard usage={usage} />
+      </div>
+
+      <AcceptedCostCard usage={usage} />
+      <BudgetsCard budgets={usage.budgets} space={usage.project} onChanged={onChanged} />
     </>
   );
 }
@@ -679,7 +575,7 @@ function UsageSkeleton() {
   return (
     <div className="usage-skeleton" aria-busy="true" aria-label="Loading token usage">
       <div className="usage-tiles">
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="usage-stat usage-stat-skeleton" />
         ))}
       </div>

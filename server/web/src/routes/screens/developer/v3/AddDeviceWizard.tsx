@@ -84,9 +84,9 @@ const RAIL: readonly { readonly n: 1 | 2 | 3; readonly name: string; readonly su
  *    own commit, link it without any token, and `laika device pair` with the
  *    one-use code. The page waits, asking the board with backoff.
  * 3. **Check the key** the device claimed the code with: the fingerprint, its
- *    system and helper version, when. Approve only if it is what the
- *    terminal printed; the fingerprint shown is echoed back, so a key that
- *    changed underneath is refused.
+ *    system and helper version, when. Approve — the footer's primary, Deny
+ *    beside it — only if it is what the terminal printed; the fingerprint
+ *    shown is echoed back, so a key that changed underneath is refused.
  * 4. **Paired** only once the board says `completed` — the device signed
  *    with the key that was approved.
  *
@@ -334,7 +334,11 @@ export function AddDeviceWizard({
 
   let body: ReactNode;
   let primary: ReactNode = null;
+  /** Beside the primary: step 3's *Deny*. */
+  let secondary: ReactNode = null;
   let hint = '';
+  /** When the device claimed the code, in words, for step 3's line. */
+  let claimedAt = '';
 
   if (resumeError !== undefined) {
     body = (
@@ -419,9 +423,7 @@ export function AddDeviceWizard({
                   </span>
                   <span>
                     <strong className="dx-option-name">My computer</strong>
-                    <span className="dx-option-sub">
-                      A Mac, Windows or Linux machine you work on
-                    </span>
+                    <span className="dx-option-sub">Mac, Windows or Linux</span>
                   </span>
                 </label>
                 <label className="dx-option">
@@ -438,7 +440,7 @@ export function AddDeviceWizard({
                   </span>
                   <span>
                     <strong className="dx-option-name">Cloud runner</strong>
-                    <span className="dx-option-sub">A hosted or temporary environment</span>
+                    <span className="dx-option-sub">Temporary or hosted environment</span>
                   </span>
                 </label>
               </div>
@@ -472,42 +474,41 @@ export function AddDeviceWizard({
           </>
         )}
 
-        <fieldset className="dv3w-set">
+        <fieldset className="dv3w-set" data-installed-choice>
           <legend className="dx-label">Is Laika’s helper already installed on it?</legend>
-          <div className="dx-options">
-            <label className="dx-option">
+          <div className="dv3w-segments">
+            <label className="dv3w-segment">
               <input
                 type="radio"
                 name={`${ids}-installed`}
                 checked={!installed}
+                aria-describedby={`${ids}-installed-help`}
                 onChange={() => {
                   setInstalled(false);
                 }}
               />
-              <span>
-                <strong className="dx-option-name">No, install it</strong>
-                <span className="dx-option-sub">
-                  The next step installs it at ~/laika, with no token
-                </span>
-              </span>
+              <span>No, install it</span>
             </label>
-            <label className="dx-option">
+            <label className="dv3w-segment">
               <input
                 type="radio"
                 name={`${ids}-installed`}
                 checked={installed}
+                aria-describedby={`${ids}-installed-help`}
                 onChange={() => {
                   setInstalled(true);
                 }}
               />
-              <span>
-                <strong className="dx-option-name">Yes</strong>
-                <span className="dx-option-sub">
-                  It has a laika command, or a ~/laika folder already
-                </span>
-              </span>
+              <span>Yes</span>
             </label>
           </div>
+          <Help>
+            <span id={`${ids}-installed-help`}>
+              {installed
+                ? 'It has a laika command, or a ~/laika folder already'
+                : 'The next step installs it at ~/laika, with no token'}
+            </span>
+          </Help>
         </fieldset>
       </div>
     );
@@ -592,7 +593,7 @@ export function AddDeviceWizard({
     hint = 'This moves on by itself when the device claims the code.';
   } else if (step === 3 && pairing !== undefined && pairing.claimed !== null) {
     const claim = pairing.claimed;
-    const at = timeLabel(claim.claimed_at, now);
+    claimedAt = timeLabel(claim.claimed_at, now).text;
     body = (
       <div className="dv3w-stack">
         <div className="dv3w-fingerprint" aria-labelledby={`${ids}-fp-label`}>
@@ -610,49 +611,15 @@ export function AddDeviceWizard({
             { label: 'Device', value: pairing.display_name, id: 'device' },
             { label: 'System', value: claim.os ?? 'Not said', id: 'system' },
             { label: 'Helper', value: claim.cli_version ?? 'Version unknown', id: 'helper' },
-            {
-              label: 'Claimed',
-              value: (
-                <time dateTime={at.iso} title={at.full}>
-                  {at.text}
-                </time>
-              ),
-              id: 'claimed',
-            },
             { label: 'Tool credentials', value: 'None created', id: 'credentials' },
           ]}
         />
         {pairing.state === 'claimed' ? (
-          <>
-            <Help tone="warn">
-              <strong>Approve only if this matches your terminal.</strong> If your terminal shows a
-              different fingerprint, or said the code was already used, someone else claimed it:
-              deny it and start again.
-            </Help>
-            <div className="dv3w-actions">
-              <button
-                type="button"
-                className="dx-btn dx-btn-primary"
-                disabled={busy}
-                aria-busy={busy || undefined}
-                onClick={() => {
-                  decide(true);
-                }}
-              >
-                Approve {pairing.display_name}
-              </button>
-              <button
-                type="button"
-                className="dx-btn dv3w-deny"
-                disabled={busy}
-                onClick={() => {
-                  decide(false);
-                }}
-              >
-                Deny
-              </button>
-            </div>
-          </>
+          <Help tone="warn">
+            <strong>Approve only if this matches your terminal.</strong> If your terminal shows a
+            different fingerprint, or said the code was already used, someone else claimed it: deny
+            it and start again.
+          </Help>
         ) : pairing.state === 'approved' ? (
           <WaitLine
             word="Approved"
@@ -666,6 +633,34 @@ export function AddDeviceWizard({
       pairing.state === 'approved'
         ? 'Paired only once the device proves it holds the key.'
         : 'Compare every character before you approve.';
+    // The decision is the step's, so it is the footer's (the owner's design).
+    if (pairing.state === 'claimed') {
+      secondary = (
+        <button
+          type="button"
+          className="dx-btn dv3w-deny"
+          disabled={busy}
+          onClick={() => {
+            decide(false);
+          }}
+        >
+          Deny
+        </button>
+      );
+      primary = (
+        <button
+          type="button"
+          className="dx-btn dx-btn-primary"
+          disabled={busy}
+          aria-busy={busy || undefined}
+          onClick={() => {
+            decide(true);
+          }}
+        >
+          Approve {pairing.display_name}
+        </button>
+      );
+    }
   } else if (step === 4 && pairing !== undefined) {
     body = (
       <div className="dv3w-stack">
@@ -736,6 +731,7 @@ export function AddDeviceWizard({
       </div>
     );
     hint = 'Start again for a new code.';
+    secondary = null;
     primary = (
       <button type="button" className="dx-btn dx-btn-primary" onClick={startAgain}>
         Start again
@@ -746,7 +742,7 @@ export function AddDeviceWizard({
   const lines: Readonly<Record<Step, string>> = {
     1: 'The computer is separate from the coding tools you add to it afterwards.',
     2: `Run the pairing step in a terminal on ${displayName || 'the device'}. No coding tool needs to be open.`,
-    3: `${displayName} claimed the code with this key. Approve it before its first tool.`,
+    3: `${displayName} claimed the code ${claimedAt} with this key. Approve it before its first tool.`,
     4: `${displayName} is paired with this board.`,
   };
   const railStep: 1 | 2 | 3 = step === 4 ? 3 : step;
@@ -788,9 +784,14 @@ export function AddDeviceWizard({
         note={hint}
         actions={
           <>
-            <button type="button" className="dx-btn" onClick={close}>
+            <button
+              type="button"
+              className={secondary === null ? 'dx-btn' : 'dx-btn dx-btn-ghost'}
+              onClick={close}
+            >
               {step === 4 || ended ? 'Done' : pairing === undefined ? 'Cancel' : 'Cancel pairing'}
             </button>
+            {secondary}
             {primary}
           </>
         }

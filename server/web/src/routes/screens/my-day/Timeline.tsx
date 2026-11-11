@@ -105,6 +105,12 @@ export interface TimelineProps {
    * change nothing.
    */
   readonly readOnly?: boolean;
+  /**
+   * Somebody else's day an owner or admin may change (D-143): their confirmed
+   * blocks move, imports included, and their drafts do not — drafts stay the
+   * person's own.
+   */
+  readonly lockDrafts?: boolean;
 }
 
 const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
@@ -319,6 +325,7 @@ export function Timeline({
   onTimerClick,
   busy,
   readOnly = false,
+  lockDrafts = false,
 }: TimelineProps) {
   const stage = useRef<HTMLDivElement | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -568,7 +575,8 @@ export function Timeline({
   });
 
   /** A block the pointer or the keys may move: not read, not busy, not an import. */
-  const canDrag = (block: LaneBlock): boolean => !readOnly && !busy && !block.locked;
+  const canDrag = (block: LaneBlock): boolean =>
+    !readOnly && !busy && (lockDrafts ? block.kind !== 'drafted' : !block.locked);
   const unchanged = (block: LaneBlock): Edit => ({
     start: block.start,
     end: block.end,
@@ -706,7 +714,7 @@ export function Timeline({
   const extHandlers = {
     onDragOver: (event: DragEvent<HTMLDivElement>) => {
       const item = trayDrag();
-      if (item === null || readOnly || busy) return;
+      if (item === null || readOnly || busy || (lockDrafts && item.kind === 'draft')) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
       const span = trayDropSpan(minuteAt(event.clientX), item.minutes);

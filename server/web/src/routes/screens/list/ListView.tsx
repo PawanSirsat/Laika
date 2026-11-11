@@ -6,25 +6,12 @@ import { SizeChip } from '../../../components/SizeChip.tsx';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import {
-  assignTask,
-  changeStatus,
-  updateTask,
-  type Member,
-  type TaskSummary,
-} from '../../../api/tasks.ts';
-import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
+import type { Sprint } from '../../../api/sprints.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { LIST_COLUMNS, listRows, nextSort, sortRows, type ListSort } from './list-derive.ts';
 import { effectiveSelection, pageState, selectAll, toggleOne, togglePage } from './list-select.ts';
-import {
-  applyToEach,
-  bulkPlan,
-  bulkSummary,
-  statusChoices,
-  type BulkAction,
-  type BulkRun,
-} from './list-bulk.ts';
+import { runBulkAction, statusChoices, type BulkAction, type BulkRun } from './list-bulk.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
@@ -97,29 +84,6 @@ export interface ListViewProps {
   readonly onBulkRun: (next: BulkRun | undefined) => void;
   /** After a bulk action: the board refetches, so every row is the server's. */
   readonly onChanged: () => void;
-}
-
-/** One task's request for a bulk action. */
-function applyAction(action: BulkAction, task: TaskSummary): Promise<unknown> {
-  switch (action.kind) {
-    case 'status':
-      return changeStatus(task.id, { status_id: action.statusId });
-    case 'cancel':
-      // The kind, not a status: the server files it under the project's
-      // first cancelled status, whatever this board calls it.
-      return changeStatus(task.id, { status: 'cancelled' });
-    case 'priority':
-      return updateTask(task.id, { priority: action.priority });
-    case 'assignee':
-      return assignTask(task.id, action.assigneeId);
-    case 'sprint':
-      // The sprint endpoint's POST is all-or-nothing over a list; sent one id
-      // at a time so a refusal names the task (`bulkPlan` has already dropped
-      // the tasks with nothing to change, so `sprint_id` is set here).
-      return action.sprintId === null
-        ? removeTaskFromSprint(task.sprint_id ?? '', task.id)
-        : addTasksToSprint(action.sprintId, [task.id]);
-  }
 }
 
 /**
@@ -230,29 +194,9 @@ export function ListView({
       const task = byId.get(id);
       return task === undefined ? [] : [task];
     });
-    const plan = bulkPlan(action, chosen);
-    onBulkRun({ phase: 'running', completed: 0, total: plan.ids.length });
-
-    void applyToEach(
-      plan.ids,
-      (id) => {
-        const task = byId.get(id);
-        return task === undefined ? Promise.resolve() : applyAction(action, task);
-      },
-      (completed) => {
-        onBulkRun({ phase: 'running', completed, total: plan.ids.length });
-      },
-    ).then((outcome) => {
-      onBulkRun({
-        phase: 'done',
-        summary: bulkSummary(outcome, plan.skipped),
-        // The key, not the id: `LC-4 — Cannot move…` is something a person
-        // can find; a ULID is not (LAI-271's lesson, again).
-        refusals: outcome.failed.map((f) => ({
-          key: byId.get(f.id)?.key ?? f.id,
-          message: f.message,
-        })),
-      });
+    // One request per task, in selection order, the report by key — the
+    // shared run (`runBulkAction`), so Work counts exactly as the List does.
+    void runBulkAction(action, chosen, onBulkRun).then(() => {
       onChanged();
     });
   };

@@ -13,6 +13,7 @@ import {
   invites,
   localActivityDays,
   meetingReviews,
+  memberNotices,
   orgs,
   pushedCommitKeys,
   tokenArrivals,
@@ -28,7 +29,9 @@ import {
   timeDayNotes,
   timeEntries,
   timeUndo,
+  userAwayPeriods,
 } from '../db/schema.ts';
+import { NOTICE_RETENTION_DAYS } from '../services/notices.ts';
 import { ARRIVALS_KEPT_MS } from '../services/plan-limit.ts';
 import { UNDO_WINDOW_MS } from '../services/time-undo-log.ts';
 
@@ -237,6 +240,7 @@ export const TIME_ENTRIES_RETENTION_YEARS = 3;
  * three years ago, with their revisions. Daily, and once at boot. Solidtime's
  * rows (§4.54) follow: a person's go with their entry, by its foreign key,
  * and *people not on Laika* are kept three years by the same cutoff (LAI-788).
+ * Away periods that ended more than 30 days ago go too (§4.86, LAI-1130).
  *
  * **By day, not by instant**, as local activity's: both hold the person's
  * local dates. The entries' cutoff is three years before `now`; the trigger
@@ -270,15 +274,32 @@ export function pruneTime(db: Db, now: number): JobResult {
       .delete(solidtimeEntries)
       .where(and(isNull(solidtimeEntries.entryId), lt(solidtimeEntries.day, entryCutoff)))
       .run();
+    // Away periods that ended more than 30 days ago (§4.86, LAI-1130).
+    const away = tx.delete(userAwayPeriods).where(lt(userAwayPeriods.toDay, draftCutoff)).run();
     return (
       drafts.changes +
       breaks.changes +
       undo.changes +
       entries.changes +
       notes.changes +
-      elsewhere.changes
+      elsewhere.changes +
+      away.changes
     );
   });
+  return { changed };
+}
+
+/**
+ * Delete member notices older than 90 days, read or not (§4.87, §11.6, D-134,
+ * LAI-1136). No `activity` row: a notice is not activity, and §4.8 has no
+ * verb for its going.
+ */
+export function pruneNotices(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.notices.prune');
+  const changed = db
+    .delete(memberNotices)
+    .where(lt(memberNotices.createdAt, now - NOTICE_RETENTION_DAYS * DAY_MS))
+    .run().changes;
   return { changed };
 }
 

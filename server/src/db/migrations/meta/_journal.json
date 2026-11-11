@@ -526,6 +526,41 @@
       "when": 1793734842970,
       "tag": "0075_task_deliverables",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1793870750931,
+      "tag": "0076_user_availability",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "6",
+      "when": 1793875272219,
+      "tag": "0077_member_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "6",
+      "when": 1793878053698,
+      "tag": "0078_developer_setup_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1793911668574,
+      "tag": "0079_analytics_views_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1793965716703,
+      "tag": "0080_member_notices_time_changed",
+      "breakpoints": true
     }
   ]
 }
