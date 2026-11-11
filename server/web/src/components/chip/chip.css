@@ -1,0 +1,155 @@
+/*
+ * One chip, every kind (LAI-1206). See `Chip.tsx` and `chip-model.ts`.
+ *
+ * **One box**: a 20px line, 6px sides, the small step, never wrapping. **Three
+ * tells that are not colour** (WCAG 1.4.1): the shape (`tab` square-cornered,
+ * `pill` round), the face (`ui` sans, `mono` for codes) and the glyph. The
+ * tone only repeats what those already say, from existing tokens (D-020) —
+ * so both themes come from `theme.css` and nothing here is a literal colour.
+ */
+
+.chip {
+  --chip-ink: var(--chip-neutral);
+  --chip-fill: var(--chip-neutral-bg);
+  --chip-edge: var(--chip-neutral-border);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  min-width: 0;
+  /* Long text yields to an ellipsis rather than widening the row. */
+  max-width: var(--chip-max, 11rem);
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--chip-edge);
+  background: var(--chip-fill);
+  color: var(--chip-ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+  /* Digits line up and do not jitter when a count changes. */
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Room for descenders and tall scripts: an ellipsis box that clips at
+     line-height 1 cuts the bottom of a `g` or a Devanagari matra. */
+  line-height: 1.25;
+}
+
+/* ---------------------------------------------------------------- shape */
+
+.chip-shape-tab {
+  border-radius: var(--radius-chip);
+}
+
+.chip-shape-pill {
+  border-radius: var(--radius-pill);
+  padding: 0 0.4375rem 0 0.375rem;
+}
+
+/* ----------------------------------------------------------------- face */
+
+.chip-face-mono {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.01em;
+}
+
+/* ---------------------------------------------------------------- glyph */
+
+.chip-glyph {
+  flex: none;
+  display: block;
+}
+
+.chip-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.chip-bars .chip-bar-on {
+  fill: currentColor;
+}
+
+.chip-bars .chip-bar-off {
+  fill: currentColor;
+  opacity: 0.28;
+}
+
+/* The priority chip borrows `PriorityIcon`, which colours itself per level. */
+.chip-priority .priority-icon {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- count */
+
+/* A count is a number alone: centred, never narrower than it is tall. */
+.chip-count {
+  justify-content: center;
+  min-width: 1.25rem;
+  padding: 0 0.3125rem;
+}
+
+/* --------------------------------------------------------------- tones */
+
+.chip-tone-blue {
+  --chip-ink: var(--chip-blue);
+  --chip-fill: var(--chip-blue-bg);
+  --chip-edge: var(--chip-blue-border);
+}
+
+.chip-tone-green {
+  --chip-ink: var(--chip-green);
+  --chip-fill: var(--chip-green-bg);
+  --chip-edge: var(--chip-green-border);
+}
+
+.chip-tone-orange {
+  --chip-ink: var(--chip-orange);
+  --chip-fill: var(--chip-orange-bg);
+  --chip-edge: var(--chip-orange-border);
+}
+
+.chip-tone-pink {
+  --chip-ink: var(--chip-pink);
+  --chip-fill: var(--chip-pink-bg);
+  --chip-edge: var(--chip-pink-border);
+}
+
+.chip-tone-purple {
+  --chip-ink: var(--chip-purple);
+  --chip-fill: var(--chip-purple-bg);
+  --chip-edge: var(--chip-purple-border);
+}
+
+/* "This one" — the active sprint, the reader's own count. */
+.chip-tone-accent {
+  --chip-ink: var(--accent);
+  --chip-fill: var(--accent-bg);
+  --chip-edge: var(--accent-border);
+}
+
+/* Overdue and blocked: the board's one alarm colour. */
+.chip-tone-danger {
+  --chip-ink: var(--overdue);
+  --chip-fill: var(--blocked-bg);
+  --chip-edge: var(--overdue-border);
+}
+
+/* An inactive sprint is drawn, not filled: a quiet outline beside the
+   filled tabs it might otherwise be mistaken for. */
+.chip-sprint.chip-tone-neutral {
+  --chip-fill: transparent;
+  --chip-edge: var(--border-default);
+  border-style: dashed;
+}
