@@ -12,6 +12,9 @@ import { describe, test } from 'node:test';
 import {
   allTasksFilter,
   DEFAULT_PAGE_SIZE,
+  groupWorkRows,
+  readWorkGroup,
+  withWorkGroup,
   pageRange,
   pageTotal,
   personFilterOf,
@@ -245,5 +248,69 @@ void describe('pages (LAI-975)', () => {
     assert.equal(pageRange(5, 25, 17, 142), '126–142 of 142');
     assert.equal(pageRange(1, 50, 50, undefined), '51–100');
     assert.equal(pageRange(0, 25, 0, 0), '0 of 0');
+  });
+});
+
+void describe('grouping (LAI-1196)', () => {
+  const lookups = {
+    spaces: new Map([
+      ['p1', { slug: 'laika', name: 'Laika' }],
+      ['p2', { slug: 'atlas', name: 'Atlas' }],
+    ]),
+    people: new Map([
+      ['u1', 'Zed'],
+      ['u2', 'Ada'],
+    ]),
+    sprints: new Map<string, string>(),
+  };
+  const served = [
+    task({ id: '1', status: 'review', status_name: 'QA', assignee_id: 'u1' }),
+    task({ id: '2', project_id: 'p2', status: 'todo', assignee_id: null }),
+    task({ id: '3', status: 'todo', assignee_id: 'u2' }),
+    task({ id: '4', project_id: 'p2', status: 'review', status_name: 'QA', assignee_id: 'u1' }),
+  ];
+  const rows = workRows(served, lookups);
+  const shape = (group: Parameters<typeof groupWorkRows>[1]) =>
+    groupWorkRows(rows, group).map((g) => [g.label, g.rows.map((r) => r.id)]);
+
+  void test('the URL keeps it; none and anything unknown are no param', () => {
+    assert.equal(readWorkGroup(new URLSearchParams('group=space')), 'space');
+    assert.equal(readWorkGroup(new URLSearchParams('group=bogus')), 'none');
+    const set = withWorkGroup(new URLSearchParams('status=todo'), 'assignee');
+    assert.equal(set.toString(), 'status=todo&group=assignee');
+    assert.equal(withWorkGroup(set, 'none').toString(), 'status=todo');
+  });
+
+  void test('none is one group of every row, in the served order', () => {
+    assert.deepEqual(shape('none'), [['Tasks', ['1', '2', '3', '4']]]);
+  });
+
+  void test('status groups go in board order; each keeps the served order', () => {
+    assert.deepEqual(shape('status'), [
+      ['To do', ['2', '3']],
+      ['Review', ['1', '4']],
+    ]);
+  });
+
+  void test('space groups by name; assignee by name with Unassigned last', () => {
+    assert.deepEqual(shape('space'), [
+      ['Atlas', ['2', '4']],
+      ['Laika', ['1', '3']],
+    ]);
+    assert.deepEqual(shape('assignee'), [
+      ['Ada', ['3']],
+      ['Zed', ['1', '4']],
+      ['Unassigned', ['2']],
+    ]);
+  });
+
+  void test('no row is added or dropped by any grouping', () => {
+    for (const g of ['none', 'space', 'status', 'assignee'] as const) {
+      assert.equal(
+        groupWorkRows(rows, g).reduce((n, x) => n + x.rows.length, 0),
+        rows.length,
+        g,
+      );
+    }
   });
 });

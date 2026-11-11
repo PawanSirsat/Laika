@@ -293,6 +293,9 @@ function WorkRoute() {
       params={params}
       setParams={setParams}
       onOpenTask={openTaskInItsSpace(navigate)}
+      onOpenSpaces={() => {
+        navigate('/projects');
+      }}
     />
   );
 }

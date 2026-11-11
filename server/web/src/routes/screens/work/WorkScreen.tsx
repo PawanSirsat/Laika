@@ -18,10 +18,12 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { ScrollCue } from '../../../components/ScrollCue.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import {
   allTasksFilter,
+  groupWorkRows,
   PAGE_SIZES,
   pageRange,
   pageTotal,
@@ -29,13 +31,18 @@ import {
   personMode,
   readPageSize,
   readWorkFilter,
+  readWorkGroup,
   STATUS_FILTERS,
   STATUS_TILES,
   summaryFilter,
   withPageSize,
   withWorkFilter,
+  withWorkGroup,
+  WORK_GROUP_LABELS,
+  WORK_GROUPS,
   workRows,
   type WorkFilter,
+  type WorkGroup,
 } from './work-derive.ts';
 import './work.css';
 
@@ -51,7 +58,11 @@ export interface WorkScreenProps {
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams) => void;
   readonly onOpenTask: (task: WorkTaskLink) => void;
+  /** The Spaces page, for an org with no work to show yet (LAI-1196). */
+  readonly onOpenSpaces?: (() => void) | undefined;
 }
+
+const NO_TASKS: readonly TaskSummary[] = [];
 
 function aborted(cause: unknown): boolean {
   return cause instanceof DOMException && cause.name === 'AbortError';
@@ -84,7 +95,7 @@ type Count =
  * The filters live in the URL, so a filtered view is a link. A row opens the
  * task in its own space's drawer.
  */
-export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProps) {
+export function WorkScreen({ me, params, setParams, onOpenTask, onOpenSpaces }: WorkScreenProps) {
   const filter = useMemo(() => readWorkFilter(params), [params]);
   const size = readPageSize(params);
   const query = useMemo(() => allTasksFilter(filter, size), [filter, size]);
@@ -106,6 +117,13 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
 
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  /*
+   * **The last page that loaded, kept through a failure** (LAI-1196). A read
+   * that fails after one succeeded leaves those rows on screen, marked as the
+   * last that loaded, with Retry above them — rather than blanking a list the
+   * reader was in the middle of using.
+   */
+  const [last, setLast] = useState<readonly TaskSummary[] | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,6 +131,7 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
     listAllTasks(cursor === null ? query : { ...query, cursor }, controller.signal)
       .then((page) => {
         setLoad({ status: 'ready', tasks: page.data, next: page.next_cursor });
+        setLast(page.data);
       })
       .catch((cause: unknown) => {
         if (aborted(cause)) return;
@@ -216,10 +235,15 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
     }),
     [spaces, people, sprintsBySpace],
   );
-  const rows = useMemo(
-    () => (load.status === 'ready' ? workRows(load.tasks, lookups) : []),
-    [load, lookups],
-  );
+  const shownTasks =
+    load.status === 'ready' ? load.tasks : load.status === 'error' ? (last ?? NO_TASKS) : NO_TASKS;
+  const stale = load.status === 'error' && last !== undefined;
+  const rows = useMemo(() => workRows(shownTasks, lookups), [shownTasks, lookups]);
+  const group = readWorkGroup(params);
+  const groups = useMemo(() => groupWorkRows(rows, group), [rows, group]);
+  const retry = (): void => {
+    setAttempt((n) => n + 1);
+  };
 
   const set = (change: Parameters<typeof withWorkFilter>[1]): void => {
     setParams(withWorkFilter(params, change));
@@ -333,16 +357,49 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
             set({ sprint: value });
           }}
         />
+        <Dropdown
+          className="work-filter work-group-by"
+          aria-label="Group by"
+          value={group}
+          options={WORK_GROUPS.map((g) => ({
+            value: g,
+            label: g === 'none' ? WORK_GROUP_LABELS[g] : `Group: ${WORK_GROUP_LABELS[g]}`,
+          }))}
+          onChange={(value: WorkGroup) => {
+            setParams(withWorkGroup(params, value));
+          }}
+        />
+        {/* The empty state offers the same, once; two identical buttons is one too many. */}
+        {filtered && !(load.status === 'ready' && rows.length === 0) && (
+          <button
+            type="button"
+            className="bar-control work-clear"
+            onClick={() => {
+              set({ person: '', status: '', space: '', sprint: '' });
+            }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
-      {load.status === 'error' ? (
+      {stale && (
+        <div className="work-stale" role="alert">
+          <p className="work-stale-text">
+            The work did not refresh. These rows are the last that loaded and may be out of date.
+          </p>
+          <button type="button" className="bar-control" onClick={retry}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {load.status === 'error' && !stale ? (
         <ApiErrorState
           error={load.error}
           resource="everyone’s work"
           scope="organisation"
-          onRetry={() => {
-            setAttempt((n) => n + 1);
-          }}
+          onRetry={retry}
         />
       ) : load.status === 'loading' ? (
         <LoadingState shape="row" count={6} label="Loading everyone’s work" />
@@ -359,10 +416,16 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
             }}
           />
         ) : (
-          <EmptyState headline={copy?.headline ?? ''} body={copy?.body ?? ''} />
+          <EmptyState
+            headline={copy?.headline ?? ''}
+            body={copy?.body ?? ''}
+            {...(onOpenSpaces === undefined
+              ? {}
+              : { action: { label: 'Go to spaces', onClick: onOpenSpaces } })}
+          />
         )
       ) : (
-        <>
+        <ScrollCue className="work-table" label="Everyone’s work, table">
           <div className="work-head" aria-hidden="true">
             <span>Key</span>
             <span>Title</span>
@@ -372,77 +435,31 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
             <span>Sprint</span>
             <span>Updated</span>
           </div>
-          <ul className="work-list" aria-label="Tasks">
-            {rows.map((row) => {
-              const updated = timeLabel(row.updatedAt, now);
-              return (
-                <li key={row.id} className="work-item">
-                  {/*
-                    The row opens its task — the title's button covers it
-                    (`::after`) — and the assignee's name is its own link to
-                    their profile, above that, for a reader who may open it
-                    (LAI-959): a link cannot sit inside a button.
-                  */}
-                  <div className="work-row">
-                    <span className="work-key">{row.key}</span>
-                    <button
-                      type="button"
-                      className="work-title work-open"
-                      data-task-id={row.id}
-                      onClick={() => {
-                        onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
-                      }}
-                    >
-                      {row.title}
-                    </button>
-                    <span className="work-meta">
-                      <span className="work-space">
-                        {row.space === undefined ? (
-                          '—'
-                        ) : (
-                          <>
-                            <SpaceBadge slug={row.space.slug} name={row.space.name} />
-                            <span className="work-space-name">{row.space.name}</span>
-                          </>
-                        )}
-                      </span>
-                      <span className="work-status" data-status={row.status}>
-                        {row.statusName}
-                      </span>
-                      <span
-                        className={
-                          row.assignee === 'Unassigned'
-                            ? 'work-assignee work-muted'
-                            : 'work-assignee'
-                        }
-                      >
-                        {row.assigneeId === null ? (
-                          row.assignee
-                        ) : (
-                          <PersonLink
-                            userId={row.assigneeId}
-                            className="work-person"
-                            label={`${row.assignee}’s profile`}
-                          >
-                            {row.assignee}
-                          </PersonLink>
-                        )}
-                      </span>
-                      <span
-                        className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}
-                      >
-                        {row.sprint ?? 'No sprint'}
-                      </span>
-                      <time className="work-updated" dateTime={updated.iso} title={updated.full}>
-                        {updated.text}
-                      </time>
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+          {groups.map((g) => (
+            <section
+              key={g.key}
+              className={stale ? 'work-group work-group-stale' : 'work-group'}
+              aria-labelledby={group === 'none' ? undefined : `work-group-${g.key}`}
+            >
+              {group !== 'none' && (
+                <h2 className="work-group-title" id={`work-group-${g.key}`}>
+                  <span>{g.label}</span>
+                  <span className="work-group-count">{g.rows.length}</span>
+                </h2>
+              )}
+              <ul className="work-list" aria-label={group === 'none' ? 'Tasks' : g.label}>
+                {g.rows.map((row) => (
+                  <WorkItem key={row.id} row={row} now={now} onOpenTask={onOpenTask} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </ScrollCue>
+      )}
+      {group !== 'none' && rows.length > 0 && load.status !== 'loading' && (
+        <p className="work-group-note">
+          Grouped within this page; Next and Previous page the whole list.
+        </p>
       )}
 
       {load.status === 'ready' && (rows.length > 0 || pageIndex > 0) && (
@@ -485,6 +502,78 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
         </nav>
       )}
     </div>
+  );
+}
+
+/** One task's row. The title's button covers the row; the assignee links above it. */
+function WorkItem({
+  row,
+  now,
+  onOpenTask,
+}: {
+  readonly row: ReturnType<typeof workRows>[number];
+  readonly now: number;
+  readonly onOpenTask: (task: WorkTaskLink) => void;
+}) {
+  const updated = timeLabel(row.updatedAt, now);
+  return (
+    <li className="work-item">
+      {/*
+        The row opens its task — the title's button covers it
+        (`::after`) — and the assignee's name is its own link to
+        their profile, above that, for a reader who may open it
+        (LAI-959): a link cannot sit inside a button.
+      */}
+      <div className="work-row">
+        <span className="work-key">{row.key}</span>
+        <button
+          type="button"
+          className="work-title work-open"
+          data-task-id={row.id}
+          onClick={() => {
+            onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
+          }}
+        >
+          {row.title}
+        </button>
+        <span className="work-meta">
+          <span className="work-space">
+            {row.space === undefined ? (
+              '—'
+            ) : (
+              <>
+                <SpaceBadge slug={row.space.slug} name={row.space.name} />
+                <span className="work-space-name">{row.space.name}</span>
+              </>
+            )}
+          </span>
+          <span className="work-status" data-status={row.status}>
+            {row.statusName}
+          </span>
+          <span
+            className={row.assignee === 'Unassigned' ? 'work-assignee work-muted' : 'work-assignee'}
+          >
+            {row.assigneeId === null ? (
+              row.assignee
+            ) : (
+              <PersonLink
+                userId={row.assigneeId}
+                className="work-person"
+                label={`${row.assignee}’s profile`}
+              >
+                {row.assignee}
+              </PersonLink>
+            )}
+          </span>
+          <span className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}>
+            {row.sprint ?? 'No sprint'}
+          </span>
+          <time className="work-updated" dateTime={updated.iso} title={updated.full}>
+            {updated.text}
+          </time>
+        </span>
+      </div>
+    </li>
   );
 }
 
