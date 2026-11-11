@@ -85,7 +85,13 @@ function requested(input: LaneInput): Lane {
   if (agent === null) return { ...base, state: 'empty', value: 'No agent selected' };
   const name = agent.display_name ?? agentLabel(agent);
   if (agent.status === 'revoked') {
-    return { ...base, state: 'set', value: name, detail: 'Selected · its access is revoked', tone: 'bad' };
+    return {
+      ...base,
+      state: 'set',
+      value: name,
+      detail: 'Selected · its access is revoked',
+      tone: 'bad',
+    };
   }
   const request = (input.offers ?? [])
     .filter((o) => o.kind === 'work_request' && o.to_agent_id === agent.id)
@@ -158,7 +164,13 @@ function outcome(input: LaneInput): Lane {
   const latest = input.rounds[0];
   if (latest === undefined) {
     if (input.task.status === 'done') {
-      return { ...base, state: 'set', value: 'Done', detail: 'No round was submitted', tone: 'done' };
+      return {
+        ...base,
+        state: 'set',
+        value: 'Done',
+        detail: 'No round was submitted',
+        tone: 'done',
+      };
     }
     return { ...base, state: 'empty', value: 'Nothing submitted yet' };
   }
@@ -170,7 +182,13 @@ function outcome(input: LaneInput): Lane {
     return { ...base, state: 'set', value: 'Sent back', detail: round, tone: 'bad' };
   }
   if (input.task.status === 'review') {
-    return { ...base, state: 'set', value: 'In review', detail: `${round} · waiting for a decision`, tone: 'warn' };
+    return {
+      ...base,
+      state: 'set',
+      value: 'In review',
+      detail: `${round} · waiting for a decision`,
+      tone: 'warn',
+    };
   }
   return { ...base, state: 'set', value: 'Submitted', detail: `${round} · not decided` };
 }

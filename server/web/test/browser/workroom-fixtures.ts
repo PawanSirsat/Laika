@@ -6,7 +6,6 @@
 
 import type { ApiStub } from './harness.ts';
 
-
 const NOW = Date.now();
 
 const PROJECT = {
@@ -240,4 +239,3 @@ export const STUB: ApiStub = {
   '/api/v1/tasks/t1/rounds': { rounds: [ROUND], send_back: null },
   ...perTask(['t1', 't2', 't3', 't4']),
 };
-

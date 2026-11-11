@@ -40,7 +40,10 @@ export type LayoutMode = 'three' | 'two' | 'one';
 export const THREE_PANEL_QUERY = '(min-width: 1280px)';
 export const TWO_PANEL_QUERY = '(min-width: 1024px)';
 
-export function layoutMode(matches: { readonly three: boolean; readonly two: boolean }): LayoutMode {
+export function layoutMode(matches: {
+  readonly three: boolean;
+  readonly two: boolean;
+}): LayoutMode {
   if (matches.three) return 'three';
   if (matches.two) return 'two';
   return 'one';
@@ -79,8 +82,7 @@ export function clampWidth(side: PanelSide, width: number): number {
  * left panel grows and the right panel shrinks.
  */
 export type SeparatorCommand =
-  | { readonly kind: 'width'; readonly width: number }
-  | { readonly kind: 'toggle' };
+  { readonly kind: 'width'; readonly width: number } | { readonly kind: 'toggle' };
 
 export function separatorKey(
   side: PanelSide,

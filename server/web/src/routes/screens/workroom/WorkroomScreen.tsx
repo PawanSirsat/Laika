@@ -44,7 +44,10 @@ function useSpaceOfKey(key: string): readonly [SpaceRead, () => void] {
     const controller = new AbortController();
     setRead({ kind: 'loading' });
     everyPage((cursor) =>
-      listProjects(cursor === undefined ? { limit: 200 } : { limit: 200, cursor }, controller.signal),
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
     )
       .then(({ items }) => {
         if (controller.signal.aborted) return;
@@ -64,9 +67,12 @@ function useSpaceOfKey(key: string): readonly [SpaceRead, () => void] {
       controller.abort();
     };
   }, [prefix, attempt]);
-  return [read, () => {
-    setAttempt((n) => n + 1);
-  }];
+  return [
+    read,
+    () => {
+      setAttempt((n) => n + 1);
+    },
+  ];
 }
 
 /** The space's members by id, for names. An unreadable list is an empty one. */
@@ -121,11 +127,7 @@ export function WorkroomScreen({ taskKey, navigate }: WorkroomScreenProps) {
   if (space.kind === 'error') {
     return (
       <WorkroomState title="Could not open this task" taskKey={taskKey} navigate={navigate}>
-        <ApiErrorState
-          error={space.error}
-          resource="your spaces"
-          onRetry={retrySpace}
-        />
+        <ApiErrorState error={space.error} resource="your spaces" onRetry={retrySpace} />
       </WorkroomState>
     );
   }
@@ -141,8 +143,7 @@ export function WorkroomScreen({ taskKey, navigate }: WorkroomScreenProps) {
       return (
         <WorkroomState title="You cannot open this task" taskKey={taskKey} navigate={navigate}>
           <p className="wr-state-body" data-state="forbidden">
-            {taskKey} belongs to a space you do not have access to. Ask one of its leads to add
-            you.
+            {taskKey} belongs to a space you do not have access to. Ask one of its leads to add you.
           </p>
         </WorkroomState>
       );
@@ -161,9 +162,7 @@ export function WorkroomScreen({ taskKey, navigate }: WorkroomScreenProps) {
   }
 
   if (set?.status === 'ready' && task === undefined) {
-    return (
-      <NotFoundState taskKey={taskKey} navigate={navigate} truncated={set.truncated} />
-    );
+    return <NotFoundState taskKey={taskKey} navigate={navigate} truncated={set.truncated} />;
   }
 
   if (task === undefined || slug === undefined || set === undefined) {

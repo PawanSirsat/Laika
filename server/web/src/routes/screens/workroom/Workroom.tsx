@@ -188,9 +188,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       mentionable.map((user) => ({
         id: user.id,
         name: user.name,
-        handle: handleOf(
-          members.get(user.id)?.email ?? (user.id === meId ? me?.email : undefined),
-        ),
+        handle: handleOf(members.get(user.id)?.email ?? (user.id === meId ? me?.email : undefined)),
       })),
     [mentionable, members, meId, me?.email],
   );
@@ -481,7 +479,10 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
           />
           {text.stale && text.error !== null && (
             <div className="panel-alert panel-text-stale" role="alert">
-              <p>Could not read the newest version of this description. Until it is read, this one cannot be edited.</p>
+              <p>
+                Could not read the newest version of this description. Until it is read, this one
+                cannot be edited.
+              </p>
               <Button variant="secondary" onClick={text.retry}>
                 Try again
               </Button>
@@ -506,7 +507,9 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
           {full.acceptance_md !== null && full.acceptance_md !== '' ? (
             <div
               className="panel-acceptance"
-              data-acceptance={checklistProgress(full.acceptance_md) === null ? 'prose' : 'checklist'}
+              data-acceptance={
+                checklistProgress(full.acceptance_md) === null ? 'prose' : 'checklist'
+              }
             >
               {checklistProgress(full.acceptance_md) !== null && (
                 <p className="panel-acceptance-progress">
@@ -579,7 +582,11 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       <h2 id="wr-evidence-h" className="wr-section-title">
         Evidence
       </h2>
-      <LatestSave save={save} status={handoffs.status} hasRounds={(rounds?.rounds.length ?? 0) > 0} />
+      <LatestSave
+        save={save}
+        status={handoffs.status}
+        hasRounds={(rounds?.rounds.length ?? 0) > 0}
+      />
       <EvidenceSection
         taskId={task.id}
         refreshKey={task.updated_at}
@@ -640,11 +647,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
                 : `Round ${String(rounds.rounds[0].number)} is waiting for a decision.`}
             </p>
             <div className="wr-review-actions" ref={sendBackButton}>
-              <Button
-                variant="primary"
-                disabled={review.deciding !== null}
-                onClick={review.accept}
-              >
+              <Button variant="primary" disabled={review.deciding !== null} onClick={review.accept}>
                 {review.deciding === 'accept' ? 'Accepting…' : 'Accept'}
               </Button>
               <Button
@@ -653,7 +656,8 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
                 onClick={() => {
                   // Focus returns to Send back when the dialog closes.
                   review.openSendBack(
-                    sendBackButton.current?.querySelector<HTMLElement>('button:last-of-type') ?? null,
+                    sendBackButton.current?.querySelector<HTMLElement>('button:last-of-type') ??
+                      null,
                   );
                 }}
               >

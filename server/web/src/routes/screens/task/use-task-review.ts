@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { acceptReview, getTaskRounds, sendBackReview, type TaskRounds } from '../../../api/review.ts';
+import {
+  acceptReview,
+  getTaskRounds,
+  sendBackReview,
+  type TaskRounds,
+} from '../../../api/review.ts';
 
 /**
  * **A task's rounds, read once** (LAI-1117) — for the state panel, the proof

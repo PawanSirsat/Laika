@@ -199,10 +199,7 @@ function TaskDrawerTask({
            * remembered so the page's *Back to …* can step back rather than
            * push a second copy of this view.
            */
-          rememberWorkroomReturn(
-            task.key,
-            window.location.pathname + window.location.search,
-          );
+          rememberWorkroomReturn(task.key, window.location.pathname + window.location.search);
           navigate(workroomHref(task.key));
         }}
       />

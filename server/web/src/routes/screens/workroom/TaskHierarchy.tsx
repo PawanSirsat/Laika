@@ -93,7 +93,13 @@ export function TaskHierarchy({ task, parent, byId, onOpenKey }: TaskHierarchyPr
           <TaskLink task={parent} onOpenKey={onOpenKey} />
         )}
       </div>
-      <Group title="Subtasks" ids={subtasks} byId={byId} empty="No subtasks." onOpenKey={onOpenKey} />
+      <Group
+        title="Subtasks"
+        ids={subtasks}
+        byId={byId}
+        empty="No subtasks."
+        onOpenKey={onOpenKey}
+      />
       <Group
         title="Blocked by"
         ids={task.blocked_by}

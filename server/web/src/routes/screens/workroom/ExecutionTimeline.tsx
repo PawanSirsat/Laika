@@ -85,10 +85,17 @@ export function ExecutionTimeline({
               )}
               <ol className="wr-rows">
                 {group.rows.map((row) => (
-                  <li key={row.id} className="wr-row" data-source={row.source} data-tone={row.tone ?? 'none'}>
+                  <li
+                    key={row.id}
+                    className="wr-row"
+                    data-source={row.source}
+                    data-tone={row.tone ?? 'none'}
+                  >
                     <span className="wr-row-badge">{SOURCE_LABEL[row.source]}</span>
                     <span className="wr-row-title">{row.title}</span>
-                    {row.detail !== undefined && <span className="wr-row-detail">{row.detail}</span>}
+                    {row.detail !== undefined && (
+                      <span className="wr-row-detail">{row.detail}</span>
+                    )}
                     <time className="wr-row-time" dateTime={new Date(row.at).toISOString()}>
                       {dateTime(row.at, now)}
                     </time>

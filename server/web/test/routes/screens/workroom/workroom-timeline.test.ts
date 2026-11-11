@@ -85,7 +85,11 @@ void describe('timelineRows', () => {
   });
 
   void test('an activity row that records no claim is not a timeline row', () => {
-    const comment = { ...claimTaken('e2', 60, 2), type: 'comment.created', payload: {} } as ActivityEvent;
+    const comment = {
+      ...claimTaken('e2', 60, 2),
+      type: 'comment.created',
+      payload: {},
+    } as ActivityEvent;
     assert.deepEqual(timelineRows({ activity: [comment], checkpoints: [], rounds: [] }), []);
   });
 });
@@ -94,7 +98,10 @@ void describe('groupRuns', () => {
   void test('consecutive rows of one claim share a run; rounds stand alone; order is kept', () => {
     const rows = timelineRows({
       activity: [claimTaken('e1', 50, 2), claimTaken('e0', 10, 1)],
-      checkpoints: [save({ id: 'c1', created_at: 100 }), save({ id: 'c0', created_at: 20, claim_generation: 1 })],
+      checkpoints: [
+        save({ id: 'c1', created_at: 100 }),
+        save({ id: 'c0', created_at: 20, claim_generation: 1 }),
+      ],
       rounds: [ROUND],
     });
     const groups = groupRuns(rows);
@@ -106,7 +113,10 @@ void describe('groupRuns', () => {
         [1, 2],
       ],
     );
-    assert.deepEqual(groups.flatMap((g) => g.rows), rows);
+    assert.deepEqual(
+      groups.flatMap((g) => g.rows),
+      rows,
+    );
   });
 });
 
@@ -137,7 +147,10 @@ void describe('agentNotes', () => {
 
 void describe('latestSave', () => {
   void test('the newest checkpoint, or none', () => {
-    assert.equal(latestSave([save({ id: 'a', created_at: 1 }), save({ id: 'b', created_at: 9 })])?.id, 'b');
+    assert.equal(
+      latestSave([save({ id: 'a', created_at: 1 }), save({ id: 'b', created_at: 9 })])?.id,
+      'b',
+    );
     assert.equal(latestSave([]), undefined);
   });
 });

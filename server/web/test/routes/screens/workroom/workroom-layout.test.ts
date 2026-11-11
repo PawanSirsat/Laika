@@ -37,9 +37,18 @@ void describe('limits', () => {
 
 void describe('separatorKey', () => {
   void test('→ moves the line right: the left panel grows, the right shrinks', () => {
-    assert.deepEqual(separatorKey('left', 248, { key: 'ArrowRight' }), { kind: 'width', width: 264 });
-    assert.deepEqual(separatorKey('right', 320, { key: 'ArrowRight' }), { kind: 'width', width: 304 });
-    assert.deepEqual(separatorKey('left', 248, { key: 'ArrowLeft' }), { kind: 'width', width: 232 });
+    assert.deepEqual(separatorKey('left', 248, { key: 'ArrowRight' }), {
+      kind: 'width',
+      width: 264,
+    });
+    assert.deepEqual(separatorKey('right', 320, { key: 'ArrowRight' }), {
+      kind: 'width',
+      width: 304,
+    });
+    assert.deepEqual(separatorKey('left', 248, { key: 'ArrowLeft' }), {
+      kind: 'width',
+      width: 232,
+    });
   });
 
   void test('Shift takes the bigger step, and still stops at the limit', () => {

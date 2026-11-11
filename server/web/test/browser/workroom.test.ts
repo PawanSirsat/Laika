@@ -43,11 +43,16 @@ void describe('opening the Workroom', () => {
       await ready(h);
       assert.equal((await title(h).textContent())?.trim(), 'Ship the workroom');
       assert.equal(await h.page.getByRole('navigation', { name: 'Task navigation' }).count(), 1);
-      assert.equal(await h.page.getByRole('complementary', { name: 'Agents and review' }).count(), 1);
+      assert.equal(
+        await h.page.getByRole('complementary', { name: 'Agents and review' }).count(),
+        1,
+      );
       assert.equal(await h.page.getByRole('article', { name: 'Ship the workroom' }).count(), 1);
       assert.equal(await h.page.getByRole('separator').count(), 2);
       // Description through the existing renderer: bold is an element, not asterisks.
-      await h.page.locator('.wr-centre strong', { hasText: 'description' }).waitFor({ timeout: 10_000 });
+      await h.page
+        .locator('.wr-centre strong', { hasText: 'description' })
+        .waitFor({ timeout: 10_000 });
       // The hierarchy from the set: the subtask and the blocker, as links to their pages.
       assert.equal(
         await h.page.locator('.wr-left a[href="/task/LC-2"]').count(),
@@ -142,7 +147,9 @@ void describe('history', () => {
       assert.equal(new URL(h.page.url()).searchParams.get('area'), 'execution');
       assert.equal(await h.page.evaluate(() => history.length), length);
       assert.equal(
-        await nav.getByRole('button', { name: 'Execution', exact: true }).getAttribute('aria-current'),
+        await nav
+          .getByRole('button', { name: 'Execution', exact: true })
+          .getAttribute('aria-current'),
         'true',
       );
       await h.page.goBack();
@@ -190,7 +197,9 @@ void describe('panels', () => {
       await h.page.keyboard.press('End');
       assert.equal(await nav.getAttribute('aria-valuenow'), '360');
       // The panel really is that wide — the value is not just an attribute.
-      const width = await h.page.locator('#wr-left').evaluate((el) => el.getBoundingClientRect().width);
+      const width = await h.page
+        .locator('#wr-left')
+        .evaluate((el) => el.getBoundingClientRect().width);
       assert.equal(Math.round(width), 360);
 
       await h.page.reload();
@@ -346,7 +355,9 @@ void describe('agent lanes, from the fixture and nothing else', () => {
       // The timeline holds the claim, the save and the round, each badged.
       const rows = h.page.locator('.wr-row');
       await until(async () => (await rows.count()) >= 3);
-      const sources = await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
+      const sources = await rows.evaluateAll((els) =>
+        els.map((e) => e.getAttribute('data-source')),
+      );
       assert.deepEqual([...new Set(sources)].sort(), ['activity', 'round', 'save']);
     } finally {
       await h.close();
@@ -364,13 +375,14 @@ void describe('agent lanes, from the fixture and nothing else', () => {
         .evaluateAll((els) => els.map((e) => e.getAttribute('data-state')));
       assert.deepEqual(states, ['empty', 'empty', 'empty', 'empty']);
       const values = await h.page.locator('.wr-lane-value').allInnerTexts();
-      for (const value of values) assert.doesNotMatch(value, /^(Working|In review|Accepted|shell-cc)/);
+      for (const value of values)
+        assert.doesNotMatch(value, /^(Working|In review|Accepted|shell-cc)/);
       assert.equal(await h.page.locator('.wr-lane-detail').count(), 0, 'a lane added a detail');
+      assert.match(await h.page.locator('[data-card="review"]').innerText(), /Nothing to decide/);
       assert.match(
-        await h.page.locator('[data-card="review"]').innerText(),
-        /Nothing to decide/,
+        await h.page.locator('.wr-timeline').innerText(),
+        /No agent has worked this yet/,
       );
-      assert.match(await h.page.locator('.wr-timeline').innerText(), /No agent has worked this yet/);
     } finally {
       await h.close();
     }
@@ -385,7 +397,9 @@ void describe('agent lanes, from the fixture and nothing else', () => {
       await ready(h);
       const review = h.page.locator('[data-card="review"]');
       await review.getByRole('button', { name: 'Accept' }).click();
-      await until(() => h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t1/accept'));
+      await until(() =>
+        h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t1/accept'),
+      );
       assert.ok(h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t1/accept'));
     } finally {
       await h.close();
@@ -421,7 +435,10 @@ void describe('breakpoints', () => {
         const overflow = await h.page
           .locator('.wr')
           .evaluate((el) => el.scrollWidth - el.clientWidth);
-        assert.ok(overflow <= 1, `${String(width)}: the page scrolls sideways by ${String(overflow)}px`);
+        assert.ok(
+          overflow <= 1,
+          `${String(width)}: the page scrolls sideways by ${String(overflow)}px`,
+        );
       }
       await h.page.getByRole('tab', { name: 'Agents & review' }).click();
       await lane(h, 'accountable').waitFor({ timeout: 5_000 });

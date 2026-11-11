@@ -1,10 +1,5 @@
 import { useRef } from 'react';
-import {
-  PANEL_LIMITS,
-  dragWidth,
-  separatorKey,
-  type PanelSide,
-} from './workroom-layout.ts';
+import { PANEL_LIMITS, dragWidth, separatorKey, type PanelSide } from './workroom-layout.ts';
 
 export interface PanelSeparatorProps {
   readonly side: PanelSide;

@@ -35,10 +35,7 @@ export function spaceOfKey<P extends Pick<Project, 'prefix' | 'former_prefixes'>
  * when the key used a prefix the space has since changed; else by its
  * outside id (LAI-780), which a board key always beats.
  */
-export function findByKey(
-  tasks: Iterable<TaskSummary>,
-  key: string,
-): TaskSummary | undefined {
+export function findByKey(tasks: Iterable<TaskSummary>, key: string): TaskSummary | undefined {
   const want = key.trim().toUpperCase();
   const number = Number(/-(\d+)$/.exec(want)?.[1]);
   let byNumber: TaskSummary | undefined;

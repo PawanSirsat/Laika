@@ -120,7 +120,10 @@ void describe('agentLanes', () => {
     const requested = lane(input, 'requested');
     assert.equal(requested.value, 'shell-cc');
     assert.equal(requested.detail, 'Selected · work request open');
-    const pending = lane({ ...input, offers: [{ ...offer, state: 'pending_approval' }] }, 'requested');
+    const pending = lane(
+      { ...input, offers: [{ ...offer, state: 'pending_approval' }] },
+      'requested',
+    );
     assert.equal(pending.detail, 'Selected · the work request waits for approval');
     assert.equal(pending.tone, 'warn');
   });
@@ -128,7 +131,13 @@ void describe('agentLanes', () => {
   void test('no agent lane ever says "assigned" — only Accountable names the assignee', () => {
     const input: LaneInput = {
       ...empty,
-      task: { assignee_id: 'u1', status: 'in_progress', selected_agent: AGENT, claim: CLAIM, send_back: null },
+      task: {
+        assignee_id: 'u1',
+        status: 'in_progress',
+        selected_agent: AGENT,
+        claim: CLAIM,
+        send_back: null,
+      },
       personName: () => 'Ada',
     };
     for (const l of agentLanes(input).filter((x) => x.id !== 'accountable')) {
@@ -157,7 +166,14 @@ void describe('agentLanes', () => {
   });
 
   void test('with no live claim, Executing reads the activity — and is unknown before it', () => {
-    const fact = { kind: 'expired', generation: 2, sessionId: null, agentId: null, at: 1, session: null } as const;
+    const fact = {
+      kind: 'expired',
+      generation: 2,
+      sessionId: null,
+      agentId: null,
+      at: 1,
+      session: null,
+    } as const;
     const expired: ClaimHistory = { kind: 'expired', fact };
     assert.equal(lane({ ...empty, history: expired }, 'executing').value, 'Last claim expired');
     const released: ClaimHistory = { kind: 'released', fact: { ...fact, kind: 'taken' } };
@@ -166,14 +182,20 @@ void describe('agentLanes', () => {
   });
 
   void test('Outcome follows the newest round and its decision', () => {
-    const inReview: LaneInput = { ...empty, task: { ...empty.task, status: 'review' }, rounds: [round({})] };
+    const inReview: LaneInput = {
+      ...empty,
+      task: { ...empty.task, status: 'review' },
+      rounds: [round({})],
+    };
     assert.equal(lane(inReview, 'outcome').value, 'In review');
     assert.equal(lane(inReview, 'outcome').detail, 'Round 2 · waiting for a decision');
     const decided = (kind: 'accepted' | 'sent_back') =>
       lane(
         {
           ...inReview,
-          rounds: [round({ decision: { kind, decided_by: 'u1', reason_md: null, created_at: NOW } })],
+          rounds: [
+            round({ decision: { kind, decided_by: 'u1', reason_md: null, created_at: NOW } }),
+          ],
         },
         'outcome',
       ).value;
