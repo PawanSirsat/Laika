@@ -34,7 +34,10 @@
   gap: var(--space-3);
 }
 
-.field-meta > .field-help {
+.field-meta-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   flex: 1;
   min-width: 0;
 }

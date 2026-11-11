@@ -155,6 +155,27 @@ export function Field({
 
   const control = children({ inputId, describedBy, invalid: isInvalid });
 
+  /*
+   * Under the control: help and the error on the left, the count on the right,
+   * on one line — so a message about the length sits beside the number it is
+   * about. Without a count, help and error simply stack.
+   */
+  const under = (help: ReactNode) =>
+    countEl === false ? (
+      <>
+        {help}
+        {errorEl}
+      </>
+    ) : (
+      <div className="field-meta">
+        <div className="field-meta-text">
+          {help}
+          {errorEl}
+        </div>
+        {countEl}
+      </div>
+    );
+
   if (layout === 'row') {
     return (
       <div className={classes}>
@@ -164,8 +185,7 @@ export function Field({
         </div>
         <div className="field-row-body">
           {control}
-          {countEl}
-          {errorEl}
+          {under(null)}
           {after}
         </div>
       </div>
@@ -176,13 +196,7 @@ export function Field({
     <div className={classes}>
       {labelEl}
       {control}
-      {helpEl !== false || countEl !== false ? (
-        <div className="field-meta">
-          {helpEl}
-          {countEl}
-        </div>
-      ) : null}
-      {errorEl}
+      {under(helpEl)}
       {after}
     </div>
   );
