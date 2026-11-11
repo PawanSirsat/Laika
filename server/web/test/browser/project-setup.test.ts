@@ -1621,6 +1621,52 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  void test('a Save that fails keeps the choice, holds Continue, and Try again recovers (LAI-1197)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1' })], puts: [] };
+    let fail = true;
+    const h = await open(
+      '/developer?tab=projects',
+      stub('v3', world, {
+        '/api/v1/agents/a1/grants': (call: StubCall) => {
+          if (fail) return refuse(503, 'unavailable', 'The board is restarting.');
+          world.puts.push(call.body);
+          const grants = (call.body as { grants: Grant[] }).grants;
+          world.agents = world.agents.map((a) => (a.id === 'a1' ? { ...a, grants } : a));
+          return world.agents[0];
+        },
+      }),
+    );
+    try {
+      await h.page.locator('.dev-setup-facts').waitFor({ timeout: 20_000 });
+      await grantTile(h.page, 'full').click();
+      await h.page.getByRole('button', { name: 'Save access' }).click();
+      const failed = h.page.locator('.dx-ps-auth .state-error');
+      await failed.waitFor({ timeout: 10_000 });
+      assert.match(await failed.innerText(), /Could not change Claude Code · Belka’s access/);
+      assert.match(await failed.innerText(), /The board is restarting\./);
+      // Still on step 1, the choice kept, Continue held with its reason.
+      assert.equal(param(h.page, 'step'), null);
+      assert.equal(await h.page.getByRole('radio', { name: 'Full' }).isChecked(), true);
+      assert.equal(await continueButton(h.page).getAttribute('aria-disabled'), 'true');
+      assert.equal(
+        (await footNote(h.page).innerText()).trim(),
+        'Give Claude Code · Belka access to OnRoute to continue.',
+      );
+
+      fail = false;
+      await failed.getByRole('button', { name: 'Try again' }).click();
+      await h.page.getByText('Saved.').waitFor({ timeout: 20_000 });
+      assert.equal(await failed.count(), 0);
+      assert.deepEqual(world.puts, [{ grants: [{ project_id: 'p1', scope: 'full' }] }]);
+      assert.equal(await continueButton(h.page).getAttribute('aria-disabled'), 'false');
+      await continueButton(h.page).click();
+      await until(() => param(h.page, 'step') === '2');
+      assert.equal(param(h.page, 'step'), '2');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('keyboard only: arrows choose a grant, Save keeps focus, the result is heard', async () => {
     const world: World = { agents: [agentRow({ id: 'a1' })], puts: [] };
     const h = await open('/developer?tab=projects', stub('v3', world));
