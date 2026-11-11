@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { EmbeddedScreen, ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import type { PageTab } from '../../page-tabs.ts';
+import './insights.css';
 
 export interface InsightsScreenProps {
   readonly tabs: readonly PageTab[];
@@ -20,7 +21,7 @@ export interface InsightsScreenProps {
 export function InsightsScreen({ tabs, current, onNavigate, children }: InsightsScreenProps) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
-    <div className="page">
+    <div className="page insights-page">
       <ScreenHeader
         variant="page"
         title="Insights"
