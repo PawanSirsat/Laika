@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 
 export interface HeaderPopoverProps {
   /** The trigger's content. */
@@ -59,6 +60,8 @@ export function HeaderPopover({
 }: HeaderPopoverProps) {
   const [own, setOwn] = useState(false);
   const open = controlled ?? own;
+  // On the overlay stack while open (LAI-1205).
+  const { isTop } = useLayer('popover', open);
   const setOpen = (next: boolean): void => {
     setOwn(next);
     onOpenChange?.(next);
@@ -98,8 +101,18 @@ export function HeaderPopover({
         return;
       if (root.current !== null && !root.current.contains(target)) close();
     };
+    /*
+     * Escape on the capture phase reaches here before anything else on the
+     * page, so it must ask whether it is this popover's (LAI-1205): not while
+     * a picker or menu is open above it, and not while a modal a control
+     * inside opened (Draft my time's question) holds the focus.
+     */
+    const theirs = (target: EventTarget | null): boolean =>
+      target instanceof Element &&
+      target.closest('[aria-modal="true"]') !== null &&
+      panel.current?.contains(target) !== true;
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && isTop() && !theirs(event.target)) {
         event.stopPropagation();
         close();
         root.current?.querySelector<HTMLElement>('button')?.focus();
@@ -130,7 +143,7 @@ export function HeaderPopover({
       document.removeEventListener('keydown', key, true);
       document.removeEventListener('keydown', trap);
     };
-  }, [open, onOpenChange, dialog]);
+  }, [open, onOpenChange, dialog, isTop]);
 
   // A dialog takes focus when it opens, on its first control.
   useEffect(() => {
