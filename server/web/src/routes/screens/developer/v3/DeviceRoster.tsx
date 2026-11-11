@@ -15,6 +15,7 @@ import { AddDeviceWizard } from './AddDeviceWizard.tsx';
 import { AddToolWizard } from './AddToolWizard.tsx';
 import { DeviceDetails } from './DeviceDetails.tsx';
 import { DEVICES_TITLE, DevicesTab } from './DevicesTab.tsx';
+import { ResultNote, StaleNotice, useResult } from './PageNotices.tsx';
 import { ToolDetails } from './ToolDetails.tsx';
 import { TOOLS_TITLE, ToolsTab } from './ToolsTab.tsx';
 import { UpdatesProvider } from './ToolUpdate.tsx';
@@ -134,6 +135,11 @@ export function DeviceRoster({
   const disconnectingRef = useRef<string | undefined>(undefined);
   const [deviceErrors, setDeviceErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [message, announce] = useLiveRegion();
+  // What a write just did, on screen as well as in the live region (LAI-1197).
+  const [result, notify, clearResult] = useResult(announce);
+  /** When the list last answered, for the stale notice. */
+  const [loadedAt, setLoadedAt] = useState<number | undefined>(undefined);
+  const [retrying, setRetrying] = useState(false);
   const addDeviceButton = useRef<HTMLButtonElement | null>(null);
   const addToolButton = useRef<HTMLButtonElement | null>(null);
   const lastAdd = useRef<'device' | 'tool' | undefined>(undefined);
@@ -142,16 +148,18 @@ export function DeviceRoster({
   const listed = useRef(false);
 
   const load = useCallback(
-    (signal?: AbortSignal, quiet = false): void => {
+    (signal?: AbortSignal, quiet = false): Promise<void> => {
       readGen.current += 1;
       const gen = readGen.current;
-      listDevices(signal)
+      return listDevices(signal)
         .then(({ data }) => {
           if (gen !== readGen.current) return;
           listed.current = true;
           setDevices(data);
           setError(null);
-          setNow(Date.now());
+          const at = Date.now();
+          setNow(at);
+          setLoadedAt(at);
           // A re-read for presence alone says nothing: the list did not change
           // because of anything the reader did.
           if (!quiet) announce(devicesSummary(deviceCounts(data)));
@@ -163,6 +171,8 @@ export function DeviceRoster({
           // restarting — keeps the list it has (LAI-1102 review, B1). Putting
           // an error in its place would take the row the reader is on, and
           // their focus with it; the next read that works brings it up to date.
+          // Any other read that fails once a list is shown — after a write, or
+          // Retry — keeps the list too, and says so above it (LAI-1197).
           if (quiet && listed.current) return;
           setError(cause);
         });
@@ -187,7 +197,7 @@ export function DeviceRoster({
 
   useEffect(() => {
     const controller = new AbortController();
-    load(controller.signal);
+    void load(controller.signal);
     loadProjects(controller.signal);
     return () => {
       controller.abort();
@@ -199,7 +209,7 @@ export function DeviceRoster({
   // window comes back and every minute while it is shown. Rows keep their
   // keys, so nothing a reader is on moves or loses focus.
   const reread = useCallback((): void => {
-    if (document.visibilityState === 'visible') load(undefined, true);
+    if (document.visibilityState === 'visible') void load(undefined, true);
   }, [load]);
   useEffect(() => {
     const timer = setInterval(reread, PRESENCE_REREAD_MS);
@@ -283,7 +293,7 @@ export function DeviceRoster({
     for (const key of WIZARD_PARAMS) next.delete(key);
     for (const [key, value] of Object.entries(extra)) next.set(key, value);
     setParams(next);
-    if (changed) load();
+    if (changed) void load();
   };
 
   const reconnect = (agent: RegisteredAgent): void => {
@@ -351,7 +361,7 @@ export function DeviceRoster({
         setDevices((current) =>
           current === undefined ? current : withConfirmed(current, device.id),
         );
-        announce(`${device.display_name} confirmed as yours.`);
+        notify(`${device.display_name} confirmed as yours.`);
       })
       .catch((cause: unknown) => {
         setDeviceErrors((errors) =>
@@ -421,11 +431,11 @@ export function DeviceRoster({
                 ? current
                 : withRevokedAgents(current, revoked_agent_ids, Date.now()),
             );
-            announce(
-              `${device.display_name} disconnected: ${String(revoked_agent_ids.length)} ${revoked_agent_ids.length === 1 ? 'tool' : 'tools'} revoked.`,
+            notify(
+              `${device.display_name} disconnected: ${String(revoked_agent_ids.length)} ${revoked_agent_ids.length === 1 ? 'tool' : 'tools'} revoked. Their credentials no longer work.`,
             );
             closeDetails();
-            load();
+            void load();
           })
           .catch((cause: unknown) => {
             setDeviceErrors((errors) =>
@@ -459,16 +469,33 @@ export function DeviceRoster({
       ? { listed: findTool(devices, panelId) }
       : undefined;
 
+  const retry = (): void => {
+    setRetrying(true);
+    void load().finally(() => {
+      setRetrying(false);
+    });
+  };
+
   const lists = (
     <>
+      {result !== undefined && <ResultNote message={result} onDismiss={clearResult} />}
+      {devices !== undefined && error !== null && (
+        <StaleNotice
+          what={tab === 'devices' ? 'your devices' : 'your tools'}
+          error={error}
+          loadedAt={loadedAt}
+          retrying={retrying}
+          onRetry={retry}
+        />
+      )}
       {tab === 'devices' ? (
         <DevicesTab
           devices={devices}
           counts={counts}
-          error={error}
+          error={devices === undefined ? error : null}
           onRetry={() => {
             setError(null);
-            load();
+            void load();
           }}
           now={now}
           canManage={canManage}
@@ -495,10 +522,10 @@ export function DeviceRoster({
         <ToolsTab
           devices={devices}
           counts={counts}
-          error={error}
+          error={devices === undefined ? error : null}
           onRetry={() => {
             setError(null);
-            load();
+            void load();
           }}
           now={now}
           canManage={canManage}
@@ -548,7 +575,7 @@ export function DeviceRoster({
           }}
           onChanged={put}
           onRenamed={renamed}
-          announce={announce}
+          announce={notify}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}
         />
@@ -570,7 +597,7 @@ export function DeviceRoster({
           onChanged={put}
           onReconnect={reconnect}
           onDisconnected={closeDetails}
-          announce={announce}
+          announce={notify}
           confirm={confirm}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}
@@ -602,7 +629,7 @@ export function DeviceRoster({
                 tool: undefined,
               }),
             );
-            load();
+            void load();
           }}
           onClose={closeWizard}
         />

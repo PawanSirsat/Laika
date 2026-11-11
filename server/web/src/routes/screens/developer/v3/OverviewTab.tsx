@@ -36,6 +36,7 @@ import {
   type AttentionItem,
   type HeroKind,
 } from './overview-state.ts';
+import { StaleNotice } from './PageNotices.tsx';
 import { RepoRows } from './RepoRows.tsx';
 import { updateManifestOf, updateStatus, type UpdateStatus } from './update-status.ts';
 import './overview.css';
@@ -216,6 +217,9 @@ export function OverviewTab({
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [error, setError] = useState<Failure | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  /** When the reads last answered: a later failure says what it is showing. */
+  const [loadedAt, setLoadedAt] = useState<number | undefined>(undefined);
+  const [retrying, setRetrying] = useState(false);
   const [updates, setUpdates] = useState<ReadonlyMap<string, UpdateStatus>>(new Map());
   const [message, announce] = useLiveRegion();
   const projects = useProjects();
@@ -223,8 +227,10 @@ export function OverviewTab({
   const root = useRef<HTMLDivElement | null>(null);
   const shownKind = useRef<HeroKind | undefined>(undefined);
 
-  const load = useCallback((signal?: AbortSignal): void => {
-    void Promise.allSettled([
+  // A read that fails after the page has loaded keeps what it shows and says
+  // so above it (LAI-1197): the reader's place, and their focus, stay.
+  const load = useCallback((signal?: AbortSignal): Promise<void> => {
+    return Promise.allSettled([
       listDevices(signal),
       listProjectSetups(undefined, undefined, signal),
     ]).then(([devices, setups]) => {
@@ -239,15 +245,17 @@ export function OverviewTab({
       }
       setLoaded({ devices: devices.value.data, setups: setups.value });
       setError(null);
-      setNow(Date.now());
+      const at = Date.now();
+      setNow(at);
+      setLoadedAt(at);
     });
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    load(controller.signal);
+    void load(controller.signal);
     const onVisible = (): void => {
-      if (document.visibilityState === 'visible') load(controller.signal);
+      if (document.visibilityState === 'visible') void load(controller.signal);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -331,8 +339,15 @@ export function OverviewTab({
     [projects.projects],
   );
 
+  const retry = (): void => {
+    setRetrying(true);
+    void load().finally(() => {
+      setRetrying(false);
+    });
+  };
+
   let body: ReactNode;
-  if (error !== null) {
+  if (error !== null && state === undefined) {
     body = (
       <ApiErrorState
         error={error.cause}
@@ -340,7 +355,7 @@ export function OverviewTab({
         scope="organisation"
         onRetry={() => {
           setError(null);
-          load();
+          void load();
         }}
       />
     );
@@ -353,6 +368,15 @@ export function OverviewTab({
     const rows = journeyRows(state, projectsHref, toolsHref);
     body = (
       <>
+        {error !== null && (
+          <StaleNotice
+            what={error.resource}
+            error={error.cause}
+            loadedAt={loadedAt}
+            retrying={retrying}
+            onRetry={retry}
+          />
+        )}
         <div className="dx-columns">
           <div className="dx-stack">
             <section
