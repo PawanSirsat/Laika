@@ -50,6 +50,8 @@ void describe('which answers may be reused (client.ts)', () => {
     // developer's own preview, which a delete must never answer stale.
     assert.equal(freshFor('/people/01ABC/activity?range=12w'), 30_000);
     assert.equal(freshFor('/people/01ABC/activity?range=52w'), 30_000);
+    assert.equal(freshFor('/me/activity?range=12w'), 30_000);
+    assert.equal(freshFor('/me/activity?range=52w'), 30_000);
     assert.equal(freshFor('/me/local-activity?days=14'), 0);
     assert.equal(freshFor('/me/activity-sharing'), 0);
     // What the reader may do (LAI-959): every name link on a page asks it, so

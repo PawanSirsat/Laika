@@ -10,7 +10,8 @@
  *  - a `?user=` the reader may not read is the not-allowed state, asked of
  *    nobody;
  *  - the person's own My day lists **who looked at my time**;
- *  - a member's profile has **Day** and **Hours** tabs from the same read.
+ *  - a member's profile has **Day** and **Time report** tabs (LAI-1138: the
+ *    shared report, from `GET /time/report?members=<them>`).
  *
  * Screenshots of the owner's view of a member's day, and of the member's own
  * list, light and dark at 1440 and 390, land in `LAIKA_SHOTS` when it is set.
@@ -21,9 +22,29 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import {
+  closeBrowser,
+  setTheme,
+  until,
+  type ApiStub,
+  type Harness,
+  type StubCall,
+} from './harness.ts';
 import { NOW, open } from './my-day-clock.ts';
-import { at, summaryRoutes, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import {
+  at,
+  reportFor,
+  reportRoutes,
+  summaryRoutes,
+  TODAY,
+  viewOf,
+  weekData,
+  weekStub,
+  YESTERDAY,
+} from './my-day-week.ts';
+import { hoursWords, weekOf } from '../../src/components/time-report/time-report-derive.ts';
+
+const GRACE_ROW = { id: 'u2', name: 'Grace Hopper', deactivated: false } as const;
 
 const ADA = {
   id: 'u1',
@@ -136,6 +157,8 @@ function stub(me: typeof ADA, actions: readonly string[]): ApiStub {
   }
   // Her Overview's week and quick picks (LAI-526), on the people route.
   Object.assign(routes, summaryRoutes(data, [], '/api/v1/people/u2/time/summary'));
+  // Her Time report (LAI-1138), from the same days, named for her.
+  Object.assign(routes, reportRoutes(data, [], GRACE_ROW));
   routes['/api/v1/people/u2/local-activity'] = {
     start: YESTERDAY,
     end: TODAY,
@@ -283,19 +306,23 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
     }
   });
 
-  void test('her Overview’s week is read from her summary, on the people route, never the reader’s own', async () => {
+  void test('her Overview’s week is her Time report, asked by her id, never the reader’s own', async () => {
     const h = await openAt(`/my-day?user=u2&day=${TODAY}`, stub(ADA, HOLDS));
     try {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
       await h.page.locator('[data-viewing-banner]').waitFor({ timeout: 10_000 });
       const ov = h.page.locator('[data-overview]');
       await ov.waitFor({ timeout: 10_000 });
+      const asked = h.page.waitForRequest((r) => r.url().includes('/api/v1/time/report?'));
       await ov.locator('[data-ov-scope="week"]').click();
-      await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 10_000 });
-      const paths = h.calls.map((c) => c.path);
-      assert.ok(paths.includes('/api/v1/people/u2/time/summary'), 'her summary was not read');
-      assert.ok(!paths.includes('/api/v1/me/time/summary'), 'the reader’s own summary was read');
-      assert.equal(await ov.locator('[data-ov-day]').count(), 7);
+      const url = new URL((await asked).url());
+      assert.equal(url.searchParams.get('members'), 'u2', 'not asked for her');
+      assert.equal(url.searchParams.get('drafts'), null, 'her drafts were read unasked');
+      const tr = h.page.locator('[data-time-report="person"]');
+      await tr.locator('[data-tr-stat="per-day"]').waitFor({ timeout: 10_000 });
+      assert.equal(await tr.locator('[data-tr-day]').count(), 7);
+      assert.match(await tr.locator('[data-tr-caption]').innerText(), /^Grace Hopper · /);
+      assert.ok(!h.calls.some((c) => c.path === '/api/v1/me/time/summary'));
     } finally {
       await h.close();
     }
@@ -447,7 +474,7 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
   }
 });
 
-void describe('a member’s profile: Day and Hours (LAI-959)', () => {
+void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', () => {
   const PROFILE = {
     user: {
       id: 'u2',
@@ -504,27 +531,82 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
     }
   });
 
-  void test('Hours is her week, day by day, with the week’s totals', async () => {
+  void test('Time report is her week from GET /time/report, read only, and says she can see the look', async () => {
+    const h = await openAt(`/people?user=u2&tab=time&day=${TODAY}`, profileStub());
+    try {
+      const asked = h.page.waitForRequest((r) => r.url().includes('/api/v1/time/report?'));
+      const tr = h.page.locator('[data-time-report="person"]');
+      await tr.locator('[data-tr-stat="confirmed"]').waitFor({ timeout: 20_000 });
+      const first = new URL((await asked).url());
+      assert.equal(first.searchParams.get('members'), 'u2');
+      // Her drafts are hers until the reader asks (D-088 items 2–3).
+      assert.equal(first.searchParams.get('drafts'), null, 'her drafts were read unasked');
+      assert.equal(
+        (await h.page.locator('[data-profile-tab="time"][aria-current="page"]').innerText()).trim(),
+        'Time report',
+      );
+      assert.match(
+        await tr.locator('[data-tr-lock]').innerText(),
+        /Visible to owners and admins · they can see you looked/,
+      );
+      assert.equal(await tr.locator('[data-tr-day]').count(), 7);
+      const confirmed = reportFor(weekOf(TODAY), weekData(), GRACE_ROW).totals.confirmed_minutes;
+      assert.ok(confirmed > 0, 'the fixture week has no confirmed time');
+      assert.match(
+        await tr.locator('[data-tr-stat="confirmed"]').innerText(),
+        new RegExp(`\\n${hoursWords(confirmed)}\\n`),
+      );
+      const withDrafts = h.page.waitForRequest(
+        (r) => new URL(r.url()).searchParams.get('drafts') === 'include',
+      );
+      await tr.locator('[data-tr-drafts="include"]').click();
+      assert.equal(new URL((await withDrafts).url()).searchParams.get('members'), 'u2');
+      // One person: no Member filter, and the table groups Space → Task.
+      assert.equal(await tr.locator('[data-tr-chip="member"]').count(), 0);
+      assert.match(await tr.locator('[data-tr-group="first"]').innerText(), /Space/);
+      assert.match(await tr.locator('[data-tr-group="second"]').innerText(), /Task/);
+      assert.deepEqual(writes(h), []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a link to ?tab=hours still opens the Time report', async () => {
     const h = await openAt(`/people?user=u2&tab=hours&day=${TODAY}`, profileStub());
     try {
-      await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('[data-hours-day]').count(), 7);
-      assert.match(await h.page.locator('[data-hours-note]').innerText(), /Two meetings ran long/);
-      const week = viewOf(TODAY) as {
-        week: { confirmed_minutes: number; drafted_minutes: number }[];
-      };
-      const confirmed = week.week.reduce((n, d) => n + d.confirmed_minutes, 0);
-      assert.ok(confirmed > 0, 'the fixture week has no confirmed time');
-      const text = (await h.page.locator('[data-hours-confirmed]').innerText()).trim();
-      const h_ = Math.floor(confirmed / 60);
-      const m = confirmed % 60;
-      const want =
-        h_ === 0
-          ? `${String(m)} min`
-          : m === 0
-            ? `${String(h_)} h`
-            : `${String(h_)} h ${String(m)} min`;
-      assert.equal(text, want);
+      await h.page
+        .locator('[data-profile-tab="time"][aria-current="page"]')
+        .waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-time-report="person"]').waitFor({ timeout: 20_000 });
+      // No Developer setup tab: these default grants do not carry *See and manage
+      // anyone's developer setup* — `developer-setup.test.ts` covers the tab (LAI-1140).
+      assert.deepEqual(
+        await h.page
+          .locator('[data-profile-tab]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-profile-tab'))),
+        ['overview', 'day', 'time'],
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /**
+   * D-139 item 4 reversed D-102's *read nothing on Overview* for the profile:
+   * This week is her week, read once on opening — a `time` look she is told
+   * about — and its *Time report ›* opens the tab (LAI-1153).
+   */
+  void test('her Overview reads this week once, and This week links to the Time report (D-139)', async () => {
+    const h = await openAt(`/people?user=u2`, profileStub());
+    try {
+      const link = h.page.locator('[data-section="week"] [data-card-link="time"]');
+      await link.waitFor({ timeout: 20_000 });
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/time/report').length;
+      await until(() => reads() === 1);
+      assert.equal(reads(), 1, 'This week is one read of her week');
+      await link.click();
+      await h.page.waitForURL(/tab=time/);
+      await h.page.locator('[data-time-report="person"]').waitFor({ timeout: 20_000 });
     } finally {
       await h.close();
     }
@@ -574,4 +656,228 @@ void describe('both themes, both widths', () => {
       });
     }
   }
+});
+
+void describe('an owner changes a member’s confirmed time on her Day tab (D-143, LAI-1165)', () => {
+  const PROFILE = {
+    user: {
+      id: 'u2',
+      name: 'Grace Hopper',
+      email: 'g@example.com',
+      org_role: 'member',
+      is_active: true,
+      profile_kind: 'manager',
+      created_at: NOW - 200 * 86_400_000,
+    },
+    window: { weeks: 12, since: NOW - 84 * 86_400_000, until: NOW },
+    projects: [],
+    review: {
+      accepted: 0,
+      sent_back: 0,
+      last_30_days: 0,
+      per_week: [],
+      time_to_decide: { measured: 0, unmeasured: 0, p50_ms: null },
+      recent: [],
+    },
+    ratings: [],
+    ratings_total: 0,
+    activity_sharing: { org_enabled: false, enabled: false },
+    queue: { projects_led: 0, waiting: 0, oldest_waiting_since: null, projects: [] },
+  };
+  const WRITES = [...HOLDS, 'time_entries.write_member'];
+
+  /** e1 is Grace's 11:30–12:00, added by her and then changed by Ada. */
+  const REVISIONS = {
+    revisions: [
+      {
+        revision: 1,
+        change: 'created',
+        changed_by: 'u2',
+        changed_by_name: 'Grace Hopper',
+        day: TODAY,
+        tz: 'UTC',
+        minutes: 30,
+        task_id: null,
+        project_id: null,
+        note: 'Planning call',
+        started_at: at(TODAY, 11, 30),
+        ended_at: at(TODAY, 12, 0),
+        created_at: at(TODAY, 12, 0),
+      },
+      {
+        revision: 2,
+        change: 'edited',
+        changed_by: 'u1',
+        changed_by_name: 'Ada Lovelace',
+        day: TODAY,
+        tz: 'UTC',
+        minutes: 30,
+        task_id: null,
+        project_id: null,
+        note: 'Planning call',
+        started_at: at(TODAY, 11, 30),
+        ended_at: at(TODAY, 12, 0),
+        created_at: at(TODAY, 12, 30),
+      },
+    ],
+  };
+
+  function editStub(
+    me: typeof ADA,
+    actions: readonly string[],
+    sent: StubCall[],
+    profile: typeof PROFILE = PROFILE,
+  ): ApiStub {
+    const routes: Record<string, unknown> = {
+      ...stub(me, actions),
+      '/api/v1/users/u2/profile': profile,
+      '/api/v1/people/u2/time-entries/e1/revisions': REVISIONS,
+    };
+    routes['/api/v1/people/u2/time-entries/e1'] = (call: StubCall) => {
+      if (call.method !== 'GET') sent.push(call);
+      return { id: 'e1' };
+    };
+    return routes;
+  }
+
+  async function openEntry(h: Harness): Promise<ReturnType<Harness['page']['locator']>> {
+    await h.page.locator('[data-profile-tab="day"][aria-current="page"]').waitFor({
+      timeout: 20_000,
+    });
+    await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+    await h.page.locator('[data-day-tab="confirmed"]').click();
+    await h.page.locator('[data-select="e1"]').click();
+    const editor = h.page.locator('[data-inspector="entry"]');
+    await editor.waitFor({ timeout: 10_000 });
+    return editor;
+  }
+
+  void test('the owner lengthens Grace’s entry: the PATCH is hers, and the history names Ada', async () => {
+    const sent: StubCall[] = [];
+    const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, editStub(ADA, WRITES, sent));
+    try {
+      const editor = await openEntry(h);
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /You’re viewing Grace Hopper’s day\. Changes you make are shown to Grace/,
+      );
+      // Her history, read from her entries — and Ada's change named.
+      const history = editor.locator('[data-entry-history]');
+      await history.locator('.editor-history-row').first().waitFor({ timeout: 10_000 });
+      assert.match(await history.innerText(), /Changed by Ada Lovelace · 30 min/);
+      assert.match(await history.innerText(), /Added by hand · 30 min · Grace Hopper/);
+
+      // 11:30–12:00, to 12:15: one edge, one write, to her path.
+      const end = editor.locator('[data-when-end]');
+      await end.fill('12:15pm');
+      await end.press('Enter');
+      await until(() => sent.length === 1);
+      assert.deepEqual(sent, [
+        {
+          method: 'PATCH',
+          path: '/api/v1/people/u2/time-entries/e1',
+          body: { ended_at: at(TODAY, 12, 15), minutes: 45 },
+        },
+      ]);
+      assert.ok(
+        !h.calls.some((c) => c.method !== 'GET' && c.path.startsWith('/api/v1/me/')),
+        'a write went to the reader’s own time',
+      );
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 1);
+      // Her drafts stay hers: a draft opens with nothing to change it with.
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-block-select="d1"]').click();
+      const draft = h.page.locator('[data-inspector="draft"]');
+      await draft.waitFor({ timeout: 5_000 });
+      assert.equal(await draft.locator('.inspector-confirm').count(), 0);
+      assert.equal(await h.page.locator('[data-block-id="d1"] [data-edge]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an import of hers is the owner’s to correct too, and the write is hers (D-143)', async () => {
+    const sent: StubCall[] = [];
+    const routes: Record<string, unknown> = { ...editStub(ADA, WRITES, sent) };
+    const day = routes[`/api/v1/people/u2/time?day=${TODAY}`] as () => {
+      entries: { id: string; source: string }[];
+    };
+    routes[`/api/v1/people/u2/time?day=${TODAY}`] = () => {
+      const v = day();
+      return {
+        ...v,
+        entries: v.entries.map((e) => (e.id === 'e1' ? { ...e, source: 'import' } : e)),
+      };
+    };
+    const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, routes);
+    try {
+      const editor = await openEntry(h);
+      assert.match(await editor.innerText(), /Imported from Solidtime · Grace Hopper’s entry/);
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 1);
+      const end = editor.locator('[data-when-end]');
+      assert.equal(await end.getAttribute('readonly'), null);
+      await end.fill('12:15pm');
+      await end.press('Enter');
+      await until(() => sent.length === 1);
+      assert.equal(sent[0]?.path, '/api/v1/people/u2/time-entries/e1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin on the owner’s day sees no control to change it, the grant notwithstanding (review L5)', async () => {
+    // Grace is the owner here; the reader an admin holding the action.
+    const admin = { ...ADA, id: 'u3', name: 'Linus Torvalds', org_role: 'admin' };
+    const ownersProfile = { ...PROFILE, user: { ...PROFILE.user, org_role: 'owner' } };
+    const sent: StubCall[] = [];
+    const h = await openAt(
+      `/people?user=u2&tab=day&day=${TODAY}`,
+      editStub(admin, WRITES, sent, ownersProfile),
+    );
+    try {
+      const editor = await openEntry(h);
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /Read-only\. You’re viewing Grace Hopper’s day/,
+      );
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 0);
+      assert.equal(await editor.locator('[data-entry-history]').count(), 0);
+      assert.equal(await editor.locator('[data-when-end]').getAttribute('readonly'), '');
+      assert.equal(await h.page.locator('[data-block-id="e1"] [data-edge]').count(), 0);
+      // A fixed window: nothing *should* happen, so nothing can end it early.
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(sent, []);
+      assert.deepEqual(writes(h), []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member who may read her day sees no control to change it', async () => {
+    const linus = { ...ADA, id: 'u3', name: 'Linus Torvalds', org_role: 'member' };
+    const sent: StubCall[] = [];
+    const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, editStub(linus, HOLDS, sent));
+    try {
+      const editor = await openEntry(h);
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /Read-only\. You’re viewing Grace Hopper’s day/,
+      );
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 0);
+      assert.equal(await editor.locator('[data-entry-history]').count(), 0);
+      assert.equal(await editor.locator('[data-when-end]').getAttribute('readonly'), '');
+      await editor
+        .locator('[data-when-end]')
+        .fill('12:15pm')
+        .catch(() => undefined);
+      await editor.locator('[data-when-end]').press('Enter');
+      // A fixed window: nothing *should* happen, so nothing can end it early.
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(sent, []);
+      assert.deepEqual(writes(h), []);
+      assert.ok(!h.calls.some((c) => c.path.includes('/revisions')), 'her history was read');
+    } finally {
+      await h.close();
+    }
+  });
 });

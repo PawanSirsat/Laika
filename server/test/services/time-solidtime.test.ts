@@ -17,6 +17,7 @@ import { pruneTime } from '../../src/jobs/jobs.ts';
 import { createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { createEntry, deleteEntry, updateEntry } from '../../src/services/time-entries.ts';
+import { deleteMemberEntry, updateMemberEntry } from '../../src/services/time-member-entries.ts';
 import { setOrgTimeMode } from '../../src/services/time-settings.ts';
 import {
   importAllSolidtime,
@@ -822,6 +823,15 @@ describe('an owner’s or admin’s pull of everyone', () => {
     ]);
     expect(result).toMatchObject({ created: 2, not_on_laika: { people: 1, minutes: 120 } });
     expect(live(bea.userId).map((e) => [e.sourceRef, e.minutes])).toEqual([['st-b', 60]]);
+    // The pull is the owner's, so the revision is too (D-143): not Bea's.
+    const imported = live(bea.userId)[0]?.id ?? '';
+    expect(
+      t.db
+        .select({ by: timeEntryRevisions.changedBy })
+        .from(timeEntryRevisions)
+        .where(eq(timeEntryRevisions.entryId, imported))
+        .all(),
+    ).toEqual([{ by: owner.userId }]);
     const setup = solidtimeSetup(t.db, owner);
     expect(setup.not_on_laika).toEqual({
       people: 1,
@@ -841,6 +851,51 @@ describe('an owner’s or admin’s pull of everyone', () => {
         }),
       ]),
     ).toMatchObject({ created: 0, unchanged: 2 });
+  });
+
+  it('a re-pull after an owner changed an import: unchanged keeps the change, a Solidtime change puts its version back, and a delete is no crash (D-143)', () => {
+    setSolidtimePeople(
+      t.db,
+      owner,
+      { people: [{ solidtime_member_id: BEA_MEMBER, user_id: bea.userId }] },
+      NOW,
+    );
+    all([entry({ id: 'st-b', member_id: BEA_MEMBER })]);
+    const id = live(bea.userId)[0]?.id ?? '';
+    updateMemberEntry(t.db, owner, bea.userId, id, { minutes: 30, ended_at: at(DAY, 9.5) }, NOW);
+    const history = () =>
+      t.db
+        .select({ change: timeEntryRevisions.change, by: timeEntryRevisions.changedBy })
+        .from(timeEntryRevisions)
+        .where(eq(timeEntryRevisions.entryId, id))
+        .all();
+
+    // The same Solidtime entry again: the owner's change stands.
+    expect(all([entry({ id: 'st-b', member_id: BEA_MEMBER })])).toMatchObject({ unchanged: 1 });
+    expect(live(bea.userId).map((e) => e.minutes)).toEqual([30]);
+
+    // Changed in Solidtime: its version comes back, the history keeps both.
+    const moved = entry({ id: 'st-b', member_id: BEA_MEMBER, end: at(DAY, 11), hash: hash('b') });
+    expect(all([moved])).toMatchObject({ updated: 1, conflicts: 1 });
+    expect(live(bea.userId).map((e) => e.minutes)).toEqual([120]);
+    expect(t.db.select({ entry: solidtimeEntries.entryId }).from(solidtimeEntries).all()).toEqual([
+      { entry: id },
+    ]);
+    expect(history()).toEqual([
+      { change: 'created', by: owner.userId },
+      { change: 'edited', by: owner.userId },
+      { change: 'edited', by: owner.userId },
+    ]);
+
+    // Deleted by the owner, then gone from Solidtime too: retired once, no error.
+    deleteMemberEntry(t.db, owner, bea.userId, id, NOW);
+    expect(all([])).toMatchObject({ deleted: 1 });
+    expect(live(bea.userId)).toEqual([]);
+    expect(history().filter((r) => r.change === 'deleted')).toHaveLength(1);
+    // Never a second entry for the one Solidtime entry, at any step.
+    const rows = t.db.select().from(timeEntries).where(eq(timeEntries.userId, bea.userId)).all();
+    expect(rows.map((r) => [r.id, r.sourceRef])).toEqual([[id, 'st-b']]);
+    expect(history().map((r) => r.change)).toEqual(['created', 'edited', 'edited', 'deleted']);
   });
 
   it('moves a member’s hours to them once an admin confirms who they are', () => {

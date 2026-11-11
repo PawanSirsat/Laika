@@ -69,6 +69,11 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0073_project_repo_setups',
     '0074_agent_capacity',
     '0075_task_deliverables',
+    '0076_user_availability',
+    '0077_member_notices',
+    '0078_developer_setup_reads',
+    '0079_analytics_views_profile',
+    '0080_member_notices_time_changed',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -77,7 +82,19 @@ function folderBefore0070(): { dir: string; restore: () => void } {
       // Back through 0074 only: 0075 (LAI-1115) adds columns to `tasks`, and
       // "changes nothing else" below reads every table's rows. What a 0069
       // database upgrades *through* is still every migration here.
-      journal.entries.push(...dropped.filter((e) => e.tag !== '0075_task_deliverables'));
+      // LAI-1130's 0076 adds two tables and LAI-1136's 0077 one, which the
+      // same check would count. LAI-1137's 0078 is put back: it adds a column
+      // to `agents` and `devices`, which the boot backfill's whole-row device
+      // reads name — as production, which runs it only after every migration —
+      // and it changes no row the check reads (`agentRows` names its columns).
+      // LAI-1165's 0080 rebuilds 0077's table, so it stays out with it.
+      const later = new Set([
+        '0075_task_deliverables',
+        '0076_user_availability',
+        '0077_member_notices',
+        '0080_member_notices_time_changed',
+      ]);
+      journal.entries.push(...dropped.filter((e) => !later.has(e.tag)));
       writeFileSync(journalPath, JSON.stringify(journal));
     },
   };

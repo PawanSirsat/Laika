@@ -216,12 +216,46 @@ const openTimeline = async (
   width = 1440,
   stub: ApiStub = STUB,
   height = 900,
+  /** Pin the browser's clock to this instant, in UTC, before the page boots. */
+  now?: number,
 ) => {
-  const h = await open(path, stub);
+  const h = await open(
+    path,
+    stub,
+    now === undefined
+      ? {}
+      : {
+          before: async (page) => {
+            await page.clock.setFixedTime(now);
+            const cdp = await page.context().newCDPSession(page);
+            await cdp.send('Emulation.setTimezoneOverride', { timezoneId: 'UTC' });
+          },
+        },
+  );
   await h.page.setViewportSize({ width, height });
   await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
   return h;
 };
+
+/** {@link STUB} with its three sprints laid around `now` instead of the real today. */
+const stubAt = (now: number): ApiStub => ({
+  ...STUB,
+  [SPRINTS]: {
+    data: [
+      sprint('s3', 'Reliability', at(15, now), at(28, now), 'planned', counts({ todo: 1 })),
+      sprint('s1', 'Baseline build', at(-40, now), at(-27, now), 'completed'),
+      sprint(
+        's2',
+        'Finish what is open',
+        at(-5, now),
+        at(8, now),
+        'active',
+        counts({ done: 2, in_progress: 1, todo: 2 }),
+      ),
+    ],
+    next_cursor: null,
+  },
+});
 
 /** A sprint's row, by its id. */
 const group = (h: Harness, id: string) => h.page.locator(`.tlx-group[data-sprint-id="${id}"]`);
@@ -514,41 +548,104 @@ void describe('the axis scrolls sideways (LAI-721)', () => {
     }
   });
 
-  void test('no tick label sits under the today pill, at Months or Quarters', async () => {
-    for (const zoom of ['months', 'quarters']) {
-      const h = await openTimeline(`/timeline?project=laika-core&zoom=${zoom}`, 1366);
-      try {
-        const clash = await h.page.evaluate(() => {
-          const pill = document.querySelector('.tlx-today-pill')!.getBoundingClientRect();
-          return [...document.querySelectorAll('.tlx-scale-tick')]
-            .filter((t) => (t.textContent ?? '').trim() !== '')
-            .map((t) => {
-              const r = document.createRange();
-              r.selectNodeContents(t);
-              return { text: t.textContent ?? '', b: r.getBoundingClientRect() };
-            })
-            .filter(({ b }) => b.right > pill.left && b.left < pill.right)
-            .map(({ text }) => text);
-        });
-        assert.deepEqual(clash, [], `${zoom}: labels under the pill`);
-        // And the labels are there to give way: one either side of the pill.
-        const sides = await h.page.evaluate(() => {
-          const pill = document.querySelector('.tlx-today-pill')!.getBoundingClientRect();
-          const corner = document.querySelector('.tlx-corner')!.getBoundingClientRect();
-          const labelled = [...document.querySelectorAll('.tlx-scale-tick')]
-            .filter((t) => (t.textContent ?? '').trim() !== '')
-            .map((t) => t.getBoundingClientRect())
-            .filter((r) => r.left >= corner.right);
-          return {
-            before: labelled.filter((r) => r.right <= pill.left).length,
-            after: labelled.filter((r) => r.left >= pill.right).length,
-          };
-        });
-        assert.ok(sides.before > 0, `${zoom}: no label left of the pill`);
-        assert.ok(sides.after > 0, `${zoom}: no label right of the pill`);
-      } finally {
-        await h.close();
+  /*
+   * **On a pinned clock** (LAI-1171). On the real clock this held or failed
+   * by the date: on 2026-11-10 at Quarters the window ended on 31 Dec, *Dec*
+   * was under the pill, and nothing was labelled to its right — the product
+   * edge `chartWindow` now closes. The dates below are the ones that found
+   * it and the quarter's two ends; the fixture's sprints follow the pinned
+   * day, so each page is the same shape as the live one.
+   */
+  const PINNED = [
+    ['late in a quarter’s second month', Date.UTC(2026, 10, 10, 12)],
+    ['mid Q3', Date.UTC(2026, 7, 15, 12)],
+    ['the last day of a quarter', Date.UTC(2026, 11, 31, 12)],
+    ['the first day of a quarter', Date.UTC(2027, 0, 1, 12)],
+  ] as const;
+
+  for (const [when, T] of PINNED) {
+    void test(`no tick label sits under the today pill, at Months or Quarters — ${when}`, async () => {
+      for (const zoom of ['months', 'quarters']) {
+        const h = await openTimeline(
+          `/timeline?project=laika-core&zoom=${zoom}`,
+          1366,
+          stubAt(T),
+          900,
+          T,
+        );
+        try {
+          assert.equal(
+            await h.page.evaluate(() => new Date().toISOString().slice(0, 10)),
+            new Date(T).toISOString().slice(0, 10),
+            'positive control: the page is on the pinned day',
+          );
+          const clash = await h.page.evaluate(() => {
+            const pill = document.querySelector('.tlx-today-pill')!.getBoundingClientRect();
+            return [...document.querySelectorAll('.tlx-scale-tick')]
+              .filter((t) => (t.textContent ?? '').trim() !== '')
+              .map((t) => {
+                const r = document.createRange();
+                r.selectNodeContents(t);
+                return { text: t.textContent ?? '', b: r.getBoundingClientRect() };
+              })
+              .filter(({ b }) => b.right > pill.left && b.left < pill.right)
+              .map(({ text }) => text);
+          });
+          assert.deepEqual(clash, [], `${zoom}: labels under the pill`);
+          // And the labels are there to give way: one either side of the pill.
+          const sides = await h.page.evaluate(() => {
+            const pill = document.querySelector('.tlx-today-pill')!.getBoundingClientRect();
+            const corner = document.querySelector('.tlx-corner')!.getBoundingClientRect();
+            const labelled = [...document.querySelectorAll('.tlx-scale-tick')]
+              .filter((t) => (t.textContent ?? '').trim() !== '')
+              .map((t) => ({ text: (t.textContent ?? '').trim(), r: t.getBoundingClientRect() }))
+              .filter(({ r }) => r.left >= corner.right);
+            return {
+              before: labelled.filter(({ r }) => r.right <= pill.left).map(({ text }) => text),
+              after: labelled.filter(({ r }) => r.left >= pill.right).map(({ text }) => text),
+            };
+          });
+          assert.ok(sides.before.length > 0, `${zoom}: no label left of the pill`);
+          assert.ok(sides.after.length > 0, `${zoom}: no label right of the pill`);
+        } finally {
+          await h.close();
+        }
       }
+    });
+  }
+
+  void test('at Quarters, late in the quarter, the month after next is labelled right of the pill', async () => {
+    // 10 November: *Dec* begins three weeks on, under the pill, and before
+    // LAI-1171 the window closed on 31 Dec. Now January is in view and clear.
+    const T = Date.UTC(2026, 10, 10, 12);
+    const h = await openTimeline(
+      '/timeline?project=laika-core&zoom=quarters',
+      1366,
+      stubAt(T),
+      900,
+      T,
+    );
+    try {
+      const after = await h.page.evaluate(() => {
+        const pill = document.querySelector('.tlx-today-pill')!.getBoundingClientRect();
+        return [...document.querySelectorAll('.tlx-scale-tick')]
+          .map((t) => ({ text: (t.textContent ?? '').trim(), r: t.getBoundingClientRect() }))
+          .filter(({ r }) => r.left >= pill.right)
+          .map(({ text }) => text);
+      });
+      // December's tick is there and blank — it gives way to the pill —
+      // and January's is the first labelled one after it.
+      assert.deepEqual(
+        after.filter((t) => t !== ''),
+        ['Jan', 'Feb', 'Mar'],
+      );
+      assert.deepEqual(await h.page.locator('.tlx-scale-band').allInnerTexts(), [
+        'Q3 2026',
+        'Q4 2026',
+        'Q1 2027',
+      ]);
+    } finally {
+      await h.close();
     }
   });
 

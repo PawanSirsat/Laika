@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react';
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode, type Ref } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 
@@ -32,21 +32,30 @@ export interface CardCandidate {
   readonly href: string;
 }
 
-export interface RichEditorProps {
+/** What a save would send, or why it cannot be sent as it stands. */
+export type RichEditorWritten =
+  | { readonly ok: true; readonly markdown: string }
+  | { readonly ok: false; readonly reason: string; readonly draft: string };
+
+/**
+ * An embedded editor's handle (LAI-1167): the form around it reads the
+ * markdown when *it* submits. A document that would not read back as typed
+ * is answered `ok: false` — and the editor has already dropped to its
+ * Markdown view with the reason, so the person can fix it where it is said.
+ */
+export interface RichEditorHandle {
+  readonly read: () => RichEditorWritten;
+  readonly focus: () => void;
+  /** Nothing written yet — so a close need not ask. */
+  readonly empty: () => boolean;
+}
+
+interface RichEditorBaseProps {
   /** The markdown at the moment editing opened. */
   readonly value: string;
   /** The field's name, for the accessible label: `Description`. */
   readonly label: string;
   readonly placeholder: string;
-  /** `Save` for a document, `Comment` for the composer. */
-  readonly submitLabel: string;
-  /**
-   * Called only when something changed. Rejects to keep the editor open with
-   * the reason — an `ApiError`'s message is shown as it is.
-   */
-  readonly onSubmit: (markdown: string) => Promise<void>;
-  /** Cancel, or a submit with nothing changed: nothing is sent. */
-  readonly onClose: () => void;
   readonly people: readonly MentionCandidate[];
   /** The reader: a mention of them is the stronger pill (LAI-868). */
   readonly meId?: string | undefined;
@@ -68,13 +77,51 @@ export interface RichEditorProps {
   readonly holding?: ReactNode;
 }
 
+/** The editor as the task panel opens it: it saves and closes itself. */
+export interface RichEditorCommitProps extends RichEditorBaseProps {
+  readonly mode?: 'commit' | undefined;
+  readonly onEscape?: undefined;
+  /** `Save` for a document, `Comment` for the composer. */
+  readonly submitLabel: string;
+  /**
+   * Called only when something changed. Rejects to keep the editor open with
+   * the reason — an `ApiError`'s message is shown as it is.
+   */
+  readonly onSubmit: (markdown: string) => Promise<void>;
+  /** Cancel, or a submit with nothing changed: nothing is sent. */
+  readonly onClose: () => void;
+  readonly handle?: undefined;
+}
+
+/**
+ * The editor as a field of a larger form (LAI-1167, the Create task dialog):
+ * no Save or Cancel of its own, and Escape and ⌘↵ are left to the form around
+ * it. The form reads the text through {@link RichEditorHandle} when it submits.
+ */
+export interface RichEditorEmbeddedProps extends RichEditorBaseProps {
+  readonly mode: 'embedded';
+  readonly handle: Ref<RichEditorHandle>;
+  /**
+   * Escape pressed in the document. ProseMirror consumes every Escape it is
+   * handed, so the form around the editor cannot see it bubble; the editor
+   * says so instead, and the form closes as it would from any other field.
+   */
+  readonly onEscape?: (() => void) | undefined;
+  readonly submitLabel?: undefined;
+  readonly onSubmit?: undefined;
+  readonly onClose?: undefined;
+}
+
+export type RichEditorProps = RichEditorCommitProps | RichEditorEmbeddedProps;
+
 const Editor = lazy(async () => {
   const loaded = await import('./editor/RichEditor.tsx');
   return { default: loaded.RichEditor };
 });
 
 interface BoundaryProps {
-  readonly onClose: () => void;
+  /** Absent for an embedded editor: the form around it is what closes. */
+  readonly onClose: (() => void) | undefined;
   readonly children: ReactNode;
 }
 
@@ -95,9 +142,11 @@ class LoadFailure extends Component<BoundaryProps, { failed: boolean }> {
     return (
       <div className="rich-editor-failed" role="alert">
         <p>The editor could not load. Check the connection and open it again.</p>
-        <Button variant="secondary" onClick={this.props.onClose}>
-          Close
-        </Button>
+        {this.props.onClose !== undefined && (
+          <Button variant="secondary" onClick={this.props.onClose}>
+            Close
+          </Button>
+        )}
       </div>
     );
   }

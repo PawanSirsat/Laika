@@ -70,13 +70,22 @@ const NOT_FOUND = 'No such device';
 /** All your devices, active first; not paginated, as `/agents/devices` is not. */
 export function listOwnDevices(db: Db, actor: ResolvedActor): DeviceView[] {
   assertCan(actor, 'agent.read_own');
+  return devicesOf(db, actor.userId);
+}
+
+/**
+ * Every device of `ownerUserId`, as their own list serves them. **No `can()`
+ * here**: the caller has asked it — `listOwnDevices` for the caller's own,
+ * `developer-setup.ts` for `developer_setup.read_any` (D-132, LAI-1137).
+ */
+export function devicesOf(db: Db, ownerUserId: string): DeviceView[] {
   const rows = db
     .select()
     .from(devices)
-    .where(eq(devices.ownerUserId, actor.userId))
+    .where(eq(devices.ownerUserId, ownerUserId))
     .orderBy(asc(devices.status), asc(devices.labelKey), desc(devices.createdAt), desc(devices.id))
     .all();
-  const recognised = recognisedKeys(db, actor.userId);
+  const recognised = recognisedKeys(db, ownerUserId);
   return rows.map((row) => deviceView(db, row, recognised));
 }
 

@@ -340,7 +340,7 @@ async function settle(page: Page): Promise<void> {
     const ending = document
       .getAnimations()
       .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
-    await Promise.all(ending.map((a) => a.finished));
+    await Promise.allSettled(ending.map((a) => a.finished));
   });
 }
 

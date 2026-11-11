@@ -344,13 +344,15 @@ void describe('the task detail redesign (D-129)', () => {
       );
       assert.doesNotMatch(text, /against the repository/);
 
-      await hero.getByRole('button', { name: 'Approve' }).click();
+      // One word for taking agent work into done (D-146 item 5): Accept.
+      assert.equal(await hero.getByRole('button', { name: 'Approve' }).count(), 0);
+      await hero.getByRole('button', { name: 'Accept' }).click();
       await until(() =>
         h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t1/accept'),
       );
       assert.ok(
         h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t1/accept'),
-        'Approve did not post the accept',
+        'Accept did not post the accept',
       );
     } finally {
       await h.close();

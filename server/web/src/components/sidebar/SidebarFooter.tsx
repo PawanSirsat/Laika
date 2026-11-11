@@ -23,9 +23,9 @@ export interface SidebarFooterProps {
  * and **Sign out**. The theme row and the sign-out button that sat here
  * (LAI-064, LAI-249) moved into it, so the rail ends in one control.
  *
- * *My profile* is drawn only for a reader who may open a profile — the server
- * answers `profile.read` to owners and admins alone, their own included — and
- * is absent, not disabled, for everyone else (LAI-082).
+ * *My profile* is drawn for a reader who may open their own profile —
+ * `profile.read_own`, every role since D-139 (LAI-1150), or `profile.read` —
+ * and is absent, not disabled, for a reader the server grants neither (LAI-082).
  *
  * The WAI-ARIA menu-button pattern: the button says it has a menu and whether
  * it is open; the menu takes the focus on its first item, the arrows move,
@@ -50,9 +50,13 @@ export function SidebarFooter({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  // `profile.read`, as the server reports it (LAI-970) — not the role.
+  // Your own profile is every role's since D-139 (LAI-1150's `profile.read_own`),
+  // as the server reports it (LAI-970) — not the role.
   const { org } = useGates();
-  const profile = org('profile.read') ? `/people?user=${encodeURIComponent(user.id)}` : undefined;
+  const profile =
+    org('profile.read') || org('profile.read_own')
+      ? `/people?user=${encodeURIComponent(user.id)}`
+      : undefined;
 
   const items = (): HTMLElement[] => [
     ...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),

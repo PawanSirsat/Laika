@@ -9,19 +9,102 @@
   padding-bottom: var(--space-2);
 }
 
-.dx-overview-attention {
+/* The status card lets the tools chip's list hang below it (LAI-1096). */
+.dx-overview [data-status] {
+  overflow: visible;
+}
+
+/* ---- the tools chip, when tools need the reader: a button and its list ---- */
+
+.dx-attention {
+  position: relative;
+  flex: none;
+}
+
+.dx-chip-button {
+  font: inherit;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.dx-chip-button:hover,
+.dx-chip-button[aria-expanded='true'] {
+  border-color: currentColor;
+}
+
+.dx-chip-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dx-chip-caret {
+  line-height: 1;
+}
+
+.dx-attention-pop {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 61;
+  width: min(20rem, calc(100vw - 2.5rem));
+  padding: var(--space-3);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.dx-attention-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--chip-orange);
+}
+
+.dx-attention-list {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.dx-overview-attention li + li {
-  margin-top: var(--space-1);
+.dx-attention-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.dx-overview-attention a {
+.dx-attention-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dx-attention-name {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
+}
+
+.dx-attention-why {
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.dx-attention-link {
+  align-self: flex-start;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  color: var(--accent);
 }
 
 .dx-overview-distinction-body {

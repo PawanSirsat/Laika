@@ -38,13 +38,17 @@ function only(role: (typeof GRANTABLE_ROLES)[number], capability: Capability): O
 /**
  * Every org action's answer, per org role, under `grants` — about somebody
  * else, so a *"not themselves"* row (LAI-957's `people.analytics.read`) is
- * answered by its grant rather than refused for want of a target.
+ * answered by its grant rather than refused for want of a target; and about
+ * a member, so a *"not for the owner"* row (D-133's revokes, LAI-1137) is too.
  */
 function answers(grants: OrgGrants | undefined): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   for (const role of ORG_ROLES) {
     for (const action of ORG_ACTIONS) {
-      out[`${role} ${action}`] = can(actor(role, grants), action, { targetUserId: 'u2' });
+      out[`${role} ${action}`] = can(actor(role, grants), action, {
+        targetUserId: 'u2',
+        targetOrgRole: 'member',
+      });
     }
   }
   return out;
@@ -58,13 +62,20 @@ describe('the mapping', () => {
         'profile.activity.read',
         'usage.read_people',
         'people.analytics.read',
+        'time.report.read',
       ],
       see_org_activity: ['audit_log.export'],
       open_all_projects: [],
       invite_people: ['user.invite'],
       deactivate_people: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
       create_archive_projects: ['project.create', 'project.archive'],
-      manage_any_tokens: ['token.list_any', 'token.revoke_any'],
+      manage_any_tokens: [
+        'token.list_any',
+        'token.revoke_any',
+        'developer_setup.read_any',
+        'agent.revoke_any',
+        'device.revoke_any',
+      ],
       change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
     });
     expect(CAPABILITIES).not.toContain('manage_people');
@@ -74,7 +85,8 @@ describe('the mapping', () => {
     expect(CAPABILITY_LABELS.invite_people).toBe('Invite people');
     expect(CAPABILITY_LABELS.deactivate_people).toBe('Deactivate people and reset access');
     expect(CAPABILITY_LABELS.create_archive_projects).toBe('Create and archive spaces');
-    expect(CAPABILITY_LABELS.manage_any_tokens).toBe("Manage anyone's tokens");
+    // D-132 (LAI-1137): renamed for what it now carries; the key is kept.
+    expect(CAPABILITY_LABELS.manage_any_tokens).toBe("See and manage anyone's developer setup");
   });
 
   it('gives every capability a one-line description of its own', () => {
@@ -193,16 +205,24 @@ describe('a flipped grant changes that role’s answer, and only for that capabi
       'token.list_any',
       'token.revoke_any',
     ] as const) {
-      expect(can(actor('admin', DEFAULT_GRANTS), action), `admin default ${action}`).toBe(true);
-      expect(can(actor('admin', bare), action), `admin withdrawn ${action}`).toBe(false);
-      expect(can(actor('member', DEFAULT_GRANTS), action), `member default ${action}`).toBe(false);
+      // `token.revoke_any` asks about a target's role (D-133, LAI-1143); a member's.
+      const about = { targetOrgRole: 'member' as const };
+      expect(can(actor('admin', DEFAULT_GRANTS), action, about), `admin default ${action}`).toBe(
+        true,
+      );
+      expect(can(actor('admin', bare), action, about), `admin withdrawn ${action}`).toBe(false);
+      expect(can(actor('member', DEFAULT_GRANTS), action, about), `member default ${action}`).toBe(
+        false,
+      );
     }
     expect(can(actor('member', only('member', 'create_archive_projects')), 'project.create')).toBe(
       true,
     );
-    expect(can(actor('member', only('member', 'manage_any_tokens')), 'token.revoke_any')).toBe(
-      true,
-    );
+    expect(
+      can(actor('member', only('member', 'manage_any_tokens')), 'token.revoke_any', {
+        targetOrgRole: 'member',
+      }),
+    ).toBe(true);
   });
 });
 

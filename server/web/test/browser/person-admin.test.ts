@@ -1,6 +1,7 @@
 /**
  * The person admin panel and the reset-link page, in a real browser (D-104,
- * LAI-988).
+ * LAI-988). Since LAI-1134 the controls live in the **Manage member** panel,
+ * opened from the profile header's ⋯; every test here opens it that way.
  *
  * What the server tests cannot see: that the `409 open_tasks` a deactivation
  * or a removal is refused with becomes the offboarding dialog's question, with
@@ -211,6 +212,9 @@ function stub(viewer: ReturnType<typeof me>, overrides: ApiStub = {}): ApiStub {
     },
     '/api/v1/users/u2/profile': profile(PEOPLE[1]!),
     '/api/v1/users/u1/profile': profile(PEOPLE[0]!),
+    // u1's own profile and heatmap, when u1 is the reader (D-139, LAI-1150).
+    '/api/v1/me/profile': profile(PEOPLE[0]!),
+    '/api/v1/me/activity': quietActivity,
     '/api/v1/users/u2/usage': quietUsage('u2'),
     '/api/v1/users/u1/usage': quietUsage('u1'),
     '/api/v1/people/u2/activity': quietActivity,
@@ -240,9 +244,18 @@ function stub(viewer: ReturnType<typeof me>, overrides: ApiStub = {}): ApiStub {
 const OWNER = me('u1', 'owner');
 const ADMIN = me('u4', 'admin');
 
+/** The profile header's ⋯ (LAI-1134). */
+const MANAGE_BUTTON = '[data-profile-manage] button[aria-haspopup="menu"]';
+const PANEL = '[data-panel="manage-member"]';
+
+/** Open the Manage member panel the way a reader does: ⋯, then *Manage member…*. */
 async function panel(h: Harness) {
-  const found = h.page.locator('.prof-card[data-section="admin"]');
-  await found.waitFor({ timeout: 20_000 });
+  const more = h.page.locator(MANAGE_BUTTON);
+  await more.waitFor({ timeout: 20_000 });
+  await more.click();
+  await h.page.getByRole('menuitem', { name: 'Manage member…' }).click();
+  const found = h.page.locator(PANEL);
+  await found.waitFor({ timeout: 10_000 });
   return found;
 }
 
@@ -340,14 +353,18 @@ void describe('the Admin panel', () => {
     }
   });
 
-  void test('a person’s own profile has no Admin panel', async () => {
-    const h = await open('/people?user=u1', stub(OWNER));
+  void test('on a person’s own profile there is no ⋯ and no panel — Who looked instead (LAI-1152)', async () => {
+    const h = await open('/people?user=u1', stub(OWNER), {
+      before: (page: Page) => watchFor(page, [...CONTROLS, MANAGE_BUTTON, PANEL]),
+    });
     try {
-      await h.page
-        .locator('.prof-card[data-section="activity"], .prof-card')
-        .first()
-        .waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.prof-card[data-section="admin"]').count(), 0);
+      // The design draws ⋯ on someone else's profile only (SPEC §11.4.2.1).
+      await h.page.locator('[data-profile-who-looked]').waitFor({ timeout: 20_000 });
+      assert.equal(await everSeen(h.page, MANAGE_BUTTON), false, 'own profile drew ⋯');
+      assert.equal(await everSeen(h.page, PANEL), false);
+      for (const sel of CONTROLS) {
+        assert.equal(await everSeen(h.page, sel), false, `own profile offered ${sel}`);
+      }
     } finally {
       await h.close();
     }
@@ -621,6 +638,155 @@ void describe('access', () => {
     }
   });
 
+  void test('the owner’s tokens: an admin sees them with no Revoke, and why (D-133, LAI-1143)', async () => {
+    const h = await open(
+      '/people?user=u1',
+      stub(ADMIN, {
+        '/api/v1/users/u1/tokens': { data: [token('o1', 'Owner laptop')], next_cursor: null },
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      await admin.locator('[data-token="o1"]').waitFor();
+      assert.equal(await admin.locator('[data-action="revoke-token"]').count(), 0);
+      assert.match(
+        await admin.locator('[data-owner-tokens]').innerText(),
+        /Only the owner can revoke its tools, devices or tokens/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('their tokens: a 403 not_for_owner is said in the reader’s terms', async () => {
+    const h = await open(
+      '/people?user=u2',
+      stub(ADMIN, {
+        '/api/v1/users/u2/tokens/k1': reply(403, {
+          error: {
+            code: 'forbidden',
+            message: "An admin cannot change the owner's setup",
+            details: { reason: 'not_for_owner' },
+          },
+        }),
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      await admin.locator('[data-token="k1"] [data-action="revoke-token"]').click();
+      await admin.locator('[data-token="k1"] [data-action="admin-confirm"]').click();
+      await until(async () =>
+        (await admin.locator('[data-admin="tokens"]').innerText()).includes('Only the owner'),
+      );
+      assert.match(
+        await admin.locator('[data-admin="tokens"]').innerText(),
+        /Only the owner can change the owner’s setup\. Nothing was changed\./,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('their tokens: a long list says how many, folds alike names and shows three (LAI-321)', async () => {
+    // The owner's own shape on 2026-11-04: ten personal (six alike, three
+    // never used) and five tool credentials.
+    const personal = [
+      token('p1', 'claude-code on macOS', { last_used_at: NOW - 60_000 }),
+      token('p2', 'claude-code on macOS', { last_used_at: null }),
+      token('p3', 'claude-code on macOS', { last_used_at: NOW - 20 * DAY }),
+      token('p4', 'claude-code on macOS', { last_used_at: NOW - 12 * 3_600_000 }),
+      token('p5', 'claude-code on macOS', { last_used_at: null }),
+      token('p6', 'claude-code on macOS', { last_used_at: NOW - 19 * DAY }),
+      token('p7', 'omnigent on macOS', { last_used_at: NOW - DAY }),
+      token('p8', 'laika-cli on a laptop', { last_used_at: NOW - 14 * DAY - 3_600_000 }),
+      token('p9', 'claude-token', { last_used_at: NOW - 2 * DAY }),
+      token('p10', 'omnigent on macOS', { last_used_at: null }),
+    ].map((t) => ({ ...t, kind: 'personal', agent_id: null, agent_label: null }));
+    const tools = [
+      'claude-code · A',
+      'omnigent · A',
+      'omnigent · B',
+      'claude-code · B',
+      'codex · B',
+    ].map((label, i) =>
+      token(`t${String(i + 1)}`, `registered ${String(i)}`, {
+        kind: 'agent',
+        agent_id: `a${String(i + 1)}`,
+        agent_label: label,
+        last_used_at: NOW - (i + 1) * 3_600_000,
+      }),
+    );
+    const h = await open(
+      '/people?user=u2',
+      stub(OWNER, {
+        '/api/v1/users/u2/tokens': { data: [...personal, ...tools], next_cursor: null },
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      const block = admin.locator('[data-admin="tokens"]');
+      await block.locator('[data-token-summary]').waitFor();
+      assert.equal(
+        await block.locator('[data-token-summary]').innerText(),
+        '15 working · 10 personal · 5 tool credentials',
+      );
+
+      // Six alike are one row, its latest use first; three rows per kind until asked.
+      const mine = block.locator('[data-kind="personal"]');
+      assert.match(await mine.innerText(), /Personal tokens · 10/);
+      const group = mine.locator('[data-token-group="claude-code on macOS"]');
+      assert.match(await group.innerText(), /claude-code on macOS\s*× 6/);
+      assert.match(await group.innerText(), /Latest used/);
+      assert.equal(await mine.locator(':scope > ul > li').count(), 3);
+      assert.equal(await mine.locator('[data-token="p8"]').count(), 0, 'a fourth row is shown');
+      await mine.locator('[data-action="show-all-tokens"]').click();
+      await mine.locator('[data-token="p8"]').waitFor();
+      // Four rows for ten tokens: claude-code × 6, omnigent × 2, and two alone.
+      assert.equal(await mine.locator(':scope > ul > li').count(), 4);
+      assert.equal(await mine.locator('[data-action="show-all-tokens"]').innerText(), 'Show fewer');
+
+      // Idle and never used say so; a folded token opens to its own revoke.
+      assert.equal(await mine.locator('[data-token="p8"] [data-use="idle"]').innerText(), 'Idle');
+      const toggle = group.locator('.prof-admin-group-toggle');
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await group.locator('[data-token]').count(), 0);
+      await toggle.click();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      assert.deepEqual(
+        await group
+          .locator('[data-token]')
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-token'))),
+        ['p1', 'p4', 'p6', 'p3', 'p2', 'p5'],
+      );
+      assert.equal(
+        await group.locator('[data-token="p2"] [data-use="never"]').innerText(),
+        'Never used',
+      );
+      assert.equal(await group.locator('[data-token="p1"] [data-use]').count(), 0);
+      assert.equal(
+        await group.locator('[data-token="p5"] [data-action="revoke-token"]').count(),
+        1,
+      );
+
+      // Tool credentials: named by tool, three shown of five.
+      const credentials = block.locator('[data-kind="agent"]');
+      assert.match(await credentials.innerText(), /Tool credentials \(Tool · Device\) · 5/);
+      assert.equal(await credentials.locator(':scope > ul > li').count(), 3);
+      assert.doesNotMatch(await credentials.innerText(), /registered \d/);
+
+      // The list spans the panel instead of one narrow column.
+      const grid = await admin.locator('.prof-admin').boundingBox();
+      const box = await block.boundingBox();
+      assert.ok(grid !== null && box !== null);
+      assert.ok(
+        Math.abs(box.width - grid.width) < 2,
+        `${String(box.width)} of ${String(grid.width)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('their tokens: grouped by kind; a tool credential says what revoking stops', async () => {
     const h = await open(
       '/people?user=u2',
@@ -775,15 +941,21 @@ void describe('every control is the server’s answer', () => {
     }
   });
 
-  void test('with no grant at all about people, there is no panel', async () => {
+  void test('with no grant at all about people, ⋯ holds only the links and there is no panel', async () => {
     const h = await open(
       '/people?user=u2',
       stub(ADMIN, { '/api/v1/permissions': permissions('admin', ['org.read', 'profile.read']) }),
-      { before: (page: Page) => watchFor(page, ['.prof-card[data-section="admin"]']) },
+      { before: (page: Page) => watchFor(page, [PANEL]) },
     );
     try {
       await h.page.locator('.prof-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await everSeen(h.page, '.prof-card[data-section="admin"]'), false);
+      // ⋯ carries *Copy link* and *See … in Work* for every reader (LAI-1152);
+      // *Manage member…* only when the panel would hold something (LAI-1134).
+      await h.page.locator(MANAGE_BUTTON).click();
+      const items = await h.page.getByRole('menuitem').allInnerTexts();
+      assert.equal(items.length, 2);
+      assert.equal(items.filter((t) => t.includes('Manage member')).length, 0);
+      assert.equal(await everSeen(h.page, PANEL), false);
     } finally {
       await h.close();
     }

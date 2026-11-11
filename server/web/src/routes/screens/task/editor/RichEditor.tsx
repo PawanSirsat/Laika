@@ -1,11 +1,24 @@
 import { Placeholder } from '@tiptap/extensions';
 import { Selection, TextSelection } from '@tiptap/pm/state';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { ApiError } from '../../../../api/errors.ts';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { Button } from '../../../../components/forms/Button.tsx';
-import type { CardCandidate, MentionCandidate, RichEditorProps } from '../LazyRichEditor.tsx';
+import type {
+  CardCandidate,
+  MentionCandidate,
+  RichEditorProps,
+  RichEditorWritten,
+} from '../LazyRichEditor.tsx';
 import type { MentionDirectory } from '../mentions.ts';
 import { MARKDOWN_EXTENSIONS } from './extensions.ts';
 import {
@@ -43,9 +56,7 @@ const bridge = createBridge(MARKDOWN_EXTENSIONS);
 type Mode = 'rich' | 'source';
 
 /** What a save would send, or why it cannot be sent as it stands. */
-type Written =
-  | { readonly ok: true; readonly markdown: string }
-  | { readonly ok: false; readonly reason: string; readonly draft: string };
+type Written = RichEditorWritten;
 
 /** The line above the Markdown view: a word in bold, then why. */
 interface Notice {
@@ -214,7 +225,10 @@ export function RichEditor({
   value,
   label,
   placeholder,
-  submitLabel,
+  mode: role = 'commit',
+  handle,
+  onEscape,
+  submitLabel = 'Save',
   onSubmit,
   onClose,
   people,
@@ -223,6 +237,12 @@ export function RichEditor({
   compact = false,
   caretAt,
 }: RichEditorProps) {
+  /*
+   * **Embedded** (LAI-1167): a field of a form rather than an editor that
+   * saves itself. No footer, and Escape and ⌘↵ are the form's — they bubble
+   * out untouched. The form reads the text through `handle.read()`.
+   */
+  const embedded = role === 'embedded';
   /** Decided once, on the text editing opened on — never on a later one. */
   const opening = useMemo(() => openDocument(bridge, value), [value]);
   const [mode, setMode] = useState<Mode>(opening.kind);
@@ -380,7 +400,7 @@ export function RichEditor({
   );
 
   const submit = useCallback(async (): Promise<void> => {
-    if (busy) return;
+    if (busy || onSubmit === undefined || onClose === undefined) return;
     const result = written();
     if (!result.ok) {
       toSource(result, 'Not saved');
@@ -404,10 +424,34 @@ export function RichEditor({
   }, [busy, written, toSource, unchanged, onSubmit, onClose]);
 
   const requestCancel = useCallback((): void => {
+    if (onClose === undefined) return;
     const result = written();
     if (result.ok && unchanged(result.markdown)) onClose();
     else setConfirming(true);
   }, [written, unchanged, onClose]);
+
+  /*
+   * The form's read (embedded only). A document that cannot be written drops
+   * to the Markdown view here, with the reason, exactly as a refused save
+   * does — so what the form reports and what the editor shows agree.
+   */
+  useImperativeHandle(
+    handle,
+    () => ({
+      read: (): Written => {
+        const result = written();
+        if (!result.ok) toSource(result, 'Not sent');
+        return result;
+      },
+      focus: (): void => {
+        if (mode === 'rich') editor.commands.focus();
+        else sourceField.current?.focus();
+      },
+      // Nothing typed: the form asks before discarding only when there is.
+      empty: (): boolean => (mode === 'rich' ? editor.isEmpty : source.trim() === ''),
+    }),
+    [written, toSource, mode, editor, source],
+  );
 
   const mentionMatches =
     picker?.kind === 'mention' ? peopleMatching(people, picker.query) : ([] as MentionCandidate[]);
@@ -444,6 +488,20 @@ export function RichEditor({
         setPicker(null);
         return true;
       }
+    }
+    if (embedded) {
+      /*
+       * Embedded: both keys are the form's. ⌘↵ bubbles out of the document
+       * and the form reads it. Escape cannot — ProseMirror `preventDefault`s
+       * every Escape it is handed, and a form that respects a consumed
+       * Escape (an open menu's) would never see this one — so the editor
+       * tells the form itself.
+       */
+      if (event.key === 'Escape') {
+        onEscape?.();
+        return true;
+      }
+      return false;
     }
     if (event.key === 'Escape') {
       requestCancel();
@@ -495,7 +553,8 @@ export function RichEditor({
       return;
     }
     // Clicked into already: that caret is the person's, not ours to move.
-    if (opening.kind !== 'rich' || mounted.view.hasFocus()) return;
+    // Embedded, the form decides where focus starts (the Title), not the editor.
+    if (embedded || opening.kind !== 'rich' || mounted.view.hasFocus()) return;
     const { state, view } = mounted;
     let selection: Selection = Selection.atStart(state.doc);
     if (caretAt !== undefined) {
@@ -582,7 +641,7 @@ export function RichEditor({
 
   return (
     <div
-      className={compact ? 'rich-editor rich-editor-compact' : 'rich-editor'}
+      className={`rich-editor${compact ? ' rich-editor-compact' : ''}${embedded ? ' rich-editor-embedded' : ''}`}
       ref={wrap}
       data-mode={mode}
       /*
@@ -590,9 +649,10 @@ export function RichEditor({
        * From the document and the Markdown view it is handled already; from a
        * toolbar, Save or Cancel button it reached the drawer, which closed the
        * panel and threw the draft away. It asks first when something changed.
+       * Embedded, Escape is the form's and passes.
        */
       onKeyDown={(event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        if (embedded || event.key !== 'Escape' || event.defaultPrevented) return;
         event.preventDefault();
         if (!confirming) requestCancel();
       }}
@@ -783,13 +843,14 @@ export function RichEditor({
       )}
 
       {picker?.kind === 'link' && (
-        <form
-          className="rte-popover rte-link"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applyLink(picker.href);
-          }}
-        >
+        /*
+         * **Not a `<form>`** (LAI-1167 review). Embedded in the Create task
+         * dialog the editor sits inside the dialog's form, and a nested form
+         * is not one: Apply submitted the page as a GET and reloaded it with
+         * the draft lost. Enter is the input's own, stopped before the dialog
+         * can read it as its submit.
+         */
+        <div className="rte-popover rte-link">
           <input
             className="rte-input"
             aria-label="Link address"
@@ -801,14 +862,24 @@ export function RichEditor({
               setPicker({ kind: 'link', href: event.target.value });
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                applyLink(picker.href);
+              } else if (event.key === 'Escape') {
                 event.preventDefault();
                 setPicker(null);
                 editor.commands.focus();
               }
             }}
           />
-          <Button type="submit">Apply</Button>
+          <Button
+            onClick={() => {
+              applyLink(picker.href);
+            }}
+          >
+            Apply
+          </Button>
           {state.link && (
             <Button
               variant="secondary"
@@ -825,7 +896,7 @@ export function RichEditor({
               {picker.error}
             </p>
           )}
-        </form>
+        </div>
       )}
 
       {picker?.kind === 'card' && (
@@ -909,6 +980,8 @@ export function RichEditor({
               setSource(event.target.value);
             }}
             onKeyDown={(event) => {
+              // Embedded: the form's keys (LAI-1167).
+              if (embedded) return;
               if (event.key === 'Escape') {
                 event.preventDefault();
                 requestCancel();
@@ -956,7 +1029,7 @@ export function RichEditor({
         </p>
       )}
 
-      {confirming ? (
+      {embedded ? null : confirming ? (
         <div className="rich-editor-confirm" role="alertdialog" aria-label="Discard your changes?">
           <p>Discard your changes?</p>
           <Button variant="danger" onClick={onClose}>
