@@ -68,11 +68,32 @@ export function changeMemberRole(
  *
  * Returns the full list like the other mutations, and 201 rather than 200.
  */
-export function addMember(slug: string, userId: string, role: ProjectRole): Promise<MemberList> {
+export function addMember(
+  slug: string,
+  userId: string,
+  role: ProjectRole,
+  onboarding: AddMemberOnboarding = {},
+): Promise<MemberList> {
+  const body: Record<string, string> = { user_id: userId, role };
+  if (onboarding.message !== undefined && onboarding.message.trim() !== '')
+    body.message = onboarding.message;
+  if (onboarding.assignTaskId !== undefined) body.assign_task_id = onboarding.assignTaskId;
   return request<MemberList>(`/projects/${encodeURIComponent(slug)}/members`, {
     method: 'POST',
-    body: { user_id: userId, role },
+    body,
   });
+}
+
+/**
+ * What *Add to project…* sends beside the role (§6.4, D-134, LAI-1136): a
+ * message for the person, at most 500 characters, and the first card to hand
+ * them — a `backlog` or `todo` card in that space with nobody on it, else
+ * `422 task_not_assignable`. The membership, the card and the notice are one
+ * transaction on the server.
+ */
+export interface AddMemberOnboarding {
+  readonly message?: string | undefined;
+  readonly assignTaskId?: string | undefined;
 }
 
 /**

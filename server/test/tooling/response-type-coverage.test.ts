@@ -213,6 +213,26 @@ const UNPAIRED = new Map<string, string>([
   ['LauncherView', 'no client type exists'],
   ['PingAgentResult', 'no client type exists'],
   ['LauncherReportView', 'no client type exists'],
+  // LAI-1130 (D-131): availability and load, served ahead of the web half,
+  // T7 of the Time report programme, which mirrors them — each leaves this
+  // group when its client type exists.
+  ['AvailabilityView', 'no client type exists'],
+  ['WorkWeekView', 'no client type exists'],
+  ['AwayPeriodView', 'no client type exists'],
+  ['AvailabilityListView', 'no client type exists'],
+  ['AvailabilityRowView', 'no client type exists'],
+  ['MemberAvailabilityView', 'no client type exists'],
+  ['LeadAvailabilityView', 'no client type exists'],
+  ['PersonLoadView', 'no client type exists'],
+  ['LoadProjectView', 'no client type exists'],
+  ['LoadCardsView', 'no client type exists'],
+  ['LoadWeekView', 'no client type exists'],
+  // LAI-1136 (D-134): served ahead of the web half, LAI-1139, which builds My
+  // day's For you and mirrors it.
+  ['NoticeView', 'no client type exists'],
+  // LAI-1151 (D-139): your own setup's activity, served ahead of the own
+  // Developer access tab, LAI-1156, which mirrors it.
+  ['OwnSetupActivityView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],
@@ -238,6 +258,10 @@ const UNPAIRED = new Map<string, string>([
   ['MetricsView', 'no client type exists'],
   // LAI-885's catalogue; the web Roles & Permissions screen brings the mirror.
   ['PermissionsView', 'no client type exists'],
+  // LAI-1135 (D-130): the Time report's answer is a union of two views, both
+  // paired since LAI-1138; a union has no fields of its own to compare, so
+  // it is named here with the client's identical union.
+  ['TimeReportAnswer', 'TimeReportAnswer'],
   // The Solidtime bridge (LAI-788) is the CLI's, not the web app's: `laika
   // time push` and `pull` read these, and no screen does. They leave this
   // group the way the rest do, when a screen shows them.

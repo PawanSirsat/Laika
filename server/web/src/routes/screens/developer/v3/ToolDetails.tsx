@@ -21,25 +21,36 @@ import {
   whyNoPing,
   type NoPing,
 } from '../../../../components/agent/capacity-derive.ts';
+import { autoPickupWords } from '../../../../components/agent/capacity-derive.ts';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
-import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
+import { CheckpointConsentSwitch, type ConsentRead } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
 import { showsConsent } from '../checkpoint-consent.ts';
 import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { DetailTiles } from './DetailTiles.tsx';
+import { DetailsFold, useFolds } from './DetailsFold.tsx';
+import { NoteBlock } from './NoteBlock.tsx';
 import { pairedDevice } from './add-flow.ts';
+import {
+  checksSummary,
+  consentSummary,
+  helperSummary,
+  supportsCheckpoints,
+  toolNext,
+} from './details-sections.ts';
 import {
   CLOUD_NOTE,
   chipTone,
   disconnectImpact,
   listedStatus,
+  toolAction,
   type ListedTool,
 } from './devices-view.ts';
 import { catalogTool } from './tool-catalog.ts';
 import { checkLines, readiness } from './tool-readiness.ts';
-import { ToolUpdate, useVerification } from './ToolUpdate.tsx';
+import { ToolUpdate, useUpdateStatus, useVerification } from './ToolUpdate.tsx';
 
 export const TOOL_PANEL_TITLE = 'dv3-tool-panel-title';
 
@@ -70,27 +81,42 @@ export interface ToolDetailsProps {
 
 type Form = 'none' | 'rename' | 'access';
 
+type ToolFold =
+  'name' | 'checks' | 'helper' | 'projects' | 'credential' | 'checkpoints' | 'launcher' | 'device';
+
+const HELPER_FOLD = `${TOOL_PANEL_TITLE}-helper`;
+
 /**
  * A tool's details (LAI-1080): everything its one-line row on Tools has no
  * room for, at `?tab=tools&agent=<id>` — the address `?agent=` has named a
- * tool by since LAI-537. What was every tool row's expanded body on Devices
- * (LAI-1054, LAI-1065) moved here unchanged:
+ * tool by since LAI-537.
  *
- * - **Status**, and the checks it comes from (`checkLines`), out of the
+ * **The top is short** (LAI-1100, the owner's V3): its status under the
+ * title, then the one next action (`toolNext`) — finish setting it up, the
+ * steps for a helper the board refuses, a check still missing, or a first
+ * project. Every other section is one summary row that opens in place
+ * (`DetailsFold`):
+ *
+ * - **Name**, only for one of a legacy duplicate pair (D-120) — open, as it
+ *   needs the owner.
+ * - **Checks**, the evidence its status comes from (`checkLines`), out of the
  *   verification the list already read — no second request. *Ready* only
  *   from that evidence; until it is in, the agent's own stamps, which never
  *   say *Ready*.
  * - **Helper**: its update status, *How to update* and *What's new*.
- * - **Launcher**: *Auto-pickup* from its presence report, the newest answer
- *   this reader may see, and *Ping* (LAI-1102, D-126).
  * - **Projects** it reaches, *Change access* on Project setup, and the same
  *   grants form here.
  * - **Credential** by prefix, and *Reconnect*: an exchange its paired device
  *   redeems, or — for a device with no key, or a tool the helper refuses —
  *   the new credential shown here once.
- * - **Save checkpoints automatically**, for its owner.
- * - **Rename**, only for one of a legacy duplicate pair (D-120).
- * - **Disconnect tool…** at the foot, behind a confirmation naming what stops.
+ * - **Automatic checkpoints**, for its owner, on a tool that can save them
+ *   (`supportsCheckpoints`): its row names what the switch read.
+ * - **Launcher**: *Auto-pickup* from its presence report, the newest answer
+ *   this reader may see, and *Ping* (LAI-1102, D-126).
+ * - **Device** it is on, and when it was last seen.
+ *
+ * **Disconnect tool…** stays at the foot, behind a confirmation naming what
+ * stops.
  */
 export function ToolDetails({
   listed,
@@ -182,6 +208,11 @@ function ToolPanel({
   const live = liveToken(agent, now);
   const replaceable = rotatableToken(agent, now);
   const viewer = me?.org_role === 'viewer';
+  const update = useUpdateStatus(agent.id);
+  const consentShown = active && supportsCheckpoints(tool) && showsConsent(agent, me);
+  const [consent, setConsent] = useState<ConsentRead>('reading');
+  // A duplicate needs its owner: its Name section starts open.
+  const folds = useFolds<ToolFold>(inConflict && active ? ['name'] : []);
 
   const [form, setForm] = useState<Form>('none');
   const [busy, setBusy] = useState(false);
@@ -335,6 +366,20 @@ function ToolPanel({
     event.preventDefault();
     onNavigate(href);
   };
+  const next = toolNext({
+    active,
+    status: status.key,
+    lines,
+    update: active ? update?.key : undefined,
+    projects: agent.grants.length,
+  });
+  const finishInWizard = toolAction(listed, status) === 'finish-in-wizard' && canManage;
+  // The helper's steps are its section's: open it, and take focus to its row.
+  const showHelper = (): void => {
+    folds.setOpen('helper', true);
+    document.getElementById(HELPER_FOLD)?.querySelector('summary')?.focus();
+  };
+  const seen = agent.last_seen_at === null ? undefined : timeLabel(agent.last_seen_at, now);
 
   return (
     <SidePanel
@@ -376,256 +421,354 @@ function ToolPanel({
         data-status={status.key}
         aria-busy={busy || undefined}
       >
-        {rotated !== undefined && (
-          <div className="side-panel-section">
-            <SecretPanel
-              created={rotated}
-              label={label}
-              title="New credential — copy it now, it is not shown again"
-              onDone={forget}
-            />
-          </div>
-        )}
-
-        <section className="side-panel-section" aria-labelledby="dv3-tool-status">
-          <h3 className="side-panel-label" id="dv3-tool-status">
-            Status
-          </h3>
-          {lines === undefined ? (
-            <p className="dv3-none">
-              {!active
-                ? 'Revoked: its credentials no longer work, and nothing here can change it.'
-                : tool === undefined
-                  ? 'This kind of tool has no checks this page can read; the status is from its own last request.'
-                  : 'Its checks could not be read yet; the status is from its own last request.'}
-            </p>
-          ) : (
-            <ul className="dv3-checks" aria-label={`Checks for ${label}`} data-checks>
-              {lines.map((l) => (
-                <li key={l.id} className="dv3-check" data-check={l.id} data-state={l.state}>
-                  <span className="dv3-check-mark" aria-hidden="true">
-                    {l.state === 'pass' ? <CheckIcon /> : l.state === 'unsupported' ? '–' : '○'}
-                  </span>
-                  <span className="dv3-check-text">
-                    <span className="dv3-check-label">
-                      {l.label}
-                      <span className="dv3-check-state">
-                        {l.state === 'pass'
-                          ? 'Done'
-                          : l.state === 'unsupported'
-                            ? 'Not supported'
-                            : 'Missing'}
-                      </span>
-                    </span>
-                    <span className="dv3-check-detail">
-                      <InlineCode text={l.detail} />
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {lines !== undefined && tool !== undefined && (
-            <p className="dv3-note">
-              {tool.name}’s name for itself is what it reports; Ready means its own credential,
-              announcing itself as {tool.name}.
-              {versionUnknown && ' Its version is unknown: neither the helper nor the tool said.'}
-            </p>
-          )}
-          {active && live === undefined && replaceable !== undefined && (
-            <p className="dv3-note" data-cloud-expired>
-              {CLOUD_NOTE}
-            </p>
-          )}
-        </section>
-
-        <section className="side-panel-section" aria-labelledby="dv3-tool-facts">
-          <h3 className="side-panel-label" id="dv3-tool-facts">
-            Details
-          </h3>
-          <DetailTiles
-            items={[
-              { label: 'Device', value: device.display_name, id: 'device' },
-              {
-                label: 'Last seen',
-                value:
-                  agent.last_seen_at === null ? (
-                    'Never'
-                  ) : (
-                    <time
-                      dateTime={timeLabel(agent.last_seen_at, now).iso}
-                      title={timeLabel(agent.last_seen_at, now).full}
-                    >
-                      {timeLabel(agent.last_seen_at, now).text.replace(/^just now$/, 'Just now')}
-                    </time>
-                  ),
-                id: 'last-seen',
-              },
-            ]}
-          />
-        </section>
-
-        {active && (
-          <section className="side-panel-section" aria-labelledby="dv3-tool-helper">
-            <h3 className="side-panel-label" id="dv3-tool-helper">
-              Helper
-            </h3>
-            <ToolUpdate agentId={agent.id} label={label} />
-          </section>
-        )}
-
-        {active && (
-          <section className="side-panel-section" aria-labelledby="dv3-tool-launcher" data-launcher>
-            <h3 className="side-panel-label" id="dv3-tool-launcher">
-              Launcher
-            </h3>
-            <AutoPickupChip
-              launcher={agent.launcher}
-              now={now}
-              device={device.display_name}
-              layout="panel"
-            />
-            {projects !== undefined && me !== undefined && (
-              <ToolPing
-                agentId={agent.id}
-                project={pingProjectFor(agent, projects, me)}
-                why={whyNoPing(agent, projects, me)}
-                target={label}
-                onPinged={onPinged}
+        <div className="dv3-details-top">
+          {rotated !== undefined && (
+            <div>
+              <SecretPanel
+                created={rotated}
+                label={label}
+                title="New credential — copy it now, it is not shown again"
+                onDone={forget}
               />
-            )}
-          </section>
-        )}
-
-        <section className="side-panel-section" aria-labelledby="dv3-tool-projects">
-          <h3 className="side-panel-label" id="dv3-tool-projects">
-            Projects
-          </h3>
-          <p className="dv3-panel-value" data-projects>
-            {grantSummary(agent.grants, projects)}
-          </p>
-          {active && form !== 'access' && (
-            <div className="dx-actions dv3-panel-actions">
-              <a className="dx-btn dx-btn-sm" href={projectHref} onClick={follow(projectHref)}>
-                Change access →
-              </a>
-              {canManage && (
-                <button
-                  type="button"
-                  ref={accessButton}
-                  className="dx-btn dx-btn-sm dx-btn-ghost"
-                  onClick={() => {
-                    setForm('access');
-                  }}
-                >
-                  Project access…
-                </button>
-              )}
             </div>
           )}
-          {form === 'access' && (
-            <AccessForm
-              agent={agent}
-              projects={projects}
-              projectsError={projectsError}
-              onRetryProjects={onRetryProjects}
-              viewer={viewer}
-              onSaved={(next) => {
-                onChanged(next);
-                announce(`${label}’s project access saved.`);
-                closeForm();
-              }}
-              onCancel={closeForm}
-            />
-          )}
-        </section>
 
-        <section className="side-panel-section" aria-labelledby="dv3-tool-credential">
-          <h3 className="side-panel-label" id="dv3-tool-credential">
-            Credential
-          </h3>
-          <p className="dv3-panel-value" data-credential>
-            {live === undefined ? 'None live' : <code>{live.prefix}…</code>}
-          </p>
-          {canManage && active && (
-            <div className="dx-actions dv3-panel-actions">
-              {paired ? (
-                <button
-                  type="button"
-                  className="dx-btn dx-btn-sm"
-                  aria-disabled={busy || undefined}
-                  onClick={() => {
-                    if (!busy) onReconnect(agent);
-                  }}
-                >
-                  Reconnect (new credential)…
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="dx-btn dx-btn-sm"
-                  aria-disabled={busy || replaceable === undefined || undefined}
-                  onClick={() => {
-                    if (!busy) rotate();
-                  }}
-                >
-                  Reconnect (new credential)…
-                </button>
-              )}
-            </div>
-          )}
-          {cloud && active && <p className="dv3-note">{CLOUD_NOTE}</p>}
-        </section>
-
-        {active && showsConsent(agent, me) && (
-          <section className="side-panel-section">
-            <CheckpointConsentSwitch agent={agent} me={me} canManage={canManage} now={now} />
-          </section>
-        )}
-
-        {inConflict && active && (
-          <section className="side-panel-section" aria-labelledby="dv3-tool-rename" data-rename>
-            <h3 className="side-panel-label" id="dv3-tool-rename">
-              Name
-            </h3>
-            <p className="dv3-note">
-              Another agent of this tool on {device.display_name} is active too, from before one
-              agent per tool per device. Both keep working; a name tells them apart.
+          {next.kind === 'revoked' && (
+            <p className="dv3-none" data-next="revoked">
+              Revoked: its credentials no longer work, and nothing here can change it.
             </p>
-            {form === 'rename' ? (
-              <RenameForm
+          )}
+          {next.kind === 'finish' && (next.check !== undefined || finishInWizard) && (
+            <div data-next="finish">
+              <NoteBlock tone="warn" title="Finish setup">
+                {next.check !== undefined && (
+                  <p>
+                    <strong>{next.check.label}:</strong> <InlineCode text={next.check.detail} />
+                  </p>
+                )}
+                {finishInWizard && (
+                  <div className="dx-actions">
+                    <button
+                      type="button"
+                      className="dx-btn dx-btn-sm dx-btn-primary"
+                      aria-label={`Finish setting up ${label}`}
+                      aria-disabled={busy || undefined}
+                      onClick={() => {
+                        if (!busy) onReconnect(agent);
+                      }}
+                    >
+                      Finish setup →
+                    </button>
+                  </div>
+                )}
+              </NoteBlock>
+            </div>
+          )}
+          {next.kind === 'update' && update !== undefined && (
+            <div data-next="update">
+              <NoteBlock tone="warn" title={update.word}>
+                <p>{update.reason}</p>
+                <div className="dx-actions">
+                  <button type="button" className="dx-btn dx-btn-sm" onClick={showHelper}>
+                    Show how to update
+                  </button>
+                </div>
+              </NoteBlock>
+            </div>
+          )}
+          {next.kind === 'check' && (
+            <div data-next="check">
+              <NoteBlock tone="accent" title={`Still missing: ${next.check.label}`}>
+                <p>
+                  <InlineCode text={next.check.detail} />
+                </p>
+              </NoteBlock>
+            </div>
+          )}
+          {next.kind === 'project' && (
+            <div data-next="project">
+              <NoteBlock tone="accent" title="No project yet">
+                <p>{label} reaches no project yet: set one up to give it work.</p>
+                <div className="dx-actions">
+                  <a
+                    className="dx-btn dx-btn-sm dx-btn-primary"
+                    href={projectHref}
+                    aria-label={`Set up a project for ${label}`}
+                    onClick={follow(projectHref)}
+                  >
+                    Set up a project →
+                  </a>
+                </div>
+              </NoteBlock>
+            </div>
+          )}
+
+          {error !== undefined && (
+            <p className="agents-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="dv3-folds">
+          {inConflict && active && (
+            <DetailsFold
+              {...folds.fold('name')}
+              title="Name"
+              summary="A duplicate: rename to tell them apart"
+              hook="rename"
+            >
+              <p className="dv3-note">
+                Another agent of this tool on {device.display_name} is active too, from before one
+                agent per tool per device. Both keep working; a name tells them apart.
+              </p>
+              {form === 'rename' ? (
+                <RenameForm
+                  agent={agent}
+                  onSaved={(saved) => {
+                    onChanged(saved);
+                    announce(`Renamed to ${saved.display_name}.`);
+                    closeForm();
+                  }}
+                  onCancel={closeForm}
+                />
+              ) : (
+                canManage && (
+                  <div className="dx-actions dv3-panel-actions">
+                    <button
+                      type="button"
+                      ref={renameButton}
+                      className="dx-btn dx-btn-sm"
+                      onClick={() => {
+                        setForm('rename');
+                      }}
+                    >
+                      Rename…
+                    </button>
+                  </div>
+                )
+              )}
+            </DetailsFold>
+          )}
+
+          {active && (
+            <DetailsFold
+              {...folds.fold('checks')}
+              title="Checks"
+              summary={
+                lines !== undefined
+                  ? checksSummary(lines)
+                  : tool === undefined
+                    ? 'None this page can read'
+                    : 'Not read yet'
+              }
+            >
+              {lines === undefined ? (
+                <p className="dv3-none">
+                  {tool === undefined
+                    ? 'This kind of tool has no checks this page can read; the status is from its own last request.'
+                    : 'Its checks could not be read yet; the status is from its own last request.'}
+                </p>
+              ) : (
+                <ul className="dv3-checks" aria-label={`Checks for ${label}`} data-checks>
+                  {lines.map((l) => (
+                    <li key={l.id} className="dv3-check" data-check={l.id} data-state={l.state}>
+                      <span className="dv3-check-mark" aria-hidden="true">
+                        {l.state === 'pass' ? <CheckIcon /> : l.state === 'unsupported' ? '–' : '○'}
+                      </span>
+                      <span className="dv3-check-text">
+                        <span className="dv3-check-label">
+                          {l.label}
+                          <span className="dv3-check-state">
+                            {l.state === 'pass'
+                              ? 'Done'
+                              : l.state === 'unsupported'
+                                ? 'Not supported'
+                                : 'Missing'}
+                          </span>
+                        </span>
+                        <span className="dv3-check-detail">
+                          <InlineCode text={l.detail} />
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {lines !== undefined && tool !== undefined && (
+                <p className="dv3-note">
+                  {tool.name}’s name for itself is what it reports; Ready means its own credential,
+                  announcing itself as {tool.name}.
+                  {versionUnknown &&
+                    ' Its version is unknown: neither the helper nor the tool said.'}
+                </p>
+              )}
+              {live === undefined && replaceable !== undefined && (
+                <p className="dv3-note" data-cloud-expired>
+                  {CLOUD_NOTE}
+                </p>
+              )}
+            </DetailsFold>
+          )}
+
+          {active && (
+            <DetailsFold
+              {...folds.fold('helper')}
+              id={HELPER_FOLD}
+              title="Helper"
+              summary={helperSummary(update?.key)}
+            >
+              <ToolUpdate agentId={agent.id} label={label} />
+            </DetailsFold>
+          )}
+
+          <DetailsFold
+            {...folds.fold('projects')}
+            title="Projects"
+            summary={grantSummary(agent.grants, projects)}
+          >
+            <p className="dv3-panel-value" data-projects>
+              {grantSummary(agent.grants, projects)}
+            </p>
+            {active && form !== 'access' && (
+              <div className="dx-actions dv3-panel-actions">
+                <a className="dx-btn dx-btn-sm" href={projectHref} onClick={follow(projectHref)}>
+                  Change access →
+                </a>
+                {canManage && (
+                  <button
+                    type="button"
+                    ref={accessButton}
+                    className="dx-btn dx-btn-sm dx-btn-ghost"
+                    onClick={() => {
+                      setForm('access');
+                    }}
+                  >
+                    Project access…
+                  </button>
+                )}
+              </div>
+            )}
+            {form === 'access' && (
+              <AccessForm
                 agent={agent}
-                onSaved={(next) => {
-                  onChanged(next);
-                  announce(`Renamed to ${next.display_name}.`);
+                projects={projects}
+                projectsError={projectsError}
+                onRetryProjects={onRetryProjects}
+                viewer={viewer}
+                onSaved={(saved) => {
+                  onChanged(saved);
+                  announce(`${label}’s project access saved.`);
                   closeForm();
                 }}
                 onCancel={closeForm}
               />
-            ) : (
-              canManage && (
-                <div className="dx-actions dv3-panel-actions">
+            )}
+          </DetailsFold>
+
+          <DetailsFold
+            {...folds.fold('credential')}
+            title="Credential"
+            summary={live === undefined ? 'None live' : `${live.prefix}…`}
+          >
+            <p className="dv3-panel-value" data-credential>
+              {live === undefined ? 'None live' : <code>{live.prefix}…</code>}
+            </p>
+            {canManage && active && (
+              <div className="dx-actions dv3-panel-actions">
+                {paired ? (
                   <button
                     type="button"
-                    ref={renameButton}
                     className="dx-btn dx-btn-sm"
+                    aria-disabled={busy || undefined}
                     onClick={() => {
-                      setForm('rename');
+                      if (!busy) onReconnect(agent);
                     }}
                   >
-                    Rename…
+                    Reconnect (new credential)…
                   </button>
-                </div>
-              )
+                ) : (
+                  <button
+                    type="button"
+                    className="dx-btn dx-btn-sm"
+                    aria-disabled={busy || replaceable === undefined || undefined}
+                    onClick={() => {
+                      if (!busy) rotate();
+                    }}
+                  >
+                    Reconnect (new credential)…
+                  </button>
+                )}
+              </div>
             )}
-          </section>
-        )}
+            {cloud && active && <p className="dv3-note">{CLOUD_NOTE}</p>}
+          </DetailsFold>
 
-        {error !== undefined && (
-          <p className="agents-error" role="alert">
-            {error}
-          </p>
-        )}
+          {consentShown && (
+            <DetailsFold
+              {...folds.fold('checkpoints')}
+              title="Automatic checkpoints"
+              summary={consentSummary(consent)}
+            >
+              <CheckpointConsentSwitch
+                agent={agent}
+                me={me}
+                canManage={canManage}
+                now={now}
+                onRead={setConsent}
+              />
+            </DetailsFold>
+          )}
+
+          {active && (
+            <DetailsFold
+              {...folds.fold('launcher')}
+              title="Launcher"
+              summary={autoPickupWords(agent.launcher, now, device.display_name).word}
+              hook="launcher"
+            >
+              <AutoPickupChip
+                launcher={agent.launcher}
+                now={now}
+                device={device.display_name}
+                layout="panel"
+              />
+              {projects !== undefined && me !== undefined && (
+                <ToolPing
+                  agentId={agent.id}
+                  project={pingProjectFor(agent, projects, me)}
+                  why={whyNoPing(agent, projects, me)}
+                  target={label}
+                  onPinged={onPinged}
+                />
+              )}
+            </DetailsFold>
+          )}
+
+          <DetailsFold
+            {...folds.fold('device')}
+            title="Device"
+            summary={`${device.display_name} · ${seen === undefined ? 'never seen' : `seen ${seen.text}`}`}
+          >
+            <DetailTiles
+              items={[
+                { label: 'Device', value: device.display_name, id: 'device' },
+                {
+                  label: 'Last seen',
+                  value:
+                    seen === undefined ? (
+                      'Never'
+                    ) : (
+                      <time dateTime={seen.iso} title={seen.full}>
+                        {seen.text.replace(/^just now$/, 'Just now')}
+                      </time>
+                    ),
+                  id: 'last-seen',
+                },
+              ]}
+            />
+          </DetailsFold>
+        </div>
       </div>
     </SidePanel>
   );

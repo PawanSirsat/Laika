@@ -143,7 +143,7 @@ function movedLine(event: ActivityEvent, agents: ReadonlyMap<string, AgentNaming
   if (move === undefined) return { ...fallback(event, agents), icon: 'moved' };
   const via = (event.payload as { via?: unknown } | null)?.via;
   if (via === 'send_back') return { icon: 'sent_back', text: 'Sent back', move };
-  if (via === 'accept') return { icon: 'finished', text: 'Approved', move };
+  if (via === 'accept') return { icon: 'finished', text: 'Accepted', move };
   return {
     icon: statusTransition(event)?.to === 'done' ? 'finished' : 'moved',
     text: 'Moved',

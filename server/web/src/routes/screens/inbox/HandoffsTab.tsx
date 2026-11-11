@@ -59,6 +59,12 @@ export interface HandoffsTabProps {
   /** An approve or a withdraw changed the badge: the shell re-reads it. */
   readonly onChanged: () => void;
   readonly onNavigate: (to: string) => void;
+  /**
+   * One view, fixed (LAI-1169): Review's *Needs your approval* section draws
+   * this tab on `needs_approval` alone — no tablist, no *Show closed*. The
+   * polling, the held rows and the writes are the same.
+   */
+  readonly only?: PersonInboxView | undefined;
 }
 
 interface Loaded {
@@ -95,8 +101,8 @@ const START: Loaded = {
  * no longer lists stays (marked), and new ones wait behind *Show N new* —
  * {@link mergeHeld}. Nothing here takes the focus.
  */
-export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTabProps) {
-  const [view, setView] = useState<PersonInboxView>('received');
+export function HandoffsTab({ meId, counts, onChanged, onNavigate, only }: HandoffsTabProps) {
+  const [view, setView] = useState<PersonInboxView>(only ?? 'received');
   const [closed, setClosed] = useState(false);
   const [state, setState] = useState<Loaded>(START);
   const [attempt, setAttempt] = useState(0);
@@ -281,54 +287,62 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
   };
 
   return (
-    <section className="handoff-inbox handoffs-tab" aria-label="Hand-offs" data-handoffs-tab>
-      <div className="handoffs-toolbar">
-        <Tabs
-          label="Show hand-offs"
-          className="handoff-filters"
-          tabClassName="handoff-filter"
-          idBase={tabIds}
-          panelId={panelId}
-          selected={view}
-          onSelect={switchTo}
-          items={PERSON_INBOX_VIEWS.map((id) => {
-            const count = shownCounts?.[id];
-            return {
-              id,
-              data: { 'data-filter': id },
-              label: (
-                <>
-                  {HANDOFF_FILTER_WORDS[id]}
-                  {count !== undefined && count > 0 && (
-                    <span className="handoff-filter-count" data-count={id}>
-                      {count}
-                      <span className="visually-hidden"> open</span>
-                    </span>
-                  )}
-                </>
-              ),
-            };
-          })}
-        />
-        <label className="handoffs-closed" htmlFor={closedId}>
-          <input
-            id={closedId}
-            type="checkbox"
-            checked={closed}
-            onChange={(event) => {
-              more.current?.abort();
-              setState(START);
-              setClosed(event.target.checked);
-            }}
+    <section
+      className="handoff-inbox handoffs-tab"
+      aria-label={only === undefined ? 'Hand-offs' : HANDOFF_FILTER_WORDS[only]}
+      data-handoffs-tab
+      data-only={only}
+    >
+      {only === undefined && (
+        <div className="handoffs-toolbar">
+          <Tabs
+            label="Show hand-offs"
+            className="handoff-filters"
+            tabClassName="handoff-filter"
+            idBase={tabIds}
+            panelId={panelId}
+            selected={view}
+            onSelect={switchTo}
+            items={PERSON_INBOX_VIEWS.map((id) => {
+              const count = shownCounts?.[id];
+              return {
+                id,
+                data: { 'data-filter': id },
+                label: (
+                  <>
+                    {HANDOFF_FILTER_WORDS[id]}
+                    {count !== undefined && count > 0 && (
+                      <span className="handoff-filter-count" data-count={id}>
+                        {count}
+                        <span className="visually-hidden"> open</span>
+                      </span>
+                    )}
+                  </>
+                ),
+              };
+            })}
           />
-          Show closed and expired
-        </label>
-      </div>
+          <label className="handoffs-closed" htmlFor={closedId}>
+            <input
+              id={closedId}
+              type="checkbox"
+              checked={closed}
+              onChange={(event) => {
+                more.current?.abort();
+                setState(START);
+                setClosed(event.target.checked);
+              }}
+            />
+            Show closed and expired
+          </label>
+        </div>
+      )}
 
       <div
         id={panelId}
-        role="tabpanel"
-        aria-labelledby={tabId(tabIds, view)}
+        {...(only === undefined
+          ? { role: 'tabpanel', 'aria-labelledby': tabId(tabIds, view) }
+          : {})}
         className="handoffs-panel"
       >
         {state.stale && (

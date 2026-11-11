@@ -365,7 +365,3 @@
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
-
-.est-time-value {
-  font-weight: var(--weight-semibold);
-}

@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
-import { at, summaryRoutes, weekData, weekStub, type DayData } from './my-day-week.ts';
+import {
+  at,
+  reportRoutes,
+  summaryRoutes,
+  weekData,
+  weekStub,
+  type DayData,
+} from './my-day-week.ts';
 import { daysIn, presetRange, weekOf } from '../../src/routes/screens/my-day/overview-derive.ts';
 
 /**
@@ -58,7 +65,11 @@ function stub(): { routes: ApiStub; data: Map<string, DayData> } {
   }
   // A range typed by hand, for the picker's test: the last three days.
   return {
-    routes: { ...weekStub(data), ...summaryRoutes(data, [{ from: typedFrom(), to: TODAY }]) },
+    routes: {
+      ...weekStub(data),
+      ...summaryRoutes(data, [{ from: typedFrom(), to: TODAY }]),
+      ...reportRoutes(data, [{ from: typedFrom(), to: TODAY }]),
+    },
     data,
   };
 }
@@ -172,21 +183,27 @@ void describe('the tabs (LAI-505)', () => {
         `not largest first: ${figures.join(', ')}`,
       );
 
-      // The week (LAI-526): read from the summary, every figure — kinds, projects, tasks, days.
+      // The week (LAI-526, LAI-1138): the shared Time report, from GET /time/report.
       await ov.locator('[data-ov-scope="week"]').click();
-      await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 5_000 });
+      const tr = h.page.locator('[data-time-report="me"]');
+      await tr.locator('[data-tr-stat="per-day"]').waitFor({ timeout: 5_000 });
       const week = weekOf(TODAY);
       assert.ok(
-        h.calls.some((c) => c.path === '/api/v1/me/time/summary'),
-        'the week was not read from the summary',
+        h.calls.some((c) => c.path === '/api/v1/time/report'),
+        'the week was not read from the Time report',
       );
-      assert.equal(await ov.locator('[data-ov-day]').count(), 7);
-      assert.equal(await ov.locator(`[data-ov-day="${TODAY}"].myday-ov-day-open`).count(), 1);
-      assert.ok((await ov.locator('[data-ov-kind]').count()) > 0, 'the week has no kinds');
-      assert.ok((await ov.locator('[data-ov-project="atlas"]').count()) === 1, 'no Atlas');
-      assert.ok((await ov.locator('[data-ov-task="LAI-11"]').count()) === 1, 'no LAI-11');
-      assert.match(await ov.locator('[data-ov-range]').innerText(), / – /);
+      assert.deepEqual(h.unmatched, [], 'a report was asked for a stretch nobody stubbed');
+      assert.equal(await tr.locator('[data-tr-day]').count(), 7);
+      assert.equal(await tr.locator(`[data-tr-day="${week.from}"]`).count(), 1);
+      // Space → Task: Atlas first, closed until opened (LAI-1162), with its cards.
+      assert.equal(await tr.locator('[data-tr-row="p1"]').count(), 1, 'no Atlas');
+      await tr.locator('[data-tr-row="p1"] .trep-row-toggle').click();
+      assert.equal(await tr.locator('[data-tr-child="t11"]').count(), 1, 'no LAI-11');
+      assert.match(await tr.locator('[data-tr-label]').innerText(), / – /);
       assert.ok(week.from <= TODAY && TODAY <= week.to);
+      // Day comes back to the day's own Overview.
+      await tr.locator('[data-tr-range="day"]').click();
+      await h.page.locator('[data-overview] [data-ov-stat="tracked"]').waitFor({ timeout: 5_000 });
 
       // The tab is remembered per browser.
       await h.page.reload();
@@ -260,42 +277,45 @@ void describe('the tabs (LAI-505)', () => {
       const ov = h.page.locator('[data-overview]');
       await ov.waitFor({ timeout: 10_000 });
       await ov.locator('[data-ov-scope="range"]').click();
-      // The quick picks, Last 7 days to start.
-      assert.equal(await ov.locator('[data-ov-preset]').count(), 4);
+      const tr = h.page.locator('[data-time-report="me"]');
+      // The quick picks, Last 30 days to start (the design's).
+      assert.equal(await tr.locator('[data-tr-preset]').count(), 4);
       assert.equal(
-        await ov.locator('[data-ov-preset="last7"]').getAttribute('aria-pressed'),
+        await tr.locator('[data-tr-preset="last30"]').getAttribute('aria-pressed'),
         'true',
       );
-      await until(async () => (await ov.locator('[data-ov-day]').count()) === 7);
-      assert.equal(await ov.locator('[data-ov-day]').count(), 7);
-      assert.ok((await ov.locator('[data-ov-project]').count()) > 0, 'no projects over the range');
+      await until(async () => (await tr.locator('[data-tr-day]').count()) === 30);
+      assert.equal(await tr.locator('[data-tr-day]').count(), 30);
+      await tr.locator('[data-tr-preset="last7"]').click();
+      await until(async () => (await tr.locator('[data-tr-day]').count()) === 7);
+      assert.equal(await tr.locator('[data-tr-day]').count(), 7);
+      assert.ok((await tr.locator('[data-tr-row]').count()) > 0, 'no rows over the range');
       // This month: a bar a day since the first.
-      await ov.locator('[data-ov-preset="thisMonth"]').click();
+      await tr.locator('[data-tr-preset="thisMonth"]').click();
       const month = presetRange('thisMonth', TODAY);
       const monthDays = daysIn(month.from, month.to);
-      if (monthDays > 1) {
-        await until(async () => (await ov.locator('[data-ov-day]').count()) === monthDays);
-        assert.equal(await ov.locator('[data-ov-day]').count(), monthDays);
-      }
+      await until(async () => (await tr.locator('[data-tr-day]').count()) === monthDays);
+      assert.equal(await tr.locator('[data-tr-day]').count(), monthDays);
       // Two days typed: the last three days.
-      await ov.locator('[data-ov-from]').fill(typedFrom());
-      await ov.locator('[data-ov-to]').fill(TODAY);
-      await until(async () => (await ov.locator('[data-ov-day]').count()) === 3);
-      assert.equal(await ov.locator('[data-ov-day]').count(), 3);
-      assert.equal(await ov.locator('[data-ov-stat="per-day"]').count(), 1);
-      assert.match(await ov.locator('[data-ov-range]').innerText(), / – /);
+      await tr.locator('[data-tr-from]').fill(typedFrom());
+      await tr.locator('[data-tr-to]').fill(TODAY);
+      await until(async () => (await tr.locator('[data-tr-day]').count()) === 3);
+      assert.equal(await tr.locator('[data-tr-day]').count(), 3);
+      assert.equal(await tr.locator('[data-tr-stat="per-day"]').count(), 1);
+      assert.match(await tr.locator('[data-tr-label]').innerText(), / – /);
+      assert.deepEqual(h.unmatched, []);
       // Backwards: said, and nothing asked.
-      const asked = h.calls.filter((c) => c.path === '/api/v1/me/time/summary').length;
-      await ov.locator('[data-ov-from]').fill('2099-01-01');
-      await ov.locator('[data-ov-problem]').waitFor({ timeout: 5_000 });
-      assert.match(await ov.locator('[data-ov-problem]').innerText(), /before the first/);
+      const asked = h.calls.filter((c) => c.path === '/api/v1/time/report').length;
+      await tr.locator('[data-tr-from]').fill('2099-01-01');
+      await tr.locator('[data-tr-problem]').waitFor({ timeout: 5_000 });
+      assert.match(await tr.locator('[data-tr-problem]').innerText(), /before the first/);
       // Longer than a quarter: said, and nothing asked.
-      await ov.locator('[data-ov-from]').fill('2020-01-01');
+      await tr.locator('[data-tr-from]').fill('2020-01-01');
       await until(async () =>
-        (await ov.locator('[data-ov-problem]').innerText()).includes('92 days or fewer'),
+        (await tr.locator('[data-tr-problem]').innerText()).includes('92 days or fewer'),
       );
-      assert.match(await ov.locator('[data-ov-problem]').innerText(), /92 days or fewer/);
-      assert.equal(h.calls.filter((c) => c.path === '/api/v1/me/time/summary').length, asked);
+      assert.match(await tr.locator('[data-tr-problem]').innerText(), /92 days or fewer/);
+      assert.equal(h.calls.filter((c) => c.path === '/api/v1/time/report').length, asked);
     } finally {
       await h.close();
     }

@@ -18,8 +18,9 @@ import {
   type DeviceCounts,
 } from './devices-view.ts';
 import { HintChip, StatusLegendLink } from './StatusLegend.tsx';
-import { BoardUpdateNote, DeviceVersionChip } from './ToolUpdate.tsx';
-import { deviceChipDescription, deviceChipKey } from './status-vocabulary.ts';
+import { BoardUpdateNote, DeviceVersionChip, useUpdateStatus } from './ToolUpdate.tsx';
+import { RowChevron, RowOpen } from './ToolsTab.tsx';
+import { deviceChipDescription, deviceChipKey, rowShowsUpdate } from './status-vocabulary.ts';
 
 export const DEVICES_TITLE = 'dv3-devices-title';
 
@@ -50,8 +51,9 @@ export interface DevicesTabProps {
  * in the owner's design). **A device is the computer**: paired once, then its
  * coding tools are added on Tools. Each row says its kind, how many tools it
  * holds and when it was last seen, a chip for how it got here — *Paired*,
- * *Imported — confirm it's yours*, *Revoked* — *Add tool →* on a paired one,
- * and *Details*: everything else about it is in its details panel.
+ * *Imported — confirm it's yours*, *Revoked* — a helper chip only when one of
+ * its tools has something to do, and *Add tool →* on a paired one. **The row
+ * itself opens its details panel** (LAI-1097), which has everything else.
  *
  * Above the list, only what needs the reader: the board-update note for an
  * owner or admin, and legacy duplicate pairs to resolve, each a click from the
@@ -226,7 +228,7 @@ function DeviceRecord({
   const chip = deviceChip(device);
   return (
     <li
-      className="dx-record dv3-device"
+      className="dx-record dv3-device dv3-row"
       data-device={device.id}
       data-kind={device.kind}
       data-origin={device.origin}
@@ -237,7 +239,13 @@ function DeviceRecord({
         <DxIcon name={device.kind === 'cloud' ? 'cloud' : 'device'} />
       </span>
       <div className="dx-record-main">
-        <strong className="dx-record-title">{device.display_name}</strong>
+        <RowOpen
+          details={`devices:${device.id}`}
+          label={device.display_name}
+          onOpen={() => {
+            onDetails(device.id);
+          }}
+        />
         <span className="dx-record-sub" data-line>
           {deviceLine(device, now)}
         </span>
@@ -255,7 +263,7 @@ function DeviceRecord({
           />
         </span>
         {device.status === 'active' && (
-          <DeviceVersionChip
+          <DeviceUpdateChip
             name={device.display_name}
             agentIds={device.agents
               .filter((agent) => agent.status === 'active')
@@ -277,18 +285,33 @@ function DeviceRecord({
             Add tool →
           </button>
         )}
-        <button
-          type="button"
-          className="dx-btn dx-btn-sm dx-btn-ghost"
-          data-details={`devices:${device.id}`}
-          aria-label={`Details for ${device.display_name}`}
-          onClick={() => {
-            onDetails(device.id);
-          }}
-        >
-          Details
-        </button>
       </div>
+      <RowChevron />
     </li>
   );
+}
+
+/**
+ * A device row's helper chip — the worst among its tools, as
+ * `DeviceVersionChip` draws it — only when one of them has something to do
+ * (`rowShowsUpdate`). Each tool's status is a hook call, so the tools are read
+ * one component apiece, down the list, carrying whether any needs the chip.
+ */
+function DeviceUpdateChip({
+  name,
+  agentIds,
+  index = 0,
+  any = false,
+}: {
+  readonly name: string;
+  readonly agentIds: readonly string[];
+  readonly index?: number;
+  readonly any?: boolean;
+}) {
+  const key = useUpdateStatus(agentIds[index] ?? '')?.key;
+  const shows = any || (index < agentIds.length && rowShowsUpdate(key));
+  if (index + 1 < agentIds.length) {
+    return <DeviceUpdateChip name={name} agentIds={agentIds} index={index + 1} any={shows} />;
+  }
+  return shows ? <DeviceVersionChip name={name} agentIds={agentIds} /> : null;
 }

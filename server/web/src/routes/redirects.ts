@@ -17,6 +17,9 @@
  *
  * Applied by `useRoute` before anything renders, as a `replace` — Back must not
  * return to an address that only bounces forward again.
+ *
+ * `/work` joined the table with D-147 (LAI-1170), when Work moved from the
+ * sidebar into the Organisation page.
  */
 
 interface Redirect {
@@ -35,6 +38,9 @@ export const REDIRECTS: Readonly<Record<string, Redirect>> = {
   '/tokens': { to: '/developer', tab: 'tokens' },
   '/connect': { to: '/developer', tab: 'connect' },
   '/developer/connect': { to: '/developer', tab: 'connect' },
+  // Work is the Organisation page's second tab since D-147 (LAI-1170); its
+  // filters (`person`, `status`, `space`, `sprint`, `size`) travel as they are.
+  '/work': { to: '/organisation', tab: 'work' },
 };
 
 /**

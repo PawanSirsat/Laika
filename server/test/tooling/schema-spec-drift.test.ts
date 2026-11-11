@@ -627,6 +627,8 @@ describe('the parser itself', () => {
       'token_telemetry_series',
       'token_usage_days',
       'token_usage_zones',
+      // LAI-1130: one row per person, keyed by `user_id`, as their time settings.
+      'user_availability',
       'user_time_settings',
     ]);
   });

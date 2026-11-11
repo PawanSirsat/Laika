@@ -33,6 +33,7 @@ import {
 } from './advanced.ts';
 import '../../tokens/tokens.css';
 import '../../../../components/token-row.css';
+import './advanced.css';
 
 export interface AdvancedTabProps {
   readonly me: MeProfile | undefined;
@@ -59,6 +60,12 @@ const TOOLS_HREF = '/developer?tab=tools';
  *
  * The one-time secret is the classic Tokens screen's rule, kept as is: in
  * component state only, blanked through state before it unmounts.
+ *
+ * **One card, nothing boxed inside it** (LAI-1100 #11): a one-line intro, the
+ * button and the list stay in view; the rows are divided, not boxed; the
+ * legacy note is one line; and the scope reference and the `curl` example are
+ * one closed fold, *How to use a personal credential*. The scope chip is
+ * neutral — `full` is the normal scope, not a warning.
  */
 export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   const confirm = useConfirm();
@@ -207,259 +214,262 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   ).length;
 
   return (
-    <div className="tokens dev-adv">
-      <LiveRegion message={message} />
-      <div className="dev-advanced-head">
-        <div className="dev-adv-intro">
-          <h2 className="dev-adv-title">Personal credentials</h2>
-          <p className="dev-advanced-intro">
-            For scripts, the REST API and automation. A personal credential acts as you, with your
-            permissions, so treat it like your password. Coding tools get their own credential on{' '}
-            <a href={TOOLS_HREF} onClick={go(TOOLS_HREF)}>
-              Tools
-            </a>{' '}
-            instead — never a personal one.
-          </p>
+    <section className="dev-card dev-advanced" aria-labelledby={`${formId}-heading`}>
+      <div className="tokens dev-adv">
+        <LiveRegion message={message} />
+        <div className="dev-advanced-head">
+          <div className="dev-adv-intro">
+            <h2 className="dev-adv-title" id={`${formId}-heading`}>
+              Personal credentials
+            </h2>
+            <p className="dev-advanced-intro">
+              For scripts, the REST API and automation. It acts as you; coding tools get their own
+              on{' '}
+              <a href={TOOLS_HREF} onClick={go(TOOLS_HREF)}>
+                Tools
+              </a>
+              .
+            </p>
+          </div>
+          {!minting && (
+            <button
+              type="button"
+              ref={newButtonRef}
+              className="bar-control bar-control-primary"
+              aria-controls={formId}
+              onClick={() => {
+                setActionError(undefined);
+                setMinting(true);
+              }}
+            >
+              + New personal credential
+            </button>
+          )}
         </div>
-        {!minting && (
-          <button
-            type="button"
-            ref={newButtonRef}
-            className="bar-control bar-control-primary"
-            aria-controls={formId}
-            onClick={() => {
-              setActionError(undefined);
-              setMinting(true);
+
+        {actionError !== undefined && (
+          <p className="tok-error dev-adv-error" role="alert">
+            {actionError}
+          </p>
+        )}
+
+        {/* Shown once, and only once (§4.9): not on the row, not stored, not re-fetchable. */}
+        {revealed !== undefined && (
+          <section className="tok-reveal" role="alert">
+            <h2 className="tok-reveal-title">Copy this now — it is not shown again</h2>
+            <p className="tok-reveal-body">
+              <strong>{revealed.token.name}</strong> is the only copy of this credential. Laika
+              stores a hash, not the secret, so nobody — including an administrator — can show it to
+              you again. If you lose it, revoke it and make another.
+            </p>
+            <div className="tok-reveal-row">
+              <code className="tok-secret">{revealed.secret}</code>
+              <CopyButton text={revealed.secret} className="tok-copy" />
+              <button
+                type="button"
+                ref={doneRef}
+                className="tok-dismiss"
+                onClick={() => {
+                  returnFocus.current = true;
+                  forget();
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </section>
+        )}
+
+        {minting && (
+          <section
+            className="tok-form"
+            id={formId}
+            aria-labelledby={`${formId}-title`}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeForm();
+              }
             }}
           >
-            + New personal credential
-          </button>
-        )}
-      </div>
+            <h2 className="tok-form-title" id={`${formId}-title`}>
+              New personal credential
+            </h2>
 
-      {actionError !== undefined && (
-        <p className="tok-error dev-adv-error" role="alert">
-          {actionError}
-        </p>
-      )}
+            <label className="tok-field">
+              <span className="tok-label">Name</span>
+              <input
+                ref={nameRef}
+                className="tok-input"
+                value={name}
+                placeholder="nightly-export"
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+              />
+              <span className="tok-hint">
+                What is it for? Shown to you, your organisation’s owners and admins, and anyone who
+                can read a task this credential creates.
+              </span>
+            </label>
 
-      {/* Shown once, and only once (§4.9): not on the row, not stored, not re-fetchable. */}
-      {revealed !== undefined && (
-        <section className="tok-reveal" role="alert">
-          <h2 className="tok-reveal-title">Copy this now — it is not shown again</h2>
-          <p className="tok-reveal-body">
-            <strong>{revealed.token.name}</strong> is the only copy of this credential. Laika stores
-            a hash, not the secret, so nobody — including an administrator — can show it to you
-            again. If you lose it, revoke it and make another.
-          </p>
-          <div className="tok-reveal-row">
-            <code className="tok-secret">{revealed.secret}</code>
-            <CopyButton text={revealed.secret} className="tok-copy" />
-            <button
-              type="button"
-              ref={doneRef}
-              className="tok-dismiss"
-              onClick={() => {
-                returnFocus.current = true;
-                forget();
-              }}
-            >
-              Done
-            </button>
-          </div>
-        </section>
-      )}
+            <div className="tok-field">
+              <span className="tok-label">Scope</span>
+              {canChoose ? (
+                <div className="tok-scopes" role="radiogroup" aria-label="Scope">
+                  {(['full', 'read_only'] as const).map((option) => (
+                    <label key={option} className="tok-scope">
+                      <input
+                        type="radio"
+                        name={`${formId}-scope`}
+                        checked={scope === option}
+                        onChange={() => {
+                          setScope(option);
+                        }}
+                      />
+                      <span>{option === 'full' ? 'Full access' : 'Read only'}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="tok-forced">
+                  <strong>Read only.</strong> Your organisation role is viewer, so your credentials
+                  can read but not write. This is set by your role, not by this form.
+                </p>
+              )}
+            </div>
 
-      {minting && (
-        <section
-          className="tok-form"
-          id={formId}
-          aria-labelledby={`${formId}-title`}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              closeForm();
-            }
-          }}
-        >
-          <h2 className="tok-form-title" id={`${formId}-title`}>
-            New personal credential
-          </h2>
-
-          <label className="tok-field">
-            <span className="tok-label">Name</span>
-            <input
-              ref={nameRef}
-              className="tok-input"
-              value={name}
-              placeholder="nightly-export"
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-            <span className="tok-hint">
-              What is it for? Shown to you, your organisation’s owners and admins, and anyone who
-              can read a task this credential creates.
-            </span>
-          </label>
-
-          <div className="tok-field">
-            <span className="tok-label">Scope</span>
-            {canChoose ? (
-              <div className="tok-scopes" role="radiogroup" aria-label="Scope">
-                {(['full', 'read_only'] as const).map((option) => (
-                  <label key={option} className="tok-scope">
-                    <input
-                      type="radio"
-                      name={`${formId}-scope`}
-                      checked={scope === option}
-                      onChange={() => {
-                        setScope(option);
-                      }}
-                    />
-                    <span>{option === 'full' ? 'Full access' : 'Read only'}</span>
-                  </label>
-                ))}
+            <div className="tok-field">
+              <span className="tok-label" id={`${formId}-expiry-label`}>
+                Expires
+              </span>
+              {/* The shared select-only combobox: no native <select> (LAI-726). */}
+              <div className="dev-adv-expiry">
+                <Dropdown
+                  value={expiry}
+                  options={EXPIRY_CHOICES.map((choice) => ({
+                    value: choice.id,
+                    label: choice.label,
+                  }))}
+                  onChange={setExpiry}
+                  aria-labelledby={`${formId}-expiry-label`}
+                  aria-describedby={`${formId}-expiry-hint`}
+                  noun="Expiry"
+                />
               </div>
-            ) : (
-              <p className="tok-forced">
-                <strong>Read only.</strong> Your organisation role is viewer, so your credentials
-                can read but not write. This is set by your role, not by this form.
+              <span className="tok-hint" id={`${formId}-expiry-hint`}>
+                {expiry === 'never'
+                  ? 'It works until you revoke it. A credential that never expires is the one most often forgotten.'
+                  : 'After that it stops working by itself. You can revoke it sooner.'}
+              </span>
+            </div>
+
+            {mintError !== undefined && (
+              <p className="tok-error" role="alert">
+                {mintError}
               </p>
             )}
-          </div>
 
-          <div className="tok-field">
-            <span className="tok-label" id={`${formId}-expiry-label`}>
-              Expires
-            </span>
-            {/* The shared select-only combobox: no native <select> (LAI-726). */}
-            <div className="dev-adv-expiry">
-              <Dropdown
-                value={expiry}
-                options={EXPIRY_CHOICES.map((choice) => ({
-                  value: choice.id,
-                  label: choice.label,
-                }))}
-                onChange={setExpiry}
-                aria-labelledby={`${formId}-expiry-label`}
-                aria-describedby={`${formId}-expiry-hint`}
-                noun="Expiry"
-              />
+            <div className="tok-form-actions">
+              <button type="button" className="bar-control" onClick={closeForm}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="bar-control bar-control-primary"
+                disabled={pending || name.trim() === ''}
+                onClick={mint}
+              >
+                {pending && <Spinner size="sm" />}
+                Create credential
+              </button>
             </div>
-            <span className="tok-hint" id={`${formId}-expiry-hint`}>
-              {expiry === 'never'
-                ? 'It works until you revoke it. A credential that never expires is the one most often forgotten.'
-                : 'After that it stops working by itself. You can revoke it sooner.'}
-            </span>
-          </div>
-
-          {mintError !== undefined && (
-            <p className="tok-error" role="alert">
-              {mintError}
-            </p>
-          )}
-
-          <div className="tok-form-actions">
-            <button type="button" className="bar-control" onClick={closeForm}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="bar-control bar-control-primary"
-              disabled={pending || name.trim() === ''}
-              onClick={mint}
-            >
-              {pending && <Spinner size="sm" />}
-              Create credential
-            </button>
-          </div>
-        </section>
-      )}
-
-      <h2 className="dev-adv-list-title" ref={listTitleRef} tabIndex={-1}>
-        Your personal credentials
-        {tokens !== undefined && (
-          <span className="dev-adv-count">
-            {' '}
-            · {tokens.length} {tokens.length === 1 ? 'credential' : 'credentials'}
-          </span>
+          </section>
         )}
-      </h2>
 
-      {legacyCount !== undefined && legacyCount > 0 && (
-        <p className="dev-adv-legacy-note" data-legacy-count={legacyCount}>
-          <strong>
-            {legacyCount === 1
-              ? 'One of these is used by a coding tool.'
-              : `${String(legacyCount)} of these are used by coding tools.`}
-          </strong>{' '}
-          That is the old way to connect one, and it keeps working. Connecting the tool on Tools
-          gives it its own credential, limited to the projects you grant; then revoke the personal
-          one here. Nothing is revoked for you.
-        </p>
-      )}
+        <h3 className="dev-adv-list-title" ref={listTitleRef} tabIndex={-1}>
+          Your credentials
+          {tokens !== undefined && <span className="dev-adv-count"> · {tokens.length}</span>}
+        </h3>
 
-      {loadError !== null ? (
-        <ApiErrorState error={loadError} resource="your credentials" scope="organisation" />
-      ) : tokens === undefined ? (
-        <LoadingState shape="row" count={3} label="Loading your credentials" />
-      ) : tokens.length === 0 ? (
-        <EmptyState
-          headline="No personal credentials yet"
-          body="Create one for a script or a call to the API. To connect a coding tool, use Tools."
-        />
-      ) : (
-        <ul className="tok-list">
-          {tokens.map((token) => (
-            <AdvancedRow
-              key={token.id}
-              token={token}
-              now={now}
-              onRevoke={revoke}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </ul>
-      )}
+        {legacyCount !== undefined && legacyCount > 0 && (
+          <p className="dev-adv-legacy-note" data-legacy-count={legacyCount}>
+            <strong>
+              {legacyCount === 1
+                ? 'One of these is used by a coding tool.'
+                : `${String(legacyCount)} of these are used by coding tools.`}
+            </strong>{' '}
+            {legacyCount === 1 ? 'It keeps working' : 'They keep working'};{' '}
+            <em>Upgrade connection</em>{' '}
+            {legacyCount === 1 ? 'on its row moves it' : 'on each row moves that one'} to Tools.
+            Nothing is revoked for you.
+          </p>
+        )}
 
-      <section className="tok-ref">
-        <h2 className="tok-ref-title">Scope reference</h2>
-        <dl className="tok-ref-list">
-          <div className="tok-ref-row">
-            <dt>
-              <code>full</code>
-            </dt>
-            <dd>
-              Everything you can do. A script holding it can create, edit and move tasks and
-              comment, as you.
-            </dd>
+        {loadError !== null ? (
+          <ApiErrorState error={loadError} resource="your credentials" scope="organisation" />
+        ) : tokens === undefined ? (
+          <LoadingState shape="row" count={3} label="Loading your credentials" />
+        ) : tokens.length === 0 ? (
+          <EmptyState
+            headline="No personal credentials yet"
+            body="Create one for a script or a call to the API. To connect a coding tool, use Tools."
+          />
+        ) : (
+          <ul className="tok-list">
+            {tokens.map((token) => (
+              <AdvancedRow
+                key={token.id}
+                token={token}
+                now={now}
+                onRevoke={revoke}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </ul>
+        )}
+
+        <details className="dev-fold dev-adv-fold" data-fold="how">
+          <summary>
+            <span className="dev-fold-title">How to use a personal credential</span>
+            <span className="dev-fold-sub">Its two scopes, and a first call to the API</span>
+          </summary>
+          <div className="dev-fold-body">
+            <h3 className="dev-fold-h">Scopes</h3>
+            <dl className="tok-ref-list">
+              <div className="tok-ref-row">
+                <dt>
+                  <code>full</code>
+                </dt>
+                <dd>
+                  Everything you can do. A script holding it can create, edit and move tasks and
+                  comment, as you.
+                </dd>
+              </div>
+              <div className="tok-ref-row">
+                <dt>
+                  <code>read_only</code>
+                </dt>
+                <dd>
+                  Reads anything you can see and writes nothing. A Viewer's credential is forced to
+                  this by the server, whatever is asked for here.
+                </dd>
+              </div>
+            </dl>
+            <h3 className="dev-fold-h">For scripts and the API</h3>
+            <pre className="tok-cli-block">
+              <code>
+                {`export LAIKA_URL=${window.location.origin}\nexport LAIKA_TOKEN=lai_…   # the secret shown once, above\ncurl -s -H "Authorization: Bearer $LAIKA_TOKEN" "$LAIKA_URL/api/v1/me"`}
+              </code>
+            </pre>
+            <p className="tok-cli-note">
+              The credential carries your permissions, so keep it in a secret store, not in a
+              repository. Revoking it here stops it working immediately.
+            </p>
           </div>
-          <div className="tok-ref-row">
-            <dt>
-              <code>read_only</code>
-            </dt>
-            <dd>
-              Reads anything you can see and writes nothing. A Viewer's credential is forced to this
-              by the server, whatever is asked for here.
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section className="tok-cli">
-        <h2 className="tok-ref-title">For scripts and the API</h2>
-        <pre className="tok-cli-block">
-          <code>
-            {`export LAIKA_URL=${window.location.origin}\nexport LAIKA_TOKEN=lai_…   # the secret shown once, above\ncurl -s -H "Authorization: Bearer $LAIKA_TOKEN" "$LAIKA_URL/api/v1/me"`}
-          </code>
-        </pre>
-        <p className="tok-cli-note">
-          The credential carries your permissions, so keep it in a secret store, not in a
-          repository. Revoking it here stops it working immediately.
-        </p>
-      </section>
-    </div>
+        </details>
+      </div>
+    </section>
   );
 }
 
@@ -490,7 +500,8 @@ function AdvancedRow({
         <span className="tok-name">{token.name}</span>
         <span className="tok-kind">{legacy ? 'Personal (legacy)' : 'Personal'}</span>
         <code className="tok-prefix">{token.prefix}</code>
-        <span className={`marker marker-${token.scope === 'full' ? 'agent' : 'ready'}`}>
+        {/* Neutral, both of them: `full` is the normal scope, not a danger (LAI-1100 #11). */}
+        <span className="dx-chip dev-adv-scope" data-scope={token.scope}>
           {token.scope === 'full' ? 'full' : 'read only'}
         </span>
         {state !== 'active' && <span className="tok-state">{state}</span>}

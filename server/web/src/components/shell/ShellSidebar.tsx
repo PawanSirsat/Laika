@@ -3,6 +3,7 @@ import { useShell } from './shell-context.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
 import { inboxCount } from '../../routes/page-tabs.ts';
 import { handoffsWaiting } from '../agent/person-handoffs.ts';
+import { useUnreadNotices } from '../../api/notices.ts';
 
 export interface ShellSidebarProps {
   readonly open: boolean;
@@ -31,7 +32,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     signingOut,
     orgName,
     unlistedOpen,
-    reviewWaiting,
+    reviewDecidable,
     tokenAlerts,
     handoffCounts,
   } = useShell();
@@ -51,6 +52,8 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     open: openSpace,
     togglePin: togglePinnedSpace,
   } = useSpaces(session.status === 'authenticated', projectSlug);
+  // For you's unread notices (D-134, LAI-1139), on My day where they are read.
+  const unreadNotices = useUnreadNotices(session.status === 'authenticated');
   return (
     <Sidebar
       currentPath={path}
@@ -66,14 +69,15 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       onTogglePin={togglePinnedSpace}
       orgName={orgName}
       spaceName={spaceName}
-      // Inbox is what waits on its tabs (LAI-796): the review queue (D-082),
-      // the hand-offs waiting on this person (LAI-550, the server's live
+      // Inbox is what waits on its tabs (LAI-796): the review queue — only
+      // what this person may decide (D-082, D-146) — the hand-offs waiting on this person (LAI-550, the server's live
       // counts) and the open unlisted count (LAI-754), which is `undefined`
       // for a reader it is not for. A person's
       // open token alerts (LAI-773) are on Insights, where Usage now is.
       counts={{
-        '/inbox': inboxCount(reviewWaiting, unlistedOpen, handoffsWaiting(handoffCounts)),
+        '/inbox': inboxCount(reviewDecidable, unlistedOpen, handoffsWaiting(handoffCounts)),
         '/insights': tokenAlerts?.length,
+        '/my-day': unreadNotices,
       }}
       user={me}
       onSignOut={signOut}
