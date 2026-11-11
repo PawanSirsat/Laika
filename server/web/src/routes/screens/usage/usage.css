@@ -334,7 +334,7 @@
   max-width: 1.5rem;
   background: var(--accent);
   border-radius: 4px 4px 0 0;
-  transition: background-color 120ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .usage-col[data-active='true'] .usage-bar,

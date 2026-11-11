@@ -967,7 +967,7 @@
 }
 
 .live-live .live-dot {
-  animation: rail-pulse 2s ease-in-out infinite;
+  animation: rail-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 /* The sprint tag on a card — real, from `task.sprint_id`. Violet when the task
@@ -1383,17 +1383,11 @@
   display: inline-block;
   font-size: var(--text-body);
   line-height: 1;
-  transition: transform 0.12s ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .swim-chevron-open {
   transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .swim-chevron {
-    transition: none;
-  }
 }
 
 .swim-avatar {
@@ -1450,7 +1444,7 @@
 .lane-menu,
 .lane-order {
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .lane-head:hover .lane-menu,
@@ -1458,13 +1452,6 @@
 .lane-head:focus-within .lane-menu,
 .lane-head:focus-within .lane-order {
   opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lane-menu,
-  .lane-order {
-    transition: none;
-  }
 }
 
 /* The name reads as pressable, because it is (LAI-602). */

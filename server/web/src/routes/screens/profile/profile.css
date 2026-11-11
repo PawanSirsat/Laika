@@ -1130,18 +1130,12 @@
   border-radius: var(--radius-pill);
   background: var(--chip-green);
   box-shadow: 0 0 0 3px var(--chip-green-bg);
-  animation: prof-live 2.4s ease-in-out infinite;
+  animation: prof-live var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 @keyframes prof-live {
   50% {
     box-shadow: 0 0 0 5px var(--chip-green-bg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .prof-live-dot {
-    animation: none;
   }
 }
 

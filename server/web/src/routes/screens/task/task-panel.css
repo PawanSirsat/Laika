@@ -1795,7 +1795,7 @@
   border-right: 2px solid var(--text-muted);
   border-bottom: 2px solid var(--text-muted);
   transform: rotate(-45deg);
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
   flex: none;
 }
 
@@ -2128,7 +2128,6 @@
   height: 100%;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  transition: width var(--transition);
 }
 
 /* The row is the hit area: key and title in one button, the rest beside it. */

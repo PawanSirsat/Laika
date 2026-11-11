@@ -187,7 +187,7 @@
 .ct-more-caret {
   display: inline-block;
   color: var(--text-secondary);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .ct-more[open] .ct-more-caret {

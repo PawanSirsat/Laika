@@ -11,6 +11,8 @@
 
 /* Every colour, type step and radius. Light on :root, dark on .dk. */
 @import './styles/theme.css';
+/* Every duration and curve, and the one reduced-motion rule (LAI-1208). */
+@import './styles/motion.css';
 @import './styles/type.css';
 
 :root {

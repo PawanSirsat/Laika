@@ -125,17 +125,11 @@
   border-right: 1.5px solid var(--text-muted);
   border-bottom: 1.5px solid var(--text-muted);
   transform: rotate(-45deg);
-  transition: transform 0.12s ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .unl-row-open .unl-caret {
   transform: rotate(45deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .unl-caret {
-    transition: none;
-  }
 }
 
 .unl-row-open .unl-line {
