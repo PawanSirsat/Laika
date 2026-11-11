@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react';
-import { getTaskTime, timeLoggedLine, type TaskTime } from '../../../api/task-time.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 import { ForecastSection } from './ForecastSection.tsx';
 import { TokensSection } from './TokensSection.tsx';
@@ -26,8 +24,8 @@ export interface EstimateCardProps {
  * override and *Why …?*, *Similar* finished tasks with their times and why
  * each was sent back, *Actual* with its verdict — `ForecastSection` — then
  * *Tokens* against the estimate's high end with the cost, the budget and
- * *Details* — `TokensSection` — and *Time logged*, the confirmed time people
- * put on it, totals only.
+ * *Details* — `TokensSection`. The time people and agents put on it is
+ * *Tracked on this task*, under the title (`TrackedTime`), not here.
  *
  * Each part reads its own data and draws nothing without it; a card with
  * no part drawn is not shown (`forecast.css`).
@@ -62,43 +60,6 @@ export function EstimateCard({
         started={task.started_at !== null}
         refreshKey={refreshKey}
       />
-      <TimeLogged taskId={task.id} refreshKey={refreshKey} />
     </section>
-  );
-}
-
-/**
- * *Time logged · 2 h 10 min by 2 people* (LAI-812's intent): the confirmed
- * time on the task, totals only. Nothing at all for none, or when the read
- * fails — never `0 min`.
- */
-function TimeLogged({
-  taskId,
-  refreshKey,
-}: {
-  readonly taskId: string;
-  readonly refreshKey: number;
-}) {
-  // Keyed on the task, so one task's figure never sits under the next one's.
-  const [loaded, setLoaded] = useState<{ taskId: string; view: TaskTime } | undefined>(undefined);
-  useEffect(() => {
-    const controller = new AbortController();
-    getTaskTime(taskId, controller.signal)
-      .then((answer) => {
-        if (!controller.signal.aborted) setLoaded({ taskId, view: answer });
-      })
-      .catch(() => undefined);
-    return () => {
-      controller.abort();
-    };
-  }, [taskId, refreshKey]);
-
-  const line = loaded?.taskId === taskId ? timeLoggedLine(loaded.view) : null;
-  if (line === null) return null;
-  return (
-    <div className="est-row est-time" data-section="time">
-      <p className="est-label">Time logged</p>
-      <p className="est-value est-time-value">{line}</p>
-    </div>
   );
 }

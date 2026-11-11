@@ -4287,7 +4287,7 @@ GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back 
 GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
 GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770); cost, budget, runaway (LAI-773)
 GET    /api/v1/tasks/:id/similar             { similar: [{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }] } — get_task_context's similar finished tasks; nobody's name (LAI-1122)
-GET    /api/v1/tasks/:id/time                { total_minutes, people, entries } — its confirmed time, totals only; drafts never count (D-088, LAI-1122)
+GET    /api/v1/tasks/:id/time                { total_minutes, people, entries, agent_minutes, my_draft_minutes } — its confirmed time, totals only; drafts never count in it; agent minutes and the caller's own drafts (null to a token) beside it (D-088, LAI-1122)
 PUT    /api/v1/tasks/:id/budget              body { tokens | null } — null goes back to the frozen forecast's p80   (lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
@@ -5761,7 +5761,12 @@ answers `{ total_minutes, people, entries }` under `project.read`: the sum of
 the task's live `time_entries` (§4.48) — confirmed time only, so a draft is
 never counted, and a deleted entry neither — with how many entries and how
 many distinct people they are from. A count of people, never who: per-person
-hours stay where D-088 puts them.
+hours stay where D-088 puts them. Beside the total and never added to it:
+`agent_minutes`, every agent (`cli`) minute tied to the card across every
+person and day, split by the same session-token rule as My day's agent lane
+(§4.50–§4.51) — minutes, never hours (D-088 item 8); and `my_draft_minutes`,
+the caller's own pending drafts on the task, which needs
+`time_drafts.read_own` and is therefore `null` to any token (D-088 item 3).
 
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`

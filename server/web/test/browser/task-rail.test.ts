@@ -5,8 +5,9 @@
  * column, Development from the round's proof, the Estimate card — effort,
  * similar tasks with their times and why one was sent back
  * (`GET /tasks/:id/similar`), the actual with its verdict, tokens against the
- * estimate's high end, and the confirmed time people logged
- * (`GET /tasks/:id/time`) — and the foot.
+ * estimate's high end — and the foot. The confirmed time people logged
+ * (`GET /tasks/:id/time`) left the rail for *Tracked on this task* under the
+ * the panel's foot (the last describe here); this checks the rail no longer says it.
  *
  * Each assertion reads what only the real path draws: words from the stubbed
  * answers, the requests that went out, the layout at phone width.
@@ -22,6 +23,7 @@ import {
   until,
   type ApiStub,
   type Harness,
+  type StubCall,
 } from './harness.ts';
 
 const NOW = Date.now();
@@ -324,7 +326,13 @@ function stub(over: Record<string, unknown> = {}): ApiStub {
     '/api/v1/tasks/t1/estimate': ESTIMATE,
     '/api/v1/tasks/t1/usage': USAGE,
     '/api/v1/tasks/t1/similar': SIMILAR,
-    '/api/v1/tasks/t1/time': { total_minutes: 130, people: 2, entries: 3 },
+    '/api/v1/tasks/t1/time': {
+      total_minutes: 130,
+      people: 2,
+      entries: 3,
+      agent_minutes: 0,
+      my_draft_minutes: 0,
+    },
     '/api/v1/org': {
       id: 'o',
       name: 'Borealis',
@@ -440,7 +448,7 @@ void describe('the rail, to the 2026-11-04 design', () => {
     }
   });
 
-  void test('the Estimate card: effort, similar tasks with why one went back, actual, tokens, time logged', async () => {
+  void test('the Estimate card: effort, similar tasks with why one went back, actual, tokens — and time in the foot', async () => {
     const h = await openRail();
     try {
       const est = card(h, 'Estimate');
@@ -504,11 +512,13 @@ void describe('the rail, to the 2026-11-04 design', () => {
       );
       assert.equal(await tokens.locator('details.tk-details').count(), 1, 'Details went missing');
 
-      // Time people confirmed on it, totals only.
-      const time = est.locator('.est-time');
-      await time.waitFor({ timeout: 10_000 });
-      assert.equal((await time.locator('.est-label').innerText()).trim(), 'Time logged');
-      assert.equal((await time.locator('.est-value').innerText()).trim(), '2 h 10 min by 2 people');
+      // Time people confirmed on it, totals only — said once, in the panel's
+      // foot, and no longer on the rail.
+      const tracked = h.page.locator('.drawer .tt');
+      await tracked.waitFor({ timeout: 10_000 });
+      assert.equal((await tracked.locator('.tt-total').innerText()).replace(/\s+/g, ''), '2h10m');
+      assert.match(await tracked.innerText(), /by 2 people · 3 entries/);
+      assert.doesNotMatch(await est.innerText(), /Time logged/);
     } finally {
       await h.close();
     }
@@ -516,7 +526,13 @@ void describe('the rail, to the 2026-11-04 design', () => {
 
   void test('no time logged draws no row, and a failed similar read keeps the estimate’s list', async () => {
     const h = await openRail({
-      '/api/v1/tasks/t1/time': { total_minutes: 0, people: 0, entries: 0 },
+      '/api/v1/tasks/t1/time': {
+        total_minutes: 0,
+        people: 0,
+        entries: 0,
+        agent_minutes: 0,
+        my_draft_minutes: 0,
+      },
       '/api/v1/tasks/t1/similar': () => refuse(500, 'internal', 'down'),
     });
     try {
@@ -652,6 +668,139 @@ void describe('the rail, to the 2026-11-04 design', () => {
         );
       }
       assert.notEqual(inks[0], inks[1], 'the status pill ignores the theme');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('Tracked on this task, pinned to the panel’s foot', () => {
+  const TIME = {
+    total_minutes: 402,
+    people: 3,
+    entries: 7,
+    agent_minutes: 125,
+    my_draft_minutes: 72,
+  };
+  const running = (task: { id: string; key: string } | null, title: string | null = null) => ({
+    started_at: Date.now() - 65_000,
+    resumed_at: Date.now() - 65_000,
+    paused_at: null,
+    accumulated_ms: 0,
+    tz: 'UTC',
+    task: task === null ? null : { ...task, title: 'A task' },
+    kind: null,
+    title,
+  });
+  const day = (mode: string, timer: unknown) => ({ settings: { org_mode: mode }, timer });
+  const block = (h: Harness) => h.page.locator('.drawer .tt');
+
+  void test('the confirmed total, large, with who, the reader’s drafts and agent minutes beside it', async () => {
+    const h = await openRail({
+      '/api/v1/tasks/t1/time': TIME,
+      '/api/v1/me/time': day('drafts', null),
+    });
+    try {
+      await block(h).waitFor({ timeout: 10_000 });
+      assert.equal((await block(h).locator('.tt-total').innerText()).replace(/\s+/g, ''), '6h42m');
+      const text = await block(h).innerText();
+      assert.match(text, /by 3 people · 7 entries/);
+      assert.match(text, /\+1h 12m in your drafts/);
+      // Minutes, never hours (D-088 item 8).
+      assert.match(text, /125 agent min/);
+      // A slim bar at the foot of the panel, below both scrolling columns,
+      // where scrolling the document cannot move it. Measured once the
+      // drawer's slide-in has finished, and all in one frame: measured apart
+      // while it moved, the bar read 1.8px "above" the columns' foot.
+      await h.page
+        .locator('.drawer')
+        .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+      const measure = () =>
+        h.page.evaluate(() => {
+          const rect = (selector: string) => {
+            const el = document.querySelector(selector);
+            if (el === null) throw new Error(`no ${selector}`);
+            const r = el.getBoundingClientRect();
+            return { top: r.top, bottom: r.bottom, height: r.height };
+          };
+          return {
+            bar: rect('.drawer .tt'),
+            columns: rect('.panel-columns'),
+            panel: rect('.drawer'),
+          };
+        });
+      const at = await measure();
+      assert.ok(
+        at.bar.top >= at.columns.bottom - 1,
+        `the bar (top ${String(at.bar.top)}) is not below the columns (bottom ${String(at.columns.bottom)})`,
+      );
+      assert.ok(Math.abs(at.bar.bottom - at.panel.bottom) <= 2, 'not at the foot');
+      assert.ok(at.bar.height <= 56, `the bar is ${String(at.bar.height)}px tall — not slim`);
+      await h.page.locator('.panel-main').evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      const after = await measure();
+      assert.equal(after.bar.top, at.bar.top, 'the bar moved when the document scrolled');
+      await block(h).getByRole('button', { name: 'Start timer' }).waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no drafts or agent lines when there are none, and no button when time is off', async () => {
+    const h = await openRail({
+      '/api/v1/tasks/t1/time': { ...TIME, agent_minutes: 0, my_draft_minutes: null },
+      '/api/v1/me/time': day('off', null),
+    });
+    try {
+      await block(h).waitFor({ timeout: 10_000 });
+      await until(() => h.calls.some((c) => c.path === '/api/v1/me/time'));
+      const text = await block(h).innerText();
+      assert.doesNotMatch(text, /drafts|agent min/);
+      // Positive control: the block drew from the same read.
+      assert.match(text, /by 3 people/);
+      assert.equal(await block(h).locator('button').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Start timer starts one on this task, and then it runs here with Stop', async () => {
+    let timer: unknown = null;
+    let posted: unknown;
+    const h = await openRail({
+      '/api/v1/tasks/t1/time': TIME,
+      '/api/v1/me/time': () => day('drafts', timer),
+      '/api/v1/me/time/timer': (call: StubCall) => {
+        posted = call.body;
+        timer = running({ id: 't1', key: 'LAI-7' });
+        return timer;
+      },
+    });
+    try {
+      await block(h).getByRole('button', { name: 'Start timer' }).click();
+      await block(h).locator('.tt-clock').waitFor({ timeout: 10_000 });
+      assert.deepEqual(
+        { task: (posted as { task?: string }).task, tz: typeof (posted as { tz?: unknown }).tz },
+        { task: 't1', tz: 'string' },
+      );
+      assert.match(await block(h).locator('.tt-clock').innerText(), /^1:0\d$/);
+      await block(h).getByRole('button', { name: 'Stop' }).waitFor();
+      assert.equal(await block(h).getByRole('button', { name: 'Start timer' }).count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a timer running on another task is named, never a second start', async () => {
+    const h = await openRail({
+      '/api/v1/tasks/t1/time': TIME,
+      '/api/v1/me/time': day('drafts', running({ id: 't9', key: 'LAI-9' })),
+    });
+    try {
+      await block(h).getByText('Your timer is running on LAI-9.').waitFor({ timeout: 10_000 });
+      assert.equal(await block(h).getByRole('button', { name: 'Start timer' }).count(), 0);
+      await block(h).getByRole('button', { name: 'Open My day' }).waitFor();
     } finally {
       await h.close();
     }
