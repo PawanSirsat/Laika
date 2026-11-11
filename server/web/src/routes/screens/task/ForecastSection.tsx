@@ -29,7 +29,8 @@ import { ApiError } from '../../../api/errors.ts';
 import { type TaskSummary } from '../../../api/tasks.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { similarRows } from './rail-derive.ts';
-import '../../../components/size-chip.css';
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { SIZE_TONES } from '../../../components/chip/chip-model.ts';
 import './forecast.css';
 
 export interface ForecastSectionProps {
@@ -218,8 +219,15 @@ export function ForecastSection({
           {/* The design's level, as the card's chip draws it (LAI-1122); the
               word beside it is what a screen reader says. */}
           {compact && (
-            <span className={`size-chip size-chip-${size.level} fc-level`} aria-hidden="true">
-              {size.level}
+            <span className="fc-level" aria-hidden="true">
+              <Chip
+                variant="size"
+                tone={SIZE_TONES[size.level]}
+                level={size.level}
+                className={`size-chip size-chip-${size.level}`}
+              >
+                {size.level}
+              </Chip>
             </span>
           )}
           <strong className={`fc-effort fc-effort-${size.level}`} data-level={size.level}>

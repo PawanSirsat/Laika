@@ -1583,6 +1583,7 @@ export function BoardScreen({
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
+              selectedId={openTaskId}
               statuses={statuses.all}
               sprints={sprints}
               theme={theme}
@@ -1707,6 +1708,7 @@ export function BoardScreen({
                   }
                 : {})}
               sprintLabels={sprintLabels}
+              selectedId={openTaskId}
             />
           )}
 

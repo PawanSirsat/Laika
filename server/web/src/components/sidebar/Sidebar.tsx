@@ -1,3 +1,5 @@
+import { Chip } from '../chip/Chip.tsx';
+import { COUNT_CAP, formatCount } from '../chip/chip-model.ts';
 import {
   GROUP_TITLES,
   NAV_GROUPS,
@@ -48,11 +50,6 @@ export interface SidebarProps {
   readonly user?: MeProfile | undefined;
   readonly onSignOut?: (() => void) | undefined;
   readonly signingOut?: boolean | undefined;
-}
-
-/** A count as the rail's badge has room for it. */
-function badge(count: number): string {
-  return count > 99 ? '99+' : String(count);
 }
 
 /**
@@ -154,11 +151,15 @@ export function Sidebar({
 
                   {/* Only where a count is real and non-zero: a fixture
                       badge or a zero badge is noise. */}
+                  {/* The shared count badge (LAI-1206): `99+` past the cap,
+                      the exact number in words for a screen reader. */}
                   {counted && (
-                    <span className="sidebar-count">
-                      {badge(count)}
-                      <span className="visually-hidden"> waiting</span>
-                    </span>
+                    <Chip variant="count" className="sidebar-count">
+                      {formatCount(count)}
+                      <span className="visually-hidden">
+                        {count > COUNT_CAP ? ` — ${String(count)}` : ''} waiting
+                      </span>
+                    </Chip>
                   )}
                 </a>
               </li>

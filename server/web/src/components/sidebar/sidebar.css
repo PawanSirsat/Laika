@@ -233,26 +233,13 @@
   color: var(--text-muted);
 }
 
-.sidebar-count {
-  flex: none;
-  min-width: 1.375rem;
-  padding: 0 0.3125rem;
-  box-sizing: border-box;
-  border-radius: var(--radius-pill);
-  background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1.25rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
+/* The count is the shared `Chip` count badge (LAI-1206): its box, face and
+   neutral tone live in `components/chip/chip.css`. The rail only decides the
+   active row's accent and, below, the collapsed rail's corner badge. */
 .sidebar-link-active .sidebar-count {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  color: var(--accent);
+  --chip-ink: var(--accent);
+  --chip-fill: var(--accent-bg);
+  --chip-edge: var(--accent-border);
 }
 
 /* ---------------------------------------------------------------- spaces */
@@ -882,12 +869,12 @@
     top: 0.125rem;
     right: 0.125rem;
     min-width: 1rem;
+    height: 0.875rem;
     padding: 0 0.1875rem;
     font-size: var(--text-tiny);
-    line-height: 0.875rem;
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
+    --chip-ink: var(--on-accent);
+    --chip-fill: var(--accent);
+    --chip-edge: var(--accent);
   }
 
   /*

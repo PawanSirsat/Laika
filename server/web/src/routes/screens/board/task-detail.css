@@ -366,16 +366,10 @@
 }
 
 /* The card's outside id beside its key (LAI-780, D-129). */
+/* The outside id is the shared `Chip` ref tab (LAI-1206); only its place in
+   the crumb row is decided here. */
 .panel-outside-id {
-  white-space: nowrap;
-  flex-shrink: 0;
   margin-left: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--text-muted);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xs);
-  padding: 1px 6px;
 }
 
 /* *Copied*, said where the share icon is (D-129 item 6). */

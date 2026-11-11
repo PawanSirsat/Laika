@@ -1,3 +1,5 @@
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { formatCount } from '../../../components/chip/chip-model.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
@@ -679,9 +681,16 @@ export function TaskDetailPanel({
           </span>
           {/* The card's id elsewhere, beside its key (LAI-780, D-129). */}
           {task.external_ref !== null && isOutsideId(task.external_ref) && (
-            <span className="panel-outside-id" title="Outside id">
+            // The shared `ref` chip (LAI-1206): a square mono tab with a link
+            // mark, named aloud as what it is.
+            <Chip
+              variant="ref"
+              glyphLabel="Outside id"
+              title="Outside id"
+              className="panel-outside-id"
+            >
               {task.external_ref}
-            </span>
+            </Chip>
           )}
         </nav>
 
@@ -715,7 +724,9 @@ export function TaskDetailPanel({
                 />
                 <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
               </svg>
-              <span className="panel-head-count">{watchers?.length ?? '–'}</span>
+              <span className="panel-head-count">
+                {watchers === undefined ? '–' : formatCount(watchers.length)}
+              </span>
             </button>
           )}
 

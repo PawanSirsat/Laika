@@ -90,6 +90,8 @@ export interface LaneRowProps {
   readonly onDeleteColumn?: ((column: ProjectStatus) => void) | undefined;
   readonly sprintLabels?:
     ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
+  /** The task open in the drawer, whose card wears the selected state (LAI-1206). */
+  readonly selectedId?: string | undefined;
 }
 
 /**
@@ -175,6 +177,7 @@ export function LaneRow({
   onRenameColumn,
   statuses,
   sprintLabels,
+  selectedId,
 }: LaneRowProps) {
   /** The column being renamed in place, and the draft text. */
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | undefined>(undefined);
@@ -624,6 +627,7 @@ export function LaneRow({
                         onOpen={onOpen}
                         onKeyMove={onPlace === undefined || !cardsDraggable ? undefined : keyMove}
                         sprintLabels={sprintLabels}
+                        selected={task.id === selectedId}
                       />
 
                       {/*
