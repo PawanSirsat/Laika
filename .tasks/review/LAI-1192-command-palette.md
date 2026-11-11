@@ -63,10 +63,16 @@ no demo data.
   brief ("if present") there is no row. Theme is a palette action.
 - **Task search**: `GET /tasks` has no text parameter and `GET /tasks/:id`
   takes an id, not a key (`services/tasks.ts` `getTask`). So the palette reads
-  one slim page of `GET /tasks?limit=200` once per opening, when the first
-  query of 2+ characters settles after a 200ms debounce, and matches key,
-  outside id and title client-side. When more pages exist it says "In loaded
-  results". A server search endpoint (proposal BE-5) would replace this.
+  `GET /tasks` (slim, 200 a page) **to the end through `everyPage`** (LAI-703),
+  once per opening, when the first query of 2+ characters settles after a 200ms
+  debounce. It matches key, outside id and title client-side. Only when
+  `everyPage` hits its cap (25 pages) does the group say "In loaded results —
+  the first N tasks; more exist". A server search endpoint (proposal BE-5)
+  would replace this. (CI round 1: the first version read one page and tripped
+  `one-page-reads.test.ts`.)
+- **No `aria-keyshortcuts` on the triggers** (CI round 1): the shortcut is in
+  the trigger's accessible name instead ("Search (⌘K)"). A viewer's board
+  must carry no `[aria-keyshortcuts]` (`card-reorder.test.ts`, LAI-473).
 - **Shortcut scope**: per the brief, ⌘K / Ctrl+K does not fire inside a text
   field or an editor (shared `components/typing-in.ts`). The proposal's "active
   even while typing" was overridden by the brief. Inside the palette's own field
