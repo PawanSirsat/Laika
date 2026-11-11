@@ -2,6 +2,7 @@ import { Command } from 'cmdk';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useGates, usePermissions } from '../../api/permissions.ts';
+import { everyPage } from '../../api/every-page.ts';
 import { listAllTasks, type TaskSummary } from '../../api/tasks.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
@@ -38,17 +39,19 @@ type TaskLoad =
   | {
       readonly state: 'ready';
       readonly tasks: readonly TaskSummary[];
-      /** More than one page exists, so matches are from the loaded page only. */
+      /** `everyPage` hit its cap: matches are from the tasks loaded, not all. */
       readonly partial: boolean;
     }
   | { readonly state: 'error' };
 
 /**
- * The tasks the palette searches (LAI-1192): one slim page of `GET /tasks`,
- * every project the reader may read, the server's own scope. The API has no
- * text search yet (proposal §1.2, BE-5), so the page is read once per opening,
- * when the first query long enough arrives, and filtered here as the query
- * settles; a page that is not the whole list says so under the results.
+ * The tasks the palette searches (LAI-1192): `GET /tasks`, slim, every
+ * project the reader may read (the server's own scope), read to the end
+ * through `everyPage` (LAI-703). The API has no text search yet (proposal
+ * §1.2, BE-5), so the list is read once per opening, when the first query
+ * long enough settles, and filtered here as the query changes. If
+ * `everyPage` stops at its cap, the results say they come from what was
+ * loaded, never passing a floor off as the whole.
  */
 function useTaskSearch(query: string): {
   readonly load: TaskLoad;
@@ -86,11 +89,12 @@ function useTaskSearch(query: string): {
     if (!wanted || sent.current === attempt) return;
     sent.current = attempt;
     setLoad({ state: 'loading' });
-    listAllTasks({ limit: TASK_PAGE })
-      .then((page) => {
-        if (alive.current) {
-          setLoad({ state: 'ready', tasks: page.data, partial: page.next_cursor !== null });
-        }
+    // Every page (LAI-703), up to `everyPage`'s cap, which it reports.
+    everyPage((cursor) =>
+      listAllTasks(cursor === undefined ? { limit: TASK_PAGE } : { limit: TASK_PAGE, cursor }),
+    )
+      .then(({ items, truncated }) => {
+        if (alive.current) setLoad({ state: 'ready', tasks: items, partial: truncated });
       })
       .catch(() => {
         if (alive.current) setLoad({ state: 'error' });
@@ -383,7 +387,9 @@ export function CommandPalette() {
                     </Command.Item>
                   ))}
                 {!searching && load.state === 'ready' && load.partial && tasks.length > 0 && (
-                  <p className="cmdk-note">In loaded results — the newest {TASK_PAGE} tasks.</p>
+                  <p className="cmdk-note" data-palette-partial>
+                    In loaded results — the first {load.tasks.length} tasks; more exist.
+                  </p>
                 )}
               </Command.Group>
             )}

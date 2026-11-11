@@ -184,10 +184,15 @@ void describe('opening and closing', () => {
       await ready(h.page);
       const hint = await h.page.locator(`${TRIGGER} .cmdk-kbd`).innerText();
       assert.match(hint, /^(?:⌘K|Ctrl K)$/, `the trigger's hint reads ${hint}`);
+      // Said in its name, not advertised with `aria-keyshortcuts`, which a
+      // viewer's board must carry none of (card-reorder.test.ts, LAI-473).
+      assert.match(await h.page.locator(TRIGGER).innerText(), /^Search/);
       assert.match(
-        (await h.page.locator(TRIGGER).getAttribute('aria-keyshortcuts')) ?? '',
-        /^(?:Meta|Control)\+K$/,
+        (await h.page.locator(TRIGGER).textContent()) ?? '',
+        /^Search \((?:⌘K|Ctrl K)\)/,
+        'the shortcut is not in the trigger’s name',
       );
+      assert.equal(await h.page.locator('[data-palette-trigger][aria-keyshortcuts]').count(), 0);
 
       await h.page.locator(TRIGGER).click();
       await h.page.locator(INPUT).waitFor({ timeout: 10_000 });
@@ -354,6 +359,42 @@ void describe('the groups', () => {
       const url = new URL(h.page.url());
       assert.equal(url.searchParams.get('task'), 't12');
       assert.equal(url.searchParams.get('project'), 'laika-core');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Tasks: every page is read (LAI-703), so a task on page two is found', async () => {
+    const urls: string[] = [];
+    let served = 0;
+    const h = await open(
+      START,
+      stub(() => {
+        served += 1;
+        return served === 1
+          ? { data: [TASKS[1]], next_cursor: 'c2' }
+          : { data: [TASKS[0]], next_cursor: null };
+      }),
+      {
+        before: (page) => {
+          page.on('request', (request) => {
+            if (new URL(request.url()).pathname === '/api/v1/tasks') urls.push(request.url());
+          });
+          return Promise.resolve();
+        },
+      },
+    );
+    try {
+      await ready(h.page);
+      await openWithKeys(h.page);
+      await h.page.locator(INPUT).fill('lc-12');
+      const row = h.page.locator('[data-palette] [role="option"]', { hasText: 'LC-12' });
+      await row.waitFor({ timeout: 10_000 });
+      assert.equal(urls.length, 2, `read ${String(urls.length)} pages: ${urls.join(', ')}`);
+      assert.equal(new URL(urls[0] ?? '').searchParams.get('cursor'), null);
+      assert.equal(new URL(urls[1] ?? '').searchParams.get('cursor'), 'c2');
+      // The whole list was read, so nothing claims to be partial.
+      assert.equal(await h.page.locator('[data-palette-partial]').count(), 0);
     } finally {
       await h.close();
     }

@@ -40,13 +40,14 @@ function SearchGlyph() {
 
 /**
  * The visible way into the command palette (LAI-1192), with its shortcut
- * printed beside it. It opens the palette with itself as the place focus
+ * printed beside it and said in its name. Not `aria-keyshortcuts`: a page
+ * carries that attribute only for shortcuts on what it shows (a viewer's
+ * board carries none, `card-reorder.test.ts`), and screen readers rarely
+ * announce it anyway. It opens the palette with itself as the place focus
  * returns to on Escape.
  */
 export function PaletteTrigger({ variant }: PaletteTriggerProps) {
-  const mac = onMac();
-  const keys = mac ? 'Meta+K' : 'Control+K';
-  const hint = shortcutLabel(mac);
+  const hint = shortcutLabel(onMac());
 
   if (variant === 'header') {
     return (
@@ -54,7 +55,6 @@ export function PaletteTrigger({ variant }: PaletteTriggerProps) {
         type="button"
         className="cmdk-trigger cmdk-trigger-header"
         aria-haspopup="dialog"
-        aria-keyshortcuts={keys}
         data-palette-trigger="header"
         onClick={(event) => {
           openPalette(event.currentTarget);
@@ -71,7 +71,6 @@ export function PaletteTrigger({ variant }: PaletteTriggerProps) {
       type="button"
       className="sidebar-link sidebar-link-button cmdk-trigger cmdk-trigger-sidebar"
       aria-haspopup="dialog"
-      aria-keyshortcuts={keys}
       data-palette-trigger="sidebar"
       onClick={(event) => {
         openPalette(event.currentTarget);
@@ -80,6 +79,7 @@ export function PaletteTrigger({ variant }: PaletteTriggerProps) {
       <span className="sidebar-link-bar" aria-hidden="true" />
       <SearchGlyph />
       <span className="sidebar-link-label sidebar-tip">Search</span>
+      <span className="visually-hidden"> ({hint})</span>
       <kbd className="cmdk-kbd" aria-hidden="true">
         {hint}
       </kbd>
