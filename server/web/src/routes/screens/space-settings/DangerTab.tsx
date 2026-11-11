@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project } from '../../../api/projects.ts';
 import { updateSpace } from '../../../api/space-settings.ts';
+import { Button } from '../../../components/forms/Button.tsx';
 
 export interface DangerTabProps {
   readonly project: Project;
@@ -61,17 +62,16 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
                 hold “Create and archive spaces” in your organisation role.
               </p>
             ) : archived ? (
-              <button
-                type="button"
-                className="ss-btn"
+              <Button
+                variant="secondary"
                 data-action="restore"
-                disabled={busy}
+                busy={busy}
                 onClick={() => {
                   set(false);
                 }}
               >
                 Restore
-              </button>
+              </Button>
             ) : confirming ? (
               <div
                 className="ss-confirm"
@@ -80,40 +80,37 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
               >
                 <p>Archive {project.name}? Its board becomes read-only until it is restored.</p>
                 <div className="ss-confirm-actions">
-                  <button
-                    type="button"
-                    className="ss-btn ss-btn-danger-solid"
+                  <Button
+                    variant="danger"
                     data-action="confirm-archive"
-                    disabled={busy}
+                    busy={busy}
                     onClick={() => {
                       set(true);
                     }}
                   >
                     Archive space
-                  </button>
-                  <button
-                    type="button"
-                    className="ss-btn"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     disabled={busy}
                     onClick={() => {
                       setConfirming(false);
                     }}
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
-                className="ss-btn ss-btn-danger"
+              <Button
+                variant="danger"
                 data-action="archive"
                 onClick={() => {
                   setConfirming(true);
                 }}
               >
                 Archive
-              </button>
+              </Button>
             )}
             {failure !== undefined && (
               <p className="ss-field-error" role="alert">

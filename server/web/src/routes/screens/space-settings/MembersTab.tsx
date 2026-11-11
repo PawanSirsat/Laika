@@ -3,6 +3,8 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
+import { Button } from '../../../components/forms/Button.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import {
   PROJECT_ROLES,
   ROLE_SUMMARY,
@@ -243,9 +245,9 @@ export function MembersTab({
                         }))}
                       />
                     </label>
-                    <button
-                      type="button"
-                      className="ss-btn ss-btn-quiet"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       data-action="remove"
                       disabled={busy}
                       aria-label={`Remove ${member.name}`}
@@ -254,7 +256,7 @@ export function MembersTab({
                       }}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <span
@@ -302,9 +304,8 @@ export function MembersTab({
         </p>
         {isMember &&
           (leaving === undefined ? (
-            <button
-              type="button"
-              className="ss-btn ss-btn-danger"
+            <Button
+              variant="danger"
               data-action="leave"
               onClick={() => {
                 setLeaving('ask');
@@ -312,7 +313,7 @@ export function MembersTab({
               }}
             >
               Leave space
-            </button>
+            </Button>
           ) : (
             <div className="ss-confirm" role="alertdialog" aria-label={`Leave ${project.name}?`}>
               <p>Leave {project.name}? Someone will have to add you back.</p>
@@ -322,25 +323,24 @@ export function MembersTab({
                 </p>
               )}
               <div className="ss-confirm-actions">
-                <button
-                  type="button"
-                  className="ss-btn ss-btn-danger-solid"
+                <Button
+                  variant="danger"
                   data-action="confirm-leave"
-                  disabled={leaving === 'busy'}
+                  busy={leaving === 'busy'}
                   onClick={leave}
                 >
                   Leave space
-                </button>
-                <button
-                  type="button"
-                  className="ss-btn"
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={leaving === 'busy'}
                   onClick={() => {
                     setLeaving(undefined);
                     setLeaveError(undefined);
                   }}
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -463,7 +463,7 @@ function AddPeople({
                 setChosen((current) => current.filter((u) => u.id !== person.id));
               }}
             >
-              {person.name} <span aria-hidden="true">×</span>
+              {person.name} <Icon name="close" size="tiny" />
               <span className="visually-hidden"> — remove from the people to add</span>
             </button>
           ))}
@@ -551,9 +551,7 @@ function AddPeople({
 
       {chosen.length > 0 && (
         <div className="ss-add-go">
-          <button
-            type="button"
-            className="ss-btn ss-btn-primary"
+          <Button
             data-action="add-people"
             disabled={busy}
             onClick={() => {
@@ -566,16 +564,15 @@ function AddPeople({
             }}
           >
             {`Add ${chosen.length === 1 ? (chosen[0]?.name ?? '1 person') : `${String(chosen.length)} people`} as ${projectRoleLabel(role)}`}
-          </button>
-          <button
-            type="button"
-            className="ss-btn"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => {
               setChosen([]);
             }}
           >
             Clear
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -668,9 +665,7 @@ function CopyMembers({
         </p>
       )}
       <div className="ss-confirm-actions">
-        <button
-          type="button"
-          className="ss-btn ss-btn-primary"
+        <Button
           data-action="confirm-copy"
           disabled={busy || incoming.length === 0}
           onClick={() => {
@@ -683,17 +678,16 @@ function CopyMembers({
           {incoming.length === 0
             ? 'Copy members'
             : `Copy ${String(incoming.length)} ${incoming.length === 1 ? 'person' : 'people'}`}
-        </button>
-        <button
-          type="button"
-          className="ss-btn"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => {
             setOpen(false);
             setSource('');
           }}
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

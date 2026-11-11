@@ -4,6 +4,7 @@ import type { Project } from '../../../api/projects.ts';
 import { updateSpace, type SpaceSettingsPatch } from '../../../api/space-settings.ts';
 import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
 import { projectSetupLink } from '../../page-tabs.ts';
+import { Button } from '../../../components/forms/Button.tsx';
 
 export interface AccessTabProps {
   readonly project: Project;
@@ -132,25 +133,22 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
               <div className="ss-confirm" role="alertdialog" aria-label="Make this space public?">
                 <p>Everyone in {org} will see this space and its work, and can join it.</p>
                 <div className="ss-confirm-actions">
-                  <button
-                    type="button"
-                    className="ss-btn ss-btn-primary"
+                  <Button
                     onClick={() => {
                       setConfirmingPublic(false);
                       save('visibility', { visibility: 'public' });
                     }}
                   >
                     Make public
-                  </button>
-                  <button
-                    type="button"
-                    className="ss-btn"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     onClick={() => {
                       setConfirmingPublic(false);
                     }}
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
