@@ -1,0 +1,97 @@
+/*
+ * The *created* toast (LAI-1167): My day's pill (`my-day/toast.css`, LAI-517)
+ * fixed to the window's foot rather than a column's, because the dialog it
+ * reports on is gone and the view under it is any of the space's. Above the
+ * dialog's layer (60/61) so a *created, but…* is never under a dialog opened
+ * next; the dropdown menus share the layer and never meet it.
+ */
+.created-toasts {
+  position: fixed;
+  right: 0;
+  bottom: 1.5rem;
+  left: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  padding: 0 0.75rem;
+  pointer-events: none;
+}
+
+@media (max-width: 899px) {
+  .created-toasts {
+    bottom: 1.25rem;
+  }
+}
+
+/* The pill: the page's ink as its ground, the card as its ink, in both themes. */
+.created-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  max-width: min(36rem, 100%);
+  padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+  border-radius: 0.625rem;
+  background: var(--text-primary);
+  box-shadow: var(--shadow-modal);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--bg-card);
+  pointer-events: auto;
+}
+
+.created-toast-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--chip-orange);
+}
+
+.created-toast-text {
+  flex: 1;
+  min-width: 0;
+  text-wrap: pretty;
+}
+
+/* The server's sentence, under the headline, quieter. */
+.created-toast-detail {
+  display: block;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: color-mix(in srgb, var(--bg-card) 72%, var(--text-primary));
+}
+
+.created-toast-open,
+.created-toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  margin: 0;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The design's accent on the pill: the theme's accent, lifted toward the card. */
+.created-toast-open {
+  padding: 0 0.625rem;
+  font-weight: var(--weight-heavy);
+  color: color-mix(in srgb, var(--accent) 50%, var(--bg-card));
+}
+
+.created-toast-close {
+  width: 1.75rem;
+  padding: 0;
+  color: color-mix(in srgb, var(--bg-card) 62%, var(--text-primary));
+}
+
+.created-toast-open:hover,
+.created-toast-close:hover {
+  background: color-mix(in srgb, var(--bg-card) 14%, transparent);
+}

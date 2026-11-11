@@ -28,6 +28,66 @@
   outline-offset: -2px;
 }
 
+/*
+ * A row opens its details (LAI-1097). The name is the button, and its
+ * `::after` covers the whole row; the chips and the row's action sit above it,
+ * positioned later in the row, so they keep their own clicks. The gaps between
+ * them fall through to the row.
+ */
+.dv3-row {
+  position: relative;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.dv3-row:hover {
+  background: var(--bg-card-hover);
+}
+
+.dv3-row-open {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dv3-row-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.dv3-row-open:focus-visible {
+  outline: none;
+}
+
+.dv3-row-open:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dv3-row .dx-record-end {
+  position: relative;
+  pointer-events: none;
+}
+
+.dv3-row .dx-record-end > * {
+  pointer-events: auto;
+}
+
+.dv3-row-chevron {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-heading-sm);
+  line-height: 1;
+}
+
 /* The tool's own mark sits in the record's icon box, as a device's glyph does. */
 .dv3-tool .dx-icon {
   background: var(--bg-card);
@@ -352,6 +412,11 @@
 @media (max-width: 600px) {
   .dv3-panel-tool-button {
     flex-wrap: wrap;
+  }
+
+  /* The chevron stays on the name's line; the chips and action wrap below. */
+  .dv3-row .dx-record-end {
+    order: 1;
   }
 }
 

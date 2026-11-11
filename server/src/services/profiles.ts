@@ -36,10 +36,14 @@ import {
   users,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
+import { readLoggedKinds } from './analytics-views.ts';
+import { todaysFor } from './availability.ts';
+import { addDays } from './calendar-days.ts';
 import { collectionView } from './local-activity.ts';
 import { percentile } from './metrics.ts';
 import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
+import { summaryOf } from './time-summary.ts';
 
 /**
  * The member profile: one person's work as the board recorded it, a label, and
@@ -53,6 +57,19 @@ import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
  * whether an id exists: `forbidden` either way, and only an admin is told
  * `not_found`. The same order `listTokensFor` keeps.
  *
+ * **And anyone, about themselves** (D-139 item 1, LAI-1150): `GET
+ * /me/profile` under `profile.read_own`, every role, session only. It is the
+ * same profile from the same code, with `ratings` left out unless the reader
+ * holds `profile.read` as well — what an owner or admin wrote about somebody
+ * stays theirs.
+ *
+ * ## Somebody else's profile is a look
+ *
+ * D-139 item 3: reading another person's profile writes an `analytics_views`
+ * row of kind `profile` — and one of kind `time`, because it carries their
+ * hours (`minutes_14d`) — in the read's own transaction, deduped as every
+ * look is (D-135). Your own writes none.
+ *
  * An admin reads every project (implicit lead, §3), so nothing here narrows by
  * project: the profile is the whole board's record of one person.
  *
@@ -65,9 +82,10 @@ import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
  *
  * ## The kind changes what is shown, never what is allowed
  *
- * A `manager` profile carries no `current_work`, `delivery` or `agents` block,
- * and a `builder` profile no `queue` block — **absent, not empty**, the
- * convention `unlisted` and the org's `ai` block use — and that is all
+ * Every profile carries `current_work`, `delivery` and `agents` — a
+ * manager's too, since D-139 item 2 — and a `manager` profile also `queue`,
+ * which a `builder` profile does not carry: **absent, not empty**, the
+ * convention `unlisted` and the org's `ai` block use. That is all
  * `profile_kind` does. `can()` never reads it.
  *
  * ## Ratings stay here
@@ -91,6 +109,12 @@ const RECENT_DECISIONS = 10;
 
 /** `review.last_30_days`: decisions in the thirty days to now (LAI-750). */
 const RECENT_DAYS = 30;
+
+/** `current_work.due_7d`: open work due today or in the six days after (LAI-1150). */
+export const DUE_SOON_DAYS = 7;
+
+/** `projects[].minutes_14d`: the last fourteen of the person's own days (LAI-1150). */
+export const PROJECT_MINUTES_DAYS = 14;
 
 /**
  * The most any of the profile's growing lists carries — ratings, open work,
@@ -136,6 +160,12 @@ export interface ProfileProject {
   accepted: number;
   /** Review decisions they made there on other people's work, in the window. */
   reviewed: number;
+  /**
+   * Their confirmed and drafted minutes there over their last
+   * {@link PROJECT_MINUTES_DAYS} days, today included — My day's own
+   * assembly (`summaryOf`), so the two cannot disagree (LAI-1150).
+   */
+  minutes_14d: number;
 }
 
 export interface ProfileTask {
@@ -307,6 +337,11 @@ export interface ProfileCurrentWork {
   in_progress_total: number;
   in_review: ProfileTask[];
   in_review_total: number;
+  /**
+   * Their open tasks due today or in the {@link DUE_SOON_DAYS} days to come,
+   * by the person's own today — overdue work is not in it (LAI-1150).
+   */
+  due_7d: number;
 }
 
 /**
@@ -324,10 +359,13 @@ export interface ProfileView {
   window: ProfileWindow;
   projects: ProfileProject[];
   review: ProfileReview;
-  /** Newest first, at most `PROFILE_LIST_LIMIT`; the first is the current one. */
-  ratings: RatingView[];
-  /** Every rating they have, however many `ratings` carries. */
-  ratings_total: number;
+  /**
+   * Newest first, at most `PROFILE_LIST_LIMIT`; the first is the current one.
+   * Absent on your own profile unless you hold `profile.read` (D-139 item 1).
+   */
+  ratings?: RatingView[];
+  /** Every rating they have, however many `ratings` carries; absent with it. */
+  ratings_total?: number;
   /**
    * D-079's shape, the organisation's switch alone since D-102 (amended), so the page can draw the Activity
    * card in its final shape before `GET /people/:id/activity` answers
@@ -335,12 +373,10 @@ export interface ProfileView {
    * count of it.
    */
   activity_sharing: ProfileActivitySharing;
-  /** Builders only — absent for a manager. */
-  current_work?: ProfileCurrentWork;
-  /** Builders only — absent for a manager. */
-  delivery?: ProfileDelivery;
-  /** Builders only — absent for a manager. */
-  agents?: ProfileAgents;
+  /** Both kinds since D-139 item 2 (LAI-1150). */
+  current_work: ProfileCurrentWork;
+  delivery: ProfileDelivery;
+  agents: ProfileAgents;
   /** Managers only — absent for a builder (LAI-750). */
   queue?: ProfileQueue;
 }
@@ -372,6 +408,11 @@ interface Move {
 
 // ------------------------------------------------------------------ reading
 
+/**
+ * `GET /users/:id/profile`: somebody's profile, for an owner or a role granted
+ * *See everyone's analytics*. Anybody else's is a `profile` look and a `time`
+ * look (D-139 items 3 and 4, LAI-1150); your own is none.
+ */
 export function getProfile(
   db: Db,
   actor: ResolvedActor,
@@ -380,8 +421,32 @@ export function getProfile(
 ): ProfileView {
   assertCan(actor, 'profile.read', { targetUserId: userId });
   const person = requireUser(db, userId);
+  return readLoggedKinds(
+    db,
+    actor,
+    userId,
+    ['profile', 'time'],
+    () => profileOf(db, person, true, now),
+    now,
+  );
+}
 
+/**
+ * `GET /me/profile` (D-139 item 1, LAI-1150): the caller's own, whatever
+ * their role. Nobody else looked, so nothing is logged; `ratings` only for a
+ * reader who could read them on anybody's profile.
+ */
+export function getOwnProfile(db: Db, actor: ResolvedActor, now: number = Date.now()): ProfileView {
+  assertCan(actor, 'profile.read_own');
+  const person = requireUser(db, actor.userId);
+  return profileOf(db, person, can(actor, 'profile.read', { targetUserId: actor.userId }), now);
+}
+
+/** One person's profile — **no `can()` here**: each caller asks its own question first. */
+function profileOf(db: Db, person: UserRow, withRatings: boolean, now: number): ProfileView {
+  const userId = person.id;
   const since = windowStart(now);
+  const today = todaysFor(db, [userId], now).get(userId) ?? '';
 
   const theirTasks = loadTheirTasks(db, userId);
   const onTheirTasks = loadMovesOnTheirTasks(db, userId, since, now);
@@ -394,7 +459,7 @@ export function getProfile(
   const profile: ProfileView = {
     user: toUser(person),
     window: { weeks: PROFILE_WINDOW_WEEKS, since, until: now },
-    projects: projectsFor(db, userId, theirTasks, accepted, theirDecisions),
+    projects: projectsFor(db, userId, theirTasks, accepted, theirDecisions, today),
     review: {
       accepted: theirDecisions.filter((d) => d.decision === 'accepted').length,
       sent_back: theirDecisions.filter((d) => d.decision === 'sent_back').length,
@@ -403,16 +468,11 @@ export function getProfile(
       time_to_decide: timeToDecide(db, theirDecisions),
       recent: theirDecisions.slice(0, RECENT_DECISIONS).map((d) => d.view),
     },
-    ratings: ratingsFor(db, userId),
-    ratings_total: ratingCount(db, userId),
+    ...(withRatings
+      ? { ratings: ratingsFor(db, userId), ratings_total: ratingCount(db, userId) }
+      : {}),
     activity_sharing: activitySharing(db),
-  };
-
-  if (person.profileKind === 'manager') return { ...profile, queue: queueFor(db, userId) };
-
-  return {
-    ...profile,
-    current_work: currentWork(db, theirTasks),
+    current_work: currentWork(db, theirTasks, today),
     delivery: {
       accepted_per_week: perWeek(accepted, since),
       accepted: accepted.length,
@@ -428,6 +488,8 @@ export function getProfile(
       ...agentWrites(db, userId, since, now),
     },
   };
+
+  return person.profileKind === 'manager' ? { ...profile, queue: queueFor(db, userId) } : profile;
 }
 
 /** The organisation's switch alone, in D-079's shape (D-102 amended). */
@@ -440,7 +502,7 @@ function activitySharing(db: Db): ProfileActivitySharing {
  * oldest start first, in Review longest waiting first — by when each last
  * entered Review, the queue's rule (LAI-751) — those the log cannot place last.
  */
-function currentWork(db: Db, theirTasks: readonly TheirTask[]): ProfileCurrentWork {
+function currentWork(db: Db, theirTasks: readonly TheirTask[], today: string): ProfileCurrentWork {
   const inProgress = theirTasks.filter((x) => x.status === 'in_progress');
   const reviewing = theirTasks.filter((x) => x.status === 'review');
   const history = movesOn(
@@ -462,7 +524,21 @@ function currentWork(db: Db, theirTasks: readonly TheirTask[]): ProfileCurrentWo
       .slice(0, PROFILE_LIST_LIMIT)
       .map(({ task, since }) => toProfileTask(task, since)),
     in_review_total: inReview.length,
+    due_7d: dueSoon(theirTasks, today),
   };
+}
+
+/**
+ * Their open tasks due from `today` through the six days after it. `due_on`
+ * is a UTC midnight with date-only semantics (§4.5), so it is compared as the
+ * date it names, against the person's own today.
+ */
+function dueSoon(theirTasks: readonly TheirTask[], today: string): number {
+  const from = Date.parse(`${today}T00:00:00Z`);
+  const to = Date.parse(`${addDays(today, DUE_SOON_DAYS - 1)}T00:00:00Z`);
+  return theirTasks.filter(
+    (x) => OPEN.includes(x.status) && x.dueOn !== null && x.dueOn >= from && x.dueOn <= to,
+  ).length;
 }
 
 // ------------------------------------------------------------------ writing
@@ -659,6 +735,7 @@ interface TheirTask {
   startedAt: number | null;
   completedAt: number | null;
   createdAt: number;
+  dueOn: number | null;
   projectId: string;
   projectSlug: string;
   prefix: string;
@@ -676,6 +753,7 @@ function loadTheirTasks(db: Db, userId: string): TheirTask[] {
       startedAt: tasks.startedAt,
       completedAt: tasks.completedAt,
       createdAt: tasks.createdAt,
+      dueOn: tasks.dueOn,
       projectId: tasks.projectId,
       projectSlug: projects.slug,
       prefix: projects.prefix,
@@ -834,6 +912,7 @@ function projectsFor(
   theirTasks: readonly TheirTask[],
   accepted: readonly MoveRow[],
   decisions: readonly Decision[],
+  today: string,
 ): ProfileProject[] {
   const roles = new Map(
     db
@@ -850,6 +929,13 @@ function projectsFor(
     ...decisions.map((d) => d.projectId),
   ]);
   if (ids.size === 0) return [];
+
+  const spent = new Map(
+    summaryOf(db, userId, {
+      from: addDays(today, -(PROJECT_MINUTES_DAYS - 1)),
+      to: today,
+    }).by_project.map((p) => [p.project?.id ?? '', p.confirmed_minutes + p.drafted_minutes]),
+  );
 
   return db
     .select({
@@ -873,6 +959,7 @@ function projectsFor(
         .length,
       accepted: accepted.filter((m) => m.projectId === project.id).length,
       reviewed: decisions.filter((d) => d.projectId === project.id).length,
+      minutes_14d: spent.get(project.id) ?? 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
 }

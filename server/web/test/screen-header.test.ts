@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { before, describe, test } from 'node:test';
+import { navRoutes } from '../src/routes/route-table.ts';
 import { code } from './helpers/code.ts';
 
 const SCREENS = fileURLToPath(new URL('../src/routes/screens/', import.meta.url));
@@ -154,5 +155,42 @@ void describe('the header band is not optional', () => {
         assert.ok(!s.body.includes(fixture), `${s.name} hardcodes the fixture "${fixture}"`);
       }
     }
+  });
+
+  /*
+   * Every page titles itself with its sidebar name. **One exception, and only
+   * one** (LAI-1096): Developer access V3 is titled *Connect your work to
+   * Laika*, in the owner's design, and its sidebar name is the eyebrow over
+   * that title — still the first thing read. The browser test
+   * (`developer-access-v3.test.ts`) asserts what is drawn; this asserts that
+   * no other page has quietly taken the same liberty.
+   */
+  void test('a page titled by what it is for keeps its sidebar name as the eyebrow — Developer access only', async () => {
+    const withEyebrow = screenFiles()
+      .filter((s) => /\beyebrow\s*[:=]/.test(s.body))
+      .map((s) => s.name);
+    assert.deepEqual(withEyebrow, ['DeveloperScreen.tsx']);
+
+    const developer = screenFiles().find((s) => s.name === 'DeveloperScreen.tsx')!.body;
+    const name = /const PAGE_NAME = '([^']+)'/.exec(developer)?.[1];
+    assert.equal(
+      navRoutes().find((r) => r.path === '/developer')?.label,
+      name,
+      'the eyebrow is not the sidebar’s name for the page',
+    );
+    // The eyebrow is the name, and wherever the design's title is not shown
+    // the name is the title, as on every other page.
+    assert.match(developer, /\{ eyebrow: PAGE_NAME, title: V3_TITLE \} : \{ title: PAGE_NAME \}/);
+
+    // A band never draws one: the header renders it in its page branch only.
+    const header = code(
+      await readFile(new URL('../src/components/ScreenHeader.tsx', import.meta.url), 'utf8'),
+    );
+    const page = header.indexOf("if (variant === 'page')");
+    const band = header.indexOf('className="screen-bar"');
+    const eyebrow = header.indexOf('screen-page-eyebrow');
+    assert.ok(page > 0 && band > page, 'the header’s branches moved');
+    assert.ok(eyebrow > page && eyebrow < band, 'the eyebrow is drawn outside the page branch');
+    assert.equal(header.indexOf('screen-page-eyebrow', eyebrow + 1), -1, 'drawn twice');
   });
 });

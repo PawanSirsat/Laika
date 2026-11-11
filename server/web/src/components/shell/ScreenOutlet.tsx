@@ -1,4 +1,3 @@
-import { HandoffsTab } from '../../routes/screens/inbox/HandoffsTab.tsx';
 import { handoffsWaiting } from '../agent/person-handoffs.ts';
 import { useEffect, type ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
@@ -24,10 +23,17 @@ import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx
 import { DeveloperScreen } from '../../routes/screens/developer/DeveloperScreen.tsx';
 import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
 import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
+import { TimeTab } from '../../routes/screens/insights/TimeTab.tsx';
+import {
+  insightsHolder,
+  ledProjectIds,
+  timeSubview,
+  timeView,
+} from '../../routes/screens/insights/time-tab.ts';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
-import { WorkScreen, type WorkTaskLink } from '../../routes/screens/work/WorkScreen.tsx';
+import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
@@ -36,6 +42,8 @@ import {
   developerAlias,
   developerTabs,
   INBOX_TABS,
+  inboxAlias,
+  inboxCount,
   INSIGHTS_TABS,
   ORGANISATION_TABS,
   refusedTab,
@@ -126,7 +134,8 @@ function openTaskByKey(navigate: (to: string) => void) {
  * Open a task **in its own space**, by id (LAI-755). Without `?project=` the
  * board falls back to the space last opened, which on a page across every
  * space is usually another one. A key search remains the fallback when the
- * space is not known.
+ * space is not known. Work's rows use it (LAI-952; the Organisation tab since
+ * LAI-1170).
  */
 function openTaskInItsSpace(navigate: (to: string) => void) {
   return ({ id, key, projectSlug }: WorkTaskLink) => {
@@ -278,88 +287,109 @@ function MyDayRoute() {
   );
 }
 
-/**
- * Everyone's work (LAI-952). The filters are the URL, replaced rather than
- * pushed, as a filter is; a row opens the task in its own space's drawer.
- */
-function WorkRoute() {
+function ReviewRoute() {
   const {
-    route: { params, setParams, navigate },
+    route: { navigate, params, setParams },
     me,
+    refreshReview,
+    handoffCounts,
+    refreshHandoffs,
   } = useShell();
+  // An accept or a send-back changes the sidebar's count; it re-reads (D-082).
+  // The hand-offs waiting on this person sit at the top of the same tab
+  // (D-146 item 4): their counts and their re-read are the shell's too.
   return (
-    <WorkScreen
-      me={me}
+    <ReviewScreen
       params={params}
       setParams={setParams}
-      onOpenTask={openTaskInItsSpace(navigate)}
+      onNavigate={navigate}
+      onChanged={refreshReview}
+      handoffs={{ meId: me?.id, counts: handoffCounts, onChanged: refreshHandoffs }}
     />
   );
 }
 
-function ReviewRoute() {
-  const {
-    route: { navigate },
-    refreshReview,
-  } = useShell();
-  // An accept or a send-back changes the sidebar's count; it re-reads (D-082).
-  return <ReviewScreen onNavigate={navigate} onChanged={refreshReview} />;
-}
-
 /**
- * Inbox (LAI-796): Review, Hand-offs (LAI-550) and Unlisted work as tabs. The
- * counts are the shell's — the same numbers the sidebar adds up for Inbox's
- * badge.
+ * Inbox (LAI-796): Review — with the hand-offs needing approval folded in
+ * (D-146, LAI-1169) — and Unlisted work as tabs. The counts are the shell's —
+ * the same numbers the sidebar adds up for Inbox's badge. The Hand-offs tab
+ * of LAI-550 is an alias now: `?tab=handoffs` is rewritten in place to
+ * Review's *All hand-offs* view, so an old link still lands on its rows.
  */
 function InboxRoute() {
   const {
-    route: { params, navigate },
+    route: { params, navigate, setParams },
     me,
-    reviewWaiting,
+    reviewDecidable,
     unlistedOpen,
     handoffCounts,
-    refreshHandoffs,
   } = useShell();
   const { permissions } = usePermissions(me !== undefined);
   const holds = permissionHolder(permissions?.me.actions);
+  const alias = inboxAlias(params);
+  useEffect(() => {
+    if (alias !== undefined) setParams(alias);
+  }, [alias?.toString()]);
   const tab = currentTab(INBOX_TABS, params, holds);
+  // An aliased address is rewritten before anything is read: mounting the
+  // queue for the one render before the effect would fetch it and flash it
+  // (review round 1, item 6). The target is always Review.
+  if (alias !== undefined) {
+    return (
+      <InboxScreen
+        tabs={visibleTabs(INBOX_TABS, holds)}
+        current="review"
+        counts={{
+          review: inboxCount(reviewDecidable, undefined, handoffsWaiting(handoffCounts)),
+          unlisted: unlistedOpen,
+        }}
+        onNavigate={navigate}
+      >
+        <LoadingState shape="row" count={3} label="Loading hand-offs" />
+      </InboxScreen>
+    );
+  }
   return (
     <InboxScreen
       tabs={visibleTabs(INBOX_TABS, holds)}
       current={tab}
       counts={{
-        review: reviewWaiting,
-        handoffs: handoffsWaiting(handoffCounts),
+        review: inboxCount(reviewDecidable, undefined, handoffsWaiting(handoffCounts)),
         unlisted: unlistedOpen,
       }}
       onNavigate={navigate}
     >
-      {tab === 'unlisted' ? (
-        <UnlistedRoute />
-      ) : tab === 'handoffs' ? (
-        <HandoffsTab
-          meId={me?.id}
-          counts={handoffCounts}
-          onChanged={refreshHandoffs}
-          onNavigate={navigate}
-        />
-      ) : (
-        <ReviewRoute />
-      )}
+      {tab === 'unlisted' ? <UnlistedRoute /> : <ReviewRoute />}
     </InboxScreen>
   );
 }
 
-/** Insights (LAI-796): Capacity and Usage & cost as tabs. */
+/**
+ * Insights (LAI-796): Capacity, Usage & cost and — for owners, analytics
+ * readers and space admins — Time (LAI-1138). A link to Time for anybody
+ * else is refused once the server has answered, never guessed before.
+ */
 function InsightsRoute() {
   const {
     route: { params, navigate },
     me,
     tokenAlerts,
+    orgName,
   } = useShell();
-  const { permissions } = usePermissions(me !== undefined);
-  const holds = permissionHolder(permissions?.me.actions);
-  const tab = currentTab(INSIGHTS_TABS, params, holds);
+  const { permissions, settled } = usePermissions(me !== undefined);
+  const leads = ledProjectIds(permissions);
+  const holds = insightsHolder(permissionHolder(permissions?.me.actions), leads);
+  const refused = settled ? refusedTab(INSIGHTS_TABS, params, holds) : undefined;
+  const tab = refused?.id ?? currentTab(INSIGHTS_TABS, params, holds);
+  // Asked for Time before the server has said who may read it: wait, rather
+  // than open Capacity (and read it) in its place.
+  if (!settled && params.get('tab') === 'time') {
+    return (
+      <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current="time" onNavigate={navigate}>
+        <LoadingState shape="card" count={1} label="Loading the Time report" />
+      </InsightsScreen>
+    );
+  }
   return (
     <InsightsScreen
       tabs={visibleTabs(INSIGHTS_TABS, holds)}
@@ -367,7 +397,23 @@ function InsightsRoute() {
       onNavigate={navigate}
       alerts={tokenAlerts?.length}
     >
-      {tab === 'usage' ? <UsageRoute /> : <CapacityRoute />}
+      {tab === 'time' ? (
+        <TimeTab
+          view={
+            refused === undefined
+              ? timeView(permissionHolder(permissions?.me.actions), leads)
+              : 'none'
+          }
+          leads={leads}
+          orgName={orgName}
+          subview={timeSubview(params.get('view'))}
+          onNavigate={navigate}
+        />
+      ) : tab === 'usage' ? (
+        <UsageRoute />
+      ) : (
+        <CapacityRoute />
+      )}
     </InsightsScreen>
   );
 }
@@ -435,6 +481,8 @@ function OrganisationRoute() {
       params={params}
       setParams={setParams}
       onNavigate={navigate}
+      // The Work tab (LAI-1170): a row opens its task in its own space's drawer.
+      onOpenTask={openTaskInItsSpace(navigate)}
     />
   );
 }
@@ -519,7 +567,6 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
   '/inbox': { Component: InboxRoute, layout: 'plain' },
-  '/work': { Component: WorkRoute, layout: 'plain' },
   '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/developer': { Component: DeveloperRoute, layout: 'plain' },

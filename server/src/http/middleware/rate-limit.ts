@@ -129,6 +129,9 @@ export const CLIENT_REPORT_PATH = '/api/v1/agents/me/client-report';
 /** A collector's drafted blocks (LAI-787). */
 export const TIME_DRAFTS_PATH = '/api/v1/me/time-drafts';
 
+/** The Time report (LAI-1135), JSON and CSV alike. */
+export const TIME_REPORT_PATH = '/api/v1/time/report';
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -156,6 +159,12 @@ export function classify(
       key: `time-drafts:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
       policy: LIMITS.localActivity,
     };
+  }
+
+  // The Time report (LAI-1135): its own bucket per person, so a run of
+  // filter clicks never spends the session's budget, nor the session's its.
+  if (path === TIME_REPORT_PATH && method === 'GET') {
+    return { key: `time-report:${who}`, policy: LIMITS.timeReport };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.

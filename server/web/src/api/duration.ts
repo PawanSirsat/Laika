@@ -73,6 +73,23 @@ export function formatDuration(minutes: number, options: DurationOptions = {}): 
   return rest === 0 ? `${String(days)} d` : `${String(days)} d ${String(rest)} h`;
 }
 
+/**
+ * A person's tracked time in hours and minutes, however long: `45 min`,
+ * `16 h 15 min`, `28 h`, `53 h 12 min` — never days, never `h:mm`, and to the
+ * minute past a day too (LAI-1147: a 28-hour week read as `1 d 4 h`). For hours
+ * worked; an age or a forecast keeps {@link formatDuration}'s days.
+ */
+export function formatHours(minutes: number): string {
+  if (!Number.isFinite(minutes)) return '—';
+  if (minutes <= 0) return '0 min';
+  if (minutes < 1) return '< 1 min';
+  const whole = Math.round(minutes);
+  const hours = Math.floor(whole / MINUTES_PER_HOUR);
+  const rest = whole % MINUTES_PER_HOUR;
+  if (hours === 0) return `${String(rest)} min`;
+  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`;
+}
+
 /** {@link formatDuration} for a figure in milliseconds, as most of the API sends them. */
 export function formatDurationMs(ms: number, options: DurationOptions = {}): string {
   return formatDuration(ms / 60_000, options);

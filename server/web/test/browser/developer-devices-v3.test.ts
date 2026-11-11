@@ -18,6 +18,9 @@
  *   should after it.
  * - *Rename…* in an active device's details sends `PATCH /devices/:id`, and
  *   the panel, the row and the tools on it follow the answer (LAI-1095).
+ * - Folded (LAI-1100): a device's details lead with what needs the owner —
+ *   the imported confirmation, the duplicates — open, never folded, and
+ *   otherwise its one next action; the rest is one summary row a section.
  * - Its states, and classic mode untouched.
  */
 
@@ -35,6 +38,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { unfold } from './developer-v3-fixtures.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -371,6 +375,25 @@ void describe('V3 Devices: one line a device, the rest in its details', () => {
       const runner = await deviceDetails(h.page, 'd2');
       assert.equal(here(h.page), '/developer?tab=devices&device=d2');
       assert.equal(await panel(h.page, 'device').locator('h2').innerText(), 'Runner');
+      // Folded to one row a section (LAI-1100); nothing here needs the owner.
+      assert.deepEqual(
+        await runner
+          .locator('details[data-fold]')
+          .evaluateAll((els) =>
+            els.map(
+              (el) =>
+                `${(el as HTMLDetailsElement).open ? 'open' : 'folded'}: ${el.querySelector<HTMLElement>(':scope > summary .dv3-fold-line')?.innerText ?? ''}`,
+            ),
+          ),
+        [
+          'folded: Tools · 1 active',
+          'folded: Helper updates · Version unknown',
+          'folded: Device · Cloud runner · Paired',
+        ],
+      );
+      assert.equal(await runner.locator('[data-next]').count(), 0);
+      await unfold(runner, 'device');
+      await unfold(runner, 'tools');
       const said = await runner.innerText();
       assert.match(said, /Kind\s*Cloud runner/);
       assert.match(said, /Origin\s*Paired/);
@@ -411,12 +434,23 @@ void describe('V3 Tools: one line a tool, across every device', () => {
         await tool(h.page, 'a5').locator('[data-line]').innerText(),
         'No project yet · never seen',
       );
-      // The two of a pair are told apart, and marked.
+      // The two of a pair are one tool, Codex, with a line each (LAI-321) —
+      // told apart, and marked.
+      const codex = h.page.locator('.dv3-tool-group[data-tool-group="codex"]');
+      assert.equal(await codex.locator('.dv3-tool-group-title').innerText(), 'Codex');
+      assert.equal(await codex.locator('[data-group-line]').innerText(), '1 device');
+      assert.deepEqual(
+        await codex
+          .locator('.dv3-tool-line .dx-record-title')
+          .evaluateAll((titles) => titles.map((t) => t.textContent)),
+        ['Belka (old laptop)', 'Belka (new laptop)'],
+      );
       assert.equal(
-        await tool(h.page, 'a2').locator('.dx-record-title').innerText(),
-        'Codex · Belka (old laptop)',
+        await tool(h.page, 'a2').locator('[data-details]').getAttribute('aria-label'),
+        'Details for Codex · Belka (old laptop)',
       );
       assert.match(await tool(h.page, 'a2').innerText(), /Duplicate/);
+      assert.match(await tool(h.page, 'a3').innerText(), /Duplicate/);
       assert.doesNotMatch(await tool(h.page, 'a1').innerText(), /Duplicate/);
       // A revoked tool is in no row and no count.
       assert.equal(await tool(h.page, 'a4').count(), 0);
@@ -506,6 +540,12 @@ void describe('V3 Devices: imported versus paired', () => {
         await body.locator('[data-imported]').innerText(),
         /Imported device — confirm it’s yours/,
       );
+      // It needs the owner: on screen at the top, in no folded section (LAI-1100).
+      assert.equal(await body.locator('[data-imported]').isVisible(), true);
+      assert.equal(
+        await body.locator('[data-imported]').evaluate((el) => el.closest('details') === null),
+        true,
+      );
       await h.page.getByRole('button', { name: 'Confirm Belka is yours' }).click();
       await body.locator('[data-imported]').waitFor({ state: 'detached' });
       const sent = h.calls.find((c) => c.path === '/api/v1/agents/devices/confirm');
@@ -532,6 +572,15 @@ void describe('V3 Devices: conflicts and revoked', () => {
       await note.getByRole('button', { name: 'Review Belka' }).click();
       const conflicts = panel(h.page, 'device').locator('[data-conflicts]');
       await conflicts.waitFor({ timeout: 10_000 });
+      // It needs the owner: open at the top, in no folded section (LAI-1100).
+      assert.equal(await conflicts.evaluate((el) => el.closest('details') === null), true);
+      assert.equal(
+        await conflicts
+          .getByRole('button', { name: /^Rename / })
+          .first()
+          .isVisible(),
+        true,
+      );
       assert.match(await conflicts.innerText(), /Needs your attention: 1 conflict/);
       assert.match(await conflicts.innerText(), /Codex · Belka: 2 active/);
       assert.match(await conflicts.innerText(), /old laptop/);
@@ -737,6 +786,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
     try {
       const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a5"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'projects');
       assert.equal(
         await body.locator('[data-projects]').innerText(),
         'None — it reaches no project',
@@ -787,6 +837,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
     try {
       const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'credential');
       assert.equal(await body.locator('[data-credential]').innerText(), 'lai_a1xx…');
       await body.getByRole('button', { name: 'Reconnect (new credential)…' }).click();
       const dialog = h.page
@@ -825,6 +876,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
     try {
       const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'credential');
       await body.getByRole('button', { name: 'Reconnect (new credential)…' }).click();
       await h.page
         .getByRole('alertdialog')
@@ -895,6 +947,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
     try {
       const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'credential');
       await body.getByRole('button', { name: 'Reconnect (new credential)…' }).click();
       const dialog = h.page
         .getByRole('alertdialog')
@@ -1176,6 +1229,7 @@ void describe('V3 Devices and Tools: states', () => {
       await device(h.page, 'd3').waitFor({ timeout: 5_000 });
       assert.match(await device(h.page, 'd3').innerText(), /Revoked/);
       const body = await deviceDetails(h.page, 'd3');
+      await unfold(body, 'tools');
       assert.match(await body.innerText(), /Revoked/);
       assert.equal(
         await panel(h.page, 'device')
@@ -1243,6 +1297,7 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
     try {
       const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d1"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'device');
       await body.getByRole('button', { name: 'Rename Belka' }).click();
       const form = body.locator('[data-device-rename]');
       const input = form.getByRole('textbox', { name: 'Device name' });
@@ -1264,14 +1319,16 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
       assert.deepEqual(sent?.body, { display_name: 'Strelka' });
       assert.equal(await titleOf(h.page).innerText(), 'Strelka');
       assert.equal(await device(h.page, 'd1').locator('.dx-record-title').innerText(), 'Strelka');
-      assert.match(
-        await body.locator('ul[aria-label="Tools on Strelka"]').innerText(),
-        /Claude Code · Strelka/,
-      );
       await until(async () => (await live(h.page).innerText()).includes('Renamed to Strelka.'));
       assert.match(await live(h.page).innerText(), /Renamed to Strelka\./);
       await until(async () => (await focusedText(h.page)) === 'Rename Strelka');
       assert.equal(await focusedText(h.page), 'Rename Strelka');
+      // Its tools follow, in their own section.
+      await unfold(body, 'tools');
+      assert.match(
+        await body.locator('ul[aria-label="Tools on Strelka"]').innerText(),
+        /Claude Code · Strelka/,
+      );
     } finally {
       await h.close();
     }
@@ -1289,6 +1346,7 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
     try {
       const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d1"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'device');
       await body.getByRole('button', { name: 'Rename Belka' }).click();
       const form = body.locator('[data-device-rename]');
       await form.getByRole('textbox', { name: 'Device name' }).fill('Runner');
@@ -1341,6 +1399,7 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
         await setTheme(h.page, theme);
         const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d1"]');
         await body.waitFor({ timeout: 20_000 });
+        await unfold(body, 'device');
         await body.getByRole('button', { name: 'Rename Belka' }).click();
         const form = body.locator('[data-device-rename]');
         for (const part of [
@@ -1381,6 +1440,8 @@ void describe('an unavailable action says why (LAI-1191, the audit’s B10)', ()
     try {
       const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
       await body.waitFor({ timeout: 20_000 });
+      // The credential is a fold since LAI-1100.
+      await unfold(body, 'credential');
       const button = body.getByRole('button', { name: 'Reconnect (new credential)…' });
       assert.equal(await button.getAttribute('aria-disabled'), 'true');
       const why = body.locator('[data-reconnect-why]');
@@ -1425,6 +1486,7 @@ void describe('an unavailable action says why (LAI-1191, the audit’s B10)', ()
     try {
       const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
       await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'credential');
       assert.equal(await body.locator('[data-reconnect-why]').count(), 0);
       assert.equal(
         await body

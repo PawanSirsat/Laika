@@ -13,6 +13,7 @@ import {
   undo,
   updateDraft,
   updateEntry,
+  WRITE_MEMBER_TIME,
   type DraftPatch,
   type EntryPatch,
   type MyDay,
@@ -45,6 +46,7 @@ import { CHIP_CAP, cardChips, cardChipsWhy } from './card-chips.ts';
 import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
+import { AvailabilityPopover } from './AvailabilityPopover.tsx';
 import { DaySettings } from './DaySettings.tsx';
 import { TimerControl, timerSeconds } from './TimerControl.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
@@ -67,6 +69,7 @@ import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
 import { DayError } from './DayError.tsx';
 import { DayOff } from './DayOff.tsx';
 import { DaySkeleton, DaySkeletonActions } from './DaySkeleton.tsx';
+import { ForYouCard } from './ForYouCard.tsx';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { MyDayPhoneBar } from './MyDayPhoneBar.tsx';
 import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
@@ -131,7 +134,7 @@ export interface MyDayScreenProps {
    * Drawn inside a member's profile (LAI-959): the person is fixed and named
    * by the profile, so there is no page title and no switcher.
    */
-  readonly embedded?: { readonly name: string } | undefined;
+  readonly embedded?: { readonly name: string; readonly orgRole?: string } | undefined;
 }
 
 type Load =
@@ -301,14 +304,28 @@ export function MyDayScreen({
   const mayTurnOn = org('org.time.set');
   /** Whose day: somebody else's only by `?user=` naming another person. */
   const subjectId = user !== undefined && user !== '' && user !== me?.id ? user : undefined;
-  const readOnly = subjectId !== undefined;
+  const notOwn = subjectId !== undefined;
   /** A refused `?user=` is decided once the server has said what the reader holds. */
-  const refused = readOnly && !holds && settled;
+  const refused = notOwn && !holds && settled;
   const people = usePeople(holds && embedded === undefined);
-  const subjectName =
-    embedded?.name ??
-    (subjectId === undefined ? undefined : (people ?? []).find((p) => p.id === subjectId)?.name) ??
-    'This person';
+  const subjectPerson =
+    subjectId === undefined ? undefined : (people ?? []).find((p) => p.id === subjectId);
+  const subjectName = embedded?.name ?? subjectPerson?.name ?? 'This person';
+  /**
+   * Somebody else's confirmed time is changed by an owner or admin (D-143,
+   * LAI-1165): the reader holds `time_entries.write_member`, and an admin
+   * never the owner's. The role is the one already loaded — the profile's, or
+   * the *Viewing* list's — and unknown is no. Drafts, the timer and breaks
+   * stay the person's own whatever this says.
+   */
+  const subjectRole = embedded?.orgRole ?? subjectPerson?.org_role;
+  const canEdit =
+    !notOwn ||
+    (org(WRITE_MEMBER_TIME) &&
+      subjectRole !== undefined &&
+      (me?.org_role === 'owner' || subjectRole !== 'owner'));
+  /** Whose entries a write goes to: `undefined` is the reader's own. */
+  const entrySubject = notOwn ? subjectId : undefined;
   const selectedDay = isDay(day) ? day : dayIn(tz, Date.now());
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [pending, setPending] = useState<string | undefined>(undefined);
@@ -358,7 +375,7 @@ export function MyDayScreen({
   };
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
-  const plate = usePlate(readOnly ? undefined : me, spaces);
+  const plate = usePlate(notOwn ? undefined : me, spaces);
   // The owner's phone page (LAI-518): its own head, bar and Timeline.
   const phone = usePhone();
   const { theme } = useTheme();
@@ -372,7 +389,7 @@ export function MyDayScreen({
 
   // Somebody else's day is asked only of a reader who holds the capability:
   // the server would refuse it, and a refused read is the not-allowed state.
-  const asking = !readOnly || holds;
+  const asking = !notOwn || holds;
   // Another person's day never shows under the last one's — a re-read after a
   // change keeps the page as it is until the answer lands.
   useEffect(() => {
@@ -646,7 +663,7 @@ export function MyDayScreen({
     };
   }, []);
 
-  const title = readOnly && embedded === undefined ? `${subjectName}’s day` : 'My day';
+  const title = notOwn && embedded === undefined ? `${subjectName}’s day` : 'My day';
   const switcher =
     holds && embedded === undefined && me !== undefined && onUser !== undefined ? (
       <ViewingSwitch meId={me.id} subjectId={subjectId} people={people} onPick={onUser} />
@@ -654,7 +671,7 @@ export function MyDayScreen({
   // The read-only banner as the design draws it (LAI-513): the eye, one
   // sentence, and the way back.
   const firstName = subjectName.split(' ')[0] ?? subjectName;
-  const banner = readOnly && (
+  const banner = notOwn && (
     <p className="myday-viewing-banner myday-viewing-read" role="status" data-viewing-banner>
       <svg className="myday-viewing-eye" viewBox="0 0 16 16" aria-hidden="true">
         <path
@@ -665,10 +682,18 @@ export function MyDayScreen({
         />
         <circle cx="8" cy="8" r="2" fill="currentColor" />
       </svg>
-      <span className="myday-viewing-words">
-        <strong>Read-only.</strong> You’re viewing {subjectName}’s day. {firstName} can see that you
-        looked.
-      </span>
+      {canEdit ? (
+        // D-143: an owner or admin may change the confirmed time, and the
+        // person is told; the rest of the day stays theirs.
+        <span className="myday-viewing-words" data-viewing-editable>
+          You’re viewing {subjectName}’s day. Changes you make are shown to {firstName}.
+        </span>
+      ) : (
+        <span className="myday-viewing-words">
+          <strong>Read-only.</strong> You’re viewing {subjectName}’s day. {firstName} can see that
+          you looked.
+        </span>
+      )}
       {onUser !== undefined && embedded === undefined && (
         <button
           type="button"
@@ -721,10 +746,8 @@ export function MyDayScreen({
         load.error instanceof ApiError && load.error.code === 'forbidden' ? (
           <ApiErrorState
             error={load.error}
-            resource={readOnly ? `${subjectName}’s day` : 'your day'}
-            {...(readOnly
-              ? { requiredRole: 'admin' as const, scope: 'organisation' as const }
-              : {})}
+            resource={notOwn ? `${subjectName}’s day` : 'your day'}
+            {...(notOwn ? { requiredRole: 'admin' as const, scope: 'organisation' as const } : {})}
             onRetry={reload}
           />
         ) : (
@@ -740,10 +763,10 @@ export function MyDayScreen({
           />
         )
       ) : (
-        <DaySkeleton label={readOnly ? `Reading ${subjectName}’s day` : 'Loading your day'} />
+        <DaySkeleton label={notOwn ? `Reading ${subjectName}’s day` : 'Loading your day'} />
       ),
       // While loading, the header's buttons stand beside Viewing in skeleton (LAI-524).
-      load.kind === 'error' || readOnly ? undefined : <DaySkeletonActions />,
+      load.kind === 'error' || notOwn ? undefined : <DaySkeletonActions />,
     );
   }
 
@@ -752,7 +775,7 @@ export function MyDayScreen({
   const totals = dayTotals(view);
   const shownTab: DayTab = tab ?? 'overview';
   const inTab = (t: DayTab): boolean => shownTab === t || shownTab === 'all';
-  const draftOff = !readOnly && settings.org_mode === 'drafts' && !settings.draft_my_time;
+  const draftOff = !notOwn && settings.org_mode === 'drafts' && !settings.draft_my_time;
   // The designed page states (LAI-513): time tracking off for the
   // organisation, a day not begun, a day with nothing on it.
   const orgOff = settings.org_mode === 'off';
@@ -803,7 +826,7 @@ export function MyDayScreen({
   const write = (held: Held, patch: DraftPatch & EntryPatch, key: string, said?: string) =>
     held.kind === 'draft'
       ? run(key, [held.draft.id], (onUndo) => updateDraft(held.draft.id, patch, onUndo), said)
-      : run(key, [held.entry.id], () => updateEntry(held.entry.id, patch), said);
+      : run(key, [held.entry.id], () => updateEntry(held.entry.id, patch, entrySubject), said);
 
   /** What a placed block is called in a toast: its card, its space, its title, or General. */
   const nameOf = (kind: 'drafted' | 'confirmed', id: string): string => {
@@ -826,7 +849,7 @@ export function MyDayScreen({
   // (LAI-512): one write of the edges that moved; a drag says so, with Undo
   // where the server offers it.
   const onEdge = (lane: LaneBlock, edit: Edit, how?: 'move' | 'resize'): void => {
-    if (readOnly) return;
+    if (lane.kind === 'drafted' ? notOwn : !canEdit) return;
     const patch: { started_at?: number; ended_at?: number; minutes: number } = {
       minutes: edit.minutes,
     };
@@ -842,7 +865,7 @@ export function MyDayScreen({
     if (lane.kind === 'drafted') {
       void run(`edge:${lane.id}`, [lane.id], (onUndo) => updateDraft(lane.id, patch, onUndo), said);
     } else {
-      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch), said);
+      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch, entrySubject), said);
     }
   };
 
@@ -851,7 +874,7 @@ export function MyDayScreen({
     item: { readonly kind: 'draft' | 'entry'; readonly id: string },
     s: Span,
   ): void => {
-    if (readOnly) return;
+    if (item.kind === 'draft' ? notOwn : !canEdit) return;
     const patch = { started_at: instant(s.start), ended_at: instant(s.end) };
     const text = `Placed ${nameOf(item.kind === 'draft' ? 'drafted' : 'confirmed', item.id)} at ${span(patch.started_at, patch.ended_at, view.tz)}.`;
     if (item.kind === 'draft') {
@@ -862,7 +885,12 @@ export function MyDayScreen({
         () => ({ text, undoable: true }),
       );
     } else {
-      void run(`place:${item.id}`, [item.id], () => updateEntry(item.id, patch), text);
+      void run(
+        `place:${item.id}`,
+        [item.id],
+        () => updateEntry(item.id, patch, entrySubject),
+        text,
+      );
     }
     setSelection({ kind: item.kind, id: item.id });
   };
@@ -927,9 +955,11 @@ export function MyDayScreen({
     const made = await run(
       'add',
       [],
-      (onUndo) => addEntry(entry, onUndo),
+      (onUndo) => addEntry(entry, onUndo, entrySubject),
       (created) => ({
-        text: `${duration(entry.minutes)} added to ${label} — confirmed as you add it.`,
+        text: notOwn
+          ? `${duration(entry.minutes)} added to ${subjectName}’s ${label}. They are told, and its history names you.`
+          : `${duration(entry.minutes)} added to ${label} — confirmed as you add it.`,
         undoable: true,
         blocks: [created.id],
       }),
@@ -1016,7 +1046,7 @@ export function MyDayScreen({
 
   // *Add time* (LAI-502): the last free half hour before now, or no set time.
   const addTime = (): void => {
-    if (readOnly || !addable || busy) return;
+    if (!canEdit || !addable || busy) return;
     const confirmed = line.blocks.filter((b) => b.kind === 'confirmed');
     const nowMinute =
       view.day === view.today && line.midnight !== undefined
@@ -1045,10 +1075,16 @@ export function MyDayScreen({
   };
 
   // What an empty Timeline offers (LAI-513), by why it is empty.
-  const emptyActions: readonly EmptyAction[] = readOnly
-    ? emptyKind === 'future' || emptyKind === 'past'
-      ? [{ label: 'Back to today', go: () => onDay(view.today) }]
-      : []
+  const emptyActions: readonly EmptyAction[] = notOwn
+    ? [
+        ...(emptyKind === 'future' || emptyKind === 'past'
+          ? [{ label: 'Back to today', go: () => onDay(view.today) }]
+          : []),
+        // D-143: an owner or admin may add to somebody else's day.
+        ...(canEdit && addable && emptyKind !== 'future'
+          ? [{ label: 'Add time', go: addTime }]
+          : []),
+      ]
     : emptyKind === 'future'
       ? [{ label: 'Back to today', go: () => onDay(view.today) }]
       : emptyKind === 'draftOff'
@@ -1182,7 +1218,9 @@ export function MyDayScreen({
         (entry.kind === undefined || entry.kind === null ? 'General' : kindLabel(entry.kind));
       void confirm({
         title: 'Delete this entry?',
-        body: 'It comes off your confirmed time and the hours your organisation sees. Its history keeps a record, and Undo brings it back for a moment after.',
+        body: notOwn
+          ? `It comes off ${subjectName}’s confirmed time and the hours your organisation sees. Its history keeps a record with your name, and ${firstName} is told. There is no Undo.`
+          : 'It comes off your confirmed time and the hours your organisation sees. Its history keeps a record, and Undo brings it back for a moment after.',
         confirmLabel: 'Delete entry',
         danger: true,
         detail: (
@@ -1200,7 +1238,7 @@ export function MyDayScreen({
         void run(
           `delete:${entry.id}`,
           [entry.id],
-          (onUndo) => deleteEntry(entry.id, onUndo),
+          (onUndo) => deleteEntry(entry.id, onUndo, entrySubject),
           () => ({
             text: `${duration(entry.minutes)} deleted. The revision history keeps a record.`,
             undoable: true,
@@ -1213,7 +1251,7 @@ export function MyDayScreen({
       void run(
         `note:${entry.id}`,
         [entry.id],
-        () => updateEntry(entry.id, { note: text === '' ? null : text }),
+        () => updateEntry(entry.id, { note: text === '' ? null : text }, entrySubject),
         'Note saved. Every edit is kept as a revision.',
       );
     },
@@ -1225,7 +1263,7 @@ export function MyDayScreen({
       void run(
         `kind:${entry.id}`,
         [entry.id],
-        () => updateEntry(entry.id, { kind }),
+        () => updateEntry(entry.id, { kind }, entrySubject),
         kind === null ? 'Kind cleared. Every edit is kept as a revision.' : 'Kind saved.',
       );
     },
@@ -1246,7 +1284,7 @@ export function MyDayScreen({
       void run(
         `details:${entry.id}`,
         [entry.id],
-        () => updateEntry(entry.id, patch),
+        () => updateEntry(entry.id, patch, entrySubject),
         'Saved. Every edit is kept as a revision.',
       );
     },
@@ -1309,12 +1347,12 @@ export function MyDayScreen({
     }
     if (dialog !== null || busy) return false;
     if (shortcut === 'add') {
-      if (readOnly || !addable) return false;
+      if (!canEdit || !addable) return false;
       addTime();
       return true;
     }
     if (shortcut === 'timer') {
-      if (readOnly || !addable) return false;
+      if (notOwn || !addable) return false;
       if (view.timer === null) setTimerOpen(true);
       else void timerStop();
       return true;
@@ -1351,7 +1389,7 @@ export function MyDayScreen({
       if (next !== undefined) setSelection({ kind: 'draft', id: next.id });
       return true;
     }
-    if (current === undefined || readOnly) return false;
+    if (current === undefined || notOwn) return false;
     if (shortcut === 'confirm') confirmOne(current);
     else if (shortcut === 'dismiss') dismissOne(current);
     else if (!current.general) actions.setCard({ kind: 'draft', draft: current }, 'general');
@@ -1366,14 +1404,14 @@ export function MyDayScreen({
   // The phone's page (the owner's `MyDay.dc.html`, LAI-518): the day row, the
   // letter week and the summary in place of the desktop header; the eye, the
   // switch and the avatar in the shell's top bar.
-  const own = !readOnly && addable;
+  const own = !notOwn && addable;
   const phoneBeside = (
     <button
       type="button"
       className="myday-chip myday-head-icon"
       ref={besideButton}
-      aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
-      title={readOnly ? 'Agent time' : 'Agent time and On your plate'}
+      aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
+      title={notOwn ? 'Agent time' : 'Agent time and On your plate'}
       aria-expanded={drawerMode === 'cards'}
       data-beside-button
       onClick={() => {
@@ -1427,7 +1465,8 @@ export function MyDayScreen({
       <MyDayPhoneBar>
         {/* Not in the design's bar, which has no other way to Agent time and On your plate. */}
         {phoneBeside}
-        {!readOnly && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
+        {!notOwn && <AvailabilityPopover />}
+        {!notOwn && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
         {switcher}
         {avatar}
       </MyDayPhoneBar>
@@ -1436,7 +1475,7 @@ export function MyDayScreen({
     phone && embedded === undefined ? (
       <MyDayPhoneHead
         view={view}
-        readOnly={readOnly}
+        readOnly={notOwn}
         subjectName={subjectName}
         locked={batching}
         onDay={onDay}
@@ -1497,7 +1536,7 @@ export function MyDayScreen({
               ),
             }
           : {})}
-        {...(readOnly
+        {...(notOwn
           ? {}
           : view.drafts.length > 0
             ? {
@@ -1559,24 +1598,32 @@ export function MyDayScreen({
             variant="page"
             title={title}
             context={
-              orgOff ? undefined : (
-                <span className="myday-figure" data-day-total>
-                  <span className="myday-figure-total">
-                    {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
-                    {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+              orgOff ? (
+                notOwn ? undefined : (
+                  <AvailabilityPopover />
+                )
+              ) : (
+                <>
+                  <span className="myday-figure" data-day-total>
+                    <span className="myday-figure-total">
+                      {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
+                      {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+                    </span>
+                    <span className="myday-figure-sub">
+                      {view.state === 'future'
+                        ? 'not started'
+                        : emptyKind === 'past'
+                          ? 'no signal'
+                          : totals.drafted > 0
+                            ? `${duration(totals.drafted)} to review`
+                            : totals.confirmed > 0
+                              ? `${duration(totals.confirmed)} confirmed`
+                              : 'nothing yet'}
+                    </span>
                   </span>
-                  <span className="myday-figure-sub">
-                    {view.state === 'future'
-                      ? 'not started'
-                      : emptyKind === 'past'
-                        ? 'no signal'
-                        : totals.drafted > 0
-                          ? `${duration(totals.drafted)} to review`
-                          : totals.confirmed > 0
-                            ? `${duration(totals.confirmed)} confirmed`
-                            : 'nothing yet'}
-                  </span>
-                </span>
+                  {/* My availability (D-131, LAI-1139): yours to set, so never on someone else's day. */}
+                  {!notOwn && <AvailabilityPopover />}
+                </>
               )
             }
             description={
@@ -1585,13 +1632,13 @@ export function MyDayScreen({
                   {dayLong(view.day)}
                   {view.day === view.today && ' · today'}
                 </span>
-                {!(orgOff && !readOnly) && (
-                  <span className="myday-subtitle-dot" aria-hidden="true" />
-                )}
-                {readOnly ? (
+                {!(orgOff && !notOwn) && <span className="myday-subtitle-dot" aria-hidden="true" />}
+                {notOwn ? (
                   <span className="myday-lock">
                     <Padlock />
-                    {`Read only · ${subjectName} sees that you looked`}
+                    {canEdit
+                      ? `Changes you make are shown to ${firstName}`
+                      : `Read only · ${subjectName} sees that you looked`}
                   </span>
                 ) : orgOff ? null : ( // Nothing is collected, so there is nobody's reading to explain (LAI-1191).
                   // Who reads what, truthfully (D-102, LAI-968): the design's
@@ -1686,10 +1733,10 @@ export function MyDayScreen({
             }
           >
             {switcher}
-            {switcher !== undefined && !readOnly && (
+            {switcher !== undefined && !notOwn && (
               <span className="myday-head-divider" aria-hidden="true" />
             )}
-            {!readOnly && addable && (
+            {!notOwn && addable && (
               <>
                 <TimerControl
                   timer={view.timer}
@@ -1757,7 +1804,7 @@ export function MyDayScreen({
                 )}
               </>
             )}
-            {!readOnly && addable && view.state !== 'future' && (
+            {!notOwn && addable && view.state !== 'future' && (
               <button
                 type="button"
                 className="myday-chip myday-chip-primary myday-confirm-day"
@@ -1786,7 +1833,7 @@ export function MyDayScreen({
                 </span>
               </button>
             )}
-            {!readOnly && addable && view.drafts.length === 0 && view.state !== 'future' && (
+            {!notOwn && addable && view.drafts.length === 0 && view.state !== 'future' && (
               <button
                 type="button"
                 className="myday-chip myday-head-button"
@@ -1801,7 +1848,7 @@ export function MyDayScreen({
                 </span>
               </button>
             )}
-            {!readOnly && !orgOff && (
+            {!notOwn && !orgOff && (
               <DaySettings
                 settings={settings}
                 held={view.drafts_held}
@@ -1812,13 +1859,13 @@ export function MyDayScreen({
                 }
               />
             )}
-            {!readOnly && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
+            {!notOwn && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
             <button
               type="button"
               className="myday-chip myday-head-icon"
               ref={besideButton}
-              aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
-              title={readOnly ? 'Agent time' : 'Agent time and On your plate'}
+              aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
+              title={notOwn ? 'Agent time' : 'Agent time and On your plate'}
               aria-expanded={drawerMode === 'cards'}
               data-beside-button
               onClick={() => {
@@ -1895,7 +1942,7 @@ export function MyDayScreen({
             </button>
           </p>
         )}
-        {readOnly && view.day_note !== null && (
+        {notOwn && view.day_note !== null && (
           <p className="myday-viewing-banner myday-day-note" data-day-note>
             <strong>
               {subjectName}’s note for {dayLong(view.day)}:
@@ -1922,7 +1969,7 @@ export function MyDayScreen({
           {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
           {orgOff ? (
             <DayOff
-              me={readOnly ? undefined : me}
+              me={notOwn ? undefined : me}
               spaces={spaces}
               canTurnOn={mayTurnOn}
               now={now}
@@ -1944,7 +1991,7 @@ export function MyDayScreen({
                 setSelection(undefined);
                 setBeside(true);
               }}
-              readOnly={readOnly}
+              readOnly={notOwn}
             />
           ) : (
             <Timeline
@@ -1966,7 +2013,8 @@ export function MyDayScreen({
                 document.querySelector<HTMLElement>('[data-timer] button')?.focus();
               }}
               busy={busy}
-              readOnly={readOnly}
+              readOnly={!canEdit}
+              lockDrafts={notOwn}
             />
           )}
           <div className="myday-main">
@@ -1975,8 +2023,8 @@ export function MyDayScreen({
                 drafts={view.drafts}
                 entries={view.entries}
                 selected={selectedId}
-                readOnly={readOnly}
-                draggable={!readOnly && addable && !busy}
+                readOnly={notOwn}
+                draggable={!notOwn && addable && !busy}
                 onPick={(item) => {
                   setSelection(item);
                 }}
@@ -1989,7 +2037,16 @@ export function MyDayScreen({
                 onPick={pickTab}
               />
             )}
-            {showLists && inTab('overview') && <OverviewTab view={view} subjectId={subjectId} />}
+            {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
+            {showLists && inTab('overview') && !notOwn && <ForYouCard onNavigate={onNavigate} />}
+            {showLists && inTab('overview') && (
+              <OverviewTab
+                view={view}
+                meId={me?.id}
+                subjectId={subjectId}
+                subjectName={subjectName}
+              />
+            )}
             {showLists && inTab('review') && (
               <DraftList
                 // A new day starts with nothing ticked.
@@ -2004,7 +2061,7 @@ export function MyDayScreen({
                   setSelection({ kind: 'draft', id: draft.id });
                 }}
                 onNavigate={onNavigate}
-                readOnly={readOnly}
+                readOnly={notOwn}
                 draftOff={draftOff}
                 assignOptions={assignOptions}
                 onBulk={(kind, chosen, card) =>
@@ -2023,7 +2080,7 @@ export function MyDayScreen({
                 key={`entries-${view.day}`}
                 entries={view.entries}
                 selected={selectedId}
-                readOnly={readOnly}
+                readOnly={notOwn}
                 subjectName={subjectName}
                 onSelect={(entry) => {
                   setSelection({ kind: 'entry', id: entry.id });
@@ -2054,7 +2111,7 @@ export function MyDayScreen({
           mode={drawerMode}
           label={
             drawerMode === 'cards'
-              ? readOnly
+              ? notOwn
                 ? `Beside ${subjectName}’s day`
                 : 'Beside your day'
               : selection?.kind === 'range' || selection?.kind === 'gap'
@@ -2087,7 +2144,10 @@ export function MyDayScreen({
               pending={pending}
               actions={actions}
               onNavigate={onNavigate}
-              readOnly={readOnly}
+              readOnly={notOwn}
+              canEdit={canEdit}
+              entrySubject={entrySubject}
+              readerId={me?.id}
               position={
                 selection.kind === 'draft' && view.drafts.length > 0
                   ? {
@@ -2107,7 +2167,7 @@ export function MyDayScreen({
             <>
               <header className="myday-drawer-head">
                 <h2 className="myday-drawer-title">
-                  {readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
+                  {notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
                 </h2>
                 <button
                   type="button"
@@ -2120,7 +2180,7 @@ export function MyDayScreen({
               </header>
               <div className="myday-drawer-cards">
                 <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
-                {!readOnly && (
+                {!notOwn && (
                   <OnYourPlate
                     me={me}
                     spaces={spaces}

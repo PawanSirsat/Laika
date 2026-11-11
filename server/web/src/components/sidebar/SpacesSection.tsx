@@ -219,6 +219,7 @@ export function SpacesSection({
           spaces={unpinned}
           onPin={onTogglePin}
           left={collapsed ? 68 : 220}
+          current={projectSlug}
           onPick={pick}
           onViewAll={() => {
             setPopover(false);

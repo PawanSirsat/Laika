@@ -10,6 +10,7 @@ import {
   createPairingRequest,
   decidePairingRequest,
   getPairingRequest,
+  listOwnPendingPairings,
   type CreatedPairingView,
   type DevicePairingView,
   type PairingClaimView,
@@ -26,7 +27,9 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * Two routers, because the two sides authenticate differently:
  *
  * - **The owner's**, at `/devices/pairing-requests`: a signed-in web session,
- *   `agent.manage_own` (session only) to act and `agent.read_own` to read.
+ *   `agent.manage_own` (session only) to act and `agent.read_own` to read
+ *   one; the list of those still waiting is `developer_setup.read_own`,
+ *   session only (D-139, LAI-1151).
  * - **The device's**, at `/device-pairing`: no actor at all. A claim presents
  *   the code; completing presents a signature. Neither is a credential and
  *   neither yields one, so there is no third way to be an actor (§6.1).
@@ -98,6 +101,13 @@ export function devicePairingRequestRoutes(options: DevicePairingRouteOptions): 
     markOneTimeSecret(c);
     return c.json<CreatedPairingView>(created, 201);
   });
+
+  // D-139 (LAI-1151): your own requests still waiting, session only.
+  app.get('/', (c) =>
+    c.json<{ data: DevicePairingView[] }>({
+      data: listOwnPendingPairings(db, requireActor(c)),
+    }),
+  );
 
   app.get('/:id', (c) =>
     c.json<DevicePairingView>(getPairingRequest(db, requireActor(c), c.req.param('id'))),

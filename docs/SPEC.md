@@ -125,18 +125,22 @@ organisation's grants for exactly these actions and no others.
 
 | Capability | Carries |
 | --- | --- |
-| *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
+| *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`, and D-130's `time.report.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
 | *Invite people* | `user.invite` (as member or viewer only) |
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
-| *Manage anyone's tokens* | `token.list_any`, `token.revoke_any` |
+| *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
 | *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
-organisation that had stored a choice for it holds that choice for both. Each
+organisation that had stored a choice for it holds that choice for both.
+*See and manage anyone's developer setup* was *Manage anyone's tokens* until
+D-132 (LAI-1137); its stored key, `manage_any_tokens`, is unchanged, so an
+organisation's choice for it now covers the setup read and the tool and
+device revokes too. Each
 capability carries a one-line `description` from the server (§6.4's
 `GET /org/permissions`), so a screen explains a switch without inventing the
 words.
@@ -165,7 +169,10 @@ are not part of this.
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
-| List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| List **anyone's** tokens | ✓ | ✓ | — | — |
+| Revoke **anyone's** token | ✓ | ✓ (not for the owner) | — | — |
+| View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+| Revoke a member's tool or unpair their device | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
 | Read own agents | ✓ | ✓ | ✓ | ✓ |
 | Register and manage own agents | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
@@ -230,6 +237,7 @@ be obvious because someone will be asking for it.
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
 | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+| View own profile and activity heatmap | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
 | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
@@ -248,9 +256,15 @@ be obvious because someone will be asking for it.
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Read and manage own time drafts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and write own time entries | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Change a member's confirmed time | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
 | Sync own time with Solidtime | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
 | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
+| View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
+| Set own availability | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -280,6 +294,16 @@ a read action in the `read_only` sense: no token may do it at all.
 
 **"not themselves"**: an owner or admin cannot rate themselves. They may read
 their own profile, ratings included, and set their own profile kind.
+
+**"View own profile and activity heatmap" is `profile.read_own`** (D-139 item
+1, LAI-1150), behind §6.4's `GET /me/profile` and `GET /me/activity`. Every
+role, because it is **their own record of their own work** — the heartbeat's
+argument — and session only, the profile's rule: a token, the person's own
+agent's included, reads no profile. One row for both reads, because for the
+person there is nothing to split: the heatmap's counts are their own. The
+person's read writes no look (§4.59), and **`ratings` is absent from it unless
+the reader also holds `profile.read`** — what an owner or admin wrote about
+somebody stays theirs.
 
 **The profile kind is a label, not a permission.** `builder` or `manager`
 (§4.1) changes what the profile shows and nothing anybody may do: `can()` never
@@ -357,6 +381,25 @@ project's totals and **never a per-person split**.
 `PUT /org/time`, `/me/time-settings`, `/me/time-drafts`, `/me/time` and
 `/me/time-entries`.
 
+**"Change a member's confirmed time" is `time_entries.write_member`** (D-143,
+LAI-1165, amending D-102 rule 4 and D-088 items 2 and 6), behind §6.4's
+`POST /people/:id/time-entries` and `PATCH`/`DELETE
+/people/:id/time-entries/:entryId`. An owner adds, changes (length, edges,
+note, card) or deletes anybody else's **confirmed** entries; an admin anybody
+else's but the owner's (`403 not_for_owner`, D-133's shape). By role, as the
+Solidtime import is, not a grant. **Never yourself** (`422 use_own_time`):
+your own time keeps its own path, with its Undo. **Session only.** An import
+may be changed here too — never pushed back to Solidtime, so a later re-sync
+of a Solidtime change may put the imported original back, and the history
+keeps both — while the person's own path still refuses it (`403
+imported_entry`). A day in the closed period stays closed (`403
+closed_period`); a card or space the person cannot open themselves is `422
+task_not_visible_to_member`; drafts, the timer and breaks stay the person's
+own, so nothing on this path reaches them. A deactivated person's time can
+still be corrected. Every change is a §4.49 revision
+with `changed_by` the editor, the person gets a `time_changed` notice
+(§4.87), and there is no Undo.
+
 - **Both switches are a web session's**, as D-079's are: the organisation's
   *Time* (`off`, `manual`, `drafts`; §4.45) is its own row and not *Org
   settings* borrowed, because a token may hold that one and an agent must not
@@ -388,6 +431,51 @@ only**.
   an owner's or admin's** (D-088 item 7): the CLI suggests a match by email
   on its own machine, and only the confirmation reaches the board.
 
+**"Read and dismiss own notices" is `notices.own`** (D-134, LAI-1136), behind
+§6.4's `GET /me/notices`, `POST /me/notices/:id/read` and `POST
+/me/notices/read-all`. Every role holds it, **session only**: a notice is
+addressed to the person — an adder's message among them — not to an agent
+acting for them, and marking one read is the person having seen it. The
+service reads and marks the caller's own rows only; no path names anybody
+else's.
+
+**"View a member's developer setup" is `developer_setup.read_any`** (D-132,
+LAI-1137), behind §6.4's `GET /people/:id/developer-setup`: a member's
+devices, tools with their checks, grants and launcher, repository setups,
+pending pairing requests, every token they hold or held, and the last 30
+days of setup activity — read-only, in one answer. It is *See and manage
+anyone's developer setup* (§3's grants). **Not themselves**: a person's own
+is Developer access, and asking for yourself is `422 use_developer_access`.
+**Every read is a look** (§4.59, kind `developer_setup`). **The pairing
+code is never in it** (D-124): a request shows its state and times, and a
+token shows no secret. **A space the reader cannot open is counted, never
+named**: its repository setups, tool grants and token pins are left out of
+the lists and only their number is served. The own-only reads stay own-only —
+`/devices`, `/agents` and the rest answer another owner's id `404` (§4.63,
+§4.78) — and this is the one route that reads another person's setup.
+
+**"View own developer setup" is `developer_setup.read_own`** (D-139,
+LAI-1151), behind §6.4's `GET /devices/pairing-requests` and `GET
+/me/developer-setup/activity`: your own pending pairing requests, with the
+fingerprint the approve call echoes and never the code (D-124), and your own
+last 30 days of setup activity, the items the admin read lists. Every role
+holds it, **session only**, and the services read the caller's own rows only;
+reading your own writes no look (D-102 rule 3).
+
+**"Revoke a member's tool or unpair their device" is `agent.revoke_any` and
+`device.revoke_any`** (D-133, LAI-1137), behind `POST
+/people/:id/agents/:agentId/revoke` and `POST
+/people/:id/devices/:deviceId/revoke`, under the same grant. The effect is
+D-114 item 2's revoke, unchanged — the tool's tokens refused from the next
+request, its sessions ended, its offers closed — and an unpair revokes every
+active tool on the device and cancels its live pairing requests. The member
+gets one in-Laika notice (§4.87, D-134); each token revoked writes the
+`token.revoked` it always does, with the revoker as actor, and no other
+§4.8 verb. **An admin may not act on the owner's setup** (`403
+not_for_owner`); the owner may act on an admin's. A deactivated member's
+setup may still be revoked. The confirm that says what stops working is the
+screen's.
+
 **"View a member's day, time and shared activity" is `people.analytics.read`**
 (D-102 rules 1–4, LAI-957), behind §6.4's `GET /people/:id/time`, `GET
 /people/:id/time/summary` and `GET /people/:id/local-activity`. It is *See everyone's analytics* (§3's grants),
@@ -408,6 +496,38 @@ follows only the organisation's Developer insights (D-102, amended).
   looked on `GET /me/analytics-views` under *Read and delete own local
   activity* (`local_activity.read_own`): what is held about them and who has
   seen it are the same Developer access screen's, every role's, session only.
+
+**"View the organisation's Time report" is `time.report.read`** (D-130,
+LAI-1135), behind §6.4's `GET /time/report` when it names people other than
+the caller, or no one. It is *See everyone's analytics*, beside
+`people.analytics.read`: per person, drafts on request, every person shown
+logged as a look at their time (§4.59). A report of the caller's own time is
+*Read and write own time entries*' and logs nothing; a space admin's totals
+are §3.2's *View the space's time totals*. A caller who holds neither and
+leads no space is `403`.
+
+**The availability rows are D-131's** (LAI-1130): `availability.set_own`
+behind §6.4's `GET/PUT /me/availability`, `POST /me/availability/away` and
+`DELETE /me/availability/away/:id`, and `availability.read` behind `GET
+/people/availability`. Both are every role's and **session only** — an agent
+must not say its person is open to more work, nor read who else is.
+
+- **Only the person writes it.** The services touch the caller's own rows;
+  no row lets anybody set another's status, hours, note, tags, working week
+  or away periods.
+- **Reading narrows to the reader** (D-137). Everyone sees the people who
+  share a space with them: status, note, tags and when a current away period
+  ends. A space's lead sees the people in the spaces they lead with, in
+  addition, the hours a week each offered, their away dates and card counts
+  over those spaces — **no tracked hours and no working week**. A holder of
+  *See everyone's analytics* sees every active person who is not an org
+  viewer, the whole record with tracked hours — and every person so listed is
+  logged as a look at their time (§4.59).
+- **Load is not this row.** `GET /people/:id/load` is *View a member's day,
+  time and shared activity* (`people.analytics.read`), not themselves, logged.
+- **Never ranked and nothing computed** (D-088 item 1, D-131): the list is
+  A–Z by name with no sort parameter, and no response carries free hours or
+  a utilisation figure.
 
 ### 3.2 Project-level permission matrix
 
@@ -444,6 +564,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Read a project's token totals | ✓ | ✓ | ✓ |
 | Set token budgets | ✓ (session only) | — | — |
 | Leave a project | ✓ | ✓ | ✓ |
+| View the space's time totals | ✓ (session only) | — | — |
 
 **Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
 `task_create_min_role` (§4.3): `member`, the default, is the cell as written;
@@ -458,6 +579,28 @@ session are unaffected. A refusal by either rule is `403 forbidden` with
 `details.reason` `task_create_min_role` or `agents_off`. *Leave a project*
 refuses the last lead `409 conflict` with `details.reason: last_lead` — hand
 over first.
+
+**The space's time totals** (D-130 item 3 as amended by D-136, LAI-1135) are
+`time.report.read_project`, behind §6.4's `GET /time/report` for a caller
+with no per-person grant who leads a space (an org Owner or Admin is an
+implicit lead, and reads per person first). **Deliberately coarse, so that
+no subtraction gets under D-088 item 7's three-person floor**: exactly one
+space a request, whole ISO weeks up to the 92-day cap — Monday to Sunday by
+**each entry's filed day**, the person's own calendar day, so no zone is
+consulted — and one figure a week: the space's confirmed minutes, `null`
+unless at least three people **other than the reader** put time on it that
+week, with the week's full head count. The reader is left out of the floor
+because their own minutes are the one figure they can always subtract: a lead
+who worked a week with two others would otherwise read those two's total. Nothing else: no range total, no task, kind or day,
+no meeting or manual split, no agent minutes, no drafts. Every published
+figure is one (space, week) cell, decided by that cell's entries and who is
+reading — never by the range or the request — so it reads the same in every
+answer that reader gets and no figure contains another: a difference of two
+answers isolates nobody. D-088 item 7 is not amended. Refusals, each
+`422`: `members` is `members_not_allowed`, `kinds` is `kinds_not_allowed`,
+drafts are `drafts_not_allowed`, two spaces — asked for, or led with none
+named — are `one_space_only`, and a range that is not whole weeks is
+`range_not_whole_weeks`.
 
 **Checkpoints and hand-offs** (§4.70 – §4.74, D-114 – D-116, LAI-544). The
 eight rows are `task.checkpoint.create`, `task.checkpoint.retag`,
@@ -554,6 +697,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.handoff.expire` | §11.6: a live offer past `expires_at` becomes `expired` and a paused claim resumes (§4.73, LAI-546) |
 | `system.checkpoint.verify` | §10.1: a signed push delivery for a `laika-ckpt/` tag records its transition and re-derives the ref's state (§4.71, §4.72, D-116, LAI-545) |
 | `system.checkpoint.prune` | §11.6: checkpoint retention, 90 days after the task reaches `done` or `cancelled` (§4.70, D-115 item 9, LAI-545) |
+| `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -2144,7 +2288,7 @@ over an existing id, and `DELETE` while its entry exists.
 | `entry_id` | FK `time_entries`, cascade |
 | `revision` | integer; `(entry_id, revision)` unique |
 | `change` | `created` \| `edited` \| `deleted` |
-| `changed_by` | FK `users` |
+| `changed_by` | FK `users` — the person, or **somebody else**: an owner or admin who changed their time (D-143), or whoever ran the Solidtime pull that brought the change |
 | `task_id`, `project_id` | nullable — **copies, no FK**: history says what the entry said, and a deleted task must not rewrite it |
 | `day`, `tz`, `started_at`, `ended_at`, `minutes`, `note`, `kind`, `title`, `description` | the entry after the change |
 | `created_at` | |
@@ -2360,7 +2504,20 @@ Who looked at a person's analytics, and when (D-102 rule 3, D-088 item 7,
 LAI-957; §3.1's *"View a member's day, time and shared activity"*). One row
 per read of somebody else's My day, local activity, heatmap or per-person
 tokens, written in the same transaction as the read; a person reading their
-own writes none. Read by the person alone, `GET /me/analytics-views`. No
+own writes none. **One row per look, not per request** (D-135, amending *one
+row per read*): the same viewer reading the same subject's same `kind` and
+`day` again within ten minutes writes no second row, so every viewer and
+subject pair is still recorded (D-102 rule 3). A read that shows several
+people per person — the Time report (§6.4, LAI-1135) — writes one row per
+person **named or shown**: everybody its `members` names, everybody a row
+shows, and everybody whose agent time is in its `agent_minutes`, the reader
+aside, each deduped on its own. A read of somebody's whole developer setup
+(§6.4's `GET /people/:id/developer-setup`, D-132, LAI-1137) is kind
+`developer_setup`. **Opening somebody's profile** (§6.4's `GET
+/users/:id/profile`, D-139 item 3, LAI-1150) is kind `profile`, and a `time`
+look beside it with no day, because the profile carries their hours
+(`minutes_14d`); each is deduped on its own. Read by the person alone, `GET
+/me/analytics-views`, each viewer with their org role. No
 `activity` row: §4.8 gains no verb. Kept **400 days** (§11.6's local-activity
 retention, by `viewed_at`).
 
@@ -2369,7 +2526,7 @@ retention, by `viewed_at`).
 | `id` | ULID |
 | `viewer_id` | FK `users` — who looked |
 | `subject_id` | FK `users`, cascade — whose analytics |
-| `kind` | `time` \| `local_activity` \| `activity` \| `usage` (CHECK) |
+| `kind` | `time` \| `local_activity` \| `activity` \| `usage` \| `developer_setup` \| `profile` (CHECK) |
 | `day` | nullable `YYYY-MM-DD` — the day read, for `time`; null for a range |
 | `viewed_at` | |
 
@@ -2481,6 +2638,7 @@ narrowed (§4.64).
 | `status` | `active` \| `revoked` (CHECK). `revoked` is terminal |
 | `created_at` | |
 | `revoked_at` | nullable — when it was revoked |
+| `revoked_by_user_id` | nullable, FK `users`, set null — who revoked it when that was not its owner: an owner or admin on the member's setup (D-133, LAI-1137). Null for the owner's own revoke and for one made before the column existed |
 | `last_seen_at` | nullable — the last request on one of its tokens, stamped at most once a minute as `tokens.last_used_at` is |
 
 Indexes: `(org_id)`, `(owner_user_id)`, `(device_id)`.
@@ -2500,7 +2658,10 @@ history are unchanged, and the owner's other tokens are untouched. Both, and
 registering, renaming and granting, are behind `agent.manage_own`, session only
 (§3.1): no token, an agent's own included, can mint itself more access.
 Reading is `agent.read_own`. Every query reaches the caller's own agents only,
-and another person's agent is a `404`. **No new §4.8 verb**: minting and
+and another person's agent is a `404` — **except** §6.4's `GET
+/people/:id/developer-setup` and `POST /people/:id/agents/:agentId/revoke`,
+an owner's or admin's read and revoke of a member's tools under their own
+§3.1 rows (D-132, D-133). **No new §4.8 verb**: minting and
 revoking an agent's token write `token.created` and `token.revoked`, the rows
 here are the record of the rest, and historic activity is never back-filled
 with an agent. No retention: an agent row lives as long as its owner.
@@ -3109,6 +3270,7 @@ input.
 | `paired_at` | nullable |
 | `status` | `active` \| `revoked` (CHECK). `revoked` is terminal and frees the name |
 | `revoked_at` | nullable |
+| `revoked_by_user_id` | nullable, FK `users`, set null — who unpaired it, when an owner or admin did (D-133, LAI-1137) |
 | `last_seen_at` | nullable — on upgrade, the newest of its agents'; reads serve the newest of this and its agents' |
 | `created_at` | on upgrade, its oldest agent's registration |
 
@@ -3151,7 +3313,12 @@ device, as a relabel does (§4.63).
 Reading is `agent.read_own`, filtered to the caller's own devices; renaming is
 `agent.manage_own`, session only. Another owner's device is a `404` identical
 to an id that does not exist. No §3.1 action and no §4.8 verb of its own
-(D-122).
+(D-122). **The one exception** is an owner's or admin's read and unpair of a
+member's devices, §6.4's `GET /people/:id/developer-setup` and `POST
+/people/:id/devices/:deviceId/revoke`, under their own §3.1 rows (D-132,
+D-133): an unpair sets `revoked`, `revoked_at` and `revoked_by_user_id`,
+revokes every active agent on the device, and cancels its live pairing
+requests.
 
 ### 4.79 `device_pairing_requests`
 
@@ -3386,7 +3553,8 @@ records only inside its grants (`403`, `agent_not_granted`, as every agent read
 outside them). A personal token is refused `403`, `not_an_agent`, **whatever body it sends**
 — before the body is read, so a local-check body is not answered `422`. **`GET
 /project-setups`** answers the caller's own rows for one project; an agent's
-token reads only its own. Another owner's agent and an id that names nothing
+token reads only its own. Each row carries its `repo_key`, so a client groups
+one repository's records across devices and tools (LAI-321). Another owner's agent and an id that names nothing
 are the same `404`. No activity row is written.
 
 ### 4.83 `agent_launcher_reports`
@@ -3491,6 +3659,77 @@ explicit request, not presence collected in the background. `GET
 /agents/:id/capacity` reads only **the project asked**, which the reader may
 read: its owner, the newest answer to anyone's ping there; anyone else, to its
 own there.
+
+### 4.85 `user_availability`
+
+A person's own availability (D-131, LAI-1130). **Set only by the person, on a
+web session.** No row is *not set*: no pill, and *No working hours set*.
+**Who reads which fields is D-137's**, by allow-list (§6.4): a member reads
+`status`, `note`, `tags` and when a current away period ends; a space's lead
+adds `hours_per_week` and the away dates; `work_days`, `work_start` and
+`work_end` are read only by the person and by *See everyone's analytics*.
+
+| field | notes |
+| --- | --- |
+| `user_id` | PK, FK `users`, cascade |
+| `status` | nullable, `open` \| `capacity` (CHECK) — null until the person says either. *Away* is not a status: it is derived from §4.86 |
+| `hours_per_week` | nullable, 1–80 (CHECK) |
+| `note` | nullable, 1–140 characters (CHECK); a blank note is stored as null |
+| `tags` | JSON array, `NOT NULL DEFAULT '[]'` — at most 8 tags of 1–32 characters, de-duplicated case-insensitively, the first spelling kept (service validated, as `former_prefixes`) |
+| `work_days` | JSON array of ISO weekdays 1–7, ascending, `NOT NULL DEFAULT '[]'` |
+| `work_start` | nullable `HH:MM`, wall clock with no zone |
+| `work_end` | nullable `HH:MM` — both or neither, and after `work_start` (CHECK) |
+| `updated_at` | moves only when a write changed something |
+
+**Nothing here is computed against tracked time** (D-088 item 1, D-131 item 4):
+the working week's minutes on the API are the days times the length of the
+day, the person's own declaration.
+
+### 4.86 `user_away_periods`
+
+A stretch of days a person is away (D-131, LAI-1130), inclusive at both ends,
+in the person's own dates. Set only by the person.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `from_day` | `YYYY-MM-DD` |
+| `to_day` | `YYYY-MM-DD`, on or after `from_day` (CHECK) |
+| `created_at` | |
+
+Indexes `(user_id, to_day)` and `(to_day)`. **A person is away** when a period
+covers today in their own zone — their `place` (§4.46), UTC when they set none.
+At most 20 current and upcoming periods each, at most 366 days long. Periods
+that ended more than 30 days ago are deleted by §11.6's time retention.
+
+### 4.87 `member_notices`
+
+A notice for one member (D-134, LAI-1136): being added to a space, with the
+adder's message and first card if they gave them, a tool, device or token
+of theirs revoked by somebody else, and their confirmed time changed by an
+owner or admin (D-143, LAI-1165).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade — who is told |
+| `actor_user_id` | FK `users`, cascade — who did it |
+| `kind` | `added_to_space` \| `tool_revoked` \| `device_unpaired` \| `token_revoked` \| `time_changed` (CHECK) |
+| `project_id` | nullable, FK `projects`, set null — the space; for `time_changed`, the entry's space |
+| `task_id` | nullable, FK `tasks`, set null — the first card; for `time_changed`, the entry's card (its key is named from the card's own space) |
+| `subject` | nullable, ≤ 120 (CHECK) — the tool, device or token name **as it was**; for `time_changed`, `<created\|edited\|deleted> <day> <±minutes>`, or `moved <from> <to> <±minutes>` |
+| `message` | nullable, ≤ 500 (CHECK) — the adder's own words |
+| `created_at` | |
+| `read_at` | nullable — set once, by the person |
+
+Indexes `(user_id, read_at, created_at)` and `(created_at)`. **It is not
+`activity`**, so §4.8 gains no verb: the adder's `member.added` and
+`task.assigned` rows are the history, and this is the person being told. **A
+self-action writes none.** Read and marked only by the person it names
+(`notices.own`, §3.1), and kept 90 days, read or not (§11.6). The space and
+card it links to are shown only while that person can still read the space
+(§6.4); `subject` is kept as it was.
 
 ## 5. Task lifecycle
 
@@ -3877,6 +4116,7 @@ GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { sc
 PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (organisation's Developer insights on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
+GET    /api/v1/me/notices                    ?unread=&limit=&cursor= → { data, next_cursor, unread_count }, newest first   POST .../:id/read  POST .../read-all → 204   (session only; D-134)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
@@ -3892,7 +4132,7 @@ POST   /api/v1/me/time/timer                 body { tz, task?, kind?, title? } �
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note?, kind?, title?, description?, started_at?, ended_at? } → 201   PATCH/DELETE .../:id   (session only)
-GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
+GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history, each revision with changed_by and changed_by_name — an owner or admin who changed it is named (D-143)   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
 PUT    /api/v1/org/time/breaks               body { breaks } — the organisation's break schedule → the caller's time settings   (owner, admin; session only; LAI-955)
 GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects, taken }   (session only; LAI-788)
@@ -3922,13 +4162,28 @@ POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at } — a o
 POST   /api/v1/password-resets/consume       body { token, new_password } → { user_id, sessions_ended } — public; new_password as setup's (12–512); ends every session of theirs; refusals 404 unknown, 409 used / revoked / expired, 403 inactive, 429 throttled like sign-in (§6.1)
 POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
-GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
+GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind } — anybody's but yours logged as kinds profile and time   (owner, admin; session only)
+GET    /api/v1/me/profile                    your own profile; ratings only with profile.read; no look   (every role; session only; D-139, LAI-1150)
+GET    /api/v1/me/activity                   ?range=12w|52w — your own heatmap by day; no look   (every role; session only; D-139, LAI-1150)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /me/time/summary answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-526)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
-GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
+GET    /api/v1/me/developer-setup/activity   → { now, data: [{ at, kind: 'paired'|'tool_added'|'tool_revoked'|'device_unpaired'|'token_revoked'|'project_check_failed', subject, by: { id, name } | null }] } — your own last 30 days, newest first, the items /people/:id/developer-setup lists in activity; no look written (developer_setup.read_own, session only; D-139, LAI-1151; not paginated)
+GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summary, devices, tools, pending_pairing, repositories, tokens: { personal, tool_credentials }, activity } — the member's whole setup; no pairing code or token secret; a space the reader cannot open counted, never named; logged as kind developer_setup; yourself is 422 use_developer_access   (owner, admin by default; session only; D-132, LAI-1137)
+POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
+POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_ids } — the device revoked, every active tool on it revoked, its live pairing requests cancelled, one device_unpaired notice; idempotent   (as above)
+POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 201 the entry, on the member's day, its revision by the editor, one time_changed notice; no Undo; yourself is 422 use_own_time; a card or space the member cannot open is 422 task_not_visible_to_member   (time_entries.write_member: owner, admin not on the owner's — 403 not_for_owner; session only; D-143, LAI-1165)
+PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, an import included (a later Solidtime re-sync may put its original back), never a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
+GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
+GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
+GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)
+GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
+POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
+DELETE /api/v1/me/availability/away/:id      → 204; another person's period is the 404 of one that does not exist   (every role; session only)
+GET    /api/v1/people/availability           ?space=&tag=&open_only= → { data: [{ user, availability, spaces, in_progress?, last_2_weeks_minutes? }] }, A–Z by name, no sort parameter; availability narrowed per reader, D-137   (every role, narrowed to the reader; session only; hours logged)
+GET    /api/v1/people/:id/load               → { availability, projects, cards, week, away } — 14 days by space, card counts, this week beside the set working minutes; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
@@ -3946,6 +4201,7 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_access, notice }; the last lead 409 `last_lead` (D-103)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
+                                             POST takes { user_id, role, message?, assign_task_id? } — one transaction, one notice (D-134)
                                              DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
        └ GET answers the document with its `revision`; PATCH takes { context_md, base_revision } — base_revision required, the revision the write replaces; another is 409 `stale_context_revision` with { base_revision, current_revision } and nothing is written (§4.68, LAI-555)
@@ -4031,7 +4287,7 @@ GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back 
 GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
 GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770); cost, budget, runaway (LAI-773)
 GET    /api/v1/tasks/:id/similar             { similar: [{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }] } — get_task_context's similar finished tasks; nobody's name (LAI-1122)
-GET    /api/v1/tasks/:id/time                { total_minutes, people, entries } — its confirmed time, totals only; drafts never count (D-088, LAI-1122)
+GET    /api/v1/tasks/:id/time                { total_minutes, people, entries, agent_minutes, my_draft_minutes } — its confirmed time, totals only; drafts never count in it; agent minutes and the caller's own drafts (null to a token) beside it (D-088, LAI-1122)
 PUT    /api/v1/tasks/:id/budget              body { tokens | null } — null goes back to the frozen forecast's p80   (lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
@@ -4052,7 +4308,7 @@ GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, 
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984); an owner or admin is withheld another person's agent too (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id    ?kind=personal|agent optional (§4.9, LAI-1046)
-GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above
+GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above; a revoke of somebody else's writes them a token_revoked notice (§4.87, D-134, LAI-1137); an admin revoking any token of the owner's, personal or a tool's credential, is 403 forbidden with details.reason not_for_owner (D-133, LAI-1143)
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
@@ -4061,6 +4317,7 @@ GET    /api/v1/devices                       own devices (§4.78), active first 
 GET    /api/v1/devices/:id                   one own device, the same shape; another owner's or an unknown id is the same 404 (agent.read_own)
 PATCH  /api/v1/devices/:id                   body { display_name } → the device, renamed with its agents' device_label (§4.78, LAI-1095); 422 invalid_device_name, 409 device_name_taken / device_revoked (agent.manage_own, session only)
 POST   /api/v1/devices/pairing-requests      body { kind: 'local'|'cloud', display_name, device_id? } → 201 { pairing, user_code, command }; the code is shown once (§4.79, agent.manage_own, session only)
+GET    /api/v1/devices/pairing-requests      own requests still waiting (open, claimed or approved, not expired), newest first → { data: [the request, as below] }; never the code; nobody else's (developer_setup.read_own, session only; D-139, LAI-1151; not paginated)
 GET    /api/v1/devices/pairing-requests/:id  one own request → { id, state, kind, display_name, device_id, claimed: { key_fingerprint, os, cli_version, claimed_at } | null, created_at, expires_at, decided_at, completed_at }; never the code (agent.read_own)
 POST   /api/v1/devices/pairing-requests/:id/approve   body { key_fingerprint } → the request; from claimed only (agent.manage_own, session only)
 POST   /api/v1/devices/pairing-requests/:id/deny      body { key_fingerprint } → the request, denied (agent.manage_own, session only)
@@ -4080,7 +4337,7 @@ GET    /api/v1/capacity-pings/:id            → { ping } — to whoever pinged 
 POST   /api/v1/agents/me/capacity-pings/:id/reply   the pinged agent's own token; body the answer (§4.84) → { ping }; 409 already_answered or ping_expired; a ping addressed to another agent the 404 of none (heartbeat.send_own)
 GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping in this project: anyone's, to the owner; its own, to anyone else (§4.84, agent.ping)
 POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
-GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
+GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, repo_key, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
@@ -4427,7 +4684,8 @@ event not addressed to the agent, or one it may no longer read, is `404` with
 `event_ids`; `session_id` must be its own open session (§4.65). It is
 presence, as a heartbeat is: `heartbeat.send_own`, no activity row. Both are
 an agent's: any other token is `403`, `reason: not_an_agent`. **`GET /handoff-offers` is a
-person's inbox** (LAI-1009), the one the web Inbox's *Hand-offs* tab reads: an
+person's inbox** (LAI-1009), the one the web Inbox's Review tab reads — its
+*Needs your approval* section and its *All hand-offs* view (D-146, LAI-1169): an
 agent's token is `403` with `reason: use_agent_inbox` and keeps `GET
 /agents/me/inbox`. Each row is a hand-off or recovery offer with its task (`id`,
 `key`, `title`, project), `from_agent` and `to_agent` as the task's selected
@@ -4496,11 +4754,17 @@ carries it**: a sprint from `GET /sprints/:id` or returned from a write is the
 plain §4.15 shape.
 
 **A member's profile is one read** (D-078, LAI-743): `GET /users/:id/profile`
-answers `{ user, window, projects, review, ratings, activity_sharing }`, and
-for a `builder` also `current_work`, `delivery` and `agents` — **absent, not
-empty**, for a `manager` — and for a `manager` also `queue`, absent for a
+answers `{ user, window, projects, review, ratings, activity_sharing,
+current_work, delivery, agents }` — for both kinds since D-139 item 2
+(LAI-1150) — and for a `manager` also `queue`, **absent, not empty**, for a
 `builder` (LAI-750). `PATCH` takes exactly `{ profile_kind }` and answers the whole
-profile, because the kind decides which blocks it carries. `POST …/ratings`
+profile, because the kind decides which blocks it carries. **Anybody's but your
+own is a look** (D-139 item 3, §4.59): the read writes an `analytics_views` row
+of kind `profile` and one of kind `time`, deduped per D-135, in its own
+transaction — the `PATCH`'s answer too, being the same profile. **`GET
+/me/profile` is your own** (D-139 item 1), every role on a session, §3.1's
+`profile.read_own`: the same answer from the same code, no look, and
+`ratings` with `ratings_total` absent unless you hold `profile.read`. `POST …/ratings`
 takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
 characters after trimming — and answers the rating, `201`. With an
 `Idempotency-Key` (at most 255 characters), a retry with the same key and body
@@ -4513,11 +4777,11 @@ on a Monday, 00:00 UTC:
 
 | field | what it counts |
 | --- | --- |
-| `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
+| `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed, and `minutes_14d`: their confirmed and pending drafted minutes there over their last 14 days, today included, by their own today (their §4.46 `place`, else UTC) — My day's own assembly (LAI-1150) |
 | `review` | their moves of a task that is not theirs — someone else's, or nobody's (LAI-751) — into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them, `assignee` null for an unassigned task; `per_week` (both, per week of the window), `last_30_days` (decisions in the thirty days to now) and `time_to_decide` — the median from the task's latest entry into Review to the decision (LAI-750). **The entry** is the latest move into a Review status from another category — a move between two Review statuses is not one — or, when every logged move before it stays inside Review, the task's creation, because it was created there (LAI-751). A decision made from outside Review, or one whose entry the log cannot place, is counted as `unmeasured` |
 | `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
 | `activity_sharing` | `{ org_enabled, enabled }` — since D-102 (amended) both are the organisation's Developer insights (`enabled` kept for older clients) — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
-| `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total` |
+| `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total`; and `due_7d`, how many of their open tasks are due today or in the six days after it, by their own today — overdue work is not counted (LAI-1150) |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
 | `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750). Org owners and admins reading a person's profile (`profile.read`) see that person's token names, registered agents included; this is access oversight, the one exception to D-120's owner-only name rule. |
 | `queue` | a manager's only: projects they lead (membership role `lead`, not archived), the tasks in a Review status there that are not theirs — someone else's or nobody's (`waiting`, in total and per project) — and `oldest_waiting_since`, the entry into Review, by `review`'s rule, of the longest-waiting one (LAI-750, LAI-751) |
@@ -4553,7 +4817,9 @@ reaches SSE, an MCP tool or an export (§4.21).
   the range, most prompts first; `{}` and `[]` while local activity is not
   shown.
 - Owners and admins on a web session only (§3.1), asked **before** the person
-  is looked up, as for the profile. **Every read is a range of one person's
+  is looked up, as for the profile. `GET /me/activity?range=` answers your own
+  in the same shape, every role on a session, with no look (D-139 item 1,
+  LAI-1150). **Every read is a range of one person's
   days on an index that leads with the person** — no read touches `activity`,
   and a year is at most 366 rows per source.
 - Context only: nothing in it feeds a rating or a score (D-079 item 6).
@@ -4974,6 +5240,39 @@ force. `POST /me/token-alerts/:id/dismiss` puts one away for the caller only
 (`204`; `404` for one they are not shown). Both **session only**
 (`token_alerts.own`).
 
+**A person's notices (D-134, LAI-1136).** `GET /me/notices` answers `{ data:
+[{ id, kind, actor: { id, name }, project: { id, slug, name } | null, task: {
+id, key, title } | null, subject, message, created_at, read_at }],
+next_cursor, unread_count }` — the caller's own (§4.87), newest first, paged
+as §6.3; `?unread=true` lists unread ones only, and `unread_count` is the
+whole count, not a page's. **`project` and `task` are read live, so they are
+shown only while the caller can still read that space** (`project.read`,
+through membership or implicit access). Removed from a private space, the
+caller keeps the notice and its `message`, but reads `project: null` and
+`task: null`, as for a deleted row, and never the space's or card's current
+name. `subject` is a snapshot and stays. `message` is the adder's own text, and
+a client renders it as plain text. `POST /me/notices/:id/read` and `POST
+/me/notices/read-all` are `204` and **idempotent**: a notice already read keeps
+its first `read_at`, and somebody else's or a missing id is the same `404`.
+All three are `notices.own`, **session only** — a token is `403`,
+`reason: session_required`.
+
+**Adding a member** — `POST /projects/:slug/members` — takes two optional
+fields beside `user_id` and `role`: `message` (≤ 500; blank is none) and
+`assign_task_id`, their first card, which must be a task of that space in
+`backlog` or `todo` with no assignee; otherwise `422`, `reason:
+task_not_assignable`, one answer for every way it is not, a missing id and
+another space's task included. **In one transaction** it writes the
+membership, `member.added` (payload unchanged), the assignment through the
+same path as `PATCH /tasks/:id`'s `assignee_id` — so `task.assigned` is
+written as today — and one `added_to_space` notice carrying the message and
+the card; a failure anywhere writes none of it. **Every add writes the
+notice**, from any screen; adding yourself writes none. It is still
+`project.members.manage`, so a space admin onboards into their own spaces. A
+deactivated person is `422`, `reason: user_deactivated`; an existing member
+stays `409`; an org viewer asking for a role above `viewer` stays `422`. The
+answer is unchanged, `201 { members }`.
+
 **The plan-limit forecast (D-087).** `GET /me/plan-limit` answers `{ plan,
 window, limit_tokens, week_reset, tz, used, rate_per_hour, window_start,
 window_end, reaches_limit_at, reached, estimate: true }` — **the developer's
@@ -5093,6 +5392,112 @@ parameter names anybody else.
   meeting kind; `manual_minutes` confirmed time typed or run on a timer. Under
   `GET /me/time`'s actions; `GET /people/:id/time/summary` is the same answer
   for a reader holding `people.analytics.read`, logged as a look with no day.
+- **The Time report (D-130, LAI-1135).** `GET /time/report?from=&to=` over at
+  most 92 days (`422 range_too_long`, `range_backwards`, as the summary),
+  narrowed by `spaces` (comma slugs; one the caller cannot open is `404`),
+  `members` (comma user ids, at most 200, `422 too_many_members`; an unknown
+  id is `404`), `kinds` (comma `TIME_ENTRY_KINDS`; drafts have none, so a
+  kinds filter holds none), `link` (D-142: `task` — on a task, by the raw
+  `task_id`, so one the caller cannot open still counts; `general` — a
+  confirmed entry on no task, or a draft marked general; `untied` — a draft
+  on no task and not marked general, so it holds drafts only; absent is all
+  three, and the three add up to it) and `drafts` (`exclude`, the default, or
+  `include`). **The server decides `scope`**: `members` naming exactly the
+  caller is `own`, under *Read and write own time entries* (and own drafts
+  with `drafts=include`), logged nowhere; otherwise `people`, under
+  `time.report.read` for everyone or `people.analytics.read` for each person
+  named (§3.1); otherwise, for a caller who leads a space, `space_totals`
+  under §3.2's `time.report.read_project` (below); otherwise `403`. Every
+  action is session only, so a token is `403 session_required`. `own` and
+  `people` answer `{ from, to, days, scope, include_drafts, totals: {
+  confirmed_minutes, drafted_minutes, meeting_minutes, manual_minutes,
+  active_days, people }, agent_minutes, by_day, rows }`: `by_day` is every
+  day `{ day, confirmed_minutes, drafted_minutes }`; `rows` the finest grain,
+  `{ project, user: { id, name, deactivated }, task, untied, kind,
+  confirmed_minutes, drafted_minutes }`, largest first, for the client to
+  group by any two of space, member, task and kind; `agent_minutes` the
+  agent's working minutes for those people, shown beside human time and never
+  added to it (D-088 item 8) — `null` when `spaces`, `kinds` or `link`
+  narrow the report. A space or task the caller cannot open is never named: its minutes
+  are `project: null` / `task: null`. **One person's totals and `by_day`
+  equal `GET /me/time/summary` for the same stretch** with `drafts=include`,
+  a test holding both. In `people`, **each person `members` names and each
+  person a row names**, the caller aside, is one §4.59 look at their time
+  (`kind: time`, no day) in the read's transaction, deduped over ten minutes
+  (D-135) — a person named is looked at even when the answer shows no time
+  of theirs, or only their agent's — and so is each person whose agent time
+  is in `agent_minutes`, named or not. More than 5 000 rows is `422
+  report_too_large` (`max_rows`), and nothing is logged; nor is a refused
+  read. **`space_totals` (D-136, §3.2) answers `{ from, to, scope, project,
+  weeks }` and nothing else**: one `spaces` slug (or the one space the
+  caller leads), `from` a Monday and `to` a Sunday (`422
+  range_not_whole_weeks`), and `weeks` every ISO week `{ from, to,
+  confirmed_minutes, people }` by each entry's filed day — the space's
+  confirmed minutes that week, `null` unless three of `people`, the week's
+  full head count, are people other than the caller; `members`,
+  `kinds`, `link` and `drafts=include` are refused, and nothing is logged.
+  `format=csv` answers the same report as a file, streamed, no row cap,
+  logged the same: `text/csv; charset=utf-8`, attachment
+  `laika-time-<from>-<to>.csv`. For `own` and `people` the columns are `day,
+  space, task_key, task_title, person, kind, confirmed_minutes,
+  drafted_minutes`, one line per day and row, `space` the space's name, text
+  prefixed `'` where a spreadsheet would run it as a formula (as LAI-984's
+  history export); for `space_totals` they are `week_start, week_end, space,
+  people, confirmed_minutes`, one line per week and nothing else, a withheld
+  week's minutes empty. The route has a bucket of its own, 30 a minute per
+  person, so filter clicks never spend the session's budget.
+- **Availability (§4.85, §4.86, D-131, LAI-1130).** `GET /me/availability`
+  answers `AvailabilityView`: `{ status, away: { until } | null,
+  hours_per_week, note, tags, work_week: { days, start, end, minutes } |
+  null, away_periods: [{ id, from, to }], updated_at }`. `status` is `null`
+  until the person sets one; `away` is the period covering today in their
+  zone; `away_periods` are the current and upcoming ones, earliest first;
+  `minutes` is days × the length of the day, null until both times are set.
+  A person who set nothing reads every field empty — `null`, `[]` — never a
+  `404`. `PUT` is a merge: a field left out keeps its value, `null` clears it.
+  Every limit is a `422` with `details.field` and `details.reason` —
+  `out_of_range` (hours 1–80), `too_long` (note over 140), `tag_length`,
+  `too_many` (tags over 8), `not_a_weekday`, `not_a_time`, `start_and_end`,
+  `end_before_start`; on `POST …/away`, `not_a_date`, `range_backwards`,
+  `range_too_long` (366 days), `away_in_past`, and `too_many_away_periods`
+  past 20.
+- **Who has room (D-131, LAI-1130).** `GET /people/availability` is A–Z by
+  name with **no sort parameter**; its query is strict, so `?sort=` is a
+  `422`. `space` narrows to one space the reader can open (`404` otherwise),
+  `tag` to a tag case-insensitively, `open_only=true` to people `open` and not
+  away. Deactivated people are never listed, nor are org viewers. Each row is
+  `{ user: { id, name }, availability, spaces: [{ id, slug, name }] }` — the
+  spaces the reader can open — with `availability` `null` for a person who
+  set nothing, and otherwise **narrowed to the reader by allow-list** (D-137),
+  the same for every row, the reader's own included:
+  - a holder of *See everyone's analytics* gets every active person, the
+    whole `AvailabilityView`, `in_progress` over the spaces they open and
+    `last_2_weeks_minutes`, the person's confirmed minutes over their own last
+    14 days; every person listed is logged as a look at their time (§4.59,
+    kind `time`). Whether the reader holds it is asked of their own role's
+    grant, never of some other person;
+  - a space's lead gets the people in the spaces they lead, with
+    `in_progress` counted in those spaces and `availability` `{ status, note,
+    tags, away: { until } | null, hours_per_week, away_periods: [{ from, to
+    }] }` — no working week, no period ids, and **no tracked-hours field at
+    all**;
+  - anyone else gets the people who share a space with them, with
+    `availability` `{ status, note, tags, away: { until } | null }` only — no
+    hours, no working week, no upcoming periods — and no card count.
+
+  More than 500 rows is a `422`, `too_many_people`.
+  `GET /people/:id/load` answers `{ availability, projects: [{ project,
+  hidden, role, confirmed_minutes, drafted_minutes }], cards: { in_progress,
+  in_review, due_7d }, week: { from, to, confirmed_minutes, drafted_minutes,
+  set_minutes }, away: [{ from, to }] }`. `projects` covers the person's last
+  14 days and every space they are in, from `GET /me/time/summary`'s own
+  assembly, so its minutes equal that answer's `by_project`; a `null` project
+  is time on no space, and spaces the reader cannot open fold into one row
+  with `hidden: true`. `cards` counts their cards in spaces the reader opens;
+  `due_7d` is open cards due from the reader's UTC today through the next six
+  days. `week` is the person's Monday to Sunday with the working minutes they
+  set beside it — **two numbers, never one taken from the other**. Under
+  `people.analytics.read`, not yourself, logged `time`.
 - **The timer (§4.61, LAI-500).** `POST /me/time/timer` `{ tz, task?, kind?,
   title? }` starts the person's one timer, `201`; a second start is `409
   timer_running`. `POST …/pause` banks the running segment (`409 timer_paused`
@@ -5357,7 +5762,12 @@ answers `{ total_minutes, people, entries }` under `project.read`: the sum of
 the task's live `time_entries` (§4.48) — confirmed time only, so a draft is
 never counted, and a deleted entry neither — with how many entries and how
 many distinct people they are from. A count of people, never who: per-person
-hours stay where D-088 puts them.
+hours stay where D-088 puts them. Beside the total and never added to it:
+`agent_minutes`, every agent (`cli`) minute tied to the card across every
+person and day, split by the same session-token rule as My day's agent lane
+(§4.50–§4.51) — minutes, never hours (D-088 item 8); and `my_draft_minutes`,
+the caller's own pending drafts on the task, which needs
+`time_drafts.read_own` and is therefore `null` to any token (D-088 item 3).
 
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`
@@ -6258,6 +6668,21 @@ the lead names. An empty status is still a column.
   its status — and Alt with an arrow key does the same from the keyboard. The
   card moves on drop and returns if the server refuses. A new task lands at the
   bottom of its lane. A reader who may not write tasks cannot drag one.
+- **Creating a task is one dialog** (D-145): *+ Create* in the space bar, the
+  List's *Create task* row and the `c` key (not while typing, not over another
+  modal, nothing for a reader without `task.create`) open a centred **Create
+  task** modal over the dimmed space — a full-height sheet on a phone. Always:
+  Title, Description (rich), Status, Priority, Assignee, Agent, Sprint, Due
+  date, Labels; under *More*: Acceptance (rich), What this delivers, Planned
+  start, Effort, Parent, Blocked by, Outside id. One `POST` carries everything
+  the body takes, with `status_id` and never `status`; the sprint and the
+  blockers are set after it, one call each, and a failure there says *created,
+  but…* with the server's sentence and *Open* — the task exists, so the dialog
+  closes as on success. A refused create lays its `422` on the fields it names
+  and keeps the form. *Create another* keeps status, priority, sprint and
+  assignee. `?new=task` is honoured as a way in and then removed from the
+  address; the dialog itself is not in the URL. A lane's *Add task* keeps its
+  inline composer.
 - **Live changes apply in place** (D-071): a stream frame, Refresh or drawer
   edit merges into the board on screen and never swaps it for a skeleton. A
   card that changes place glides there in 200ms; one someone else changed
@@ -6326,14 +6751,14 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **My day** and **Inbox** (its count is Review's waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (owners and admins, who alone may open a profile), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
+| the sidebar | **My day** and **Inbox** (its count is Review's *for you to decide* — the queue rows the reader may accept or send back, D-146 — plus the hand-offs needing the reader's approval (LAI-1169) plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (everyone, their own — D-139; only owners and admins open someone else's), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries — *Work* (LAI-952) sat after Inbox until it moved to Organisation (D-147) | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20); **D-146**; **D-147** |
 | the icon rail | a toggle in the sidebar's head collapses it to icons — each entry's icon, its count on the icon's corner, its name in a tooltip on hover and keyboard focus — remembered per browser; automatic between the phone's off-canvas width and a laptop's; never on a phone, where the sidebar is off-canvas | **LAI-796** |
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer; `min(1280px, 94vw)` wide since the redesign (D-129) | D-059.2, amended by **D-063**, width by **D-129** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
-| old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-507** |
-| Organisation | four tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **People** (members and invites), **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins) | **LAI-796** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept, the hand-offs needing approval at its head and the whole Hand-offs list at `?view=handoffs` — D-146; `?tab=handoffs` is an alias to it, LAI-1169) and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`), `/work` → `/organisation?tab=work` (keeping its `person`, `status`, `space`, `sprint` and `size`) | **LAI-796**; **LAI-507**; **D-147** |
+| Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
@@ -6357,15 +6782,16 @@ call MCP; agents do.
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
-| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read | `propose_time_entry` | ✅ D-088, LAI-796 |
+| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
+| **Member profile** *(your own for everyone; someone else's for owners and admins — D-139)* | 7 | Someone else's: `GET/PATCH /users/:id/profile` (a `profile` look, D-139 item 3), `GET /people/:id/activity`, `GET /users/:id/usage`, the head card's availability — for a holder of *See everyone's analytics* `GET /people/:id/load` (its one `time` look is the one opening the profile writes, D-135), never `GET /people/availability`, which logs a look at everyone it lists; for any other reader their row of that list, narrowed and unlogged (LAI-1159), and for *This week* `GET /people/:id/time` (a `time` look, D-139 item 4); your own: `GET /me/profile`, `GET /me/activity`, `GET /users/:id/usage` for yourself, `GET/PUT /me/availability`, `GET /me/time`, `GET /me/analytics-views?since=` (*Who looked*); the *Day* tab (the embedded My day, D-140, LAI-1161): `GET /me/time?day=` or `GET /people/:id/time?day=` (drafts read-only, D-102 rule 1) and, for someone else, `GET /people/:id/local-activity` — and for an owner or admin who may change their confirmed time (D-143, LAI-1165) `POST /people/:id/time-entries`, `PATCH/DELETE /people/:id/time-entries/:entryId` and `GET /people/:id/time-entries/:entryId/revisions`; the *Time report* tab (LAI-1138): `GET /time/report`, `members=<them>` or the reader's own, JSON and `format=csv`; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; your own *Developer access* (LAI-1156): `GET /devices`, `GET /agents`, `GET /project-setups`, `GET /tokens`, `GET /devices/pairing-requests` with `POST /devices/pairing-requests/:id/approve` and `…/deny`, `GET /me/developer-setup/activity`. No rating and no *Current load* on the profile (D-139 item 8: `POST /users/:id/ratings` and `GET /people/:id/load` stay in the API) | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137, **D-139**, D-140 (LAI-1148) |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
+| **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id` | — | ✅ D-130, D-131, D-136, D-137, D-138, LAI-1138, LAI-1139 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -6398,7 +6824,9 @@ anything missing sends the task back.
   with counts; cards showing key, title, assignee, priority, **blocked / ready
   markers**, subtasks and a due date that is today or past; drag between columns issuing a real status call with snap-back
   on rejection; filters by assignee/priority/ready; live update over SSE;
-  agent-authored badge; empty column states.
+  agent-authored badge; empty column states; **one Create task dialog**
+  (D-145) from *+ Create*, the List's *Create task* row and `c`, with every
+  field the create takes and the sprint and blockers set after.
 - **Task detail** — laid out as a Jira issue view (D-066), restyled to the
   owner's 2026-11-04 design (D-129, LAI-1117) with nothing below removed: a
   header with the breadcrumb `↳ PARENT-KEY / KEY` (the parent key opens the
@@ -6566,11 +6994,28 @@ anything missing sends the task back.
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of
   another user's tokens (Organisation's *Security* tab).
-- **Organisation** — in four tabs since LAI-796 (§11.4.2's table): the org's
+- **Organisation** — in tabs since LAI-796 (§11.4.2's table; seven since
+  D-147): the org's
   name, mark, owners and creation date in the header with *Invite people* for
   owners and admins, which opens *People* at the invite form; on *Overview*
   members, spaces and pending invites counted from the page's own reads, and
   the spaces with members, open tasks and status, each opening its board.
+  **Work** (D-147; LAI-952's page, a tab since LAI-1170), second after
+  Overview and open to every signed-in role: everyone's tasks across every
+  space the reader can read, one page at a time in the server's order, the
+  figures for the same filters above them as pressable tiles, and the filters
+  (person, status, space, sprint, page size) in the address beside `?tab=work`
+  so a filtered view is a link; `/work` redirects here with its query. A row
+  opens its task in its own space's drawer; the assignee's name opens their
+  profile. Rows the reader may change (`task.write` in that row's space) carry
+  the List's checkbox, with select-all in the head, and once anything is
+  selected the List's bulk bar floats over the card's foot: *Priority*,
+  *Assignee* and *Cancel tasks* always; *Status* and *Sprint* only within one
+  space — the `?space=` filter, or every selected row in one space — and held
+  with a title saying so otherwise. One request per task, in order, with a
+  progress line and a report that names each refusal by key. The Review tile
+  filters as the others do and carries *Decide in Inbox ›*, because deciding
+  is Inbox's.
   Nothing the organisation has no data for — a plan, an admin log, a
   permission matrix, a token lifetime, a danger zone — is drawn. Org name; AI provider config showing `configured / provider
   / key_last4` and **never the key**; invites with role at invite time; member
@@ -6676,21 +7121,55 @@ anything missing sends the task back.
   `presence_enabled = 0` it says so, keeps the workload and draws no status.
   **No unlisted notes on this screen** — they are on their own page.
 - **Inbox** (`/inbox`, LAI-796) — *Review* and *Unlisted work* as tabs, each
-  with its count; Unlisted work only for owners and admins. The sidebar's
-  Inbox count is the two added.
-- **Review** (Inbox's first tab, `/inbox?tab=review`, everyone signed in, D-082) — the queue of tasks in a
-  review status on every project the reader can act on, **oldest waiting
-  first**: key, title, project, assignee, the agent that finished it, time
-  waiting, the proof in brief (commits, PR, tests passed and failed, or *no
-  proof*) and the round. A summary card of tiles — waiting, oldest, failing
-  tests, no proof — with an (i). Filters: project, assignee, *Failing tests*,
-  *No proof*, *CI failed*, *CI confirmed* (D-083). Each row's proof in brief
-  carries the CI result when GitHub reported one. A row opens the full proof (the task panel's Proof section) with
-  **Accept** and **Send back…**, the second asking for a required reason in a
-  dialog; both are disabled, saying why, for a reader who may not decide.
-  *Open on board* opens the task. The waiting count is on the tab and in the
-  sidebar's Inbox count. There is no organisation-wide stream, so the page re-reads
-  every 20 seconds, when the tab returns and after each decision.
+  with its count; Unlisted work only for owners and admins. The Hand-offs tab
+  (LAI-550) folded into Review (D-146 item 4, LAI-1169): `?tab=handoffs` is
+  rewritten in place to `?tab=review&view=handoffs`. The sidebar's Inbox count
+  is the two added, Review's being its *for you to decide* count plus the
+  hand-offs needing the reader's approval (D-146).
+- **Review** (Inbox's first tab, `/inbox?tab=review`, everyone signed in, D-082,
+  a decision queue since D-146) — the tasks in a review status on every project
+  the reader can act on, **oldest waiting first**: key, title, assignee, the
+  agent that finished it, time waiting, the proof in brief (commits, PR, tests
+  passed and failed, or *no proof*) and the round. **It opens on *For you to
+  decide*** — the rows the server marks `can_decide`, the reader's own and
+  every one on a space they administer — **grouped by space**, the space with
+  the longest-waiting task first and the queue's order kept inside each group;
+  each group heads with its name, its count and a select-all box. ***Everything
+  in review*** is the other half of a two-button toggle, first in the filter
+  row, and lists the whole queue at `?view=all` (the default view is not in
+  the address); a row the reader may not decide is drawn there with no
+  checkbox and no decisions, only *Open on board* and why. The header says
+  *N for you to decide · M in review* (*· first 200* when the server capped).
+  A summary card of tiles — waiting, oldest, failing tests, no proof, check
+  these — counts the open view and says which, with an (i). Filters: project,
+  assignee, *Failing tests*, *No proof*, *CI failed*, *CI confirmed* (D-083),
+  *Check this one* (LAI-772); they narrow the view without leaving it, and
+  *Clear filters* keeps it. Each row's proof in brief carries the CI result
+  when GitHub reported one. **A row opens the Review dialog** (D-146 item 3,
+  LAI-1169) — the Create task dialog's house shape, `?item=<taskId>` in the
+  address so Back closes it and a link opens one: key, title, space, assignee,
+  agent, round and time waiting; the finish summary; the full proof (the task
+  panel's Proof section); the *Ships* checklist read-only; then *Prev* ·
+  *n of N* · *Next* along the rows as drawn, *Open on board*, **Send back…**
+  (a required reason in a dialog over it) and **Accept**. Keys: `j`/`↓` next,
+  `k`/`↑` previous, `a` accept, `s` send back, Escape close — none while
+  typing, none with a modifier. A decision removes the row and moves to the
+  next, or closes at the end; a link to a task no longer waiting says so and
+  drops the param. A row the reader may not decide opens with no decisions
+  and why. **One word, *Accept***, here, in the bulk bar, on the task drawer
+  and in the feed (D-146 item 5). At the top of the tab, ***Needs your
+  approval (N)*** (D-146 item 4): the hand-offs between agents that wait on
+  this person, with their Approve, and *All hand-offs →* to `?view=handoffs`,
+  the whole Hand-offs list in the queue's place with *← Back to review*. **A checkbox beside each decidable row and a bulk bar**
+  — *N selected · Accept N · ×*, stuck to the foot of the page — accept the
+  ticked rows **one `POST /tasks/:id/accept` each, in page order**, with a
+  progress line, then a report naming each refusal by key with the server's
+  sentence; the refused rows stay ticked so a retry is one click. Send back
+  stays one at a time: it needs a reason. The selection clears on a view
+  change. The *for you to decide* count is on the tab and in the sidebar's
+  Inbox count; Capacity's *Waiting for review* tile keeps the whole queue's.
+  There is no organisation-wide stream, so the page re-reads every 20 seconds,
+  when the tab returns and after each decision.
 - **Unlisted work** (Inbox's tab, `/inbox?tab=unlisted`, owners and admins, LAI-754) — **one line per
   note**: repo, who, when and the note's first line, newest first; a click opens
   the full text with **Promote to task** and **Dismiss** under it; the first
@@ -6758,6 +7237,66 @@ anything missing sends the task back.
   publishes a token figure. **The sidebar's Usage item carries a count** of the
   reader's open alerts, none at zero. Light and
   dark; one column on a phone with nothing scrolling sideways.
+- **Time report** (D-130, LAI-1138) — one component in three places: My
+  day's *Overview* (Week, Month, Range), a person's *Time report* tab, and
+  Insights → *Time*. **Day · Week · Month · Range**, ‹ › stepping a day, a
+  week, a month or the range's own length, the Range quick picks and two
+  dates (92 days at most, a backward or longer range said, not read).
+  **Space**, **Kind** and **Task link** (*All · On a task · General · Not
+  on a task yet*; the last turns drafts on, D-142) filter chips, and
+  **Member** where everyone is
+  shown; **Confirmed only / Include drafts**; **Export CSV**, the server's
+  file. Seven figures — *Tracked*, *Confirmed*, *Drafts waiting*, *Meetings*,
+  *Active days* (of the days so far), *Tasks worked* (distinct tasks with
+  time, *across N spaces*; LAI-1164), *Per active day* — and the agents'
+  minutes on their own line, never added to hours. **Hours per day**: a bar
+  a day, confirmed solid and drafted hatched **and named**, arrow keys, Home
+  and End moving between days, each bar's figures in words, and the same as
+  a table for a screen reader. **Group by** two levels with *Swap* (Space →
+  Member for everyone, Space → Task for one person), a *Total* row, and a
+  donut with its legend. Every group starts **closed** (one alone opens by
+  itself), and an open one shows its first ten rows in the table's order, then *Show N more*
+  (25 at a time) and *Show fewer*, with *N of M* (LAI-1162). **People are
+  listed A–Z** and everything else largest first, until the reader sorts
+  by a **column header** — name, *Spaces*, *Tasks*, *Confirmed*, *Drafted*
+  or *Total*: the first click A–Z or the largest first, the next the other
+  way, `aria-sort` saying which; time on nothing stays last, a column no
+  longer drawn stops sorting, the donut's colours stay with the largest, and
+  the order is that reader's alone (D-141, D-144); with **Member**
+  first, each person's **Spaces** and **Tasks** — how many their counted
+  time went to, general time naming no task — sit before the hours (on a
+  phone, under the name), plain counts and never a score (D-142); no rank number, no
+  utilisation figure, no money. States: reading, *No time in
+  this range* (*Show the last 30 days*), *No time matches these filters*
+  (*Clear filters*), *Nothing confirmed* (*Include drafts*), *Drafts only*,
+  and the server's sentence with *Retry*. A **space admin** (D-136, D-138)
+  reads one space they lead, whole weeks, one bar a week with its people
+  count, a week fewer than three people besides them worked in reading
+  *withheld — fewer than 3 others*; no table, donut, drafts switch or Member,
+  Kind and Task link filters. On a person's tab it says *Visible to owners and admins ·
+  they can see you looked*. Light and dark; one column on a phone with
+  nothing scrolling sideways.
+- **Time** (Insights' third tab, `/insights?tab=time`, LAI-1138) — the Time
+  report of everyone for an owner or a holder of *See everyone's analytics*,
+  a space admin's weeks for a space admin; the tab is absent for anybody
+  else, and an address naming it shows the not-allowed state. Two views
+  under it, each with its own address (LAI-1139): **Time report** and
+  **Availability** (`&view=availability`, frames 2g–2l, 2n–2o) — *who has
+  room for another project*, people A–Z and never by how busy anyone is, with
+  no sort control; filters *Space*, *Skills / areas* and *Open to more work
+  only*, sent as the server's three parameters (a space admin's *Space* lists
+  only the spaces they lead); each person's note, tags and pill (a glyph and
+  words, never colour alone), and *updated N ago*, muted past 30 days, where
+  the server sends when it changed — a space admin is not sent it (D-137);
+  *Can take*, *In progress* and *Last 2 weeks* only where the
+  server sent them for this reader (D-137), and **no free-hours column**
+  (D-088 item 1). Empty: *Nobody has marked themselves open to more work in
+  this space* with *Show everyone in …*, or *Nobody matches these filters*
+  with *Clear filters*. *Add to project…* is a dialog (a bottom sheet on a
+  phone) offering only the spaces the reader may manage — a space admin's
+  own — a role, an optional first card and an optional message, posted once;
+  the row then reads *✓ Added to … as … · … was notified*, a `409` takes the
+  space off the list and a `422 user_deactivated` says so. Cards on a phone.
 - **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796, made
   for a busy day by LAI-810) — the week in the header between *previous* and
   *next*, with *Today* away from it, and while anything is drafted a confirm
@@ -6787,49 +7326,116 @@ anything missing sends the task back.
   project the name matched, it reads as a space block does, the name beside
   it; *Drafted from* shows the name, and the branch when sent, and its line
   then says the name went with the counts; a confirmed entry shows the name.
+  In the header (LAI-1139, frames 2a–2c), the reader's own **availability
+  pill** — *Open to more work · ~6 h/wk*, *At capacity* or *Away until …*, a
+  glyph and words — opening **My availability**: status, *away until*, hours
+  a week they could take, a note, skills and areas, their working week and
+  away periods, *updated N ago · everyone in your spaces sees this* and
+  *Save*; a refusal is the server's sentence beside the field it names. Never
+  on somebody else's day. At the top of *Overview*, **For you** (D-134): what
+  somebody else did that concerns them — added to a space, with the adder's
+  message drawn as plain text and the first card, a space they can no longer
+  open named as gone — with *Mark read* and *Mark all read*, and the unread
+  count on *My day* in the rail; nothing at all when there is nothing.
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
-  menu opens the reader's own, for an owner or an admin) — owners and admins only:
-  anyone else sees a permission notice and the profile is never requested.
-  Laid out as cards on a grid that folds to one column on a phone (LAI-750).
-  A head card with name, org role, project count, email, member since, an
-  *owners and admins only* pill and the **Builder / Manager** control, which
-  says it is a label and not a permission; **projects** as horizontal bars —
-  a builder's open tasks, a manager's review decisions — with role and
-  figures; for a builder, **delivered** — accepted per week as twelve bars,
-  sent back, reopened, cycle p50/p75 with the unmeasured count — **current
-  work**, **agents used** — one bar split by share of writes, each agent with
-  its mark, share and tokens — and **online now**; **review work** with
-  decisions in 30 days, median time to decide and review load per week, and
-  for a manager the queue — projects led, waiting now, oldest waiting — and
-  **recent decisions**; the **rating** — the latest on top, the history
-  below, *Rate* for anyone but yourself, a dialog taking 1–5 and a required
-  note. What each figure counts is in an (i) beside it, not in paragraphs.
-  Every figure from the response; an empty state, never a zero, where there is
-  nothing. **Current work** shows at most five rows of the chosen list —
-  *In progress* or *In review*, longest waiting first — with *Show all* opening
-  the rest inside the card in a bounded scroll; no card stretches its row
-  (LAI-751). **Agents used** is one row per agent, the token names behind an
-  expand (LAI-751).
-  An **Activity** card (D-079, LAI-751) heads the page: a daily heatmap from
-  `GET /people/:id/activity`, **12 weeks or 1 year** (a phone opens on 12
-  weeks; the year scrolls sideways inside the card with the weekday column
-  pinned), in two designs each viewer chooses between and the browser
-  remembers — **A**, one grid with each day split GitHub / Local, and **B**,
-  one grid per source on a shared week axis (the default). GitHub is violet,
-  Local amber, Board slate; a legend per source; a tooltip with the day's whole
-  breakdown — pushed commits, local commits, prompts per agent, sessions, board
-  actions by them and by their agents; arrow keys move between days and each
-  day reads as text; stats — active days, current and longest streak, busiest
-  weekday, pushed vs local — computed on the client. It says plainly when the
-  organisation's switch is off (with a link to Organisation) and when nothing
-  has arrived yet. Context only:
-  nothing on it feeds the rating. A **Tokens** card follows it, full width
-  (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
-  the share tied to a task beside it; a bar per week; their top agents and
-  models; agents with *no token data* named; and plainly when the
-  organisation's switch is off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
-  Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain text for everyone
-  else.
+  menu opens the reader's own) — the owner's design *Laika Profile*
+  (2026-11-06, D-139, LAI-1148). **One profile for two cases**: an owner or
+  admin looking at someone else — read-only, and the person sees the look
+  (§4.59) — and **anyone looking at their own**, whatever their role (D-139
+  item 1). Anyone else opening somebody's profile sees a permission notice
+  and the profile is never requested.
+  - **Chrome.** A breadcrumb *Members / <name>*, or *My profile* on your own,
+    and a notice at the top right: *Owners and admins only · read-only ·
+    <first> can see that you looked* — on your own, *Owners and admins see a
+    read-only copy · you can see who looked*.
+  - **Head card**, holding the tabs: avatar, name, the **Builder / Manager**
+    chip, and the **availability pill** inline — *Open to more work · ~6
+    h/week*, *At capacity*, *Away until …*, or a dashed *Availability not
+    set* — then org role · project count · email · member since, and on its
+    own line the note, tags and *set by <first> · updated N ago* (*set by
+    you* on your own). On your own profile the pill is a button opening *My
+    availability* (status, hours a week, note; *Everyone in your spaces sees
+    this*). On someone else's, **⋯** opens *Manage member…* (the **Manage
+    member panel**, LAI-1134, unchanged: Role, Spaces, Tokens, Security,
+    Danger zone, each only when granted), *Copy link to profile* and *See
+    <first>'s cards in Work*. On your own, **Who looked N** opens *Who looked ·
+    last 30 days*: each owner's or admin's look — name · role, *Looked at
+    Overview / Day / Time report / Activity / LLM tokens / Developer setup ·
+    when* — closing on Escape and handing focus back; its foot says every
+    look is listed for 400 days (§4.59).
+  - **Tabs** in the head card, for your own profile and for someone else's:
+    **Overview · Day · Time report · Developer setup** (*Developer access* on
+    your own), each for someone else only for a reader granted it — Day and
+    Time report by *See everyone's analytics*, Developer setup by *See and
+    manage anyone's developer setup* (D-132). **"N to fix"** sits on your own
+    Developer access tab only; on someone else's it appears once their tab is
+    opened, never read to draw the head (D-139 item 5).
+  - **Overview** is **rows of cards that share a height**, so nothing leaves
+    a hole, folding to one column on a phone, **the same for both kinds**
+    (D-139 item 2): Work + This week · Projects + Agents · Activity · Review
+    for others + LLM tokens. Every figure from a response; an empty state in
+    one line, never a zero, where there is nothing.
+    - **Work** — *oldest started <age>*, *Open in Work ›*; three tiles that
+      are its tabs, **In progress · In review · Due in 7 days**; at most five
+      rows of the chosen list, longest waiting first, with ages; *Show all N*
+      opens the rest inside the card in a bounded scroll, at most 50 (*Showing
+      50 of N, oldest first*); and a footer line *Delivered · 12 weeks* —
+      accepted, reopened, cycle p50 / p75, the unmeasured count — or *Nothing
+      accepted yet*.
+    - **This week** — Monday to Sunday; *<tracked> tracked · <set> set* as
+      **two numbers on an empty track**, never a filled bar or a share
+      (D-131 item 4), or *no working hours set*; a bar per day, confirmed
+      solid and drafts hatched, today marked; *Confirmed · Drafts · Agents,
+      apart* (agent minutes beside the person's, never added, D-088 item 8);
+      and the away dates, or *No time away planned*. For someone else it is
+      read on opening, a `time` look they are told about (D-139 item 4).
+      *Time report ›* opens the tab.
+    - **Projects** — a table: project (letter, key, name), role (*Space
+      admin* / *Member*, D-103), open now, hours in the last two weeks,
+      accepted and reviewed in 12 weeks, open first; projects with nothing
+      open, tracked, accepted or reviewed fold into one row *N quiet projects*
+      that expands. On a phone, two-line rows.
+    - **Agents** — *N tools · N online*; one bar of the share of LLM tokens
+      over 12 weeks, then a row per tool with its mark, *online*, *N tokens ·
+      active …* and its share; *Developer setup ›*. With none: *<first>
+      hasn't set up an agent yet* (*You haven't…* on your own) in a dashed
+      box.
+    - **Activity** (D-079, LAI-751) — a daily heatmap, **12 weeks or 1 year**
+      (a phone and a member of under 12 weeks open on 12 weeks; the year
+      scrolls sideways inside the card), **Split** — one grid, each day GitHub
+      top-left and Local bottom-right — or **Stacked** — one grid of both
+      together; days before they joined drawn apart and named so; legends
+      with totals (*commits pushed*, *prompts · sessions · not pushed*); five
+      tiles — active days, current and longest streak, busiest weekday, pushed
+      vs local. It says when the organisation's switch is off and when nothing
+      has arrived.
+    - **Review for others** — decided in 30 days, accepted, sent back, median
+      to decide; accepted and sent back per week over 12 weeks.
+    - **LLM tokens** — 12 weeks, **at least**: tokens, cache reads, tied to a
+      task, cost (*the API-equivalent price, not a bill*); a bar per week;
+      *By agent* and *By model*.
+  - **Day** — the person's **My day, embedded**, exactly as the My day screen
+    draws it (D-140, LAI-1161; the design's compact day panel is not used):
+    your own with *Edit in My day ›* above it; someone else's read-only, with
+    their shared local activity beneath (`GET /people/:id/local-activity`,
+    D-102 rule 1, logged for them). Someone else's drafts are shown,
+    read-only (D-139 item 6); the read is a `time` look.
+  - **Time report** — the shared Time report (LAI-1138), `scope` me on your
+    own, the person for someone else (`?tab=hours` still opens it).
+  - **Developer setup** (LAI-1140, unchanged for someone else: read only when
+    opened, *Owners and admins only · read-only · <first> can see that you
+    looked*) and on your own **Developer access** — the same layout from your
+    own reads, *Your setup · owners and admins see a read-only copy, and you
+    can see when they look*: summary, health line, Devices, pending pairing
+    requests with **Approve / Decline**, Tools by device, Repositories &
+    projects, Tokens, recent setup activity; unpair and revoke on your own
+    without the owner-decision label.
+  - **Not on the profile** (D-139 item 8): the rating and its Rate dialog
+    (`ratings` stays in the API), recent decisions, the delivery chart, and
+    Current load with *Show current load*; no (i) definitions.
+  Reached from a person's name on Organisation, a Capacity card or a
+  Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain
+  text for everyone else.
 
 #### 11.4.3 Timeline view
 
@@ -7021,8 +7627,9 @@ One interval-driven scheduler in the same process:
   person's with their entry, *people not on Laika* by the same three years
   (LAI-788). With them, by the same job (LAI-831): `time_breaks` dated before
   30 days ago, as drafts are (§4.55), and `time_undo` rows older than
-  `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). No `activity`
-  row, for the reason local activity's has none
+  `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). Away periods
+  that ended more than 30 days ago go with them (§4.86, LAI-1130). No
+  `activity` row, for the reason local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`. **It is the one stale rule, on every screen**
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
@@ -7059,6 +7666,9 @@ One interval-driven scheduler in the same process:
   and lose the link (§4.73) — and transitions for a ref name **never
   registered**, 90 days after they arrived; under `system.checkpoint.prune`. It writes no `activity` row: the
   `task.checkpoint_saved` rows naming them stay, and they are the history
+- **notice retention** (§4.87, D-134, LAI-1136) — daily: `member_notices`
+  older than 90 days, read or not, under `system.notices.prune`. No
+  `activity` row: a notice is not activity
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
   at boot**, so a deploy starts with every task estimated. It writes no

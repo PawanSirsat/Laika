@@ -12,6 +12,7 @@ import { describe, test } from 'node:test';
 import {
   ciLine,
   ciVerdict,
+  decidableCount,
   evidenceSummary,
   filterQueue,
   NO_FILTER,
@@ -126,6 +127,20 @@ void describe('evidenceSummary', () => {
 
   void test('a finish with only a branch is not "no proof"', () => {
     assert.equal(evidenceSummary(round({ branch: { ...item(), name: 'main' } })).empty, false);
+  });
+});
+
+void describe('decidableCount (D-146)', () => {
+  void test('counts the rows this reader may decide, not the queue', () => {
+    const items = [
+      queued('A'),
+      { ...queued('B'), can_decide: false },
+      queued('C'),
+      { ...queued('D'), can_decide: false },
+    ];
+    assert.equal(decidableCount(items), 2);
+    assert.equal(decidableCount([]), 0);
+    assert.equal(decidableCount([{ ...queued('B'), can_decide: false }]), 0);
   });
 });
 
