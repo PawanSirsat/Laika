@@ -67,6 +67,7 @@ import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../ap
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
 import '../../../components/markers.css';
+import { TrackedTime } from '../task/TrackedTime.tsx';
 import './task-detail.css';
 
 export interface TaskDetailPanelProps {
@@ -832,6 +833,7 @@ export function TaskDetailPanel({
             the title (D-066): each is a field on the rail now, where Jira keeps
             them, and the document column keeps to the document.
           */}
+
           {moveError !== undefined && (
             <p className="panel-alert" role="alert">
               {moveError}
@@ -1252,6 +1254,14 @@ export function TaskDetailPanel({
           )}
         </div>
       </div>
+
+      {/*
+        The time on the card (owner, 2026-11-10): a slim bar pinned to the
+        panel's foot, as the head is pinned to its top, so it stays in view
+        while either column scrolls. It replaced the rail's *Time logged*
+        line, so time is said once.
+      */}
+      <TrackedTime taskId={task.id} refreshKey={task.updated_at} />
     </div>
   );
 }
