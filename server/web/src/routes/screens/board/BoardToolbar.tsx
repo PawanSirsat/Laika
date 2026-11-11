@@ -344,8 +344,19 @@ export function BoardToolbar({
       if (shift > 0) pop.style.translate = `-${String(shift)}px 0`;
     };
     place();
+    /*
+     * Again once the row has re-laid out (LAI-1198): in the header's one-line
+     * toolbar a narrower window shrinks search and steps the figures down a
+     * tier *after* the resize event, which moves the button the pop hangs
+     * from. The row's own size changes are when that settles.
+     */
+    const row = pop.closest('.bt');
+    const observer =
+      row !== null && typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
+    if (row !== null) observer?.observe(row);
     window.addEventListener('resize', place);
     return () => {
+      observer?.disconnect();
       window.removeEventListener('resize', place);
     };
   }, [open]);
