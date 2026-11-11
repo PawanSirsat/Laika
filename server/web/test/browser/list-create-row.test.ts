@@ -170,9 +170,10 @@ void describe('the List’s Create row (LAI-717)', () => {
       }
       await setTheme(h.page, 'light');
 
-      // Still the control it was.
+      // Still the control it was — now opening the space's Create task
+      // dialog (LAI-1167) where it opened an inline form (LAI-290).
       await h.page.locator('.list-create').click();
-      await h.page.locator('form.new-task').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-dialog="create-task"]').waitFor({ timeout: 5_000 });
     } finally {
       await h.close();
     }

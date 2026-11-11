@@ -345,6 +345,67 @@ export function getPairingRequest(
   return view(ownRequest(db, actor, id), now);
 }
 
+/**
+ * `ownerUserId`'s requests still waiting — open, claimed or approved, and
+ * not past their ten minutes — newest first. The view carries no code, hash,
+ * nonce or key, only the fingerprint the owner sees. **No `can()` here**: the
+ * caller, `developer-setup.ts`, has asked `developer_setup.read_any` (D-132,
+ * LAI-1137).
+ */
+export function pendingPairingsOf(
+  db: Db,
+  ownerUserId: string,
+  now = Date.now(),
+): DevicePairingView[] {
+  return db
+    .select()
+    .from(devicePairingRequests)
+    .where(
+      and(
+        eq(devicePairingRequests.ownerUserId, ownerUserId),
+        inArray(devicePairingRequests.state, LIVE_STATES),
+        gt(devicePairingRequests.expiresAt, now),
+      ),
+    )
+    .all()
+    .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? 1 : -1))
+    .map((row) => view(row, now));
+}
+
+/**
+ * `GET /devices/pairing-requests`: the caller's own requests still waiting,
+ * as {@link pendingPairingsOf} reads them for an admin — the fingerprint the
+ * approve call echoes, never the code (D-124, D-132 item 2). Session only
+ * (`developer_setup.read_own`, D-139, LAI-1151); only the caller's rows are
+ * read, so nobody else's request can appear.
+ */
+export function listOwnPendingPairings(
+  db: Db,
+  actor: ResolvedActor,
+  now = Date.now(),
+): DevicePairingView[] {
+  assertCan(actor, 'developer_setup.read_own');
+  return pendingPairingsOf(db, actor.userId, now);
+}
+
+/**
+ * Cancel every live request that pairs `deviceId`, inside the caller's write
+ * transaction — the device was unpaired (D-133, LAI-1137), so a request to
+ * give it a key must not complete afterwards. Returns how many.
+ */
+export function cancelPairingsOfDevice(db: Db, deviceId: string, now: number): number {
+  return db
+    .update(devicePairingRequests)
+    .set({ state: 'cancelled', decidedAt: now })
+    .where(
+      and(
+        eq(devicePairingRequests.deviceId, deviceId),
+        inArray(devicePairingRequests.state, LIVE_STATES),
+      ),
+    )
+    .run().changes;
+}
+
 export interface ClaimPairingInput {
   code: string;
   publicKey: string;

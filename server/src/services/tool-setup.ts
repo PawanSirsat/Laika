@@ -606,7 +606,19 @@ export function getAgentVerification(
     .where(and(eq(agents.id, agentId), eq(agents.ownerUserId, actor.userId)))
     .get();
   if (agent === undefined) throw ApiError.agentNotFound();
+  return verificationOf(db, agent, now);
+}
 
+/**
+ * One agent's checks, from its row. **No `can()` here**: the caller has
+ * asked it — `getAgentVerification` for the owner or the agent's own token,
+ * `developer-setup.ts` for `developer_setup.read_any` (D-132, LAI-1137).
+ */
+export function verificationOf(
+  db: Db,
+  agent: typeof agents.$inferSelect,
+  now: number = Date.now(),
+): AgentVerificationView {
   const device =
     agent.deviceId === null
       ? undefined

@@ -21,19 +21,25 @@ import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-
 import { DEFAULT_CLI_SOURCE_URL, type DeveloperAccessMode } from './env.ts';
 import { developerRoutes } from './http/routes/developer.ts';
 import { healthRoutes } from './http/routes/health.ts';
-import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
+import { meNoticeRoutes, meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { permissionsRoutes } from './http/routes/permissions.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
 import { meUsageRoutes } from './http/routes/me-usage.ts';
 import { otlpRoutes } from './http/routes/otlp.ts';
 import { meTimeRoutes, orgTimeRoutes } from './http/routes/time.ts';
+import { timeReportRoutes } from './http/routes/time-report.ts';
 import {
   projectBudgetRoutes,
   sprintBudgetRoutes,
   taskBudgetRoutes,
 } from './http/routes/token-budgets.ts';
-import { meAnalyticsViewRoutes, peopleRoutes } from './http/routes/people.ts';
+import {
+  meAnalyticsViewRoutes,
+  meDeveloperSetupRoutes,
+  peopleRoutes,
+} from './http/routes/people.ts';
+import { meAvailabilityRoutes } from './http/routes/availability.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectStatusRoutes } from './http/routes/project-statuses.ts';
@@ -48,7 +54,7 @@ import {
   taskHandoffRoutes,
 } from './http/routes/handoffs.ts';
 import { userRoutes } from './http/routes/users.ts';
-import { profileRoutes } from './http/routes/profiles.ts';
+import { meProfileRoutes, profileRoutes } from './http/routes/profiles.ts';
 import { inviteRoutes } from './http/routes/invites.ts';
 import { passwordResetRoutes } from './http/routes/password-resets.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
@@ -341,6 +347,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
 
   if (db !== undefined) {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
+    // A member's own notices (D-134, LAI-1136).
+    app.route(`${API_BASE}/me`, meNoticeRoutes({ db }));
     // D-079's developer side (LAI-751): sharing, reports, and what is held.
     app.route(`${API_BASE}/me`, localActivityRoutes({ db }));
     // A person's own token alerts and plan limit (LAI-773, D-087).
@@ -350,6 +358,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // Time (D-088, LAI-787): the person's own on `/me`, the switch on `/org`.
     app.route(`${API_BASE}/me`, meTimeRoutes({ db }));
     app.route(`${API_BASE}/org`, orgTimeRoutes({ db }));
+    // The Time report (D-130, LAI-1135): own, people, or a space admin's totals.
+    app.route(`${API_BASE}/time`, timeReportRoutes({ db }));
     app.route(
       `${API_BASE}/events`,
       eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),
@@ -381,8 +391,14 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tasks`, taskBudgetRoutes({ db }));
     // The profile's heatmap (D-079, LAI-751), by day; a person's day and local
     // activity read for them, and who looked (D-102, LAI-957).
-    app.route(`${API_BASE}/people`, peopleRoutes({ db }));
+    app.route(`${API_BASE}/people`, peopleRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
+    // Your own profile and heatmap, every role (D-139 item 1, LAI-1150).
+    app.route(`${API_BASE}/me`, meProfileRoutes({ db }));
+    // Your own developer setup's activity (D-139, LAI-1151); no look.
+    app.route(`${API_BASE}/me`, meDeveloperSetupRoutes({ db }));
+    // A person's own availability (D-131, LAI-1130); the people reads are above.
+    app.route(`${API_BASE}/me`, meAvailabilityRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));
     app.route(
       `${API_BASE}/org`,

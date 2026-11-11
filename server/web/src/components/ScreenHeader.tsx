@@ -13,10 +13,22 @@ export interface ScreenHeaderProps {
    * `band` — the compact bar every screen had (the default).
    * `page` — a top-level page of the reorganised app (LAI-796): a larger
    * title, a line under it, and a row below for its tabs.
+   * `crumbs` — a breadcrumb whose last step is the title, and the context at
+   * the right; the member profile's chrome (LAI-1152). No band of its own:
+   * the card under it is the page's head.
    */
-  readonly variant?: 'band' | 'page';
+  readonly variant?: 'band' | 'page' | 'crumbs';
+  /** Crumbs only: the steps before the title, each with its own separator. */
+  readonly trail?: ReactNode;
   /** Page only: a sentence under the title. */
   readonly description?: ReactNode;
+  /**
+   * Page only: a short line over the title, in the accent. For a page whose
+   * title says what it is *for* — Developer access V3's *Connect your work to
+   * Laika* (LAI-1096) — the eyebrow carries the page's name, so the name the
+   * sidebar gave is still the first thing read. The band ignores it.
+   */
+  readonly eyebrow?: string;
   /** Page only: before the title — an organisation's mark. */
   readonly lead?: ReactNode;
   /** Page only: the row under the title — the page's tabs, or My day's week. */
@@ -76,9 +88,11 @@ export function ScreenHeader({
   children,
   variant = 'band',
   description,
+  eyebrow,
   lead,
   below,
   onActionsSlot,
+  trail,
 }: ScreenHeaderProps) {
   const embed = useContext(EmbedContext);
 
@@ -98,12 +112,27 @@ export function ScreenHeader({
     );
   }
 
+  if (variant === 'crumbs') {
+    return (
+      <header className="screen-crumbs">
+        <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
+          {trail}
+          <h1 className="screen-crumbs-here" aria-current="page">
+            {title}
+          </h1>
+        </nav>
+        {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
+      </header>
+    );
+  }
+
   if (variant === 'page') {
     return (
       <header className={below === undefined ? 'screen-page' : 'screen-page screen-page-tabbed'}>
         <div className="screen-page-row">
           {lead}
           <div className="screen-page-titles">
+            {eyebrow !== undefined && <p className="screen-page-eyebrow">{eyebrow}</p>}
             <div className="screen-page-titleline">
               <h1 className="screen-page-title">{title}</h1>
               {context !== undefined && <span className="screen-page-context">{context}</span>}

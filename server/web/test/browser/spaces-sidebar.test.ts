@@ -182,14 +182,15 @@ void describe('the SPACES section', () => {
       const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
       const trimmed = async (group: typeof home) =>
         (await group.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim());
-      // Work joined them in LAI-952: everyone's work across every space.
-      await until(async () => (await trimmed(home)).join('|') === 'My day|Inbox|Work');
+      // Work joined them in LAI-952 and left for the Organisation page's tabs
+      // in LAI-1170 (D-147).
+      await until(async () => (await trimmed(home)).join('|') === 'My day|Inbox');
       await until(
         async () => (await trimmed(org)).join('|') === 'Insights|Organisation|Developer access',
       );
       assert.deepEqual(
         (await home.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
-        ['My day', 'Inbox', 'Work'],
+        ['My day', 'Inbox'],
       );
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
@@ -628,8 +629,9 @@ void describe('the prototype geometry (LAI-249)', () => {
   void test('the toggle collapses the sidebar to a 60px icon rail and back, remembered', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
-      // Two waiting for review: the Inbox count the rail must keep.
-      '/api/v1/review': { tasks: [{}, {}], truncated: false },
+      // Two waiting for review, both this reader's to decide (D-146): the
+      // Inbox count the rail must keep.
+      '/api/v1/review': { tasks: [{ can_decide: true }, { can_decide: true }], truncated: false },
     });
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
@@ -941,7 +943,7 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('a member’s menu has no My profile — absent, not disabled', async () => {
+  void test('a member’s menu has My profile too — your own is every role’s (D-139)', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: 'member' },
@@ -955,11 +957,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await until(
         async () =>
           (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
-          'Switch to dark|Developer access|Sign out',
+          'My profile|Switch to dark|Developer access|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
       );
     } finally {
       await h.close();

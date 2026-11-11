@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
+import { getOwnActivity } from '../../services/people-activity.ts';
 import {
+  getOwnProfile,
   getProfile,
   PROFILE_KINDS,
   rateMember,
@@ -10,7 +12,8 @@ import {
 } from '../../services/profiles.ts';
 import { type AppEnv } from '../context.ts';
 import { IDEMPOTENCY_HEADER } from '../middleware/idempotency.ts';
-import { parseBody, strictObject, z } from '../validation.ts';
+import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
+import { ActivityQuery } from './people.ts';
 
 /**
  * A member's profile and their ratings (SPEC §6.4, D-078, LAI-743).
@@ -78,6 +81,30 @@ export function profileRoutes(options: { db: Db }): Hono<AppEnv> {
     });
     if (written.replayed) c.header('Idempotent-Replay', 'true');
     return c.json(written.rating, 201);
+  });
+
+  return app;
+}
+
+/**
+ * `GET /api/v1/me/profile` and `GET /api/v1/me/activity?range=12w|52w`
+ * (D-139 item 1, LAI-1150): the caller's own profile and heatmap, every role,
+ * on a web session — `/users/:id/profile` and `/people/:id/activity`'s answers
+ * from the same code, with nothing logged. Mounted at `/api/v1/me`.
+ */
+export function meProfileRoutes(options: { db: Db }): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const { db } = options;
+
+  app.get('/profile', (c) => {
+    const actor = requireActor(c);
+    return c.json(getOwnProfile(db, actor));
+  });
+
+  app.get('/activity', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(ActivityQuery, c.req.query());
+    return c.json(getOwnActivity(db, actor, query.range));
   });
 
   return app;

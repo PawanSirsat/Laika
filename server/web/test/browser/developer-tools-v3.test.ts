@@ -11,6 +11,13 @@
  *   device's.
  * - A bottom sheet on a phone, with no sideways scroll; the card colour of
  *   whichever theme is on.
+ * - One row a tool (LAI-321): a tool on two devices is a header — the tool,
+ *   how many devices, the worst of their statuses — over a line a device,
+ *   each opening its own agent's details; no name an owner typed anywhere.
+ * - Folded (LAI-1100): the status and one next action on top, every other
+ *   section one summary row that opens, *Disconnect tool…* at the foot; the
+ *   consent switch only for a tool that saves checkpoints, its row naming
+ *   what the switch read.
  *
  * Set `LAIKA_EVIDENCE_DIR` to also save the Devices and Tools tabs and both
  * panels, light and dark, at 1440 and 390 px.
@@ -20,9 +27,18 @@ import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import type { Page } from 'playwright';
-import { closeBrowser, navigateInApp, open, setTheme, until, type ApiStub } from './harness.ts';
+import type { Locator, Page } from 'playwright';
+import {
+  closeBrowser,
+  navigateInApp,
+  open,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { unfold } from './developer-v3-fixtures.ts';
 
 const NOW = Date.now();
 
@@ -368,6 +384,8 @@ void describe('the details panel: open, held, closed', () => {
       const device = h.page.getByRole('dialog', { name: 'Belka' });
       await device.waitFor({ timeout: 10_000 });
       assert.equal(here(h.page), '/developer?tab=devices&device=d1');
+      // Its tools are one folded row until opened (LAI-1100).
+      await unfold(device, 'tools');
       await device.getByRole('button', { name: /^Codex · Belka: Needs setup/ }).click();
       await h.page.getByRole('dialog', { name: 'Codex · Belka' }).waitFor({ timeout: 10_000 });
       assert.equal(here(h.page), '/developer?tab=tools&agent=a2');
@@ -422,6 +440,7 @@ void describe('the details panel: a form inside it, and Escape (review round 1)'
     try {
       await openFromRow(h.page);
       const body = panel(h.page).locator('.dv3-tool-details[data-agent="a1"]');
+      await unfold(body, 'projects');
       await body.getByRole('button', { name: 'Project access…' }).click();
       const form = body.locator('.agents-panel');
       await form.waitFor({ timeout: 10_000 });
@@ -448,6 +467,13 @@ void describe('the details panel: a form inside it, and Escape (review round 1)'
     try {
       await openFromRow(h.page, 'a4');
       const body = panel(h.page).locator('.dv3-tool-details[data-agent="a4"]');
+      // A duplicate needs its owner: its Name section is open from the start (LAI-1100).
+      assert.equal(
+        await body
+          .locator('details[data-fold="name"]')
+          .evaluate((el) => (el as HTMLDetailsElement).open),
+        true,
+      );
       await body.getByRole('button', { name: 'Rename…' }).click();
       const input = body.getByLabel('New name');
       await input.waitFor({ timeout: 10_000 });
@@ -636,10 +662,16 @@ void describe('the details panel: what it says', () => {
           'session_hooks:pass',
         ],
       );
+      // Ready, in a project: nothing to lead with but the status (LAI-1100).
+      assert.equal(await body.locator('[data-next]').count(), 0);
+      await unfold(body, 'device');
       assert.match(await body.innerText(), /Device\s*Belka/);
+      await unfold(body, 'projects');
       assert.equal(await body.locator('[data-projects]').innerText(), 'OnRoute (full)');
+      await unfold(body, 'credential');
       assert.equal(await body.locator('[data-credential]').innerText(), 'lai_a1xx…');
       // Owner, signed in: the checkpoint consent is here, off until given.
+      await unfold(body, 'checkpoints');
       assert.match(await body.innerText(), /Save checkpoints automatically/);
       // No duplicate, so no rename.
       assert.equal(await body.locator('[data-rename]').count(), 0);
@@ -665,6 +697,213 @@ void describe('the details panel: what it says', () => {
         'fail',
       );
       assert.doesNotMatch(await panel(h.page).innerText(), /\bReady\b(?! means)/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/** Each folded row of a panel, in order: its name and its one line. */
+const rows = (page: Page) =>
+  panel(page)
+    .locator('details[data-fold]')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          `${el.getAttribute('data-fold') ?? ''}${(el as HTMLDetailsElement).open ? ' (open)' : ''}: ${el.querySelector<HTMLElement>(':scope > summary .dv3-fold-line')?.innerText ?? ''}`,
+      ),
+    );
+
+const GIVEN = { given: true, given_by_user_id: 'u1', given_at: NOW - 60_000, withdrawn_at: null };
+
+void describe('the details panel: folded (LAI-1100)', () => {
+  void test('the top is the status and one next action; every other section is one row; Disconnect at the foot', async () => {
+    const h = await open('/developer?tab=tools&agent=a2', stub());
+    try {
+      const body = panel(h.page).locator('.dv3-tool-details[data-agent="a2"]');
+      await body.waitFor({ timeout: 20_000 });
+      await until(
+        async () => (await panel(h.page).locator('[data-evidence="true"]').count()) === 1,
+      );
+      // The status, under the title.
+      assert.equal(
+        await panel(h.page)
+          .locator('.side-panel-sub [data-readiness]')
+          .getAttribute('data-readiness'),
+        'needs-setup',
+      );
+      // The one next action: the first check still missing, and Finish setup.
+      const next = body.locator('[data-next]');
+      assert.equal(await next.count(), 1);
+      assert.equal(await next.getAttribute('data-next'), 'finish');
+      assert.equal(
+        (await next.innerText()).replace(/\s+/g, ' ').trim(),
+        'Finish setup Codex connected: Codex has not called the board yet. Open Codex, trust the hooks in /hooks, then ask it to call laika_whoami. Finish setup →',
+      );
+      // Every other section is a row, folded, saying its state.
+      await until(async () =>
+        (await rows(h.page)).includes('checkpoints: Automatic checkpoints · Off'),
+      );
+      assert.deepEqual(await rows(h.page), [
+        'checks: Checks · 2 of 4 done',
+        'helper: Helper · Version unknown',
+        'projects: Projects · None — it reaches no project',
+        'credential: Credential · lai_a2xx…',
+        'checkpoints: Automatic checkpoints · Off',
+        'launcher: Launcher · Auto-pickup: off',
+        'device: Device · Belka · never seen',
+      ]);
+      // Folded is folded: what a section holds is not on screen until it opens.
+      assert.equal(await body.locator('[data-check="tool_request"]').isVisible(), false);
+      const reconnect = body.getByRole('button', { name: 'Reconnect (new credential)…' });
+      assert.equal(await reconnect.count(), 0);
+      // A row opens by keyboard, as a disclosure does, and closes again.
+      const credential = body.locator('details[data-fold="credential"]');
+      await credential.locator(':scope > summary').focus();
+      await h.page.keyboard.press('Enter');
+      await reconnect.waitFor({ timeout: 5_000 });
+      assert.equal(await credential.evaluate((el) => (el as HTMLDetailsElement).open), true);
+      await h.page.keyboard.press('Enter');
+      await reconnect.waitFor({ state: 'hidden', timeout: 5_000 });
+      // The danger action stays at the foot, outside every section.
+      const foot = panel(h.page).locator('.side-panel-foot');
+      assert.equal(await foot.getByRole('button', { name: 'Disconnect tool…' }).count(), 1);
+      assert.equal(await body.getByRole('button', { name: /Disconnect/ }).count(), 0);
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Finish setup opens the wizard’s reconnect, as the row’s does', async () => {
+    const h = await open('/developer?tab=tools&agent=a2', stub());
+    try {
+      const next = panel(h.page).locator('[data-next="finish"]');
+      await next.waitFor({ timeout: 20_000 });
+      await next.getByRole('button', { name: 'Finish setting up Codex · Belka' }).click();
+      await h.page.waitForURL(/reconnect=a2/, { timeout: 10_000 });
+      const url = new URL(h.page.url());
+      assert.equal(url.searchParams.get('add'), 'tool');
+      assert.equal(url.searchParams.get('tab'), 'tools');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a helper the board refuses leads; Show how to update opens Helper and takes focus there', async () => {
+    const h = await open('/developer?tab=tools&agent=a3', stub());
+    try {
+      const next = panel(h.page).locator('[data-next="update"]');
+      await next.waitFor({ timeout: 20_000 });
+      assert.match(await next.innerText(), /^Update required for pairing devices/);
+      const helper = panel(h.page).locator('details[data-fold="helper"]');
+      assert.equal(await helper.evaluate((el) => (el as HTMLDetailsElement).open), false);
+      await next.getByRole('button', { name: 'Show how to update' }).click();
+      await until(() => helper.evaluate((el) => (el as HTMLDetailsElement).open));
+      assert.equal(await helper.evaluate((el) => (el as HTMLDetailsElement).open), true);
+      assert.equal(
+        await h.page.evaluate(
+          () => document.activeElement?.closest('details')?.getAttribute('data-fold') ?? null,
+        ),
+        'helper',
+      );
+      assert.equal(await h.page.evaluate(() => document.activeElement?.tagName ?? null), 'SUMMARY');
+      await helper.locator('.dv3-update[data-update="required"] [data-update-how]').waitFor();
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every check done and no project: Set up a project leads, to Project setup', async () => {
+    const h = await open(
+      '/developer?tab=tools&agent=a1',
+      stub([agentRow('a1', 'claude-code', NOW - 30_000), CODEX]),
+    );
+    try {
+      const next = panel(h.page).locator('[data-next="project"]');
+      await next.waitFor({ timeout: 20_000 });
+      const link = next.getByRole('link', { name: 'Set up a project for Claude Code · Belka' });
+      assert.equal(await link.getAttribute('href'), '/developer?tab=projects&tool=a1');
+      await link.click();
+      await h.page.waitForURL(/tab=projects/, { timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=projects&tool=a1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Automatic checkpoints: its row names the state, and follows the switch', async () => {
+    let held: object = NO_CONSENT;
+    const h = await open('/developer?tab=tools&agent=a1', {
+      ...stub(),
+      '/api/v1/agents/a1/checkpoint-consent': (call: StubCall) => {
+        if (call.method === 'PUT') held = GIVEN;
+        return held;
+      },
+    });
+    try {
+      const fold = panel(h.page).locator('details[data-fold="checkpoints"]');
+      const line = fold.locator(':scope > summary .dv3-fold-line');
+      await until(
+        async () =>
+          (await line.count()) === 1 && (await line.innerText()) === 'Automatic checkpoints · Off',
+      );
+      assert.equal(await line.innerText(), 'Automatic checkpoints · Off');
+      // The switch is in the section, which opens to it.
+      assert.equal(await panel(h.page).getByRole('switch').count(), 0);
+      await unfold(panel(h.page), 'checkpoints');
+      const control = fold.getByRole('switch', { name: 'Save checkpoints automatically' });
+      assert.equal(await control.getAttribute('aria-checked'), 'false');
+      await control.click();
+      await until(async () => (await control.getAttribute('aria-checked')) === 'true');
+      assert.equal(await control.getAttribute('aria-checked'), 'true');
+      assert.equal(await line.innerText(), 'Automatic checkpoints · On');
+      assert.deepEqual(
+        h.calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path}`),
+        ['PUT /api/v1/agents/a1/checkpoint-consent'],
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Automatic checkpoints: already on says On before it is opened', async () => {
+    const h = await open('/developer?tab=tools&agent=a1', {
+      ...stub(),
+      '/api/v1/agents/a1/checkpoint-consent': GIVEN,
+    });
+    try {
+      const fold = panel(h.page).locator('details[data-fold="checkpoints"]');
+      const line = fold.locator(':scope > summary .dv3-fold-line');
+      await until(
+        async () =>
+          (await line.count()) === 1 && (await line.innerText()) === 'Automatic checkpoints · On',
+      );
+      assert.equal(await line.innerText(), 'Automatic checkpoints · On');
+      assert.equal(await fold.evaluate((el) => (el as HTMLDetailsElement).open), false);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a tool that saves no checkpoints has no switch, and its consent is never asked for', async () => {
+    const h = await open('/developer?tab=tools&agent=a3', stub());
+    try {
+      const body = panel(h.page).locator('.dv3-tool-details[data-agent="a3"]');
+      await body.locator('details[data-fold="launcher"]').waitFor({ timeout: 20_000 });
+      // Settled: Omnigent's own row is there, so the panel has drawn every row it will.
+      await h.page.waitForLoadState('networkidle');
+      assert.equal(await body.locator('details[data-fold="checkpoints"]').count(), 0);
+      assert.equal(await body.locator('[data-consent]').count(), 0);
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/agents/a3/checkpoint-consent').length,
+        0,
+      );
+      // Codex, beside it, saves checkpoints: its details carry the switch.
+      await h.page.keyboard.press('Escape');
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      await openFromRow(h.page, 'a2');
+      await panel(h.page).locator('details[data-fold="checkpoints"]').waitFor();
     } finally {
       await h.close();
     }
@@ -728,6 +967,389 @@ void describe('the details panel: phone and themes', () => {
   });
 });
 
+/** A click where a row's line is: what a person aims at when they click the row, not its name. */
+async function clickLine(page: Page, row: string): Promise<void> {
+  const box = await page.locator(`${row} [data-line]`).boundingBox();
+  assert.ok(box !== null);
+  await page.mouse.click(box.x + Math.min(24, box.width / 2), box.y + box.height / 2);
+}
+
+void describe('a row opens its details (LAI-1097, the owner’s design: one chip, one action)', () => {
+  void test('Tools: anywhere on the row opens it, focus comes back to the row, and there is no Details button', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      await h.page.locator('.dv3-tool[data-agent="a2"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.getByRole('button', { name: 'Details', exact: true }).count(), 0);
+      assert.equal(await h.page.getByText('Details', { exact: true }).count(), 0);
+      await clickLine(h.page, '.dv3-tool[data-agent="a2"]');
+      await panel(h.page).locator('[data-agent="a2"]').waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a2');
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a2');
+      // The chip and the action keep their own clicks: a tooltip, the wizard.
+      const row = h.page.locator('.dv3-tool[data-agent="a2"]');
+      await row.locator('[data-readiness] .dv3-hint-anchor').click();
+      await until(() => row.locator('[data-readiness] [role="tooltip"]').isVisible());
+      assert.equal(await panel(h.page).count(), 0);
+      await row.getByRole('button', { name: 'Finish setting up Codex · Belka' }).click();
+      await until(() => h.page.url().includes('reconnect=a2'));
+      assert.doesNotMatch(h.page.url(), /agent=/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('by keyboard: the row is one button named for it; Enter opens, Escape comes back to it', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 20_000 });
+      const open_ = h.page.getByRole('button', { name: 'Details for Claude Code · Belka' });
+      assert.equal(await open_.count(), 1);
+      assert.equal(await open_.getAttribute('data-details'), 'tools:a1');
+      // Its name is the row's own words, so a screen reader hears what it opens.
+      assert.equal((await open_.innerText()).trim(), 'Claude Code · Belka');
+      await open_.focus();
+      await h.page.keyboard.press('Enter');
+      await panel(h.page).locator('[data-agent="a1"]').waitFor({ timeout: 10_000 });
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a1');
+      // The chevron says it opens, and says nothing to a screen reader.
+      const chevron = h.page.locator('.dv3-tool[data-agent="a1"] .dv3-row-chevron');
+      assert.equal(await chevron.getAttribute('aria-hidden'), 'true');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Devices: anywhere on the row opens the device, and focus comes back to it', async () => {
+    const h = await open('/developer?tab=devices', stub());
+    try {
+      await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.getByRole('button', { name: 'Details', exact: true }).count(), 0);
+      await clickLine(h.page, '.dv3-device[data-device="d1"]');
+      await h.page.getByRole('dialog', { name: 'Belka' }).waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=devices&device=d1');
+      await h.page.keyboard.press('Escape');
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.activeElement?.getAttribute('data-details') === 'devices:d1',
+        undefined,
+        { timeout: 5_000 },
+      );
+      // Add tool → keeps its own click.
+      await h.page.getByRole('button', { name: 'Add a tool to Belka' }).click();
+      await until(() => h.page.url().includes('add=tool'));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Needs setup is the warn tone: never drawn like Connected or Ready', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      const chip = (id: string) =>
+        h.page.locator(`.dv3-tool[data-agent="${id}"] [data-readiness] .dx-chip`);
+      await until(
+        async () =>
+          (await h.page.locator('.dv3-tool[data-agent="a1"]').getAttribute('data-status')) ===
+          'ready',
+        15_000,
+      );
+      await until(
+        async () =>
+          (await h.page.locator('.dv3-tool[data-agent="a2"]').getAttribute('data-status')) ===
+          'needs-setup',
+        15_000,
+      );
+      assert.equal(await chip('a2').innerText(), 'Needs setup');
+      assert.equal(await chip('a2').getAttribute('data-tone'), 'warn');
+      assert.equal(await chip('a3').innerText(), 'Connected');
+      assert.equal(await chip('a3').getAttribute('data-tone'), 'accent');
+      assert.equal(await chip('a1').getAttribute('data-tone'), 'ok');
+      // Drawn from the warn tokens, so it looks unlike both.
+      const colour = (id: string) => chip(id).evaluate((el) => getComputedStyle(el).color);
+      const warn = await h.page.evaluate(() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--chip-orange)';
+        document.body.append(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      });
+      assert.equal(await colour('a2'), warn);
+      assert.notEqual(await colour('a2'), await colour('a3'));
+      assert.notEqual(await colour('a2'), await colour('a1'));
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The owner's Claude Code on two laptops (LAI-321): Ready on Belka, never
+ * used on paired Strelka — and Codex on Belka alone. Every agent carries a
+ * name its owner typed, which no label shows (D-120).
+ */
+const TYPED = 'Ada typed this';
+const G_CLAUDE = { ...CLAUDE, display_name: `${TYPED} for Belka` };
+const G_CODEX = { ...CODEX, display_name: `${TYPED} for Codex` };
+const G_STRELKA = {
+  ...agentRow('a6', 'claude-code', null),
+  device_label: 'Strelka',
+  display_name: `${TYPED} for Strelka`,
+};
+const strelkaRow = (agents: Agent[]) => ({
+  ...deviceRow(agents),
+  id: 'd2',
+  display_name: 'Strelka',
+  device_label: 'strelka',
+  key_fingerprint: '0c4e2a9f61b7d358',
+});
+const grouped = () =>
+  stub([G_CLAUDE, G_CODEX, G_STRELKA], [deviceRow([G_CLAUDE, G_CODEX]), strelkaRow([G_STRELKA])]);
+
+const claudeGroup = (page: Page) => page.locator('.dv3-tool-group[data-tool-group="claude-code"]');
+
+/** Both lines' statuses are in: Ready from Belka's own verification, Needs setup on Strelka. */
+async function groupedReady(page: Page): Promise<void> {
+  await claudeGroup(page).waitFor({ timeout: 20_000 });
+  for (const [id, key] of [
+    ['a1', 'ready'],
+    ['a6', 'needs-setup'],
+  ] as const) {
+    await until(
+      async () =>
+        (await page.locator(`.dv3-tool[data-agent="${id}"]`).getAttribute('data-status')) === key,
+      15_000,
+    );
+  }
+}
+
+/** A chip's description, through its `aria-describedby`. */
+async function describedBy(page: Page, anchor: Locator): Promise<string> {
+  const id = await anchor.getAttribute('aria-describedby');
+  assert.ok(id !== null, 'the chip has no aria-describedby');
+  return ((await page.locator(`[id="${id}"]`).textContent()) ?? '').trim();
+}
+
+void describe('Tools by tool (LAI-321): one row a tool, a line a device under it', () => {
+  void test('two Claude Code agents on two devices: one group, a line each, device by device', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      // The list's own rows: Claude Code's group, then Codex, one device, one row.
+      assert.deepEqual(
+        await h.page
+          .locator('.dv3-roster .dx-records > li')
+          .evaluateAll((rows) =>
+            rows.map(
+              (row) => row.getAttribute('data-tool-group') ?? row.getAttribute('data-agent'),
+            ),
+          ),
+        ['claude-code', 'a2'],
+      );
+      const group = claudeGroup(h.page);
+      assert.equal(await group.locator('.dv3-tool-group-title').innerText(), 'Claude Code');
+      assert.equal(await group.locator('[data-group-line]').innerText(), '2 devices');
+      assert.equal(await group.getAttribute('data-devices'), '2');
+      const lines = group.locator('.dv3-tool-lines > .dv3-tool-line');
+      assert.deepEqual(
+        await lines.evaluateAll((els) => els.map((el) => el.getAttribute('data-agent'))),
+        ['a1', 'a6'],
+      );
+      assert.deepEqual(
+        await lines
+          .locator('.dx-record-title')
+          .evaluateAll((els) => els.map((el) => el.textContent)),
+        ['Belka', 'Strelka'],
+      );
+      // Each line is named for the whole label, so a screen reader hears what it opens.
+      assert.deepEqual(
+        await lines
+          .locator('[data-details]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label'))),
+        ['Details for Claude Code · Belka', 'Details for Claude Code · Strelka'],
+      );
+      // The list of lines is labelled by its tool.
+      assert.equal(
+        await group
+          .locator('.dv3-tool-lines')
+          .evaluate(
+            (ul) => document.getElementById(ul.getAttribute('aria-labelledby') ?? '')?.textContent,
+          ),
+        'Claude Code',
+      );
+      // A tool on one device is one row, named as before, with no header.
+      const codex = h.page.locator('.dv3-tool[data-agent="a2"]');
+      assert.equal(await codex.locator('.dx-record-title').innerText(), 'Codex · Belka');
+      assert.equal(await codex.evaluate((el) => el.classList.contains('dv3-tool-line')), false);
+      assert.equal(await h.page.locator('[data-tool-group="codex"]').count(), 0);
+      // Each line keeps its own chips and next step.
+      const belka = h.page.locator('.dv3-tool[data-agent="a1"]');
+      assert.equal(await belka.locator('[data-readiness] .dx-chip').innerText(), 'Ready');
+      assert.equal(await belka.locator('[data-auto-pickup]').count(), 1);
+      assert.equal(
+        await belka
+          .getByRole('link', { name: 'Set up a project for Claude Code · Belka' })
+          .getAttribute('href'),
+        '/developer?tab=projects&tool=a1',
+      );
+      const strelka = h.page.locator('.dv3-tool[data-agent="a6"]');
+      assert.equal(await strelka.locator('[data-readiness] .dx-chip').innerText(), 'Needs setup');
+      assert.equal(
+        await strelka
+          .getByRole('button', { name: 'Finish setting up Claude Code · Strelka' })
+          .count(),
+        1,
+      );
+      // The add-tool entry point is still the tab's.
+      assert.equal(await h.page.getByRole('button', { name: '+ Add tool' }).count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the header carries the worst of its lines: Needs setup on Strelka beside Ready on Belka', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      const group = claudeGroup(h.page);
+      assert.equal(await group.getAttribute('data-status'), 'needs-setup');
+      const head = group.locator('.dv3-tool-group-head [data-group-status]');
+      assert.equal(await head.getAttribute('data-group-status'), 'needs-setup');
+      assert.equal(await head.locator('.dx-chip').innerText(), 'Needs setup');
+      assert.equal(await head.locator('.dx-chip').getAttribute('data-tone'), 'warn');
+      assert.match(
+        await describedBy(h.page, head.locator('.dv3-hint-anchor')),
+        /^Needs setup: Claude Code on Strelka\. The worst of its lines/,
+      );
+      // One status chip in the header, and it is not either line's.
+      assert.equal(await group.locator('.dv3-tool-group-head .dx-chip').count(), 1);
+      assert.equal(await group.locator('.dv3-tool-group-head [data-readiness]').count(), 0);
+    } finally {
+      await h.close();
+    }
+
+    // Once Strelka's Claude Code is in use, the worst is what is left.
+    const seen = { ...G_STRELKA, last_seen_at: NOW - 60_000 };
+    const r = await open(
+      '/developer?tab=tools',
+      stub([G_CLAUDE, G_CODEX, seen], [deviceRow([G_CLAUDE, G_CODEX]), strelkaRow([seen])]),
+    );
+    try {
+      await claudeGroup(r.page).waitFor({ timeout: 20_000 });
+      await until(
+        async () =>
+          (await r.page.locator('.dv3-tool[data-agent="a6"]').getAttribute('data-status')) ===
+          'connected',
+        15_000,
+      );
+      assert.equal(
+        await claudeGroup(r.page).locator('[data-group-status]').getAttribute('data-group-status'),
+        'connected',
+      );
+    } finally {
+      await r.close();
+    }
+  });
+
+  void test('a device line opens its own agent’s details; the header opens nothing', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      // The header is a summary: no button opens it, and a click on it does nothing.
+      const head = claudeGroup(h.page).locator('.dv3-tool-group-head');
+      assert.equal(await head.locator('[data-details]').count(), 0);
+      await head.locator('.dv3-tool-group-title').click();
+      await h.page.waitForTimeout(300);
+      assert.equal(await panel(h.page).count(), 0);
+      assert.equal(here(h.page), '/developer?tab=tools');
+
+      await clickLine(h.page, '.dv3-tool[data-agent="a6"]');
+      await h.page
+        .getByRole('dialog', { name: 'Claude Code · Strelka' })
+        .waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a6');
+      await panel(h.page).locator('.dv3-tool-details[data-agent="a6"]').waitFor();
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a6');
+
+      // The other line is its own agent.
+      await clickLine(h.page, '.dv3-tool[data-agent="a1"]');
+      await h.page
+        .getByRole('dialog', { name: 'Claude Code · Belka' })
+        .waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no name its owner typed is shown — on the list, in a description or in a line’s details (D-120)', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      const roster = h.page.locator('.dv3-roster');
+      // textContent: the tooltips' descriptions too, not only what is on screen.
+      assert.doesNotMatch((await roster.textContent()) ?? '', new RegExp(TYPED));
+      const named = await roster
+        .locator('[aria-label], [title]')
+        .evaluateAll((els) =>
+          els.map(
+            (el) => `${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('title') ?? ''}`,
+          ),
+        );
+      assert.ok(named.length > 0);
+      assert.equal(named.filter((n) => n.includes(TYPED)).length, 0, named.join(' | '));
+      // The products and devices are what it says instead.
+      assert.match((await roster.textContent()) ?? '', /Claude Code[\s\S]*Belka[\s\S]*Strelka/);
+
+      await clickLine(h.page, '.dv3-tool[data-agent="a6"]');
+      const details = panel(h.page).locator('.dv3-tool-details[data-agent="a6"]');
+      await details.waitFor({ timeout: 10_000 });
+      assert.doesNotMatch((await panel(h.page).textContent()) ?? '', new RegExp(TYPED));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('390 px, both themes: the lines under their tool, with no sideways scroll', async () => {
+    const rails: string[] = [];
+    for (const theme of ['light', 'dark'] as const) {
+      const h = await open('/developer?tab=tools', grouped(), {
+        before: async (page) => {
+          await page.setViewportSize({ width: 390, height: 844 });
+        },
+      });
+      try {
+        await setTheme(h.page, theme);
+        await groupedReady(h.page);
+        const wide = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        assert.ok(wide <= 0, `${theme}: the page scrolls sideways by ${String(wide)}px`);
+        const head = await claudeGroup(h.page).locator('.dv3-tool-group-title').boundingBox();
+        for (const id of ['a1', 'a6']) {
+          const line = await h.page.locator(`.dv3-tool[data-agent="${id}"]`).boundingBox();
+          assert.ok(line !== null && head !== null);
+          assert.ok(line.x + line.width <= 390, `${theme}: ${id} runs off screen`);
+          // Under its tool, set in from the header's edge.
+          assert.ok(line.y > head.y, `${theme}: ${id} is not under its header`);
+        }
+        rails.push(
+          await claudeGroup(h.page)
+            .locator('.dv3-tool-lines')
+            .evaluate((el) => getComputedStyle(el).borderLeftColor),
+        );
+      } finally {
+        await h.close();
+      }
+    }
+    // The rule the lines hang from is the theme's own colour.
+    assert.notEqual(rails[0], rails[1], 'light and dark drew the same rule');
+  });
+});
+
 const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
 
 void describe(
@@ -765,6 +1387,13 @@ void describe(
           },
         },
         {
+          // LAI-321: Claude Code on two devices, one row with a line a device.
+          name: 'tools-grouped',
+          path: '/developer?tab=tools',
+          api: grouped(),
+          ready: groupedReady,
+        },
+        {
           name: 'tools-fresh',
           path: '/developer?tab=tools',
           api: stub([], []),
@@ -780,7 +1409,8 @@ void describe(
           name: 'device-details',
           path: '/developer?tab=devices&device=d1',
           api: stub(),
-          ready: (page) => page.locator('[data-device-update]').waitFor({ timeout: 20_000 }),
+          ready: (page) =>
+            page.locator('.side-panel [data-fold="helpers"]').waitFor({ timeout: 20_000 }),
         },
         {
           name: 'tool-details-ready',
@@ -794,7 +1424,7 @@ void describe(
           path: '/developer?tab=tools&agent=a2',
           api: stub(),
           ready: (page) =>
-            page.locator('.side-panel [data-check="tool_request"]').waitFor({ timeout: 20_000 }),
+            page.locator('.side-panel [data-next="finish"]').waitFor({ timeout: 20_000 }),
         },
         {
           name: 'tool-details-update-required',
@@ -809,6 +1439,7 @@ void describe(
           path: '/developer?tab=tools&agent=a3',
           api: stub(),
           ready: async (page) => {
+            await unfold(page.locator('.side-panel'), 'helper');
             const helper = page.locator('.side-panel .dv3-update[data-update="required"]');
             await helper.waitFor({ timeout: 20_000 });
             for (const summary of await helper.locator('summary').all()) await summary.click();

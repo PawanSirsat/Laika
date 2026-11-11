@@ -6,12 +6,13 @@ import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { type TokenScope } from '../db/enums.ts';
+import { type OrgRole, type TokenScope } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { agents, projects, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan, forcedTokenScope } from '../policy/can.ts';
+import { assertCan, can, forcedTokenScope } from '../policy/can.ts';
+import { NOTICE_SUBJECT_MAX, writeNotice } from './notices.ts';
 import { canSeeProject } from './projects.ts';
 
 /**
@@ -334,7 +335,9 @@ export function revokeTokenFor(
   tokenId: string,
   now: number = Date.now(),
 ): void {
-  assertCan(actor, 'token.revoke_any');
+  // The grant alone, asked about a target who is not the owner, before any row
+  // is read: a caller without it gets the same `403` for every token id.
+  assertCan(actor, 'token.revoke_any', { targetOrgRole: 'member' });
 
   const row = requireToken(db, tokenId);
   // The token must belong to the user in the path. Without this, an admin could
@@ -344,7 +347,51 @@ export function revokeTokenFor(
     throw ApiError.notFound(`No token with id "${tokenId}" for that user`);
   }
 
-  revoke(sqlite, db, actor, row, now);
+  // D-133 (LAI-1143): an admin may not revoke **any** token the owner holds,
+  // a personal token or a tool's credential. Asked before the already-revoked
+  // return, so an admin is refused the owner's token whatever its state.
+  const targetOrgRole = requireUserRole(db, row.userId);
+  if (!can(actor, 'token.revoke_any', { targetOrgRole })) {
+    throw new ApiError('forbidden', "An admin cannot revoke the owner's tokens", {
+      action: 'token.revoke_any',
+      reason: 'not_for_owner',
+    });
+  }
+
+  // Revoking twice is no second event and no second notice.
+  if (row.revokedAt !== null) return;
+  immediateTransaction(sqlite, () => {
+    revokeTokenRow(db, actor, row, now);
+    // D-134 (LAI-1137): the person is told, in Laika, that somebody else
+    // revoked it. `writeNotice` writes none when the actor is the person, so
+    // their own revoke through this path leaves no notice.
+    writeNotice(db, {
+      userId: row.userId,
+      actorUserId: actor.userId,
+      kind: 'token_revoked',
+      subject: row.name.slice(0, NOTICE_SUBJECT_MAX),
+      now,
+    });
+  });
+}
+
+/**
+ * Every token of `userId`, revoked and expired ones included, newest first —
+ * a member's whole history for `GET /people/:id/developer-setup`. **No
+ * `can()` here**: the caller has asked `developer_setup.read_any` (D-132,
+ * LAI-1137). Never a secret: rows go through `tokenView`.
+ */
+export function tokensOf(db: Db, userId: string): TokenView[] {
+  return db
+    .select({ token: tokens, harness: agents.harness, deviceLabel: agents.deviceLabel })
+    .from(tokens)
+    .leftJoin(agents, eq(agents.id, tokens.agentId))
+    .where(eq(tokens.userId, userId))
+    .orderBy(desc(tokens.createdAt), desc(tokens.id))
+    .all()
+    .map(({ token, harness, deviceLabel }) =>
+      tokenView(token, harness === null ? null : { harness, deviceLabel }),
+    );
 }
 
 // ------------------------------------------------------------------ helpers
@@ -394,6 +441,13 @@ function requireToken(db: Db, tokenId: string): TokenRow {
 function requireUser(db: Db, userId: string): void {
   const row = db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
   if (row === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
+}
+
+/** The org role of a token's holder — the target `token.revoke_any` asks about. */
+function requireUserRole(db: Db, userId: string): OrgRole {
+  const row = db.select({ orgRole: users.orgRole }).from(users).where(eq(users.id, userId)).get();
+  if (row === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
+  return row.orgRole;
 }
 
 /**

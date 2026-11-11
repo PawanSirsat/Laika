@@ -23,7 +23,17 @@ export interface HeaderPopoverProps {
   /** Opened and closed from outside too — the subtitle's *who looked* link. */
   readonly open?: boolean | undefined;
   readonly onOpenChange?: ((open: boolean) => void) | undefined;
+  /**
+   * A dialog rather than a region (the profile's *Who looked* and *My
+   * availability*, LAI-1152): the trigger says it opens one, focus moves into
+   * the panel when it opens, and `Tab` stays inside it until Escape or a
+   * click away closes it — when focus goes back to the trigger.
+   */
+  readonly dialog?: boolean | undefined;
 }
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * A header control with a panel under it (the owner's My day design, D-110):
@@ -45,6 +55,7 @@ export function HeaderPopover({
   children,
   open: controlled,
   onOpenChange,
+  dialog = false,
 }: HeaderPopoverProps) {
   const [own, setOwn] = useState(false);
   const open = controlled ?? own;
@@ -94,13 +105,38 @@ export function HeaderPopover({
         root.current?.querySelector<HTMLElement>('button')?.focus();
       }
     };
+    // A dialog keeps `Tab` inside its panel: from the last control to the
+    // first, and back with Shift.
+    const trap = (event: KeyboardEvent): void => {
+      if (!dialog || event.key !== 'Tab' || panel.current === null) return;
+      const inside = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      const first = inside[0];
+      const last = inside[inside.length - 1];
+      if (first === undefined || last === undefined) return;
+      const at = document.activeElement;
+      if (event.shiftKey && (at === first || !panel.current.contains(at))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (at === last || !panel.current.contains(at))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
     document.addEventListener('mousedown', away);
     document.addEventListener('keydown', key, true);
+    document.addEventListener('keydown', trap);
     return () => {
       document.removeEventListener('mousedown', away);
       document.removeEventListener('keydown', key, true);
+      document.removeEventListener('keydown', trap);
     };
-  }, [open, onOpenChange]);
+  }, [open, onOpenChange, dialog]);
+
+  // A dialog takes focus when it opens, on its first control.
+  useEffect(() => {
+    if (!open || !dialog) return;
+    panel.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+  }, [open, dialog]);
 
   return (
     <div
@@ -115,6 +151,7 @@ export function HeaderPopover({
         title={title ?? label}
         aria-expanded={open}
         aria-controls={id}
+        {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
         disabled={disabled}
         onClick={() => {
           setOpen(!open);
@@ -127,7 +164,7 @@ export function HeaderPopover({
           ref={panel}
           id={id}
           className={`myday-pop-panel myday-pop-${width}${side === 'left' ? ' myday-pop-left' : ''}${placement === 'above' ? ' myday-pop-up' : ''}`}
-          role="region"
+          role={dialog ? 'dialog' : 'region'}
           aria-label={label}
         >
           {children}

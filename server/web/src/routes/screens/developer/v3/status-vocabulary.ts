@@ -107,7 +107,7 @@ export const TOOL_STATUS: Readonly<Record<ToolChipKey, StatusCopy>> = {
   },
   'needs-setup': {
     word: 'Needs setup',
-    tone: 'accent',
+    tone: 'warn',
     meaning:
       'There is no live credential for it on the device yet, its credential has expired, or nothing has used the one it has.',
     todo: 'Run its Add tool command on the device, or use Finish setup → on its row.',
@@ -159,6 +159,19 @@ export const UPDATE_ORDER: readonly UpdateChipKey[] = [
 
 /** A device's chip speaks for all of its tools; this is its word when every one is up to date. */
 export const ALL_UP_TO_DATE = 'Helpers up to date';
+
+/**
+ * The helper statuses a Tools or Devices row shows a chip for (LAI-1097, the
+ * owner's design: one chip and one action a row): the ones with something to
+ * do — update, or retry a check that failed. *Helper up to date* and *Version
+ * unknown* are in the row's details only.
+ */
+export const ROW_UPDATE_KEYS: readonly UpdateChipKey[] = ['required', 'available', 'unchecked'];
+
+/** Whether a row shows its helper chip: only when there is something to do. */
+export function rowShowsUpdate(key: UpdateKey | undefined): key is UpdateChipKey {
+  return ROW_UPDATE_KEYS.some((k) => k === key);
+}
 
 export const UPDATE_STATUS: Readonly<Record<UpdateChipKey, StatusCopy>> = {
   'up-to-date': {

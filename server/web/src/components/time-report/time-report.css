@@ -1,0 +1,1455 @@
+/*
+ * The Time report (D-130, LAI-1138; the owner's design, frames 1a–1m).
+ * Tokens only, so both themes come from theme.css; every size is a step of
+ * the type scale.
+ */
+
+.trep {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.125rem 1.125rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+}
+
+.trep svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trep-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.trep-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.trep-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  line-height: 1.25rem;
+  font-weight: var(--weight-heavy);
+}
+
+.trep-caption {
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.trep-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  align-self: flex-start;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  font-size: var(--text-small);
+  line-height: 1rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+}
+
+.trep-lock svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* --------------------------------------------------------- segments */
+
+.trep-segments {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-column);
+}
+
+.trep-segment {
+  height: 1.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trep-segment-on {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+/* --------------------------------------------------------- the toolbar */
+
+.trep-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trep-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.trep-step {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.trep-step:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.trep-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.trep-step svg {
+  width: 14px;
+  height: 14px;
+}
+
+.trep-range-label {
+  padding: 0 0.375rem;
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.trep-divider {
+  width: 1px;
+  height: 1.25rem;
+  margin: 0 0.25rem;
+  background: var(--border-card);
+}
+
+.trep-bar-end {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trep-chip-wrap {
+  position: relative;
+}
+
+.trep-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.9375rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trep-chip svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.4;
+}
+
+.trep-chip-value {
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.trep-chip-on {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.trep-chip-on .trep-chip-value {
+  color: var(--accent);
+}
+
+.trep-chip-strong {
+  border-color: var(--border-default);
+  font-weight: var(--weight-bold);
+}
+
+.trep-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  width: 16rem;
+  max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.375rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-modal);
+}
+
+.trep-menu {
+  width: auto;
+  min-width: 11rem;
+}
+
+.trep-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.trep-option:hover {
+  background: var(--bg-column);
+}
+
+.trep-option input {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.trep-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trep-pop-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding: 0.375rem 0.25rem 0.125rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.trep-pop-empty {
+  margin: 0;
+  padding: 0.5rem;
+}
+
+.trep-link-button {
+  padding: 0.25rem 0.375rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.trep-link-accent {
+  color: var(--accent);
+}
+
+.trep-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 2.125rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trep-menu-item:hover,
+.trep-menu-item:focus-visible {
+  background: var(--bg-column);
+}
+
+.trep-menu-item-on {
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+}
+
+.trep-export {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.9375rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trep-export:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.trep-export:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.trep-export svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* --------------------------------------------------------- the range */
+
+.trep-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-column) 45%, transparent);
+}
+
+.trep-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.trep-preset {
+  height: 1.875rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trep-preset-on {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.trep-dates {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.trep-dates > .trep-quiet {
+  line-height: 2rem;
+}
+
+.trep-date {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.trep-date-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.trep-date-input {
+  height: 2rem;
+  padding: 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color-scheme: light dark;
+}
+
+/* --------------------------------------------------------- notes, states */
+
+.trep-quiet {
+  color: var(--text-muted);
+}
+
+.trep-small {
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.trep-note {
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+  text-wrap: pretty;
+}
+
+.trep-note b {
+  font-weight: var(--weight-bold);
+}
+
+.trep-note-info {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+}
+
+.trep-note-error {
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+.trep-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
+  background: var(--blocked-bg);
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+}
+
+.trep-error > span {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.trep-error b {
+  color: var(--overdue);
+  font-weight: var(--weight-bold);
+}
+
+.trep-pill-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3125rem 0.875rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.trep-bone {
+  display: block;
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+}
+
+.trep-bone-a {
+  width: 4.5rem;
+  height: 0.625rem;
+}
+
+.trep-bone-b {
+  width: 6rem;
+  height: 1.25rem;
+}
+
+.trep-bone-c {
+  width: 5rem;
+  height: 0.625rem;
+}
+
+.trep-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.trep-bone-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 10rem;
+  padding-left: 2.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.trep-bone-bar {
+  flex: 1 1 0;
+  max-width: 2.75rem;
+  margin: 0 auto;
+  min-height: 2px;
+}
+
+/* --------------------------------------------------------- the strip */
+
+.trep-stats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0.75rem;
+}
+
+.trep-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.trep-stat-label {
+  font-size: var(--text-small);
+  line-height: 1rem;
+  color: var(--text-muted);
+}
+
+.trep-stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-md);
+  line-height: 1.5rem;
+  font-weight: var(--weight-semibold);
+}
+
+.trep-stat-sub {
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.trep-agent {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: var(--text-small);
+  line-height: 1rem;
+  color: var(--text-muted);
+}
+
+.trep-agent b {
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.trep-agent-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------- the chart */
+
+.trep-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.trep-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.trep-h3 {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.trep-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.trep-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.trep-swatch {
+  flex: none;
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 3px;
+}
+
+.trep-swatch-confirmed {
+  background: var(--accent);
+}
+
+/* Drafted is hatched and named, never colour alone. */
+.trep-swatch-drafted {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 2px, var(--accent-bg) 2px 4px);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.trep-plot {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  column-gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.trep-axis {
+  position: relative;
+  height: 10rem;
+}
+
+.trep-axis-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1rem;
+  color: var(--text-muted);
+}
+
+.trep-area {
+  position: relative;
+  height: 10rem;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.trep-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.trep-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+.trep-bars-wide {
+  gap: 0.75rem;
+}
+
+.trep-bars-mid {
+  gap: 0.25rem;
+}
+
+.trep-bars-dense {
+  gap: 2px;
+}
+
+.trep-col {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+  font: inherit;
+}
+
+.trep-col-on,
+.trep-col:focus-visible {
+  background: var(--accent-bg);
+}
+
+.trep-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  max-width: 2.75rem;
+  min-height: 2px;
+  border-radius: 4px 4px 1px 1px;
+  overflow: hidden;
+  background: var(--border-default);
+}
+
+.trep-stack-future {
+  background: transparent;
+}
+
+.trep-fill-confirmed {
+  flex-grow: 0;
+  flex-shrink: 0;
+  background: var(--accent);
+}
+
+.trep-fill-drafted {
+  flex-grow: 0;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(135deg, var(--accent) 0 2px, var(--accent-bg) 2px 5px);
+}
+
+.trep-tip {
+  position: absolute;
+  z-index: 5;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  white-space: nowrap;
+}
+
+.trep-tip-date {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.trep-tip-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-bold);
+}
+
+.trep-tip-sub {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.trep-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.trep-empty-title {
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+}
+
+.trep-empty-sub {
+  margin: 0;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.trep-day-names {
+  display: flex;
+  padding-top: 0.375rem;
+}
+
+.trep-day-name {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: var(--text-small);
+  line-height: 1rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.trep-day-quiet {
+  color: var(--text-muted);
+}
+
+.trep-day-today {
+  color: var(--accent);
+  font-weight: var(--weight-heavy);
+}
+
+.trep-mono {
+  font-family: var(--font-mono);
+}
+
+.trep-strong {
+  font-weight: var(--weight-semibold);
+}
+
+/* --------------------------------------------------------- the table */
+
+.trep-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1.5rem 2rem;
+}
+
+.trep-table-wrap {
+  flex: 999 1 30rem;
+  min-width: min(100%, 18rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.trep-group-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.trep-group-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.trep-swap {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.9375rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.trep-swap:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.trep-swap svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.trep-table {
+  --tr-cols: minmax(0, 1fr) 6rem;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.trep-table-split {
+  --tr-cols: minmax(0, 1fr) 5.25rem 5.25rem 6rem;
+}
+
+/* A header that sorts its column (LAI-1166). */
+.trep-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.trep-num .trep-sort {
+  flex-direction: row-reverse;
+}
+
+.trep-sort:hover,
+.trep-sort-on {
+  color: var(--text-primary);
+}
+
+.trep-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.trep-sort-mark {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.5;
+}
+
+.trep-sort-on .trep-sort-mark {
+  opacity: 1;
+}
+
+/* People first: Spaces and Tasks before the hours (LAI-1164). */
+.trep-table-spread {
+  --tr-cols: minmax(0, 1fr) 4.5rem 4.5rem 6rem;
+}
+
+.trep-table-spread.trep-table-split {
+  --tr-cols: minmax(0, 1fr) 4.5rem 4.5rem 5.25rem 5.25rem 6rem;
+}
+
+/* The name, and on a phone the counts on a line under it; the columns say it wider. */
+.trep-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.trep-row-spread {
+  display: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  line-height: 1rem;
+  color: var(--text-muted);
+}
+
+.trep-row {
+  display: grid;
+  grid-template-columns: var(--tr-cols);
+  column-gap: 0.75rem;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 0.375rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.trep-row-head {
+  min-height: 0;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.trep-row-child {
+  min-height: 2.25rem;
+  background: color-mix(in srgb, var(--bg-column) 45%, transparent);
+}
+
+.trep-row-total {
+  border-bottom: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+}
+
+.trep-cell-name {
+  min-width: 0;
+}
+
+.trep-cell-child {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0 0.375rem 2.25rem;
+}
+
+/* A long group shows ten rows, then *Show N more* (LAI-1162). */
+.trep-row-more > .trep-cell-child {
+  grid-column: 1 / -1;
+  gap: 0.75rem;
+}
+
+.trep-more {
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.trep-more:hover {
+  text-decoration: underline;
+}
+
+.trep-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.trep-row-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.trep-row-toggle:disabled {
+  cursor: default;
+}
+
+.trep-chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  stroke-width: 2.4;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+
+.trep-chev-open {
+  transform: rotate(90deg);
+}
+
+.trep-chev-none {
+  opacity: 0;
+}
+
+.trep-code {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.trep-row-label {
+  flex: 0 1 auto;
+  min-width: 2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.trep-quiet-text {
+  font-weight: var(--weight-normal);
+  color: var(--text-secondary);
+}
+
+.trep-row-meta {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.trep-num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.trep-num-quiet {
+  color: var(--text-secondary);
+}
+
+.trep-num-muted {
+  color: var(--text-muted);
+}
+
+.trep-num-strong {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.trep-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+}
+
+.trep-dashed {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  box-sizing: border-box;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-xs);
+}
+
+.trep-avatar {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+}
+
+.trep-kind-work {
+  background: var(--kind-work);
+}
+.trep-kind-meeting {
+  background: var(--kind-meeting);
+}
+.trep-kind-thinking {
+  background: var(--kind-thinking);
+}
+.trep-kind-research {
+  background: var(--kind-research);
+}
+.trep-kind-pairing {
+  background: var(--kind-pairing);
+}
+.trep-kind-review {
+  background: var(--kind-review);
+}
+.trep-kind-support {
+  background: var(--kind-support);
+}
+.trep-kind-admin {
+  background: var(--kind-admin);
+}
+
+/* --------------------------------------------------------- the donut */
+
+.trep-donut-wrap {
+  flex: 1 1 20rem;
+  min-width: min(100%, 16rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trep-donut-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.25rem;
+}
+
+.trep-donut {
+  position: relative;
+  flex: none;
+  width: 9.25rem;
+  height: 9.25rem;
+  border-radius: 50%;
+}
+
+.trep-donut-hole {
+  position: absolute;
+  inset: 0.875rem;
+  border-radius: 50%;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.trep-donut-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-md);
+  line-height: 1.5rem;
+  font-weight: var(--weight-bold);
+}
+
+.trep-donut-caption {
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.trep-slices {
+  flex: 1 1 10rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trep-slice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+  padding: 0 0.375rem;
+  border-radius: var(--radius-control);
+  font-size: var(--text-small);
+  cursor: default;
+}
+
+.trep-slice-on {
+  background: var(--bg-column);
+}
+
+.trep-slice-dim {
+  opacity: 0.6;
+}
+
+.trep-slice-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+}
+
+.trep-slice-pct {
+  min-width: 2.25rem;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- a space's weeks */
+
+.trep-weeks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trep-week-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.trep-week {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) 13rem;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.375rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-body);
+}
+
+.trep-week-label {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.trep-week-track {
+  height: 0.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.trep-week-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.trep-week-figure {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.trep-week-withheld {
+  text-align: right;
+  font-size: var(--text-small);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- a phone */
+
+.trep-short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .trep-long {
+    display: none;
+  }
+
+  .trep-short {
+    display: inline;
+  }
+
+  .trep {
+    padding: 0.875rem;
+  }
+
+  .trep-head .trep-segments,
+  .trep-bar-end {
+    width: 100%;
+  }
+
+  .trep-bar-end {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .trep-segments .trep-segment {
+    flex: 1 1 0;
+  }
+
+  .trep-divider {
+    display: none;
+  }
+
+  .trep-table-split,
+  .trep-table-spread,
+  .trep-table-spread.trep-table-split {
+    --tr-cols: minmax(0, 1fr) 4.5rem;
+  }
+
+  .trep-table-split .trep-num:not(:last-child),
+  .trep-table-spread .trep-num:not(:last-child) {
+    display: none;
+  }
+
+  .trep-row-spread {
+    display: block;
+  }
+
+  .trep-row-meta {
+    display: none;
+  }
+
+  .trep-week {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 0.5rem 0.375rem;
+  }
+
+  .trep-week-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

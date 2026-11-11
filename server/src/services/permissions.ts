@@ -76,8 +76,11 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'token.create_own': 'Generate, read and revoke own tokens',
   'token.read_own': 'Generate, read and revoke own tokens',
   'token.revoke_own': 'Generate, read and revoke own tokens',
-  'token.list_any': "List / revoke anyone's token",
-  'token.revoke_any': "List / revoke anyone's token",
+  'token.list_any': "List anyone's tokens",
+  'token.revoke_any': "Revoke anyone's token",
+  'developer_setup.read_any': "View a member's developer setup",
+  'agent.revoke_any': "Revoke a member's tool or unpair their device",
+  'device.revoke_any': "Revoke a member's tool or unpair their device",
   'agent.read_own': 'Read own agents',
   'agent.manage_own': 'Register and manage own agents',
   'unlisted.log_own': 'Log own unlisted work',
@@ -88,6 +91,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'profile.set_kind': "Set a member's profile kind",
   'profile.rate': 'Rate a member',
   'profile.activity.read': "View a member's activity heatmap",
+  'profile.read_own': 'View own profile and activity heatmap',
   'people.analytics.read': "View a member's day, time and shared activity",
   'org.developer_insights.set': 'Turn Developer insights on or off',
   'activity_sharing.read_own': 'Read own activity-sharing setting',
@@ -109,9 +113,15 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'time_drafts.manage_own': 'Read and manage own time drafts',
   'time_entries.read_own': 'Read and write own time entries',
   'time_entries.write_own': 'Read and write own time entries',
+  'time_entries.write_member': "Change a member's confirmed time",
   'time_sync.own': 'Sync own time with Solidtime',
   'time_sync.map': 'Map Solidtime projects and people',
   'time_sync.import_all': "Import everyone's Solidtime time",
+  'time.report.read': "View the organisation's Time report",
+  'availability.set_own': 'Set own availability',
+  'availability.read': 'See availability of people in your spaces',
+  'notices.own': 'Read and dismiss own notices',
+  'developer_setup.read_own': 'View own developer setup',
 
   'project.members.manage': 'Manage project members',
   'project.settings.edit': 'Edit project settings and context_md',
@@ -141,6 +151,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'usage.read_project': "Read a project's token totals",
   'budget.set': 'Set token budgets',
   'project.leave': 'Leave a project',
+  'time.report.read_project': "View the space's time totals",
 };
 
 /**
@@ -170,6 +181,14 @@ const SOMEONE_ELSE = 'someone-else';
  *  - `profile.rate` — Owner and Admin, anybody but themselves.
  *  - `people.analytics.read` — anybody but themselves: their own is `/me`
  *    (LAI-957).
+ *  - `developer_setup.read_any` — anybody but themselves: their own is
+ *    Developer access (D-132, LAI-1137).
+ *  - `token.revoke_any` — an Admin anybody's but the Owner's, personal token
+ *    or tool credential alike (D-133, LAI-1143).
+ *  - `agent.revoke_any`, `device.revoke_any` — an Admin anybody but the
+ *    Owner (D-133, LAI-1137); never themselves, whoever asks.
+ *  - `time_entries.write_member` — an Admin anybody but the Owner, the Owner
+ *    anybody; never themselves (D-143, LAI-1165).
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
  *  - `task.delete` — a Lead any task, a Member one they created.
  *  - `task.handoff.approve` — a Lead any, a Member a task assigned to them.
@@ -215,6 +234,31 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Anyone but themselves',
     holds: () => ({ targetUserId: SOMEONE_ELSE }),
     fails: (userId) => ({ targetUserId: userId }),
+  },
+  'developer_setup.read_any': {
+    text: 'Anyone but themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE }),
+    fails: (userId) => ({ targetUserId: userId }),
+  },
+  'token.revoke_any': {
+    text: 'Not for the Owner',
+    holds: () => ({ targetOrgRole: 'member' }),
+    fails: () => ({ targetOrgRole: 'owner' }),
+  },
+  'agent.revoke_any': {
+    text: 'Not for the Owner, nor themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
+  },
+  'device.revoke_any': {
+    text: 'Not for the Owner, nor themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
+  },
+  'time_entries.write_member': {
+    text: 'Not for the Owner, nor themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
   },
   'comment.edit': {
     text: 'Their own comments only',

@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type FocusEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -51,6 +53,7 @@ import { SectionTitle } from './SectionTitle.tsx';
 import { UpdateCliHelp } from './UpdateCliGuide.tsx';
 import { GUIDE_TITLE } from './update-cli.ts';
 import {
+  askedView,
   cliMatchHint,
   connectedTools,
   currentChoice,
@@ -61,6 +64,7 @@ import {
   hasRecord,
   levelChip,
   noDeviceCheck,
+  openingView,
   parseStep,
   projectCheckCommand,
   recordFinding,
@@ -68,16 +72,19 @@ import {
   recordState,
   REPO_MCP_CONFIG_TOOLS,
   setupEvidence,
-  setupRow,
   stepNumber,
   targetFor,
   verificationWords,
   withOneGrant,
+  type CliMatchHint,
   type GrantChoice,
   type SetupEvidence,
   type SetupStep,
+  type SetupView,
   type ToolChoice,
 } from './project-setup.ts';
+import { repoGroups, repoTitle, type RepoGroup } from './repo-groups.ts';
+import { RepoRows } from './RepoRows.tsx';
 import '../../connect/connect.css';
 import './project-setup-design.css';
 
@@ -154,15 +161,25 @@ const STEP_NAMES = ['Choose project & tool', 'Copy project prompt', 'Review & ve
  *
  * Everything is in the address — `?project=`, `?tool=`, `?step=` — so the
  * page can be bookmarked, resumed and reached from another tab's row; a step
- * replaces the address rather than pushing it. `?view=setups` lists every
- * repository setup recorded across the reader's projects (LAI-1077); moving
- * between it and the wizard pushes, so Back returns to the list.
+ * replaces the address rather than pushing it. `?view=setups` lists the
+ * reader's repository setups across their projects (LAI-1077), one row per
+ * repository with each device under it (LAI-321); moving between it and the
+ * wizard pushes, so Back returns to the list.
+ *
+ * **Which it opens on** (LAI-321): what the address asks for (`askedView` —
+ * `?view=`, or a place in the wizard such as Tools' `?tool=`), else the list
+ * for a reader with a setup for a connected tool and the wizard for one with
+ * none (`openingView`). That is decided from the first read of the records
+ * and kept, so a reader who records their first setup is not moved off the
+ * wizard under them. The records are read once here, and the list shows that
+ * read; it is read again when the reader comes back to the list.
  *
  * The board never sees the repository, and the page never says it did.
  */
 export function ProjectSetupTab({ origin, params, setParams, onNavigate }: ProjectSetupTabProps) {
   const projects = useProjects();
   const [agents, setAgents] = useState<Load<readonly RegisteredAgent[]>>(LOADING);
+  const setups = useAllSetups();
   const [message, announce] = useLiveRegion();
   const [now] = useState(() => Date.now());
   const ids = useId();
@@ -210,7 +227,28 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
     setAddress({ [key]: value });
   };
 
-  const listing = params.get('view') === 'setups';
+  // The view: the address's, else the records' — decided once, then kept.
+  const asked = askedView(params);
+  const decided =
+    agents.kind === 'ready' && setups.records.kind === 'ready'
+      ? openingView(setups.records.value, agents.value)
+      : undefined;
+  const [opening, setOpening] = useState<SetupView | undefined>(undefined);
+  useEffect(() => {
+    if (opening === undefined && decided !== undefined) setOpening(decided);
+  }, [opening, decided]);
+  const view = asked ?? opening ?? decided;
+  const listing = view === 'setups';
+
+  // Back to the list from the wizard: read again, for what the wizard recorded.
+  // Not on the way in, which is the read the view was decided from.
+  const { refresh } = setups;
+  const shownView = useRef(view);
+  useEffect(() => {
+    if (view === 'setups' && shownView.current === 'wizard') refresh();
+    shownView.current = view;
+  }, [view, refresh]);
+
   const step = parseStep(params.get('step'));
   const titleId = `${ids}-title`;
 
@@ -234,18 +272,24 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
     />
   );
 
+  // Until the view is known no title is drawn, so neither view's flashes first.
+  const heading =
+    view === undefined ? null : listing ? <SetupsTitle titleId={titleId} /> : sectionTitle;
+
   let content: ReactNode;
   if (agents.kind === 'loading' || projects.status === 'loading') {
     content = (
       <>
-        {sectionTitle}
+        {heading}
         <LoadingState shape="row" count={2} label="Loading your tools and projects" />
       </>
     );
+  } else if (view === undefined && setups.records.kind === 'loading') {
+    content = <LoadingState shape="row" count={2} label="Loading your repository setups" />;
   } else if (agents.kind === 'error') {
     content = (
       <>
-        {sectionTitle}
+        {heading}
         <ApiErrorState
           error={agents.error}
           resource="your tools"
@@ -257,7 +301,7 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
   } else if (projects.status === 'error') {
     content = (
       <>
-        {sectionTitle}
+        {heading}
         <ApiErrorState
           error={projects.error}
           resource="your projects"
@@ -266,14 +310,28 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
         />
       </>
     );
+  } else if (view === undefined && setups.records.kind === 'error') {
+    content = (
+      <ApiErrorState
+        error={setups.records.error}
+        resource="your repository setups"
+        scope="organisation"
+        onRetry={setups.reload}
+      />
+    );
   } else if (listing) {
     content = (
-      <SetupsList
-        titleId={titleId}
-        agents={agents.value}
-        projects={projects.projects}
-        setAddress={setAddress}
-      />
+      <>
+        {heading}
+        <SetupsList
+          titleId={titleId}
+          records={setups.records}
+          onRetry={setups.reload}
+          agents={agents.value}
+          projects={projects.projects}
+          setAddress={setAddress}
+        />
+      </>
     );
   } else {
     const tools = connectedTools(agents.value, now);
@@ -378,7 +436,7 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
   }
 
   return (
-    <div className="dx dx-ps dev-setup" data-view={listing ? 'setups' : 'wizard'}>
+    <div className="dx dx-ps dev-setup" data-view={view ?? 'loading'}>
       <LiveRegion message={message} />
       {content}
     </div>
@@ -411,6 +469,54 @@ function EmptyCard({
 }
 
 // ------------------------------------------------------------------- data
+
+interface AllSetups {
+  readonly records: Load<readonly ProjectSetup[]>;
+  /** Read again from nothing, as a retry does. */
+  readonly reload: () => void;
+  /** Read again, keeping what is on screen meanwhile. */
+  readonly refresh: () => void;
+}
+
+/**
+ * The reader's setup records across every project (`GET /project-setups`
+ * with no project, LAI-1077): read once for the tab, which decides its view
+ * from them and lists them.
+ */
+function useAllSetups(): AllSetups {
+  const [records, setRecords] = useState<Load<readonly ProjectSetup[]>>(LOADING);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setRecords(LOADING);
+    listProjectSetups(undefined, undefined, controller.signal)
+      .then((value) => {
+        setRecords({ kind: 'ready', value });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setRecords({ kind: 'error', error });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [attempt]);
+
+  const reload = useCallback(() => {
+    setAttempt((n) => n + 1);
+  }, []);
+  const refresh = useCallback(() => {
+    listProjectSetups()
+      .then((value) => {
+        setRecords({ kind: 'ready', value });
+      })
+      .catch(() => {
+        // A missed re-read keeps what is on screen; coming back reads again.
+      });
+  }, []);
+  return { records, reload, refresh };
+}
 
 interface SetupData {
   readonly access: Load<ProjectAccess>;
@@ -588,8 +694,9 @@ function SetupWizard({
         path={target.path}
         titleRef={titleRef}
         onRetry={data.reload}
+        // The wizard, by name: with no place in it, the tab would open on the list.
         onAnother={() => {
-          setAddress({ step: null });
+          setAddress({ step: null, view: 'wizard' });
         }}
         go={go}
       />
@@ -1299,6 +1406,10 @@ function ReviewStep({
         ? undefined
         : 'warn';
 
+  // What each row's mark says: a tick once that way has recorded something.
+  const checkedHere = evidence !== null && evidence.checks.length > 0;
+  const selfHere = evidence?.self ?? null;
+
   return (
     <div className="dx-ps-review" data-step="record">
       <div className="dx-status-head">
@@ -1317,97 +1428,93 @@ function ReviewStep({
         check run on your device, or your own word.
       </p>
 
+      {/*
+        LAI-1099 #9: the two ways as the design's check rows — a mark, the way
+        and its status, then its action — not two boxed cards.
+      */}
       <section className="dx-ps-way" aria-labelledby={`${ids}-check`} data-way="check">
         <div className="dx-ps-way-head">
-          <h4 className="dx-ps-way-title" id={`${ids}-check`}>
-            Check it from your device
-          </h4>
-          {checkCommand !== null && <DesignChip tone="accent">Recommended</DesignChip>}
-        </div>
-        {checkCommand === null ? (
-          // LAI-1091: `laika tool add` refuses this tool, so the check would
-          // exit 2 and record nothing. Say so rather than offer it.
-          <NoteBlock tone="warn" title={manual.title} note="no-device-check">
-            <p className="conn-body">{manual.body}</p>
-            {manual.note !== null && (
-              <p className="conn-note" data-note="manual">
-                <InlineCode text={manual.note} />
+          <span className="dx-ps-way-mark" data-done={checkedHere || undefined} aria-hidden="true">
+            <DxIcon name={checkedHere ? 'check' : 'tool'} size={16} />
+          </span>
+          <div className="dx-ps-way-text">
+            <h4 className="dx-ps-way-title" id={`${ids}-check`}>
+              Check it from your device
+            </h4>
+            {records.kind === 'loading' ? (
+              <LoadingState shape="row" count={1} label="Loading what is recorded" />
+            ) : records.kind === 'error' ? (
+              <ApiErrorState
+                error={records.error}
+                resource="what is recorded for this repository"
+                scope="project"
+                onRetry={onRetry}
+              />
+            ) : evidence === null ? null : (
+              <p className="dx-ps-status" data-status={evidence.overall} aria-live="polite">
+                <EvidenceChip evidence={evidence} canCheck={checkCommand !== null} />
               </p>
             )}
-          </NoteBlock>
-        ) : (
-          <>
-            <p className="conn-body" data-note="project-check">
-              Run this in the repository. It reads the instructions file, changes nothing, and
-              records what it found with {tool.toolName}’s own credential.
-            </p>
-            <CodeBlock label="Terminal, in the repository" text={checkCommand} what="the command" />
-            <p className="conn-note" data-note="cli-match">
-              This needs a Laika CLI that matches this board
-              {hint.commit !== null && (
-                <>
-                  {' '}
-                  (commit <code>{hint.commit}</code>)
-                </>
+          </div>
+          {checkCommand !== null && <DesignChip tone="accent">Recommended</DesignChip>}
+        </div>
+        <div className="dx-ps-way-body">
+          {checkCommand === null ? (
+            // LAI-1091: `laika tool add` refuses this tool, so the check would
+            // exit 2 and record nothing. Say so rather than offer it.
+            <NoteBlock tone="warn" title={manual.title} note="no-device-check">
+              <p className="conn-body">{manual.body}</p>
+              {manual.note !== null && (
+                <p className="conn-note" data-note="manual">
+                  <InlineCode text={manual.note} />
+                </p>
               )}
-              . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
-              <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
-              your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and what
-              to do about it, wherever the old one is.
-            </p>
-            <UpdateCliHelp place="project-setup" />
-          </>
-        )}
-        {records.kind === 'loading' ? (
-          <LoadingState shape="row" count={1} label="Loading what is recorded" />
-        ) : records.kind === 'error' ? (
-          <ApiErrorState
-            error={records.error}
-            resource="what is recorded for this repository"
-            scope="project"
-            onRetry={onRetry}
-          />
-        ) : evidence === null ? null : (
-          <>
-            <p className="dx-ps-status" data-status={evidence.overall} aria-live="polite">
-              <EvidenceChip evidence={evidence} canCheck={checkCommand !== null} />
-            </p>
-            {hasRecord(evidence) && (
-              <ul
-                className="dev-setup-records dx-ps-records"
-                aria-label="Records for this repository"
-              >
-                {evidence.checks.map((r) => (
-                  <li key={r.id} data-source="local_check" data-state={recordState(r)}>
-                    <span className="dev-setup-record-source">{recordSource(r, now)}</span>
-                    <span className="conn-note">{recordFinding(r)}</span>
-                  </li>
-                ))}
-                {evidence.self !== null && (
-                  <li data-source="self_reported_browser" data-state={recordState(evidence.self)}>
-                    <span className="dev-setup-record-source">
-                      {recordSource(evidence.self, now)}
-                    </span>
-                    <span className="conn-note">{recordFinding(evidence.self)}</span>
-                  </li>
-                )}
-              </ul>
-            )}
-          </>
-        )}
+            </NoteBlock>
+          ) : (
+            <>
+              <p className="conn-body" data-note="project-check">
+                Run this in the repository. It reads the instructions file, changes nothing, and
+                records what it found with {tool.toolName}’s own credential.
+              </p>
+              <CodeBlock
+                label="Terminal, in the repository"
+                text={checkCommand}
+                what="the command"
+              />
+              <CliLine hint={hint} />
+              <UpdateCliHelp place="project-setup" />
+            </>
+          )}
+          {evidence !== null && evidence.checks.length > 0 && (
+            <ul className="dev-setup-records dx-ps-records" aria-label="What the checks found">
+              {evidence.checks.map((r) => (
+                <li key={r.id} data-source="local_check" data-state={recordState(r)}>
+                  <span className="dev-setup-record-source">{recordSource(r, now)}</span>
+                  <span className="conn-note">{recordFinding(r)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="dx-ps-way" aria-labelledby={`${ids}-self`} data-way="self">
-        <h4 className="dx-ps-way-title" id={`${ids}-self`}>
-          Or record it yourself
-        </h4>
-        <p className="conn-note">
-          If you ran the prompt and reviewed its diff, or added the block by hand, say so here.
-        </p>
-        {recordError !== null && (
-          <ApiErrorState error={recordError} resource="your record" scope="project" verb="save" />
-        )}
-        <div className="dx-actions">
+        <div className="dx-ps-way-head">
+          <span
+            className="dx-ps-way-mark"
+            data-done={selfHere !== null || undefined}
+            aria-hidden="true"
+          >
+            <DxIcon name={selfHere === null ? 'repo' : 'check'} size={16} />
+          </span>
+          <div className="dx-ps-way-text">
+            <h4 className="dx-ps-way-title" id={`${ids}-self`}>
+              Or record it yourself
+            </h4>
+            <p className="conn-note dx-ps-way-state">
+              Self-reported. Laika does not check the file.
+            </p>
+          </div>
           <button
             type="button"
             className="dx-btn dx-btn-sm"
@@ -1422,19 +1529,113 @@ function ReviewStep({
             {recording && <Spinner size="sm" />}
             I’ve added it
           </button>
-          <span className="conn-note">Self-reported. Laika does not check the file.</span>
         </div>
-        {!granted && (
-          <p
-            className="conn-note"
-            id={`${ids}-record-needs-access`}
-            data-note="record-needs-access"
-          >
-            Give {tool.label} access to {project.name} first: a record names a tool that can work
-            here.
-          </p>
+        {(selfHere !== null || recordError !== null || !granted) && (
+          <div className="dx-ps-way-body">
+            {selfHere !== null && (
+              <ul className="dev-setup-records dx-ps-records" aria-label="What you recorded">
+                <li data-source="self_reported_browser" data-state={recordState(selfHere)}>
+                  <span className="dev-setup-record-source">{recordSource(selfHere, now)}</span>
+                  <span className="conn-note">{recordFinding(selfHere)}</span>
+                </li>
+              </ul>
+            )}
+            {recordError !== null && (
+              <ApiErrorState
+                error={recordError}
+                resource="your record"
+                scope="project"
+                verb="save"
+              />
+            )}
+            {!granted && (
+              <p
+                className="conn-note"
+                id={`${ids}-record-needs-access`}
+                data-note="record-needs-access"
+              >
+                Give {tool.label} access to {project.name} first: a record names a tool that can
+                work here.
+              </p>
+            )}
+          </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Step 3's CLI line (LAI-1099 #9): one short sentence, and the LAI-1093 hint
+ * behind *Help*, word for word. A disclosure, as the Overview's tools chip is:
+ * focus stays on *Help* as it opens and `Tab` walks into it; `Escape` closes
+ * it and puts focus back; a click outside, or focus leaving, closes it in
+ * place. *How to update your Laika CLI* stays where it was, right under this.
+ */
+function CliLine({ hint }: { readonly hint: CliMatchHint }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement | null>(null);
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const popId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: Event): void => {
+      if (wrap.current !== null && !wrap.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [open]);
+
+  const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !open) return;
+    event.preventDefault();
+    setOpen(false);
+    button.current?.focus();
+  };
+
+  const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    const to = event.relatedTarget as Node | null;
+    if (!open || to === null || wrap.current?.contains(to) === true) return;
+    setOpen(false);
+  };
+
+  return (
+    <div className="dx-ps-cli" ref={wrap} onKeyDown={onKey} onBlur={onBlur} data-cli-line="">
+      <p className="conn-note dx-ps-cli-line">
+        Needs a Laika CLI that matches this board.{' '}
+        <button
+          type="button"
+          className="dx-ps-link"
+          aria-expanded={open}
+          {...(open ? { 'aria-controls': popId } : {})}
+          ref={button}
+          onClick={() => {
+            setOpen(!open);
+          }}
+        >
+          Help
+        </button>
+      </p>
+      {open && (
+        <div className="dx-ps-help-pop" id={popId} role="group" aria-label="Which Laika CLI">
+          <p className="conn-note" data-note="cli-match">
+            This needs a Laika CLI that matches this board
+            {hint.commit !== null && (
+              <>
+                {' '}
+                (commit <code>{hint.commit}</code>)
+              </>
+            )}
+            . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
+            <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
+            your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and what
+            to do about it, wherever the old one is.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1599,43 +1800,44 @@ function DoneCard({
 
 // ------------------------------------------------------------- setups list
 
+/** The list's title: what it is, and that each repository is said once. */
+function SetupsTitle({ titleId }: { readonly titleId: string }) {
+  return (
+    <SectionTitle
+      title="Your repository setups"
+      titleId={titleId}
+      sub="Each repository once, with every device that set it up. Checked only by laika project check."
+    />
+  );
+}
+
 interface SetupsListProps {
   readonly titleId: string;
+  /** The tab's own read of every project's records, shared rather than read twice. */
+  readonly records: Load<readonly ProjectSetup[]>;
+  readonly onRetry: () => void;
   readonly agents: readonly RegisteredAgent[];
   readonly projects: readonly Project[];
   readonly setAddress: SetAddress;
 }
 
 /**
- * Every repository setup the reader has recorded, across every project they
- * can read, newest first (LAI-1077) — one line each, *Open* taking the setup
- * back to its step 3.
+ * The reader's repository setups across every project they can read
+ * (LAI-1077), one row per repository with each device that set it up under
+ * it (LAI-321) — the Overview's rows, drawn by the same `RepoRows`. Each of a
+ * device's tools has *Open*, taking that tool's setup of the project back to
+ * its step 3. The first row starts a new one.
  */
-function SetupsList({ titleId, agents, projects, setAddress }: SetupsListProps) {
-  const [records, setRecords] = useState<Load<readonly ProjectSetup[]>>(LOADING);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setRecords(LOADING);
-    listProjectSetups(undefined, undefined, controller.signal)
-      .then((value) => {
-        setRecords({ kind: 'ready', value });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setRecords({ kind: 'error', error });
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [attempt]);
-
+function SetupsList({ titleId, records, onRetry, agents, projects, setAddress }: SetupsListProps) {
   // Between the list and the wizard is a move the reader will want Back to
-  // undo, so it pushes; a step within the wizard replaces.
+  // undo, so it pushes; a step within the wizard replaces. The wizard is
+  // named: with no place in it, the tab would open on this list again.
   const start = () => {
-    setAddress({ view: null, step: null }, { push: true });
+    setAddress({ view: 'wizard', step: null }, { push: true });
   };
+
+  const nameOf = (group: RepoGroup): string =>
+    projects.find((p) => p.id === group.projectId)?.name ?? group.projectSlug;
 
   let rows: ReactNode;
   if (records.kind === 'loading') {
@@ -1651,97 +1853,82 @@ function SetupsList({ titleId, agents, projects, setAddress }: SetupsListProps) 
           error={records.error}
           resource="your repository setups"
           scope="organisation"
-          onRetry={() => {
-            setAttempt((n) => n + 1);
-          }}
+          onRetry={onRetry}
         />
       </li>
     );
-  } else if (records.value.length === 0) {
-    rows = (
-      <li className="dx-record" data-row="none">
-        <div className="dx-record-main">
-          <span className="dx-record-sub">
-            Nothing is recorded yet. A setup shows here once laika project check, or your own I’ve
-            added it, records it.
-          </span>
-        </div>
-      </li>
-    );
   } else {
-    rows = records.value.map((record) => {
-      const row = setupRow(record, agents, projects.find((p) => p.id === record.project_id)?.name);
-      return (
-        <li
-          key={record.id}
-          className="dx-record"
-          data-setup={record.id}
-          data-source={record.source}
-        >
-          <span className="dx-icon">
-            <DxIcon name={row.chip.word === 'Checked' ? 'check' : 'repo'} />
-          </span>
+    // A disconnected tool's records go with it: it can be set up no further.
+    const groups = repoGroups(
+      records.value,
+      agents.filter((agent) => agent.status === 'active'),
+    );
+    rows =
+      groups.length === 0 ? (
+        <li className="dx-record" data-row="none">
           <div className="dx-record-main">
-            <strong className="dx-record-title">{row.title}</strong>
-            <span className="dx-record-sub">{row.sub}</span>
+            <span className="dx-record-sub">
+              Nothing is recorded yet. A setup shows here once laika project check, or your own I’ve
+              added it, records it.
+            </span>
           </div>
-          <div className="dx-record-end">
-            <DesignChip tone={row.chip.tone}>{row.chip.word}</DesignChip>
-            {row.toolId !== null && (
+        </li>
+      ) : (
+        <RepoRows
+          groups={groups}
+          projectName={nameOf}
+          toolAction={(group, device, tool) => {
+            const title = repoTitle(group, nameOf(group));
+            return (
               <button
+                key={tool.id}
                 type="button"
                 className="dx-btn dx-btn-sm"
-                aria-label={`Open ${row.title}`}
+                data-open={tool.id}
                 onClick={() => {
                   setAddress(
-                    { view: null, project: record.project_slug, tool: row.toolId, step: '3' },
+                    { view: null, project: group.projectSlug, tool: tool.id, step: '3' },
                     { push: true },
                   );
                 }}
               >
-                Open <span aria-hidden="true">→</span>
+                {/* One tool on the line needs no name; two are told apart by theirs. */}
+                {device.tools.length === 1 ? 'Open' : `Open ${tool.name}`}
+                <span className="visually-hidden">
+                  {device.tools.length === 1
+                    ? ` ${title} with ${tool.name} on ${device.device}`
+                    : ` for ${title} on ${device.device}`}
+                </span>{' '}
+                <span aria-hidden="true">→</span>
               </button>
-            )}
-          </div>
-        </li>
+            );
+          }}
+        />
       );
-    });
   }
 
   return (
-    <>
-      <SectionTitle
-        title="Your repository setups"
-        titleId={titleId}
-        sub="What laika project check found, and what you recorded yourself, newest first."
-        actions={
-          <button type="button" className="dx-btn dx-btn-sm" onClick={start}>
-            Back to setup
-          </button>
-        }
-      />
-      <section className="dx-card" aria-labelledby={titleId}>
-        <ul className="dx-records dx-ps-setups" aria-label="Repository setups">
-          <li className="dx-record" data-row="new">
-            <span className="dx-icon">
-              <DxIcon name="repo" />
+    <section className="dx-card" aria-labelledby={titleId}>
+      <ul className="dx-records dx-ps-setups" aria-label="Repository setups">
+        <li className="dx-record" data-row="new">
+          <span className="dx-icon">
+            <DxIcon name="repo" />
+          </span>
+          <div className="dx-record-main">
+            <strong className="dx-record-title">A new repository</strong>
+            <span className="dx-record-sub">
+              Choose a project and one of your connected tools, then copy its prompt.
             </span>
-            <div className="dx-record-main">
-              <strong className="dx-record-title">A new repository</strong>
-              <span className="dx-record-sub">
-                Choose a project and one of your connected tools, then copy its prompt.
-              </span>
-            </div>
-            <div className="dx-record-end">
-              <button type="button" className="dx-btn dx-btn-primary dx-btn-sm" onClick={start}>
-                Set up a new repository <span aria-hidden="true">→</span>
-              </button>
-            </div>
-          </li>
-          {rows}
-        </ul>
-      </section>
-    </>
+          </div>
+          <div className="dx-record-end">
+            <button type="button" className="dx-btn dx-btn-primary dx-btn-sm" onClick={start}>
+              Set up a new repository <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </li>
+        {rows}
+      </ul>
+    </section>
   );
 }
 

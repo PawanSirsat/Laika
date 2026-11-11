@@ -1,16 +1,21 @@
-/* The offboarding dialog (D-104 item 5, LAI-988): the rating dialog's frame. */
+/*
+ * The offboarding dialog (D-104 item 5, LAI-988): the rating dialog's frame.
+ * Over the side panel (61) it is asked from — the Manage member panel,
+ * LAI-1134 — and under its own pickers (70).
+ */
 
 .offb-scrim {
   position: fixed;
   inset: 0;
-  z-index: var(--layer-overlay);
+  /* Over the side panel it is asked from, under its own pickers (LAI-1134). */
+  z-index: calc(var(--layer-panel) + 2);
   /* Darker, and frosted by `glass.css` (LAI-1132). */
   background: var(--glass-scrim);
 }
 
 .offb-dialog {
   position: fixed;
-  z-index: calc(var(--layer-overlay) + 1);
+  z-index: calc(var(--layer-panel) + 3);
   inset: 0;
   margin: auto;
   height: fit-content;
