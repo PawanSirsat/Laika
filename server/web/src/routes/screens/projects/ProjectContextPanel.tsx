@@ -341,27 +341,25 @@ export function ProjectContextPanel({
             {mayEdit ? (
               <div className="ctx-actions">
                 {/*
-                  **One status, always in the DOM** (LAI-1196): Saving…, then
-                  Saved as rN, or Unsaved changes — so a screen reader hears
-                  each change and a sighted reader sees which revision their
-                  text became, the one the history below lists first.
+                  **One status, always in the DOM** (LAI-1196): Unsaved changes,
+                  then Saved as rN — so a screen reader hears each change and a
+                  sighted reader sees which revision their text became, the one
+                  the history below lists first. While the save is in flight the
+                  Save button's own spinner says so (the repo's busy pattern,
+                  `loading-sweep.test.ts`); the line does not swap in a word.
                 */}
                 <span
-                  className={
-                    saving ? 'ctx-status' : dirty ? 'ctx-status ctx-dirty' : 'ctx-status ctx-saved'
-                  }
+                  className={dirty ? 'ctx-status ctx-dirty' : 'ctx-status ctx-saved'}
                   role="status"
                   data-save-state={
                     saving ? 'saving' : dirty ? 'dirty' : savedAt !== undefined ? 'saved' : 'idle'
                   }
                 >
-                  {saving
-                    ? 'Saving…'
-                    : dirty
-                      ? 'Unsaved changes'
-                      : savedAt !== undefined
-                        ? `Saved as r${String(loaded.revision)}`
-                        : ''}
+                  {dirty
+                    ? 'Unsaved changes'
+                    : savedAt !== undefined
+                      ? `Saved as r${String(loaded.revision)}`
+                      : ''}
                 </span>
                 <button
                   type="button"
