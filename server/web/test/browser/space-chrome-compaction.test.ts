@@ -158,15 +158,23 @@ void describe('the bar is two lines: identity, then tabs', () => {
  * removed that row). The board renders its row inline and the seam does not
  * exist.
  *
- * Asserted so the slot is not reintroduced by someone reading the old plan.
+ * **LAI-1198 reverses this, deliberately.** The space now has one header on
+ * every tab — title, tabs, then one toolbar — and the board's row is that
+ * toolbar's middle slot (`SpaceBarSlot`), because a row of its own under the
+ * header is what put Create in a different place on the board. What this
+ * still guards is the old plan's *named* seam: no `space-toolbar-slot`
+ * container, one toolbar row and the board's row inside it, once.
  */
-void describe('no slot was carved', () => {
-  void test('the layout exposes no toolbar slot', async () => {
+void describe('one toolbar, no second seam (LAI-1198)', () => {
+  void test('the board’s row is inside the one toolbar, and no other slot exists', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
+      await h.page.locator('.board-bar').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.space-toolbar-slot').count(), 0);
       assert.equal(await h.page.locator('#space-toolbar-slot').count(), 0);
+      assert.equal(await h.page.locator('.space-toolbar').count(), 1);
+      assert.equal(await h.page.locator('.space-toolbar .board-bar').count(), 1);
     } finally {
       await h.close();
     }
@@ -188,7 +196,9 @@ void describe('no slot was carved', () => {
  * worth failing on.
  */
 void describe('search and the faces are in exactly one place per view', () => {
-  void test('the board has them in its own row, not in the bar', async () => {
+  // "The bar" here is the space's own controls; on the board they are the
+  // board's row, which sits in the header's toolbar since LAI-1198.
+  void test('the board has them in its own row, not in the space’s', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
@@ -218,7 +228,7 @@ void describe('search and the faces are in exactly one place per view', () => {
     }
   });
 
-  void test('the calendar keeps them in the bar — it has no row', async () => {
+  void test('the calendar keeps the space’s own — it has no row', async () => {
     // The half that stops the move becoming a deletion: a view with no toolbar
     // has nowhere else to put them. Measured on the timeline until LAI-725,
     // which hides them there because the Timeline never read them.
@@ -251,8 +261,14 @@ void describe('search and the faces are in exactly one place per view', () => {
  * edge**, not against a pixel: a number would pass on any width that happened
  * to match and would have to be rewritten every time the tabs change.
  */
+/*
+ * **Create moved down a row in LAI-1198**: it ends the toolbar under the
+ * tabs, the same place on every tab. Agents and ⋯ stay on the title line.
+ * So: Create is still flush with the bar's right edge, now *below* the tabs;
+ * the title's actions are still *above* them.
+ */
 void describe('the space bar’s actions are on the right', () => {
-  void test('Create ends where the bar ends, and both sit after the tabs', async () => {
+  void test('Create ends where the bar ends, under the tabs; Agents and ⋯ above them', async () => {
     const h = await open('/board?project=laika-core', STUB);
 
     try {
@@ -263,13 +279,14 @@ void describe('the space bar’s actions are on the right', () => {
         h.page.evaluate(() => {
           const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
           const create = box('.space-create');
-          const top = box('.space-bar-top');
+          const top = box('.space-toolbar');
           const tabs = box('.view-tabs');
           const group = box('.space-bar-right');
           return create === null || top === null || tabs === null || group === null
             ? null
             : {
                 createRight: Math.round(create.right),
+                createTop: Math.round(create.top),
                 topRight: Math.round(top.right),
                 tabsTop: Math.round(tabs.top),
                 groupTop: Math.round(group.top),
@@ -278,12 +295,18 @@ void describe('the space bar’s actions are on the right', () => {
       // Wait for the layout it asserts, not a clock (LAI-715).
       await until(async () => {
         const now = await measure();
-        return now !== null && now.createRight === now.topRight && now.groupTop < now.tabsTop;
+        return (
+          now !== null &&
+          now.createRight === now.topRight &&
+          now.groupTop < now.tabsTop &&
+          now.createTop > now.tabsTop
+        );
       });
       const m = await measure();
 
       assert.ok(m !== null, 'the bar, the tabs or the actions are missing');
       assert.equal(m.createRight, m.topRight, 'Create is not flush with the bar’s right edge');
+      assert.ok(m.createTop > m.tabsTop, 'Create is not in the toolbar under the tabs');
 
       /*
        * **They share the identity's line, above the tabs** (LAI-299).
