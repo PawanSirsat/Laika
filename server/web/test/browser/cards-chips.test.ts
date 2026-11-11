@@ -294,13 +294,13 @@ async function badgeWhole(page: Page): Promise<boolean> {
 }
 
 void describe('the worst realistic board (break-ui)', () => {
-  void test('nothing escapes a card, titles clamp at two lines, at 390 and 1440 in both themes', async () => {
+  void test('nothing escapes a card, titles clamp at two lines, at 390, 768 and 1440 in both themes', async () => {
     const h = await open('/board?project=laika-core', stub());
     try {
       await boardReady(h.page);
       // At the harness's own viewport too, not only the two widths below.
       assert.equal(await badgeWhole(h.page), true, 'default viewport: the badge is clipped');
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 768, 390]) {
         await h.page.setViewportSize({ width, height: 900 });
         for (const theme of ['Dark', 'Light']) {
           await setTheme(h.page, theme);
