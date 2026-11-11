@@ -36,7 +36,7 @@ import {
   type AttentionItem,
   type HeroKind,
 } from './overview-state.ts';
-import { StaleNotice } from './PageNotices.tsx';
+import { StaleNotice } from './StaleNotice.tsx';
 import { RepoRows } from './RepoRows.tsx';
 import { updateManifestOf, updateStatus, type UpdateStatus } from './update-status.ts';
 import './overview.css';

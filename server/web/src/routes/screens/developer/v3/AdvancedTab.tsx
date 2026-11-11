@@ -33,7 +33,7 @@ import {
 } from './advanced.ts';
 import '../../tokens/tokens.css';
 import '../../../../components/token-row.css';
-import { ResultNote, useResult } from './PageNotices.tsx';
+import { ResultNote, useResult } from './ResultNote.tsx';
 import './advanced.css';
 
 export interface AdvancedTabProps {
@@ -294,7 +294,9 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
                   const name = revealed.token.name;
                   returnFocus.current = true;
                   forget();
-                  notify(`“${name}” is ready to use. Its secret is hidden now and cannot be shown again.`);
+                  notify(
+                    `“${name}” is ready to use. Its secret is hidden now and cannot be shown again.`,
+                  );
                 }}
               >
                 I’ve saved it

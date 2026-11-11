@@ -110,7 +110,9 @@ void describe('Advanced: revoking a personal credential', () => {
         await result(h.page).innerText(),
         /Revoked “nightly-export”\. Anything using it has stopped working\./,
       );
-      await result(h.page).getByRole('button', { name: /^Dismiss: Revoked/ }).click();
+      await result(h.page)
+        .getByRole('button', { name: /^Dismiss: Revoked/ })
+        .click();
       await result(h.page).waitFor({ state: 'detached', timeout: 5_000 });
     } finally {
       await h.close();

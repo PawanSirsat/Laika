@@ -1,4 +1,4 @@
-/* LAI-1197: the stale and result notices (`PageNotices.tsx`). Tokens only. */
+/* LAI-1197: the stale and result notices (`StaleNotice.tsx`, `ResultNote.tsx`). Tokens only. */
 
 .dx-stale,
 .dx-result {
