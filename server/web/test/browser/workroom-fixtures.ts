@@ -78,7 +78,7 @@ const task = (over: Record<string, unknown>) => ({
         in_progress: 'In progress',
         backlog: 'Backlog',
       } as Record<string, string>
-    )[String(over.status ?? 'todo')] ?? 'To do',
+    )[typeof over.status === 'string' ? over.status : 'todo'] ?? 'To do',
 });
 
 const AGENT = {

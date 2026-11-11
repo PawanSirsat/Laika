@@ -337,7 +337,7 @@ void describe('agent lanes, from the fixture and nothing else', () => {
       const text = async (id: string) => (await lane(h, id).innerText()).replace(/\s+/g, ' ');
       assert.match(await text('accountable'), /Ada Lovelace/);
       assert.match(await text('requested'), /shell-cc.*Selected/);
-      await until(async () => /Last claim 2 ended/.test(await text('executing')));
+      await until(async () => (await text('executing')).includes('Last claim 2 ended'));
       assert.match(await text('executing'), /No live claim.*Last claim 2 ended/);
       assert.match(await text('outcome'), /In review.*Round 2/);
       const lanes = await h.page.locator('.wr-lanes').innerText();

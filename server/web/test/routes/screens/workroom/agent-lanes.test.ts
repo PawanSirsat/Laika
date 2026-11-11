@@ -37,25 +37,24 @@ const CLAIM: TaskLiveClaim = {
   device_label: 'belka',
 };
 
-const round = (over: Partial<Round>): Round =>
-  ({
-    id: 'r1',
-    task_id: 't1',
-    number: 2,
-    finished_by: 'u1',
-    client_name: null,
-    agent: null,
-    by_registered_agent: false,
-    summary_md: '',
-    commits: [],
-    branch: null,
-    pull_request: null,
-    tests: [],
-    ci: null,
-    decision: null,
-    created_at: NOW - 1000,
-    ...over,
-  }) as Round;
+const round = (over: Partial<Round>): Round => ({
+  id: 'r1',
+  task_id: 't1',
+  number: 2,
+  finished_by: 'u1',
+  client_name: null,
+  agent: null,
+  by_registered_agent: false,
+  summary_md: '',
+  commits: [],
+  branch: null,
+  pull_request: null,
+  tests: [],
+  ci: null,
+  decision: null,
+  created_at: NOW - 1000,
+  ...over,
+});
 
 const empty: LaneInput = {
   task: { assignee_id: null, status: 'todo', selected_agent: null, claim: null, send_back: null },
