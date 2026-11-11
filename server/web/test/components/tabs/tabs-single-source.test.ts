@@ -2,11 +2,12 @@
  * One tab strip, one tooltip (LAI-1193) — guards that fail on a second copy.
  *
  * - `role="tablist"` is written in exactly one place, `components/tabs/`.
- *   The four hand-rolled tablists (hand-offs, Contributors, the day tabs, the
- *   task activity feed) each carried their own keys or none; a fifth copy is
+ *   The six hand-rolled tablists (hand-offs, Contributors, the day tabs, the
+ *   task activity feed, Usage's Breakdown, the profile's Work tiles) each
+ *   carried their own keys or none; a fifth copy is
  *   how that drift starts again.
- * - Every tab strip renders through `TabStrip`: `PageTabs` and `ViewTabs`
- *   included, so all of them share the keys, the fade and the reveal.
+ * - Every tab strip renders through `TabStrip`: `PageTabs`, `ViewTabs` and
+ *   the profile's tabs included, so all of them share the keys, the fade and the reveal.
  * - The board toolbar and the space bar draw no `title=` on a control: their
  *   icon buttons carry `aria-label` and the `Tooltip`.
  */
@@ -55,6 +56,9 @@ void describe('one tab strip (LAI-1193)', () => {
       'routes/screens/dashboard/Contributors.tsx',
       'routes/screens/my-day/DayTabs.tsx',
       'routes/screens/task/ActivityFeed.tsx',
+      'routes/screens/usage/BreakdownCard.tsx',
+      'routes/screens/profile/overview/WorkCard.tsx',
+      'routes/screens/profile/ProfileScreen.tsx',
     ]) {
       assert.match(read(rel), /<(TabStrip|Tabs)\b/, `${rel} draws its own tab strip`);
     }
@@ -66,6 +70,8 @@ void describe('one tab strip (LAI-1193)', () => {
       'routes/screens/dashboard/Contributors.tsx',
       'routes/screens/my-day/DayTabs.tsx',
       'routes/screens/task/ActivityFeed.tsx',
+      'routes/screens/usage/BreakdownCard.tsx',
+      'routes/screens/profile/overview/WorkCard.tsx',
     ]) {
       assert.doesNotMatch(read(rel), /'ArrowRight'|'ArrowLeft'/, rel);
     }

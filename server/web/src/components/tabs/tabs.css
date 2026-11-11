@@ -1,7 +1,8 @@
 /*
  * The one tab strip (LAI-1193). What every row of tabs shares, whatever it
- * looks like: it scrolls sideways rather than wrapping, hides its scrollbar,
- * and fades the edge that hides a tab. The look of each strip stays in its
+ * looks like: when it does not fit it scrolls sideways, hides its scrollbar,
+ * and fades the edge that hides a tab. Whether it wraps or scrolls is the
+ * strip's own layout, never set here. The look of each strip stays in its
  * own stylesheet.
  *
  * The fade is a mask, not an overlay, so it works over any background — card,
@@ -11,8 +12,8 @@
 
 .tab-strip {
   --tab-strip-fade: 1.5rem;
-  display: flex;
-  flex-wrap: nowrap;
+  /* No display or wrap here: each strip keeps its own layout (a wrapping
+     row, a grid of tiles). A strip that does not wrap scrolls. */
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;

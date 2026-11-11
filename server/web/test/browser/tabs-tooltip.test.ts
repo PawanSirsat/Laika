@@ -212,9 +212,10 @@ void describe('the shared tab strip (LAI-1193)', () => {
 
       await nav.locator('[data-tab="review"]').focus();
       await h.page.keyboard.press('ArrowRight');
-      await until(() => h.page.url().includes('tab=handoffs'));
-      assert.match(h.page.url(), /tab=handoffs/);
-      await until(async () => (await focusedAttr(h.page, 'data-tab')) === 'handoffs');
+      // Inbox's tabs since D-146: Review, then Unlisted work (owners hold audit_log.export).
+      await until(() => h.page.url().includes('tab=unlisted'));
+      assert.match(h.page.url(), /tab=unlisted/);
+      await until(async () => (await focusedAttr(h.page, 'data-tab')) === 'unlisted');
       assert.equal(await focusedAttr(h.page, 'aria-current'), 'page');
 
       await h.page.keyboard.press('Home');
