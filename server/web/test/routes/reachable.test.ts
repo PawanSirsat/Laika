@@ -29,6 +29,7 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   '/spaces/:slug/settings': "a space's ⋯ menu (Space settings) and the gear on its card (LAI-977)",
   '/design/tokens': 'the token reference, linked from `/design/states`',
   '/design/states': 'a development reference, reached by typing the path',
+  '/design/documents': 'the deliverable design trial (LAI-1131), reached by typing the path',
   // The SPACES section is built from the project list rather than from
   // `ROUTES`, so these two are reachable without being in any group.
   '/board': 'the SPACES section — every space row opens its board',

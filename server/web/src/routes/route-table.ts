@@ -334,6 +334,8 @@ export const ROUTES: readonly Route[] = [
   // required them — but out of the product nav, since they are not product.
   { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
   { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
+  // LAI-1131: the deliverable design trial. Illustrative fixtures, lazily loaded.
+  { public: true, path: '/design/documents', label: 'Documents', group: null, phase: 'reference' },
 ];
 
 /**
