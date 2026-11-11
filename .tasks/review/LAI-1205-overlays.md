@@ -5,8 +5,9 @@ area: shell
 assignee: shell
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-11T09:00:00Z
+finished: 2026-11-11T18:30:00Z
 ---
 
 ## Goal
@@ -20,24 +21,24 @@ on `integration-ui-transformation` (phase-1 UX audit, B3/B12/B16).
 
 ## Acceptance criteria
 
-- [ ] One `Dialog` primitive on `use-dialog-focus`: `role=dialog|alertdialog`,
+- [x] One `Dialog` primitive on `use-dialog-focus`: `role=dialog|alertdialog`,
       `aria-modal`, labelled title, focus trap, initial focus, focus restore,
       Escape closes only the topmost layer, scroll lock by class (no runtime
       style injection), backdrop click never closes an alertdialog, sizes,
       sticky header/footer for long content, bottom sheet at 390.
-- [ ] SidePanel and Menu/Popover share the same layer stack, so a dropdown
+- [x] SidePanel and Menu/Popover share the same layer stack, so a dropdown
       inside a side panel and a confirm inside a dialog order correctly (B16),
       via a documented layer-constant module (`theme.css` untouched).
-- [ ] Untruncated census of every `role="dialog|alertdialog"` file, each one
+- [x] Untruncated census of every `role="dialog|alertdialog"` file, each one
       listed with its outcome; the modal dialogs that skip the focus helper
       migrated onto `Dialog` where safe; the rest listed as follow-ups.
-- [ ] Open/close motion: opacity + small transform only, interruptible, none
+- [x] Open/close motion: opacity + small transform only, interruptible, none
       under `prefers-reduced-motion`; values in one local module for LAI-1208.
-- [ ] Playwright: focus trap/restore, Escape topmost only, dropdown-in-panel
+- [x] Playwright: focus trap/restore, Escape topmost only, dropdown-in-panel
       stacking, backdrop policy, 390 sheet, reduced motion, CSP violations 0;
       each key behaviour mutated once and seen red.
-- [ ] Both themes, 390/768/1440; screenshots in `.polly/screenshots/overlays/`.
-- [ ] Gate: `pnpm lint`, `pnpm format`, web typecheck, web tests (4 shards)
+- [x] Both themes, 390/768/1440; screenshots in `.polly/screenshots/overlays/`.
+- [x] Gate: `pnpm lint`, `pnpm format`, web typecheck, web tests (4 shards)
       each exit 0; PR into `integration-ui-transformation` with CI green.
 
 ## Notes
