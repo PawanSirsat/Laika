@@ -97,11 +97,13 @@
 /*
  * Portalled to `<body>` and placed by `Dropdown` from the trigger's box: top
  * or bottom, left, min/max width and max-height are set inline. Above the
- * popovers (31), the click-away catchers (30) and the dialogs (41).
+ * popovers (31), the click-away catchers (30), the dialogs (41), the side
+ * panel (61) and the offboarding question asked from it (63, LAI-1134) — a
+ * picker inside any of them opens over it — and under a confirmation (80).
  */
 .dd-panel {
   position: fixed;
-  z-index: 60;
+  z-index: 70;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;

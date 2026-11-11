@@ -4,6 +4,7 @@ import type { Sprint } from '../../../api/sprints.ts';
 import { PRIORITIES, type Member, type TaskPriority } from '../../../api/tasks.ts';
 import { anchorOf, ListMenu, type MenuAnchor, type MenuItem } from './ListMenu.tsx';
 import type { BulkAction, BulkRun } from './list-bulk.ts';
+import '../../../components/bulk-bar.css';
 
 export interface BulkBarProps {
   /** How many rows are selected, of `total` rows the filter left. */
@@ -11,10 +12,24 @@ export interface BulkBarProps {
   readonly total: number;
   readonly onSelectAll: () => void;
   readonly onClear: () => void;
-  /** The project's statuses — what *Status* offers (LAI-739). */
-  readonly statuses: readonly ProjectStatus[];
+  /**
+   * The project's statuses — what *Status* offers (LAI-739). **Undefined is
+   * "no one project to offer them for"** (LAI-1170): on Work, a selection
+   * across two spaces has no single column list, so *Status* is drawn
+   * disabled with a title saying what would enable it — not absent, which
+   * would read as "cannot" rather than "not yet".
+   */
+  readonly statuses?: readonly ProjectStatus[] | undefined;
+  /**
+   * `statuses` is undefined because the one space's columns are still on
+   * their way (LAI-1170 review): held as *Loading statuses…*, `aria-busy`,
+   * rather than told to choose a space it already has.
+   */
+  readonly statusesLoading?: boolean | undefined;
   readonly members: ReadonlyMap<string, Member>;
-  readonly sprints: readonly Sprint[];
+  /** The sprints *Sprint* offers; undefined as `statuses` is (LAI-1170). */
+  readonly sprints?: readonly Sprint[] | undefined;
+  readonly sprintsLoading?: boolean | undefined;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
   /** Assigning to a sprint is member+ (§3.2) — absent otherwise, not disabled. */
   readonly maySetSprint: boolean;
@@ -30,6 +45,18 @@ const PRIORITY_LABELS: Readonly<Record<TaskPriority, string>> = {
   p2: 'P2',
   p3: 'P3 — lowest',
 };
+
+/** Why a scoped action is held back on Work, said on the disabled button. */
+export const CHOOSE_ONE_SPACE = {
+  status: 'Choose one space to change status',
+  sprint: 'Choose one space to change sprint',
+} as const;
+
+/** The space is known; its list is not here yet. A title, never the button's label. */
+export const LOADING_SCOPE = {
+  status: 'Loading statuses…',
+  sprint: 'Loading sprints…',
+} as const;
 
 /**
  * The bar that appears once anything is selected (LAI-496; the owner's
@@ -52,8 +79,10 @@ export function BulkBar({
   onSelectAll,
   onClear,
   statuses,
+  statusesLoading = false,
   members,
   sprints,
+  sprintsLoading = false,
   sprintLabels,
   maySetSprint,
   run,
@@ -78,7 +107,8 @@ export function BulkBar({
    */
   useLayoutEffect(() => {
     const el = bar.current;
-    const card = el?.closest<HTMLElement>('.list-card');
+    // The List's card, or Work's (LAI-1170): whichever the bar floats over.
+    const card = el?.closest<HTMLElement>('.list-card, .work-card');
     if (el === null || card === null || card === undefined) return;
     const measure = (): void => {
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -99,7 +129,7 @@ export function BulkBar({
       case 'status':
         return {
           label: 'Change status',
-          items: [...statuses]
+          items: [...(statuses ?? [])]
             .sort((a, b) => a.position - b.position)
             .map((s) => ({
               value: s.id,
@@ -127,7 +157,7 @@ export function BulkBar({
           label: 'Move to sprint',
           items: [
             { value: '', label: 'No sprint' },
-            ...sprints.map((s) => ({
+            ...(sprints ?? []).map((s) => ({
               value: s.id,
               label: `${sprintLabels.get(s.id)?.label ?? ''} · ${s.name}`,
             })),
@@ -153,11 +183,31 @@ export function BulkBar({
     }
   };
 
-  const trigger = (which: Open, text: string, icon: React.ReactNode) => (
+  /** Why a scoped action is held: its list is loading, or there is no one space. */
+  const heldFor = (
+    kind: 'status' | 'sprint',
+    list: readonly unknown[] | undefined,
+    loading: boolean,
+  ): { held: string; loading: boolean } | undefined => {
+    if (list !== undefined) return undefined;
+    return loading
+      ? { held: LOADING_SCOPE[kind], loading: true }
+      : { held: CHOOSE_ONE_SPACE[kind], loading: false };
+  };
+
+  const trigger = (
+    which: Open,
+    text: string,
+    icon: React.ReactNode,
+    /** Held back, with the sentence that says what would enable it. */
+    held?: { readonly held: string; readonly loading: boolean },
+  ) => (
     <button
       type="button"
       className="list-bulk-action"
-      disabled={busy}
+      disabled={busy || held !== undefined}
+      {...(held === undefined ? {} : { title: held.held })}
+      {...(held?.loading === true ? { 'aria-busy': true } : {})}
       aria-haspopup="menu"
       aria-expanded={open?.which === which}
       onClick={(event) => {
@@ -208,6 +258,7 @@ export function BulkBar({
               strokeWidth="2.2"
             />
           </svg>,
+          heldFor('status', statuses, statusesLoading),
         )}
         {trigger(
           'priority',
@@ -231,13 +282,14 @@ export function BulkBar({
           </svg>,
         )}
         {maySetSprint &&
-          sprints.length > 0 &&
+          (sprints === undefined || sprints.length > 0) &&
           trigger(
             'sprint',
             'Sprint',
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M4 12h12M12 6l6 6-6 6" stroke="currentColor" strokeWidth="2.4" />
             </svg>,
+            heldFor('sprint', sprints, sprintsLoading),
           )}
 
         <span className="list-bulk-sep" aria-hidden="true" />

@@ -123,7 +123,13 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'token.read_own': 'CCCC',
   'token.revoke_own': 'CCCC',
   'token.list_any': 'YYNN',
-  'token.revoke_any': 'YYNN',
+  // D-133 (LAI-1143): an admin revokes anybody's token but the owner's.
+  'token.revoke_any': 'YCNN',
+  // D-132, D-133 (LAI-1137): a member's setup, read by anybody else holding
+  // the grant; revoked by an admin for anybody but the owner.
+  'developer_setup.read_any': 'CCNN',
+  'agent.revoke_any': 'YCNN',
+  'device.revoke_any': 'YCNN',
   // D-114 (LAI-534): every role reads and manages its own agents; the
   // service reaches only the caller's own rows.
   'agent.read_own': 'YYYY',
@@ -136,6 +142,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'profile.set_kind': 'YYNN',
   'profile.rate': 'CCNN',
   'profile.activity.read': 'YYNN',
+  'profile.read_own': 'YYYY',
   'people.analytics.read': 'CCNN',
   'org.developer_insights.set': 'YYNN',
   'activity_sharing.read_own': 'YYYY',
@@ -157,9 +164,16 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'time_drafts.manage_own': 'YYYY',
   'time_entries.read_own': 'YYYY',
   'time_entries.write_own': 'YYYY',
+  // D-143 (LAI-1165): a member's confirmed time, an admin anybody's but the owner's.
+  'time_entries.write_member': 'YCNN',
   'time_sync.own': 'YYYY',
   'time_sync.map': 'YYNN',
   'time_sync.import_all': 'YYNN',
+  'time.report.read': 'YYNN',
+  'availability.set_own': 'YYYY',
+  'availability.read': 'YYYY',
+  'notices.own': 'YYYY',
+  'developer_setup.read_own': 'YYYY',
 
   'project.members.manage': 'YNN',
   'project.settings.edit': 'YNN',
@@ -189,6 +203,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'usage.read_project': 'YYY',
   'budget.set': 'YNN',
   'project.leave': 'YYY',
+  'time.report.read_project': 'YNN',
 };
 
 const LETTER = { yes: 'Y', no: 'N', conditional: 'C' } as const;
@@ -366,7 +381,12 @@ describe('the catalogue follows the organisation’s grants', () => {
     const before = permissionsCatalogue(actor());
     const after = permissionsCatalogue(actor({ orgGrants: MEMBER_ANALYTICS }));
 
-    for (const action of ['profile.read', 'profile.activity.read', 'usage.read_people']) {
+    for (const action of [
+      'profile.read',
+      'profile.activity.read',
+      'usage.read_people',
+      'time.report.read',
+    ]) {
       expect(cells(before, action), action).toBe('YYNN');
       expect(cells(after, action), action).toBe('YYYN');
     }
@@ -381,6 +401,7 @@ describe('the catalogue follows the organisation’s grants', () => {
       'people.analytics.read',
       'profile.activity.read',
       'profile.read',
+      'time.report.read',
       'usage.read_people',
     ]);
   });

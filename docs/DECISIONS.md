@@ -6894,3 +6894,476 @@ read-only states.
 server-side. The board card does not show the progress line until the slim list carries a
 count (LAI-1120). Whether deliverables feed the size model is LAI-1119's question, not this
 decision's.
+
+## D-130 — The Time report is one component in three scopes, read from one endpoint
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), who asked polly to decide the open
+questions over the design exported as `Laika Time Report.html`; recorded by Belka.
+
+**Context.** The owner asked for a report of where time went, for himself, for one person and
+for the whole organisation, and the design draws one component in all three places: My day →
+Overview (Week, Range), a *Time report* tab on a member's profile replacing *Hours*, and a new
+*Time* tab in Insights. Nothing today returns time across several people or groups it by
+space and member.
+
+**Decision.**
+
+1. **One endpoint, `GET /time/report`, serves all three scopes** as JSON or CSV. The server
+   decides what the caller may see; the browser does the grouping.
+2. **Per-person rows** are for the caller's own time, and for owners and holders of *See
+   everyone's analytics* (D-102). Every person shown per person is logged as a look at their
+   time.
+3. **Space admins see their spaces' totals only**, confirmed time, with no per-person split and
+   under D-088 item 7's three-person floor. D-088 item 7 is not amended.
+4. **The design's *Project* is a Laika space.** Laika gains no sub-project level; the groupings
+   are Space, Member, Task and Kind.
+5. **No billable field and no money.** Billing stays in Solidtime (D-088 item 10). Agent time
+   is shown beside human time and never added to it (D-088 item 8).
+
+**Consequences.** The 92-day summary cap applies to the report. One person's totals must equal
+`GET /me/time/summary` for the same range — a test holds both.
+
+## D-131 — Availability is the person's own declaration
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Context.** A manager wants to know who has room to be onboarded onto another project. D-088
+item 1 forbids a per-person score, ranking or utilisation figure.
+
+**Decision.**
+
+1. **Status** (*open to more work*, *at capacity*), optional hours per week, a note, tags,
+   working week and away periods are set **only by the person**, on a web session.
+2. Status is seen by everyone who shares a space with them. **Load facts** — hours by space and
+   card counts — are read-only, logged, and shown to owners and admins; space admins see card
+   counts only.
+3. **Never ranked**: lists sort alphabetically with no sort by load.
+4. **D-088 item 1 stands: no computed free hours.** The design's "≈ free hours" variant is
+   dropped. *Current load* shows tracked hours and the person's set working hours as two plain
+   numbers on an empty track — not a filled bar, which would be the same ratio drawn.
+
+## D-132 — Owners and admins may read a member's whole developer setup
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.**
+
+1. Owners and admins may read another member's devices, tools, repository setups, check
+   results, pending pairing requests and full token history, **read-only**, each view logged
+   in the D-102 record the member can see.
+2. **The one-time code of a pairing request is never shown to them** (D-124).
+3. It is one permission with token management: *Manage anyone's tokens* becomes **See and
+   manage anyone's developer setup**, held by admins by default.
+4. `/devices` and `/agents` stay own-only — another owner's id still answers `404` there
+   (§4.78). The admin read is its own route under `/people/:id/`.
+5. A repository in a space the reader cannot open is counted, never named.
+
+## D-133 — Owners and admins may revoke a member's tool or unpair their device
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.** Under the permission in D-132, an owner or admin may revoke another member's tool
+(agent) or unpair their device. The effect is D-114 item 2's revoke, unchanged. A confirm says
+exactly what stops working; the member gets an in-Laika notice (D-134). **An admin may not do
+this to the owner's setup.** No email: Laika sends none.
+
+## D-134 — Members get notices
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.** A small store of notices owned by each member covers being added to a space (with
+an optional message and first card) and a tool, device or token of theirs being revoked by
+someone else. They show on My day, are not activity, and are kept 90 days. **No new activity
+verb**: the add is already `member.added` and a revoke is already `token.revoked`.
+
+## D-135 — Repeated looks within ten minutes are logged once
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.** A viewer looking at the same person's data of the same kind again within ten
+minutes writes no second row. This amends §4.59's *one row per read*. D-102 rule 3 still holds,
+because every viewer and subject pair is recorded — a report filter click across forty people
+writes forty rows once, not forty per click.
+
+## D-136 — A space admin's Time report is one space, whole weeks, one figure a week
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka. Amends
+D-130 item 3.
+
+**Context.** LAI-1135 first gave a space admin their spaces' totals with D-088 item 7's
+three-person floor applied to each figure. An independent review showed the floor cannot
+hold that way: one total minus another (all time minus meeting time), the JSON days against
+the CSV lines, or two requests with different spaces, kinds or dates each gave back one
+person's time by subtraction. A floor on each figure does not protect differences between
+figures.
+
+**Decision.**
+
+1. A space admin asks for **one space per request**, over **whole ISO weeks** (Monday to
+   Sunday in the organisation's time zone), within the 92-day cap.
+2. The answer is **one figure per week**: that space's confirmed minutes and how many people
+   made them up. A week with fewer than three people is withheld — `null`, never `0`.
+3. There is no range total, no breakdown by task, kind, day, meeting or manual time, no agent
+   time, no member filter and no drafts. The CSV carries the same weekly lines and nothing
+   else.
+4. Owners and holders of *See everyone's analytics* keep the full report, per person and
+   logged (D-130 item 2, unchanged).
+5. When a report names people, every named person other than the reader is logged as a look,
+   including people with no time in range.
+
+**Consequences.** Weeks do not overlap and each request is one space, so every published
+figure is a whole week of one space made up of at least three people, and no difference of
+two answers isolates fewer than three people. A small space shows mostly withheld weeks; that
+is the floor working. The weekly figure tells a space admin how much the team logged, which is
+what they need; who logged what stays with owners and admins.
+
+## D-137 — What a co-worker sees of someone's availability
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka. Narrows
+D-131 item 2.
+
+**Context.** LAI-1130's review found that "status is seen by everyone who shares a space"
+was being served as the whole record — weekly hours, working week, and every future away
+period with its dates. A co-worker's future holidays and stated hours are more than status.
+
+**Decision.** What a reader sees of someone else's availability is an allow-list per reader:
+
+1. **A member who shares a space:** status, note, tags, and the end date of a current away
+   period ("away until …"). No hours, no working week, no upcoming away periods.
+2. **A space admin, for people in a space they lead:** the above, plus hours per week, upcoming
+   away periods (dates only), and the count of cards in progress. No hours tracked and no
+   working week.
+3. **Owners and holders of *See everyone's analytics*:** the full record and hours tracked,
+   each look logged (D-131, unchanged).
+4. **The person** sees and edits all of their own.
+
+## D-138 — The space admin's weekly floor does not count the reader
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka. Amends
+D-136.
+
+**Context.** LAI-1135's second review found that a space admin who logs time in their own
+space can subtract their own report from a week's figure: A, B and the lead each log ten
+minutes, the week shows thirty for three people, the lead's own report shows ten, and the
+difference is two people's time. D-136 counted the reader among the three.
+
+**Decision.**
+
+1. A space admin's week is shown only when **at least three people other than the reader**
+   logged time in it; otherwise it is withheld (`null`). The people count may still include
+   the reader.
+2. A week is the **Monday-to-Sunday span of the day each entry is filed on** — the day the
+   person's own record carries — not a conversion into the organisation's time zone. This
+   corrects D-136 item 1's wording to match SPEC and the code: no conversion can move an
+   entry from one week to another between two answers.
+3. For owners and holders of *See everyone's analytics*, every person whose time contributes
+   to any figure served — including agent minutes — is logged as a look, not only the people
+   on a row.
+
+## D-139 — The member profile, redesigned: one layout, your own profile for everyone
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner), on the owner's design *Laika Profile*
+(2026-11-06); recorded by Belka. Amends D-078 (one layout for both kinds), D-102 rule 3
+(a profile open is a look) and §3.1's profile rows (the person's own profile). Programme
+LAI-1148.
+
+**Context.** The design draws one profile for two cases — an owner or admin looking at
+someone else (read-only, and the person sees the look), and anyone looking at their own —
+with four tabs (Overview, Day, Time report, Developer setup / access) in both, and a fixed
+Overview of rows that share a height. Today a plain member cannot open their own profile
+(`profile.read` is owner/admin), a `manager` profile omits the work, delivery and agents
+blocks, opening a profile is not a logged look, and several cards the design does not draw
+are still on it. Seven points of the design collided with recorded rules; the owner settled
+each.
+
+**Decision.**
+
+1. **Everyone may read their own profile.** A person reads their own profile and their own
+   activity heatmap whatever their org role, on a session (`/me/profile`,
+   `/me/activity`, LAI-1150). Their own read writes no look (D-102 rule 3: a person
+   reading their own writes none). The `ratings` block is not served to a person about
+   themselves unless they hold `profile.read` — what an owner or admin wrote about someone
+   stays theirs.
+2. **One layout for both kinds** (amends D-078 item 2). A `manager` profile carries
+   `current_work`, `delivery` and `agents` like a `builder`'s; the kind stays a label
+   (§4.1), and the screen draws the same cards for both.
+3. **Opening someone's profile is a look** (amends D-102 rule 3). `GET /users/:id/profile`
+   by anyone but the person writes an `analytics_views` row of a new kind, `profile`,
+   deduped like every other (D-135). *Who looked* names the tab each look came from —
+   Overview (`profile`), Day and Time report (`time`), Activity (`activity`), LLM tokens
+   (`usage`), Developer setup (`developer_setup`) — with the viewer's org role. Looks are
+   kept **400 days** (§4.59, unchanged): the design's "90 days" is not adopted.
+4. **This week is two numbers on an empty track** (D-131 item 4 stands): "36 h 58 min
+   tracked · 40 h set", never a filled bar or a percentage. The figures are read when the
+   profile opens, so opening someone's profile also logs a `time` look for that week —
+   reversing LAI-1139's *Show current load* click, which goes with the Current load card.
+5. **The Developer setup count ("3 to fix") is on your own profile only.** On someone
+   else's it would need their whole developer setup read, and logged, on every open; there
+   the count appears only once their Developer setup tab is opened.
+6. **Someone else's Day shows their drafts, read-only** — D-102 rule 1 already allows an
+   owner or admin to read them; the tab is read-only (rule 4) and the read is logged.
+7. **Durations are hours** (LAI-1147): `1 h 45 min` / `38h 20m`, never the design's `1:45`
+   or `38:20`.
+8. **Removed from the profile:** the owner's or admin's rating card and its Rate dialog
+   (§11.4.2.1; `ratings` and `POST …/ratings` stay in the API, nothing is deleted), the
+   Recent decisions card, the Delivery chart card (it becomes the Work card's one-line
+   *Delivered · 12 weeks* footer), and Current load with *Show current load*.
+
+## D-140 — The profile's Day tab is the embedded My day, not the design's panel
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner), after LAI-1155 shipped; recorded by
+Belka. Amends D-139 (the Day tab only; items 6 and 7 stand). Task LAI-1161.
+
+**Context.** LAI-1155 replaced the profile's Day tab — until then the person's My day,
+embedded — with the compact day panel drawn in the owner's design *Laika Profile*. The
+owner's word on seeing it: the Day tab should stay the earlier one, the same as My day,
+with no change.
+
+**Decision.**
+
+1. **Day is My day, embedded** (§11.4.2.1): your own with *Edit in My day ›* above it;
+   someone else's read-only, with their shared local activity beneath, as before LAI-1155.
+2. **The compact day panel is withdrawn** (`profile/day/`), with its tests. The design file
+   is not changed; its Day frame is simply not built.
+3. **Your own Time report names you** (LAI-1161): with no subject the shared report reads as
+   everyone's and was never asked for, so the tab sat on its skeleton.
+
+## D-141 — The Time report may list people by most time, when the reader asks
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Narrows D-088
+item 1 and D-131 item 3 for the Time report's table and donut only. Task LAI-1162.
+
+**Context.** Insights → Time listed everyone A–Z, and the donut coloured the first five
+A–Z, so with many people it read *Other 88%* and said nothing about where the hours went.
+The owner asked to see who has the most time.
+
+**Decision.**
+
+1. **A–Z stays the default.** Beside *Swap*, wherever people are a grouping, **A–Z ·
+   Most time** lets the reader order people by hours, largest first; the donut's colours
+   follow the order. It is the reader's own view, not stored and not shared.
+2. **Still no ranking figure**: no position number, no score, no utilisation, no money.
+   Everywhere else (Availability, Capacity, lists of people) stays A–Z.
+3. **Long groups are capped** (LAI-1162): every group starts closed — one alone opens by
+   itself — and an open one shows its first ten rows in the table's order (largest first;
+   people A–Z unless *Most time*), then *Show N more* in steps of 25, with *Show fewer*
+   back to ten.
+
+## D-142 — The Time report separates time on a task from general time
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Extends D-130.
+Tasks LAI-1163 (the filter) and LAI-1164 (the spread).
+
+**Context.** Comparing two developers' reports, the owner's hours sat on tasks while
+most others' were general — a title and no task, drafted or imported. Mixed together the
+report could not show the difference.
+
+**Decision.**
+
+1. **Task link: All · On a task · General · Not on a task yet** narrows the whole report
+   — figures, bars, table, donut and CSV — on the server (`link`, §6.4). *On a task* is
+   decided on the raw `task_id`, so a task in a space the reader cannot see still counts;
+   *General* is a confirmed entry on no task, or a draft marked general; *Not on a task
+   yet* is a draft on neither, so choosing it turns drafts on. The three add up to all.
+2. **A space admin's weeks take no `link`**: a narrower total beside the whole would let
+   a reader subtract under the three-person floor (D-136).
+3. **Spread** (LAI-1164): how many spaces and tasks a person's hours went to, as plain
+   counts beside the hours — never a score, a rank or an efficiency figure (D-088 item 1
+   stands for those).
+
+## D-143 — Owners and admins may change a member's confirmed time
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Amends D-102
+rule 4 (someone else's day is read-only) and D-088 items 2 and 6 (confirmed time is the
+person's own to write). Task LAI-1165.
+
+**Context.** An owner or admin reading a member's Day tab could see a wrong entry — a
+meeting typed as four hours instead of one — and could only ask the member to fix it. The
+owner asked to be able to correct it there, with the member told and the record kept.
+
+**Decision.**
+
+1. **Owners and admins may add, change (length, edges, note, card) or delete a member's
+   confirmed time entries** — `time_entries.write_member` (§3.1), by role, not a grant.
+   **An admin may not do this to the owner's time** (`403 not_for_owner`), as D-133 holds
+   for the owner's setup.
+2. **Nobody uses this path on themselves** (`422 use_own_time`): your own time keeps its
+   own path, with its Undo.
+3. **Session only**: no token, an agent's or an admin's own, reaches it.
+4. **Imports are editable here too** (the owner, the same day, before release): almost
+   all of the organisation's time is Solidtime imports — one developer's 166 h is all
+   import — so read-only imports would leave nothing to correct. The change stays in
+   Laika: an import is never pushed back to Solidtime. **A later Solidtime re-sync for
+   that person may put the imported original back; the revision history keeps both.**
+   The person's own path still leaves their imports to Solidtime (D-088 item 10).
+   **What stays read-only**: any day in the closed period. Drafts, the timer and breaks
+   stay the person's own; nothing on this path reaches them.
+5. **The editor is on the record.** Every change is a `time_entry_revisions` row with
+   `changed_by` the editor (§4.49), and the entry's history names them (*Changed by …*).
+   An admin's Solidtime pull of everyone is recorded the same way: the puller, not the
+   person.
+6. **The person is told**: a `time_changed` member notice (§4.87) naming who did what, on
+   which day and by how many minutes — a move names both days. **No Undo** for the editor:
+   a mistake is changed back, which is one more revision with their name on it.
+7. **Only on what the person can open**: time goes on a card or space the person can read
+   themselves, or it is `422 task_not_visible_to_member` — an admin sees every space, and
+   the person's own day must not show one they cannot open.
+8. **A deactivated person's time can still be corrected.**
+9. **The right is by role, not a grant**: owners and admins, as the Solidtime import is;
+   no capability switch turns it off for admins.
+
+## D-144 — The Time report sorts by any column
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Replaces D-141
+item 1's *A–Z · Most time* switch. Task LAI-1166.
+
+**Decision.** Every column header of the Time report's table sorts it — the name, *Spaces*,
+*Tasks*, *Confirmed*, *Drafted* and *Total*: the first click A–Z or the largest first, the
+next the other way. The default stays D-141's (people A–Z, everything else largest first);
+time on nothing stays last; the donut's colours stay with the largest groups whatever the
+order; a sort on a column no longer drawn (Spaces and Tasks without people first, Confirmed
+and Drafted with confirmed only) stops ordering the table; on a phone only the name and
+*Total* are drawn, so only they sort; the order is the reader's own and is not stored.
+D-141 item 2 stands: no rank number, score or efficiency figure.
+
+## D-145 — One Create task dialog for a space
+
+**Date:** 2026-11-09 · **Decided by:** Pawan (owner); recorded by build-1167 for Belka.
+Task LAI-1167.
+
+**Decision.** A space has one way to create a task from the browser: a centred **Create
+task** modal over the dimmed space (a full-height sheet on a phone), opened by the space
+bar's *+ Create*, the List view's *Create task* row and the `c` key — not while typing, not
+while another modal is open, and nothing at all for a reader the space does not grant
+`task.create`. Always shown: Title, Description (rich), Status, Priority, Assignee, Agent,
+Sprint, Due date, Labels. Under a *More* fold: Acceptance (rich), What this delivers
+(ships / solves / unlocks), Planned start, Effort, Parent, Blocked by, Outside id. A lane's
+*Add task* keeps its inline composer: title and priority in the column you clicked.
+
+**The create is one `POST`, then the steps that need a task id.** The body carries every
+field the server takes and sends `status_id` only — never `status`, so the pair can never
+disagree (LAI-738). A refused create lays its `422` on the fields it names and keeps the form
+as typed. The sprint (`POST /sprints/:id/tasks`) and each blocker (`POST
+/tasks/:id/dependencies`) follow, one call each; a failure there cannot undo the create, so
+the dialog closes exactly as on success and the toast says *created, but could not add it to
+Sprint 4* with the server's sentence and *Open*. The form is never left filled after a task
+exists — that invites the same task twice. *Create another* keeps status, priority, sprint
+and assignee and clears the rest; focus returns to the Title. Closing a dialog with a title,
+description or acceptance typed — by Escape, the scrim, × or Cancel — asks *Discard this
+task?* first; an empty one closes at once. A change of space closes it: the draft belonged to
+the space it opened in.
+
+**Not in the URL.** The task drawer is content and lives in `?task=`; the dialog is an
+action. A half-typed form cannot survive a refresh, and Back closing a filled form is a trap.
+`?new=task`, the address the old *+ Create* navigated to, stays honoured as a way in and is
+then removed from the address with a replace.
+
+**A toast of its own, for now.** The *created* pill is built beside My day's toast
+(`my-day/Toast.tsx`) in the same recipe, not shared: that one is sticky inside the My day
+column and carries Undo; this one is fixed to the window because the dialog it reports on has
+closed and the view beneath may be any of the space's. Unifying the two is a later task.
+
+**The server is unchanged.** `POST /projects/:slug/tasks` already took every field; the
+browser simply never offered them.
+
+
+## D-146 — Inbox → Review is a decision queue
+
+**Date:** 2026-11-10 · **Decided by:** Pawan (owner); recorded by build-1168 for Belka.
+Tasks LAI-1168 (this half) and LAI-1169 (the dialog, the hand-offs fold and the
+*Accept* wording). Amends D-082 item 7.
+
+**What it was.** `GET /review` lists every review task on the spaces the reader holds
+`task.write` on — the organisation's pile — and the page drew it flat, rows the reader
+could not decide included with their buttons disabled, Accept and Send back only after
+expanding a row. The sidebar's **99+** was that whole queue plus every hand-off plus the
+open unlisted notes: a number about the organisation, not about the reader.
+
+**Decision.** Six things, the owner's on 2026-11-10:
+
+1. **Review opens on *For you to decide*** — the rows the server marks `can_decide` —
+   **grouped by space**, the space with the longest-waiting task first and the queue's
+   oldest-first order kept inside each group. A two-button toggle, first in the filter
+   row, shows ***Everything in review*** read-only at `?view=all`; the default is not in
+   the address. **The badge and the tab count only what the reader can decide.**
+   Capacity's *Waiting for review* tile keeps the whole queue's count; it is a tile about
+   the organisation's load, and says so.
+2. **Multi-select and a bulk bar: Accept only.** A checkbox beside each decidable row,
+   a select-all per group, *N selected · Accept N · ×*. One `POST /tasks/:id/accept` per
+   task, in page order, a progress line, a report naming each refusal by key with the
+   server's sentence, the refused rows left ticked. **Send back stays single** — it
+   needs a reason, and a reason written once for twelve tasks is not one.
+3. **A Review dialog** (LAI-1169): a centred modal in the Create task dialog's house
+   shape — proof, the *Ships* checklist, Accept / Send back / Open on board, Prev / Next,
+   keys — replacing the inline expand.
+4. **Hand-offs fold into Review** (LAI-1169) as a *Needs your approval (N)* section; the
+   Hand-offs tab goes, `?tab=handoffs` aliases to `?tab=review&view=handoffs`.
+5. **One word, *Accept***, everywhere a person takes agent work into done (LAI-1169; the
+   task drawer says *Approve* today). Hand-off approval and device-pairing approval are
+   different acts and keep their word.
+6. **Work moves into the Organisation page as a tab** — D-147, LAI-1170.
+
+**No server change.** `can_decide` was already on every row; the page now reads it.
+
+**Three judgement calls, recorded so the owner can say otherwise.**
+
+- **The hand-offs part of the badge becomes `needs_approval` only** (LAI-1169). An
+  offer `received` waits on the reader's *agent*, not on a click here; counting it in a
+  badge while not listing it on the page is the same badge/page mismatch item 1 removes.
+  *All hand-offs* stays one link away.
+- **The server's 200 cap is applied before `can_decide`.** If a reader's decidable rows
+  ever sit beyond the 200 oldest, they see *0 for you to decide · 200 in review · first
+  200*. Recorded as **not decided**: a precise `GET /review?mine=1` (CORE) would fix it,
+  and nothing here would need to change.
+- **The assignee may still accept their own agent's work** (D-082 left it open). Bulk
+  Accept makes that easier. Unchanged here, flagged.
+
+**What this does not decide.** The dialog's exact keys and the hand-offs section's shape
+(LAI-1169's task file holds them); whether a space admin's accept should need a second
+pair of eyes on the assignee's own agent; a server-side *mine* filter.
+
+**Addendum, LAI-1169 (2026-11-10).** Items 3, 4 and 5 landed. The badge's hand-offs
+part is **`needs_approval` alone** — `handoffsWaiting` reads one count — and the Review
+tab's count is the same sum the sidebar shows for it: *for you to decide* plus the
+hand-offs needing approval, so the tabs still add up to the badge. `?tab=handoffs` is an
+alias (`inboxAlias`) to `?tab=review&view=handoffs`, applied in place. The dialog's keys
+are `j`/`↓`, `k`/`↑`, `a`, `s`, Escape, read only inside the dialog's own box (DOM
+containment, since the Send back dialog is portaled and React would bubble its keys
+through); the *Needs your approval* section, once drawn, stays for the page's life so
+approving the last offer does not unmount the row the reader is on.
+
+## D-147 — Work is the organisation's register
+
+**Date:** 2026-11-10 · **Decided by:** Pawan (owner); recorded by build-1170 for Belka.
+Task LAI-1170. Amends LAI-952's placing of Work.
+
+**Decision.** Work — everyone's tasks across every space the reader can read (LAI-952,
+`GET /tasks`) — is a **tab of the Organisation page**, second after Overview, at
+`/organisation?tab=work`, and not a sidebar entry. It is the organisation's register, so it
+sits with the organisation's other pages; the sidebar keeps the reader's own places and the
+three organisation pages. `/work` redirects there and keeps its query (`person`, `status`,
+`space`, `sprint`, `size`), as every moved address does (LAI-796). The tab is open to every
+signed-in role, as the page was: the server decides whose tasks each reader is sent.
+
+**It gains the List's selection and bulk bar**, as one shared piece rather than a second
+bar: a checkbox on every row the reader may change (`task.write` in that row's space; absent
+otherwise, not disabled), select-all in the head, and `BulkBar` over the card's foot once
+anything is selected. **One request per task, in order** — the server has no bulk endpoint
+and §7.2 keeps it that way — with a progress line and a report that names each refusal by
+key; the list and the figures are read again when the run ends.
+
+**The mixed-space rule.** *Priority*, *Assignee* and *Cancel tasks* are the same request in
+every space and are always offered. *Status* and *Sprint* are a space's own — a status id or
+a sprint id means nothing outside its space — so they are offered **only within one space**:
+when the `?space=` filter names one, or when every selected row is in one space. Otherwise
+each is drawn disabled with a title saying what would enable it (*Choose one space to change
+status*), rather than absent: "not yet", not "cannot". *Sprint* further needs
+`task.assign_sprint` in that space, as on the List.
+
+**The Review tile** keeps filtering to `?status=review` and carries *Decide in Inbox ›*
+(`/inbox?tab=review`): the register shows what is in review; deciding stays Inbox's. The
+profile's *See their cards in Work* links follow the tab.
+
+**The server is unchanged.** Every endpoint the tab calls existed; the bar's requests are
+the List's. Work is now defined in SPEC §11.4.2 (the Organisation row and its endpoints) and
+§11.4.2.1; it was built from LAI-952 without a SPEC entry.

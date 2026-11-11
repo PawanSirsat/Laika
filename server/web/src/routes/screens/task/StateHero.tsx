@@ -48,11 +48,11 @@ export interface StateHeroProps {
   readonly nameOf: (userId: string) => string;
   /** The page's own clock for the live claim (LAI-597): Live turns to Connection lost on it. */
   readonly claimNow: number;
-  /** Offer Approve / Send back (D-129 item 5); the server still decides. */
+  /** Offer Accept / Send back (D-129 item 5; one word, D-146); the server still decides. */
   readonly mayDecide: boolean;
   readonly deciding: 'accept' | 'send_back' | null;
   readonly decideError: string | undefined;
-  readonly onApprove: () => void;
+  readonly onAccept: () => void;
   readonly onSendBack: (opener: HTMLElement) => void;
   /** The rail's Ping, when this reader may ping the agent; nothing otherwise. */
   readonly ping?: ReactNode;
@@ -263,7 +263,7 @@ export function StateHero({
   mayDecide,
   deciding,
   decideError,
-  onApprove,
+  onAccept,
   onSendBack,
   ping,
   onChangeAgent,
@@ -318,10 +318,10 @@ export function StateHero({
                 type="button"
                 className="hero-button hero-button-primary"
                 disabled={deciding !== null}
-                onClick={onApprove}
+                onClick={onAccept}
               >
                 {deciding === 'accept' && <Spinner size="sm" />}
-                Approve
+                Accept
               </button>
             </span>
           )}

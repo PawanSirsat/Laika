@@ -14,6 +14,7 @@ import {
   pruneHeartbeats,
   pruneLocalActivity,
   pruneTime,
+  pruneNotices,
   vacuum,
   type JobResult,
 } from './jobs.ts';
@@ -92,6 +93,8 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     // Drafts after 30 days, entries after three years (D-088), and once at
     // boot for the reason local activity's runs then.
     { name: 'time.retention', everyMs: DAY, run: (now) => pruneTime(db, now), atStart: true },
+    // Member notices after 90 days, read or not (§11.6, D-134, LAI-1136).
+    { name: 'notices.retention', everyMs: DAY, run: (now) => pruneNotices(db, now) },
     // Checkpoints of tasks done or cancelled 90 days, with their refs and
     // transitions (§11.6, D-115 item 9, LAI-545). Laika never deletes a tag.
     {

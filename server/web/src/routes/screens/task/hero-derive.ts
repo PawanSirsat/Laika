@@ -290,7 +290,7 @@ export function openWorkRequest(
 }
 
 /**
- * Whether to offer Approve / Send back here (D-082, D-129 item 5): the
+ * Whether to offer Accept / Send back here (D-082, D-129 item 5, D-146): the
  * assignee or a lead, signed in. The server decides; this only keeps a button
  * from being offered to someone it would refuse.
  */

@@ -16,11 +16,20 @@ import {
   consentStateLine,
 } from './checkpoint-consent.ts';
 
+/** What the switch last read, in a word: for a summary that names it (LAI-1100). */
+export type ConsentRead = 'reading' | 'on' | 'off' | 'failed';
+
 export interface CheckpointConsentSwitchProps {
   readonly agent: RegisteredAgent;
   readonly me: MeProfile | undefined;
   readonly canManage: boolean;
   readonly now: number;
+  /**
+   * Told each time what the switch shows changes — Tool details' folded row
+   * says *Automatic checkpoints · On* from it, so the row and the switch can
+   * never disagree, and nothing is read twice.
+   */
+  readonly onRead?: (read: ConsentRead) => void;
 }
 
 type Read =
@@ -62,6 +71,7 @@ export function CheckpointConsentSwitch({
   me,
   canManage,
   now,
+  onRead,
 }: CheckpointConsentSwitchProps) {
   const [read, setRead] = useState<Read>({ kind: 'loading' });
   const [round, setRound] = useState(0);
@@ -90,6 +100,18 @@ export function CheckpointConsentSwitch({
       abort.abort();
     };
   }, [agent.id, round]);
+
+  const shown: ConsentRead =
+    read.kind === 'loading'
+      ? 'reading'
+      : read.kind === 'error'
+        ? 'failed'
+        : read.consent.given
+          ? 'on'
+          : 'off';
+  useEffect(() => {
+    onRead?.(shown);
+  }, [shown, onRead]);
 
   const labelId = `${consentSwitchId(agent.id)}-label`;
   const meaningId = `${consentSwitchId(agent.id)}-meaning`;

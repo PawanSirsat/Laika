@@ -1,10 +1,10 @@
 import type { RegisteredAgent } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
 import type { ProjectSetup } from '../../../../api/project-setups.ts';
-import { agentLabel } from '../../../../api/selected-agent.ts';
+import { agentLabel, agentProductName } from '../../../../api/selected-agent.ts';
 import type { ChipTone } from './DesignChip.tsx';
 import { deviceCounts, deviceLive, toolStatus, type DeviceCounts } from './devices-view.ts';
-import { recordState, setupEvidence } from './project-setup.ts';
+import { repoGroups, type RepoGroup } from './repo-groups.ts';
 import type { UpdateStatus } from './update-status.ts';
 
 /**
@@ -23,7 +23,8 @@ import type { UpdateStatus } from './update-status.ts';
  *   credential has reached the board — the Devices tab's every status but
  *   *Needs setup* (`toolStatus`). Never *Ready*: that needs the tool's own
  *   verification (`tool-readiness.ts`), which this page does not read.
- * - A **repository setup** is a tool's records for one project. *Checked*
+ * - A **repository setup** is one repository of one project, with each
+ *   device that set it up under it (`repo-groups.ts`, LAI-321). *Checked*
  *   only from `laika project check`'s record of a current block; the reader's
  *   own *I've added it* is *Recorded by you* and said to be not verified.
  *
@@ -60,6 +61,17 @@ export function toolAddress(agentId: string): string {
 /** Where scripts and the API get their credential: the reader's own, under Advanced. */
 export const ADVANCED_ADDRESS = '/developer?tab=advanced';
 
+/**
+ * Project setup's wizard, at `projectsHref` (LAI-321). The tab opens on the
+ * reader's repositories once they have one, so a link that means *set up a
+ * repository* says `view=wizard` rather than landing on the list.
+ */
+export function wizardAddress(projectsHref: string): string {
+  const url = new URL(projectsHref, 'https://laika.invalid');
+  url.searchParams.set('view', 'wizard');
+  return `${url.pathname}${url.search}`;
+}
+
 // ------------------------------------------------------------------ the state
 
 /** The one next step the hero names. */
@@ -67,27 +79,6 @@ export type HeroKind = 'no-device' | 'no-tool' | 'finish-tool' | 'no-setup' | 'a
 
 /** What a repository setup's chip says, from its records alone. */
 export type SetupChipKey = 'checked' | 'recorded' | 'update-available' | 'missing';
-
-/** One tool's records for one project: a row of *Your repository setups*. */
-export interface SetupRow {
-  /** `<project id>:<agent id>` — one row per tool and project. */
-  readonly key: string;
-  readonly projectId: string;
-  /** The slug the record carries: the name to show when the project list has not got it. */
-  readonly projectSlug: string;
-  /** The tool the records are about; `null` for a browser record naming none. */
-  readonly agentId: string | null;
-  /** *Claude Code · Belka*, or {@link NO_TOOL}. */
-  readonly toolLabel: string;
-  /** The repositories `laika project check` named, in the order the read sent them. */
-  readonly repos: readonly string[];
-  /** The instructions file the newest record names, or `null` when none did. */
-  readonly instructionsPath: string | null;
-  readonly chip: SetupChipKey;
-}
-
-/** A browser record may name no tool (SPEC §4.82). */
-export const NO_TOOL = 'No tool named';
 
 export interface OverviewState {
   readonly hero: HeroKind;
@@ -101,66 +92,12 @@ export interface OverviewState {
   readonly needSetup: readonly RegisteredAgent[];
   /** The tool *Finish connecting* is about: the newest that needs setup, when none is connected. */
   readonly pending: RegisteredAgent | undefined;
-  readonly setups: readonly SetupRow[];
-  /** Rows whose records show a block: every row but *missing*. */
+  /** *Your repository setups*: one per repository, each device under it (LAI-321). */
+  readonly setups: readonly RepoGroup[];
+  /** Repositories whose records show a block: every one but *missing*. */
   readonly setUp: number;
-  /** Rows a local check found current. */
+  /** Repositories a local check found current on every device. */
   readonly checked: number;
-}
-
-/**
- * The reader's records grouped one row per tool and project, newest first
- * (the read's own order), each with the one word its records support —
- * `setupEvidence`'s verdict, the Project setup tab's.
- */
-export function setupRows(
-  records: readonly ProjectSetup[],
-  tools: readonly RegisteredAgent[],
-): SetupRow[] {
-  const byId = new Map(tools.map((agent) => [agent.id, agent]));
-  const groups = new Map<string, ProjectSetup[]>();
-  for (const record of records) {
-    // A disconnected tool's records go with it: it reaches nothing now.
-    if (record.agent_id !== null && !byId.has(record.agent_id)) continue;
-    const key = `${record.project_id}:${record.agent_id ?? ''}`;
-    groups.set(key, [...(groups.get(key) ?? []), record]);
-  }
-  return [...groups].map(([key, group]) => {
-    const first = group[0]!;
-    const agent = first.agent_id === null ? undefined : byId.get(first.agent_id);
-    // `setupEvidence` reads one tool's records by its id; a record naming no
-    // tool is grouped under the empty one, which no agent has.
-    const evidence = setupEvidence(
-      group.map((record) => ({ ...record, agent_id: record.agent_id ?? '' })),
-      first.agent_id ?? '',
-    );
-    const chip: SetupChipKey =
-      evidence.overall === 'update-available'
-        ? 'update-available'
-        : evidence.overall === 'missing'
-          ? 'missing'
-          : evidence.checks.some((record) => recordState(record) === 'current')
-            ? 'checked'
-            : 'recorded';
-    const repos = [
-      ...new Set(
-        evidence.checks
-          .map((record) => record.repo_label)
-          .filter((label): label is string => label !== null && label.trim() !== ''),
-      ),
-    ];
-    return {
-      key,
-      projectId: first.project_id,
-      projectSlug: first.project_slug,
-      agentId: first.agent_id,
-      toolLabel: agent === undefined ? NO_TOOL : agentLabel(agent),
-      repos,
-      instructionsPath:
-        group.find((record) => record.instructions_path !== null)?.instructions_path ?? null,
-      chip,
-    };
-  });
 }
 
 /** The Overview's whole state, from the two reads and the clock. */
@@ -173,9 +110,9 @@ export function overviewState(
   const tools = activeTools(listed);
   const needSetup = tools.filter((agent) => toolStatus(agent, now).key === 'needs-setup');
   const connected = tools.length - needSetup.length;
-  const setups = setupRows(records, tools);
-  const setUp = setups.filter((row) => row.chip !== 'missing').length;
-  const checked = setups.filter((row) => row.chip === 'checked').length;
+  const setups = repoGroups(records, tools);
+  const setUp = setups.filter((group) => group.chip !== 'missing').length;
+  const checked = setups.filter((group) => group.chip === 'checked').length;
 
   const hero: HeroKind =
     listed.length === 0
@@ -246,9 +183,10 @@ export function heroTitle(state: Pick<OverviewState, 'hero' | 'pending'>): strin
 }
 
 /**
- * The one next step, from the state alone. `projectsHref` is where *Set up a
- * project* goes — `preview` sends it to the new flow (LAI-1052); `toolsHref`
- * is where *Manage tools* goes.
+ * The one next step, from the state alone. `projectsHref` is Project setup —
+ * `preview` sends it to the new flow (LAI-1052) — and *Set up a project* goes
+ * to its wizard there (`wizardAddress`); `toolsHref` is where *Manage tools*
+ * goes.
  */
 export function heroOf(
   state: OverviewState,
@@ -264,7 +202,7 @@ export function heroOf(
         kind: state.hero,
         eyebrow: 'Start here',
         title,
-        sub: 'Pair your laptop or a cloud runner with this board, once. You choose a coding tool after that.',
+        sub: 'Pair your laptop or cloud runner with Laika. No coding tool selection is needed yet.',
         primary: { label: 'Add a device →', href: OVERVIEW_ADDRESSES.addDevice },
       };
     case 'no-tool':
@@ -296,7 +234,7 @@ export function heroOf(
         eyebrow: 'Your next step',
         title,
         sub: 'Your tool is connected. Pick a Laika project, give the tool access to it, and copy a prompt that adds the board’s block to the repository’s instructions file.',
-        primary: { label: 'Set up a project →', href: projectsHref },
+        primary: { label: 'Set up a project →', href: wizardAddress(projectsHref) },
         secondary: manage,
       };
     case 'all-done':
@@ -305,7 +243,7 @@ export function heroOf(
         eyebrow: 'Your next step',
         title,
         sub: `${plural(state.setUp, 'repository setup', 'repository setups')} so far. Each repository needs its own block; your devices and tools are already done.`,
-        primary: { label: 'Set up a repository →', href: projectsHref },
+        primary: { label: 'Set up a repository →', href: wizardAddress(projectsHref) },
         secondary: manage,
       };
   }
@@ -326,6 +264,12 @@ export interface AttentionItem {
   /** Why, in a few words, lower case to follow the label. */
   readonly why: string;
   readonly href: string;
+  /** Its own credential has not reached the board, or no longer works. */
+  readonly setup: boolean;
+  /** Its helper is one the board needs updated: `updateStatus`'s *Update required*. */
+  readonly update: boolean;
+  /** The link's words: *Finish setup →* for a tool not connected, else *Open details →*. */
+  readonly action: string;
 }
 
 function lowerFirst(text: string): string {
@@ -333,10 +277,11 @@ function lowerFirst(text: string): string {
 }
 
 /**
- * Tools that need the reader, under the hero: one not connected yet (except
- * the one the hero is already about), and one whose helper the board needs
- * updated — `updateStatus`'s *Update required*, never a guess. Each links to
- * its row.
+ * Tools that need the reader, behind the Connection status card's tools chip
+ * (LAI-1096): every one not connected yet, and every one whose helper the
+ * board needs updated — `updateStatus`'s *Update required*, never a guess.
+ * Each links to its row, its Details open. The tool the hero is about is
+ * listed too: the list is opened from a count, and has to match it.
  */
 export function attentionItems(
   state: OverviewState,
@@ -346,7 +291,7 @@ export function attentionItems(
   const items: AttentionItem[] = [];
   for (const agent of state.tools) {
     const update = updates.get(agent.id);
-    const notConnected = state.needSetup.includes(agent) && agent !== state.pending;
+    const notConnected = state.needSetup.includes(agent);
     const required = update?.key === 'required';
     if (!notConnected && !required) continue;
     const why = [
@@ -358,9 +303,28 @@ export function attentionItems(
       label: agentLabel(agent),
       why: why.join('; '),
       href: toolAddress(agent.id),
+      setup: notConnected,
+      update: required,
+      action: notConnected ? 'Finish setup →' : 'Open details →',
     });
   }
   return items;
+}
+
+/**
+ * The tools chip's word when some need the reader: what they all need, when
+ * it is one thing — *2 need setup*, *1 needs an update* — and *3 need
+ * attention* when it is not.
+ */
+export function attentionWord(items: readonly Pick<AttentionItem, 'setup' | 'update'>[]): string {
+  const n = items.length;
+  const verb = n === 1 ? 'needs' : 'need';
+  const what = items.every((item) => item.setup && !item.update)
+    ? 'setup'
+    : items.every((item) => item.update && !item.setup)
+      ? 'an update'
+      : 'attention';
+  return `${String(n)} ${verb} ${what}`;
 }
 
 // ------------------------------------------------------------------ the journey
@@ -385,7 +349,10 @@ export const STEP_NAMES: Readonly<Record<JourneyStep, string>> = {
   project: 'Set up a project repository',
 };
 
-/** The three steps, each done, the one to do now, or still to come. */
+/**
+ * The three steps, each done, the one to do now, or still to come. The
+ * project step's *Open* is the reader's repositories; its *Start* the wizard.
+ */
 export function journeyRows(
   state: OverviewState,
   projectsHref: string,
@@ -408,7 +375,7 @@ export function journeyRows(
         step: 'device',
         name: STEP_NAMES.device,
         state: 'active',
-        line: 'Pair your laptop or a cloud runner, once',
+        line: 'Pair laptop or cloud runner only',
         action: { label: 'Start', href: OVERVIEW_ADDRESSES.addDevice },
       };
 
@@ -427,7 +394,7 @@ export function journeyRows(
         state: deviceDone ? 'active' : 'pending',
         line:
           firstPending === undefined
-            ? 'Give the tool its own credential, then check it connects'
+            ? 'Give the tool its own credential and verify it'
             : state.tools.length === 1
               ? `${agentLabel(firstPending)} registered, not connected yet`
               : `${plural(state.tools.length, 'tool', 'tools')} registered, none connected yet`,
@@ -451,8 +418,8 @@ export function journeyRows(
         step: 'project',
         name: STEP_NAMES.project,
         state: toolDone ? 'active' : 'pending',
-        line: 'A prompt for the repository’s instructions file · no token in it',
-        action: { label: 'Start', href: projectsHref },
+        line: 'Project-specific prompt · no new token · no re-install',
+        action: { label: 'Start', href: wizardAddress(projectsHref) },
         ...(toolDone ? {} : { locked: 'Connect a tool first' }),
       };
 
@@ -480,13 +447,19 @@ export interface StatusLine {
  *
  * - Devices: *Paired* only when every one was paired; one imported from its
  *   tools' labels before pairing existed says so.
- * - Tools: *Connected* only when every one has reached the board.
+ * - Tools: *Connected* only when none needs the reader (`attention`, from
+ *   {@link attentionItems}); else what they need, which the page makes the
+ *   button that lists them (LAI-1096). Its line names the tools alone — the
+ *   devices are the line above (*Claude Code, Codex*), each name once.
  * - Setups: the most useful true thing, in this order — any that needs an
  *   update or has no block (warn, naming how many); else any the reader only
  *   recorded (*n to verify*); else *Checked*, when `laika project check` found
  *   every one current; with none, *Next step*.
  */
-export function statusLines(state: OverviewState): StatusLine[] {
+export function statusLines(
+  state: OverviewState,
+  attention: readonly Pick<AttentionItem, 'setup' | 'update'>[],
+): StatusLine[] {
   const counts = state.counts;
   const imported = state.devices.filter((device) => device.origin === 'imported').length;
   const deviceChip =
@@ -498,15 +471,11 @@ export function statusLines(state: OverviewState): StatusLine[] {
           ? { word: 'Imported', tone: 'neutral' as const }
           : { word: `${String(imported)} imported`, tone: 'neutral' as const };
 
-  const waiting = state.needSetup.length;
   const toolChip =
     counts.tools === 0
       ? { word: 'Not added', tone: 'neutral' as const }
-      : waiting > 0
-        ? {
-            word: `${String(waiting)} ${waiting === 1 ? 'needs' : 'need'} setup`,
-            tone: 'warn' as const,
-          }
+      : attention.length > 0
+        ? { word: attentionWord(attention), tone: 'warn' as const }
         : { word: 'Connected', tone: 'ok' as const };
 
   const recorded = state.setups.filter((row) => row.chip === 'recorded').length;
@@ -554,7 +523,10 @@ export function statusLines(state: OverviewState): StatusLine[] {
       key: 'tools',
       icon: 'tool',
       count: plural(counts.tools, 'tool', 'tools'),
-      names: state.tools.length === 0 ? 'No tools yet' : state.tools.map(agentLabel).join(', '),
+      names:
+        state.tools.length === 0
+          ? 'No tools yet'
+          : [...new Set(state.tools.map(agentProductName))].join(', '),
       chip: toolChip,
     },
     {
@@ -580,22 +552,6 @@ export const SETUP_CHIPS: Readonly<Record<SetupChipKey, SetupChip>> = {
   'update-available': { word: 'Update available', tone: 'warn' },
   missing: { word: 'No block found', tone: 'warn' },
 };
-
-/**
- * A setup row's second line: the tool, the file, and — for the reader's own
- * word — that it is not verified; for a check that found nothing, so.
- */
-export function setupLine(row: SetupRow): string {
-  const parts = [row.toolLabel, row.instructionsPath ?? 'instructions file not named'];
-  if (row.chip === 'recorded') parts.push('not verified');
-  if (row.chip === 'missing') parts.push('laika project check found no Laika block');
-  return parts.join(' · ');
-}
-
-/** The row's title: the project, then any repository a check named. */
-export function setupTitle(row: SetupRow, projectName: string): string {
-  return row.repos.length === 0 ? projectName : `${projectName} · ${row.repos.join(', ')}`;
-}
 
 // ------------------------------------------------------------------ the live region
 

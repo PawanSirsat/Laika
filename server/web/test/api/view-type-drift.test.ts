@@ -765,6 +765,33 @@ const PAIRS: readonly Pair[] = [
     client: 'SummaryKind',
     clientFile: 'time.ts',
   },
+  // The Time report (LAI-1135, D-130), paired by LAI-1138 with the component
+  // that reads it. `TimeReportAnswer` is their union and stays named in the
+  // server's census; `TimeReportPerson` is reached only through the row.
+  {
+    server: 'TimeReportView',
+    serverFile: 'services/time-report.ts',
+    client: 'TimeReport',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'TimeReportRowView',
+    serverFile: 'services/time-report.ts',
+    client: 'TimeReportRow',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SpaceWeeksReportView',
+    serverFile: 'services/time-report.ts',
+    client: 'SpaceWeeksReport',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SpaceWeekView',
+    serverFile: 'services/time-report.ts',
+    client: 'SpaceWeek',
+    clientFile: 'time.ts',
+  },
   // The day's note (LAI-501), served in the day and by `PUT /me/time/days/:day/note`.
   {
     server: 'DayNoteView',
@@ -877,6 +904,46 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/project-setups.ts',
     client: 'ProjectSetup',
     clientFile: 'project-setups.ts',
+  },
+  // LAI-1140: a member's developer setup on their profile (D-132, D-133). The
+  // tool and device extend `Omit<…>` of a type in another module, which
+  // `fieldsOf` does not follow — so each compares its own fields, and the
+  // bases stay held by the `AgentView` and `DeviceView` pairs above.
+  {
+    server: 'DeveloperSetupView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'DeveloperSetup',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupToolView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupTool',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupDeviceView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupDevice',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupTokenView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupToken',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupActivityView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupActivity',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'UnpairedDeviceView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'UnpairedDevice',
+    clientFile: 'developer-setup.ts',
   },
   // Nested, through a table for the reason given below the profile's.
   ...(

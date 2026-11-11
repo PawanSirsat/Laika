@@ -38,6 +38,8 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     'profile.activity.read',
     'usage.read_people',
     'people.analytics.read',
+    // D-130 (LAI-1135): the organisation's Time report, per person.
+    'time.report.read',
   ],
   see_org_activity: ['audit_log.export'],
   open_all_projects: [],
@@ -48,7 +50,15 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
   invite_people: ['user.invite'],
   deactivate_people: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
   create_archive_projects: ['project.create', 'project.archive'],
-  manage_any_tokens: ['token.list_any', 'token.revoke_any'],
+  // *See and manage anyone's developer setup* (D-132, LAI-1137): the token
+  // grant renamed, its key kept so every stored matrix still means the same.
+  manage_any_tokens: [
+    'token.list_any',
+    'token.revoke_any',
+    'developer_setup.read_any',
+    'agent.revoke_any',
+    'device.revoke_any',
+  ],
   change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
 };
 
@@ -60,7 +70,7 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   invite_people: 'Invite people',
   deactivate_people: 'Deactivate people and reset access',
   create_archive_projects: 'Create and archive spaces',
-  manage_any_tokens: "Manage anyone's tokens",
+  manage_any_tokens: "See and manage anyone's developer setup",
   change_org_settings: 'Change organisation settings, Time and breaks',
 };
 
@@ -77,7 +87,8 @@ export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
   deactivate_people:
     'Deactivate or reactivate a person, sign them out everywhere, and issue them a password-reset link.',
   create_archive_projects: 'Create new spaces, and archive or restore them.',
-  manage_any_tokens: "See and revoke anyone's agent and API tokens.",
+  manage_any_tokens:
+    "See anyone's devices, tools, repository setups and tokens, and revoke their tools, devices and tokens; every look is logged.",
   change_org_settings:
     "Change the organisation's AI provider, presence, Developer insights, Time and breaks.",
 };

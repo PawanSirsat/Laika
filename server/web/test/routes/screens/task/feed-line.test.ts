@@ -122,7 +122,7 @@ void describe('feedLines: the design’s words for the facts it shows', () => {
         }),
       ),
       // No names on an older row: the categories in words.
-      ['✓ Approved Review → Done'],
+      ['✓ Accepted Review → Done'],
     );
   });
 
