@@ -660,6 +660,14 @@ void describe('the prototype geometry (LAI-249)', () => {
       const inbox = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
       assert.ok(await inbox.locator('.nav-icon').isVisible(), 'the icon went with the label');
       const opacity = (el: Element) => getComputedStyle(el).opacity;
+      // The collapse is instant now (LAI-1208), so the tip's own short fade can
+      // still be running: wait it out, asserted, before reading.
+      const tipStill = () =>
+        inbox
+          .locator('.sidebar-tip')
+          .evaluate((el) => el.getAnimations().every((a) => a.playState !== 'running'));
+      await until(tipStill);
+      assert.equal(await tipStill(), true, 'the tip never stopped fading');
       assert.equal(await inbox.locator('.sidebar-tip').evaluate(opacity), '0');
       assert.match(await inbox.locator('.sidebar-count').innerText(), /^2/);
       assert.equal(await h.page.locator('.space-row .space-badge').first().innerText(), 'L');
