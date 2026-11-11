@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo } from 'react';
 import { ApiError } from '../../api/errors.ts';
-import { everyPage } from '../../api/every-page.ts';
 import { useGates } from '../../api/permissions.ts';
-import { getProject } from '../../api/projects.ts';
-import { listSprints, type Sprint } from '../../api/sprints.ts';
-import { changeStatus, getTask, type Member, type TaskSummary } from '../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../api/tasks.ts';
 import { taskStore } from '../../api/store.ts';
 import { reloadProjectTasks, useProjectTasks } from '../../api/use-project-tasks.ts';
 import { useProjectStatuses } from '../../api/use-statuses.ts';
 import { TaskDetailPanel } from '../../routes/screens/board/TaskDetailPanel.tsx';
+import { workroomHref } from '../../routes/task-href.ts';
+import { rememberWorkroomReturn } from '../../routes/workroom-return.ts';
 import { ApiErrorState } from '../ApiErrorState.tsx';
 import { LoadingState } from '../LoadingState.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { TaskDrawer } from './TaskDrawer.tsx';
 import type { TaskSource } from './TaskSourceProvider.tsx';
+import { useAgentsAllowed, useLocalMoves, useSprints, useTaskRead } from './use-space-reads.ts';
 
 export interface TaskDrawerHostProps {
   /** The space the drawer is open over, from `?project=`. */
@@ -71,7 +71,11 @@ function TaskDrawerTask({
   onResolved,
   onClose,
 }: TaskDrawerHostProps & { readonly taskRef: string }) {
-  const { me, refreshReview } = useShell();
+  const {
+    me,
+    refreshReview,
+    route: { navigate },
+  } = useShell();
   const gates = useGates(me !== undefined);
   const headingId = useId();
 
@@ -187,113 +191,21 @@ function TaskDrawerTask({
         moveError={actions.moveError}
         onMove={actions.onMove}
         onClose={onClose}
+        expandHref={workroomHref(task.key)}
+        onExpand={() => {
+          /*
+           * **The Workroom, as a pushed entry** (LAI-1199): Back from the page
+           * lands here, on this view with this drawer open. The address is
+           * remembered so the page's *Back to …* can step back rather than
+           * push a second copy of this view.
+           */
+          rememberWorkroomReturn(
+            task.key,
+            window.location.pathname + window.location.search,
+          );
+          navigate(workroomHref(task.key));
+        }}
       />
     </TaskDrawer>
   );
-}
-
-/** Every sprint in the space, for the panel's sprint control. */
-function useSprints(slug: string | undefined): readonly Sprint[] {
-  const [sprints, setSprints] = useState<readonly Sprint[]>([]);
-  useEffect(() => {
-    setSprints([]);
-    if (slug === undefined) return;
-    const controller = new AbortController();
-    everyPage((cursor) =>
-      listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),
-    )
-      .then(({ items }) => {
-        if (!controller.signal.aborted) setSprints(items);
-      })
-      .catch(() => {
-        // No sprints to offer rather than wrong ones.
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [slug]);
-  return sprints;
-}
-
-/** The space's `agents_allowed`; `undefined` (allowed) until it answers. */
-function useAgentsAllowed(slug: string | undefined): boolean | undefined {
-  const [allowed, setAllowed] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    setAllowed(undefined);
-    if (slug === undefined) return;
-    const controller = new AbortController();
-    getProject(slug, controller.signal)
-      .then((project) => {
-        if (!controller.signal.aborted) setAllowed(project.agents_allowed);
-      })
-      .catch(() => {
-        // The Agent row then reads as allowed, and the server still decides.
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [slug]);
-  return allowed;
-}
-
-/** `GET /tasks/:id` for a task the set does not hold. */
-function useTaskRead(taskId: string | undefined): {
-  readonly task: TaskSummary | undefined;
-  readonly error: unknown;
-  readonly retry: () => void;
-} {
-  const [state, setState] = useState<{
-    readonly id: string;
-    readonly task?: TaskSummary;
-    readonly error?: unknown;
-  }>();
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    if (taskId === undefined) return;
-    const controller = new AbortController();
-    setState({ id: taskId });
-    getTask(taskId, controller.signal)
-      .then((task) => {
-        if (!controller.signal.aborted) setState({ id: taskId, task });
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setState({ id: taskId, error });
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [taskId, attempt]);
-  const retry = useCallback(() => {
-    setAttempt((n) => n + 1);
-  }, []);
-  const current = taskId !== undefined && state?.id === taskId ? state : undefined;
-  return { task: current?.task, error: current?.error, retry };
-}
-
-/**
- * Moving a task from the drawer when the view offers no store of its own: the
- * same `POST /tasks/:id/status` the board's move makes, then the shared set
- * is read again so the view under the drawer follows.
- */
-function useLocalMoves(slug: string | undefined) {
-  const [movingId, setMovingId] = useState<string | undefined>(undefined);
-  const [moveError, setMoveError] = useState<string | undefined>(undefined);
-  const onMove = useCallback(
-    (taskId: string, toStatusId: string): void => {
-      setMoveError(undefined);
-      setMovingId(taskId);
-      changeStatus(taskId, { status_id: toStatusId })
-        .then(() => {
-          reloadProjectTasks(slug);
-        })
-        .catch((cause: unknown) => {
-          setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
-        })
-        .finally(() => {
-          setMovingId(undefined);
-        });
-    },
-    [slug],
-  );
-  return { movingId, moveError, onMove };
 }
