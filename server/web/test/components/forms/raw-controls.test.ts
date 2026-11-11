@@ -135,7 +135,7 @@ void describe('migrated files stay on the primitives (LAI-1204)', () => {
       }
       for (const t of openingTags(src, 'input')) {
         const type = /\btype="([a-z]+)"/.exec(t)?.[1] ?? 'text';
-        if (['text', 'email', 'url', 'search'].includes(type) && /className=/.test(t)) {
+        if (['text', 'email', 'url', 'search'].includes(type) && t.includes('className=')) {
           assert.fail(`a hand-styled text <input> in ${file} — use TextInput: ${t}`);
         }
       }
