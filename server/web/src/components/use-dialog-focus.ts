@@ -62,6 +62,11 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
       ) {
         return;
       }
+      // A Dropdown's panel is portaled into the modal, at its end, so its
+      // search box reads as the last control and Tab would wrap to the first
+      // (LAI-1167 review). The Dropdown moves focus back to its trigger on
+      // Tab and lets the browser carry on from there; leave that to it.
+      if (active !== null && active.closest('[data-dropdown-panel]') !== null) return;
       const target = trapTarget(controls(), active as HTMLElement, event.shiftKey);
       if (target === undefined) return;
       event.preventDefault();

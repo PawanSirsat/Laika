@@ -21,7 +21,7 @@ export interface PageTab {
    * not disabled** (LAI-082), as a sidebar entry is. Read through
    * `permissionHolder`, so the client mirrors `policy/can.ts` in one place.
    */
-  readonly requires?: 'audit_log.export' | 'token.list_any';
+  readonly requires?: 'audit_log.export' | 'token.list_any' | 'time.report.read';
   /**
    * An address naming this tab, for a reader not offered it, shows the
    * not-allowed state rather than the first tab (LAI-951) — see `refusedTab`.
@@ -33,26 +33,61 @@ export interface PageTab {
    * text, so a screen reader hears it too.
    */
   readonly badge?: string;
+  /**
+   * Drawn by its page after the tabs, as a quieter link, rather than as a tab
+   * of its own — V3's *Advanced* (LAI-1096), which the owner's design leaves
+   * out of its four tabs. **It is still a tab to `currentTab`**, so its
+   * address opens it and every link to it keeps working.
+   */
+  readonly secondary?: true;
 }
 
 /**
- * Work handed back for a person, hand-offs between agents that concern them
- * (LAI-550), then work nobody filed (admin-up, §4.14).
+ * Work handed back for a person — with the hand-offs waiting on their
+ * approval folded in (D-146 item 4, LAI-1169) — then work nobody filed
+ * (admin-up, §4.14). The Hand-offs tab of LAI-550 is gone: `?tab=handoffs`
+ * is an alias, {@link inboxAlias}.
  */
 export const INBOX_TABS: readonly PageTab[] = [
   { id: 'review', label: 'Review' },
-  { id: 'handoffs', label: 'Hand-offs' },
   { id: 'unlisted', label: 'Unlisted work', requires: 'audit_log.export' },
 ];
 
-/** Who is working on what, then what the agents spent. Open to everyone. */
+/**
+ * Where an old Inbox address lives since the Hand-offs tab folded into
+ * Review (D-146 item 4, LAI-1169): `?tab=handoffs` is Review's *All hand-offs*
+ * view, `?tab=review&view=handoffs`. `undefined` when the address needs no
+ * change. Applied as a `replace`, the shape of {@link developerAlias}; the
+ * target is a tab with no alias of its own, so applying it twice changes
+ * nothing. Everything else in the query is kept, in its order.
+ */
+export function inboxAlias(params: URLSearchParams): URLSearchParams | undefined {
+  if (params.get('tab') !== 'handoffs') return undefined;
+  const next = new URLSearchParams();
+  next.set('tab', 'review');
+  next.set('view', 'handoffs');
+  for (const [key, value] of params) {
+    if (key === 'tab' || key === 'view') continue;
+    next.append(key, value);
+  }
+  return next;
+}
+
+/**
+ * Who is working on what, then what the agents spent — open to everyone —
+ * then where people's time went (D-130, LAI-1138): **Time** is for owners and
+ * holders of *See everyone's analytics* (`time.report.read`) and for space
+ * admins, whose leading a space the Insights route folds into the same gate;
+ * a link to it for anybody else says so rather than opening Capacity.
+ */
 export const INSIGHTS_TABS: readonly PageTab[] = [
   { id: 'capacity', label: 'Capacity' },
   { id: 'usage', label: 'Usage & cost' },
+  { id: 'time', label: 'Time', requires: 'time.report.read', refusedByAddress: true },
 ];
 
 /**
- * The organisation's settings, grouped. **Security is everyone's tokens**, so
+ * The organisation's register and settings, grouped. **Security is everyone's tokens**, so
  * it is an owner's or an admin's (§3.1 `token.list_any`); everyone else can
  * read the other three, and each section inside them keeps its own gate.
  * **Activity is every space's history** (LAI-951), behind the gate
@@ -60,6 +95,10 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
  */
 export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
+  // Everyone's work across every space (LAI-952), a tab since D-147
+  // (LAI-1170): ungated, as the sidebar entry it replaces was — the server
+  // decides whose tasks each reader is sent.
+  { id: 'work', label: 'Work' },
   { id: 'people', label: 'People' },
   // Who may do what, for everyone: the endpoint is `org.read` (LAI-950).
   { id: 'roles', label: 'Roles & permissions' },
@@ -90,13 +129,17 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
  * link to it means the same place in every mode. **Activity is not a tab of
  * its own here**: *Share local activity* is the second card on Advanced, and
  * `?tab=activity` lands on it (`developerAlias`).
+ *
+ * **The design has four tabs** (LAI-1096): Advanced is `secondary`, a quieter
+ * link at the end of the row, so the four fit a phone's width — and an
+ * address naming it still opens it.
  */
 export const DEVELOPER_V3_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'projects', label: 'Project setup' },
   { id: 'devices', label: 'Devices' },
   { id: 'tools', label: 'Tools' },
-  { id: 'advanced', label: 'Advanced' },
+  { id: 'advanced', label: 'Advanced', secondary: true },
 ];
 
 /**
@@ -116,18 +159,34 @@ export function isV3OnlyTab(id: string): boolean {
 /**
  * The Developer access tabs a mode offers. **Preview keeps every classic tab
  * and its order**, Connect still first and so still the default, and adds the
- * V3-only tabs after them, each marked *Preview*.
+ * V3-only tabs after them, each marked *Preview* — Advanced as a tab like the
+ * others, since preview's bar is not the design's.
  */
 export function developerTabs(mode: DeveloperAccessMode): readonly PageTab[] {
   if (mode === 'v3') return DEVELOPER_V3_TABS;
   if (mode === 'classic') return DEVELOPER_TABS;
   return [
     ...DEVELOPER_TABS,
-    ...DEVELOPER_V3_TABS.filter((tab) => V3_ONLY.has(tab.id)).map((tab) => ({
-      ...tab,
+    ...DEVELOPER_V3_TABS.filter((tab) => V3_ONLY.has(tab.id)).map(({ id, label }) => ({
+      id,
+      label,
       badge: 'Preview',
     })),
   ];
+}
+
+/**
+ * A page's tab row split in two (LAI-1096): the tabs it draws as tabs, then
+ * the `secondary` ones it draws after them as quieter links.
+ */
+export function splitTabs(tabs: readonly PageTab[]): {
+  readonly drawn: readonly PageTab[];
+  readonly secondary: readonly PageTab[];
+} {
+  return {
+    drawn: tabs.filter((tab) => tab.secondary !== true),
+    secondary: tabs.filter((tab) => tab.secondary === true),
+  };
 }
 
 /**
@@ -323,11 +382,12 @@ export function tabHref(path: string, id: string): string {
 }
 
 /**
- * The sidebar's Inbox count: what waits on Review, on Hand-offs (LAI-550) and
- * on Unlisted work. `undefined` for a count that is not this reader's or not
- * read yet, so a reader who may not triage unlisted work counts the others
- * alone — and nothing read at all is no badge rather than a zero that was
- * never measured.
+ * The sidebar's Inbox count: what waits on Review — the rows the reader may
+ * decide (D-146) and the hand-offs that need their approval (LAI-550,
+ * LAI-1169) — and on Unlisted work. `undefined` for a count that is not this
+ * reader's or not read yet, so a reader who may not triage unlisted work
+ * counts the others alone — and nothing read at all is no badge rather than a
+ * zero that was never measured.
  */
 export function inboxCount(
   reviewWaiting: number | undefined,

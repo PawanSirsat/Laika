@@ -213,25 +213,57 @@
   overflow-wrap: anywhere;
 }
 
+.dx-ps-review .conn-body {
+  margin: 0;
+}
+
+/*
+ * LAI-1099 #9: the two ways are the design's check rows, not boxed cards — a
+ * mark, the way and its status, its action at the end; a rule between them.
+ * What a way needs below its row (the command, its records) hangs under the
+ * text, past the mark.
+ */
 .dx-ps-way {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-control);
-}
-
-.dx-ps-way[data-way='check'] {
-  border-color: var(--accent-border);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .dx-ps-way-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
   gap: var(--space-3);
+  min-width: 0;
+}
+
+.dx-ps-way-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+}
+
+.dx-ps-way-mark[data-done] {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.dx-ps-way-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .dx-ps-way-title {
@@ -242,6 +274,32 @@
   color: var(--text-primary);
 }
 
+.dx-ps-way-state {
+  margin: 0;
+}
+
+/* A way's status under its name: the reason goes under its word when the two
+   do not fit on one line, rather than into a sliver beside it. */
+.dx-ps-way-text .status-chip {
+  flex-wrap: wrap;
+  row-gap: 0;
+  border-radius: var(--radius-control);
+}
+
+.dx-ps-way-head > .dx-chip,
+.dx-ps-way-head > .dx-btn {
+  flex-shrink: 0;
+}
+
+/* Under the way's words: the mark's width and the row's gap. */
+.dx-ps-way-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding-left: calc(1.75rem + var(--space-3));
+}
+
 .dx-ps-status {
   margin: 0;
 }
@@ -249,6 +307,55 @@
 .dx-ps .dx-ps-records {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
+}
+
+/* ---- step 3: the CLI line, and its hint behind Help ---- */
+
+.dx-ps-cli {
+  position: relative;
+  min-width: 0;
+}
+
+.dx-ps .dx-ps-cli-line {
+  margin: 0;
+}
+
+/* Over what follows, never wider than the step: 390 px never scrolls sideways. */
+.dx-ps-help-pop {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-width: 34rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.dx-ps-help-pop .conn-note {
+  margin: 0;
+}
+
+/* ---- step 2: the prompt window ---- */
+
+/*
+ * LAI-1099 #10: the prompt is hard-wrapped already, so the window keeps its
+ * lines as they are and scrolls sideways inside itself, rather than breaking
+ * each long one a second time. The page itself still never scrolls sideways.
+ */
+.dx-ps .conn-project-prompt {
+  overflow-x: auto;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+.dx-ps .conn-project-prompt .conn-line {
+  display: inline;
+  padding-inline-start: 0;
+  text-indent: 0;
 }
 
 /* ---- the aside's first list: a rule under the label, then one per item ---- */
@@ -331,9 +438,27 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .dx-ps-auth-head,
+  .dx-ps-auth-head {
+    flex-wrap: wrap;
+  }
+
+  /* The way's words take the rest of the line, so its chip or button goes
+     under them, past the mark, rather than squeezing its status to a sliver. */
   .dx-ps-way-head {
     flex-wrap: wrap;
+  }
+
+  .dx-ps-way-text {
+    flex-basis: calc(100% - 1.75rem - var(--space-3));
+  }
+
+  .dx-ps-way-head > .dx-chip,
+  .dx-ps-way-head > .dx-btn {
+    margin-left: calc(1.75rem + var(--space-3));
+  }
+
+  .dx-ps-way-body {
+    padding-left: 0;
   }
 
   /* A setup's line says who said it — *your word, not verified* — last; on a

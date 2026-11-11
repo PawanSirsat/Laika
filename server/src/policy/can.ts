@@ -141,7 +141,10 @@ export interface Resource {
   visibility?: 'public' | 'private' | undefined;
   /**
    * For `user.invite`: the role the invite grants. Anyone but an owner may
-   * invite only as `member` or `viewer` (D-102 rule 5, LAI-958).
+   * invite only as `member` or `viewer` (D-102 rule 5, LAI-958). For
+   * `user.reset_password`, `agent.revoke_any`, `device.revoke_any` and
+   * `time_entries.write_member`: the target's own role, so an admin is
+   * refused the owner's (D-133, LAI-1137; D-143, LAI-1165).
    */
   targetOrgRole?: OrgRole | undefined;
   /**
@@ -253,6 +256,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.handoff.recover',
   'system.handoff.expire',
   'system.checkpoint.prune',
+  'system.notices.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -436,12 +440,54 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'agent.manage_own':
       return true;
 
-    // | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+    // | List **anyone's** tokens | ✓ | ✓ | — | — |
     //
     // *Manage anyone's tokens* (D-104 item 6, LAI-985).
     case 'token.list_any':
-    case 'token.revoke_any':
       return granted(actor, action);
+
+    // | Revoke **anyone's** token | ✓ | ✓ (not for the owner) | — | — |
+    //
+    // The same grant. D-133, applied by LAI-1143: **an admin may not act on
+    // the owner's setup**, and a token is part of it — a personal token and a
+    // tool's credential alike, since revoking either switches the owner's work
+    // off. Strict as `agent.revoke_any` is: below the owner, an absent
+    // `targetOrgRole` is a denial, so a caller that forgot to load the target
+    // cannot be read as "not the owner". Unlike that row, yourself is allowed:
+    // an admin's own token through this path is still their own token.
+    case 'token.revoke_any':
+      if (!granted(actor, action)) return false;
+      if (orgRole === 'owner') return true;
+      return resource.targetOrgRole !== undefined && resource.targetOrgRole !== 'owner';
+
+    // | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+    //
+    // D-132 (LAI-1137): *See and manage anyone's developer setup*. **Not
+    // themselves**, as for `people.analytics.read`: a person reads their own
+    // on Developer access, where nothing is logged. An absent target is a
+    // denial.
+    case 'developer_setup.read_any':
+      return (
+        granted(actor, action) &&
+        resource.targetUserId !== undefined &&
+        resource.targetUserId !== actor.userId
+      );
+
+    // | Revoke a member's tool or unpair their device | ✓ (session only) | ✓ (session only, not the owner's) | — | — |
+    //
+    // D-133 (LAI-1137): the same grant. **An admin may not act on the
+    // owner's setup** — the `user.reset_password` shape on the target's role,
+    // but strict: an absent `targetOrgRole` is a denial, so a caller that
+    // forgot to load the target cannot be read as "not the owner". Not
+    // themselves either: a person revokes their own on Developer access.
+    case 'agent.revoke_any':
+    case 'device.revoke_any':
+      if (!granted(actor, action)) return false;
+      if (resource.targetUserId === undefined || resource.targetUserId === actor.userId) {
+        return false;
+      }
+      if (resource.targetOrgRole === undefined) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
 
     // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     //
@@ -513,6 +559,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // reviewed. Today the two answer alike, as D-078 and D-079 both say.
     case 'profile.activity.read':
       return granted(actor, action);
+
+    // | View own profile and activity heatmap | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-139 item 1 (LAI-1150): a person reads their own profile and heatmap
+    // whatever their role — their own record of their own work, the
+    // heartbeat's argument. The service reads only the caller's own rows and
+    // leaves `ratings` out unless `profile.read` is held too.
+    case 'profile.read_own':
+      return true;
 
     // | View a member's day, time and shared activity | ✓ (session only, not themselves) | … | — | — |
     //
@@ -591,6 +646,21 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'plan_limit.own':
       return true;
 
+    // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-134 (LAI-1136): every role, and nobody else's — the service reads and
+    // marks the caller's own rows only.
+    case 'notices.own':
+      return true;
+
+    // | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+    //
+    // D-139 (LAI-1151): every role, and nobody else's — the services read the
+    // caller's own pairing requests and setup only, so no path names anybody
+    // else. `developer_setup.read_any` is the other person's, logged.
+    case 'developer_setup.read_own':
+      return true;
+
     // | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
     //
     // D-088 item 5's organisation switch (LAI-787): its own row, not
@@ -621,6 +691,22 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'time_entries.write_own':
       return true;
 
+    // | Change a member's confirmed time | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
+    //
+    // D-143 (LAI-1165), amending D-102 rule 4 and D-088 items 2 and 6. Owners
+    // and admins, by role as the Solidtime import is: the owner anybody else,
+    // an admin anybody else but the owner — D-133's shape, and as strict: an
+    // absent `targetOrgRole` is a denial, so a caller that forgot to load the
+    // target cannot be read as "not the owner". Never yourself: your own time
+    // is `time_entries.write_own`, with its drafts, timer and Undo.
+    case 'time_entries.write_member':
+      if (!isAdminUp) return false;
+      if (resource.targetUserId === undefined || resource.targetUserId === actor.userId) {
+        return false;
+      }
+      if (resource.targetOrgRole === undefined) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
+
     // | Sync own time with Solidtime | ✓ (session only) | … | ✓ (session only) |
     // | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
     // | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
@@ -636,6 +722,27 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'time_sync.map':
     case 'time_sync.import_all':
       return isAdminUp;
+
+    // | View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-130 item 2 (LAI-1135): everyone's time per person, so *See everyone's
+    // analytics* (LAI-958) with the per-person reads it sits beside. A space
+    // admin's totals are §3.2's `time.report.read_project`.
+    case 'time.report.read':
+      return granted(actor, action);
+    // | Set own availability | ✓ (session only) | … | ✓ (session only) |
+    // | See availability of people in your spaces | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-131 (LAI-1130). Every role: availability is **the person's own
+    // declaration**, and the service writes the caller's own rows only — no
+    // row lets anybody set another's. Reading is every role's too, and the
+    // service narrows the answer: people who share a space with the reader,
+    // everyone for an owner or admin. The load columns are not this row's —
+    // they ride `people.analytics.read` (hours) and a space's lead (card
+    // counts), which the service asks for separately.
+    case 'availability.set_own':
+    case 'availability.read':
+      return true;
 
     default:
       return assertNever(action);
@@ -819,6 +926,14 @@ function canProjectAction(
     // pure function is not given.
     case 'project.leave':
       return true;
+
+    // | View the space's time totals | ✓ (session only) | — | — |
+    //
+    // D-130 item 3 as D-136 amends it (LAI-1135): one space, one figure a
+    // week, no per-person split. The service decides which weeks are shown —
+    // three people besides the reader — since that is a fact about rows.
+    case 'time.report.read_project':
+      return isLead;
 
     default:
       return assertNever(action);

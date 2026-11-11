@@ -4,6 +4,8 @@
  * are tested without a browser.
  */
 
+import type { TokenAlert } from '../../../api/token-alerts.ts';
+
 export interface ScopeProject {
   readonly id: string;
   readonly slug: string;
@@ -123,4 +125,51 @@ export function dayLabel(day: string): string {
   return Number.isNaN(at.getTime())
     ? day
     : at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+/** One of the reader's own alerts as the Budget alerts card draws it (LAI-1127). */
+export interface AlertRow {
+  readonly alert: TokenAlert;
+  /** Spent over the limit: 1 is the whole budget, or the whole p95. */
+  readonly share: number;
+  /** A budget alert at or past its budget. */
+  readonly over: boolean;
+}
+
+/** The alerts, most spent against their limit first; ties keep the server's order. */
+export function alertRows(alerts: readonly TokenAlert[]): AlertRow[] {
+  return alerts
+    .map((alert) => {
+      const share = alert.limit_tokens > 0 ? alert.tokens / alert.limit_tokens : 0;
+      return { alert, share, over: alert.kind === 'budget' && share >= 1 };
+    })
+    .sort((a, b) => b.share - a.share);
+}
+
+/** The Breakdown card's tabs (LAI-1127), in the design's order. */
+export const BREAKDOWN_TABS = ['space', 'developer', 'agent', 'model'] as const;
+export type BreakdownTab = (typeof BREAKDOWN_TABS)[number];
+
+/**
+ * The tabs a reading offers: *Space* only when the server sent `by_project` —
+ * the organisation, for a reader who may read it — and the rest always, since
+ * *Developer* says why it is empty for a reader who may not see people.
+ */
+export function breakdownTabs(hasSpaces: boolean): BreakdownTab[] {
+  return BREAKDOWN_TABS.filter((t) => t !== 'space' || hasSpaces);
+}
+
+/**
+ * The tab shown: the one picked while it is offered, else the first with
+ * figures in it — by space, then by developer for a reader the server sent
+ * people to, else by agent.
+ */
+export function breakdownTab(
+  picked: BreakdownTab | undefined,
+  tabs: readonly BreakdownTab[],
+  readsPeople: boolean,
+): BreakdownTab {
+  if (picked !== undefined && tabs.includes(picked)) return picked;
+  if (tabs.includes('space')) return 'space';
+  return readsPeople ? 'developer' : 'agent';
 }

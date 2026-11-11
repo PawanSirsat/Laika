@@ -66,6 +66,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
   );
   const {
     waiting: reviewWaiting,
+    decidable: reviewDecidable,
     capped: reviewCapped,
     queue: reviewQueue,
     refresh: refreshReview,
@@ -95,6 +96,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
+      reviewDecidable,
       reviewCapped,
       reviewQueue,
       refreshReview,
@@ -123,6 +125,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
+      reviewDecidable,
       reviewCapped,
       reviewQueue,
       refreshReview,

@@ -59,6 +59,12 @@ export interface HandoffsTabProps {
   /** An approve or a withdraw changed the badge: the shell re-reads it. */
   readonly onChanged: () => void;
   readonly onNavigate: (to: string) => void;
+  /**
+   * One view, fixed (LAI-1169): Review's *Needs your approval* section draws
+   * this tab on `needs_approval` alone — no tablist, no *Show closed*. The
+   * polling, the held rows and the writes are the same.
+   */
+  readonly only?: PersonInboxView | undefined;
 }
 
 interface Loaded {
@@ -95,8 +101,8 @@ const START: Loaded = {
  * no longer lists stays (marked), and new ones wait behind *Show N new* —
  * {@link mergeHeld}. Nothing here takes the focus.
  */
-export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTabProps) {
-  const [view, setView] = useState<PersonInboxView>('received');
+export function HandoffsTab({ meId, counts, onChanged, onNavigate, only }: HandoffsTabProps) {
+  const [view, setView] = useState<PersonInboxView>(only ?? 'received');
   const [closed, setClosed] = useState(false);
   const [state, setState] = useState<Loaded>(START);
   const [attempt, setAttempt] = useState(0);
@@ -298,61 +304,69 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
   };
 
   return (
-    <section className="handoff-inbox handoffs-tab" aria-label="Hand-offs" data-handoffs-tab>
-      <div className="handoffs-toolbar">
-        <div className="handoff-filters" role="tablist" aria-label="Show hand-offs">
-          {PERSON_INBOX_VIEWS.map((id) => {
-            const count = shownCounts?.[id];
-            const selected = id === view;
-            return (
-              <button
-                key={id}
-                ref={(el) => {
-                  tabRefs.current[id] = el;
-                }}
-                id={`${tabIds}-${id}`}
-                type="button"
-                role="tab"
-                className="handoff-filter"
-                aria-selected={selected}
-                aria-controls={panelId}
-                tabIndex={selected ? 0 : -1}
-                data-filter={id}
-                onClick={() => {
-                  switchTo(id);
-                }}
-                onKeyDown={onTabKey}
-              >
-                {HANDOFF_FILTER_WORDS[id]}
-                {count !== undefined && count > 0 && (
-                  <span className="handoff-filter-count" data-count={id}>
-                    {count}
-                    <span className="visually-hidden"> open</span>
-                  </span>
-                )}
-              </button>
-            );
-          })}
+    <section
+      className="handoff-inbox handoffs-tab"
+      aria-label={only === undefined ? 'Hand-offs' : HANDOFF_FILTER_WORDS[only]}
+      data-handoffs-tab
+      data-only={only}
+    >
+      {only === undefined && (
+        <div className="handoffs-toolbar">
+          <div className="handoff-filters" role="tablist" aria-label="Show hand-offs">
+            {PERSON_INBOX_VIEWS.map((id) => {
+              const count = shownCounts?.[id];
+              const selected = id === view;
+              return (
+                <button
+                  key={id}
+                  ref={(el) => {
+                    tabRefs.current[id] = el;
+                  }}
+                  id={`${tabIds}-${id}`}
+                  type="button"
+                  role="tab"
+                  className="handoff-filter"
+                  aria-selected={selected}
+                  aria-controls={panelId}
+                  tabIndex={selected ? 0 : -1}
+                  data-filter={id}
+                  onClick={() => {
+                    switchTo(id);
+                  }}
+                  onKeyDown={onTabKey}
+                >
+                  {HANDOFF_FILTER_WORDS[id]}
+                  {count !== undefined && count > 0 && (
+                    <span className="handoff-filter-count" data-count={id}>
+                      {count}
+                      <span className="visually-hidden"> open</span>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <label className="handoffs-closed" htmlFor={closedId}>
+            <input
+              id={closedId}
+              type="checkbox"
+              checked={closed}
+              onChange={(event) => {
+                more.current?.abort();
+                setState(START);
+                setClosed(event.target.checked);
+              }}
+            />
+            Show closed and expired
+          </label>
         </div>
-        <label className="handoffs-closed" htmlFor={closedId}>
-          <input
-            id={closedId}
-            type="checkbox"
-            checked={closed}
-            onChange={(event) => {
-              more.current?.abort();
-              setState(START);
-              setClosed(event.target.checked);
-            }}
-          />
-          Show closed and expired
-        </label>
-      </div>
+      )}
 
       <div
         id={panelId}
-        role="tabpanel"
-        aria-labelledby={`${tabIds}-${view}`}
+        {...(only === undefined
+          ? { role: 'tabpanel', 'aria-labelledby': `${tabIds}-${view}` }
+          : {})}
         className="handoffs-panel"
       >
         {state.stale && (

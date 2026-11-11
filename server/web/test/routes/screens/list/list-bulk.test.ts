@@ -17,8 +17,10 @@ import {
   bulkPlan,
   bulkSummary,
   failureMessage,
+  runBulkAction,
   statusChoices,
   statusTargets,
+  type BulkRun,
 } from '../../../../src/routes/screens/list/list-bulk.ts';
 import type { ProjectStatus } from '../../../../src/api/statuses.ts';
 
@@ -239,5 +241,71 @@ void describe('bulkPlan', () => {
       bulkPlan({ kind: 'sprint', sprintId: null }, [task('a', { sprint_id: 's1' }), task('b', {})]),
       { ids: ['a'], skipped: 1 },
     );
+  });
+});
+
+void describe('runBulkAction — the whole run, shared by the List and Work (LAI-1170)', () => {
+  const task = (id: string, over: Partial<Task>): Task =>
+    ({
+      id,
+      key: id.toUpperCase(),
+      status: 'todo',
+      status_id: 's-todo',
+      priority: 'p2',
+      assignee_id: null,
+      sprint_id: null,
+      ...over,
+    }) as Task;
+
+  void test('plans, applies one at a time in selection order, and reports by key', async () => {
+    const phases: BulkRun[] = [];
+    const applied: string[] = [];
+    const outcome = await runBulkAction(
+      { kind: 'priority', priority: 'p1' },
+      // `b` is already p1 and is never sent; `c` is refused by the server.
+      [task('a', {}), task('b', { priority: 'p1' }), task('c', {})],
+      (run) => {
+        phases.push(run);
+      },
+      (action, t) => {
+        assert.equal(action.kind, 'priority');
+        applied.push(t.id);
+        return t.id === 'c'
+          ? Promise.reject(new ApiError('forbidden', 'Not yours to change', 403, {}))
+          : Promise.resolve(undefined);
+      },
+    );
+
+    assert.deepEqual(applied, ['a', 'c'], 'the skipped task was sent, or the order changed');
+    assert.deepEqual(phases, [
+      { phase: 'running', completed: 0, total: 2 },
+      { phase: 'running', completed: 1, total: 2 },
+      { phase: 'running', completed: 2, total: 2 },
+      {
+        phase: 'done',
+        summary: '1 updated, 1 refused, 1 already there',
+        refusals: [{ key: 'C', message: 'Not yours to change' }],
+      },
+    ]);
+    assert.deepEqual(outcome, {
+      done: ['a'],
+      failed: [{ id: 'c', message: 'Not yours to change' }],
+    });
+  });
+
+  void test('nothing to send is one `done` report with no request made', async () => {
+    const phases: BulkRun[] = [];
+    await runBulkAction(
+      { kind: 'assignee', assigneeId: null },
+      [task('a', {})],
+      (run) => {
+        phases.push(run);
+      },
+      () => Promise.reject(new Error('must not be called')),
+    );
+    assert.deepEqual(phases, [
+      { phase: 'running', completed: 0, total: 0 },
+      { phase: 'done', summary: '0 updated, 1 already there', refusals: [] },
+    ]);
   });
 });

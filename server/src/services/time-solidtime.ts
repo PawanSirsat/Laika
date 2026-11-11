@@ -811,7 +811,9 @@ function reconcile(
               minutes,
               note: twin.note,
             },
-            twin.userId,
+            // The pull is the change, so its revision is the puller's: the
+            // person on their own pull, the admin on everyone's (D-143).
+            actor.userId,
             now,
           );
         } catch (err) {
@@ -924,7 +926,7 @@ function reconcile(
       let entryId: string;
       let revision: number;
       try {
-        ({ entryId, revision } = takeImport(tx, userId, e.id, fields, now));
+        ({ entryId, revision } = takeImport(tx, userId, e.id, fields, actor.userId, now));
       } catch (err) {
         if (isDayFull(err)) {
           flag(e.id, ownDay, 'day_full');
@@ -974,7 +976,7 @@ function reconcile(
         flag(r.solidtimeId, r.day, 'closed_period');
         continue;
       }
-      if (r.entryId !== null && r.userId !== null) retireEntry(tx, r.entryId, r.userId, now);
+      if (r.entryId !== null && r.userId !== null) retireEntry(tx, r.entryId, actor.userId, now);
       tx.delete(solidtimeEntries).where(eq(solidtimeEntries.solidtimeId, r.solidtimeId)).run();
       result.deleted += 1;
     }
@@ -991,13 +993,15 @@ function isDayFull(err: unknown): boolean {
 /**
  * The person's imported entry for a Solidtime id: a new one, or the one they
  * already had — deleted when the link that brought it was undone — made live
- * again. `time_entries` keeps one `import` row per `(user, source_ref)`.
+ * again. `time_entries` keeps one `import` row per `(user, source_ref)`. The
+ * revision is by `changedBy`, whoever ran the pull (D-143).
  */
 function takeImport(
   tx: Tx,
   userId: string,
   solidtimeId: string,
   fields: EntryFields,
+  changedBy: string,
   now: number,
 ): { entryId: string; revision: number } {
   const had = tx
@@ -1012,9 +1016,12 @@ function takeImport(
     )
     .get();
   if (had !== undefined) {
-    return { entryId: had.id, revision: syncEntry(tx, had.id, fields, userId, now) };
+    return { entryId: had.id, revision: syncEntry(tx, had.id, fields, changedBy, now) };
   }
-  return { entryId: insertEntry(tx, userId, fields, 'import', solidtimeId, now), revision: 1 };
+  return {
+    entryId: insertEntry(tx, userId, fields, 'import', solidtimeId, now, changedBy),
+    revision: 1,
+  };
 }
 
 /**

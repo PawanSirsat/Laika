@@ -67,6 +67,12 @@ export interface ShellValue {
    * badge; `undefined` until read. Everyone signed in has a queue.
    */
   readonly reviewWaiting: number | undefined;
+  /**
+   * Of those, what this person may decide (D-146, LAI-1168): the rail's
+   * Inbox badge and the Review tab count this, not `reviewWaiting`, which
+   * Capacity's tile keeps for the whole queue.
+   */
+  readonly reviewDecidable: number | undefined;
   /** More wait than the server's 200, so `reviewWaiting` is a floor (LAI-818). */
   readonly reviewCapped: boolean | undefined;
   /** The queue that count is, for My day's *Waiting on your review* (LAI-796). */

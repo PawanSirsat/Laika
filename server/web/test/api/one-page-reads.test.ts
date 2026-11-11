@@ -67,6 +67,13 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       },
     ],
     [
+      'routes/screens/insights/AddToProjectDialog.tsx',
+      {
+        names: ['listTasks'],
+        why: 'a deliberate window: the first eight unassigned todo and backlog cards offered as a first card (LAI-1139), never counted',
+      },
+    ],
+    [
       'routes/screens/sprints/use-sprints.ts',
       { names: ['listSprints'], why: 'its own cursor loop, reporting `truncated`' },
     ],
@@ -77,10 +84,10 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       { names: ['listProjects'], why: 'the Projects screen pages on purpose, with Load more' },
     ],
     [
-      'routes/screens/work/WorkScreen.tsx',
+      'routes/screens/organisation/WorkTab.tsx',
       {
         names: ['listAllTasks'],
-        why: 'everyone’s work pages on purpose, with Load more (LAI-952)',
+        why: 'everyone’s work pages on purpose, Previous and Next (LAI-952; a tab since LAI-1170)',
       },
     ],
     [
@@ -107,6 +114,18 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       {
         names: ['listAnalyticsViews'],
         why: 'the newest pages, walking `next_cursor` until one reaches past the window',
+      },
+    ],
+    /*
+     * LAI-1152: the profile's *Who looked · last 30 days* walks the same log
+     * the same way, until a page reaches past 30 days; the badge is the
+     * server's `total` when it sends one (LAI-1150).
+     */
+    [
+      'routes/screens/profile/ProfileWhoLooked.tsx',
+      {
+        names: ['listAnalyticsViews'],
+        why: 'the newest pages, walking `next_cursor` until one reaches past 30 days',
       },
     ],
   ]);

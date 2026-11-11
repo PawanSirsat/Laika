@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -10,6 +10,8 @@ export interface SpacesPopoverProps {
   readonly spaces: readonly Space[];
   /** Pixel offset of the panel's left edge: past the rail, collapsed or not. */
   readonly left: number;
+  /** The space the reader is in: its row, if listed, is scrolled into view. */
+  readonly current?: string | undefined;
   readonly onPick: (slug: string) => void;
   /** Pin a space to the rail (LAI-989). Absent, no row offers it. */
   readonly onPin?: ((slug: string) => void) | undefined;
@@ -33,6 +35,7 @@ export interface SpacesPopoverProps {
 export function SpacesPopover({
   spaces,
   left,
+  current,
   onPick,
   onPin,
   onViewAll,
@@ -40,6 +43,19 @@ export function SpacesPopover({
 }: SpacesPopoverProps) {
   const { theme } = useTheme();
   const [query, setQuery] = useState('');
+  const list = useRef<HTMLUListElement>(null);
+
+  /*
+   * **The list scrolls; the reader's row is on screen** (LAI-1146). With
+   * thirty spaces the panel ran off the window and nothing scrolled; now only
+   * the list does, and the current space is brought into it on open.
+   */
+  useLayoutEffect(() => {
+    if (current === undefined) return;
+    list.current
+      ?.querySelector<HTMLElement>(`[data-slug="${CSS.escape(current)}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [current]);
 
   const needle = query.trim().toLowerCase();
   const shown =
@@ -66,7 +82,8 @@ export function SpacesPopover({
         className="spaces-pop"
         role="dialog"
         aria-label="Spaces"
-        style={{ left: `${String(left)}px` }}
+        // A custom property, so the CSS can keep the panel inside a phone.
+        style={{ '--spaces-pop-left': `${String(left)}px` } as CSSProperties}
         onKeyDown={(event) => {
           if (event.key === 'Escape') onClose();
         }}
@@ -118,14 +135,15 @@ export function SpacesPopover({
         ) : shown.length === 0 ? (
           <p className="spaces-pop-empty">No space matches “{query.trim()}”.</p>
         ) : (
-          <ul className="spaces-pop-list">
+          <ul ref={list} className="spaces-pop-list">
             {shown.map((space) => {
               const colour = avatarColor(space.slug, theme);
               return (
-                <li key={space.slug} className="space-item">
+                <li key={space.slug} className="space-item" data-slug={space.slug}>
                   <button
                     type="button"
                     className="spaces-pop-row"
+                    aria-current={space.slug === current ? 'true' : undefined}
                     onClick={() => {
                       onPick(space.slug);
                     }}

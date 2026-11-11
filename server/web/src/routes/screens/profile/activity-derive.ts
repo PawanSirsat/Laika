@@ -2,7 +2,7 @@ import { AGENT_CLIENT_NAMES, type AgentClient } from '../../../api/agent-clients
 import type { PeopleActivity } from '../../../api/people-activity.ts';
 
 /**
- * How the profile's activity heatmap reads (D-079, LAI-751).
+ * How the profile's activity heatmap reads (D-079, LAI-751; D-139, LAI-1154).
  *
  * Pure: the server sends one integer per day per source, and everything the
  * card shows beyond that — which week a day falls in, how dark its square is,
@@ -11,7 +11,11 @@ import type { PeopleActivity } from '../../../api/people-activity.ts';
  * figure is a count of days or commits, said as such (D-079 item 6).
  */
 
-export type HeatSource = 'github' | 'local' | 'board';
+/**
+ * The two sources the card draws. The board's actions are in the response and
+ * no longer on the card (LAI-1154): the design draws GitHub and Local only.
+ */
+export type HeatSource = 'github' | 'local';
 
 /** A colour step: 0 is nothing that day, 1–4 the source's own quartiles. */
 export type HeatLevel = 0 | 1 | 2 | 3 | 4;
@@ -29,9 +33,11 @@ export interface HeatDay {
   readonly sessions: number | null;
   /** Prompts + sessions + commits not pushed: the Local colour's measure. */
   readonly local: number | null;
-  readonly boardSelf: number;
-  readonly boardAgent: number;
-  readonly board: number;
+  /**
+   * A day before the person joined (LAI-1154): drawn apart, named so, and
+   * left out of every stat — they could not have been active on it.
+   */
+  readonly pre: boolean;
   readonly promptsByAgent: Readonly<Partial<Record<AgentClient, number>>>;
 }
 
@@ -62,8 +68,28 @@ export function rangeDays(range: '12w' | '52w'): number {
   return range === '12w' ? 84 : 364;
 }
 
-/** The response, one entry per day, oldest first. */
-export function heatDays(activity: PeopleActivity): HeatDay[] {
+/**
+ * The day someone joined, `YYYY-MM-DD` in the series' time zone — the zone
+ * the days are counted in. An unknown zone falls back to UTC.
+ */
+export function joinedDay(createdAt: number, tz: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(createdAt));
+  } catch {
+    return new Date(createdAt).toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * The response, one entry per day, oldest first. Days before `joined`
+ * (`YYYY-MM-DD`) are marked; with none given, no day is.
+ */
+export function heatDays(activity: PeopleActivity, joined?: string): HeatDay[] {
   const { series } = activity;
   const length = series.board_self.length;
   return Array.from({ length }, (_, i) => {
@@ -75,8 +101,6 @@ export function heatDays(activity: PeopleActivity): HeatDay[] {
       localCommits === null || prompts === null || sessions === null
         ? null
         : localCommits + prompts + sessions;
-    const boardSelf = series.board_self[i] ?? 0;
-    const boardAgent = series.board_agent[i] ?? 0;
     return {
       index: i,
       day,
@@ -86,16 +110,14 @@ export function heatDays(activity: PeopleActivity): HeatDay[] {
       prompts,
       sessions,
       local,
-      boardSelf,
-      boardAgent,
-      board: boardSelf + boardAgent,
+      pre: joined !== undefined && day < joined,
       promptsByAgent: activity.prompts_by_agent[day] ?? {},
     };
   });
 }
 
 /** Days for a range ending `end`, all empty — the skeleton's grid. */
-export function emptyDays(end: string, length: number): HeatDay[] {
+export function emptyDays(end: string, length: number, joined?: string): HeatDay[] {
   const start = dayAfter(end, -(length - 1));
   return Array.from({ length }, (_, i) => {
     const day = dayAfter(start, i);
@@ -108,9 +130,7 @@ export function emptyDays(end: string, length: number): HeatDay[] {
       prompts: null,
       sessions: null,
       local: null,
-      boardSelf: 0,
-      boardAgent: 0,
-      board: 0,
+      pre: joined !== undefined && day < joined,
       promptsByAgent: {},
     };
   });
@@ -223,7 +243,10 @@ export interface Streak {
 
 export interface ActivityStats {
   readonly activeDays: number;
+  /** The days counted: the range's, less any before they joined. */
   readonly totalDays: number;
+  /** Some of the range is before they joined, so the counts are "since joining". */
+  readonly sinceJoining: boolean;
   /** Ending today — or yesterday, when today has nothing yet. */
   readonly currentStreak: number;
   readonly longestStreak: Streak;
@@ -245,12 +268,22 @@ export interface ActivityStats {
   readonly unpushed: number;
 }
 
-/** A day with anything recorded in a source on show. */
-export function isActive(day: HeatDay): boolean {
-  return (day.github ?? 0) + (day.local ?? 0) + day.board > 0;
+/** GitHub and Local together — Stacked's measure; null when neither is shown. */
+export function combined(day: HeatDay): number | null {
+  return day.github === null && day.local === null ? null : (day.github ?? 0) + (day.local ?? 0);
 }
 
-export function activityStats(days: readonly HeatDay[]): ActivityStats {
+/** A day with a commit, a prompt, a session or a local commit — the board is not on the card. */
+export function isActive(day: HeatDay): boolean {
+  return !day.pre && (combined(day) ?? 0) > 0;
+}
+
+/**
+ * Every stat is over the days since they joined (LAI-1154): a day before it
+ * is not an inactive day, so it neither counts against them nor breaks a run.
+ */
+export function activityStats(all: readonly HeatDay[]): ActivityStats {
+  const days = all.filter((day) => !day.pre);
   const active = days.map(isActive);
 
   let longest: Streak = { days: 0, from: null, to: null };
@@ -292,6 +325,7 @@ export function activityStats(days: readonly HeatDay[]): ActivityStats {
   return {
     activeDays: active.filter(Boolean).length,
     totalDays: days.length,
+    sinceJoining: days.length < all.length,
     currentStreak: current,
     longestStreak: longest,
     busiestWeekday: busiest,
@@ -302,6 +336,17 @@ export function activityStats(days: readonly HeatDay[]): ActivityStats {
   };
 }
 
+/**
+ * The busiest weekday the tile names, or null for *no single day yet*: one
+ * weekday ahead of every other, on at least three of its days — fewer is too
+ * little to call a habit (the design's rule, LAI-1154).
+ */
+export function singleBusiest(stats: ActivityStats): number | null {
+  const busiest = stats.busiestWeekday;
+  if (busiest?.weekdays.length !== 1 || busiest.active < 3) return null;
+  return busiest.weekdays[0] ?? null;
+}
+
 // ---------------------------------------------------------------------- text
 
 /** `Wed 7 Oct` — the tooltip's heading. */
@@ -310,15 +355,12 @@ export function shortDate(day: string): string {
   return `${WEEKDAYS[weekdayOf(day)] ?? ''} ${String(date.getUTCDate())} ${MONTHS[date.getUTCMonth()] ?? ''}`;
 }
 
-/** `2–20 Mar`, `28 Feb – 3 Mar` — a streak's span. */
+/** `11 Jan – 16 Jan`, `28 Feb – 3 Mar`, `7 Oct` — a streak's span, as the design writes it. */
 export function spanLabel(from: string, to: string): string {
   const a = new Date(at(from));
   const b = new Date(at(to));
-  if (from === to) return `${String(a.getUTCDate())} ${MONTHS[a.getUTCMonth()] ?? ''}`;
-  if (a.getUTCMonth() === b.getUTCMonth()) {
-    return `${String(a.getUTCDate())}–${String(b.getUTCDate())} ${MONTHS[b.getUTCMonth()] ?? ''}`;
-  }
-  return `${String(a.getUTCDate())} ${MONTHS[a.getUTCMonth()] ?? ''} – ${String(b.getUTCDate())} ${MONTHS[b.getUTCMonth()] ?? ''}`;
+  const one = (d: Date) => `${String(d.getUTCDate())} ${MONTHS[d.getUTCMonth()] ?? ''}`;
+  return from === to ? one(a) : `${one(a)} – ${one(b)}`;
 }
 
 export function weekdayName(weekday: number): string {
@@ -380,17 +422,6 @@ export function dayLines(day: HeatDay): TipLine[] {
       text: day.sessions === 1 ? 'agent session' : 'agent sessions',
     });
   }
-
-  lines.push({
-    source: 'board',
-    n: day.boardSelf,
-    text: day.boardSelf === 1 ? 'board action by them' : 'board actions by them',
-  });
-  lines.push({
-    source: 'board',
-    n: day.boardAgent,
-    text: day.boardAgent === 1 ? 'board action by their agents' : 'board actions by their agents',
-  });
   return lines;
 }
 
@@ -398,6 +429,7 @@ export function dayLines(day: HeatDay): TipLine[] {
 export function dayText(day: HeatDay): string {
   const date = new Date(at(day.day));
   const heading = `${weekdayName(day.weekday)} ${String(date.getUTCDate())} ${MONTHS[date.getUTCMonth()] ?? ''} ${String(date.getUTCFullYear())}`;
+  if (day.pre) return `${heading} · before joining`;
   const body = dayLines(day)
     .map((line) => (line.n === null ? line.text : `${line.n.toLocaleString('en-GB')} ${line.text}`))
     .join(', ');
@@ -410,8 +442,6 @@ export function sourceTotals(days: readonly HeatDay[]): {
   prompts: number;
   sessions: number;
   unpushed: number;
-  boardSelf: number;
-  boardAgent: number;
 } {
   return days.reduce(
     (sum, d) => ({
@@ -419,11 +449,40 @@ export function sourceTotals(days: readonly HeatDay[]): {
       prompts: sum.prompts + (d.prompts ?? 0),
       sessions: sum.sessions + (d.sessions ?? 0),
       unpushed: sum.unpushed + (d.localCommits ?? 0),
-      boardSelf: sum.boardSelf + d.boardSelf,
-      boardAgent: sum.boardAgent + d.boardAgent,
     }),
-    { pushed: 0, prompts: 0, sessions: 0, unpushed: 0, boardSelf: 0, boardAgent: 0 },
+    { pushed: 0, prompts: 0, sessions: 0, unpushed: 0 },
   );
+}
+
+/**
+ * A source's line in the legend: `6,006 commits pushed`; `85 prompts · 83
+ * sessions · 9 not pushed`, or *No local activity yet* when Local has nothing.
+ */
+export function totalLine(source: HeatSource, totals: ReturnType<typeof sourceTotals>): string {
+  if (source === 'github') return plural(totals.pushed, 'commit pushed', 'commits pushed');
+  if (totals.prompts + totals.sessions + totals.unpushed === 0) return 'No local activity yet';
+  return [
+    plural(totals.prompts, 'prompt', 'prompts'),
+    plural(totals.sessions, 'session', 'sessions'),
+    `${totals.unpushed.toLocaleString('en-GB')} not pushed`,
+  ].join(' · ');
+}
+
+/**
+ * The card's range, before the viewer picks one (LAI-1154): 12 weeks on a
+ * phone, or for someone who joined under 12 weeks ago — a year of their
+ * squares would be almost all before they joined — else a year.
+ */
+export function openingRange(phone: boolean, joinedAt: number, now: number): '12w' | '52w' {
+  return phone || now - joinedAt < rangeDays('12w') * DAY_MS ? '12w' : '52w';
+}
+
+/** `joined Mon 2 Nov` when they joined inside the range shown, else nothing. */
+export function joinedNote(days: readonly HeatDay[], joined: string): string | null {
+  const first = days[0]?.day;
+  const last = days.at(-1)?.day;
+  if (first === undefined || last === undefined || joined < first || joined > last) return null;
+  return `joined ${shortDate(joined)}`;
 }
 
 // ------------------------------------------------------------- the viewer's
@@ -436,9 +495,9 @@ export function designKey(viewerId: string): string {
   return `laika.profile.activity-design.${viewerId}`;
 }
 
-/** The viewer's remembered design, or B — stacked grids — by default. */
+/** The viewer's remembered design, or Split — the design's opening view — by default (LAI-1154). */
 export function storedDesign(value: string | null): HeatDesign {
-  return value === 'split' ? 'split' : 'stacked';
+  return value === 'stacked' ? 'stacked' : 'split';
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   DEVICE_ORDER,
   DEVICE_STATUS,
   DUPLICATE,
+  ROW_UPDATE_KEYS,
   TOOL_ORDER,
   TOOL_STATUS,
   UPDATE_ORDER,
@@ -151,6 +152,11 @@ export function HintChip({ word, tone, description }: HintChipProps) {
 export const LEGEND_LINK = 'What do these statuses mean?';
 export const LEGEND_TITLE = 'What these statuses mean';
 
+const ROW_WORDS = ROW_UPDATE_KEYS.map((key) => UPDATE_STATUS[key].word);
+
+/** Where the helper's chips show (LAI-1097): on a row only when there is something to do. */
+export const HELPER_NOTE = `A row shows its helper’s chip only when there is something to do: ${ROW_WORDS.slice(0, -1).join(', ')} or ${ROW_WORDS[ROW_WORDS.length - 1] ?? ''}. Its details always say which it is.`;
+
 function Entry({ copy, keyName }: { readonly copy: StatusCopy; readonly keyName: string }) {
   return (
     <div className="dv3-legend-entry" data-legend={keyName}>
@@ -170,10 +176,13 @@ function Entry({ copy, keyName }: { readonly copy: StatusCopy; readonly keyName:
 function Group({
   title,
   id,
+  note,
   entries,
 }: {
   readonly title: string;
   readonly id: string;
+  /** One line under the title, for where a group's chips show. */
+  readonly note?: string;
   readonly entries: readonly (readonly [string, StatusCopy])[];
 }) {
   return (
@@ -181,6 +190,7 @@ function Group({
       <h3 className="side-panel-label" id={id}>
         {title}
       </h3>
+      {note !== undefined && <p className="dv3-legend-note">{note}</p>}
       <dl className="dv3-legend">
         {entries.map(([key, copy]) => (
           <Entry key={key} keyName={key} copy={copy} />
@@ -219,6 +229,7 @@ export function StatusLegend({
       key="helper"
       title="Its Laika helper"
       id="dv3-legend-helper"
+      note={HELPER_NOTE}
       entries={UPDATE_ORDER.map((key) => [key, UPDATE_STATUS[key]] as const)}
     />
   );
@@ -234,7 +245,7 @@ export function StatusLegend({
     <SidePanel
       title={LEGEND_TITLE}
       titleId="dv3-legend-title"
-      subtitle="Every status these lists can show, what it means and what to do. Hover over or focus a chip on a row for that row’s own reason."
+      subtitle="Every status these lists and their details can show, what it means and what to do. Hover over or focus a chip on a row for that row’s own reason."
       onClose={onClose}
       restore={restore}
       panel="status-legend"

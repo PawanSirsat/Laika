@@ -26,6 +26,7 @@ import {
   defaultPermissions,
   open,
   refuse,
+  reply,
   until,
   type ApiStub,
   type StubCall,
@@ -456,6 +457,76 @@ void describe('revoking', () => {
       const error = row.locator('.org-error');
       await error.waitFor({ timeout: 20_000 });
       assert.equal(await error.innerText(), MESSAGE, 'the refusal was reworded');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * **An admin may not revoke the owner's tokens** (D-133, LAI-1143; the shared
+ * rule in `api/owner-setup.ts`, LAI-1140): the list is still shown, Revoke is
+ * not, and the reason is said. A `403 not_for_owner` that arrives anyway — a
+ * role changed since the page loaded — is said in the reader's terms.
+ */
+void describe("the owner's tokens, read by an admin", () => {
+  const OWNER_TOKENS: ApiStub = {
+    '/api/v1/users/u1/tokens': {
+      data: [token('o1', 'Owner laptop')],
+      next_cursor: null,
+    },
+  };
+
+  void test('are listed with no Revoke, and the reason is on the screen', async () => {
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      ...OWNER_TOKENS,
+      '/api/v1/me': me('u3', 'admin'),
+    });
+    try {
+      const row = await openPanel(h, 'Ada Lovelace');
+      await until(async () => (await row.locator('.tok-row').count()) === 1);
+      assert.equal(await row.locator('.tok-row').count(), 1);
+      assert.equal(await row.locator('.tok-revoke').count(), 0, 'offered Revoke on the owner');
+      assert.match(
+        await row.locator('[data-owner-tokens]').innerText(),
+        /Only the owner can revoke its tools, devices or tokens/,
+      );
+      // A member's tokens keep their Revoke for the same admin.
+      const tomas = await openPanel(h, 'Tomas Nel');
+      await tomas.locator('.tok-revoke').first().waitFor({ timeout: 20_000 });
+      assert.equal(await tomas.locator('[data-owner-tokens]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a 403 not_for_owner is said in the reader’s terms', async () => {
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u3', 'admin'),
+      '/api/v1/users/u2/tokens/t1': reply(403, {
+        error: {
+          code: 'forbidden',
+          message: "An admin cannot change the owner's setup",
+          details: { reason: 'not_for_owner' },
+        },
+      }),
+    });
+    try {
+      const row = await openPanel(h, 'Tomas Nel');
+      await row.locator('.tok-revoke').first().waitFor({ timeout: 20_000 });
+      await row
+        .locator('.tok-row', { hasText: 'Laptop — Claude Code' })
+        .locator('.tok-revoke')
+        .click();
+      await answerConfirm(h.page, true);
+      const error = row.locator('.org-error');
+      await error.waitFor({ timeout: 20_000 });
+      assert.equal(
+        await error.innerText(),
+        'Only the owner can change the owner’s setup. Nothing was changed.',
+      );
     } finally {
       await h.close();
     }

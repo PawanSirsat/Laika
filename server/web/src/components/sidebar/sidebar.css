@@ -399,7 +399,19 @@
   position: fixed;
   top: 132px;
   z-index: 41;
-  width: 284px;
+  /*
+   * **Inside the window, whatever it is** (LAI-1146). Beside the rail where
+   * there is room; slid left on a phone, where the open rail is 212px of a
+   * 390px screen. The height is the window's below the top, so a long list
+   * scrolls inside the panel instead of running off the bottom.
+   */
+  /* The expanded rail's edge; `SpacesPopover` sets it inline, past the rail. */
+  --spaces-pop-left: 220px;
+  left: max(8px, min(var(--spaces-pop-left), calc(100vw - 292px)));
+  width: min(284px, calc(100vw - 16px));
+  box-sizing: border-box;
+  max-height: calc(100vh - 132px - 12px);
+  max-height: calc(100dvh - 132px - 12px);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: 12px;
@@ -508,13 +520,36 @@
   text-wrap: pretty;
 }
 
+.spaces-pop-head,
+.spaces-pop-search,
+.spaces-pop-all {
+  flex: none;
+}
+
+/*
+ * Only the list scrolls (LAI-1146); the head, the search and *View all* stay.
+ * A hairline above it marks where rows slide under the search.
+ */
 .spaces-pop-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 4px 0 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* One height for every row, however long the list. */
+.spaces-pop-list > li {
+  flex: none;
+}
+
+.spaces-pop-row[aria-current='true'] {
+  background: var(--accent-bg);
 }
 
 .spaces-pop-row {
