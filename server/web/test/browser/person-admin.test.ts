@@ -924,3 +924,36 @@ void describe('/reset-password', () => {
     }
   });
 });
+
+void describe('inline confirmations and the keyboard (LAI-1194, audit B12)', () => {
+  void test('a confirmation takes focus, Escape backs out, and nothing is sent', async () => {
+    const h = await open('/people?user=u2', stub(OWNER));
+    try {
+      const admin = await panel(h);
+      await admin.locator('[data-action="sign-out"]').click();
+      const yes = admin.locator('[data-action="admin-confirm"]');
+      await yes.waitFor({ timeout: 10_000 });
+      await until(async () => yes.evaluate((el) => el === document.activeElement));
+      assert.equal(
+        await yes.evaluate((el) => el === document.activeElement),
+        true,
+        'the confirmation did not take focus',
+      );
+
+      await h.page.keyboard.press('Escape');
+      await until(async () => (await yes.count()) === 0);
+      assert.equal(await yes.count(), 0, 'Escape did not back out');
+      assert.equal(
+        h.calls.some((c) => c.path === '/api/v1/users/u2/sign-out'),
+        false,
+        'cancelling sent the sign-out anyway',
+      );
+      // Focus returns to the row's control, not the page.
+      const back = admin.locator('[data-action="sign-out"]');
+      await until(async () => back.evaluate((el) => el === document.activeElement));
+      assert.equal(await back.evaluate((el) => el === document.activeElement), true);
+    } finally {
+      await h.close();
+    }
+  });
+});

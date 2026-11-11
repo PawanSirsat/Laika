@@ -605,7 +605,7 @@ void describe('a builder’s profile', () => {
     });
     try {
       const text = await (await section(h.page, 'rating')).page().locator('.prof').innerText();
-      assert.match(text, /No projects yet/);
+      assert.match(text, /Not in any space yet/);
       assert.match(text, /Nothing in progress or in review/);
       assert.match(text, /Nothing accepted in these 12 weeks/);
       assert.match(text, /No agent has used their tokens yet/);

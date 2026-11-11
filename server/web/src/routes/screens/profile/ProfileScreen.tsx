@@ -859,7 +859,7 @@ function ProjectsCard({
   return (
     <Card
       name="projects"
-      title="Projects"
+      title="Spaces"
       count={projects.length}
       caption={kind === 'manager' ? `decisions · ${String(weeks)} wk` : 'open tasks now'}
       info={
@@ -882,7 +882,7 @@ function ProjectsCard({
       }
     >
       {projects.length === 0 ? (
-        <Empty>No projects yet.</Empty>
+        <Empty>Not in any space yet.</Empty>
       ) : (
         <ul className="prof-pbars">
           {projects.map((project, i) => {
@@ -1198,7 +1198,7 @@ function ReviewCard({
         <dl className="prof-stats prof-stats-compact" data-group="queue">
           <Stat
             name="projects_led"
-            label="Projects led"
+            label="Spaces led"
             value={String(queue.projects_led)}
             hint={MEANS.led}
           />
