@@ -507,9 +507,9 @@ const workKeys = async (page: Page): Promise<string[]> => {
   return page.locator('.work-row .work-key').allInnerTexts();
 };
 
-void describe('Work: filters and grouping are the URL (LAI-1196)', () => {
+void describe('Work (Organisation tab): filters and grouping are the URL (LAI-1196)', () => {
   void test('space, status, assignee and grouping survive a reload, and each is sent to the server', async () => {
-    const h = await openWork('/work', workWorld());
+    const h = await openWork('/organisation?tab=work', workWorld());
     try {
       await workKeys(h.page);
       await h.page.getByRole('combobox', { name: 'Group by' }).click();
@@ -528,7 +528,7 @@ void describe('Work: filters and grouping are the URL (LAI-1196)', () => {
         ['Laika', 'Onroute'],
       );
 
-      await h.page.goto(`${h.origin}/work?space=laika&status=todo&person=none&group=status`);
+      await h.page.goto(`${h.origin}/organisation?tab=work&space=laika&status=todo&person=none&group=status`);
       await h.page.locator('.work-row').first().waitFor({ timeout: 20_000 });
       await h.page.reload();
       await h.page.locator('.work-row').first().waitFor({ timeout: 20_000 });
@@ -562,7 +562,7 @@ void describe('Work: filters and grouping are the URL (LAI-1196)', () => {
 void describe('Work: a failed refresh keeps the last rows (LAI-1196)', () => {
   void test('the rows stay, marked, with Retry; Retry brings the list back', async () => {
     const world = workWorld();
-    const h = await openWork('/work', world);
+    const h = await openWork('/organisation?tab=work', world);
     try {
       assert.deepEqual(await workKeys(h.page), ['ONR-1', 'LAI-2', 'LAI-3', 'ONR-4']);
       world.failing = true;
@@ -592,7 +592,7 @@ void describe('Work: a failed refresh keeps the last rows (LAI-1196)', () => {
   void test('a first read that fails has nothing to keep: the error, with Retry', async () => {
     const world = workWorld();
     world.failing = true;
-    const h = await openWork('/work', world);
+    const h = await openWork('/organisation?tab=work', world);
     try {
       const retry = h.page.getByRole('button', { name: /Retry|Try again/ });
       await retry.first().waitFor({ timeout: 10_000 });
@@ -609,7 +609,7 @@ void describe('Work: a failed refresh keeps the last rows (LAI-1196)', () => {
 
 void describe('Work: the table at tablet width (LAI-1196)', () => {
   void test('at 768 it keeps its columns and scrolls with a cue; at 390 it stacks', async () => {
-    const h = await openWork('/work', workWorld(), 768);
+    const h = await openWork('/organisation?tab=work', workWorld(), 768);
     try {
       await workKeys(h.page);
       const wrap = h.page.locator('.work-table');

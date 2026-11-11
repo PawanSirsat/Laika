@@ -5,6 +5,10 @@
  */
 .scroll-cue {
   position: relative;
+  /* A grid or flex item's automatic minimum is its content, which would let
+     the region grow to the table's width instead of scrolling it. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .scroll-cue-region {
