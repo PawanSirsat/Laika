@@ -66,20 +66,12 @@ export function FeedComment({
   const body = saved?.from === comment.updated_at ? saved.body : comment.body_md;
 
   /*
-   * The confirmation's Escape closes the dialog and not the drawer under it:
-   * spent before anything else hears it, as `WhoDidThis` and the send-back
-   * dialog spend theirs.
+   * The confirmation's Escape closes the dialog and not the drawer under it.
+   * That is ConfirmDialog's own since LAI-1205 (`useModalLayer`): the top
+   * layer spends the key and stops it before the drawer's window listener.
+   * The window-capture `preventDefault` that used to stand in for it here
+   * now read to the dialog as "already spent", so it is gone.
    */
-  useEffect(() => {
-    if (!confirming) return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') event.preventDefault();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [confirming]);
 
   const remove = (): void => {
     setDeleting(true);
