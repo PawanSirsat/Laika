@@ -20,7 +20,8 @@ export function trapTarget<T>(items: readonly T[], current: T, backwards: boolea
   return undefined;
 }
 
-const FOCUSABLE =
+/** What can take focus inside a modal — `Dialog` picks its first control by it. */
+export const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface DialogFocus {
