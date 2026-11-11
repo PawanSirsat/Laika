@@ -99,6 +99,36 @@ Belka in `../Laika-1169`, branch `LAI-1169-review-dialog-handoffs`.
 - `scratch-882-install.txt` and `tools/` in the root worktree are not this
   task's and were not touched.
 
+## Review round 1 (CHIEF, 2026-11-10; fixed 2026-11-11)
+
+CI round 1 red: `github-confirm.test.ts` still read the inline expand — re-aimed
+at the dialog (`5b634f30`, `402d9886`). Then seven review items, all fixed:
+
+- [x] 1 (high) Keys dead when focus left the box: `.rd-dialog` has `tabIndex={-1}`
+      so a click on its text keeps focus inside, and Accept moves focus to the
+      heading **before** the request disables it; the Send back dialog's restore
+      falls back to the heading when *Send back…* has been disabled meanwhile.
+      Tests: click the summary text → `j` advances; `a` with the accept held →
+      focus on the heading, Escape closes.
+- [x] 2 (high) Stale closure reopened a closed dialog: `decided()` reads the live
+      `?item` through `openIdRef` (and `openTask` the live params through
+      `paramsRef`) and advances only if the dialog is still on the decided task.
+      Tests: Escape and × during a held accept → stays closed, no `?item`.
+- [x] 3 (medium) `advanceAfterDecide` now receives `present` = the rows drawn at
+      response time. Test: LC-2 dropped by a re-read while LC-1's accept is held
+      → the dialog advances to LC-3.
+- [x] 4 (low-medium) `inFlight: ReadonlySet<string>` replaces the single `busy`
+      id; Prev/Next and their keys are held while any decision is out; cleared
+      per id. Test: `j` during a held accept does not move; Next disabled.
+- [x] 5 (low) Next from a vanished item goes to the row now drawn where it stood
+      (`order[lastIndex]`), else the first — the code now matches the comment.
+      Test: LC-2 taken by a re-read → *This task left the queue*, Next → LC-3.
+- [x] 6 (low) `InboxRoute` renders a `LoadingState` for the one render before the
+      alias replaces the params, so the queue is neither fetched nor flashed.
+- [x] 7 (low) Dead `.rev-detail` rules removed from `review.css`, and `.rev-actions`
+      with them (nothing in `src/` references either).
+- [x] Mutation checks of the round: see the log entry of 2026-11-11.
+
 ## Verification (Belka, single files)
 
 See `logs/chief-2026-11-10-LAI-1169.md` for every command and exit code.
