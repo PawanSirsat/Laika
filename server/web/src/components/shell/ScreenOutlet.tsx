@@ -5,6 +5,10 @@ import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
 import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
 import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
+import {
+  capacityParams,
+  withCapacityParams,
+} from '../../routes/screens/capacity/capacity-derive.ts';
 import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
@@ -32,6 +36,7 @@ import {
 } from '../../routes/screens/insights/time-tab.ts';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
+import { DEFAULT_RANGE, usageRange } from '../../routes/screens/usage/usage-derive.ts';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
@@ -210,6 +215,10 @@ function CapacityRoute() {
       reviewWaiting={reviewWaiting}
       reviewCapped={reviewCapped}
       onNavigate={navigate}
+      params={capacityParams(params)}
+      onParams={(next) => {
+        setParams(withCapacityParams(params, next));
+      }}
     />
   );
 }
@@ -246,6 +255,14 @@ function UsageRoute() {
         const next = new URLSearchParams(params);
         if (slug === '') next.delete('project');
         else next.set('project', slug);
+        setParams(next);
+      }}
+      range={usageRange(params.get('range'))}
+      onRange={(range) => {
+        // A period is a filter (LAI-1201): it replaces, and 30 days is the clean address.
+        const next = new URLSearchParams(params);
+        if (range === DEFAULT_RANGE) next.delete('range');
+        else next.set('range', String(range));
         setParams(next);
       }}
     />
