@@ -56,3 +56,6 @@ data, permissions from the server.
 - Not done here (needs other owners or tasks): the shared tab component,
   `theme.css`, the `/members` links (retiring `/members` is B13), and the
   Tool/agent wording on token groups (S11's copy pass).
+- Re-based on `origin/integration-ui-transformation` 8e6a2249: LAI-1134's
+  profile and LAI-1170's Work tab kept as they are; this task's changes sit on
+  top (see the log).
