@@ -79,6 +79,14 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     body: 'When an agent finishes a task it lands here with its proof — commits, pull request, tests. Accept it into done, or send it back with a reason the agent reads first.',
   },
   /*
+   * Home, the Command Center (LAI-1202). Empty is the good state: nothing
+   * needs the reader and nothing of theirs is moving.
+   */
+  '/home': {
+    headline: 'Nothing needs you right now',
+    body: 'Reviews and hand-offs waiting on you, your work in progress, your agents, what is blocked and what is due soon all gather here as they appear — each one a link to where you act on it.',
+  },
+  /*
    * My day (D-088, LAI-787): the reader's own, drafted on their machine and
    * confirmed by them — so the copy says where a draft comes from.
    */

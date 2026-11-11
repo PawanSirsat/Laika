@@ -119,6 +119,20 @@ export function listProjectActivity(
   );
 }
 
+/**
+ * The newest rows of the feed **across every space the reader can read**
+ * (`GET /activity`, §6.3), newest first — the Command Center's *Recent
+ * activity* (LAI-1202). Which spaces, and whether organisation rows are in
+ * it, is the server's answer (`listOrgActivity`), never widened here.
+ */
+export function listOrgActivity(limit = 20, signal?: AbortSignal): Promise<Page<ActivityEvent>> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return request<Page<ActivityEvent>>(
+    `/activity?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 /** `GET /activity/history`'s filters (LAI-886), each optional, all combinable. */
 export interface HistoryQuery {
   /** A user id. */

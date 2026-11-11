@@ -78,6 +78,13 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       { names: ['listSprints'], why: 'its own cursor loop, reporting `truncated`' },
     ],
     ['api/users.ts', { names: ['listUsers'], why: '`listAllUsers` — its own cursor loop' }],
+    [
+      'routes/screens/home/home-load.ts',
+      {
+        names: ['listOrgActivity'],
+        why: 'a deliberate window: the newest rows of the feed for the Command Center (LAI-1202), a glance with a link out, never counted',
+      },
+    ],
     ['api/sprints.ts', { names: ['listSprints'], why: '`countAllSprints` — its own cursor loop' }],
     [
       'api/use-projects.ts',
@@ -145,8 +152,9 @@ const CALLS: readonly Call[] = SOURCES.flatMap(({ rel, text }) =>
         rel,
         name,
         line: text.slice(0, m.index).split('\n').length,
-        // `everyPage((cursor) => listTasks(` — the call is the helper's argument.
-        wrapped: /everyPage\(\s*\(cursor\)\s*=>\s*$/.test(
+        // `everyPage((cursor) => listTasks(` — the call is the helper's argument;
+        // `api.listTasks(` too, where the functions are passed in (LAI-1202).
+        wrapped: /everyPage\(\s*\(cursor\)\s*=>\s*(?:\w+\.)?$/.test(
           text.slice(Math.max(0, m.index - 60), m.index),
         ),
       })),

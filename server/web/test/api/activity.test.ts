@@ -12,6 +12,7 @@ import {
   describeEvent,
   historyCsvHref,
   isReorder,
+  listOrgActivity,
   listProjectActivityPage,
   pushSummary,
   shownInFeed,
@@ -282,6 +283,24 @@ void describe('listProjectActivityPage', () => {
       '/api/v1/projects/laika%20core/activity?limit=200',
       '/api/v1/projects/laika-core/activity?limit=200&since=5&cursor=C1',
     ]);
+  });
+});
+
+void describe('listOrgActivity (LAI-1202)', () => {
+  void test('asks the feed across every space, newest page, at the limit given', async () => {
+    const asked: string[] = [];
+    globalThis.fetch = ((input: string | URL) => {
+      asked.push(String(input));
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], next_cursor: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    }) as unknown as typeof fetch;
+    await listOrgActivity();
+    await listOrgActivity(8);
+    assert.deepEqual(asked, ['/api/v1/activity?limit=20', '/api/v1/activity?limit=8']);
   });
 });
 

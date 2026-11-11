@@ -139,7 +139,8 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // **Six from LAI-952 to D-147**: Work, everyone's work across every
       // space, sat after Inbox. **Five again since LAI-1170**: it is the
       // Organisation page's second tab, and `/work` redirects there.
-      ['My day', 'Inbox', 'Insights', 'Organisation', 'Developer access'],
+      // **Six since LAI-1202**: Home, the Command Center, leads the rail.
+      ['Home', 'My day', 'Inbox', 'Insights', 'Organisation', 'Developer access'],
     );
   });
 

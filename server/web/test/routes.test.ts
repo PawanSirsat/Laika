@@ -78,7 +78,8 @@ void describe('sidebar groups (AC1)', () => {
       routesInGroup('HOME', () => true).map((r) => r.label),
       // Work (LAI-952) sat here until D-147 (LAI-1170) made it the
       // Organisation page's tab; `page-tabs.test.ts` pins it there.
-      ['My day', 'Inbox'],
+      // Home, the Command Center, leads it since LAI-1202.
+      ['Home', 'My day', 'Inbox'],
     );
     assert.deepEqual(
       routesInGroup('ORG', () => true).map((r) => r.label),

@@ -20,7 +20,8 @@
 /**
  * The sidebar's groups, top to bottom (LAI-796, the owner's reference).
  *
- * - **`HOME`** — the reader's own places: *My day* and *Inbox*. No heading;
+ * - **`HOME`** — the reader's own places: *Home* (the Command Center,
+ *   LAI-1202), *My day* and *Inbox*. No heading;
  *   they lead the rail because they are where a day starts.
  * - **`SPACES`** sits between, and is deliberately not here: its rows are the
  *   projects you opened, built from the project list rather than from routes.
@@ -45,7 +46,7 @@ export const GROUP_TITLES: Readonly<Record<NavGroup, string | null>> = {
 };
 
 /** The glyph a sidebar entry wears, in the rail and beside its label. */
-export const NAV_ICONS = ['day', 'inbox', 'insights', 'organisation', 'developer'] as const;
+export const NAV_ICONS = ['home', 'day', 'inbox', 'insights', 'organisation', 'developer'] as const;
 export type NavIconName = (typeof NAV_ICONS)[number];
 
 export interface Route {
@@ -207,6 +208,21 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 6',
   },
 
+  /*
+   * **The Command Center** (LAI-1202): what needs the reader, what they are
+   * on, their agents, what is blocked and coming up, and recent activity —
+   * each row a way into the work. First in the rail; **not** the landing
+   * route (`DEFAULT_PATH` is unchanged) until the owner decides.
+   */
+  {
+    orgLevel: true,
+    path: '/home',
+    label: 'Home',
+    group: 'HOME',
+    status: 'ready',
+    phase: 'Phase 8',
+    icon: 'home',
+  },
   /*
    * **The reader's own places, at the top of the rail** (LAI-796).
    *

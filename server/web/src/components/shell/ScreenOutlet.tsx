@@ -33,6 +33,7 @@ import {
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
+import { HomeScreen } from '../../routes/screens/home/HomeScreen.tsx';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
@@ -283,6 +284,30 @@ function MyDayRoute() {
         else next.set('user', userId);
         setParams(next, { push: true });
       }}
+    />
+  );
+}
+
+/**
+ * The Command Center (LAI-1202). The review queue is the shell's — the one
+ * the sidebar's badge reads — so the page never asks for it twice.
+ */
+function HomeRoute() {
+  const {
+    route: { navigate },
+    me,
+    reviewQueue,
+    reviewCapped,
+    refreshReview,
+  } = useShell();
+  if (me === undefined) return null;
+  return (
+    <HomeScreen
+      me={me}
+      reviewQueue={reviewQueue}
+      reviewCapped={reviewCapped}
+      refreshReview={refreshReview}
+      onNavigate={navigate}
     />
   );
 }
@@ -559,6 +584,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/activity': { Component: ActivityRoute, layout: 'space' },
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
+  '/home': { Component: HomeRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
   '/inbox': { Component: InboxRoute, layout: 'plain' },
   '/insights': { Component: InsightsRoute, layout: 'plain' },

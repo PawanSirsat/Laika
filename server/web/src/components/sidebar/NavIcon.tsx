@@ -22,6 +22,12 @@ export type IconName =
  * every one is `aria-hidden`.
  */
 const PATHS: Readonly<Record<IconName, readonly string[]>> = {
+  // A house: the Command Center, where a day's work starts (LAI-1202).
+  home: [
+    'M4 10.5 12 4l8 6.5',
+    'M6 9v10a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 19V9',
+    'M10 20.5v-5.5h4v5.5',
+  ],
   // A calendar page with a tick: the reader's own day.
   day: [
     'M5.5 5h13a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z',

@@ -183,14 +183,14 @@ void describe('the SPACES section', () => {
       const trimmed = async (group: typeof home) =>
         (await group.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim());
       // Work joined them in LAI-952 and left for the Organisation page's tabs
-      // in LAI-1170 (D-147).
-      await until(async () => (await trimmed(home)).join('|') === 'My day|Inbox');
+      // in LAI-1170 (D-147). Home, the Command Center, leads since LAI-1202.
+      await until(async () => (await trimmed(home)).join('|') === 'Home|My day|Inbox');
       await until(
         async () => (await trimmed(org)).join('|') === 'Insights|Organisation|Developer access',
       );
       assert.deepEqual(
         (await home.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
-        ['My day', 'Inbox'],
+        ['Home', 'My day', 'Inbox'],
       );
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
@@ -203,7 +203,7 @@ void describe('the SPACES section', () => {
         .last()
         .evaluate((el: Element) => el.getBoundingClientRect().bottom);
       const orgTop = (await org.boundingBox())?.y ?? -Infinity;
-      assert.ok(homeBottom <= spacesTop, 'My day and Inbox are not above the spaces');
+      assert.ok(homeBottom <= spacesTop, 'Home, My day and Inbox are not above the spaces');
       assert.ok(orgTop >= spacesBottom, 'Organisation is not below the spaces');
       // Nothing else is a top-level entry: the six pages LAI-796 folded away.
       for (const gone of ['Capacity', 'Review', 'Usage', 'Unlisted work', 'Connect', 'Tokens']) {
@@ -678,12 +678,13 @@ void describe('the prototype geometry (LAI-249)', () => {
         undefined,
         { timeout: 5000 },
       );
-      // …and on keyboard focus: the toggle, then Tab, is My day.
+      // …and on keyboard focus: the toggle, then Tab, is the first entry — Home
+      // since LAI-1202.
       await h.page.mouse.move(900, 500);
       await toggle.focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.match(focused, /My day/, 'Tab from the toggle does not reach the first entry');
+      assert.match(focused, /Home/, 'Tab from the toggle does not reach the first entry');
       await h.page.waitForFunction(
         () => {
           const tip = document.activeElement?.querySelector('.sidebar-tip');
