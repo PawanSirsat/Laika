@@ -20,6 +20,7 @@ import {
   sprintOnDay,
   weekOf,
 } from '../../../../src/routes/screens/calendar/calendar-derive.ts';
+import type { TaskStatus } from '../../../../src/api/tasks.ts';
 
 const local = (y: number, m: number, d: number): number => new Date(y, m, d).getTime();
 const ymd = (at: number): [number, number, number] => {
@@ -111,7 +112,7 @@ void describe('dayLabel', () => {
 
 void describe('nearestDueOutside, the empty period’s way on', () => {
   const utc = (y: number, m: number, d: number) => Date.UTC(y, m, d);
-  const t = (due: number | null, status = 'todo') => ({ due_on: due, status }) as const;
+  const t = (due: number | null, status: TaskStatus = 'todo') => ({ due_on: due, status });
   const FROM = local(2027, 0, 1);
   const TO = local(2027, 0, 31);
 

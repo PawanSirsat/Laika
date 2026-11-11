@@ -235,7 +235,12 @@ void describe('red means overdue, and nothing else (visual audit #12)', () => {
         const late = h.page.locator('.cal-task', { hasText: 'LC-2' });
         assert.equal(await late.locator('.cal-task-flag').textContent(), 'Overdue');
         // Key, title, status and priority are all on the chip, all visible.
-        for (const part of ['.cal-task-key', '.cal-task-title', '.cal-task-status', '.cal-task-pri'])
+        for (const part of [
+          '.cal-task-key',
+          '.cal-task-title',
+          '.cal-task-status',
+          '.cal-task-pri',
+        ])
           assert.ok(
             ((await late.locator(part).boundingBox())?.width ?? 0) > 0,
             `${part} is not visible on the chip`,
