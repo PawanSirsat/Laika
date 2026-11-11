@@ -706,6 +706,11 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); records the owner’s statement about a label, touches no task',
   'POST /api/v1/agents/devices/revoke':
     'session only (agent.manage_own); revokes each agent as /agents/:id/revoke does, its claims lapse',
+  // LAI-1137 (D-133): an owner's or admin's revoke of a member's tool or device.
+  'POST /api/v1/people/:id/agents/:agentId/revoke':
+    'session only (agent.revoke_any); the revoke /agents/:id/revoke does, its claims lapse',
+  'POST /api/v1/people/:id/devices/:deviceId/revoke':
+    'session only (device.revoke_any); revokes each agent on it as /agents/:id/revoke does, its claims lapse',
   // LAI-1050: pairing a device (§4.79) touches no task and mints nothing.
   'POST /api/v1/devices/pairing-requests':
     'session only (agent.manage_own); asks for a pairing code, touches no task',
@@ -781,6 +786,13 @@ const NOT_FENCED: Record<string, string> = {
   'DELETE /api/v1/me/plan-limit': 'the caller’s own settings',
   'POST /api/v1/me/token-alerts/:id/dismiss': 'the caller’s own alerts',
   'PUT /api/v1/me/time-settings': 'the caller’s own time',
+  // LAI-1130 (D-131): the caller's own availability, session only.
+  'PUT /api/v1/me/availability': 'the caller’s own availability',
+  'POST /api/v1/me/availability/away': 'the caller’s own availability',
+  'DELETE /api/v1/me/availability/away/:id': 'the caller’s own availability',
+  // LAI-1136 (D-134): the caller's own notices, session only.
+  'POST /api/v1/me/notices/:id/read': 'the caller’s own notices',
+  'POST /api/v1/me/notices/read-all': 'the caller’s own notices',
   'PUT /api/v1/me/time-drafts': 'the caller’s own time',
   'POST /api/v1/me/time-drafts': 'the caller’s own time',
   'DELETE /api/v1/me/time-drafts': 'the caller’s own time',
@@ -801,6 +813,13 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/me/time-entries': 'the caller’s own time',
   'PATCH /api/v1/me/time-entries/:id': 'the caller’s own time',
   'DELETE /api/v1/me/time-entries/:id': 'the caller’s own time',
+  // D-143 (LAI-1165): an owner's or admin's change to a member's confirmed time.
+  'POST /api/v1/people/:id/time-entries':
+    'session only (time_entries.write_member); a member’s time, not a task',
+  'PATCH /api/v1/people/:id/time-entries/:entryId':
+    'session only (time_entries.write_member); a member’s time, not a task',
+  'DELETE /api/v1/people/:id/time-entries/:entryId':
+    'session only (time_entries.write_member); a member’s time, not a task',
   'PUT /api/v1/me/time/solidtime/links': 'the caller’s own time',
   'PUT /api/v1/me/time/solidtime/import': 'the caller’s own time',
 };

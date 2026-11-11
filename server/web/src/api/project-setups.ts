@@ -26,6 +26,8 @@ export interface ProjectSetup {
   readonly project_id: string;
   readonly project_slug: string;
   readonly repo_label: string | null;
+  /** `''` on a browser record; one repository's records share it (LAI-321). */
+  readonly repo_key: string;
   readonly instructions_path: string | null;
   readonly block_found: boolean;
   readonly template_revision: number | null;

@@ -10,6 +10,8 @@ export interface OverflowMenuItem {
   readonly disabled?: boolean | undefined;
   /** A destructive action — *Disconnect*, *Revoke*. Its label says so too. */
   readonly danger?: boolean | undefined;
+  /** A muted second line under the label — what the item leads to (LAI-1152). */
+  readonly hint?: string | undefined;
 }
 
 export interface OverflowMenuProps {
@@ -168,7 +170,14 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
                   item.onSelect();
                 }}
               >
-                {item.label}
+                {item.hint === undefined ? (
+                  item.label
+                ) : (
+                  <>
+                    <span className="overflow-menu-label">{item.label}</span>
+                    <span className="overflow-menu-hint">{item.hint}</span>
+                  </>
+                )}
               </button>
             </li>
           ))}

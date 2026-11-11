@@ -1,6 +1,7 @@
 /**
  * `src/api/time.ts` — a person's own time (LAI-787, D-088): every call is the
- * caller's own, and nothing names anybody else. The SPA confirms, edits and
+ * caller's own, and nothing names anybody else — but for an owner's or
+ * admin's change to a member's confirmed entries (D-143), which names them. The SPA confirms, edits and
  * types; it never proposes a draft, which is an agent's (`POST
  * /me/time-drafts`) and never sends a collector's blocks (`PUT
  * /me/time-drafts`).
@@ -17,13 +18,16 @@ import {
   deleteDrafts,
   deleteEntry,
   dismissDraft,
+  downloadTimeReportCsv,
   getMyDay,
+  getTimeReport,
   getRevisions,
   getTimeSettings,
   setDraftMyTime,
   setOrgBreaks,
   setOrgTimeMode,
   splitDraft,
+  timeReportParams,
   TIME_MODES,
   updateDraft,
   updateEntry,
@@ -133,6 +137,97 @@ void describe('the calls — the caller’s own, and nothing names anybody else'
         ['GET', '/api/v1/me/time-entries/e1/revisions', undefined],
       ],
     );
+  });
+
+  void test('somebody else’s entries, for an owner or admin, go to /people/:id (D-143)', async () => {
+    await addEntry({ day: '2026-10-20', tz: 'UTC', minutes: 45 }, undefined, 'u2');
+    await updateEntry('e1', { minutes: 30 }, 'u2');
+    await deleteEntry('e1', undefined, 'u2');
+    await getRevisions('e1', undefined, 'u2');
+    assert.deepEqual(
+      sent.map((s) => [s.method, s.url, s.body]),
+      [
+        ['POST', '/api/v1/people/u2/time-entries', { day: '2026-10-20', tz: 'UTC', minutes: 45 }],
+        ['PATCH', '/api/v1/people/u2/time-entries/e1', { minutes: 30 }],
+        ['DELETE', '/api/v1/people/u2/time-entries/e1', undefined],
+        ['GET', '/api/v1/people/u2/time-entries/e1/revisions', undefined],
+      ],
+    );
+  });
+});
+
+void describe('the Time report (D-130, LAI-1138) — the one read that may name others', () => {
+  void test('one report is one address: lists joined, empty ones left out, drafts only when asked', () => {
+    assert.equal(
+      timeReportParams({
+        from: '2026-11-02',
+        to: '2026-11-08',
+        spaces: ['atlas', 'beacon'],
+        members: [],
+        kinds: ['work', 'meeting'],
+        drafts: true,
+      }).toString(),
+      'from=2026-11-02&to=2026-11-08&spaces=atlas%2Cbeacon&kinds=work%2Cmeeting&drafts=include',
+    );
+    assert.equal(
+      timeReportParams({ from: '2026-11-02', to: '2026-11-08', members: ['u1'] }).toString(),
+      'from=2026-11-02&to=2026-11-08&members=u1',
+    );
+  });
+
+  void test('JSON is a GET of /time/report with the query', async () => {
+    await getTimeReport({ from: '2026-11-02', to: '2026-11-08', members: ['u1'] });
+    assert.deepEqual(
+      sent.map((s) => [s.method, s.url]),
+      [['GET', '/api/v1/time/report?from=2026-11-02&to=2026-11-08&members=u1']],
+    );
+  });
+
+  void test('link sits after kinds and before drafts, so one report is one address (LAI-1163)', async () => {
+    await getTimeReport({
+      from: '2026-11-02',
+      to: '2026-11-08',
+      kinds: ['work'],
+      link: 'general',
+      drafts: true,
+    });
+    assert.deepEqual(
+      sent.map((s) => s.url),
+      ['/api/v1/time/report?from=2026-11-02&to=2026-11-08&kinds=work&link=general&drafts=include'],
+    );
+  });
+
+  void test('the CSV is the server’s file, and a refusal is the server’s sentence', async () => {
+    const was = globalThis.fetch;
+    const asked: string[] = [];
+    globalThis.fetch = ((input: string | URL) => {
+      asked.push(String(input));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'unprocessable',
+              message: 'A space admin reads whole weeks, Monday to Sunday',
+            },
+          }),
+          { status: 422, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    }) as unknown as typeof fetch;
+    try {
+      await assert.rejects(
+        downloadTimeReportCsv({ from: '2026-11-03', to: '2026-11-09', spaces: ['atlas'] }),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message === 'A space admin reads whole weeks, Monday to Sunday' &&
+          (error as { status?: number }).status === 422,
+      );
+    } finally {
+      globalThis.fetch = was;
+    }
+    assert.deepEqual(asked, [
+      '/api/v1/time/report?from=2026-11-03&to=2026-11-09&spaces=atlas&format=csv',
+    ]);
   });
 });
 

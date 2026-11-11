@@ -1,9 +1,12 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from 'react';
@@ -17,27 +20,23 @@ import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { DesignChip } from './DesignChip.tsx';
-import { DxIcon, type DxIconName } from './DxIcon.tsx';
-import { NoteBlock } from './NoteBlock.tsx';
+import { DxIcon } from './DxIcon.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import {
   ADVANCED_ADDRESS,
   OVERVIEW_ADDRESSES,
-  SETUP_CHIPS,
   attentionItems,
   heroOf,
   journeyComplete,
   journeyRows,
   overviewState,
   overviewSummary,
-  setupLine,
-  setupTitle,
   statusLines,
+  wizardAddress,
+  type AttentionItem,
   type HeroKind,
-  type SetupChipKey,
 } from './overview-state.ts';
-import { UpdateCliHelp } from './UpdateCliGuide.tsx';
-import { cliNotice, cliNoticeText } from './update-cli.ts';
+import { RepoRows } from './RepoRows.tsx';
 import { updateManifestOf, updateStatus, type UpdateStatus } from './update-status.ts';
 import './overview.css';
 
@@ -57,13 +56,6 @@ interface Failure {
   readonly resource: string;
   readonly cause: unknown;
 }
-
-const SETUP_ICON: Readonly<Record<SetupChipKey, DxIconName>> = {
-  checked: 'check',
-  recorded: 'repo',
-  'update-available': 'alert',
-  missing: 'alert',
-};
 
 /** An in-app link: a real `href`, and a plain click stays in the page. */
 function AppLink({
@@ -98,6 +90,108 @@ function AppLink({
 }
 
 /**
+ * The Connection status card's tools chip when tools need the reader
+ * (LAI-1096): a button that opens the list of them — each tool, why, and the
+ * link to its row. It was a note between the hero and the journey; the
+ * owner's design has nothing there, so the facts went behind the count.
+ *
+ * A disclosure, not a menu: the list holds words as well as links. Focus stays
+ * on the chip as it opens, and `Tab` walks into the list, which follows it.
+ * `Escape` closes it and puts focus back on the chip. A click outside, or
+ * focus leaving for anywhere else, closes it in place.
+ */
+function AttentionChip({
+  word,
+  items,
+  onNavigate,
+}: {
+  readonly word: string;
+  readonly items: readonly AttentionItem[];
+  readonly onNavigate: (to: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement | null>(null);
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const listId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: Event): void => {
+      if (wrap.current !== null && !wrap.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [open]);
+
+  const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !open) return;
+    event.preventDefault();
+    setOpen(false);
+    button.current?.focus();
+  };
+
+  const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    const to = event.relatedTarget as Node | null;
+    if (!open || to === null || wrap.current?.contains(to) === true) return;
+    setOpen(false);
+  };
+
+  return (
+    <div className="dx-attention" ref={wrap} onKeyDown={onKey} onBlur={onBlur} data-attention="">
+      <button
+        type="button"
+        className="dx-chip dx-chip-button"
+        data-tone="warn"
+        aria-expanded={open}
+        {...(open ? { 'aria-controls': listId } : {})}
+        ref={button}
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        {word}
+        <span className="dx-chip-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div
+          className="dx-attention-pop"
+          id={listId}
+          role="group"
+          aria-label="Needs your attention"
+        >
+          <p className="dx-attention-title">Needs your attention</p>
+          <ul className="dx-attention-list">
+            {items.map((item) => (
+              <li key={item.agentId} className="dx-attention-item" data-agent={item.agentId}>
+                <span className="dx-attention-text">
+                  <strong className="dx-attention-name">{item.label}</strong>
+                  <span className="dx-attention-why">{item.why}</span>
+                </span>
+                <AppLink
+                  href={item.href}
+                  className="dx-attention-link"
+                  onNavigate={(to) => {
+                    setOpen(false);
+                    onNavigate(to);
+                  }}
+                >
+                  {item.action}
+                  <span className="visually-hidden">{`: ${item.label}`}</span>
+                </AppLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Developer access V3 → Overview (LAI-1048, LAI-1079), in the owner's design:
  * one next step, the three-step journey, where things stand, and the
  * repository setups made so far.
@@ -107,7 +201,9 @@ function AppLink({
  * two pages count alike — and the reader's setup records across every project
  * (`GET /project-setups`, LAI-1077). Each tool that has reached the board is
  * also asked for its helper's version report, once, so a helper the board
- * needs updated is named under the hero.
+ * needs updated is among the tools the Connection status card says need the
+ * reader (LAI-1096). How to update is in that tool's Details, and its
+ * device's: the Overview carries no notice of its own.
  *
  * It reads again when the reader comes back to the tab — the step that sends
  * them away (running a command on their machine) finishes elsewhere — and a
@@ -169,7 +265,8 @@ export function OverviewTab({
    * Each tool that has reached the board, asked once for its helper's report
    * (`GET /agents/:id/verification`) beside the board's own answer — the
    * Devices tab's update status, read the same way. Only *Update required* is
-   * said here; a failed read says nothing rather than something wrong.
+   * said here, behind the tools chip; a failed read says nothing rather than
+   * something wrong.
    */
   const seenKey =
     state === undefined
@@ -253,7 +350,6 @@ export function OverviewTab({
     const toolsHref = OVERVIEW_ADDRESSES.tools;
     const hero = heroOf(state, now, projectsHref, toolsHref);
     const attention = attentionItems(state, updates, now);
-    const notice = cliNotice(updates.values());
     const rows = journeyRows(state, projectsHref, toolsHref);
     body = (
       <>
@@ -287,28 +383,6 @@ export function OverviewTab({
                 </div>
               </div>
             </section>
-            {attention.length > 0 && (
-              <NoteBlock tone="warn" title="Needs your attention" note="attention">
-                <ul className="dx-overview-attention">
-                  {attention.map((item) => (
-                    <li key={item.agentId} data-agent={item.agentId}>
-                      <AppLink href={item.href} onNavigate={onNavigate}>
-                        {item.label}
-                      </AppLink>
-                      : {item.why}
-                    </li>
-                  ))}
-                </ul>
-              </NoteBlock>
-            )}
-            {notice !== undefined && (
-              <NoteBlock note="cli-update">
-                <div className="dx-overview-cli" data-cli-notice="">
-                  <p>{cliNoticeText(notice)}</p>
-                  <UpdateCliHelp place="overview" />
-                </div>
-              </NoteBlock>
-            )}
             <section className="dx-card" aria-labelledby="dx-overview-journey" data-journey="">
               <div className="dx-card-pad dx-overview-journey-head">
                 <div className="dx-card-head">
@@ -317,7 +391,9 @@ export function OverviewTab({
                   </h2>
                   <DesignChip tone="accent">{journeyComplete(rows)}</DesignChip>
                 </div>
-                <p className="dx-card-sub">One clear path; finished steps are skipped next time.</p>
+                <p className="dx-card-sub">
+                  One clear path, with finished steps skipped next time.
+                </p>
               </div>
               <ol className="dx-flow">
                 {rows.map((row, i) => (
@@ -375,7 +451,7 @@ export function OverviewTab({
                   Connection status
                 </h2>
                 <ul className="dx-stats">
-                  {statusLines(state).map((line) => (
+                  {statusLines(state, attention).map((line) => (
                     <li key={line.key} className="dx-stat" data-stat={line.key}>
                       <span className="dx-icon">
                         <DxIcon name={line.icon} />
@@ -386,7 +462,15 @@ export function OverviewTab({
                           {line.names}
                         </span>
                       </div>
-                      <DesignChip tone={line.chip.tone}>{line.chip.word}</DesignChip>
+                      {line.key === 'tools' && attention.length > 0 ? (
+                        <AttentionChip
+                          word={line.chip.word}
+                          items={attention}
+                          onNavigate={onNavigate}
+                        />
+                      ) : (
+                        <DesignChip tone={line.chip.tone}>{line.chip.word}</DesignChip>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -425,12 +509,9 @@ export function OverviewTab({
             </section>
           </div>
         </div>
-        <section className="dx-overview-setups" aria-labelledby="dx-overview-setups" data-setups="">
-          <SectionTitle
-            title="Your repository setups"
-            titleId="dx-overview-setups"
-            sub="Project setup is the main outcome: one block in each repository’s instructions file."
-          />
+        {/* The design's title; the region keeps the name of what it lists (LAI-1096). */}
+        <section className="dx-overview-setups" aria-label="Your repository setups" data-setups="">
+          <SectionTitle title="Project setup is the main outcome" titleId="dx-overview-setups" />
           <div className="dx-card">
             <ul className="dx-records">
               <li className="dx-record" data-setup="new">
@@ -440,12 +521,14 @@ export function OverviewTab({
                 <div className="dx-record-main">
                   <strong className="dx-record-title">Set up a new repository</strong>
                   <span className="dx-record-sub">
-                    Choose a Laika project and one of your tools, then copy the prompt into it.
+                    Choose an existing Laika project, your connected tool, then copy a safe prompt
+                    into your agent.
                   </span>
                 </div>
                 <div className="dx-record-end">
+                  {/* The wizard, not the tab: it opens on these rows once there are any. */}
                   <AppLink
-                    href={projectsHref}
+                    href={wizardAddress(projectsHref)}
                     className="dx-btn dx-btn-primary"
                     onNavigate={onNavigate}
                   >
@@ -453,29 +536,10 @@ export function OverviewTab({
                   </AppLink>
                 </div>
               </li>
-              {state.setups.map((row) => {
-                const chip = SETUP_CHIPS[row.chip];
-                const title = setupTitle(row, names.get(row.projectId) ?? row.projectSlug);
-                const line = setupLine(row);
-                return (
-                  <li key={row.key} className="dx-record" data-setup={row.chip}>
-                    <span className="dx-icon">
-                      <DxIcon name={SETUP_ICON[row.chip]} />
-                    </span>
-                    <div className="dx-record-main">
-                      <strong className="dx-record-title" title={title}>
-                        {title}
-                      </strong>
-                      <span className="dx-record-sub" title={line}>
-                        {line}
-                      </span>
-                    </div>
-                    <div className="dx-record-end">
-                      <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
-                    </div>
-                  </li>
-                );
-              })}
+              <RepoRows
+                groups={state.setups}
+                projectName={(group) => names.get(group.projectId) ?? group.projectSlug}
+              />
             </ul>
           </div>
         </section>

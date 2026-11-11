@@ -24,13 +24,22 @@ import type { MyDay, TimeSummary } from './time.ts';
 export const PEOPLE_ANALYTICS = 'people.analytics.read';
 
 /** What was looked at. Mirrors `ANALYTICS_VIEW_KINDS` in `server/src/db/enums.ts`. */
-export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
+export const ANALYTICS_VIEW_KINDS = [
+  'time',
+  'local_activity',
+  'activity',
+  'usage',
+  'developer_setup',
+  // D-139 item 3 (LAI-1150): somebody opened your profile.
+  'profile',
+] as const;
 export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
 
 /** One row of `GET /me/analytics-views`: who looked at the caller, and when. */
 export interface WhoLooked {
   readonly id: string;
-  readonly viewer: { readonly id: string; readonly name: string };
+  /** `org_role` since LAI-1150; LAI-1154's *Who looked* draws it. */
+  readonly viewer: { readonly id: string; readonly name: string; readonly org_role?: string };
   /** Typed open, so a kind this client has not heard of is drawn rather than dropped. */
   readonly kind: AnalyticsViewKind | (string & {});
   /** The day read, for My day; `null` for a range. */
@@ -76,16 +85,29 @@ export function getPersonLocalActivity(
   );
 }
 
-/** `GET /me/analytics-views` — who looked at the caller's analytics, newest first. */
+/**
+ * `GET /me/analytics-views` — who looked at the caller's analytics, newest
+ * first. `since` (unix ms) and `total` are LAI-1150's: a server without them
+ * ignores the one and leaves out the other, so a caller filters by time
+ * itself and counts what it read when `total` is absent.
+ */
 export function listAnalyticsViews(
-  query: { readonly limit?: number; readonly cursor?: string | undefined } = {},
+  query: {
+    readonly limit?: number;
+    readonly cursor?: string | undefined;
+    readonly since?: number | undefined;
+  } = {},
   signal?: AbortSignal,
-): Promise<Page<WhoLooked>> {
+): Promise<Page<WhoLooked> & { readonly total?: number }> {
   const params = new URLSearchParams();
   if (query.limit !== undefined) params.set('limit', String(query.limit));
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
+  if (query.since !== undefined) params.set('since', String(query.since));
   const qs = params.toString();
-  return request<Page<WhoLooked>>(`/me/analytics-views${qs === '' ? '' : `?${qs}`}`, opts(signal));
+  return request<Page<WhoLooked> & { readonly total?: number }>(
+    `/me/analytics-views${qs === '' ? '' : `?${qs}`}`,
+    opts(signal),
+  );
 }
 
 /** How a view of the person's analytics reads in their list. */
@@ -94,6 +116,8 @@ export const VIEW_KIND_LABELS: Readonly<Record<AnalyticsViewKind, string>> = {
   local_activity: 'your shared local activity',
   activity: 'your activity heatmap',
   usage: 'your token usage',
+  developer_setup: 'your developer setup',
+  profile: 'your profile',
 };
 
 export function viewKindLabel(kind: WhoLooked['kind']): string {

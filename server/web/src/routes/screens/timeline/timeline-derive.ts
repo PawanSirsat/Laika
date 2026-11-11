@@ -110,9 +110,29 @@ export function onAxis(sprint: Sprint, now: number): boolean {
 }
 
 /**
+ * How far past today the window must reach, so that **the lower header row
+ * has a label in view to the right of the today pill** (LAI-1171). The pill
+ * blanks the tick labels it would sit over, and it is about 145px wide — a
+ * week either side of today at Months, three weeks at Quarters. The window's
+ * air past the last sprint is a week, and its end is then snapped to a month
+ * or quarter end, so with every sprint behind today the only label right of
+ * the pill could be the one the pill hides, and the window ended before the
+ * next: measured on 2026-11-10 at Quarters (*Dec* under the pill, the window
+ * closing on 31 Dec), and on 15 Aug the same way. Two weeks reaches a Monday
+ * clear of the pill at Weeks and Months; at Quarters the lower row is months,
+ * so the window reaches the first of the month after next, whose label is
+ * always more than three weeks on.
+ */
+function reachPastToday(now: number, zoom: Zoom): number {
+  if (zoom !== 'quarters') return startOfDay(now) + 14 * DAY;
+  const today = new Date(startOfDay(now));
+  return Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 2, 1);
+}
+
+/**
  * The days the chart draws: **whole calendar months** — or quarters, at the
  * Quarters zoom — around every sprint and today, with at least a week of air on
- * each side.
+ * each side, and past today as far as {@link reachPastToday} asks.
  *
  * Today is inside it on purpose. The squeezed axis kept today out so empty
  * months would not shrink the bars; a scrolling axis has no such cost, and a
@@ -137,7 +157,7 @@ export function chartWindow(
   }
 
   const first = new Date(from - 7 * DAY);
-  const last = new Date(to + 7 * DAY);
+  const last = new Date(Math.max(to + 7 * DAY, reachPastToday(now, zoom)));
   // A quarter's axis starts and ends with its quarters, not mid-Q4.
   const span = zoom === 'quarters' ? 3 : 1;
   const startMonth = first.getUTCMonth() - (first.getUTCMonth() % span);

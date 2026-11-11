@@ -82,10 +82,6 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
    * My day (D-088, LAI-787): the reader's own, drafted on their machine and
    * confirmed by them — so the copy says where a draft comes from.
    */
-  '/work': {
-    headline: 'No work in your spaces yet',
-    body: 'Work lists every task in the spaces you can read, across all of them at once. It fills in as tasks are created on any board.',
-  },
   '/my-day': {
     headline: 'Nothing on this day yet',
     // Who reads drafts, in My day's own words (D-102, LAI-968).

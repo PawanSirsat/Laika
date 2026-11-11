@@ -1,4 +1,5 @@
 import { resetAgentWrites } from './agent-writes.ts';
+import { resetSharedAvailability } from './availability.ts';
 import { createActivityStore } from './activity-store.ts';
 import { listProjectActivityPage } from './activity.ts';
 import { observeStreams } from './event-stream.ts';
@@ -6,6 +7,7 @@ import { sharedCache } from './query-cache.ts';
 import { setPermissionsUser } from './permissions.ts';
 import { createStatusStore } from './status-store.ts';
 import { listStatuses } from './statuses.ts';
+import { resetUnreadNotices } from './notices.ts';
 import { createTaskStore } from './task-store.ts';
 import { listTasks } from './tasks.ts';
 
@@ -131,4 +133,8 @@ export function setStoreUser(userId: string | undefined): void {
   // Agent selections in flight were the last user's (LAI-538): abort them,
   // and never let one hold a picker in the next session.
   resetAgentWrites();
+  // Their own availability and unread count (LAI-1139 review R1, N2): never
+  // the next person's pill, form or badge, nor what a Save would send.
+  resetSharedAvailability();
+  resetUnreadNotices();
 }

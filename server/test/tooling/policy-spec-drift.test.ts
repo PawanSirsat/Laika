@@ -80,7 +80,12 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
     'Generate, read and revoke own tokens',
     ['token.create_own', 'token.read_own', 'token.revoke_own'],
   ],
-  ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
+  // D-133 (LAI-1143) split the row: an admin revokes anybody's but the owner's.
+  ["List anyone's tokens", ['token.list_any']],
+  ["Revoke anyone's token", ['token.revoke_any']],
+  // D-132, D-133 (LAI-1137): a member's whole setup, and revoking part of it.
+  ["View a member's developer setup", ['developer_setup.read_any']],
+  ["Revoke a member's tool or unpair their device", ['agent.revoke_any', 'device.revoke_any']],
   // D-114 (LAI-534): a person's registered agents.
   ['Read own agents', ['agent.read_own']],
   ['Register and manage own agents', ['agent.manage_own']],
@@ -96,6 +101,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Rate a member', ['profile.rate']],
   // D-079's rows (LAI-751): the heatmap, and the developer's own side of it.
   ["View a member's activity heatmap", ['profile.activity.read']],
+  // D-139 item 1 (LAI-1150): your own profile and heatmap, every role.
+  ['View own profile and activity heatmap', ['profile.read_own']],
   // D-102 rule 1 (LAI-957): a person's day and local activity, read for them.
   ["View a member's day, time and shared activity", ['people.analytics.read']],
   ['Turn Developer insights on or off', ['org.developer_insights.set']],
@@ -118,10 +125,21 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Send own time drafts', ['time_drafts.send_own']],
   ['Read and manage own time drafts', ['time_drafts.read_own', 'time_drafts.manage_own']],
   ['Read and write own time entries', ['time_entries.read_own', 'time_entries.write_own']],
+  // D-143 (LAI-1165): an owner's or admin's change to a member's confirmed time.
+  ["Change a member's confirmed time", ['time_entries.write_member']],
   // LAI-788's rows: the Solidtime bridge, from the CLI on a signed-in session.
   ['Sync own time with Solidtime', ['time_sync.own']],
   ['Map Solidtime projects and people', ['time_sync.map']],
   ["Import everyone's Solidtime time", ['time_sync.import_all']],
+  // D-130 (LAI-1135).
+  ["View the organisation's Time report", ['time.report.read']],
+  // D-131 (LAI-1130): availability, the person's own declaration.
+  ['Set own availability', ['availability.set_own']],
+  ['See availability of people in your spaces', ['availability.read']],
+  // D-134 (LAI-1136): a member's own notices.
+  ['Read and dismiss own notices', ['notices.own']],
+  // D-139 (LAI-1151): a person's own pairing requests and setup activity.
+  ['View own developer setup', ['developer_setup.read_own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
@@ -154,6 +172,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ["Read a project's token totals", ['usage.read_project']],
   ['Set token budgets', ['budget.set']],
   ['Leave a project', ['project.leave']],
+  // D-130 item 3 (LAI-1135).
+  ["View the space's time totals", ['time.report.read_project']],
 ]);
 
 /**
@@ -453,6 +473,23 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     },
   ],
   [
+    'not for the owner',
+    {
+      why: "An Admin may revoke anybody's token but the Owner's — a personal token and a tool's credential alike, since either switches the owner's work off (D-133, LAI-1143). Below the owner, a target whose role was never loaded is refused.",
+      verify: (action: Action, role: string) => {
+        const actor = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(actor, action, { targetOrgRole: 'member' }), 'for a member').toBe(true);
+        expect(can(actor, action, { targetOrgRole: 'admin' }), 'for an admin').toBe(true);
+        expect(can(actor, action, { targetOrgRole: 'owner' }), 'for the owner').toBe(false);
+        expect(can(actor, action, {}), 'no role loaded').toBe(false);
+        expect(
+          can(orgActor('owner'), action, { targetOrgRole: 'owner' }),
+          'owner, for the owner',
+        ).toBe(true);
+      },
+    },
+  ],
+  [
     'session only, not for the owner',
     {
       why: 'As "session only", and an Admin may not issue a link for the Owner: a reset link for the owner is the owner\'s account (D-104 item 4, LAI-983).',
@@ -465,6 +502,28 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
         expect(
           can(orgActor('owner'), action, { targetOrgRole: 'owner' }),
           'owner, for the owner',
+        ).toBe(true);
+      },
+    },
+  ],
+  [
+    'session only, not for the owner, not themselves',
+    {
+      why: 'As "session only, not for the owner", and never yourself: an Admin may revoke a member\'s tool or unpair their device, not the Owner\'s; a person revokes their own on Developer access (D-133, LAI-1137).',
+      verify: (action: Action, role: string) => {
+        verifySessionOnly(action, role);
+
+        const actor = orgActor(role.toLowerCase() as OrgRole);
+        const other = { targetUserId: 'someone-else' };
+        expect(can(actor, action, { ...other, targetOrgRole: 'member' }), 'a member').toBe(true);
+        expect(can(actor, action, { ...other, targetOrgRole: 'owner' }), 'the owner').toBe(false);
+        expect(
+          can(actor, action, { targetUserId: actor.userId, targetOrgRole: 'member' }),
+          'themselves',
+        ).toBe(false);
+        expect(
+          can(orgActor('owner'), action, { ...other, targetOrgRole: 'owner' }),
+          'owner, for another owner-role target',
         ).toBe(true);
       },
     },
@@ -493,7 +552,9 @@ function verifySessionOnly(action: Action, role: string): void {
   const lower = role.toLowerCase();
   const actor =
     lower === 'lead' || lower === 'member' ? projectActor(lower) : orgActor(lower as OrgRole);
-  const about = { targetUserId: 'someone-else', projectId: 'p' };
+  // A target who is somebody else and not the owner, so a row that also says
+  // *not for the owner* or *not themselves* is asked about the case it allows.
+  const about = { targetUserId: 'someone-else', targetOrgRole: 'member' as const, projectId: 'p' };
 
   expect(can(actor, action, about), `${action} / ${role} on a session`).toBe(true);
 

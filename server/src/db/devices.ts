@@ -92,6 +92,7 @@ export function insertImportedDevice(db: Db, input: NewDeviceInput): DeviceRow {
     status: input.status,
     revokedAt: input.status === 'revoked' ? (input.revokedAt ?? input.now) : null,
     lastSeenAt: input.lastSeenAt ?? null,
+    revokedByUserId: null,
     createdAt: input.now,
   };
   db.insert(devices).values(row).run();

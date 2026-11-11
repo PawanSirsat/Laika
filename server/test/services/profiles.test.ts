@@ -6,12 +6,25 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { appendActivity } from '../../src/db/activity.ts';
 import { type OrgRole, type ProfileKind } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { heartbeats, orgs, projects, tasks, tokens, users } from '../../src/db/schema.ts';
+import {
+  analyticsViews,
+  heartbeats,
+  orgs,
+  projects,
+  tasks,
+  timeDrafts,
+  timeEntries,
+  tokens,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { ALL_ACTIONS } from '../../src/policy/actions.ts';
 import { can } from '../../src/policy/can.ts';
+import { getOwnActivity } from '../../src/services/people-activity.ts';
+import { LOOK_DEDUPE_MS } from '../../src/services/analytics-views.ts';
 import {
+  getOwnProfile,
   getProfile,
   PROFILE_LIST_LIMIT,
   PROFILE_WINDOW_WEEKS,
@@ -484,12 +497,15 @@ describe('a manager’s profile (LAI-743)', () => {
     setProfileKind(t.db, actor(ada), cal, 'manager', NOW);
   });
 
-  it('carries projects, review work and recent decisions — and no agent, work or delivery block', () => {
+  it('carries the builder blocks as a builder’s does, and the queue besides (D-139 item 2)', () => {
     const profile = getProfile(t.db, actor(ada), cal, NOW);
 
     expect(profile.user.profile_kind).toBe('manager');
     expect(Object.keys(profile).sort()).toEqual([
       'activity_sharing',
+      'agents',
+      'current_work',
+      'delivery',
       'projects',
       'queue',
       'ratings',
@@ -498,9 +514,14 @@ describe('a manager’s profile (LAI-743)', () => {
       'user',
       'window',
     ]);
-    expect('agents' in profile).toBe(false);
-    expect('current_work' in profile).toBe(false);
-    expect('delivery' in profile).toBe(false);
+
+    // The same blocks the same person carries as a builder — the kind is a
+    // label (§4.1), so only `queue` differs.
+    const asBuilder = setProfileKind(t.db, actor(ada), cal, 'builder', NOW);
+    expect('queue' in asBuilder).toBe(false);
+    expect(profile.current_work).toEqual(asBuilder.current_work);
+    expect(profile.delivery).toEqual(asBuilder.delivery);
+    expect(profile.agents).toEqual(asBuilder.agents);
   });
 
   it('counts the decisions they made on other people’s work, newest first', () => {
@@ -561,6 +582,7 @@ describe('a person with no history (LAI-743)', () => {
       in_progress_total: 0,
       in_review: [],
       in_review_total: 0,
+      due_7d: 0,
     });
     expect(profile.delivery).toEqual({
       accepted_per_week: Array.from({ length: 12 }, (_, i) => ({
@@ -641,7 +663,7 @@ describe('rating a member (LAI-743)', () => {
     });
 
     const { ratings } = getProfile(t.db, actor(ada), bea, NOW);
-    expect(ratings.map((r) => [r.score, r.note, r.rated_by.name])).toEqual([
+    expect(ratings!.map((r) => [r.score, r.note, r.rated_by.name])).toEqual([
       [5, 'Clears review fast.', 'Ari'],
       // Trimmed on the way in.
       [4, 'Steady delivery.', 'Ada'],
@@ -978,8 +1000,8 @@ describe('long lists are capped and counted (LAI-746)', () => {
     expect(profile.ratings).toHaveLength(50);
     expect(profile.ratings_total).toBe(OVER);
     // Newest first: the last one written leads, the very first is the one cut.
-    expect(profile.ratings[0]?.note).toBe('Note 50');
-    expect(profile.ratings.map((r) => r.note)).not.toContain('Note 0');
+    expect(profile.ratings![0]?.note).toBe('Note 50');
+    expect(profile.ratings!.map((r) => r.note)).not.toContain('Note 0');
 
     expect(profile.current_work?.in_progress).toHaveLength(50);
     expect(profile.current_work?.in_progress_total).toBe(OVER);
@@ -1299,5 +1321,161 @@ describe('a builder’s writes by agent (LAI-750)', () => {
     const agents = getProfile(t.db, actor(ada), bea, NOW).agents;
     expect(agents?.writes).toEqual([]);
     expect(agents?.writes_total).toBe(0);
+  });
+});
+
+// ------------------------------------------------------- D-139 (LAI-1150)
+
+describe('your own profile, whatever your role (D-139 item 1, LAI-1150)', () => {
+  it('answers a member and a viewer their own, with no ratings and no look', () => {
+    const vic = makeUser('Vic', 'viewer');
+    rateMember(t.db, actor(ada), bea, { score: 4, note: 'Steady.' }, NOW - DAY);
+
+    const own = getOwnProfile(t.db, actor(bea), NOW);
+    expect(own.user.id).toBe(bea);
+    // What an owner or admin wrote about Bea stays theirs.
+    expect('ratings' in own).toBe(false);
+    expect('ratings_total' in own).toBe(false);
+    // Nobody else looked.
+    expect(t.db.select().from(analyticsViews).all()).toEqual([]);
+    // The rest is the profile an owner reads of her, from the same code.
+    const read = getProfile(t.db, actor(ada), bea, NOW);
+    const { ratings: _r, ratings_total: _n, ...rest } = read;
+    expect(own).toEqual(rest);
+
+    expect(getOwnProfile(t.db, actor(vic), NOW).user.org_role).toBe('viewer');
+    expect(getOwnActivity(t.db, actor(vic), '12w', NOW).series.board_self).toHaveLength(84);
+    // Only Ada's read of Bea above is a look: the two own reads wrote none.
+    expect(
+      t.db
+        .select()
+        .from(analyticsViews)
+        .all()
+        .map((v) => v.subjectId),
+    ).toEqual([bea, bea]);
+  });
+
+  it('carries ratings for a reader who holds profile.read', () => {
+    const ari = makeUser('Ari', 'admin');
+    rateMember(t.db, actor(ari), ada, { score: 5, note: 'Fine.' }, NOW - DAY);
+    const own = getOwnProfile(t.db, actor(ada), NOW);
+    expect(own.ratings?.map((r) => [r.score, r.rated_by.name])).toEqual([[5, 'Ari']]);
+    expect(own.ratings_total).toBe(1);
+  });
+
+  it('is refused to any token, the person’s own included', () => {
+    expect(code(() => getOwnProfile(t.db, withToken(bea), NOW))).toBe('forbidden');
+    expect(code(() => getOwnActivity(t.db, withToken(bea), '12w', NOW))).toBe('forbidden');
+  });
+});
+
+describe('somebody else’s profile is a look (D-139 items 3 and 4, LAI-1150)', () => {
+  const looks = () =>
+    t.db
+      .select({
+        viewer: analyticsViews.viewerId,
+        kind: analyticsViews.kind,
+        day: analyticsViews.day,
+      })
+      .from(analyticsViews)
+      .all()
+      .map((v) => [v.viewer, v.kind, v.day])
+      .sort();
+
+  it('writes a profile look and a time look once per ten minutes', () => {
+    getProfile(t.db, actor(ada), bea, NOW);
+    getProfile(t.db, actor(ada), bea, NOW + LOOK_DEDUPE_MS - 1);
+    expect(looks()).toEqual([
+      [ada, 'profile', null],
+      [ada, 'time', null],
+    ]);
+    getProfile(t.db, actor(ada), bea, NOW + LOOK_DEDUPE_MS);
+    expect(looks()).toHaveLength(4);
+  });
+
+  it('writes none when an owner reads their own on /users/:id/profile', () => {
+    getProfile(t.db, actor(ada), ada, NOW);
+    expect(looks()).toEqual([]);
+  });
+});
+
+describe('due_7d and minutes_14d (LAI-1150)', () => {
+  /** NOW is Wednesday 14 October 2026; Bea has no place, so her today is UTC's. */
+  const TODAY = Date.UTC(2026, 9, 14);
+
+  it('counts their open tasks due today through the six days after', () => {
+    const due = (title: string, dueOn: number, assignee = bea) =>
+      task('laika', title, { assignee_id: assignee, due_on: dueOn });
+    due('today', TODAY);
+    due('in six days', TODAY + 6 * DAY);
+    due('in seven days', TODAY + 7 * DAY); // past the week
+    due('yesterday', TODAY - DAY); // overdue is not due soon
+    due('Eve’s', TODAY, eve); // not hers
+    const finished = due('done today', TODAY);
+    move(ada, finished, 'done', NOW - HOUR); // not open
+    task('laika', 'no date', { assignee_id: bea });
+
+    expect(getProfile(t.db, actor(ada), bea, NOW).current_work.due_7d).toBe(2);
+  });
+
+  it('sums their confirmed and pending drafted minutes per project over 14 days', () => {
+    const laika = laikaProjectId();
+    const orbit = t.db.select().from(projects).where(eq(projects.slug, 'orbit')).get()!.id;
+    const entry = (
+      projectId: string,
+      day: string,
+      minutes: number,
+      deletedAt: number | null = null,
+    ) =>
+      t.db
+        .insert(timeEntries)
+        .values({
+          id: newId(),
+          userId: bea,
+          projectId,
+          day,
+          tz: 'UTC',
+          minutes,
+          source: 'manual',
+          deletedAt,
+          createdAt: NOW - DAY,
+          updatedAt: NOW - DAY,
+        })
+        .run();
+    const draft = (
+      projectId: string,
+      day: string,
+      minutes: number,
+      state: 'pending' | 'dismissed',
+    ) =>
+      t.db
+        .insert(timeDrafts)
+        .values({
+          id: newId(),
+          userId: bea,
+          source: 'agent',
+          day,
+          tz: 'UTC',
+          minutes,
+          projectId,
+          state,
+          createdAt: NOW - DAY,
+          updatedAt: NOW - DAY,
+        })
+        .run();
+
+    entry(laika, '2026-10-14', 60); // today
+    entry(laika, '2026-10-01', 30); // the first of the fourteen days
+    entry(laika, '2026-09-30', 45); // the day before them
+    entry(laika, '2026-10-10', 100, NOW - HOUR); // deleted
+    draft(laika, '2026-10-12', 20, 'pending');
+    draft(laika, '2026-10-12', 15, 'dismissed');
+    entry(orbit, '2026-10-05', 10);
+
+    const minutes = Object.fromEntries(
+      getProfile(t.db, actor(ada), bea, NOW).projects.map((p) => [p.slug, p.minutes_14d]),
+    );
+    // 60 + 30 confirmed, 20 drafted.
+    expect(minutes).toEqual({ laika: 110, orbit: 10 });
   });
 });

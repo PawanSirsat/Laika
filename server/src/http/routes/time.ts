@@ -213,7 +213,7 @@ const SplitBody = strictObject({ at: z.number().int().min(0) });
 const ENTRY_TITLE_MAX = 120;
 const ENTRY_DESCRIPTION_MAX = 2000;
 
-const EntryBody = strictObject({
+export const EntryBody = strictObject({
   day,
   tz: zone,
   minutes,
@@ -227,7 +227,7 @@ const EntryBody = strictObject({
   ended_at: z.number().int().min(0).optional(),
 });
 
-const EntryPatchBody = strictObject({
+export const EntryPatchBody = strictObject({
   minutes: minutes.optional(),
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),

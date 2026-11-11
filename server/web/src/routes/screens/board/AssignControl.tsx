@@ -1,5 +1,6 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { assigneeOptions } from './assignee-options.ts';
 import { useId, useState } from 'react';
 import { assignTask, claimTask, claimWinner } from '../../../api/tasks.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
@@ -93,14 +94,7 @@ export function AssignControl({ task, members, meId, mayAssign, onChanged }: Ass
           noun="people"
           value={assigned ?? ''}
           disabled={busy}
-          options={[
-            { value: '', label: 'unassigned', pinned: true },
-            ...[...members.values()].map((member) => ({
-              value: member.user_id,
-              label: `${member.name}${member.user_id === meId ? ' (you)' : ''}`,
-              keywords: member.email,
-            })),
-          ]}
+          options={assigneeOptions(members.values(), meId)}
           onChange={(next) => {
             run(assignTask(task.id, next === '' ? null : next));
           }}
