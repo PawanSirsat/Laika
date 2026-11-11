@@ -24,7 +24,8 @@
    */
   height: 100vh;
   overflow: hidden;
-  background: var(--bg-canvas);
+  /* Transparent (LAI-1132): the ambient layer behind it is the ground. */
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-body);
@@ -111,8 +112,12 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  border-bottom: 1px solid var(--glass-border);
+  /* Level-1 glass (LAI-1132): the pane is `glass.css`'s ::before. */
+  position: relative;
+  isolation: isolate;
+  z-index: var(--layer-header);
+  background: transparent;
 }
 
 .shell-head-right {

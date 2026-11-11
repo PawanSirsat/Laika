@@ -226,8 +226,51 @@
   --brand-splash-arc: rgba(143, 167, 198, 0.07);
   --brand-panel: rgba(28, 35, 50, 0.55);
 
+  /* ---- glass (LAI-1132): the owner's "greater impact" frosted surfaces ----
+     Three levels — 1 chrome (rails, bars), 2 panels and cards, 3 floating
+     (menus, popovers, dialogs, toasts) — each a translucent Slate over the
+     ambient layer, with the opaque step it falls back to. `--glass-solid` is
+     the surface a glass element inside another glass element uses instead
+     (never nest a blur). Alphas are set by the worst-case AA rule in
+     tokens.test.ts: text on each level clears 4.5:1 composited over the
+     brightest point of the ambient layer behind it. */
+  --glass-1: rgba(12, 18, 34, 0.56);
+  --glass-2: rgba(16, 22, 38, 0.64);
+  --glass-3: rgba(20, 27, 44, 0.74);
+  --glass-1-solid: #121826;
+  --glass-2-solid: #1c2332;
+  --glass-3-solid: #222a3b;
+  --glass-solid: #1c2332;
+  --glass-hover: rgba(185, 194, 214, 0.07);
+  --glass-border: rgba(190, 205, 240, 0.22);
+  --glass-border-strong: rgba(190, 205, 240, 0.38);
+  /* A crisp line of light along the top edge with a faint inner rim, and a
+     faint cool sheen in the top-left corner. The AA pairs in
+     tokens.test.ts measure the level's tint only, not the sheen over it. */
+  --glass-highlight:
+    inset 0 1px 0 rgba(244, 247, 251, 0.24), inset 0 0 0 1px rgba(160, 182, 235, 0.07);
+  --glass-sheen: linear-gradient(135deg, rgba(160, 182, 245, 0.06), transparent 55%);
+  --glass-glow: 0 0 0 1px rgba(141, 164, 242, 0.55), 0 0 12px rgba(111, 143, 232, 0.22);
+  /* The scrim a modal surface floats over: darker than `--scrim`, and blurred. */
+  --glass-scrim: rgba(5, 8, 15, 0.55);
+  /* The focus ring that holds on any glass: a canvas inner ring, a bright
+     outer, and a soft brand glow beyond it. */
+  --focus-ring: 0 0 0 2px #0b0f1a, 0 0 0 4px #b8c8ff, 0 0 10px rgba(141, 164, 242, 0.3);
+
+  /* ---- the ambient layer behind the shell (LAI-1132) ----
+     v3, owner: "keep it simple". Brand Ink, with one faint, large lift
+     toward the top and nothing else — no discs, no arcs, no hazes, no
+     motion. `--ambient-peak` is the lightest stop: the AA worst case the
+     glass pairs in tokens.test.ts are measured over. */
+  --ambient-base: linear-gradient(180deg, #0f1422 0%, #0b0f1a 60%);
+  --ambient-peak: #0f1422;
+
   /* ---- elevation ---- */
   --shadow-card: 0 1px 2px rgba(5, 8, 15, 0.35);
+  /* LAI-1132: one shadow per elevation, so a level never invents its own. */
+  --shadow-panel: 0 18px 48px rgba(3, 6, 12, 0.5);
+  --shadow-popover: 0 12px 32px rgba(3, 6, 12, 0.5);
+  --shadow-toast: 0 10px 28px rgba(3, 6, 12, 0.55);
 }
 
 /* ===================================================================
@@ -376,7 +419,33 @@
   --brand-splash-arc: rgba(75, 98, 130, 0.08);
   --brand-panel: rgba(255, 255, 255, 0.6);
 
+  /* ---- glass (LAI-1132) ---- */
+  --glass-1: rgba(255, 255, 255, 0.56);
+  --glass-2: rgba(255, 255, 255, 0.62);
+  --glass-3: rgba(255, 255, 255, 0.74);
+  --glass-1-solid: #ffffff;
+  --glass-2-solid: #ffffff;
+  --glass-3-solid: #ffffff;
+  --glass-solid: #ffffff;
+  --glass-hover: rgba(11, 15, 26, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-border-strong: rgba(75, 98, 130, 0.36);
+  --glass-highlight: inset 0 1px 0 #ffffff, inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  --glass-sheen: linear-gradient(135deg, rgba(143, 178, 230, 0.1), transparent 55%);
+  --glass-glow: 0 0 0 1px rgba(63, 91, 209, 0.5), 0 0 12px rgba(63, 91, 209, 0.16);
+  --glass-scrim: rgba(11, 15, 26, 0.32);
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #2f48b8, 0 0 10px rgba(63, 91, 209, 0.2);
+
+  /* ---- the ambient layer (LAI-1132): Paper, settling into a faint Fog
+     toward the bottom. `--ambient-peak` is the darkest stop, its AA worst
+     case. */
+  --ambient-base: linear-gradient(180deg, #f4f7fb 40%, #edf1f7 100%);
+  --ambient-peak: #edf1f7;
+
   --shadow-card: 0 1px 2px rgba(11, 15, 26, 0.07);
+  --shadow-panel: 0 18px 48px rgba(30, 41, 66, 0.18);
+  --shadow-popover: 0 12px 32px rgba(30, 41, 66, 0.16);
+  --shadow-toast: 0 10px 28px rgba(30, 41, 66, 0.2);
 }
 
 /* ===================================================================
@@ -445,4 +514,53 @@
   /* Brand motion (LAI-1126): the icon loader's turn and the splash's step. */
   --motion-spin: 1.1s;
   --motion-step: 1.6s;
+
+  /* ---- glass, colour-free (LAI-1132) ----
+     Blur per level, capped: the guard in glass-guard.test.ts refuses any
+     blur over 32px and any blur literal outside glass.css. */
+  --glass-blur-1: 12px;
+  --glass-blur-2: 16px;
+  --glass-blur-3: 20px;
+  --glass-blur-scrim: 6px;
+  --glass-saturate: 1.2;
+
+  /* ---- motion (LAI-1132) ---- */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasised: cubic-bezier(0.3, 0, 0, 1.2);
+
+  /*
+   * ---- layers (LAI-1132): one ladder, low to high ----
+   * Fixes B16 — a Dropdown (60) opened from a SidePanel (61) painted under
+   * it. Anything that opens *from* a surface sits above it: popovers and
+   * menus outrank panels, dialogs outrank menus, toasts outrank everything.
+   * Screens with their own local stacking (the board's 30/31 popovers, the
+   * timeline) keep their numbers; these are the shared surfaces'.
+   */
+  --layer-sticky: 5;
+  --layer-header: 10;
+  --layer-sidebar: 15;
+  --layer-drawer: 20;
+  --layer-overlay: 40;
+  --layer-panel: 60;
+  --layer-popover: 65;
+  --layer-menu: 70;
+  --layer-tooltip: 75;
+  --layer-dialog: 80;
+  --layer-toast: 90;
+}
+
+/* One rule for reduced motion (LAI-1132): every transition and animation is
+   cut to near-instant, so no component has to remember its own. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

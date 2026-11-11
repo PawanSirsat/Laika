@@ -14,8 +14,11 @@
   width: 13.25rem; /* 212px */
   flex: none;
   box-sizing: border-box;
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-subtle);
+  /* Level-1 glass (LAI-1132): transparent, the pane is `glass.css`'s ::before
+     — never a blur on the sidebar itself, which would trap its fixed popover. */
+  background: transparent;
+  isolation: isolate;
+  border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
