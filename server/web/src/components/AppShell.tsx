@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { CommandPaletteHost } from './command/CommandPaletteHost.tsx';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
 import { ShellSidebar } from './shell/ShellSidebar.tsx';
@@ -236,6 +237,9 @@ function AppFrame() {
           </SessionGate>
         </main>
       </div>
+
+      {/* ⌘K, and the palette it opens (LAI-1192): a signed-in tool. */}
+      {signedIn && <CommandPaletteHost />}
     </div>
   );
 }

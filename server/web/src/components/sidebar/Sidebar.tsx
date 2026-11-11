@@ -10,6 +10,7 @@ import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
 import { SidebarFooter } from './SidebarFooter.tsx';
 import { NavIcon } from './NavIcon.tsx';
+import { PaletteTrigger } from '../command/PaletteTrigger.tsx';
 import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
@@ -203,6 +204,11 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-nav">
+        {/* Search and commands, ⌘K (LAI-1192). */}
+        <div className="sidebar-group sidebar-group-search">
+          <PaletteTrigger variant="sidebar" />
+        </div>
+
         {shown.filter((group) => group === 'HOME').map(renderGroup)}
 
         {spaces !== undefined && spaces.length > 0 && onOpenSpace !== undefined && (

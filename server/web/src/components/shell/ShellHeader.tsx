@@ -1,5 +1,6 @@
 import { Brand } from '../Brand.tsx';
 import { ThemeSwitch } from '../ThemeSwitch.tsx';
+import { PaletteTrigger } from '../command/PaletteTrigger.tsx';
 
 export interface ShellHeaderProps {
   readonly signedIn: boolean;
@@ -41,6 +42,8 @@ export function ShellHeader({ signedIn, navOpen, onToggleNav }: ShellHeaderProps
           <span className="shell-navtoggle-bars" aria-hidden="true" />
         </button>
       ) : null}
+      {/* The phone's way into the palette (LAI-1192); the bar is hidden above 900px. */}
+      {signedIn && <PaletteTrigger variant="header" />}
 
       {!signedIn && <Brand />}
       {!signedIn && (
