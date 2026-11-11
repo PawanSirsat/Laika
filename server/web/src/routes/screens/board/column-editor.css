@@ -87,7 +87,6 @@
   color: var(--text-secondary);
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
-  margin-left: auto;
 }
 
 .cd-confirm {
@@ -111,9 +110,8 @@
 }
 
 /* The affirmative action, so it reads as the way out of the dialog rather than
-   one of two equal buttons. Pushed right of Cancel. */
+   one of two equal buttons. The Dialog's footer sets it right of Cancel. */
 .cd-submit {
-  margin-left: auto;
   color: var(--on-accent);
   background: var(--accent);
   border: 1px solid var(--accent);
