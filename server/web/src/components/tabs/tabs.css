@@ -1,0 +1,49 @@
+/*
+ * The one tab strip (LAI-1193). What every row of tabs shares, whatever it
+ * looks like: it scrolls sideways rather than wrapping, hides its scrollbar,
+ * and fades the edge that hides a tab. The look of each strip stays in its
+ * own stylesheet.
+ *
+ * The fade is a mask, not an overlay, so it works over any background — card,
+ * canvas or glass — without knowing which. 1.5rem matches FADE_PX in
+ * TabStrip.tsx, the room left past a revealed tab.
+ */
+
+.tab-strip {
+  --tab-strip-fade: 1.5rem;
+  display: flex;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-strip-fade-end {
+  mask-image: linear-gradient(to right, black calc(100% - var(--tab-strip-fade)), transparent);
+}
+
+.tab-strip-fade-start {
+  mask-image: linear-gradient(to left, black calc(100% - var(--tab-strip-fade)), transparent);
+}
+
+.tab-strip-fade-start.tab-strip-fade-end {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--tab-strip-fade),
+    black calc(100% - var(--tab-strip-fade)),
+    transparent
+  );
+}
+
+/* A focused tab is always visible on both themes, whatever the strip's look. */
+.tab-strip [data-tab-item]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

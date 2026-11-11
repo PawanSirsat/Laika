@@ -1,4 +1,5 @@
 import { tabHref, type PageTab } from '../routes/page-tabs.ts';
+import { TAB_ACTIVE, TAB_ITEM, TabStrip, rovingTabIndex } from './tabs/TabStrip.tsx';
 import './page-tabs.css';
 
 export interface PageTabsProps {
@@ -26,6 +27,13 @@ export interface PageTabsProps {
  *
  * **Links, not buttons**: a tab is an address (`?tab=`), so middle-click,
  * copy-link and Back all work, and the click only suppresses the reload.
+ *
+ * **On the one tab strip** (LAI-1193): one stop in the Tab order (the current
+ * tab), Left/Right/Home/End between tabs, and at 390px an edge fade where the
+ * strip scrolls, with the current tab scrolled into view. The semantics stay
+ * a `nav` of links with `aria-current` — the design system's *route variant*:
+ * each tab is an address the screen under it reads, not a panel this strip
+ * owns, so there is no `tabpanel` for `aria-controls` to name.
  */
 export function PageTabs({
   label,
@@ -36,10 +44,11 @@ export function PageTabs({
   countNoun = 'waiting',
   onNavigate,
 }: PageTabsProps) {
+  const anyActive = tabs.some((tab) => tab.id === current);
   return (
     <nav className="page-tabs" aria-label={label}>
-      <ul>
-        {tabs.map((tab) => {
+      <TabStrip activeKey={current} element="ul">
+        {tabs.map((tab, index) => {
           const active = tab.id === current;
           const href = tabHref(path, tab.id);
           const count = counts?.[tab.id];
@@ -49,7 +58,10 @@ export function PageTabs({
                 href={href}
                 className={active ? 'page-tab page-tab-active' : 'page-tab'}
                 aria-current={active ? 'page' : undefined}
+                tabIndex={rovingTabIndex(active, index, anyActive)}
                 data-tab={tab.id}
+                {...{ [TAB_ITEM]: '' }}
+                {...(active ? { [TAB_ACTIVE]: '' } : {})}
                 onClick={(event) => {
                   // Modified clicks stay the browser's — new tab, new window.
                   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -69,7 +81,7 @@ export function PageTabs({
             </li>
           );
         })}
-      </ul>
+      </TabStrip>
     </nav>
   );
 }

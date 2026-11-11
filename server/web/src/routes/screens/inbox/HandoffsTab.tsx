@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type FocusEvent,
-  type KeyboardEvent,
   type MouseEvent,
 } from 'react';
 import {
@@ -45,6 +44,7 @@ import {
   type ShownRow,
 } from '../../../components/agent/person-handoffs.ts';
 import { plainClick, taskHref } from '../my-day/task-link.ts';
+import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 import '../../../components/agent/agent.css';
 
 /** Offers expire in minutes; a visible tab re-reads twice a minute, quietly. */
@@ -124,7 +124,6 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
   const closedId = useId();
   /** The *Show more* read in flight, so a change of view can abort it. */
   const more = useRef<AbortController | null>(null);
-  const tabRefs = useRef<Partial<Record<PersonInboxView, HTMLButtonElement | null>>>({});
 
   // A new view or the closed toggle starts again; a re-read of the same keeps what is drawn.
   const shownFor = useRef(`${view}:${String(closed)}`);
@@ -242,22 +241,6 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
     setView(next);
   };
 
-  /** The tabs pattern's keys: arrows move and select, Home and End jump (WAI-ARIA APG). */
-  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>): void => {
-    const at = PERSON_INBOX_VIEWS.indexOf(view);
-    const last = PERSON_INBOX_VIEWS.length - 1;
-    let to: number | undefined;
-    if (event.key === 'ArrowRight') to = at === last ? 0 : at + 1;
-    else if (event.key === 'ArrowLeft') to = at === 0 ? last : at - 1;
-    else if (event.key === 'Home') to = 0;
-    else if (event.key === 'End') to = last;
-    const next = to === undefined ? undefined : PERSON_INBOX_VIEWS[to];
-    if (next === undefined) return;
-    event.preventDefault();
-    switchTo(next);
-    tabRefs.current[next]?.focus();
-  };
-
   const write = (kind: 'approve' | 'withdraw', row: PersonHandoffView): void => {
     if (pending.current.has(row.id)) return;
     pending.current.add(row.id);
@@ -300,40 +283,33 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
   return (
     <section className="handoff-inbox handoffs-tab" aria-label="Hand-offs" data-handoffs-tab>
       <div className="handoffs-toolbar">
-        <div className="handoff-filters" role="tablist" aria-label="Show hand-offs">
-          {PERSON_INBOX_VIEWS.map((id) => {
+        <Tabs
+          label="Show hand-offs"
+          className="handoff-filters"
+          tabClassName="handoff-filter"
+          idBase={tabIds}
+          panelId={panelId}
+          selected={view}
+          onSelect={switchTo}
+          items={PERSON_INBOX_VIEWS.map((id) => {
             const count = shownCounts?.[id];
-            const selected = id === view;
-            return (
-              <button
-                key={id}
-                ref={(el) => {
-                  tabRefs.current[id] = el;
-                }}
-                id={`${tabIds}-${id}`}
-                type="button"
-                role="tab"
-                className="handoff-filter"
-                aria-selected={selected}
-                aria-controls={panelId}
-                tabIndex={selected ? 0 : -1}
-                data-filter={id}
-                onClick={() => {
-                  switchTo(id);
-                }}
-                onKeyDown={onTabKey}
-              >
-                {HANDOFF_FILTER_WORDS[id]}
-                {count !== undefined && count > 0 && (
-                  <span className="handoff-filter-count" data-count={id}>
-                    {count}
-                    <span className="visually-hidden"> open</span>
-                  </span>
-                )}
-              </button>
-            );
+            return {
+              id,
+              data: { 'data-filter': id },
+              label: (
+                <>
+                  {HANDOFF_FILTER_WORDS[id]}
+                  {count !== undefined && count > 0 && (
+                    <span className="handoff-filter-count" data-count={id}>
+                      {count}
+                      <span className="visually-hidden"> open</span>
+                    </span>
+                  )}
+                </>
+              ),
+            };
           })}
-        </div>
+        />
         <label className="handoffs-closed" htmlFor={closedId}>
           <input
             id={closedId}
@@ -352,7 +328,7 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
       <div
         id={panelId}
         role="tabpanel"
-        aria-labelledby={`${tabIds}-${view}`}
+        aria-labelledby={tabId(tabIds, view)}
         className="handoffs-panel"
       >
         {state.stale && (
