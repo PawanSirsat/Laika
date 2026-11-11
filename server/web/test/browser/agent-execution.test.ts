@@ -719,7 +719,7 @@ void describe('the live claim (LAI-597)', () => {
 
       await h.page.clock.fastForward(95_000);
 
-      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await h.page.locator('.bt-icon[aria-label="View settings"]').click();
       await h.page.waitForSelector('.view-settings');
       await h.page.locator('.vs-search').fill('Agent');
       await h.page.locator('.vs-add').first().click();
