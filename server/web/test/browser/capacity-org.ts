@@ -320,7 +320,12 @@ export function orgStub(reader: Reader): ApiStub {
     '/api/v1/capacity': capacityFor(reader),
     // Three waiting, for the tile; only the count is read on this page.
     '/api/v1/review': {
-      tasks: ['t8', 't9', 't11'].map((id) => ({ task: { id }, waiting_since: NOW - DAY })),
+      // All three the reader's to decide (D-146): the Inbox badge counts those.
+      tasks: ['t8', 't9', 't11'].map((id) => ({
+        task: { id },
+        waiting_since: NOW - DAY,
+        can_decide: true,
+      })),
       truncated: false,
     },
   };

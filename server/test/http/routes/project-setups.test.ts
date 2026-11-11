@@ -44,6 +44,7 @@ interface Setup {
   project_id: string;
   project_slug: string;
   repo_label: string | null;
+  repo_key: string;
   instructions_path: string | null;
   block_found: boolean;
   template_revision: number | null;
@@ -197,6 +198,7 @@ describe('a local check, on the agent’s own token', () => {
       project_id: alpha,
       project_slug: 'alpha',
       repo_label: 'laika',
+      repo_key: REPO_KEY,
       instructions_path: 'CLAUDE.md',
       block_found: true,
       template_revision: 2,
@@ -417,6 +419,7 @@ describe('the browser’s record, the owner signed in', () => {
       agent_id: tool.agent.id,
       source: 'self_reported_browser',
       repo_label: null,
+      repo_key: '',
       block_found: true,
       template_revision: 2,
       project_match: null,
@@ -557,6 +560,33 @@ describe('reading records', () => {
       404,
     );
     expect(foreign.body).toEqual(unknown.body);
+  });
+
+  it('serves each record’s repo_key, so one repository groups across devices (LAI-321)', async () => {
+    const laptop = await register(bob.cookie, [{ project_id: alpha, scope: 'full' }], 'Laptop');
+    const desktop = await register(bob.cookie, [{ project_id: alpha, scope: 'full' }], 'Desktop');
+    const other = createHash('sha256').update('github.com/example/laika-web').digest('hex');
+    await ok(await post(localCheck(), { bearer: laptop.secret }), 201);
+    await ok(await post(localCheck(), { bearer: desktop.secret }), 201);
+    await ok(await post(localCheck({ repo_key: other }), { bearer: desktop.secret }), 201);
+    await ok(
+      await post(
+        { agent_id: laptop.agent.id, project_slug: 'alpha', template_revision: 2 },
+        { cookie: bob.cookie },
+      ),
+      201,
+    );
+
+    const read = await ok<{ data: Setup[] }>(await list('project=alpha', { cookie: bob.cookie }));
+    const keyOf = (row: Setup): string => `${row.device_label ?? ''}:${row.source}:${row.repo_key}`;
+    expect(read.data.map(keyOf).sort()).toEqual(
+      [
+        `Desktop:local_check:${other}`,
+        `Desktop:local_check:${REPO_KEY}`,
+        `Laptop:local_check:${REPO_KEY}`,
+        'Laptop:self_reported_browser:',
+      ].sort(),
+    );
   });
 
   it('lets an agent’s token read only its own records', async () => {

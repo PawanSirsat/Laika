@@ -5,8 +5,9 @@ import { shortCommit, updateCommand, type UpdateCommand, type UpdateKey } from '
 /**
  * *Update your Laika CLI* (LAI-1086): one guidance, the same everywhere a
  * developer meets an out-of-date CLI — a tool's update status, a device's
- * summary, the Overview, Project setup's check step, and the two wizards
- * before their `laika` command.
+ * summary, Project setup's check step, and the two wizards before their
+ * `laika` command. (The Overview's own notice went with LAI-1096: a tool to
+ * update is behind its Connection status chip, one click from its details.)
  *
  * The owner followed V3 Project setup with a checkout 389 commits behind the
  * board and got `laika: unknown command "project"`; nothing on the page said
@@ -181,47 +182,4 @@ export function guideFor(key: UpdateKey | undefined): boolean {
  */
 export function versionUnknownHint(device = 'that device'): string {
   return `To make its version appear, run laika update on ${device}: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: ${GUIDE_TITLE}, below, has the steps for it.`;
-}
-
-export interface CliNotice {
-  /** Tools whose helper the board needs updated. */
-  readonly required: number;
-  /** Tools whose helper has never reported a version. */
-  readonly unknown: number;
-}
-
-/**
- * The Overview's quiet notice: any of the reader's tools *Update required*,
- * or with no version report. `undefined` — no notice — when every one is up
- * to date, has an update merely available, or could not be checked: a failed
- * read is not evidence of anything.
- */
-export function cliNotice(statuses: Iterable<{ readonly key: UpdateKey }>): CliNotice | undefined {
-  let required = 0;
-  let unknown = 0;
-  for (const s of statuses) {
-    if (s.key === 'required') required += 1;
-    else if (s.key === 'unknown') unknown += 1;
-  }
-  return required === 0 && unknown === 0 ? undefined : { required, unknown };
-}
-
-function tools(n: number): string {
-  return `${String(n)} ${n === 1 ? 'tool' : 'tools'}`;
-}
-
-/** The notice's sentence, from its counts. */
-export function cliNoticeText(notice: CliNotice): string {
-  const parts: string[] = [];
-  if (notice.required > 0) {
-    parts.push(
-      `${tools(notice.required)} ${notice.required === 1 ? 'runs' : 'run'} a Laika CLI this board needs updated`,
-    );
-  }
-  if (notice.unknown > 0) {
-    parts.push(
-      `${tools(notice.unknown)} ${notice.unknown === 1 ? 'has' : 'have'} never reported a CLI version`,
-    );
-  }
-  return `${parts.join('; ')}.`;
 }

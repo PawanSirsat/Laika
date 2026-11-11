@@ -212,6 +212,7 @@ function stub(
           project_id: 'p1',
           project_slug: 'onroute',
           repo_label: null,
+          repo_key: '',
           instructions_path: 'CLAUDE.md',
           block_found: true,
           template_revision: body.template_revision,
@@ -252,6 +253,7 @@ const checked = (over: Record<string, unknown> = {}) => ({
   project_id: 'p1',
   project_slug: 'onroute',
   repo_label: 'onroute-app',
+  repo_key: 'a'.repeat(64),
   instructions_path: 'CLAUDE.md',
   block_found: true,
   template_revision: 2,
@@ -576,6 +578,12 @@ void describe('Project setup, v3', () => {
       assert.equal(param(h.page, 'step'), null);
       assert.equal(param(h.page, 'project'), null);
       assert.equal((await grantChip(h.page).innerText()).trim(), 'Full access');
+      // The reader has a setup now, so the address names the wizard (LAI-321):
+      // reloaded, it is still the wizard rather than their list.
+      assert.equal(param(h.page, 'view'), 'wizard');
+      await h.page.reload();
+      await card(h.page, 1).waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
     } finally {
       await h.close();
     }
@@ -766,16 +774,33 @@ void describe('Project setup, v3', () => {
       }),
     );
     try {
+      // LAI-1099 #9: one short line under the command, the hint behind Help.
+      const line = h.page.locator('[data-way="check"] [data-cli-line]');
+      await line.waitFor({ timeout: 20_000 });
+      assert.equal(
+        (await line.innerText()).replace(/\s+/g, ' ').trim(),
+        'Needs a Laika CLI that matches this board. Help',
+      );
       const hint = h.page.locator('[data-way="check"] [data-note="cli-match"]');
-      await hint.waitFor({ timeout: 20_000 });
+      assert.equal(await hint.count(), 0, 'the hint is behind Help until asked for');
+      const helpButton = line.getByRole('button', { name: 'Help' });
+      assert.equal(await helpButton.getAttribute('aria-expanded'), 'false');
+      await helpButton.click();
+      assert.equal(await helpButton.getAttribute('aria-expanded'), 'true');
+      await hint.waitFor({ timeout: 5_000 });
+      assert.equal(
+        await helpButton.getAttribute('aria-controls'),
+        await h.page.locator('.dx-ps-help-pop').getAttribute('id'),
+      );
       await until(async () => (await hint.innerText()).includes('0123456'));
+      // The LAI-1093 hint, word for word.
       assert.equal(
         (await hint.innerText()).replace(/\s+/g, ' ').trim(),
         'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version: if it prints a commit, laika update brings it to this board’s. If either says unknown command, your CLI predates this board: How to update your Laika CLI, below, shows where it comes from and what to do about it, wherever the old one is.',
       );
-      // Directly under the command it is about.
+      // The line sits directly under the command it is about.
       assert.equal(
-        await hint.evaluate((el) => el.previousElementSibling?.textContent?.includes('--harness')),
+        await line.evaluate((el) => el.previousElementSibling?.textContent?.includes('--harness')),
         true,
       );
       assert.deepEqual(await hint.locator('code').allInnerTexts(), [
@@ -783,11 +808,16 @@ void describe('Project setup, v3', () => {
         'laika version',
         'laika update',
       ]);
-      // LAI-1093: the guide itself, right under the hint — and, open, the fresh
+      // Escape closes it, and focus goes back to Help.
+      await h.page.keyboard.press('Escape');
+      await hint.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await helpButton.getAttribute('aria-expanded'), 'false');
+      assert.equal(await h.page.evaluate(() => document.activeElement?.textContent ?? ''), 'Help');
+      // LAI-1093: the guide itself, right under the line — and, open, the fresh
       // install from this board's own source rather than a pull of ~/laika.
       const help = h.page.locator('[data-way="check"] [data-update-cli="project-setup"]');
       assert.equal(
-        await hint.evaluate((el) => el.nextElementSibling?.getAttribute('data-update-cli')),
+        await line.evaluate((el) => el.nextElementSibling?.getAttribute('data-update-cli')),
         'project-setup',
       );
       assert.equal(await help.locator('summary').innerText(), 'How to update your Laika CLI');
@@ -814,6 +844,10 @@ void describe('Project setup, v3', () => {
     const h = await open('/developer?tab=projects&step=3', stub('v3', world));
     try {
       const hint = h.page.locator('[data-way="check"] [data-note="cli-match"]');
+      await h.page
+        .locator('[data-way="check"] [data-cli-line]')
+        .getByRole('button', { name: 'Help' })
+        .click({ timeout: 20_000 });
       await hint.waitFor({ timeout: 20_000 });
       // The page read the answer twice: once for the mode, once for this hint.
       const asked = () =>
@@ -858,6 +892,7 @@ void describe('Project setup, v3', () => {
           /Record it yourself with I’ve added it/,
         );
         assert.equal(await way.locator('[data-note="cli-match"]').count(), 0);
+        assert.equal(await way.locator('[data-cli-line]').count(), 0);
         // LAI-1093: no CLI to update for a check that cannot run, so no guide either.
         assert.equal(await way.locator('[data-update-cli]').count(), 0);
         assert.doesNotMatch(await way.innerText(), /How to update your Laika CLI/);
@@ -927,24 +962,184 @@ void describe('Project setup, v3', () => {
     }
   });
 
-  void test('the setups list: every project’s records, newest first, each opening its step 3', async () => {
+  void test('step 3’s two ways are check rows: a mark, the way and its status, its action — no checkbox (LAI-1099 #9)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      const review = h.page.locator('[data-step="record"]');
+      await review.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      assert.equal(await review.locator('input[type="checkbox"]').count(), 0);
+      assert.equal(await review.getByRole('checkbox').count(), 0);
+      const ways = await review.locator('[data-way]').evaluateAll((els) =>
+        els.map((el) => {
+          const head = el.querySelector('.dx-ps-way-head');
+          const style = getComputedStyle(el);
+          return {
+            way: el.getAttribute('data-way'),
+            mark: head?.querySelector('.dx-ps-way-mark') !== null,
+            title: head?.querySelector('.dx-ps-way-title')?.textContent ?? '',
+            status: (
+              head?.querySelector('.dx-ps-status, .dx-ps-way-state') as HTMLElement | null
+            )?.innerText
+              .replace(/\s+/g, ' ')
+              .trim(),
+            end: (head?.lastElementChild as HTMLElement | null)?.innerText.trim(),
+            // A rule between the rows, not a box around each.
+            box: [style.borderLeftWidth, style.borderRightWidth, style.borderBottomWidth],
+            rule: style.borderTopWidth,
+          };
+        }),
+      );
+      assert.deepEqual(ways, [
+        {
+          way: 'check',
+          mark: true,
+          title: 'Check it from your device',
+          status:
+            'Not recorded · Laika cannot see your repository. Run laika project check in it to find out.',
+          end: 'Recommended',
+          box: ['0px', '0px', '0px'],
+          rule: '1px',
+        },
+        {
+          way: 'self',
+          mark: true,
+          title: 'Or record it yourself',
+          status: 'Self-reported. Laika does not check the file.',
+          end: 'I’ve added it',
+          box: ['0px', '0px', '0px'],
+          rule: '1px',
+        },
+      ]);
+      // The action sits on its way's row, beside its words.
+      const [title, button] = await Promise.all([
+        review.locator('[data-way="self"] .dx-ps-way-title').boundingBox(),
+        review.getByRole('button', { name: 'I’ve added it' }).boundingBox(),
+      ]);
+      assert.ok(title !== null && button !== null);
+      assert.ok(button.y < title.y + title.height, 'the button is not on its row');
+      // Once recorded, the mark says so, and the record is under its own way.
+      await review.getByRole('button', { name: 'I’ve added it' }).click();
+      await review.locator('[data-way="self"] [data-source="self_reported_browser"]').waitFor({
+        timeout: 20_000,
+      });
+      assert.equal(
+        await review.locator('[data-way="self"] .dx-ps-way-mark').getAttribute('data-done'),
+        'true',
+      );
+      assert.equal(await review.locator('[data-way="check"] [data-source]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('390 px: each way’s words take the line, and its chip or button goes under them (LAI-1099 #9)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      const review = h.page.locator('[data-step="record"]');
+      await review.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      const ways = await review.locator('[data-way]').evaluateAll((els) =>
+        els.map((el) => {
+          const way = el.getBoundingClientRect();
+          const mark = el.querySelector('.dx-ps-way-mark')!.getBoundingClientRect();
+          const text = el.querySelector('.dx-ps-way-text')!.getBoundingClientRect();
+          const end = el
+            .querySelector('.dx-ps-way-head')!
+            .lastElementChild!.getBoundingClientRect();
+          return {
+            way: el.getAttribute('data-way'),
+            // The words reach the row's edge: everything after the mark is theirs.
+            full: Math.round(text.right) >= Math.round(way.right) - 1 && text.left > mark.right,
+            under: end.top >= text.bottom - 1,
+          };
+        }),
+      );
+      assert.deepEqual(ways, [
+        { way: 'check', full: true, under: true },
+        { way: 'self', full: true, under: true },
+      ]);
+      // The status reads as words, not a column of single letters: its reason
+      // has most of the way's line.
+      const widths = await review.locator('[data-way="check"]').evaluate((el) => ({
+        reason: el.querySelector('.status-chip-reason')!.getBoundingClientRect().width,
+        text: el.querySelector('.dx-ps-way-text')!.getBoundingClientRect().width,
+      }));
+      assert.ok(
+        widths.reason > widths.text * 0.75,
+        `the status's reason is ${String(Math.round(widths.reason))}px of ${String(Math.round(widths.text))}px`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the prompt window keeps the prompt’s own lines, and scrolls inside itself (LAI-1099 #10)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [] };
+    const h = await open('/developer?tab=projects&step=2', stub('v3', world));
+    try {
+      for (const width of [1440, 390]) {
+        await h.page.setViewportSize({ width, height: 900 });
+        const prompt = h.page.locator('.conn-project-prompt');
+        await prompt.waitFor({ timeout: 20_000 });
+        // Each of the prompt's lines draws as one row: none is broken again.
+        const rows = await prompt.locator('.conn-line').evaluateAll((els) =>
+          els.map((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+            return { text: el.textContent ?? '', rows: tops.size };
+          }),
+        );
+        assert.ok(rows.length > 10, `${String(width)}px: ${String(rows.length)} lines`);
+        const broken = rows.filter((r) => r.rows !== 1);
+        assert.deepEqual(broken, [], `${String(width)}px: lines broken a second time`);
+        // What does not fit scrolls inside the window, never the page.
+        const box = await prompt.evaluate((el) => ({
+          scrolls: el.scrollWidth > el.clientWidth,
+          overflowX: getComputedStyle(el).overflowX,
+          page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        }));
+        assert.equal(box.overflowX, 'auto');
+        assert.ok(
+          box.page <= 0,
+          `${String(width)}px: the page scrolls sideways by ${String(box.page)}px`,
+        );
+        if (width === 390) assert.equal(box.scrolls, true, 'nothing to scroll at 390px');
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the setups list: one row per repository, each device under it, each tool opening its step 3 (LAI-321)', async () => {
     const world: World = {
       agents: [
         agentRow({ id: 'a1', grants: FULL }),
+        agentRow({ id: 'a3', harness: 'omnigent', grants: FULL }),
+        agentRow({ id: 'a4', harness: 'codex', device_label: 'Strelka', grants: FULL }),
         agentRow({ id: 'a2', harness: 'codex', device_label: 'Strelka', status: 'revoked' }),
       ],
       puts: [],
       setups: [
+        // One repository, three tools on two devices.
         checked({ id: 'r1', agent_id: 'a1' }),
+        checked({ id: 'r4', agent_id: 'a3', instructions_path: 'AGENTS.md' }),
+        checked({ id: 'r5', agent_id: 'a4', device_label: 'Strelka', template_revision: 1 }),
+        // The reader's own word in another project: no repository named.
         checked({
           id: 'r2',
           agent_id: 'a1',
           project_id: 'p2',
           project_slug: 'atlas',
           repo_label: null,
+          repo_key: '',
           source: 'self_reported_browser',
         }),
-        checked({ id: 'r3', agent_id: 'a2', repo_label: 'old', template_revision: 1 }),
+        // A disconnected tool's record goes with it.
+        checked({ id: 'r3', agent_id: 'a2', repo_label: 'old', repo_key: 'e'.repeat(64) }),
       ],
     };
     const urls: string[] = [];
@@ -957,39 +1152,68 @@ void describe('Project setup, v3', () => {
       },
     });
     try {
-      await card(h.page, 1).waitFor({ timeout: 20_000 });
-      await h.page.getByRole('button', { name: 'View existing setups' }).click();
-      await h.page.locator('[data-setup="r1"]').waitFor({ timeout: 20_000 });
-      assert.equal(param(h.page, 'view'), 'setups');
-      // The list's read names no project: it is every project's.
-      assert.ok(
-        urls.some((u) => new URL(u).search === ''),
-        `no read across projects in ${urls.join(', ')}`,
+      // A reader with setups opens on them (LAI-321).
+      await h.page.locator('.dx-ps-setups [data-repo]').first().waitFor({ timeout: 20_000 });
+      assert.equal(await card(h.page, 1).count(), 0);
+      assert.equal(param(h.page, 'view'), null);
+      assert.equal(
+        await h.page.locator('.dev-setup .dx-section-heading').innerText(),
+        'Your repository setups',
       );
+      // The list's read names no project, and the tab reads it once: the
+      // view it opens on and the list are the same answer.
+      const across = () => urls.filter((u) => new URL(u).search === '').length;
+      assert.equal(across(), 1, `reads across projects: ${urls.join(', ')}`);
 
-      const rows = h.page.locator('.dx-ps-setups > li');
-      assert.deepEqual(
-        await rows.evaluateAll((items) =>
-          items.map((li) => (li as HTMLElement).dataset.setup ?? (li as HTMLElement).dataset.row),
-        ),
-        ['new', 'r1', 'r2', 'r3'],
+      const rows = await h.page.locator('.dx-ps-setups > li').evaluateAll((items) =>
+        items.map((li) => {
+          const el = li as HTMLElement;
+          return [
+            el.dataset.row ?? el.dataset.setup ?? '',
+            el.querySelector('.dx-record-title')?.textContent ?? '',
+            el.querySelector('.dx-record-sub')?.textContent ?? '',
+            // The device, its tools, its chip, and each tool's button as it reads.
+            [...el.querySelectorAll('.dx-repo-device')].map((d) =>
+              [
+                d.querySelector('.dx-repo-device-name')?.textContent ?? '',
+                d.querySelector('.dx-repo-device-line')?.textContent ?? '',
+                d.querySelector('.dx-chip')?.textContent ?? '',
+                ...[...d.querySelectorAll('button')].map((b) => b.childNodes[0]?.textContent ?? ''),
+              ].join(' | '),
+            ),
+          ];
+        }),
       );
-      const text = async (id: string) =>
-        (await h.page.locator(`[data-setup="${id}"]`).innerText()).replace(/\s+/g, ' ').trim();
-      assert.match(
-        await text('r1'),
-        /^OnRoute · onroute-app Claude Code · Belka · CLAUDE\.md · checked on Belka Checked Open/,
-      );
-      assert.match(
-        await text('r2'),
-        /^Atlas Claude Code · Belka · CLAUDE\.md · your word, not verified Recorded by you Open/,
-      );
-      assert.doesNotMatch(await text('r2'), /Checked/);
-      assert.match(await text('r3'), /Codex · Strelka · disconnected .*Update available$/);
-      // A disconnected tool cannot be set up again.
-      assert.equal(await h.page.locator('[data-setup="r3"]').getByRole('button').count(), 0);
+      assert.deepEqual(rows, [
+        [
+          'new',
+          'A new repository',
+          'Choose a project and one of your connected tools, then copy its prompt.',
+          [],
+        ],
+        [
+          'update-available',
+          'onroute-app',
+          'OnRoute · CLAUDE.md',
+          [
+            'Belka | Claude Code, Omnigent | Checked | Open Claude Code | Open Omnigent',
+            'Strelka | Codex | Update available | Open',
+          ],
+        ],
+        [
+          'recorded',
+          'Atlas',
+          'CLAUDE.md',
+          ['Belka | Claude Code · not verified | Recorded by you | Open'],
+        ],
+      ]);
+      assert.doesNotMatch(await h.page.locator('.dx-ps-setups').innerText(), /\bold\b/);
 
-      await h.page.getByRole('button', { name: 'Open Atlas' }).click();
+      // Each tool on a line reopens its own setup, at step 3.
+      await h.page
+        .getByRole('button', { name: 'Open Omnigent for onroute-app on Belka' })
+        .waitFor({ timeout: 5_000 });
+      await h.page.getByRole('button', { name: 'Open Atlas with Claude Code on Belka' }).click();
       await card(h.page, 3).waitFor({ timeout: 20_000 });
       assert.equal(param(h.page, 'view'), null);
       assert.equal(param(h.page, 'project'), 'atlas');
@@ -1001,8 +1225,153 @@ void describe('Project setup, v3', () => {
       await h.page.locator('[data-row="new"]').waitFor({ timeout: 20_000 });
       await h.page.getByRole('button', { name: 'Set up a new repository' }).click();
       await card(h.page, 1).waitFor({ timeout: 20_000 });
-      assert.equal(param(h.page, 'view'), null);
+      assert.equal(param(h.page, 'view'), 'wizard');
       assert.equal(param(h.page, 'step'), null);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('390 px: a device line’s chip and each Open wrap under its words, inside the card (LAI-321)', async () => {
+    const world: World = {
+      agents: [
+        agentRow({ id: 'a1', grants: FULL }),
+        agentRow({ id: 'a3', harness: 'omnigent', grants: FULL }),
+      ],
+      puts: [],
+      setups: [checked({ id: 'r1', agent_id: 'a1' }), checked({ id: 'r2', agent_id: 'a3' })],
+    };
+    const h = await open('/developer?tab=projects', stub('v3', world));
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await h.page.locator('.dx-ps-setups [data-repo]').waitFor({ timeout: 20_000 });
+      // The card clips what overflows it, so the page never scrolls: measure the controls.
+      const out = await h.page.locator('.dx-ps-setups').evaluate((list) => {
+        const edge = list.getBoundingClientRect().right;
+        const controls = [
+          ...list.querySelectorAll('.dx-repo-device .dx-chip, .dx-repo-device button'),
+        ];
+        return {
+          count: controls.length,
+          past: controls
+            .filter((el) => el.getBoundingClientRect().right > edge + 0.5)
+            .map((el) => el.childNodes[0]?.textContent ?? ''),
+        };
+      });
+      assert.equal(out.count, 3, 'the chip and two Open buttons');
+      assert.deepEqual(out.past, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('which view it opens on: the list for a reader with a setup, else the wizard; the address can say (LAI-321)', async () => {
+    const list = (): World => ({
+      agents: [agentRow({ id: 'a1', grants: FULL })],
+      puts: [],
+      setups: [checked()],
+    });
+    // With setups: the list, unless the address names the wizard or a place in it.
+    for (const [query, view] of [
+      ['', 'setups'],
+      ['&view=wizard', 'wizard'],
+      ['&tool=a1', 'wizard'],
+      ['&view=setups', 'setups'],
+    ] as const) {
+      const h = await open(`/developer?tab=projects${query}`, stub('v3', list()));
+      try {
+        await h.page
+          .locator(
+            view === 'setups' ? '.dx-ps-setups [data-repo]' : '.conn-wizard-card[data-step="1"]',
+          )
+          .waitFor({ timeout: 20_000 });
+        assert.equal(await h.page.locator('.dev-setup').getAttribute('data-view'), view, query);
+        assert.equal(
+          await h.page.locator('.dx-ps-setups').count(),
+          view === 'setups' ? 1 : 0,
+          query,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+    // A setup only for a disconnected tool is no setup: the wizard.
+    const revoked = await open(
+      '/developer?tab=projects',
+      stub('v3', {
+        agents: [
+          agentRow({ id: 'a1', grants: FULL }),
+          agentRow({ id: 'a2', harness: 'codex', status: 'revoked' }),
+        ],
+        puts: [],
+        setups: [checked({ agent_id: 'a2' })],
+      }),
+    );
+    try {
+      await card(revoked.page, 1).waitFor({ timeout: 20_000 });
+      assert.equal(await revoked.page.locator('.dev-setup').getAttribute('data-view'), 'wizard');
+    } finally {
+      await revoked.close();
+    }
+    // A new reader can still ask for the list, and is told it is empty.
+    const none = await open(
+      '/developer?tab=projects&view=setups',
+      stub('v3', { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] }),
+    );
+    try {
+      await none.page.locator('[data-row="none"]').waitFor({ timeout: 20_000 });
+      assert.match(
+        await none.page.locator('[data-row="none"]').innerText(),
+        /Nothing is recorded yet/,
+      );
+    } finally {
+      await none.close();
+    }
+  });
+
+  void test('the records failing to load is said, with a retry, before either view (LAI-321)', async () => {
+    const world: World = {
+      agents: [agentRow({ id: 'a1', grants: FULL })],
+      puts: [],
+      setups: [checked()],
+    };
+    let calls = 0;
+    const h = await open(
+      '/developer?tab=projects',
+      stub('v3', world, {
+        '/api/v1/project-setups': () => {
+          calls += 1;
+          return calls === 1
+            ? refuse(503, 'unavailable', 'Try again shortly.')
+            : { data: world.setups };
+        },
+      }),
+    );
+    try {
+      await h.page.getByText('Could not load your repository setups').waitFor({ timeout: 20_000 });
+      assert.equal(await card(h.page, 1).count(), 0);
+      assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
+      await h.page.getByRole('button', { name: 'Try again' }).click();
+      await h.page.locator('.dx-ps-setups [data-repo]').waitFor({ timeout: 20_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('back to the list from the wizard reads again, so what the wizard recorded is there (LAI-321)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      await h.page.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      await h.page.getByRole('button', { name: 'I’ve added it' }).click();
+      await h.page.locator('[data-status="current"]').waitFor({ timeout: 20_000 });
+      await h.page.getByRole('button', { name: 'View existing setups' }).click();
+      await h.page.locator('.dx-ps-setups [data-repo]').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.dx-ps-setups [data-repo] .dx-record-title').innerText(),
+        'OnRoute',
+      );
+      assert.equal(await h.page.locator('[data-row="none"]').count(), 0);
     } finally {
       await h.close();
     }
@@ -1325,7 +1694,7 @@ void describe('Project setup, both themes', () => {
                 step === 'done'
                   ? '.dx-ps-done [data-detail="verification"]'
                   : step === 'setups'
-                    ? '[data-setup="c1"]'
+                    ? '.dx-ps-setups [data-repo]'
                     : `.conn-wizard-card[data-step="${step}"] .dx-ps-auth, .conn-wizard-card[data-step="${step}"] .conn-block, .conn-wizard-card[data-step="${step}"] [data-status]`,
               )
               .first()
@@ -1429,14 +1798,21 @@ void describe(
                 agent_id: 'a2',
                 project_id: 'p2',
                 project_slug: 'atlas',
-                repo_label: 'atlas-web',
+                repo_label: null,
+                repo_key: '',
                 instructions_path: 'AGENTS.md',
                 source: 'self_reported_browser',
               }),
-              checked({ id: 'c3', repo_label: 'onroute-api', template_revision: 1 }),
+              checked({ id: 'c3', agent_id: 'a2', device_label: 'Strelka' }),
+              checked({
+                id: 'c4',
+                repo_label: 'onroute-api',
+                repo_key: 'b'.repeat(64),
+                template_revision: 1,
+              }),
             ];
             await h.page.goto(`${h.origin}/developer?tab=projects&view=setups`);
-            await settle(h.page, '[data-setup="c3"]');
+            await settle(h.page, '.dx-ps-setups [data-repo]');
             await shot(h.page, 'list', theme, width);
           } finally {
             await h.close();

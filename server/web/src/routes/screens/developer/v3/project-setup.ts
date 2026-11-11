@@ -209,54 +209,43 @@ export function doneSummary(input: {
   };
 }
 
-// ------------------------------------------------------------- setups list
+// ------------------------------------------------------------- which view
 
 /**
- * One record as a line in *Your repository setups*: what it is about, who
- * said it, and its chip — *Checked* only for a local check that found the
- * current block, the reader's own word always *Recorded by you* and *not
- * verified*.
+ * Project setup's two views (LAI-321): the reader's repositories, one row
+ * each, or the wizard that sets one up.
  */
-export function recordChip(record: ProjectSetup): Chip {
-  const state = recordState(record);
-  if (state === 'update-available') return { word: 'Update available', tone: 'warn' };
-  if (state === 'missing') return { word: 'No block found', tone: 'warn' };
-  return record.source === 'local_check'
-    ? { word: 'Checked', tone: 'ok' }
-    : { word: 'Recorded by you', tone: 'neutral' };
+export type SetupView = 'setups' | 'wizard';
+
+/** The address keys that name a place in the wizard: a bookmark or another tab's link. */
+const WIZARD_KEYS = ['tool', 'project', 'step'] as const;
+
+/**
+ * The view the address asks for: `?view=setups` or `?view=wizard`, or the
+ * wizard for an address that names a place in it — Tools' *Set up project*
+ * (`?tool=`), the list's *Open*, a step. `undefined` leaves it to the
+ * reader's records ({@link openingView}).
+ */
+export function askedView(params: URLSearchParams): SetupView | undefined {
+  const view = params.get('view');
+  if (view === 'setups' || view === 'wizard') return view;
+  return WIZARD_KEYS.some((key) => params.has(key)) ? 'wizard' : undefined;
 }
 
-export interface SetupRow {
-  readonly title: string;
-  readonly sub: string;
-  readonly chip: Chip;
-  /** The tool to reopen the setup with, or `null` when it is no longer connected. */
-  readonly toolId: string | null;
-}
-
-export function setupRow(
-  record: ProjectSetup,
-  agents: readonly RegisteredAgent[],
-  projectName: string | undefined,
-): SetupRow {
-  const agent = agents.find((a) => a.id === record.agent_id);
-  const active = agent?.status === 'active';
-  const tool =
-    agent === undefined
-      ? 'A tool no longer connected'
-      : `${toolLabel(agent)}${active ? '' : ' · disconnected'}`;
-  const name = projectName ?? record.project_slug;
-  const device = record.device_label?.trim() ?? '';
-  const said =
-    record.source === 'local_check'
-      ? `checked on ${device === '' ? NO_DEVICE.toLowerCase() : device}`
-      : 'your word, not verified';
-  return {
-    title: record.repo_label === null ? name : `${name} · ${record.repo_label}`,
-    sub: `${tool} · ${record.instructions_path ?? 'instructions file'} · ${said}`,
-    chip: recordChip(record),
-    toolId: active ? (agent?.id ?? null) : null,
-  };
+/**
+ * What the tab opens on when the address does not say: the reader's
+ * repositories once they have a setup record for a tool still connected, and
+ * the wizard for a reader with none — a record about a disconnected tool
+ * reaches nothing, and is not listed either (`repoGroups`).
+ */
+export function openingView(
+  records: readonly Pick<ProjectSetup, 'agent_id'>[],
+  agents: readonly Pick<RegisteredAgent, 'id' | 'status'>[],
+): SetupView {
+  const connected = new Set(agents.filter((a) => a.status === 'active').map((a) => a.id));
+  return records.some((record) => record.agent_id !== null && connected.has(record.agent_id))
+    ? 'setups'
+    : 'wizard';
 }
 
 /**

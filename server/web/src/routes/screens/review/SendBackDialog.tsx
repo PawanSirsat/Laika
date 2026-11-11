@@ -64,7 +64,7 @@ export function SendBackDialog({
 
   return createPortal(
     <>
-      <div className="rating-scrim" aria-hidden="true" onClick={close} />
+      <div className="rating-scrim rev-scrim" aria-hidden="true" onClick={close} />
       <form
         ref={box}
         className="rating-dialog rev-dialog"

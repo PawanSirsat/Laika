@@ -39,10 +39,26 @@ export type Capability = (typeof CAPABILITIES)[number];
 /**
  * Which of a person's analytics an owner or admin looked at (§4.59, D-102
  * rule 3, LAI-957): My day, their shared local activity, the profile's
- * heatmap, their tokens. One per read, never a count.
+ * heatmap, their tokens — and their whole developer setup (D-132, LAI-1137)
+ * — and their profile opened (D-139 item 3, LAI-1150). One per look, never a
+ * count.
  */
-export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
+export const ANALYTICS_VIEW_KINDS = [
+  'time',
+  'local_activity',
+  'activity',
+  'usage',
+  'developer_setup',
+  'profile',
+] as const;
 export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
+
+/**
+ * What a person says about taking on more work (§4.85, D-131, LAI-1130).
+ * *Away* is not one: it is derived from an away period covering today.
+ */
+export const AVAILABILITY_STATUSES = ['open', 'capacity'] as const;
+export type AvailabilityStatus = (typeof AVAILABILITY_STATUSES)[number];
 
 export const PROJECT_ROLES = ['lead', 'member', 'viewer'] as const;
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
@@ -548,6 +564,22 @@ export type BudgetScope = (typeof BUDGET_SCOPES)[number];
  */
 export const TOKEN_ALERT_KINDS = ['budget', 'runaway'] as const;
 export type TokenAlertKind = (typeof TOKEN_ALERT_KINDS)[number];
+
+/**
+ * §4.87's `kind` (D-134, LAI-1136): what a member is told about. Being added
+ * to a space, and a tool, device or token of theirs revoked by somebody else.
+ * A notice is not activity, so none of these is a §4.8 verb. `time_changed`
+ * (D-143, LAI-1165): an owner or admin added, changed or deleted one of the
+ * member's confirmed time entries.
+ */
+export const MEMBER_NOTICE_KINDS = [
+  'added_to_space',
+  'tool_revoked',
+  'device_unpaired',
+  'token_revoked',
+  'time_changed',
+] as const;
+export type MemberNoticeKind = (typeof MEMBER_NOTICE_KINDS)[number];
 
 /**
  * §4.38's `source` (LAI-773): per-session token totals from the session

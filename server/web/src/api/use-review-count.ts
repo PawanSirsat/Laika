@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getReviewQueue, type ReviewQueueItem } from './review.ts';
+import { decidableCount, getReviewQueue, type ReviewQueueItem } from './review.ts';
 
 /** A minute is fresh enough for a badge; the Review page itself reads sooner. */
 const REFRESH_MS = 60_000;
@@ -7,6 +7,13 @@ const REFRESH_MS = 60_000;
 export interface ReviewCount {
   /** Tasks waiting for a person, or `undefined` — not asked yet, or the read failed. */
   readonly waiting: number | undefined;
+  /**
+   * Of those, the ones this reader may accept or send back (`can_decide`,
+   * D-146): what the Inbox badge and the Review tab count. `waiting` stays
+   * for Capacity's tile, which is about the whole queue. `undefined` until
+   * read.
+   */
+  readonly decidable: number | undefined;
   /**
    * The server stopped at its 200 and more wait (`truncated`, §6.4), so
    * `waiting` is a floor: a count shown from it says "200+" (LAI-818, D-092
@@ -64,5 +71,11 @@ export function useReviewCount(enabled: boolean): ReviewCount {
     setAsked((n) => n + 1);
   }, []);
 
-  return { waiting: queue?.length, capped, queue, refresh };
+  return {
+    waiting: queue?.length,
+    decidable: queue === undefined ? undefined : decidableCount(queue),
+    capped,
+    queue,
+    refresh,
+  };
 }

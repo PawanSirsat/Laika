@@ -1,0 +1,571 @@
+/*
+ * The profile's Overview as rows (SPEC §11.4.2.1, D-139, LAI-1153): each row a
+ * grid row, so its cards share the taller one's height; one column once the
+ * profile is a phone's width. Tokens only — `theme-single-source.test.ts`
+ * forbids a colour literal, so every tint is a `color-mix` of tokens.
+ */
+
+.ov {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ov-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.ov-row-even {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container prof (max-width: 48rem) {
+  .ov-row,
+  .ov-row-even {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --------------------------------------------------------------- shared */
+
+.ov-link {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ov-link:hover {
+  text-decoration: underline;
+}
+
+.ov-link:focus-visible,
+.ov-more:focus-visible,
+.ov-quiet:focus-visible,
+.ov-work-tile:focus-visible,
+.ov-work-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ov-dashed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+}
+
+.ov-dashed p {
+  margin: 0;
+}
+
+.ov-dashed-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ov-dashed-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+/* The last line of a card, under a dashed rule: Delivered, Away. */
+.ov-foot {
+  margin: auto 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-subtle);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ov-foot b {
+  color: var(--text-primary);
+}
+
+.ov-num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------- work */
+
+.ov-work-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.ov-work-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.5625rem 0.6875rem 0.625rem;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.ov-work-tile[aria-selected='true'] {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.ov-work-tile-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.ov-work-tile[aria-selected='true'] .ov-work-tile-label {
+  color: var(--accent);
+}
+
+.ov-work-tile-n {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ov-work-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Opened, the list scrolls inside the card: the row never grows to its length. */
+.ov-work-panel[data-expanded='true'] {
+  max-height: 20rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ov-work-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ov-work-row {
+  display: grid;
+  grid-template-columns: 6.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  min-height: 2.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ov-work-row .prof-key {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-more {
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ this week */
+
+.ov-week-total {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+}
+
+.ov-week-tracked {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.ov-week-of {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+/* An empty track: a rule under the two numbers, never filled (D-131 item 4). */
+.ov-week-track {
+  display: block;
+  height: 0.375rem;
+  margin-top: -0.375rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+}
+
+.ov-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.ov-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.ov-day-plot {
+  width: 100%;
+  height: 6.5rem;
+  padding-top: 1rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.ov-day-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1.75rem);
+  height: 2px;
+  border-radius: 4px 4px 1px 1px;
+}
+
+.ov-day[data-zero='true'] .ov-day-col {
+  background: var(--border-default);
+  border-radius: 1px;
+}
+
+.ov-day-n {
+  position: absolute;
+  left: -0.75rem;
+  right: -0.75rem;
+  bottom: calc(100% + 0.1875rem);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.ov-day-confirmed,
+.ov-day-draft {
+  flex-basis: 0;
+  min-height: 0;
+}
+
+.ov-day-confirmed {
+  background: var(--accent);
+}
+
+.ov-day-draft,
+.ov-key-draft {
+  background: repeating-linear-gradient(135deg, var(--accent) 0 2px, var(--accent-bg) 2px 4px);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ov-day-confirmed:first-child,
+.ov-day-draft:first-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.ov-day-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.ov-day[data-today='true'] .ov-day-name {
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+}
+
+.ov-week-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.ov-week-facts dt {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ov-week-facts dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ov-key {
+  flex: none;
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+}
+
+.ov-key-confirmed {
+  background: var(--accent);
+}
+
+.ov-key-agents {
+  box-shadow: inset 0 0 0 1px var(--border-default);
+}
+
+.ov-away-dates {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ov-away-dates + .ov-away-dates::before {
+  content: ' · ';
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------- projects */
+
+.ov-projects {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ov-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.25rem 3.25rem 4.75rem 4.5rem 4.75rem;
+  column-gap: 0.75rem;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.25rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.ov-projects-head .ov-project {
+  min-height: 2rem;
+  border-top: 0;
+  border-bottom: 1px solid var(--border-default);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.ov-projects-head + [role='rowgroup'] > .ov-project:first-child {
+  border-top: 0;
+}
+
+.ov-project-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+
+.ov-letter {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 4px;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  color: var(--on-space);
+}
+
+.ov-project-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+}
+
+.ov-project-role {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ov-project-open b {
+  font-weight: var(--weight-bold);
+}
+
+.ov-project-phone {
+  display: none;
+}
+
+.ov-quiet-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ov-quiet {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.25rem;
+  font: inherit;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ov-chevron {
+  flex: none;
+  display: inline-block;
+  transition: transform var(--transition);
+}
+
+.ov-chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.ov-quiet-title {
+  flex: none;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ov-quiet-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+/*
+ * Two-line rows (frame C) whenever the card is too narrow for six columns — a
+ * phone, and a laptop where the card is half of a narrow page — so the name
+ * never shrinks to nothing: the name over a line of words, the open count on
+ * the right. Measured on the card, not the page.
+ */
+.ov-card[data-section='projects'] {
+  container: ov-projects / inline-size;
+}
+
+@container ov-projects (max-width: 36rem) {
+  .ov-projects-head {
+    display: none;
+  }
+
+  .ov-project {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ov-project [data-col]:not([data-col='open']) {
+    display: none;
+  }
+
+  .ov-project-phone {
+    display: inline;
+  }
+
+  .ov-project-name .ov-project-phone {
+    display: block;
+    flex-basis: 100%;
+    font-size: var(--text-small);
+    color: var(--text-muted);
+  }
+}
+
+@container prof (max-width: 38rem) {
+  .ov-work-row {
+    grid-template-columns: 5.25rem minmax(0, 1fr) auto;
+  }
+}
+
+/* --------------------------------------------------------------- agents */
+
+.ov-share {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.ov-share-label {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.ov-tool {
+  min-height: 2.75rem;
+}
+
+/* --------------------------------------------------------------- review */
+
+.ov-axis {
+  align-items: center;
+}
+
+.ov-legend {
+  font-family: var(--font-ui);
+}
+
+/* --------------------------------------------- LLM tokens in a half row */
+
+.ov .usage-person-stats > div {
+  min-width: 0;
+  padding: 0.5625rem 0.6875rem 0.625rem;
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+/* The card's sentence says what cost is; the tile's own caveat would say it twice. */
+.ov .usage-cost-caveat {
+  display: none;
+}
+
+/* Four tiles in a half row: figures that fit on one line. */
+.ov-tiles .prof-stat-value {
+  font-size: var(--text-heading-md);
+  white-space: nowrap;
+}
