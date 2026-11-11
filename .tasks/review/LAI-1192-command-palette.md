@@ -20,9 +20,10 @@ no demo data.
 
 ## Acceptance criteria
 
-- [x] ⌘K / Ctrl+K opens the palette from anywhere, including inside a text
-      field; it is the only new global shortcut and collides with none of My
-      Day's keys (test runs the handler against `SHORTCUT_GROUPS`).
+- [x] ⌘K / Ctrl+K opens the palette from anywhere except inside a text field
+      or an editor (per the brief); it is the only new global shortcut and
+      collides with none of My Day's keys (test runs the handler against
+      `SHORTCUT_GROUPS`) nor the Review dialog's or Create task's.
 - [x] A visible trigger with its shortcut hint opens the palette; Esc closes
       it and restores focus to whatever had it before.
 - [x] Go to: every destination the sidebar shows, from the same
