@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown } from './Dropdown.tsx';
-import { Spinner } from './Spinner.tsx';
+import { Spinner } from '../components/Spinner.tsx';
 import { Button } from './forms/Button.tsx';
 import { IconButton } from './forms/IconButton.tsx';
 import { useDialogFocus } from './use-dialog-focus.ts';
