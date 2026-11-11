@@ -60,29 +60,32 @@ export function useValidatedForm<T extends HTMLElement = HTMLFormElement>() {
   return { formRef, blur, shown, attempt, focusFirstInvalid };
 }
 
-/**
- * Re-focus whenever the server's answer changes to something worth reading.
- *
- * Keyed on the **content** of the answer, not its identity: a caller that
- * defaults `fieldErrors = {}` makes a new object every render, and an effect on
- * that would steal focus on every keystroke.
- */
-export function useFocusOnServerAnswer(
-  focusFirstInvalid: () => void,
-  answer: {
-    readonly rejected?: boolean | undefined;
-    readonly serverError?: string | undefined;
-    readonly fieldErrors?: Readonly<Record<string, string>> | undefined;
-  },
-): void {
-  const key = [
-    answer.rejected === true ? 'rejected' : '',
-    answer.serverError ?? '',
-    JSON.stringify(answer.fieldErrors ?? {}),
-  ].join('\u0000');
-  const empty = ['', '', '{}'].join('\u0000');
+/** What a server answer can carry for a form: a rejection, a message, named fields. */
+export interface ServerAnswer {
+  readonly rejected?: boolean | undefined;
+  readonly serverError?: string | undefined;
+  readonly fieldErrors?: Readonly<Record<string, string>> | undefined;
+}
 
+/**
+ * The answer as a string that changes when, and only when, its **content**
+ * does — `''` for no answer at all.
+ *
+ * Content rather than identity: a caller that defaults `fieldErrors = {}`
+ * makes a new object every render, and an effect keyed on that would steal
+ * focus on every keystroke.
+ */
+export function serverAnswerKey(answer: ServerAnswer): string {
+  const fields = Object.entries(answer.fieldErrors ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  if (answer.rejected !== true && answer.serverError === undefined && fields.length === 0)
+    return '';
+  return JSON.stringify([answer.rejected === true, answer.serverError ?? null, fields]);
+}
+
+/** Re-focus whenever the server's answer changes to something worth reading. */
+export function useFocusOnServerAnswer(focusFirstInvalid: () => void, answer: ServerAnswer): void {
+  const key = serverAnswerKey(answer);
   useEffect(() => {
-    if (key !== empty) focusFirstInvalid();
-  }, [key, empty, focusFirstInvalid]);
+    if (key !== '') focusFirstInvalid();
+  }, [key, focusFirstInvalid]);
 }
