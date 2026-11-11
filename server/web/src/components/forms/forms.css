@@ -232,8 +232,27 @@
   opacity: 0.55;
 }
 
+/*
+ * **Press feedback** (LAI-1208): the button gives a little under the pointer
+ * and springs back, so a click is felt before its answer arrives. Transform
+ * only — nothing reflows — and a transition, not a keyframe, so a press let
+ * go half-way retargets from where it is. A full-width button gives less: 3%
+ * of a 600px button is a visible lurch.
+ */
+.button {
+  transition: transform var(--duration-instant) var(--ease-enter);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 .button-block {
   width: 100%;
+}
+
+.button-block:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .button-primary {
