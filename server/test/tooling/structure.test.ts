@@ -86,6 +86,14 @@ function webPatternExempt(rel: string): boolean {
 
 const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   [
+    'components/drawer/use-space-reads.ts',
+    'React hooks moved unchanged out of TaskDrawerHost (LAI-1199); no renderer in this package — exercised by test/browser/task-drawer-host.test.ts and workroom.test.ts',
+  ],
+  [
+    'routes/screens/task/use-task-review.ts',
+    'React hooks moved unchanged out of TaskDetailPanel (LAI-1199); no renderer in this package — exercised by test/browser/task-hero.test.ts and workroom.test.ts',
+  ],
+  [
     'routes/screens/board/tag-colors.ts',
     'covered by the TAG_COLORS suite in test/routes/screens/board/task-card.test.ts — the map and the card that wears it are one subject',
   ],
