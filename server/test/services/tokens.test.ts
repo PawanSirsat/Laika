@@ -390,12 +390,27 @@ describe('revoking', () => {
     }
   });
 
-  it('lets an Admin revoke anyone’s, through their own user path', () => {
+  it('lets an Admin revoke a Member’s, through their own user path', () => {
+    const adminId = makeUser('admin', 'admin');
+    const memberId = makeUser('member', 'member');
+    const { token } = createToken(t.sqlite, t.db, actor(memberId), { name: 'n', scope: 'full' });
+
+    revokeTokenFor(t.sqlite, t.db, actor(adminId), memberId, token.id, 500);
+    expect(listOwnTokens(t.db, actor(memberId), LIST)[0]?.revoked_at).toBe(500);
+  });
+
+  it('refuses an Admin the Owner’s token, not_for_owner, and leaves it live (D-133)', () => {
     const adminId = makeUser('admin', 'admin');
     const { token } = createToken(t.sqlite, t.db, actor(ownerId), { name: 'n', scope: 'full' });
 
-    revokeTokenFor(t.sqlite, t.db, actor(adminId), ownerId, token.id, 500);
-    expect(listOwnTokens(t.db, actor(ownerId), LIST)[0]?.revoked_at).toBe(500);
+    try {
+      revokeTokenFor(t.sqlite, t.db, actor(adminId), ownerId, token.id, 500);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect((error as ApiError).code).toBe('forbidden');
+      expect((error as ApiError).details).toMatchObject({ reason: 'not_for_owner' });
+    }
+    expect(listOwnTokens(t.db, actor(ownerId), LIST)[0]?.revoked_at).toBeNull();
   });
 
   it('refuses an Admin revoking a token through the wrong user’s path', () => {

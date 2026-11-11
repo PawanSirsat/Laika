@@ -98,6 +98,8 @@ const CACHED: readonly RegExp[] = [
   // A profile's heatmap, per person and range (LAI-751): a year of days that
   // changes by the day, asked once per range however often a viewer switches.
   /^\/people\/[^/?]+\/activity\?range=(12w|52w)$/,
+  // Your own (LAI-1154), the same way. Any write clears it, as every answer.
+  /^\/me\/activity\?range=(12w|52w)$/,
   // What the reader may do (LAI-959): every name link on a page asks it.
   /^\/permissions$/,
 ];

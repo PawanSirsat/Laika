@@ -210,21 +210,13 @@ describe('DELETE /api/v1/tokens/:id', () => {
 });
 
 describe('the admin paths (§3.1 — Owner and Admin only)', () => {
-  it('lets an Admin list and revoke anyone’s', async () => {
-    const created = await json(await mint({ name: 'n', scope: 'full' }));
-    const id = (created.token as unknown as { id: string }).id;
+  it('lets an Admin list anyone’s, the owner’s included', async () => {
+    await mint({ name: 'n', scope: 'full' });
     const admin = await join('admin@example.test', 'admin');
 
     const list = await req(`/api/v1/users/${ownerId}/tokens`, {}, admin.cookie);
     expect(list.status).toBe(200);
     expect((await json(list)).data).toHaveLength(1);
-
-    const del = await req(
-      `/api/v1/users/${ownerId}/tokens/${id}`,
-      { method: 'DELETE' },
-      admin.cookie,
-    );
-    expect(del.status).toBe(204);
   });
 
   it('403s a Member on both', async () => {
@@ -421,24 +413,26 @@ describe('token kind on every view (LAI-1046)', () => {
   });
 
   it('lets an admin revoke an agent credential; the agent stays registered with none live', async () => {
-    const { agentId, token } = await register('Belka');
+    // A member's tool: the owner's is refused to an admin (D-133, LAI-1143).
+    const member = await join('member-revoke@example.test', 'member');
+    const { agentId, token } = await register('Belka', member.cookie);
     const admin = await join('admin-revoke@example.test', 'admin');
 
     const del = await req(
-      `/api/v1/users/${ownerId}/tokens/${token.id}`,
+      `/api/v1/users/${member.id}/tokens/${token.id}`,
       { method: 'DELETE' },
       admin.cookie,
     );
     expect(del.status).toBe(204);
 
-    const agents = await list(`/api/v1/users/${ownerId}/tokens?kind=agent`, admin.cookie);
+    const agents = await list(`/api/v1/users/${member.id}/tokens?kind=agent`, admin.cookie);
     // The row first: `undefined?.revoked_at` is not null either (review N2).
     expect(agents.map((t) => t.id)).toEqual([token.id]);
     expect(typeof agents[0]?.revoked_at).toBe('number');
 
     // What the admin's confirmation says (plan §E.4, A13): the tool is still
     // registered, active, with no live credential…
-    const agent = await req(`/api/v1/agents/${agentId}`, {}, ownerCookie);
+    const agent = await req(`/api/v1/agents/${agentId}`, {}, member.cookie);
     expect(agent.status).toBe(200);
     expect(await agent.json()).toMatchObject({ status: 'active' });
 
@@ -447,12 +441,111 @@ describe('token kind on every view (LAI-1046)', () => {
     const rotate = await req(
       `/api/v1/agents/${agentId}/rotate-token`,
       { method: 'POST', body: JSON.stringify({ token_id: token.id }) },
-      ownerCookie,
+      member.cookie,
     );
     expect(rotate.status).toBe(409);
     expect(((await rotate.json()) as { error: unknown }).error).toMatchObject({
       code: 'conflict',
       details: { reason: 'token_revoked' },
     });
+  });
+});
+
+/**
+ * D-133, applied by LAI-1143: an admin may not act on the owner's setup, and
+ * that is **every** token the owner holds — a personal token and a tool's
+ * credential alike. Each case asserts the status and the code, and reads the
+ * row back, so a refusal that revoked anyway cannot pass.
+ */
+describe('DELETE /api/v1/users/:id/tokens/:tokenId — the owner’s tokens (D-133)', () => {
+  interface Revoked {
+    id: string;
+    revoked_at: number | null;
+  }
+
+  async function revokedAt(userId: string, tokenId: string): Promise<number | null> {
+    const res = await req(`/api/v1/users/${userId}/tokens`, {}, ownerCookie);
+    expect(res.status, await res.clone().text()).toBe(200);
+    const row = ((await res.json()) as { data: Revoked[] }).data.find((t) => t.id === tokenId);
+    expect(row, `token ${tokenId} listed`).toBeDefined();
+    return row?.revoked_at ?? null;
+  }
+
+  async function revoke(userId: string, tokenId: string, cookie: string): Promise<Response> {
+    return req(`/api/v1/users/${userId}/tokens/${tokenId}`, { method: 'DELETE' }, cookie);
+  }
+
+  async function expectNotForOwner(res: Response): Promise<void> {
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: unknown }).error).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'token.revoke_any', reason: 'not_for_owner' },
+    });
+  }
+
+  it('refuses an Admin the owner’s personal token: 403 not_for_owner, and it still works', async () => {
+    const created = await json(await mint({ name: 'owner laptop', scope: 'full' }));
+    const id = (created.token as unknown as { id: string }).id;
+    const admin = await join('admin-p@example.test', 'admin');
+
+    await expectNotForOwner(await revoke(ownerId, id, admin.cookie));
+    expect(await revokedAt(ownerId, id)).toBeNull();
+    const me = await h.app.request('/api/v1/me', {
+      headers: { Authorization: `Bearer ${String(created.secret)}` },
+    });
+    expect(me.status).toBe(200);
+  });
+
+  it('refuses an Admin the owner’s tool credential: 403 not_for_owner, and it still works', async () => {
+    const res = await req(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({ display_name: 'Owner tool', harness: 'claude-code', grants: [] }),
+      },
+      ownerCookie,
+    );
+    expect(res.status, await res.clone().text()).toBe(201);
+    const tool = (await res.json()) as { token: { id: string }; secret: string };
+    const admin = await join('admin-t@example.test', 'admin');
+
+    await expectNotForOwner(await revoke(ownerId, tool.token.id, admin.cookie));
+    expect(await revokedAt(ownerId, tool.token.id)).toBeNull();
+    const me = await h.app.request('/api/v1/me', {
+      headers: { Authorization: `Bearer ${tool.secret}` },
+    });
+    expect(me.status).toBe(200);
+  });
+
+  it('refuses an Admin the owner’s token even once it is revoked', async () => {
+    const created = await json(await mint({ name: 'old', scope: 'full' }));
+    const id = (created.token as unknown as { id: string }).id;
+    expect((await req(`/api/v1/tokens/${id}`, { method: 'DELETE' }, ownerCookie)).status).toBe(204);
+    const admin = await join('admin-r@example.test', 'admin');
+
+    await expectNotForOwner(await revoke(ownerId, id, admin.cookie));
+  });
+
+  it('lets the owner revoke an Admin’s token: 204, and it is revoked', async () => {
+    const admin = await join('admin-o@example.test', 'admin');
+    const created = await json(await mint({ name: 'admin laptop', scope: 'full' }, admin.cookie));
+    const id = (created.token as unknown as { id: string }).id;
+
+    const res = await revoke(admin.id, id, ownerCookie);
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+    expect(typeof (await revokedAt(admin.id, id))).toBe('number');
+  });
+
+  it('lets an Admin revoke a Member’s token: 204, and it is revoked', async () => {
+    const admin = await join('admin-m@example.test', 'admin');
+    const member = await join('member-m@example.test', 'member');
+    const created = await json(await mint({ name: 'member laptop', scope: 'full' }, member.cookie));
+    const id = (created.token as unknown as { id: string }).id;
+
+    const res = await revoke(member.id, id, admin.cookie);
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe('');
+    expect(typeof (await revokedAt(member.id, id))).toBe('number');
   });
 });

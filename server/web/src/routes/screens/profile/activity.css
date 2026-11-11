@@ -1,6 +1,6 @@
 /*
- * The profile's Activity card (D-079, LAI-751): daily grids of three sources,
- * in two designs, over 12 weeks or a year. Design tokens only — the heat
+ * The profile's Activity card (D-079, LAI-751; LAI-1154): one daily grid of
+ * GitHub and Local, in two designs, over 12 weeks or a year. Design tokens only — the heat
  * steps are `--heat-*` in `styles/theme.css`, both themes — and no chart
  * library: every square is an element on a CSS grid.
  *
@@ -104,8 +104,8 @@
 }
 
 /*
- * GitHub and Local off (LAI-751): one panel for both, where their grids would
- * be, then the Board grid. Its words are known before the activity answers —
+ * GitHub and Local off (LAI-751): one panel for both, where their grid would
+ * be — the card draws nothing else (LAI-1154). Its words are known before the activity answers —
  * the switches come with the profile — so the skeleton already carries it.
  */
 .hm-off {
@@ -261,54 +261,62 @@
   z-index: 1;
 }
 
-/* One source per grid: its own four steps. */
-.hm-grid[data-kind='github'] .hm-cell[data-v='1'],
+/* Each source's legend scale: its own four steps. */
 .hm-ramp[data-source='github'] > i[data-v='1'] {
   background: var(--heat-gh-1);
 }
-.hm-grid[data-kind='github'] .hm-cell[data-v='2'],
 .hm-ramp[data-source='github'] > i[data-v='2'] {
   background: var(--heat-gh-2);
 }
-.hm-grid[data-kind='github'] .hm-cell[data-v='3'],
 .hm-ramp[data-source='github'] > i[data-v='3'] {
   background: var(--heat-gh-3);
 }
-.hm-grid[data-kind='github'] .hm-cell[data-v='4'],
 .hm-ramp[data-source='github'] > i[data-v='4'] {
   background: var(--heat-gh-4);
 }
-.hm-grid[data-kind='local'] .hm-cell[data-v='1'],
 .hm-ramp[data-source='local'] > i[data-v='1'] {
   background: var(--heat-lo-1);
 }
-.hm-grid[data-kind='local'] .hm-cell[data-v='2'],
 .hm-ramp[data-source='local'] > i[data-v='2'] {
   background: var(--heat-lo-2);
 }
-.hm-grid[data-kind='local'] .hm-cell[data-v='3'],
 .hm-ramp[data-source='local'] > i[data-v='3'] {
   background: var(--heat-lo-3);
 }
-.hm-grid[data-kind='local'] .hm-cell[data-v='4'],
 .hm-ramp[data-source='local'] > i[data-v='4'] {
   background: var(--heat-lo-4);
 }
-.hm-grid[data-kind='board'] .hm-cell[data-v='1'],
-.hm-ramp[data-source='board'] > i[data-v='1'] {
+
+/* Stacked: GitHub and Local together, on one neutral scale. */
+.hm-grid[data-kind='all'] .hm-cell[data-v='1'],
+.hm-ramp[data-source='all'] > i[data-v='1'] {
   background: var(--heat-all-1);
 }
-.hm-grid[data-kind='board'] .hm-cell[data-v='2'],
-.hm-ramp[data-source='board'] > i[data-v='2'] {
+.hm-grid[data-kind='all'] .hm-cell[data-v='2'],
+.hm-ramp[data-source='all'] > i[data-v='2'] {
   background: var(--heat-all-2);
 }
-.hm-grid[data-kind='board'] .hm-cell[data-v='3'],
-.hm-ramp[data-source='board'] > i[data-v='3'] {
+.hm-grid[data-kind='all'] .hm-cell[data-v='3'],
+.hm-ramp[data-source='all'] > i[data-v='3'] {
   background: var(--heat-all-3);
 }
-.hm-grid[data-kind='board'] .hm-cell[data-v='4'],
-.hm-ramp[data-source='board'] > i[data-v='4'] {
+.hm-grid[data-kind='all'] .hm-cell[data-v='4'],
+.hm-ramp[data-source='all'] > i[data-v='4'] {
   background: var(--heat-all-4);
+}
+
+/* A day before they joined (LAI-1154): no fill, a hairline ring — apart from an empty day. */
+.hm-cell[data-pre='true'],
+.hm-pre-key {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-default);
+}
+
+.hm-pre-key {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
 }
 
 /*
@@ -358,7 +366,7 @@
   background: var(--hm-l);
 }
 
-/* The pointed day; in B the same day in the other grids, quieter. */
+/* The pointed day. */
 .hm-ring {
   z-index: 1;
   border-radius: 3px;
@@ -366,66 +374,13 @@
   pointer-events: none;
 }
 
-.hm-ring[data-twin='true'] {
-  box-shadow: inset 0 0 0 2px var(--text-muted);
-}
-
-/* ------------------------------------------------------------ B: blocks */
+/* ------------------------------------------------------------ the grid */
 
 .hm-block {
   display: grid;
   row-gap: 0.25rem;
 }
 
-.hm-block + .hm-block {
-  margin-top: 0.375rem;
-}
-
-/*
- * Each source's heading stays on screen while its weeks scroll, and is no
- * wider than the card: `border-box`, or the weekday column's indent is added
- * to the full width and twelve weeks overflow a phone (LAI-751).
- *
- * **One line wide, two narrow, chosen by the width alone** — never by how
- * long the totals turn out — and the total never wraps: the answer landing
- * moves nothing below it.
- */
-.hm-block-head {
-  position: sticky;
-  left: 0;
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: 'name total ramp';
-  align-items: center;
-  gap: 0.125rem 0.75rem;
-  max-width: 100cqw;
-  padding-left: calc(var(--hm-days-w) + var(--hm-gap));
-  font-size: var(--text-small);
-  color: var(--text-secondary);
-}
-
-.hm-block-head .hm-block-name {
-  grid-area: name;
-}
-
-.hm-block-head .hm-total {
-  grid-area: total;
-}
-
-/* Narrow: two lines, and the full width — the weekday column's indent would
-   cut a phone's longest total short. */
-@container (max-width: 36rem) {
-  .hm-block-head {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      'name ramp'
-      'total total';
-    padding-left: 0;
-  }
-}
-
-.hm-block-name,
 .hm-key-name {
   display: inline-flex;
   align-items: center;
@@ -466,11 +421,6 @@
   color: var(--text-secondary);
 }
 
-.hm-block-head .hm-ramp {
-  grid-area: ramp;
-  justify-self: end;
-}
-
 .hm-ramp {
   display: inline-flex;
   align-items: center;
@@ -509,7 +459,7 @@
   background-position: calc(var(--hm-gap) * -1) calc(var(--hm-gap) * -1);
 }
 
-/* ------------------------------------------------------------ A: legend */
+/* ---------------------------------------------------------------- legend */
 
 .hm-legend {
   display: grid;
@@ -552,6 +502,29 @@
     var(--bg-card) calc(50% - 0.7px) calc(50% + 0.7px),
     var(--heat-lo-3) calc(50% + 0.7px) 100%
   );
+}
+
+/* Stacked's key: the sentence, then its one scale — on a line of its own when narrow. */
+.hm-split-key[data-key='all'] {
+  display: flex;
+  min-width: 0;
+}
+
+.hm-all-key {
+  flex: 1 1 auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+
+.hm-all-key .hm-ramp {
+  white-space: nowrap;
+}
+
+.hm-sample[data-kind='all'] {
+  background: var(--heat-all-3);
 }
 
 /* ---------------------------------------------------------------- the tip */

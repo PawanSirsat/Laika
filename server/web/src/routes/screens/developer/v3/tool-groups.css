@@ -1,0 +1,73 @@
+/*
+ * Developer access V3 → Tools, one row a tool (LAI-321): a tool on more than
+ * one device is a header — its name, how many devices, the worst of their
+ * statuses — over a line a device, each the agent's own row, which opens its
+ * details (`devices-tab.css`'s `.dv3-row`). A tool on one device stays one
+ * row and needs nothing here. Existing tokens only, so both themes come from
+ * theme.css.
+ */
+
+.dv3-tool-group {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dv3-tool-group:last-child {
+  border-bottom: 0;
+}
+
+/*
+ * The header is the group's first row: no rule under it, its lines follow.
+ * Through the group, so it outranks `.dx-record` whichever sheet loads first.
+ */
+.dv3-tool-group > .dv3-tool-group-head {
+  padding-bottom: var(--space-2);
+  border-bottom: 0;
+}
+
+.dv3-tool-group-head .dx-icon {
+  background: var(--bg-card);
+}
+
+.dv3-tool-group-title {
+  margin: 0;
+}
+
+.dv3-tool-group[data-status='revoked'] > .dv3-tool-group-head {
+  opacity: 0.75;
+}
+
+/*
+ * The lines hang from the header's mark: a rule down from its centre, each
+ * line to the right of it, so the hover of a line is that line's alone.
+ */
+.dv3-tool-lines {
+  margin: 0 0 var(--space-3) calc(1.25rem + 2.375rem / 2);
+  padding: 0;
+  border-left: 1px solid var(--border-card);
+  list-style: none;
+}
+
+.dv3-tool-lines > .dv3-tool-line {
+  padding: var(--space-3) 1.25rem var(--space-3) var(--space-4);
+}
+
+.dv3-tool-line .dx-icon {
+  width: 1.875rem;
+  height: 1.875rem;
+}
+
+.dv3-tool-line .dx-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (max-width: 600px) {
+  .dv3-tool-lines {
+    margin-left: var(--space-4);
+  }
+
+  .dv3-tool-lines > .dv3-tool-line {
+    padding-right: var(--space-4);
+    padding-left: var(--space-3);
+  }
+}

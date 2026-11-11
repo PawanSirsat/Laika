@@ -589,9 +589,9 @@ void describe('links out', () => {
       assert.equal(await review.getAttribute('href'), '/inbox?tab=review');
 
       // The sidebar's Inbox carries both counts added (LAI-796): 3 waiting for
-      // review and 1 unlisted. The shell reads its counts apart from the page,
-      // so the entry can be drawn before the number is (LAI-765): wait for it,
-      // then assert it.
+      // review — all three this reader's to decide (D-146) — and 1 unlisted.
+      // The shell reads its counts apart from the page, so the entry can be
+      // drawn before the number is (LAI-765): wait for it, then assert it.
       const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
       await until(async () => /Inbox\s*4/.test(await entry.innerText()), 10_000);
       assert.match(await entry.innerText(), /Inbox\s*4/);

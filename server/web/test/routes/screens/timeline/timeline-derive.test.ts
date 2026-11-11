@@ -74,6 +74,38 @@ void describe('chartWindow — whole months around every sprint and today', () =
     assert.deepEqual(chartWindow([B, A], d(5)), chartWindow([A, B], d(5)));
     assert.equal(chartWindow([], d(5)), null);
   });
+
+  /*
+   * LAI-1171: the lower header row must keep a label in view to the right of
+   * the today pill. The pill hides the labels it sits over — three weeks
+   * either side of today at Quarters — and a window ending a week past the
+   * last sprint, snapped to the quarter, left nothing beyond the hidden one.
+   * Measured on 2026-11-10 at Quarters: every sprint behind today, *Dec*
+   * under the pill, the window closing on 31 Dec.
+   */
+  void test('at Quarters, reaches the month after next, so a label clears the pill', () => {
+    // Sprints well behind today; a week of air alone would end on 31 Dec.
+    const w = chartWindow([A, B], day('2026-11-10'), 'quarters')!;
+    assert.equal(w.from, day('2026-07-01'));
+    assert.equal(w.to, day('2027-03-31'), 'the quarter holding 1 January is in');
+    // The same, mid second month of Q3: the window reaches Q4.
+    assert.equal(chartWindow([A], day('2026-08-15'), 'quarters')!.to, day('2026-12-31'));
+    // The last day of a quarter: the month after next is February — Q1 is in.
+    assert.equal(chartWindow([A], day('2026-12-31'), 'quarters')!.to, day('2027-03-31'));
+    // The first day of a quarter: March is still that quarter.
+    assert.equal(chartWindow([A], day('2027-01-01'), 'quarters')!.to, day('2027-03-31'));
+    // Early in a quarter's first month the reach stays inside it.
+    assert.equal(chartWindow([A], day('2026-10-01'), 'quarters')!.to, day('2026-12-31'));
+  });
+
+  void test('at Weeks and Months, reaches two weeks past today — a Monday clear of the pill', () => {
+    // A ends 14 Aug; today 24 Oct with a week of air alone would end on 31 Oct
+    // either way, so pick a today whose fortnight crosses the month: 20 Nov.
+    assert.equal(chartWindow([A], day('2026-11-20'), 'months')!.to, day('2026-12-31'));
+    assert.equal(chartWindow([A], day('2026-11-20'), 'weeks')!.to, day('2026-12-31'));
+    // A sprint further out than the fortnight still sets the end.
+    assert.equal(chartWindow([A, B], day('2026-08-10'), 'months')!.to, day('2026-09-30'));
+  });
 });
 
 void describe('dayIndex and sprintSpan — a sprint is its inclusive dates', () => {
@@ -307,9 +339,12 @@ void describe('chartWindow at Quarters — whole quarters (LAI-721 review)', () 
   void test('starts on a quarter’s first day and ends on a quarter’s last', () => {
     const w = chartWindow([B], day('2026-08-10'), 'quarters')!;
     assert.equal(w.from, day('2026-07-01'), 'Q3 starts 1 July');
-    assert.equal(w.to, day('2026-09-30'), 'Q3 ends 30 Sept');
+    // Since LAI-1171 the window reaches the month after next — October — so
+    // it closes with Q4, not on 30 Sept.
+    assert.equal(w.to, day('2026-12-31'), 'Q4 ends 31 Dec');
     const later = chartWindow([B], day('2026-11-20'), 'quarters')!;
-    assert.equal(later.to, day('2026-12-31'), 'not mid-Q4');
+    assert.equal(later.to, day('2027-03-31'), 'January is in, and Q1 ends with March');
+    assert.equal(new Date(later.to + DAY).getUTCDate(), 1, 'a quarter’s last day, never mid-way');
   });
 });
 

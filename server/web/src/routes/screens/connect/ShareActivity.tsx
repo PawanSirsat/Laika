@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
@@ -27,6 +27,14 @@ export const ACTIVITY_COMMAND = 'laika activity on';
  */
 export const COLLECTED =
   'per-day counts of your prompts, agent sessions and commits, and your agents’ token counts';
+
+/**
+ * The compact panel's one line for its *What is sent and never sent* fold
+ * (LAI-1100 #11): what the lists inside it say, in a line the reader sees
+ * without opening it.
+ */
+export const SENT_SUMMARY =
+  'Daily counts only — never prompt text, file names, paths or commit messages';
 
 /** The grant that lets a role see a person's analytics (D-102 rule 6, LAI-958). */
 const SEE_ANALYTICS = 'see_people_analytics';
@@ -104,11 +112,21 @@ function said(cause: unknown, fallback: string): string {
  * the developer's, web-session-only on the server, so no agent can do either
  * for its person. With the organisation's switch off nothing is collected, and
  * this says so.
+ *
+ * **`compact`** is Developer access V3's Advanced (LAI-1100 #11): the same
+ * rules, scope, command and delete, with what explains them folded away. In
+ * view are one status line — collected or off, and who can see it — the
+ * *Count work in* choice and the command; *What is sent and never sent*,
+ * *OpenTelemetry (optional)* and *What the board holds for you* are closed
+ * `<details>`, and the status line's link to the last opens it. Without
+ * `compact` — the classic and preview Activity tab — the panel is drawn
+ * exactly as it was.
  */
 export function ShareActivity({
   canSetInsights,
   origin = window.location.origin,
   setupTabName = 'Projects tab',
+  compact = false,
 }: {
   /** `org.developer_insights.set`, as the server reports it — offered the Organisation link. */
   readonly canSetInsights: boolean;
@@ -116,6 +134,8 @@ export function ShareActivity({
   readonly origin?: string;
   /** What the project block's tab is called here; Project setup in V3 (LAI-1058). */
   readonly setupTabName?: string;
+  /** V3's Advanced: the explanations in closed folds (LAI-1100 #11). */
+  readonly compact?: boolean;
 }) {
   const SCOPES = scopes(setupTabName);
   const confirm = useConfirm();
@@ -125,6 +145,7 @@ export function ShareActivity({
   const [deleted, setDeleted] = useState(false);
   const commandRef = useRef<HTMLPreElement | null>(null);
   const otelRef = useRef<HTMLPreElement | null>(null);
+  const heldRef = useRef<HTMLDetailsElement | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     Promise.all([
@@ -219,56 +240,269 @@ export function ShareActivity({
       });
   };
 
+  const intro = (
+    <p className="conn-body">
+      Your own machine can send daily counts to your profile’s <strong>Activity</strong> — so the
+      board shows the work that happens before a task moves — and your agents’ token counts to{' '}
+      <strong>Usage</strong>. They show on your profile and never feed a rating or a score.
+    </p>
+  );
+
+  const lists = (
+    <div className="share-lists">
+      <div>
+        <h3 className="share-h">What is sent, per day</h3>
+        <ul className="share-list" data-list="sent">
+          <li>How many prompts you sent, per agent</li>
+          <li>How many agent sessions you started</li>
+          <li>How many of your commits are not on any remote yet</li>
+          <li>A one-way key for each commit already pushed, so it counts once</li>
+          <li>
+            Your agents’ token counts per agent and model — input, output and cache — from their own
+            session files (Claude Code, Codex, Gemini CLI), and the Laika task they were spent on,
+            by its key alone: the task your agent marked, or the one your branch is named for
+          </li>
+        </ul>
+        <p className="conn-note">
+          Commits count from the day collection starts on your machine, and merge commits never
+          count.
+        </p>
+      </div>
+      <div>
+        <h3 className="share-h">Never sent</h3>
+        <ul className="share-list" data-list="never">
+          <li>Prompt text, or anything an agent wrote</li>
+          <li>File names, repository names or paths</li>
+          <li>Remote URLs, branch names or session ids</li>
+          <li>Commit messages, author emails or commit ids</li>
+        </ul>
+      </div>
+    </div>
+  );
+
+  const orgOff = (
+    <p className="conn-note conn-note-warn" data-state="org-off">
+      <strong>Developer insights are off for this organisation</strong>, so nothing is collected
+      from your machine.{' '}
+      {canSetInsights ? (
+        <>
+          You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.
+        </>
+      ) : (
+        `Only ${collectionManager(permissions)} can turn them on.`
+      )}
+    </p>
+  );
+
+  const scopeChoice = (
+    <fieldset className="share-scope" disabled={busy}>
+      <legend className="share-h">Count work in {busy && <Spinner size="sm" />}</legend>
+      {LOCAL_ACTIVITY_SCOPES.map((scope) => (
+        <label key={scope} className="share-scope-option">
+          <input
+            type="radio"
+            name="share-scope"
+            value={scope}
+            checked={sharing.scope === scope}
+            onChange={() => {
+              change({ scope });
+            }}
+          />
+          <span>
+            <span className="share-scope-label">{SCOPES[scope].label}</span>
+            <span className="conn-note">{SCOPES[scope].hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+
+  const command = (
+    <div className="conn-block">
+      <div className="conn-block-bar">
+        <span className="conn-block-label" id="share-command-label">
+          Then, on each machine — carries no token
+        </span>
+        <CopyButton text={ACTIVITY_COMMAND} selects={commandRef} what="the command" />
+      </div>
+      <pre className="conn-pre" ref={commandRef} tabIndex={0} aria-labelledby="share-command-label">
+        {ACTIVITY_COMMAND}
+      </pre>
+    </div>
+  );
+
+  const otelNote = (
+    <p className="conn-note">
+      <code>laika activity on</code>, above, also has Claude Code send its own token metrics here,
+      from every Claude Code on the laptop — started from the Dock or by Omnigent included — with no
+      shell line. They fill in what its session files miss — titles, classifiers, compaction —
+      matched session by session, so nothing counts twice. <strong>Metrics only</strong>: Laika
+      refuses logs and traces, which can carry prompt text. The token is never written: a helper
+      reads it from <code>~/.laika/env</code> each time. <code>laika activity status</code> says
+      whether they reach this board.
+    </p>
+  );
+
+  const otelBlock = (
+    <div className="conn-block">
+      <div className="conn-block-bar">
+        <span className="conn-block-label" id="share-otel-label">
+          What it writes to ~/.claude/settings.json — no token
+        </span>
+        <CopyButton
+          text={otelEnvBlock(origin)}
+          selects={otelRef}
+          what="the OpenTelemetry settings"
+        />
+      </div>
+      <pre
+        className="conn-pre"
+        ref={otelRef}
+        tabIndex={0}
+        aria-labelledby="share-otel-label"
+        data-otel
+      >
+        {otelEnvBlock(origin)}
+      </pre>
+    </div>
+  );
+
+  const nothingHeld = (
+    <p className="conn-note" data-state="nothing-held">
+      {deleted ? 'Deleted. ' : ''}Nothing held for you in these 14 days
+      {held.oldest_day === null ? ', and nothing older.' : '.'}
+    </p>
+  );
+
+  const heldFoot = (
+    <>
+      {held.oldest_day !== null && (
+        <p className="conn-note">
+          Held since {dayLabel(held.oldest_day)} · from{' '}
+          {held.collectors === 1 ? 'one machine' : `${String(held.collectors)} machines`} in these
+          days · kept 400 days, then deleted.
+        </p>
+      )}
+      {held.oldest_day !== null && (
+        <button type="button" className="conn-outline share-delete" disabled={busy} onClick={erase}>
+          Delete my local-activity history
+        </button>
+      )}
+    </>
+  );
+
+  const failed = error !== undefined && (
+    <p className="conn-note conn-note-warn" role="alert">
+      {error}
+    </p>
+  );
+
+  if (compact) {
+    /** The status line's own link: open the fold it names, then go to it. */
+    const showHeld = (event: MouseEvent<HTMLAnchorElement>): void => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const fold = heldRef.current;
+      if (fold === null) return;
+      event.preventDefault();
+      fold.open = true;
+      fold.scrollIntoView({ block: 'start' });
+      fold.querySelector('summary')?.focus({ preventScroll: true });
+    };
+    const heldDays = held.days.length;
+    return (
+      <div
+        className="conn-extra share-activity share-activity-compact"
+        data-extra="activity"
+        data-compact=""
+      >
+        {!sharing.org_enabled ? (
+          orgOff
+        ) : (
+          <>
+            <p className="conn-note share-collects" data-state="org-collects">
+              <strong>Your organisation collects your local activity.</strong>{' '}
+              {collectionAudience(permissions)} can see it, and you can see who looked.{' '}
+              <a href="#share-held" onClick={showHeld}>
+                See what the board holds for you
+              </a>
+              .
+              {canSetInsights && (
+                <>
+                  {' '}
+                  You can turn it off in <a href="/organisation?tab=overview">Organisation</a>.
+                </>
+              )}
+            </p>
+            {scopeChoice}
+            {command}
+          </>
+        )}
+
+        <div className="dev-folds">
+          <details className="dev-fold" data-fold="sent">
+            <summary>
+              <span className="dev-fold-title">What is sent and never sent</span>
+              <span className="dev-fold-sub">{SENT_SUMMARY}</span>
+            </summary>
+            <div className="dev-fold-body">
+              {intro}
+              {lists}
+            </div>
+          </details>
+
+          {sharing.org_enabled && (
+            <details className="dev-fold" data-fold="otel" data-block="otel">
+              <summary>
+                <span className="dev-fold-title">OpenTelemetry (optional)</span>
+                <span className="dev-fold-sub">
+                  Claude Code’s own token metrics — <code>laika activity on</code> sets it up
+                </span>
+              </summary>
+              <div className="dev-fold-body">
+                {otelNote}
+                {otelBlock}
+              </div>
+            </details>
+          )}
+
+          <details className="dev-fold" data-fold="held" id="share-held" ref={heldRef}>
+            <summary>
+              <span className="dev-fold-title">What the board holds for you</span>
+              <span className="dev-fold-sub">
+                Last 14 days ·{' '}
+                {heldDays === 0
+                  ? 'nothing held'
+                  : `${String(heldDays)} ${heldDays === 1 ? 'day' : 'days'} held`}
+                {held.oldest_day !== null && ' · you can delete it'}
+              </span>
+            </summary>
+            <div className="dev-fold-body share-held">
+              {heldDays === 0 ? (
+                nothingHeld
+              ) : (
+                // Six columns are wider than a phone: the table scrolls, not the card.
+                <div className="dev-fold-scroll">
+                  <HeldDays held={held} />
+                </div>
+              )}
+              {heldFoot}
+            </div>
+          </details>
+        </div>
+
+        {failed}
+      </div>
+    );
+  }
+
   return (
     <div className="conn-extra share-activity" data-extra="activity">
-      <p className="conn-body">
-        Your own machine can send daily counts to your profile’s <strong>Activity</strong> — so the
-        board shows the work that happens before a task moves — and your agents’ token counts to{' '}
-        <strong>Usage</strong>. They show on your profile and never feed a rating or a score.
-      </p>
+      {intro}
 
-      <div className="share-lists">
-        <div>
-          <h3 className="share-h">What is sent, per day</h3>
-          <ul className="share-list" data-list="sent">
-            <li>How many prompts you sent, per agent</li>
-            <li>How many agent sessions you started</li>
-            <li>How many of your commits are not on any remote yet</li>
-            <li>A one-way key for each commit already pushed, so it counts once</li>
-            <li>
-              Your agents’ token counts per agent and model — input, output and cache — from their
-              own session files (Claude Code, Codex, Gemini CLI), and the Laika task they were spent
-              on, by its key alone: the task your agent marked, or the one your branch is named for
-            </li>
-          </ul>
-          <p className="conn-note">
-            Commits count from the day collection starts on your machine, and merge commits never
-            count.
-          </p>
-        </div>
-        <div>
-          <h3 className="share-h">Never sent</h3>
-          <ul className="share-list" data-list="never">
-            <li>Prompt text, or anything an agent wrote</li>
-            <li>File names, repository names or paths</li>
-            <li>Remote URLs, branch names or session ids</li>
-            <li>Commit messages, author emails or commit ids</li>
-          </ul>
-        </div>
-      </div>
+      {lists}
 
       {!sharing.org_enabled ? (
-        <p className="conn-note conn-note-warn" data-state="org-off">
-          <strong>Developer insights are off for this organisation</strong>, so nothing is collected
-          from your machine.{' '}
-          {canSetInsights ? (
-            <>
-              You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.
-            </>
-          ) : (
-            `Only ${collectionManager(permissions)} can turn them on.`
-          )}
-        </p>
+        orgOff
       ) : (
         <>
           <p className="conn-note share-collects" data-state="org-collects">
@@ -286,43 +520,9 @@ export function ShareActivity({
             )}
           </p>
 
-          <fieldset className="share-scope" disabled={busy}>
-            <legend className="share-h">Count work in {busy && <Spinner size="sm" />}</legend>
-            {LOCAL_ACTIVITY_SCOPES.map((scope) => (
-              <label key={scope} className="share-scope-option">
-                <input
-                  type="radio"
-                  name="share-scope"
-                  value={scope}
-                  checked={sharing.scope === scope}
-                  onChange={() => {
-                    change({ scope });
-                  }}
-                />
-                <span>
-                  <span className="share-scope-label">{SCOPES[scope].label}</span>
-                  <span className="conn-note">{SCOPES[scope].hint}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          {scopeChoice}
 
-          <div className="conn-block">
-            <div className="conn-block-bar">
-              <span className="conn-block-label" id="share-command-label">
-                Then, on each machine — carries no token
-              </span>
-              <CopyButton text={ACTIVITY_COMMAND} selects={commandRef} what="the command" />
-            </div>
-            <pre
-              className="conn-pre"
-              ref={commandRef}
-              tabIndex={0}
-              aria-labelledby="share-command-label"
-            >
-              {ACTIVITY_COMMAND}
-            </pre>
-          </div>
+          {command}
 
           {/* LAI-773: the OpenTelemetry fallback. Metrics only, with this
               board's address and no token; `laika activity on` writes it (LAI-867). */}
@@ -330,36 +530,8 @@ export function ShareActivity({
             <h3 className="share-h" id="share-otel-title">
               OpenTelemetry (optional)
             </h3>
-            <p className="conn-note">
-              <code>laika activity on</code>, above, also has Claude Code send its own token metrics
-              here, from every Claude Code on the laptop — started from the Dock or by Omnigent
-              included — with no shell line. They fill in what its session files miss — titles,
-              classifiers, compaction — matched session by session, so nothing counts twice.{' '}
-              <strong>Metrics only</strong>: Laika refuses logs and traces, which can carry prompt
-              text. The token is never written: a helper reads it from <code>~/.laika/env</code>{' '}
-              each time. <code>laika activity status</code> says whether they reach this board.
-            </p>
-            <div className="conn-block">
-              <div className="conn-block-bar">
-                <span className="conn-block-label" id="share-otel-label">
-                  What it writes to ~/.claude/settings.json — no token
-                </span>
-                <CopyButton
-                  text={otelEnvBlock(origin)}
-                  selects={otelRef}
-                  what="the OpenTelemetry settings"
-                />
-              </div>
-              <pre
-                className="conn-pre"
-                ref={otelRef}
-                tabIndex={0}
-                aria-labelledby="share-otel-label"
-                data-otel
-              >
-                {otelEnvBlock(origin)}
-              </pre>
-            </div>
+            {otelNote}
+            {otelBlock}
           </section>
         </>
       )}
@@ -368,38 +540,11 @@ export function ShareActivity({
         <h3 className="share-h" id="share-held-title">
           What the board holds for you · last 14 days
         </h3>
-        {held.days.length === 0 ? (
-          <p className="conn-note" data-state="nothing-held">
-            {deleted ? 'Deleted. ' : ''}Nothing held for you in these 14 days
-            {held.oldest_day === null ? ', and nothing older.' : '.'}
-          </p>
-        ) : (
-          <HeldDays held={held} />
-        )}
-        {held.oldest_day !== null && (
-          <p className="conn-note">
-            Held since {dayLabel(held.oldest_day)} · from{' '}
-            {held.collectors === 1 ? 'one machine' : `${String(held.collectors)} machines`} in these
-            days · kept 400 days, then deleted.
-          </p>
-        )}
-        {held.oldest_day !== null && (
-          <button
-            type="button"
-            className="conn-outline share-delete"
-            disabled={busy}
-            onClick={erase}
-          >
-            Delete my local-activity history
-          </button>
-        )}
+        {held.days.length === 0 ? nothingHeld : <HeldDays held={held} />}
+        {heldFoot}
       </section>
 
-      {error !== undefined && (
-        <p className="conn-note conn-note-warn" role="alert">
-          {error}
-        </p>
-      )}
+      {failed}
     </div>
   );
 }

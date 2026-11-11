@@ -46,7 +46,8 @@ export function InfoTip({ label, children }: InfoTipProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      // Handled already by the tip itself (below), or by something that owns it.
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       setOpen(false);
       button.current?.focus();
     };
@@ -64,7 +65,19 @@ export function InfoTip({ label, children }: InfoTipProps) {
   }, [open]);
 
   return (
-    <span className="prof-info" ref={wrap}>
+    <span
+      className="prof-info"
+      ref={wrap}
+      onKeyDown={(event) => {
+        // Escape from the tip closes the tip, and says so: a dialog the tip
+        // sits in (the Manage member panel, LAI-1134) sees it handled and
+        // stays open — React delivers the key to it before `document`.
+        if (event.key !== 'Escape' || !open) return;
+        event.preventDefault();
+        setOpen(false);
+        button.current?.focus();
+      }}
+    >
       <button
         ref={button}
         type="button"

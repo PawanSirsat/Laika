@@ -510,6 +510,17 @@ describe('the cases LAI-004 calls out by name', () => {
       // D-114 (LAI-534): registering and managing their own agents, signed
       // in. An agent of theirs can never write more than they can.
       const ownAgents = action === 'agent.manage_own';
+      // D-131 (LAI-1130): their own availability, and the availability of
+      // people who share a space with them. Reading is session only, so it is
+      // not in `READ_ACTIONS` — `profile.read`'s reason — and lands here.
+      const ownAvailability = action === 'availability.set_own' || action === 'availability.read';
+      // D-134 (LAI-1136): reading and marking read their own notices.
+      const ownNotices = action === 'notices.own';
+      // D-139 item 1 (LAI-1150): reading their own profile and heatmap,
+      // session only — `profile.read`'s reason for not being a read action.
+      const ownProfile = action === 'profile.read_own';
+      // D-139 (LAI-1151): reading their own pairing requests and setup activity.
+      const ownDeveloperSetup = action === 'developer_setup.read_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -522,7 +533,11 @@ describe('the cases LAI-004 calls out by name', () => {
           ownTokenData ||
           ownTime ||
           ownMembership ||
-          ownAgents,
+          ownAgents ||
+          ownAvailability ||
+          ownNotices ||
+          ownProfile ||
+          ownDeveloperSetup,
       );
     }
   });
@@ -586,6 +601,30 @@ describe('assertCan', () => {
  * Sending a draft and reading one's own settings are what a collector and an
  * agent do, so a token may.
  */
+/**
+ * D-131's rows (LAI-1130): availability is the person's own declaration, set
+ * and read signed in. An agent must not say its person is open to more work,
+ * nor read who else is.
+ */
+describe('availability refuses every token (LAI-1130)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+
+  it('allows every role on a cookie session, and refuses each to any token', () => {
+    for (const action of ['availability.set_own', 'availability.read'] as const) {
+      for (const role of ['owner', 'admin', 'member', 'viewer'] as const) {
+        expect(can(actor(role, null), action), `${action} / ${role}`).toBe(true);
+        for (const token of tokens) {
+          expect(can(actor(role, null, token), action), `${action} / ${token.id}`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
 describe('time refuses every token but where a collector or an agent acts (LAI-787)', () => {
   const tokens: TokenContext[] = [
     { id: 'tok_full', scope: 'full', projectIds: null },

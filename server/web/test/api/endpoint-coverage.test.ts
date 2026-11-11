@@ -145,6 +145,11 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only — a session is refused `403`; the device’s launcher reports with it (plan auto-pickup slice B)',
   'api/v1/agents/me/capacity-pings/*/reply':
     'agent-token only — the pinged agent’s own; its launcher or session watcher answers a ping with it (plan auto-pickup slice B)',
+  // D-139 item 8 (LAI-1152): the rating card and its Rate dialog left the
+  // profile, and nothing else in the SPA writes a rating. The API keeps the
+  // endpoint and every rating already written; nothing was deleted.
+  'api/v1/users/*/ratings':
+    'D-139 item 8 — the profile draws no rating any more; the endpoint stays in the API',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

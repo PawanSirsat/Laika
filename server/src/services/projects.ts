@@ -27,6 +27,9 @@ import { CAPABILITY_LABELS, implicitProjectRole } from '../policy/grants.ts';
 // through this one, and the seed is all this needs.
 import { createDefaultProjectStatuses } from '../db/project-statuses.ts';
 import { noSuchProjectForAgent } from './work-requests.ts';
+import { writeNotice } from './notices.ts';
+import { READY_STATUSES } from './task-lifecycle.ts';
+import { updateTask } from './tasks.ts';
 import {
   applyOffboardingChoice,
   assertOffboardingChoice,
@@ -1020,6 +1023,24 @@ function assertRoleAllowedForUser(db: Db, userId: string, role: ProjectRole): vo
   }
 }
 
+/** What `POST /projects/:slug/members` may carry beside the person and role (D-134). */
+export interface AddMemberOptions {
+  /** A note to the person, shown on their notice. */
+  message?: string | undefined;
+  /** Their first card: a ready, unassigned task in this space. */
+  assignTaskId?: string | undefined;
+}
+
+/**
+ * Add a person to a space (§6.4, D-134, LAI-1136).
+ *
+ * **One transaction**: the membership, `member.added`, the first card's
+ * assignment if one was asked for — through `updateTask`, so `task.assigned`
+ * is written exactly as a reassignment writes it — and one `added_to_space`
+ * notice carrying the message and the card. A failure anywhere writes none of
+ * it. **Every add notifies**, from whichever screen, because being added should
+ * always be visible to the person; a self-add writes no notice.
+ */
 export function addMember(
   db: Db,
   actor: ResolvedActor,
@@ -1027,35 +1048,97 @@ export function addMember(
   userId: string,
   role: ProjectRole,
   now: number = Date.now(),
+  options: AddMemberOptions = {},
 ): MemberView[] {
   const row = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, row.id), 'project.members.manage', { projectId: row.id });
   assertRoleAllowedForUser(db, userId, role);
+  assertActiveUser(db, userId);
 
-  const existing = db
-    .select({ id: projectMemberships.id })
-    .from(projectMemberships)
-    .where(and(eq(projectMemberships.projectId, row.id), eq(projectMemberships.userId, userId)))
-    .get();
+  db.transaction(
+    () => {
+      const existing = db
+        .select({ id: projectMemberships.id })
+        .from(projectMemberships)
+        .where(and(eq(projectMemberships.projectId, row.id), eq(projectMemberships.userId, userId)))
+        .get();
 
-  if (existing !== undefined) {
-    throw new ApiError('conflict', 'That user is already a member of this project');
-  }
+      if (existing !== undefined) {
+        throw new ApiError('conflict', 'That user is already a member of this project');
+      }
 
-  db.insert(projectMemberships)
-    .values({ id: newId(), projectId: row.id, userId, role, createdAt: now })
-    .run();
+      db.insert(projectMemberships)
+        .values({ id: newId(), projectId: row.id, userId, role, createdAt: now })
+        .run();
 
-  appendActivity(db, {
-    orgId: row.orgId,
-    projectId: row.id,
-    ...activityActor(actor),
-    type: 'member.added',
-    payload: { user_id: userId, user_name: userNameOf(db, userId), role },
-    now,
-  });
+      appendActivity(db, {
+        orgId: row.orgId,
+        projectId: row.id,
+        ...activityActor(actor),
+        type: 'member.added',
+        payload: { user_id: userId, user_name: userNameOf(db, userId), role },
+        now,
+      });
+
+      if (options.assignTaskId !== undefined) {
+        assertTaskAssignable(db, row.id, options.assignTaskId);
+        updateTask(db, actor, options.assignTaskId, { assignee_id: userId, now });
+      }
+
+      writeNotice(db, {
+        userId,
+        actorUserId: actor.userId,
+        kind: 'added_to_space',
+        projectId: row.id,
+        taskId: options.assignTaskId ?? null,
+        message: options.message === undefined || options.message === '' ? null : options.message,
+        now,
+      });
+    },
+    { behavior: 'immediate' },
+  );
 
   return listMembers(db, actor, slug);
+}
+
+/** `422 user_deactivated`: nobody is added to a space they cannot sign in to (D-134). */
+function assertActiveUser(db: Db, userId: string): void {
+  const target = db
+    .select({ isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  if (target === undefined) throw ApiError.notFound('No such user');
+  if (target.isActive === 0) {
+    throw new ApiError('unprocessable', 'That person has been deactivated', {
+      field: 'user_id',
+      reason: 'user_deactivated',
+    });
+  }
+}
+
+/**
+ * A first card must be a task of **this** space, `backlog` or `todo`, and
+ * unassigned (D-134). One answer, `422 task_not_assignable`, for every way it
+ * is not — a missing id and another space's task included — so the shape of
+ * the error never confirms that a task exists elsewhere.
+ */
+function assertTaskAssignable(db: Db, projectId: string, taskId: string): void {
+  const task = db
+    .select({ projectId: tasks.projectId, status: tasks.status, assigneeId: tasks.assigneeId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .get();
+  if (
+    task?.projectId !== projectId ||
+    !READY_STATUSES.includes(task.status) ||
+    task.assigneeId !== null
+  ) {
+    throw new ApiError('unprocessable', 'That card cannot be given to them', {
+      field: 'assign_task_id',
+      reason: 'task_not_assignable',
+    });
+  }
 }
 
 export function changeMemberRole(
