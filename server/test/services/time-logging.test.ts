@@ -241,6 +241,7 @@ describe('each person’s facts', () => {
     entry(imported, '2026-09-30', 30, true); // deleted: not a day they had
     const drafted = person('Drafted', { createdAt: NOW });
     draft(drafted, '2026-10-20', 60);
+    draft(drafted, '2026-10-01', 60, 'dismissed'); // not pending: not a day they had
     const fresh = person('Fresh', { createdAt: NOW });
     entry(fresh, '2026-11-13', 60); // filed ahead: joining stays the account's day
     const v = grid(owner, '2026-11-10', '2026-11-16');
