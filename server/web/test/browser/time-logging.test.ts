@@ -343,8 +343,15 @@ void describe('every cell state, from the server’s facts', () => {
       assert.deepEqual(await stateAndText('2026-10-14'), ['none', '✕']);
       assert.deepEqual(await stateAndText('2026-10-10'), ['off', '— 2h']);
       assert.deepEqual(await stateAndText('2026-10-11'), ['off', '—']);
-      assert.deepEqual(await stateAndText('2026-10-02'), ['before', '—']);
-      assert.deepEqual(await stateAndText('2026-10-16'), ['future', '—']);
+      // Time on a day that owed nothing keeps its figure, muted, and stays a door.
+      assert.deepEqual(await stateAndText('2026-10-02'), ['before', '— 8h']);
+      assert.deepEqual(await stateAndText('2026-10-16'), ['future', '— 8h']);
+      assert.deepEqual(await stateAndText('2026-10-01'), ['before', '—']);
+      assert.equal(
+        await c('2026-10-01').locator('a').count(),
+        0,
+        'nothing owed, nothing held: no door',
+      );
       assert.deepEqual(await stateAndText('2026-10-15'), ['today', '— 1h 30m']);
       // The words, on hover and for a screen reader.
       assert.equal(
@@ -352,8 +359,12 @@ void describe('every cell state, from the server’s facts', () => {
         'Bea Nkosi, Mon 12 Oct: 9h, 8h or more, full day',
       );
       assert.equal(
-        await c('2026-10-02').locator('.tlg-dash').getAttribute('title'),
+        await c('2026-10-02').locator('a').getAttribute('title'),
         'Bea Nkosi, Fri 2 Oct: 8h, before they joined',
+      );
+      assert.equal(
+        await c('2026-10-01').locator('.tlg-dash').getAttribute('title'),
+        'Bea Nkosi, Thu 1 Oct: before they joined',
       );
       // Saturdays and Sundays are marked in the head; Friday is not.
       assert.equal(
@@ -409,6 +420,16 @@ void describe('every cell state, from the server’s facts', () => {
       const row = h.page.locator('tr[data-person="u3"]');
       await row.waitFor({ timeout: 20_000 });
       assert.match(await row.locator('.tlg-role').innerText(), /deactivated/);
+      // No verdict on anybody who has left: the day with time keeps its
+      // figure, muted, and is a door; an empty working day is a dash, not ✕.
+      const worked = row.locator('td[data-day="2026-10-12"]');
+      assert.equal(await worked.getAttribute('data-state'), 'left');
+      assert.match(await worked.locator('a.tlg-cell').innerText(), /8h/);
+      const empty = row.locator('td[data-day="2026-10-13"]');
+      assert.equal(await empty.getAttribute('data-state'), 'left');
+      assert.equal(await empty.locator('a').count(), 0);
+      assert.equal(await empty.locator('.tlg-dash [aria-hidden="true"]').innerText(), '—');
+      assert.equal(await row.locator('td[data-state="none"]').count(), 0, 'a ✕ after they left');
       const total = row.locator('[data-tlg-total]');
       assert.match(await total.innerText(), /8h/);
       assert.doesNotMatch(await total.innerText(), /days/);

@@ -116,10 +116,11 @@ export function minutesOn(
 }
 
 /**
- * What a cell is. `future`, `before` and `off` are no verdict; `today` is
- * hours so far; `full`, `under` and `none` are the day against the threshold.
+ * What a cell is. `future`, `before`, `off` and `left` are no verdict —
+ * nothing was due, though time on the day is still shown; `today` is hours
+ * so far; `full`, `under` and `none` are the day against the threshold.
  */
-export type CellState = 'full' | 'under' | 'none' | 'today' | 'off' | 'before' | 'future';
+export type CellState = 'full' | 'under' | 'none' | 'today' | 'off' | 'before' | 'future' | 'left';
 
 /** The words a cell's state is said in, for the legend, hover and a screen reader. */
 export const CELL_WORDS: Readonly<Record<CellState, string>> = {
@@ -130,6 +131,7 @@ export const CELL_WORDS: Readonly<Record<CellState, string>> = {
   off: 'not a working day',
   before: 'before they joined',
   future: 'not yet',
+  left: 'no longer here',
 };
 
 /** A text glyph beside every figure, so no verdict is colour alone. */
@@ -141,6 +143,7 @@ export const CELL_GLYPHS: Readonly<Record<CellState, string>> = {
   off: '—',
   before: '—',
   future: '—',
+  left: '—',
 };
 
 export interface Cell {
@@ -157,7 +160,9 @@ export interface Cell {
 
 /**
  * One cell, by precedence: a day not yet come, a day before the person
- * joined, today, a day off, then the verdict. The threshold is the server's.
+ * joined, today, a person who has left, a day off, then the verdict. The
+ * threshold is the server's. A deactivated person owes no day (D-148 item
+ * 5), so none of theirs is a verdict — their time is still shown.
  */
 export function cellState(person: TimeLoggingPerson, day: string, threshold: number): Cell {
   const { confirmed, drafted } = minutesOn(person, day);
@@ -166,6 +171,7 @@ export function cellState(person: TimeLoggingPerson, day: string, threshold: num
   if (day > person.today_day) state = 'future';
   else if (day < person.joined_day) state = 'before';
   else if (day === person.today_day) state = 'today';
+  else if (person.user.deactivated) state = 'left';
   else if (!isWorkingDay(person.work_days, day)) state = 'off';
   else if (minutes >= threshold) state = 'full';
   else if (minutes === 0) state = 'none';
@@ -187,6 +193,15 @@ export function cellState(person: TimeLoggingPerson, day: string, threshold: num
     figure,
     aria: `${person.user.name}, ${dayWords(day)}: ${hours}${words}`,
   };
+}
+
+/**
+ * Whether a cell is a door to the person's Day: any day with time on it,
+ * whatever its state, and a due day — today, or a working day with nothing
+ * logged. A day that owed nothing and holds nothing is a dash and no more.
+ */
+export function isDoor(cell: Cell): boolean {
+  return cell.minutes > 0 || cell.state === 'none' || cell.state === 'today';
 }
 
 /**

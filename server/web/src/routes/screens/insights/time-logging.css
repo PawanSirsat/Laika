@@ -286,9 +286,15 @@ td[data-state='none'] .tlg-cell,
   border-color: var(--chip-pink-border);
 }
 
-/* Today: hours so far, no verdict. A day off with time: a muted figure. */
+/*
+ * No verdict: today's hours so far, and time on a day that owed nothing — a
+ * day off, before they joined, not yet, or after they left — a muted figure.
+ */
 td[data-state='today'] .tlg-cell,
 td[data-state='off'] .tlg-cell,
+td[data-state='before'] .tlg-cell,
+td[data-state='future'] .tlg-cell,
+td[data-state='left'] .tlg-cell,
 .tlg-swatch[data-state='off'] {
   color: var(--text-muted);
   background: var(--bg-column);

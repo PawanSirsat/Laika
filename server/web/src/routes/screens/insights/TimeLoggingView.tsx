@@ -19,6 +19,7 @@ import {
   cellState,
   dayHref,
   dayWords,
+  isDoor,
   monthDays,
   monthHref,
   monthKey,
@@ -188,7 +189,8 @@ export function TimeLoggingView({
               <span className="tlg-swatch" data-state="off" aria-hidden="true">
                 {CELL_GLYPHS.off}
               </span>
-              not due — a day off, before they joined, not yet, or today so far
+              not due — a day off, before they joined, not yet, no longer here, or today so far; the
+              hours in grey when there are any
             </li>
           </ul>
         )}
@@ -291,16 +293,10 @@ function Row({
       </th>
       {days.map((d) => {
         const cell = cellState(person, d.day, threshold);
-        const door =
-          cell.state === 'full' ||
-          cell.state === 'under' ||
-          cell.state === 'none' ||
-          cell.state === 'today' ||
-          (cell.state === 'off' && cell.minutes > 0);
         const href = dayHref(person.user.id, d.day);
         return (
           <td key={d.day} data-state={cell.state} data-day={d.day}>
-            {door ? (
+            {isDoor(cell) ? (
               <a
                 className="tlg-cell"
                 href={href}

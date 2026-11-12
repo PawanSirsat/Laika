@@ -11,6 +11,7 @@ import {
   cellState,
   dayHref,
   dueDays,
+  isDoor,
   isWorkingDay,
   monthDays,
   monthHref,
@@ -127,6 +128,52 @@ void describe('a cell', () => {
     // Joined on a Saturday: the Friday before is "before", not "off".
     const late = person([], { joined_day: '2026-11-07' });
     assert.equal(cellState(late, '2026-11-06', THRESHOLD).state, 'before');
+  });
+
+  void test('time on a day that owed nothing keeps its figure: before joining, not yet, after they left', () => {
+    const p = person([
+      { day: '2026-10-30', c: 480 }, // before joining
+      { day: '2026-11-13', c: 480 }, // not yet
+    ]);
+    const before = cellState(p, '2026-10-30', THRESHOLD);
+    assert.deepEqual([before.state, before.figure, isDoor(before)], ['before', '8h', true]);
+    assert.equal(before.aria, 'Bea Nkosi, Fri 30 Oct: 8h, before they joined');
+    const future = cellState(p, '2026-11-13', THRESHOLD);
+    assert.deepEqual([future.state, future.figure, isDoor(future)], ['future', '8h', true]);
+    // Nothing owed and nothing held: a dash and no door.
+    assert.equal(isDoor(cellState(p, '2026-10-29', THRESHOLD)), false);
+    assert.equal(isDoor(cellState(p, '2026-11-14', THRESHOLD)), false);
+    assert.equal(isDoor(cellState(p, '2026-11-07', THRESHOLD)), false, 'a quiet Saturday');
+    // A due day is always a door: nothing logged, and today.
+    assert.equal(isDoor(cellState(p, '2026-11-04', THRESHOLD)), true);
+    assert.equal(isDoor(cellState(p, '2026-11-12', THRESHOLD)), true);
+  });
+
+  void test('a deactivated person owes no day: an empty day is a dash, time keeps its figure, no verdict', () => {
+    const gone = person(
+      [
+        { day: '2026-11-02', c: 480 },
+        { day: '2026-11-07', c: 60 },
+      ],
+      { user: { id: 'u2', name: 'Bea Nkosi', org_role: 'member', deactivated: true } },
+    );
+    const full = cellState(gone, '2026-11-02', THRESHOLD);
+    assert.deepEqual(
+      [full.state, full.figure, full.glyph, isDoor(full)],
+      ['left', '8h', '—', true],
+    );
+    assert.equal(full.aria, 'Bea Nkosi, Mon 2 Nov: 8h, no longer here');
+    const quiet = cellState(gone, '2026-11-03', THRESHOLD);
+    assert.deepEqual([quiet.state, quiet.figure, isDoor(quiet)], ['left', '', false]);
+    assert.equal(
+      cellState(gone, '2026-11-07', THRESHOLD).state,
+      'left',
+      'a Saturday is no different',
+    );
+    // Before joining, not yet and today still come first.
+    assert.equal(cellState(gone, '2026-10-30', THRESHOLD).state, 'before');
+    assert.equal(cellState(gone, '2026-11-13', THRESHOLD).state, 'future');
+    assert.equal(cellState(gone, '2026-11-12', THRESHOLD).state, 'today');
   });
 
   void test('says the person, the day, the hours and the words', () => {
