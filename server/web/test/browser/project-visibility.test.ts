@@ -24,6 +24,7 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
+import { boardAction } from './board-menu.ts';
 
 const BASE = {
   id: 'p1',
@@ -290,7 +291,7 @@ void describe('the board', () => {
     const h = await open('/board?project=laika-core', api);
     try {
       await h.page.waitForSelector('.card-title', { timeout: 20_000 });
-      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await boardAction(h.page, 'View settings');
       await h.page.waitForSelector('.view-settings');
       assert.equal(await h.page.locator('input[name="vs-visibility"]').count(), 0);
       const link = h.page.locator('.vs-settings-link');

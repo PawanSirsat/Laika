@@ -1,0 +1,36 @@
+/* Saving… / Saved / Couldn't save — Retry (LAI-1129): small, beside the Save. */
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.5rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.save-status[data-save-status='saved'] .save-status-line {
+  color: var(--chip-green);
+}
+
+.save-status[data-save-status='failed'] .save-status-line {
+  color: var(--overdue);
+}
+
+.save-status-retry {
+  margin: 0;
+  padding: 0 var(--space-1);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.save-status-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

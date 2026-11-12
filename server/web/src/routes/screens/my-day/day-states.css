@@ -26,8 +26,38 @@
   padding: 2rem 1.5rem;
 }
 
-.dstate-off {
-  padding: 3rem 1.5rem;
+/* Tracking off (LAI-1191): a one-line note over the reader's open work. */
+.dstate-off-note {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.625rem;
+}
+
+.dstate-off-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--chip-blue);
+}
+
+.dstate-off-note > span:nth-child(2) {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.dstate-off-link {
+  flex: none;
+  text-decoration: none;
+}
+
+.dstate-off-link:hover {
+  text-decoration: underline;
+}
+
+.dstate-off-status {
+  color: var(--text-muted);
+  font-weight: var(--weight-normal);
 }
 
 .dstate-mark {
@@ -44,14 +74,6 @@
   color: var(--overdue);
   font-weight: var(--weight-heavy);
   font-size: var(--text-heading-sm);
-}
-
-.dstate-mark-off {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--radius-control);
-  background: var(--bg-pill);
-  color: var(--text-muted);
 }
 
 .dstate-title {

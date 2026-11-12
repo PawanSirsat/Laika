@@ -407,7 +407,17 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
         )}
 
         {loadError !== null ? (
-          <ApiErrorState error={loadError} resource="your credentials" scope="organisation" />
+          <ApiErrorState
+            error={loadError}
+            resource="your credentials"
+            scope="organisation"
+            onRetry={() => {
+              // Back to the loading rows while asking, so the press shows (LAI-1128).
+              setLoadError(null);
+              setTokens(undefined);
+              reload();
+            }}
+          />
         ) : tokens === undefined ? (
           <LoadingState shape="row" count={3} label="Loading your credentials" />
         ) : tokens.length === 0 ? (
