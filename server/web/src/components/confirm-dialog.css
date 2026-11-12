@@ -7,7 +7,7 @@
 .confirm-layer {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--layer-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -17,8 +17,8 @@
 .confirm-scrim {
   position: absolute;
   inset: 0;
-  background: var(--scrim);
-  backdrop-filter: blur(2px);
+  /* Darker, and frosted by `glass.css` (LAI-1132), which took the 2px blur. */
+  background: var(--glass-scrim);
   animation: confirm-fade 140ms ease-out;
 }
 
@@ -30,10 +30,11 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.25rem 1.25rem 1rem;
-  border: 1px solid var(--border-card);
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-column);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-modal);
+  /* Level-3 glass over the frosted scrim (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-3);
+  box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
   animation: confirm-in 160ms ease-out;
 }

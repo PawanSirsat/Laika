@@ -46,8 +46,10 @@
 }
 
 .org-stat {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
   display: flex;
@@ -168,8 +170,10 @@
 }
 
 .org-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
 }

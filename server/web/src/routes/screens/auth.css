@@ -16,10 +16,14 @@
 .auth-card {
   width: 100%;
   max-width: 26rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  /* Level-2 glass hero over the ambient layer (LAI-1132) — the brand's
+     showcase. The pane is `glass.css`'s ::before. */
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-panel);
   padding: var(--space-5);
 }
 

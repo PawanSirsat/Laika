@@ -104,10 +104,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132): translucent, no blur over a smooth ground. */
+  background: var(--glass-sheen), var(--glass-2);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--glass-highlight), var(--shadow-card);
   padding: var(--space-4);
 }
 
