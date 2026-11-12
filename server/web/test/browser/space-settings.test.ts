@@ -32,6 +32,7 @@ import {
 } from './harness.ts';
 import { pick } from './dropdown.ts';
 import { boardAction } from './board-menu.ts';
+import { answerConfirm } from './confirm.ts';
 
 const SLUG = 'laika';
 const SETTINGS = `/spaces/${SLUG}/settings`;
@@ -211,7 +212,9 @@ void describe('the route', () => {
       await settled(h);
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Laika');
       assert.equal(await h.page.title(), 'Space settings · Laika');
-      assert.equal(await h.page.locator('.ss-key').innerText(), 'LAIKA · PawanSirsat/Laika');
+      // The key as a chip, the repository beside it (LAI-1211).
+      assert.equal(await h.page.locator('[data-key-chip]').innerText(), 'LAIKA');
+      assert.equal(await h.page.locator('.ss-repo').innerText(), 'PawanSirsat/Laika');
       assert.equal(await h.page.locator('.ss-badge').first().innerText(), 'PRIVATE');
       assert.equal(await h.page.locator('.ss-avatar').getAttribute('data-color'), 'violet');
       assert.equal(
@@ -225,7 +228,7 @@ void describe('the route', () => {
       );
       // Open board, and ← Spaces.
       assert.equal(
-        await h.page.locator('.ss-open-board').getAttribute('href'),
+        await h.page.locator('.ss-open-board-wide').getAttribute('href'),
         '/board?project=laika',
       );
       assert.equal(await h.page.locator('.ss-back').getAttribute('href'), '/projects');
@@ -372,6 +375,8 @@ void describe('General', () => {
     });
   }
 
+  // A value the client's own check accepts (LAI-1211 catches `9X` before any
+  // request), so this is the server's refusal arriving, in the server's words.
   void test('a 422 lands on its field', async () => {
     const h = await open(
       SETTINGS,
@@ -398,7 +403,7 @@ void describe('General', () => {
     );
     try {
       await settled(h);
-      await h.page.locator('#ss-prefix').fill('9X');
+      await h.page.locator('#ss-prefix').fill('XY');
       await h.page.getByRole('button', { name: 'Save changes' }).click();
       const error = h.page.locator('#ss-prefix-error');
       await error.waitFor({ timeout: 5_000 });
@@ -621,7 +626,7 @@ void describe('Access', () => {
       );
       assert.match(
         await h.page.locator('[data-visibility="public"]').innerText(),
-        /Anyone in Kvelld can find it and join\./,
+        /Anyone in Kvelld can find it, read its board and join it themselves\./,
       );
 
       // Who can create tasks.
@@ -765,18 +770,28 @@ void describe('Danger zone', () => {
       await settled(h);
       assert.equal(await h.page.locator('.ss-danger-title').innerText(), 'Danger zone');
       assert.match(
-        await h.page.locator('.ss-danger').innerText(),
-        /The board becomes read-only\. Members keep access to its history\./,
+        await h.page.locator('[data-consequences="archive"]').innerText(),
+        /Its board becomes read-only[\s\S]*Agents stop picking up its work[\s\S]*Nothing is deleted[\s\S]*restored at any time/,
       );
-      assert.equal(await h.page.getByText(/delete/i).count(), 0, 'a delete row is drawn');
+      assert.equal(await h.page.getByText(/\bdelete\b/i).count(), 0, 'a delete row is drawn');
       await h.page.locator('[data-action="archive"]').click();
+      // The typed confirmation (LAI-1211): Archive waits for the key.
+      const confirmArchive = h.page.locator('[data-action="confirm-archive"]');
+      assert.equal(await confirmArchive.getAttribute('aria-disabled'), 'true');
+      // Pressed anyway — it stays focusable so its reason is read — and does nothing.
+      await confirmArchive.click({ force: true });
       assert.equal(
         h.calls.filter((c) => c.method === 'PATCH').length,
         0,
-        'archived without asking',
+        'archived without the key typed',
       );
-      await h.page.locator('[data-action="confirm-archive"]').click();
+      await h.page.locator('#ss-archive-key').fill('laika');
+      await confirmArchive.click();
       await h.page.locator('[data-action="restore"]').waitFor({ timeout: 5_000 });
+      assert.match(
+        await h.page.locator('[data-danger-result="archived"]').innerText(),
+        /Laika is archived[\s\S]*Spaces › Archived/,
+      );
       assert.match(await h.page.locator('.screen-page').innerText(), /ARCHIVED/);
       await h.page.locator('[data-action="restore"]').click();
       await h.page.locator('[data-action="archive"]').waitFor({ timeout: 5_000 });
@@ -850,6 +865,8 @@ void describe('a change to the reader’s own membership reaches their controls'
       const before = h.calls.filter((c) => c.path === '/api/v1/permissions').length;
 
       await pick(h.page.locator('[data-member="u2"] [role="combobox"]'), 'member');
+      // Demoting yourself asks first, because the controls go with it (LAI-1211).
+      assert.match(await answerConfirm(h.page, true), /stop being a space admin of Laika/);
       await until(() => h.calls.some((c) => c.method === 'PATCH'));
       await until(() => h.calls.filter((c) => c.path === '/api/v1/permissions').length > before);
       await remove.first().waitFor({ state: 'detached', timeout: 10_000 });

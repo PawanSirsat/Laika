@@ -17,7 +17,8 @@ export interface UseMembers {
   readonly pendingId: string | undefined;
   /** The server's reason for refusing the last change. */
   readonly actionError: unknown;
-  readonly setRole: (userId: string, role: ProjectRole) => Promise<void>;
+  /** `true` once the server answered with the new list; `false` on a refusal, kept in `actionError`. */
+  readonly setRole: (userId: string, role: ProjectRole) => Promise<boolean>;
   /** Resolves `true` only when the server accepted, so a caller can offer Undo. */
   readonly remove: (userId: string) => Promise<boolean>;
   /**
@@ -91,9 +92,9 @@ export function useMembers(slug: string | undefined): UseMembers {
   );
 
   const setRole = useCallback(
-    async (userId: string, role: ProjectRole): Promise<void> => {
-      if (slug === undefined) return;
-      await run(userId, () => changeMemberRole(slug, userId, role));
+    (userId: string, role: ProjectRole): Promise<boolean> => {
+      if (slug === undefined) return Promise.resolve(false);
+      return run(userId, () => changeMemberRole(slug, userId, role));
     },
     [slug, run],
   );

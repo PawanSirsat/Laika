@@ -6,6 +6,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
+import { IconButton } from '../../../components/forms/IconButton.tsx';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   PROJECT_ROLES,
@@ -24,6 +25,9 @@ import { listAllUsers, type OrgUser } from '../../../api/users.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { filterMembers, roleSummary } from './space-settings-model.ts';
+import { onRadioGroupKeyDown, radioTabIndex } from './radio-keys.ts';
 
 export interface MembersTabProps {
   readonly project: Project;
@@ -51,6 +55,12 @@ const ADD_ROLES: readonly ProjectRole[] = ['member', 'lead', 'viewer'];
  * what happens to their open tasks here when they hold any, then offers
  * **Undo** in the app's toast (LAI-1129), which adds the person back with the
  * role they had. Undo restores the membership, not the tasks' assignee.
+ *
+ * LAI-1211: **a list you can find someone in** — a filter over name and email,
+ * the role counts above it, a no-match state with a way back — and **every
+ * role change answered** in the toast, in the server's terms once it has the
+ * new list. Demoting yourself from Space admin asks first, because the
+ * controls go with it; your own row offers *Leave space* rather than Remove.
  */
 export function MembersTab({
   project,
@@ -80,6 +90,34 @@ export function MembersTab({
 
   const say = (text: string): void => {
     toast.show({ text, tone: 'success' });
+  };
+  const confirm = useConfirm();
+  const [query, setQuery] = useState('');
+  const shown = filterMembers(members.members, query);
+  const findInput = useRef<HTMLInputElement | null>(null);
+
+  const changeRole = async (member: Member, role: ProjectRole): Promise<void> => {
+    if (role === member.role) return;
+    const self = member.user_id === me.id;
+    if (self && member.role === 'lead' && role !== 'lead') {
+      const yes = await confirm({
+        title: `Make yourself ${projectRoleLabel(role)}?`,
+        body: `You will stop being a space admin of ${project.name}. Unless your organisation role opens every space, its settings and members become read only for you, and only another space admin can make you one again.`,
+        confirmLabel: `Make me ${projectRoleLabel(role)}`,
+        cancelLabel: 'Stay space admin',
+        danger: true,
+        icon: 'warning',
+      });
+      if (!yes) return;
+    }
+    const ok = await members.setRole(member.user_id, role);
+    if (!ok) return;
+    touchedSelf(member.user_id);
+    say(
+      self
+        ? `You are now ${projectRoleLabel(role)} in ${project.name}.`
+        : `${member.name} is now ${projectRoleLabel(role)} in ${project.name}.`,
+    );
   };
 
   const isMember = members.members.some((m) => m.user_id === me.id);
@@ -184,77 +222,151 @@ export function MembersTab({
           onRetry={members.reload}
         />
       ) : (
-        <ul className="ss-members">
-          {members.members.map((member) => {
-            const colour = avatarColor(member.user_id, theme);
-            const busy = members.pendingId === member.user_id;
-            const self = member.user_id === me.id;
-            return (
-              <li key={member.user_id} className="ss-member" data-member={member.user_id}>
-                <span
-                  className="ss-member-avatar"
-                  style={{
-                    background: colour.background,
-                    color: colour.foreground,
-                    borderColor: colour.border,
+        <>
+          {members.members.length > 0 && (
+            <div className="ss-members-tools">
+              <div className="ss-find" role="search">
+                <Icon name="search" size="small" />
+                <input
+                  ref={findInput}
+                  type="search"
+                  className="ss-find-input"
+                  placeholder="Find a member by name or email"
+                  aria-label={`Find a member of ${project.name}`}
+                  aria-controls="ss-member-list"
+                  value={query}
+                  data-find-member
+                  onChange={(event) => {
+                    setQuery(event.target.value);
                   }}
-                  aria-hidden="true"
-                >
-                  {initials(member.name)}
-                </span>
-                <div className="ss-member-who">
-                  <span className="ss-member-name">
-                    {member.name}
-                    {self && <span className="ss-you">YOU</span>}
-                  </span>
-                  <span className="ss-member-email">{member.email}</span>
-                </div>
-                {mayManage ? (
-                  <div className="ss-member-actions">
-                    <label className="ss-member-role">
-                      <span className="visually-hidden">Role for {member.name}</span>
-                      <Dropdown
-                        variant="bare"
-                        noun="roles"
-                        value={member.role}
-                        disabled={busy}
-                        onChange={(value) => {
-                          void members.setRole(member.user_id, value as ProjectRole).then(() => {
-                            touchedSelf(member.user_id);
-                          });
-                        }}
-                        options={PROJECT_ROLES.map((role) => ({
-                          value: role,
-                          label: projectRoleLabel(role),
-                          title: ROLE_SUMMARY[role],
-                        }))}
-                      />
-                    </label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      data-action="remove"
-                      disabled={busy}
-                      aria-label={`Remove ${member.name}`}
-                      onClick={() => {
-                        setRemoving(member);
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ) : (
-                  <span
-                    className="ss-member-role-static"
-                    title={ROLE_SUMMARY[member.role as ProjectRole]}
-                  >
-                    {projectRoleLabel(member.role)}
-                  </span>
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && query !== '') {
+                      event.preventDefault();
+                      setQuery('');
+                    }
+                  }}
+                />
+                {query !== '' && (
+                  <IconButton
+                    label="Clear the search"
+                    icon="close"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setQuery('');
+                      findInput.current?.focus();
+                    }}
+                  />
                 )}
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+              <p className="ss-role-summary" aria-live="polite" data-role-summary>
+                {query.trim() === ''
+                  ? roleSummary(members.members)
+                  : `${String(shown.length)} of ${String(members.members.length)} match`}
+              </p>
+            </div>
+          )}
+          {members.members.length === 0 ? (
+            <p className="ss-members-empty" data-members-empty>
+              Nobody is in {project.name} yet.
+              {mayManage ? ' Add people from the organisation above.' : ''}
+            </p>
+          ) : shown.length === 0 ? (
+            <p className="ss-members-empty" data-members-no-match>
+              Nobody here matches “{query.trim()}”.
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuery('');
+                  findInput.current?.focus();
+                }}
+              >
+                Clear search
+              </Button>
+            </p>
+          ) : (
+            <ul className="ss-members" id="ss-member-list">
+              {shown.map((member) => {
+                const colour = avatarColor(member.user_id, theme);
+                const busy = members.pendingId === member.user_id;
+                const self = member.user_id === me.id;
+                return (
+                  <li key={member.user_id} className="ss-member" data-member={member.user_id}>
+                    <span
+                      className="ss-member-avatar"
+                      style={{
+                        background: colour.background,
+                        color: colour.foreground,
+                        borderColor: colour.border,
+                      }}
+                      aria-hidden="true"
+                    >
+                      {initials(member.name)}
+                    </span>
+                    <div className="ss-member-who">
+                      <span className="ss-member-name">
+                        <span className="ss-member-name-text" title={member.name}>
+                          {member.name}
+                        </span>
+                        {self && <span className="ss-you">YOU</span>}
+                      </span>
+                      <span className="ss-member-email" title={member.email}>
+                        {member.email}
+                      </span>
+                    </div>
+                    {mayManage ? (
+                      <div className="ss-member-actions">
+                        <label className="ss-member-role">
+                          <span className="visually-hidden">Role for {member.name}</span>
+                          <Dropdown
+                            variant="bare"
+                            noun="roles"
+                            value={member.role}
+                            disabled={busy}
+                            onChange={(value) => {
+                              void changeRole(member, value as ProjectRole);
+                            }}
+                            options={PROJECT_ROLES.map((role) => ({
+                              value: role,
+                              label: projectRoleLabel(role),
+                              title: ROLE_SUMMARY[role],
+                            }))}
+                          />
+                        </label>
+                        {self ? (
+                          <p className="ss-self-note" data-self-note>
+                            You — use Leave space below
+                          </p>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-action="remove"
+                            disabled={busy}
+                            aria-label={`Remove ${member.name}`}
+                            onClick={() => {
+                              setRemoving(member);
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <span
+                        className="ss-member-role-static"
+                        title={ROLE_SUMMARY[member.role as ProjectRole]}
+                      >
+                        {projectRoleLabel(member.role)}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       {removing !== undefined && (
@@ -437,13 +549,19 @@ function AddPeople({
             }}
           />
         </div>
-        <div className="ss-segmented" role="radiogroup" aria-label="Role for the people added">
-          {ADD_ROLES.map((value) => (
+        <div
+          className="ss-segmented"
+          role="radiogroup"
+          aria-label="Role for the people added"
+          onKeyDown={onRadioGroupKeyDown}
+        >
+          {ADD_ROLES.map((value, index) => (
             <button
               key={value}
               type="button"
               role="radio"
               aria-checked={role === value}
+              tabIndex={radioTabIndex(role === value, index, true)}
               data-add-role={value}
               title={ROLE_SUMMARY[value]}
               onClick={() => {
