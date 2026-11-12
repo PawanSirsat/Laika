@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Project } from '../../../api/projects.ts';
 import { updateSpace } from '../../../api/space-settings.ts';
+import { Button } from '../../../components/forms/Button.tsx';
 import { InlineConfirm } from '../../../components/InlineConfirm.tsx';
 import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 
@@ -72,24 +73,23 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
                 hold “Create and archive spaces” in your organisation role.
               </p>
             ) : archived ? (
-              <button
-                type="button"
-                className="ss-btn"
+              <Button
+                variant="secondary"
                 data-action="restore"
-                disabled={busy}
+                busy={busy}
                 onClick={() => {
                   set(false);
                 }}
               >
                 Restore
-              </button>
+              </Button>
             ) : confirming ? (
               <InlineConfirm
                 className="ss-confirm"
                 question={`Archive ${project.name}? Its board becomes read-only until it is restored.`}
                 confirmLabel="Archive space"
-                confirmClassName="ss-btn ss-btn-danger-solid"
-                cancelClassName="ss-btn"
+                confirmClassName="button button-danger button-md"
+                cancelClassName="button button-secondary button-md"
                 confirmAction="confirm-archive"
                 busy={busy}
                 onConfirm={() => {
@@ -101,17 +101,16 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
                 returnFocus={() => archiveButton.current}
               />
             ) : (
-              <button
+              <Button
                 ref={archiveButton}
-                type="button"
-                className="ss-btn ss-btn-danger"
+                variant="danger"
                 data-action="archive"
                 onClick={() => {
                   setConfirming(true);
                 }}
               >
                 Archive
-              </button>
+              </Button>
             )}
             {mayArchive && <SaveStatus state={status.state} onRetry={status.retry} />}
             {failure !== undefined && (

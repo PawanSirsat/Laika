@@ -170,15 +170,16 @@ void describe('the startup splash', () => {
     try {
       const steps = still.page.locator('.brand-splash-step');
       await steps.first().waitFor({ timeout: 20_000 });
+      // Held, not removed (LAI-1208's one-rule guard): paused on its first frame.
       const read = await steps.evaluateAll((els) =>
         els.map((el) => ({
-          animation: getComputedStyle(el).animationName,
+          animation: getComputedStyle(el).animationPlayState,
           background: getComputedStyle(el).backgroundColor,
         })),
       );
       assert.deepEqual(
         read.map((r) => r.animation),
-        ['none', 'none', 'none', 'none'],
+        ['paused', 'paused', 'paused', 'paused'],
         'a pill is still stepping under reduced motion',
       );
       // Still a loader: one pill lit, the rest the track.
@@ -200,10 +201,12 @@ void describe('the icon loader', () => {
       assert.equal(await spinner.locator('.brand-mark').getAttribute('aria-hidden'), 'true');
 
       await h.page.emulateMedia({ reducedMotion: 'reduce' });
+      // Held on its first frame (LAI-1208's one-rule guard), not removed.
       await until(
-        async () => (await ring.evaluate((el) => getComputedStyle(el).animationName)) === 'none',
+        async () =>
+          (await ring.evaluate((el) => getComputedStyle(el).animationPlayState)) === 'paused',
       );
-      assert.equal(await ring.evaluate((el) => getComputedStyle(el).animationName), 'none');
+      assert.equal(await ring.evaluate((el) => getComputedStyle(el).animationPlayState), 'paused');
       // The arc is still drawn: a still loader, not a missing one.
       const arc = await spinner.locator('.brand-spinner-arc').boundingBox();
       assert.ok(arc !== null && arc.width > 0, 'the arc vanished under reduced motion');

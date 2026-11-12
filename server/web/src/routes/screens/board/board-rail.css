@@ -57,7 +57,7 @@
 
 .rail-dot-live {
   background: var(--chip-green);
-  animation: rail-pulse 2s ease-in-out infinite;
+  animation: rail-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 .rail-dot-connecting,
@@ -72,12 +72,6 @@
   }
   50% {
     opacity: 0.3;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rail-dot-live {
-    animation: none;
   }
 }
 

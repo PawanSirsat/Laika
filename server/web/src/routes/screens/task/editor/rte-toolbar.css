@@ -1,0 +1,152 @@
+/*
+ * The editor toolbar's fit (LAI-1209): grouped tools on one line, the ones a
+ * narrow box has no room for moved into *More formatting*. Its own file,
+ * beside rich-editor.css, so the open motion work (#329) on that file does
+ * not collide with this. Tokens only, both themes.
+ *
+ * The toolbar is a size container, so the widths below are **the toolbar's**,
+ * not the window's: the same editor sits in the Create task dialog, the side
+ * panel and a comment, each a different width at the same window size.
+ *
+ *   ≥ 42rem   every tool on the bar; no ⋯
+ *   < 42rem   the inserts (tier 2: table, mention, card) move to ⋯
+ *   < 38rem   the rarer marks and blocks (tier 3) follow
+ *   < 21.5rem numbered list, undo and redo (tier 4) too
+ *
+ * Measured from the tools' own sizes (28px squares, 2px gaps, the 7.5rem
+ * text-style menu): all of them need ~41.5rem, tiers 1 and 4 with ⋯ ~21rem,
+ * so a 390px phone keeps one row and its undo. `dialog-tooltips.test.ts`
+ * holds the toolbar to one row at 1440 and 390.
+ */
+
+.rte-toolbar {
+  container: rte-toolbar / inline-size;
+}
+
+/* The Markdown toggle's mono glyph, following its new name. */
+.rte-tool[aria-label='Markdown source'] .rte-glyph {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+/* ------------------------------------------------------------- the ⋯ menu */
+
+.rte-more-wrap {
+  position: relative;
+  display: none;
+}
+
+.rte-menu {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.rte-menu-item {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rte-menu-item:hover:not([aria-disabled='true']),
+.rte-menu-item:focus-visible {
+  background: var(--bg-column);
+  outline: none;
+}
+
+.rte-menu-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.rte-menu-item[aria-checked='true'] {
+  color: var(--accent);
+}
+
+.rte-menu-item[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rte-menu-glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.rte-menu-item[data-rte-tool='Strikethrough'] .rte-glyph {
+  text-decoration: line-through;
+}
+
+.rte-menu-label {
+  flex: 1;
+}
+
+.rte-menu-kbd {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ the fit rules */
+
+@container rte-toolbar (width < 42rem) {
+  .rte-toolbar > [data-rte-tier='2'] {
+    display: none;
+  }
+
+  .rte-more-wrap {
+    display: inline-flex;
+  }
+
+  .rte-menu-item[data-rte-tier='2'] {
+    display: flex;
+  }
+}
+
+@container rte-toolbar (width < 38rem) {
+  .rte-toolbar > [data-rte-tier='3'] {
+    display: none;
+  }
+
+  .rte-menu-item[data-rte-tier='3'] {
+    display: flex;
+  }
+
+  .rte-style {
+    min-width: 6.5rem;
+  }
+}
+
+@container rte-toolbar (width < 21.5rem) {
+  .rte-toolbar > [data-rte-tier='4'] {
+    display: none;
+  }
+
+  .rte-menu-item[data-rte-tier='4'] {
+    display: flex;
+  }
+}

@@ -279,9 +279,11 @@
  * would take away the feedback, not just the motion.
  */
 @media (prefers-reduced-motion: reduce) {
+  /* The loops run on --motion-* (LAI-1126), not motion.css's tokens: held
+     on their first frame rather than run once by motion.css's backstop. */
   .brand-spinner-ring,
   .brand-splash-step {
-    animation: none;
+    animation-play-state: paused;
   }
 
   .brand-splash-step:first-child {

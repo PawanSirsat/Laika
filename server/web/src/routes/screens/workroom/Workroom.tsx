@@ -62,6 +62,7 @@ import {
   type PanelPrefs,
   type PanelSide,
 } from './workroom-layout.ts';
+import { prefersReducedMotion } from '../../../theme/motion.ts';
 
 export interface WorkroomProps {
   readonly task: TaskSummary;
@@ -314,7 +315,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
     setContentsOpen(false);
     if (mode === 'one') return;
     const target = document.getElementById(`wr-${id}`);
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce = prefersReducedMotion();
     target?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     target?.focus({ preventScroll: true });
   };

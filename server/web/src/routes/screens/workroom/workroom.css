@@ -731,9 +731,3 @@
 :root[data-workroom-focus] #sidebar {
   display: none;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .wr-separator-grip {
-    transition: none;
-  }
-}

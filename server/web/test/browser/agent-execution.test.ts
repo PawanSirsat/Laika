@@ -611,12 +611,18 @@ void describe('the live claim (LAI-597)', () => {
       const working = card(h.page, 't4').locator('[data-exec-state]');
       await working.waitFor({ timeout: 10_000 });
       assert.equal(await working.getAttribute('data-exec-state'), 'working');
-      assert.equal((await working.innerText()).trim(), 'Working · Claude Code · Belka');
+      // LAI-1206: the state line says the state; the agent is named once, on
+      // the attribution line under it, with whose work it is.
+      assert.equal((await working.innerText()).trim(), 'Working');
+      assert.equal(
+        (await card(h.page, 't4').locator('.card-attribution .agent-chip').innerText()).trim(),
+        'Claude Code · Belka',
+      );
       assert.equal(await working.locator('svg[data-shape="working"]').count(), 1);
 
       const quiet = card(h.page, 't5').locator('[data-exec-state]');
       assert.equal(await quiet.getAttribute('data-exec-state'), 'connection_lost');
-      assert.equal((await quiet.innerText()).trim(), 'Connection lost · Claude Code · Belka');
+      assert.equal((await quiet.innerText()).trim(), 'Connection lost');
       assert.equal(await quiet.locator('svg[data-shape="connection_lost"]').count(), 1);
 
       // No live claim: what LAI-543 drew, unchanged.
@@ -651,7 +657,8 @@ void describe('the live claim (LAI-597)', () => {
       await h.page.clock.fastForward(10_000);
       await until(async () => (await line.getAttribute('data-exec-state')) === 'connection_lost');
       assert.equal(await line.getAttribute('data-exec-state'), 'connection_lost');
-      assert.match(await line.innerText(), /Connection lost · Claude Code · Belka/);
+      // The agent is named on the attribution line since LAI-1206, not here.
+      assert.equal((await line.innerText()).trim(), 'Connection lost');
       assert.equal(taskReads(h), before, 'the flip re-read a task');
     } finally {
       await h.close();

@@ -2582,7 +2582,7 @@
 /* Overview: a figure with somewhere to go is one link the size of its tile. */
 .org-stat-linked {
   position: relative;
-  transition: border-color 140ms ease-out;
+  transition: border-color var(--duration-fast) var(--ease-enter);
 }
 
 .org-stat-linked:hover {
@@ -2911,17 +2911,5 @@
   .org-pending-notice {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .org-scroll-inner {
-    scroll-behavior: auto;
-  }
-
-  .org-mode,
-  .perm-group-toggle,
-  .org-stat-linked {
-    transition: none;
   }
 }

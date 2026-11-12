@@ -309,7 +309,7 @@
   width: 0.875rem;
   height: 0.875rem;
   stroke: currentColor;
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .tlx-chevron[aria-expanded='true'] svg {
@@ -777,7 +777,7 @@
   width: 0.875rem;
   height: 0.875rem;
   stroke: currentColor;
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .timeline-tray-toggle[aria-expanded='true'] svg {
@@ -907,12 +907,5 @@
 @media (max-width: 30rem) {
   .tlx-frame {
     --tlx-side-cue: 9.5rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tlx-chevron svg,
-  .timeline-tray-toggle svg {
-    transition: none;
   }
 }

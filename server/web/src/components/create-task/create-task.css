@@ -70,26 +70,6 @@
   color: var(--text-primary);
 }
 
-.ct-close {
-  flex: none;
-  width: 1.875rem;
-  height: 1.875rem;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-heading-sm);
-  line-height: 1;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.ct-close:hover {
-  background: var(--bg-column);
-}
-
 /* ---------------------------------------------------------------- the body */
 
 .ct-body {
@@ -187,7 +167,7 @@
 .ct-more-caret {
   display: inline-block;
   color: var(--text-secondary);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .ct-more[open] .ct-more-caret {

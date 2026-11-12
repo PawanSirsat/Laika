@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import { menuKey, openingIndex } from './overflow-menu-model.ts';
+import { useLayer } from '../overlay/layer-stack.ts';
+import '../overlay/overlay.css';
 import './overflow-menu.css';
 
 export interface OverflowMenuItem {
@@ -43,6 +45,9 @@ export interface OverflowMenuProps {
  */
 export function OverflowMenu({ label, items }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
+  // On the overlay stack while open (LAI-1205): the panel or dialog it sits in
+  // leaves Escape to it.
+  useLayer('menu', open);
   const [active, setActive] = useState<number | undefined>(undefined);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -50,7 +55,11 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
   const menuId = useId();
   const enabled = items.map((item) => item.disabled !== true);
 
-  const show = (fromEnd: boolean): void => {
+  /** Opened from the keyboard: no entrance to wait for (`overflow-menu.css`). */
+  const [byKey, setByKey] = useState(false);
+
+  const show = (fromEnd: boolean, keyboard = true): void => {
+    setByKey(keyboard);
     setOpen(true);
     setActive(openingIndex(enabled, fromEnd));
   };
@@ -136,9 +145,10 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
         aria-expanded={open}
         {...(open ? { 'aria-controls': menuId } : {})}
         ref={buttonRef}
-        onClick={() => {
+        onClick={(event) => {
           if (open) close(false);
-          else show(false);
+          // A click the keyboard made (Enter, Space) has no pointer detail.
+          else show(false, event.detail === 0);
         }}
         onKeyDown={onButtonKey}
       >
@@ -149,6 +159,7 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
           className="overflow-menu-list"
           role="menu"
           id={menuId}
+          data-keyboard={byKey ? '' : undefined}
           aria-label={label}
           onKeyDown={onMenuKey}
         >

@@ -1103,14 +1103,6 @@
     line-height: var(--leading-heading-md);
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .doc-trial * {
-    scroll-behavior: auto;
-    transition: none;
-  }
-}
-
 /* ---- print: browser "Save as PDF" (T10) ---- */
 
 @page {

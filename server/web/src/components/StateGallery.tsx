@@ -17,6 +17,12 @@ const AgentStateGallery = lazy(() => import('./agent-states/AgentStateGallery.ts
 /** Developer access V3's shared parts (LAI-1044), in their own chunk for the same reason. */
 const WizardGallery = lazy(() => import('./wizard/WizardGallery.tsx'));
 
+/** The LAI-1207 state kit's specimens, in their own chunk for the same reason. */
+const StateKitGallery = lazy(() => import('./StateKitGallery.tsx'));
+
+/** Button, fields and Icon in every state (LAI-1204), in their own chunk too. */
+const ControlsGallery = lazy(() => import('./forms/ControlsGallery.tsx'));
+
 /**
  * Every state on one page (LAI-020 AC7), so they can be reviewed — and their
  * copy argued with — without navigating an app that does not exist yet.
@@ -181,6 +187,14 @@ export function StateGallery() {
         fallback={<LoadingState shape="card" count={1} label="Loading Developer access parts" />}
       >
         <WizardGallery />
+      </Suspense>
+
+      <Suspense fallback={<LoadingState shape="card" count={2} label="Loading the state kit" />}>
+        <StateKitGallery />
+      </Suspense>
+
+      <Suspense fallback={<LoadingState shape="card" count={1} label="Loading controls" />}>
+        <ControlsGallery />
       </Suspense>
     </section>
   );

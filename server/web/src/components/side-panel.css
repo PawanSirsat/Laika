@@ -2,15 +2,16 @@
  * The details side panel (LAI-1078): a right-hand column the height of the
  * window on a desktop, the bottom sheet below 900px — where the shell's
  * sidebar goes off-canvas, as My day's drawer. Under a confirmation (80), over
- * the page. Tokens only.
+ * the page — the layers are `overlay.css`'s (LAI-1205). Tokens only.
  */
 
 .side-panel-scrim {
   position: fixed;
   inset: 0;
-  z-index: var(--layer-panel);
+  z-index: var(--layer-panel-scrim);
   /* Darker, and frosted by `glass.css` (LAI-1132). */
   background: var(--glass-scrim);
+  transition: opacity var(--overlay-scrim-in) var(--overlay-ease-out);
 }
 
 .side-panel {
@@ -18,7 +19,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: calc(var(--layer-panel) + 1);
+  z-index: var(--layer-panel);
   display: flex;
   flex-direction: column;
   width: min(28rem, 100vw);
@@ -28,6 +29,20 @@
   border-left: 1px solid var(--glass-border-strong);
   box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
+  /*
+   * The panel itself only fades and never transforms, so a Dropdown portaled
+   * into it (it is `aria-modal`) is placed against the window even while it
+   * opens; its rows carry the slide (`overlay.css` explains, LAI-1205).
+   */
+  transition: opacity var(--overlay-sheet-in) var(--overlay-ease-sheet);
+}
+
+.side-panel > :not([data-dropdown-panel]) {
+  transition: transform var(--overlay-sheet-in) var(--overlay-ease-sheet);
+}
+
+.side-panel:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .side-panel-head {
@@ -129,5 +144,29 @@
     border-left: 0;
     border-top: 1px solid var(--border-card);
     border-radius: var(--radius-column) var(--radius-column) 0 0;
+  }
+}
+
+/*
+ * Open motion (LAI-1205): in from the edge it sits on — from the right on a
+ * desktop, a short slide that reads as "beside the list"; up from the bottom
+ * as a sheet. Nothing under reduced motion.
+ */
+@starting-style {
+  .side-panel-scrim,
+  .side-panel {
+    opacity: 0;
+  }
+
+  .side-panel > :not([data-dropdown-panel]) {
+    transform: translateX(var(--overlay-slide));
+  }
+}
+
+@media (max-width: 900px) {
+  @starting-style {
+    .side-panel > :not([data-dropdown-panel]) {
+      transform: translateY(var(--overlay-sheet-rise));
+    }
   }
 }

@@ -554,7 +554,7 @@
  * **The empty List, centred in the card** (LAI-717): the state takes the space
  * above the Create row and centres itself in it, so the two never meet.
  */
-.list-scroll-empty > .state {
+.list-scroll-empty > .empty-panel {
   flex: 1 1 auto;
 }
 
@@ -687,6 +687,18 @@
 
 .list-row-selected td {
   border-bottom-color: var(--accent-border);
+}
+
+/* The row whose task is open in the drawer (LAI-1206): an accent outline,
+   which a checked row's tint does not have — two states, two drawings. */
+.list-row-open {
+  outline: 1px solid var(--accent-border);
+  outline-offset: -1px;
+}
+
+/* The sprint pill sits in a 46px column: let it use the cell, no wider. */
+.list-spr .chip {
+  --chip-max: 100%;
 }
 
 /* ------------------------------------------------- the status pill as a menu */

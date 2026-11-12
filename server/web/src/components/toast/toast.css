@@ -43,7 +43,7 @@
   line-height: var(--leading-body);
   color: var(--bg-card);
   pointer-events: auto;
-  animation: toast-in 160ms ease-out;
+  animation: toast-in var(--duration-base) var(--ease-enter);
 }
 
 @keyframes toast-in {
@@ -52,13 +52,6 @@
     transform: translateY(0.5rem);
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    animation: none;
-  }
-}
-
 .toast-dot {
   flex: none;
   width: 6px;

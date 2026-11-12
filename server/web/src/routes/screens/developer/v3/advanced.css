@@ -202,7 +202,7 @@
   border-right: 2px solid var(--text-muted);
   border-bottom: 2px solid var(--text-muted);
   transform: rotate(-45deg);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .dev-fold[open] > summary::before {
@@ -262,10 +262,4 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dev-fold > summary::before {
-    transition: none;
-  }
 }

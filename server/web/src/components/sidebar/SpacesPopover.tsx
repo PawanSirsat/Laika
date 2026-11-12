@@ -4,6 +4,7 @@ import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import type { Space } from '../../routes/spaces.ts';
 import { PinButton } from './PinButton.tsx';
+import { useLayer } from '../overlay/layer-stack.ts';
 
 export interface SpacesPopoverProps {
   /** Spaces not already pinned in the sidebar — the prototype's `popSpaces`. */
@@ -43,6 +44,8 @@ export function SpacesPopover({
 }: SpacesPopoverProps) {
   const { theme } = useTheme();
   const [query, setQuery] = useState('');
+  // On the overlay stack (LAI-1205): a dialog above it keeps Escape.
+  const { isTop } = useLayer('popover');
   const list = useRef<HTMLUListElement>(null);
 
   /*
@@ -85,7 +88,7 @@ export function SpacesPopover({
         // A custom property, so the CSS can keep the panel inside a phone.
         style={{ '--spaces-pop-left': `${String(left)}px` } as CSSProperties}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') onClose();
+          if (event.key === 'Escape' && !event.defaultPrevented && isTop()) onClose();
         }}
       >
         <div className="spaces-pop-head">

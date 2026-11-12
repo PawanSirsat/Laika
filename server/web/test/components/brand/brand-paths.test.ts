@@ -158,7 +158,12 @@ void describe('motion', () => {
     const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css);
     assert.ok(reduced, 'brand.css ignores prefers-reduced-motion');
     const body = reduced[1] ?? '';
-    assert.match(body, /\.brand-spinner-ring,\s*\.brand-splash-step \{\s*animation: none;/);
+    // Paused, not removed: motion-tokens.test.ts allows no `animation: none` in
+    // an exempt block (LAI-1208), and a paused loop holds its first frame.
+    assert.match(
+      body,
+      /\.brand-spinner-ring,\s*\.brand-splash-step \{\s*animation-play-state: paused;/,
+    );
     assert.match(body, /\.brand-splash-step:first-child \{\s*background: var\(--brand-active\);/);
     assert.doesNotMatch(body, /display:\s*none/, 'a still loader must stay visible');
   });
