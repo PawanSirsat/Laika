@@ -59,3 +59,32 @@ void describe('placeTooltip', () => {
     assert.ok(at.x >= TIP_MARGIN && at.x + 280 <= 390 - TIP_MARGIN, String(at.x));
   });
 });
+
+void describe('placeTooltip keeps clear of the field being typed in (LAI-1209)', () => {
+  const anchor = { left: 500, top: 100, width: 32, height: 32 };
+
+  void test('below would cover the field: it goes above', () => {
+    const field = { left: 400, top: 140, width: 300, height: 36 };
+    const at = placeTooltip(anchor, TIP, VIEW, 'bottom', field);
+    assert.equal(at.side, 'top');
+  });
+
+  void test('above would cover it: it goes below, even when asked for above', () => {
+    const field = { left: 400, top: 50, width: 300, height: 30 };
+    const at = placeTooltip(anchor, TIP, VIEW, 'top', field);
+    assert.equal(at.side, 'bottom');
+  });
+
+  void test('a field elsewhere changes nothing', () => {
+    const field = { left: 0, top: 600, width: 300, height: 36 };
+    assert.deepEqual(
+      placeTooltip(anchor, TIP, VIEW, 'bottom', field),
+      placeTooltip(anchor, TIP, VIEW, 'bottom'),
+    );
+  });
+
+  void test('both sides would cover it: it keeps the side it had', () => {
+    const field = { left: 0, top: 0, width: 1440, height: 900 };
+    assert.equal(placeTooltip(anchor, TIP, VIEW, 'bottom', field).side, 'bottom');
+  });
+});
