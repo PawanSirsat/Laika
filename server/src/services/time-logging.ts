@@ -1,8 +1,14 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole } from '../db/enums.ts';
-import { projectMemberships, userAvailability, users } from '../db/schema.ts';
+import {
+  projectMemberships,
+  timeDrafts,
+  timeEntries,
+  userAvailability,
+  users,
+} from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { readLoggedMany } from './analytics-views.ts';
 import { zonesFor } from './availability.ts';
@@ -33,7 +39,10 @@ import { stretch } from './time-summary.ts';
  * `threshold_minutes` is served, never assumed by the client. Each person
  * carries their zone, the day they joined and today in that zone, and their
  * working days — so a client needs no zone arithmetic to say which days were
- * due. Days are each person's own filed days (`time_entries.day`), as every
+ * due. **The day they joined is the earlier of the day their account was made
+ * and their first day with any time** (LAI-1177): an account made by an import
+ * carries months of earlier time, and that time was due when it was logged,
+ * not only from the day the import ran. Days are each person's own filed days (`time_entries.day`), as every
  * time read counts them. Cells hold live entries and **pending** drafts,
  * apart, read through {@link minutesByUserDay} — the Time report's own two
  * WHEREs. Agent time is never read (D-088 item 8).
@@ -186,6 +195,44 @@ function candidatesOf(db: Db, ids: readonly string[] | null): Candidate[] {
   }));
 }
 
+/**
+ * Each shown person's first filed day across all time — a live entry or a
+ * pending draft, whichever is earlier — or nothing when they never logged.
+ * Two grouped reads, over all days, never the stretch: the stretch decides
+ * what is shown, not when somebody started.
+ */
+function firstDaysFor(db: Db, ids: readonly string[]): Map<string, string> {
+  const first = new Map<string, string>();
+  if (ids.length === 0) return first;
+  const take = (userId: string, day: string | null): void => {
+    if (day === null) return;
+    const had = first.get(userId);
+    if (had === undefined || day < had) first.set(userId, day);
+  };
+  for (const r of db
+    .select({ userId: timeEntries.userId, day: sql<string | null>`min(${timeEntries.day})` })
+    .from(timeEntries)
+    .where(and(isNull(timeEntries.deletedAt), inArray(timeEntries.userId, [...ids])))
+    .groupBy(timeEntries.userId)
+    .all()) {
+    take(r.userId, r.day);
+  }
+  for (const r of db
+    .select({ userId: timeDrafts.userId, day: sql<string | null>`min(${timeDrafts.day})` })
+    .from(timeDrafts)
+    .where(and(eq(timeDrafts.state, 'pending'), inArray(timeDrafts.userId, [...ids])))
+    .groupBy(timeDrafts.userId)
+    .all()) {
+    take(r.userId, r.day);
+  }
+  return first;
+}
+
+/** The earlier of two `YYYY-MM-DD` days; the one given when the other is missing. */
+function earlierDay(a: string, b: string | undefined): string {
+  return b !== undefined && b < a ? b : a;
+}
+
 /** Each shown person's working days: their own when they set any, else Monday to Friday. */
 function workDaysFor(db: Db, ids: readonly string[]): Map<string, number[]> {
   const set = new Map(
@@ -232,6 +279,7 @@ function build(db: Db, actor: ResolvedActor, days: string[], now: number): TimeL
   const ids = shown.map((c) => c.id);
   const zones = zonesFor(db, ids);
   const workDays = workDaysFor(db, ids);
+  const firstDays = firstDaysFor(db, ids);
 
   return {
     from,
@@ -243,7 +291,7 @@ function build(db: Db, actor: ResolvedActor, days: string[], now: number): TimeL
       return {
         user: { id: c.id, name: c.name, org_role: c.orgRole, deactivated: c.deactivated },
         zone,
-        joined_day: dayIn(zone, c.createdAt.getTime()),
+        joined_day: earlierDay(dayIn(zone, c.createdAt.getTime()), firstDays.get(c.id)),
         today_day: dayIn(zone, now),
         work_days: workDays.get(c.id) ?? [...DEFAULT_WORK_DAYS],
         days: (byPerson.get(c.id) ?? []).sort((a, b) => a.day.localeCompare(b.day)),

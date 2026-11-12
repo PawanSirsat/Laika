@@ -5503,8 +5503,9 @@ parameter names anybody else.
   confirmed_minutes, drafted_minutes }` — live entries and **pending**
   drafts, by each entry's filed day, the person's own calendar day, read
   with the Time report's two WHEREs; `zone` their place's (§4.46), `UTC`
-  when unset; `joined_day` the day their account was made and `today_day`
-  today, both in that zone, so the client does no zone arithmetic;
+  when unset; `joined_day` the earlier of the day their account was made
+  and their first day with any time (LAI-1177), and `today_day` today, both
+  in that zone, so the client does no zone arithmetic;
   `work_days` their working week (§4.85), Monday to Friday when they set
   none. `threshold_minutes` is **served** — 480, D-148 item 2 — and the
   verdict on each cell is the client's: full, under or nothing on a working

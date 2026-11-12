@@ -234,6 +234,22 @@ describe('each person’s facts', () => {
     });
   });
 
+  it('joins on the first filed day when that is before the account was made (LAI-1177)', () => {
+    // An import makes the account today and carries the person's earlier time.
+    const imported = person('Imported', { createdAt: NOW });
+    entry(imported, '2026-10-06', 480);
+    entry(imported, '2026-09-30', 30, true); // deleted: not a day they had
+    const drafted = person('Drafted', { createdAt: NOW });
+    draft(drafted, '2026-10-20', 60);
+    draft(drafted, '2026-10-01', 60, 'dismissed'); // not pending: not a day they had
+    const fresh = person('Fresh', { createdAt: NOW });
+    entry(fresh, '2026-11-13', 60); // filed ahead: joining stays the account's day
+    const v = grid(owner, '2026-11-10', '2026-11-16');
+    expect(row(v, imported).joined_day).toBe('2026-10-06');
+    expect(row(v, drafted).joined_day).toBe('2026-10-20');
+    expect(row(v, fresh).joined_day).toBe('2026-11-12');
+  });
+
   it('serves the person’s working days, Monday to Friday when they set none or an empty list', () => {
     const none = person('None');
     const empty = person('Empty');
@@ -427,8 +443,13 @@ describe('the read', () => {
     for (const table of ['time_entries', 'time_drafts'] as const) {
       const everyone = queryPlansOf(t.sqlite, table, () => grid(owner));
       expect(everyone.length).toBeGreaterThan(0);
+      // The minutes read ranges the day index; the first-day read (LAI-1177)
+      // walks each shown person's (user, day) index. Neither is a scan.
+      expect(
+        everyone.some((p) => new RegExp(`USING (COVERING )?INDEX ${table}_day_idx`).test(p)),
+      ).toBe(true);
       for (const plan of everyone) {
-        expect(plan).toMatch(new RegExp(`USING (COVERING )?INDEX ${table}_day_idx`));
+        expect(plan).toMatch(new RegExp(`USING (COVERING )?INDEX ${table}_(user_)?day_idx`));
         expect(plan).not.toMatch(new RegExp(`SCAN ${table}(?! USING)`));
       }
       const led = queryPlansOf(t.sqlite, table, () => grid(lead));
