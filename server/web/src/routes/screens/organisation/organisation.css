@@ -46,8 +46,10 @@
 }
 
 .org-stat {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
   display: flex;
@@ -168,8 +170,10 @@
 }
 
 .org-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
 }
@@ -2268,23 +2272,6 @@
 
 /* ------------------------------- LAI-987's features in LAI-893's tab (LAI-999) */
 
-.org-undo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin: 0 var(--space-5) var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-card);
-  background: var(--accent-bg);
-  font-size: var(--text-body);
-  color: var(--text-primary);
-}
-
-.org-undo-btn {
-  margin-left: auto;
-}
-
 .org-people-space {
   flex: none;
 }
@@ -2363,12 +2350,238 @@
 }
 
 @media (max-width: 40rem) {
-  .org-undo {
+  .org-invites li {
+    flex-wrap: wrap;
+  }
+}
+
+/* ------------------------------------------- the 17-state pass (LAI-1194) */
+
+/* A wide table says it is wide (V9): a fade on the edge with more behind it,
+   a line of text under it, and a focus ring when the arrow keys can scroll it.
+   Every cue is keyed on data-overflow, which is measured — at 1440 nothing
+   here applies. */
+.org-scroll {
+  position: relative;
+}
+
+.org-scroll-inner {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.org-scroll-inner:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.org-scroll[data-overflow='true']:not([data-at-end='true'])::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 1.75rem;
+  width: 3rem;
+  pointer-events: none;
+  background: linear-gradient(to left, var(--bg-card), transparent);
+}
+
+.org-scroll-hint {
+  margin: 0;
+  padding: var(--space-1) var(--space-5) var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.org-people-empty-clear:focus-visible,
+.perm-group-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A refresh that failed: the last good answer stays below, this says so. */
+.org-refresh-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-card);
+  background: var(--chip-orange-bg);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-refresh-error > span {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.org > .org-refresh-error {
+  margin: var(--space-3) var(--space-5) 0;
+}
+
+/* Disabled controls say why. */
+.org-transfer-why {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.org-tokens-result:empty {
+  display: none;
+}
+
+.org-tokens-result {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+/* Empty states with a way on: the quiet second action beside Invite. */
+.org-people-empty-clear {
+  height: 2rem;
+  margin: 0;
+  padding: 0 0.875rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.org-people-empty-clear:hover {
+  background: var(--bg-card-hover);
+}
+
+.org-pending-empty.org-people-empty {
+  padding: 2.5rem var(--space-5);
+}
+
+/* Roles & permissions: a summary first, the inventory on request (V8). */
+.perm-summary {
+  margin: 0 0 var(--space-3);
+  max-width: 60rem;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.perm-find {
+  display: flex;
+  margin: 0 0 var(--space-3);
+  max-width: 28rem;
+}
+
+.perm-find .org-people-search {
+  flex: 1;
+}
+
+.perm-groups {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.perm-groups > .perm-project {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.perm-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-card);
+  background: transparent;
+  font: inherit;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.perm-group-toggle:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+}
+
+.perm-group-toggle:disabled {
+  cursor: default;
+}
+
+.perm-group-toggle .perm-project-head {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.perm-group-chevron {
+  flex: none;
+  width: 1rem;
+  color: var(--text-muted);
+}
+
+.perm-group-count {
+  flex: none;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.perm-groups .perm-held {
+  padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + 1rem + var(--space-2));
+}
+
+.perm-groups .perm-held[hidden] {
+  display: none;
+}
+
+/* Tokens and Deactivate read as buttons, not as faint text (visual audit). */
+.org-tokens-open,
+.org-deactivate {
+  font-weight: var(--weight-semibold);
+}
+
+.org-tokens-open {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+@media (max-width: 40rem) {
+  .org-scroll-hint {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  .org > .org-refresh-error {
     margin-left: var(--space-4);
     margin-right: var(--space-4);
   }
+}
 
-  .org-invites li {
-    flex-wrap: wrap;
+@media (prefers-reduced-motion: reduce) {
+  .org-scroll-inner {
+    scroll-behavior: auto;
+  }
+
+  .org-mode,
+  .perm-group-toggle {
+    transition: none;
   }
 }

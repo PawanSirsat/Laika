@@ -5,9 +5,11 @@
  * The page's insets are `organisation.css`'s (`.org > *`), so nothing here
  * sets a margin.
  *
- * **Seven columns wide, one stacked row narrow.** Below 56rem the row is a
+ * **Seven columns wide, one stacked row narrow.** Below 37.5rem the row is a
  * two-line card — key and title, then the rest — so a phone never scrolls
- * sideways.
+ * sideways. Between that and the width the seven columns need (768, a laptop
+ * with the rail open), the table keeps its columns and scrolls sideways with a
+ * cue on the edge that has more (LAI-1196) instead of crushing the title.
  *
  * The figures strip and the pager (LAI-975) take the Capacity tiles' look
  * (`capacity.css`) at a smaller size: a figure, its label, nothing more.
@@ -441,7 +443,82 @@ button.work-person-chip:hover {
   width: 5rem;
 }
 
-@media (max-width: 56rem) {
+/* ------------------------------------------------- the table and its groups */
+
+.work-table {
+  display: grid;
+  gap: var(--space-3);
+  /* Room for the cards' shadows, which a scrolling box would clip. */
+  padding: 2px 2px var(--space-1);
+  /* The scroller ScrollCue fades and labels (LAI-1201, LAI-1196). */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* Never narrower than its seven columns: past this it scrolls (LAI-1196). */
+.work-table .work-head,
+.work-table .work-group {
+  min-width: 64rem;
+}
+
+.work-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.work-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.work-group-count {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+.work-group-note {
+  margin-top: calc(-1 * var(--space-2));
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+/* The last rows that loaded, after a failed refresh: dimmed, still usable. */
+.work-group-stale .work-list {
+  opacity: 0.72;
+}
+
+.work-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-control);
+  background: var(--blocked-bg);
+}
+
+.work-stale-text {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+@media (max-width: 37.5rem) {
+  .work-table .work-head,
+  .work-table .work-group {
+    min-width: 0;
+  }
+
   .work-head {
     display: none;
   }
@@ -468,7 +545,9 @@ button.work-person-chip:hover {
   .work-meta > * {
     max-width: 100%;
   }
+}
 
+@media (max-width: 56rem) {
   .work-filters .work-filter {
     flex: 1 1 10rem;
     width: auto;

@@ -24,7 +24,8 @@
    */
   height: 100vh;
   overflow: hidden;
-  background: var(--bg-canvas);
+  /* Transparent (LAI-1132): the ambient layer behind it is the ground. */
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-body);
@@ -71,26 +72,17 @@
 
 /* ------------------------------------------------------------- identity */
 
-/* Rendered by `Brand`, which appears in the pre-auth header and on the auth
-   cards as well as the sidebar head — so these stay shell-level. */
+/* Rendered by `Brand` (the lockup, LAI-1126) in the pre-auth header and the
+   first-boot rail — so it stays shell-level. */
 .sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5625rem;
   min-width: 0;
 }
 
-/* 28px here, 30px on the auth card — the prototype uses both. */
-.sidebar-brand .brand-tile {
-  width: 1.75rem;
-  height: 1.75rem;
-}
-
+/* The sidebar head's drawn wordmark (LAI-1126): the box hugs the drawing. */
 .sidebar-wordmark {
-  font-weight: var(--weight-heavy);
-  font-size: var(--text-body);
+  display: flex;
+  align-items: center;
   line-height: 1;
-  letter-spacing: -0.02em;
 }
 
 /* ---------------------------------------------------------------- body */
@@ -120,8 +112,12 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  border-bottom: 1px solid var(--glass-border);
+  /* Level-1 glass (LAI-1132): the pane is `glass.css`'s ::before. */
+  position: relative;
+  isolation: isolate;
+  z-index: var(--layer-header);
+  background: transparent;
 }
 
 .shell-head-right {

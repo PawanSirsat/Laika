@@ -1471,11 +1471,16 @@
 
 .prof-tabs {
   display: flex;
-  gap: 0.25rem;
   padding: 0 0.75rem;
   border-top: 1px solid var(--border-subtle);
-  overflow-x: auto;
-  scrollbar-width: none;
+}
+
+/* The links' row inside it (LAI-1193): scrolling, the edge fade and the
+   reveal are the tab strip's (tabs.css). */
+.prof-tabs-strip {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 0.25rem;
 }
 
 .prof-tab {

@@ -103,16 +103,19 @@
  */
 .dd-panel {
   position: fixed;
-  z-index: 70;
+  /* Above any panel it opens from (B16, LAI-1132). */
+  z-index: var(--layer-menu);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
+  /* Level-3 glass (LAI-1132): the pane is `glass.css`'s ::before. */
+  isolation: isolate;
+  background: transparent;
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-popover);
   padding: 0.25rem;
   font-size: var(--text-body);
   color: var(--text-primary);

@@ -33,6 +33,14 @@
  * reports an `auto` margin as px (see `capture`). Each regeneration was run
  * against the same pre-extraction source (`35ad1314`, in a temporary
  * worktree), never against the refactored page.
+ *
+ * It was regenerated a third time for **a rendering change on purpose**:
+ * LAI-1126 put the brand palette into the theme, so every colour in both style
+ * dumps moved, and the sidebar's brand mark takes a React `useId` before the
+ * page does, which shifts the agent logos' gradient ids by the same count in
+ * the markup digest. The accessibility tree did not change. Diffed against
+ * the dumps of `9ac3be1f` (`LAIKA_GOLDEN_DUMP`) before regenerating: the html
+ * differed only in those ids, the styles only in colour values.
  */
 
 import assert from 'node:assert/strict';

@@ -1,5 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Sprint, SprintInput } from '../../../api/sprints.ts';
 import {
   MIN_SPRINT_DAYS,
@@ -46,6 +46,12 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // The form opens where the keyboard can use it (LAI-1195): on the name.
+  useEffect(() => {
+    formRef.current?.querySelector<HTMLInputElement>('input[name="name"]')?.focus();
+  }, []);
 
   const set = (key: keyof SprintFormValues, value: string): void => {
     const next = { ...values, [key]: value };
@@ -64,7 +70,18 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
 
     const found = validateSprintForm(values);
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      // To the first field that needs fixing, in the order they are read.
+      const first = (['name', 'goal', 'startsOn', 'endsOn'] as const).find(
+        (key) => found[key] !== undefined,
+      );
+      if (first !== undefined) {
+        requestAnimationFrame(() => {
+          formRef.current?.querySelector<HTMLElement>(`[name="${first}"]`)?.focus();
+        });
+      }
+      return;
+    }
 
     const input = toSprintInput(values);
     if (input === null) return;
@@ -75,13 +92,23 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
   };
 
   return (
-    <form className="sprint-form" onSubmit={submit} noValidate>
-      <h2 className="sprint-form-title">{sprint === undefined ? 'New sprint' : 'Edit sprint'}</h2>
+    <form
+      ref={formRef}
+      className="sprint-form"
+      onSubmit={submit}
+      noValidate
+      aria-labelledby="sprint-form-title"
+    >
+      <h2 className="sprint-form-title" id="sprint-form-title">
+        {sprint === undefined ? 'New sprint' : 'Edit sprint'}
+      </h2>
 
       <label className="sprint-field">
         <span className="sprint-label">Name</span>
         <input
           className="sprint-input"
+          name="name"
+          required
           value={values.name}
           maxLength={120}
           onChange={(e) => {
@@ -102,6 +129,9 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
           Goal <span className="sprint-optional">optional</span>
         </span>
         <textarea
+          name="goal"
+          aria-invalid={errors.goal !== undefined}
+          aria-describedby={errors.goal === undefined ? undefined : 'sprint-goal-error'}
           className="sprint-input sprint-textarea"
           value={values.goal}
           maxLength={500}
@@ -110,7 +140,11 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
             set('goal', e.target.value);
           }}
         />
-        {errors.goal !== undefined && <span className="sprint-error">{errors.goal}</span>}
+        {errors.goal !== undefined && (
+          <span className="sprint-error" id="sprint-goal-error">
+            {errors.goal}
+          </span>
+        )}
       </label>
 
       <div className="sprint-dates">
@@ -119,13 +153,20 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
           <input
             className="sprint-input"
             type="date"
+            name="startsOn"
+            required
             value={values.startsOn}
             onChange={(e) => {
               set('startsOn', e.target.value);
             }}
             aria-invalid={errors.startsOn !== undefined}
+            aria-describedby={errors.startsOn === undefined ? undefined : 'sprint-start-error'}
           />
-          {errors.startsOn !== undefined && <span className="sprint-error">{errors.startsOn}</span>}
+          {errors.startsOn !== undefined && (
+            <span className="sprint-error" id="sprint-start-error">
+              {errors.startsOn}
+            </span>
+          )}
         </label>
 
         <label className="sprint-field">
@@ -135,18 +176,27 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
           <input
             className="sprint-input"
             type="date"
+            name="endsOn"
+            required
             value={values.endsOn}
             min={values.startsOn === '' ? undefined : values.startsOn}
             onChange={(e) => {
               set('endsOn', e.target.value);
             }}
             aria-invalid={errors.endsOn !== undefined}
+            aria-describedby={
+              errors.endsOn === undefined ? 'sprint-hint' : 'sprint-end-error sprint-hint'
+            }
           />
-          {errors.endsOn !== undefined && <span className="sprint-error">{errors.endsOn}</span>}
+          {errors.endsOn !== undefined && (
+            <span className="sprint-error" id="sprint-end-error">
+              {errors.endsOn}
+            </span>
+          )}
         </label>
       </div>
 
-      <p className="sprint-hint">
+      <p className="sprint-hint" id="sprint-hint" aria-live="polite">
         {days ??
           `The last day is included. The shortest sprint is ${String(MIN_SPRINT_DAYS)} days.`}
       </p>

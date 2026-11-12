@@ -421,3 +421,43 @@
   padding: var(--space-3) 0;
   border-block: 1px solid var(--border-subtle);
 }
+
+/* ----------------------------------------------------------------- stale */
+
+/* A failed refresh over data still on screen (LAI-1128): a line above the
+   rows, not a page in their place. */
+.state-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.state-stale-retry {
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  padding: 0.125rem 0.625rem;
+  cursor: pointer;
+}
+
+.state-stale-retry:hover {
+  border-color: var(--accent);
+}
+
+.state-stale-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
