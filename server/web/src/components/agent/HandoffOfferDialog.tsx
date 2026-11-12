@@ -225,7 +225,7 @@ export function HandoffOfferDialog({
           </p>
         )}
         {offer.state === 'pending_approval' && approve.kind === 'disabled' && (
-          <p className="handoff-saved" data-approve-reason>
+          <p className="handoff-saved" id="handoff-approve-reason" data-approve-reason>
             {approve.reason}
           </p>
         )}
@@ -247,6 +247,8 @@ export function HandoffOfferDialog({
             <Button
               busy={busy === 'approve'}
               disabled={busy !== null || approve.kind === 'disabled'}
+              // The reason is already on screen, above; read with the button too (LAI-1209).
+              describedBy={approve.kind === 'disabled' ? 'handoff-approve-reason' : undefined}
               onClick={onApprove}
             >
               Approve

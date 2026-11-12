@@ -22,6 +22,8 @@ import {
   summarize,
   teamLoad,
   workloadIn,
+  capacityParams,
+  withCapacityParams,
 } from '../../../../src/routes/screens/capacity/capacity-derive.ts';
 import type {
   CapacityEntry,
@@ -368,6 +370,35 @@ void describe('bars and figures', () => {
         ['in_progress', 1, 25],
         ['todo', 3, 75],
       ],
+    );
+  });
+});
+
+void describe('the view in the address (LAI-1201)', () => {
+  void test('read leniently: an unknown chip or sort is the default', () => {
+    assert.deepEqual(capacityParams(new URLSearchParams('q=bea&show=overdue&space=p1&sort=name')), {
+      query: 'bea',
+      filter: 'overdue',
+      space: 'p1',
+      sort: 'name',
+    });
+    assert.deepEqual(capacityParams(new URLSearchParams('show=bogus&sort=&space=')), {
+      query: '',
+      filter: 'all',
+      space: null,
+      sort: 'online',
+    });
+  });
+
+  void test('written back without defaults, keeping what else the address says', () => {
+    const base = new URLSearchParams('tab=capacity&q=bea&sort=name');
+    assert.equal(
+      withCapacityParams(base, { filter: 'never' }).toString(),
+      'tab=capacity&q=bea&sort=name&show=never',
+    );
+    assert.equal(
+      withCapacityParams(base, { query: '', sort: 'online' }).toString(),
+      'tab=capacity',
     );
   });
 });

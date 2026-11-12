@@ -387,6 +387,7 @@
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);
   min-height: 2.25rem;
+  flex-wrap: wrap;
 }
 
 .space-card-actions,
@@ -490,11 +491,16 @@
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  overflow: hidden;
+  /* The scroller ScrollCue fades and labels (LAI-1201, LAI-1196). */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 
+/* Never squeezed below its columns: past this it scrolls, with the cue
+   (LAI-1196), rather than crushing the Space column to an ellipsis. */
 .spaces-table {
   width: 100%;
+  min-width: 72rem;
   table-layout: fixed;
   border-collapse: collapse;
 }
@@ -517,7 +523,7 @@
   width: 6rem;
 }
 .spaces-col-actions {
-  width: 14.5rem;
+  width: 18rem;
 }
 
 .spaces-table th {
@@ -603,8 +609,20 @@
   justify-content: flex-end;
 }
 
+/* Already scrolling here, so the Space column gets room for a name rather
+   than whatever the fixed columns leave. */
+@media (max-width: 1100px) {
+  .spaces-table {
+    min-width: 80rem;
+  }
+}
+
 /* Phone: each row becomes a block of labelled lines. */
-@media (max-width: 760px) {
+@media (max-width: 600px) {
+  .spaces-table {
+    min-width: 0;
+  }
+
   .spaces-table,
   .spaces-table tbody,
   .spaces-table tr,
@@ -664,6 +682,42 @@
 
 /* ------------------------------------------------------------------ form */
 
+.projects-form-lead {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+/* What the last join, archive or restore did — kept in the DOM, so a screen
+   reader hears each new sentence. */
+.projects-notice {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-control);
+  background: var(--chip-green-bg);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+}
+
+.projects-notice[data-empty='true'] {
+  display: none;
+}
+
+/* Sized to its longest choice, the height of the search beside it. */
+.spaces-toolbar .spaces-sort {
+  flex: 0 0 auto;
+  width: 13.5rem;
+  height: 2.375rem;
+}
+
+@media (max-width: 600px) {
+  .spaces-toolbar .spaces-sort {
+    flex: 1 1 10rem;
+    width: auto;
+  }
+}
+
 .projects-form {
   margin: 0 1.125rem var(--space-4);
   padding: var(--space-4);
@@ -682,4 +736,8 @@
 
 .projects-more {
   margin: var(--space-4) 1.125rem var(--space-6);
+}
+
+.projects-form-error {
+  margin: 0 0 var(--space-3);
 }

@@ -1,14 +1,131 @@
 /*
- * The Calendar (prototype lines 581–624).
+ * The Calendar (prototype lines 581–624; refined by LAI-1200).
  *
  * Rows, not one flat grid. The design gives each week a 46px gutter carrying
  * its ISO week number, and a row that owns its own label cannot drift out of
  * step with it — which two parallel lists eventually would.
+ *
+ * **Red is for overdue work and nothing else** (visual audit #12). The running
+ * sprint's days used to take the overdue palette, so every ordinary day of a
+ * sprint read as late. Days are neutral; a sprint is a calm band; priority is
+ * a label. Theme tokens only — `theme.css` is not this screen's to change.
  */
 
 .cal {
   padding: 0.875rem 1.125rem 1.125rem;
   min-width: 0;
+}
+
+/* ------------------------------------------------------------------ the bar */
+
+.cal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 0.625rem;
+}
+
+.cal-nav,
+.cal-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.cal-title {
+  margin: 0 0.25rem;
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cal-btn {
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-default);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  /* --transition's colour fade, on the duration token so it stops under
+     reduced motion as it did when this screen asked the question (LAI-1200). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.cal-btn:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+}
+
+.cal-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.cal-btn:focus-visible,
+.cal-switch-option:focus-visible,
+.cal-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cal-btn-icon {
+  width: 2rem;
+  padding: 0;
+  font-size: var(--text-heading-sm);
+  line-height: 1;
+}
+
+.cal-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.cal-btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.06);
+}
+
+.cal-switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-default);
+  background: var(--bg-input);
+}
+
+.cal-switch-option {
+  min-height: 1.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  /* --transition's colour fade, on the duration token so it stops under
+     reduced motion as it did when this screen asked the question (LAI-1200). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.cal-switch-option[aria-pressed='true'] {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
 }
 
 /* What the grid cannot show (LAI-819): nothing dated, or dates beyond it. */
@@ -20,6 +137,36 @@
   color: var(--text-secondary);
 }
 
+/* An empty period is normal, not a failure: neutral, with a way on. */
+.cal-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  margin: 0 0 0.625rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.cal-empty-title {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.cal-empty-body {
+  margin: 0;
+  flex: 1;
+  min-width: 12rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* ----------------------------------------------------------------- the grid */
+
 .cal-scroll {
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -28,15 +175,13 @@
 }
 
 .cal-card {
-  min-width: 60rem;
+  min-width: 46rem;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   overflow: hidden;
 }
-
-/* ----------------------------------------------------------------- the head */
 
 .cal-head {
   display: flex;
@@ -55,8 +200,6 @@
   letter-spacing: 0.09em;
   color: var(--text-muted);
 }
-
-/* ----------------------------------------------------------- the week gutter */
 
 .cal-gutter {
   width: 46px;
@@ -78,8 +221,6 @@
   background: var(--bg-canvas);
 }
 
-/* ----------------------------------------------------------------- the weeks */
-
 .cal-week {
   display: flex;
   align-items: stretch;
@@ -90,19 +231,27 @@
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
-  /* The design's cell floor, so a week with no work is the same height as one
-     with three tasks in it. */
-  min-height: 6.5rem;
+  /* The cell floor holds three chips, so a week with no work is the same
+     height as one with three tasks in it. */
+  min-height: 8.75rem;
   padding: 0.4375rem 0.5rem 0.5rem;
   border-left: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.3125rem;
   background: var(--bg-card);
+  outline: none;
 }
 
-/* A day outside this month is present but recessive — the grid keeps its shape
-   and the reader is not invited to read those cells as this month's. */
+.cal-card-week .cal-day {
+  min-height: 22rem;
+}
+
+.cal-day:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* A day outside this month is present but recessive. */
 .cal-day-out {
   background: var(--bg-canvas);
 }
@@ -115,24 +264,20 @@
   background: var(--bg-column);
 }
 
-/* The running sprint's days, from the API — not a placeholder. */
-.cal-day-sprint {
-  background: var(--chip-pink-bg);
-}
-
 .cal-day-head {
   display: flex;
   align-items: center;
   gap: 0.375rem;
+  min-height: 22px;
 }
 
 .cal-date {
   flex: none;
-  min-width: 20px;
-  height: 20px;
+  min-width: 22px;
+  height: 22px;
   padding: 0 5px;
   box-sizing: border-box;
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,11 +288,22 @@
   color: var(--text-secondary);
 }
 
-/* Today is a filled badge, which is the one thing on this grid that must be
-   findable in a glance. */
+/* Today: a filled badge, the word, and a ring — findable in a glance, and in
+   greyscale. */
+.cal-day-today {
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
 .cal-day-today .cal-date {
-  background: var(--chip-orange);
+  background: var(--accent);
   color: var(--on-accent);
+}
+
+.cal-today-word {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--accent);
 }
 
 .cal-month {
@@ -159,18 +315,56 @@
   color: var(--text-muted);
 }
 
-.cal-sprint-tag {
-  margin-left: auto;
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
-  color: var(--text-muted);
+/* ------------------------------------------------------------ sprint bands */
+
+/* Edge to edge across the cell, so a sprint reads as one band through the
+   week. Neutral for a sprint that is not running; calm blue for the one that
+   is. Never the overdue palette. */
+.cal-band {
+  height: 1.125rem;
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  background: var(--chip-neutral-bg);
+  border-top: 1px solid var(--chip-neutral-border);
+  border-bottom: 1px solid var(--chip-neutral-border);
 }
 
-.cal-sprint-tag-now {
-  color: var(--chip-pink);
+.cal-band-now {
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+
+.cal-band-first {
+  margin-left: 0;
+  border-left: 1px solid var(--chip-neutral-border);
+  border-top-left-radius: var(--radius-pill);
+  border-bottom-left-radius: var(--radius-pill);
+}
+
+.cal-band-last {
+  margin-right: 0;
+  border-right: 1px solid var(--chip-neutral-border);
+  border-top-right-radius: var(--radius-pill);
+  border-bottom-right-radius: var(--radius-pill);
+}
+
+.cal-band-now.cal-band-first,
+.cal-band-now.cal-band-last {
+  border-color: var(--chip-blue-border);
+}
+
+.cal-band-label {
+  min-width: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ----------------------------------------------------------------- the tasks */
@@ -179,37 +373,57 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-}
-
-.cal-task {
-  display: flex;
-  align-items: center;
-  gap: 0.3125rem;
-  width: 100%;
-  font: inherit;
-  text-align: left;
-  padding: 0.3125rem 0.375rem;
-  border-radius: 6px;
-  background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  cursor: pointer;
   min-width: 0;
 }
 
-.cal-task:hover,
-.cal-task:focus-visible {
-  border-color: var(--border-default);
+/* Two lines, so key, title, status and priority all fit a narrow cell
+   without one pushing another out. */
+.cal-task {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  text-align: left;
+  padding: 0.3125rem 0.4375rem;
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+  /* --transition's colour fade, on the duration token so it stops under
+     reduced motion as it did when this screen asked the question (LAI-1200). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
-/* Priority tints the chip, as it tints the card's dot on the board. */
-.cal-task-p1 {
+.cal-task:hover {
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
+
+.cal-task:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The one red thing on the calendar. A bar as well as a colour, so it
+   survives greyscale. */
+.cal-task-overdue {
   background: var(--blocked-bg);
   border-color: var(--overdue-border);
+  box-shadow: inset 3px 0 0 var(--overdue);
 }
 
-.cal-task-p2 {
-  background: var(--chip-orange-bg);
-  border-color: var(--chip-orange-border);
+.cal-task-line {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .cal-task-key {
@@ -221,12 +435,8 @@
   color: var(--text-secondary);
 }
 
-.cal-task-p1 .cal-task-key {
+.cal-task-overdue .cal-task-key {
   color: var(--overdue);
-}
-
-.cal-task-p2 .cal-task-key {
-  color: var(--chip-orange);
 }
 
 .cal-task-title {
@@ -235,20 +445,190 @@
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   line-height: 1.2;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* The design's agent mark: a purple square, the same purple the bot badge uses
-   on a card. Shape as well as colour, so it survives greyscale. */
+.cal-task-meta {
+  gap: 0.375rem;
+}
+
+/* The design's agent mark: a square, the accent the agent badge uses. Shape as
+   well as colour, so it survives greyscale — and not red, which is overdue. */
 .cal-task-agent {
   flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--chip-pink);
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* The task's status, by name, in its kind's colour (LAI-739). Backlog takes
+   the muted default; done and cancelled work has no due date to draw. */
+.cal-task-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.1;
+  color: var(--text-muted);
+}
+
+.cal-status-todo {
+  color: var(--chip-purple);
+}
+
+.cal-status-in_progress {
+  color: var(--chip-blue);
+}
+
+.cal-status-review {
+  color: var(--chip-orange);
+}
+
+/* Priority as a label, not a tint: weight carries it, colour stays calm. */
+.cal-task-pri {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.cal-pri-p1 {
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.cal-pri-p2 {
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.cal-task-flag {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--overdue);
+}
+
+.cal-more {
+  align-self: flex-start;
+  padding: 0.125rem 0.375rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.cal-more:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------ the day list */
+
+.cal-daylist {
+  position: fixed;
+  z-index: 40;
+  width: min(20rem, calc(100vw - 1rem));
+  max-height: min(24rem, calc(100vh - 1rem));
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 0.625rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.cal-daylist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.cal-daylist-title {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------- the agenda */
+
+.cal-agenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.cal-agenda-day {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.cal-agenda-today {
+  border-color: var(--accent-border);
+}
+
+.cal-agenda-date {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0 0 0.5rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.cal-agenda-badge {
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: var(--weight-bold);
+}
+
+.cal-agenda-sprint {
+  margin-left: auto;
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  border: 1px solid var(--chip-neutral-border);
+  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+}
+
+.cal-agenda-sprint-now {
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+
+.cal-agenda-none {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
 }
 
 /* ---------------------------------------------------------------- the legend */
@@ -279,24 +659,29 @@
 }
 
 .cal-swatch-today {
-  border-radius: 5px;
-  background: var(--chip-orange);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
 }
 
 .cal-swatch-sprint {
-  background: var(--chip-pink-bg);
-  border: 1px solid var(--chip-pink-border);
+  width: 22px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--chip-blue-bg);
+  border: 1px solid var(--chip-blue-border);
 }
 
-.cal-swatch-weekend {
-  background: var(--bg-column);
+.cal-swatch-overdue {
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  box-shadow: inset 3px 0 0 var(--overdue);
 }
 
 .cal-swatch-agent {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--chip-pink);
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
 .cal-legend-note {
@@ -305,29 +690,4 @@
   font-weight: var(--weight-medium);
   line-height: 1.4;
   color: var(--text-muted);
-}
-
-/* The task's status, by name, in its kind's colour (LAI-739). Backlog takes
-   the muted default; done and cancelled work has no due date to draw. */
-.cal-task-status {
-  flex: none;
-  max-width: 6rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-}
-
-.cal-status-todo {
-  color: var(--chip-purple);
-}
-
-.cal-status-in_progress {
-  color: var(--chip-blue);
-}
-
-.cal-status-review {
-  color: var(--chip-orange);
 }

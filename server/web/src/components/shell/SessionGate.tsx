@@ -1,4 +1,4 @@
-import { Spinner } from '../Spinner.tsx';
+import { BrandSplash } from '../brand/BrandSplash.tsx';
 import { useDelayed } from '../use-delayed.ts';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ApiErrorState } from '../ApiErrorState.tsx';
@@ -51,6 +51,11 @@ export function SessionGate({ children }: SessionGateProps) {
    *
    * Declared with the other hooks, above every conditional return. A hook
    * below one is the defect SprintStrip carried into LAI-297.
+   *
+   * **Since LAI-1126 that slow case shows the brand splash** — the same screen
+   * `index.html` shows before the script runs, so a slow instance reads as one
+   * continuous start-up rather than a splash, a blank and a spinner. Still
+   * behind the same delay: on a healthy instance nothing is shown at all.
    */
   const stillResolving = useDelayed(session.status === 'loading');
 
@@ -98,9 +103,7 @@ export function SessionGate({ children }: SessionGateProps) {
    */
   if (!routeIsPublic && session.status === 'loading') {
     return (
-      <div className="shell-gate">
-        {stillResolving && <Spinner size="sm" label="Signing you in" />}
-      </div>
+      <div className="shell-gate">{stillResolving && <BrandSplash label="Signing you in" />}</div>
     );
   }
 

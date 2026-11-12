@@ -5,6 +5,7 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 import type { Contributors as ContributorList } from './contributors-derive.ts';
 import { DashLink, boardHref, listHref } from './DashLink.tsx';
 import type { PersonLoad, Workload } from './summary-derive.ts';
@@ -131,29 +132,21 @@ export function Contributors({
         <h2 id="dash-people-title" className="dash-card-title">
           Contributors
         </h2>
-        <span className="dash-tabs" role="tablist" aria-label="Contributors">
-          {(
-            [
-              ['delivered', 'Delivered'],
-              ['open', 'Open work now'],
-            ] as const
-          ).map(([id, name]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`dash-people-tab-${id}`}
-              aria-selected={tab === id}
-              aria-controls="dash-people-panel"
-              className={tab === id ? 'dash-tab dash-tab-on' : 'dash-tab'}
-              onClick={() => {
-                setTab(id);
-              }}
-            >
-              {name}
-            </button>
-          ))}
-        </span>
+        <Tabs
+          element="span"
+          label="Contributors"
+          className="dash-tabs"
+          tabClassName="dash-tab"
+          selectedClassName="dash-tab-on"
+          idBase="dash-people-tab"
+          panelId="dash-people-panel"
+          selected={tab}
+          onSelect={setTab}
+          items={[
+            { id: 'delivered', label: 'Delivered' },
+            { id: 'open', label: 'Open work now' },
+          ]}
+        />
         <span className="dash-card-tools">
           <span className="dash-card-meta" title={meta}>
             {meta}
@@ -166,7 +159,7 @@ export function Contributors({
         id="dash-people-panel"
         className="dash-people-panel"
         role="tabpanel"
-        aria-labelledby={`dash-people-tab-${tab}`}
+        aria-labelledby={tabId('dash-people-tab', tab)}
       >
         {tab === 'delivered' ? (
           <Delivered

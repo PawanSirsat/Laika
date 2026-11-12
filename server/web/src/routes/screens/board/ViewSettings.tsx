@@ -1,5 +1,6 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 import { ALWAYS_ON, FIELD_ICONS, FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
 import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
 import './view-settings.css';
@@ -104,6 +105,8 @@ export function ViewSettings({
 }: ViewSettingsProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
+  // On the overlay stack (LAI-1205): a picker open inside it keeps Escape.
+  const { isTop } = useLayer('popover');
 
   const shown = FIELD_KEYS.filter((key) => preferences.fields[key]);
   const needle = query.trim().toLowerCase();
@@ -137,7 +140,7 @@ export function ViewSettings({
           } as CSSProperties
         }
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
+          if (event.key === 'Escape' && !event.defaultPrevented && isTop()) {
             event.stopPropagation();
             onClose();
           }

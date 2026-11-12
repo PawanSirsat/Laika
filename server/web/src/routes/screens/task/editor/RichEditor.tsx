@@ -2,6 +2,7 @@ import { Placeholder } from '@tiptap/extensions';
 import { Selection, TextSelection } from '@tiptap/pm/state';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import {
+  Fragment,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -13,6 +14,10 @@ import {
 import { ApiError } from '../../../../api/errors.ts';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { Button } from '../../../../components/forms/Button.tsx';
+import { Icon } from '../../../../components/icon/Icon.tsx';
+import { useLayer } from '../../../../components/overlay/layer-stack.ts';
+import { formatShortcut, onMac } from '../../../../components/tooltip/shortcut.ts';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 import type {
   CardCandidate,
   MentionCandidate,
@@ -32,6 +37,7 @@ import {
 import { MentionPills, redrawMentions } from './mention-pills.ts';
 import { reducePastedHtml } from './paste.ts';
 import './rich-editor.css';
+import './rte-toolbar.css';
 
 /**
  * The task panel's editor (LAI-827): Jira's issue-view editor, over markdown.
@@ -152,35 +158,208 @@ function findMention(editor: Editor): { query: string; from: number; to: number 
   return { query, from: $from.pos - query.length - 1, to: $from.pos };
 }
 
+/**
+ * How narrow the toolbar has to be before a tool moves into *More formatting*
+ * (LAI-1209). `1` never moves; `2` (the inserts: table, mention, card) moves
+ * first; `3` (the rarer marks and blocks) next; `4` (numbered list, undo and
+ * redo) only on the narrowest boxes — a phone keeps them, for a finger has no
+ * ⌘Z. The widths are
+ * container queries in `rte-toolbar.css`, so the toolbar fits the box it is
+ * in — the Create task dialog, the side panel, a comment — not the window.
+ */
+type Tier = 1 | 2 | 3 | 4;
+
+interface ToolSpec {
+  readonly label: string;
+  readonly glyph: ReactNode;
+  readonly run: () => void;
+  readonly pressed?: boolean | undefined;
+  readonly disabled?: boolean | undefined;
+  /** As `Mod+B` (`shortcut.ts`): the keycap in its tooltip and its `aria-keyshortcuts`. */
+  readonly shortcut?: string | undefined;
+  readonly tier: Tier;
+}
+
+const MAC = onMac();
+
 function Tool({
   label,
   pressed,
   disabled,
+  shortcut,
+  tier,
   onRun,
   children,
 }: {
   readonly label: string;
   readonly pressed?: boolean | undefined;
   readonly disabled?: boolean | undefined;
+  readonly shortcut?: string | undefined;
+  readonly tier?: Tier | undefined;
   readonly onRun: () => void;
   readonly children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      className={pressed === true ? 'rte-tool rte-tool-on' : 'rte-tool'}
-      aria-label={label}
-      title={label}
-      aria-pressed={pressed}
-      disabled={disabled}
-      // The editor keeps focus and its selection: a toolbar button acts on it.
-      onMouseDown={(event) => {
-        event.preventDefault();
-      }}
-      onClick={onRun}
-    >
-      {children}
-    </button>
+    // The shared tooltip, not `title=` (LAI-1209): it shows on keyboard focus,
+    // carries the shortcut, and sits above the toolbar — never over the text.
+    <Tooltip content={label} shortcut={shortcut} side="top">
+      <button
+        type="button"
+        className={pressed === true ? 'rte-tool rte-tool-on' : 'rte-tool'}
+        aria-label={label}
+        aria-pressed={pressed}
+        disabled={disabled}
+        data-rte-tier={tier}
+        // The editor keeps focus and its selection: a toolbar button acts on it.
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+        onClick={onRun}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
+/**
+ * *More formatting* (LAI-1209): the tools a narrow toolbar has no room for,
+ * as a menu under a ⋯ button. Every tool is rendered here as well as on the
+ * toolbar; the same container queries that hide one on the bar show it here,
+ * so nothing is ever in both places or in neither.
+ *
+ * The WAI-ARIA menu button: Enter, Space or a click opens it with the first
+ * item focused; arrows, Home and End move; Escape closes it and gives focus
+ * back — and is spent, so the dialog or editor around it does not also close;
+ * Tab or a press elsewhere closes it.
+ */
+function MoreTools({ tools }: { readonly tools: readonly ToolSpec[] }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement | null>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  // On the overlay stack, so a Dialog around the editor knows it is not on top.
+  useLayer('menu', open);
+
+  /** The items the toolbar has handed over at this width. */
+  const shown = (): HTMLElement[] =>
+    [...(menu.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])].filter(
+      (el) => el.getClientRects().length > 0,
+    );
+
+  useEffect(() => {
+    if (!open) return;
+    shown()[0]?.focus();
+    const onPointer = (event: PointerEvent): void => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (
+        target !== null &&
+        (menu.current?.contains(target) === true || button.current?.contains(target) === true)
+      )
+        return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, [open]);
+
+  const move = (by: number | 'first' | 'last'): void => {
+    const items = shown();
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      by === 'first'
+        ? 0
+        : by === 'last'
+          ? items.length - 1
+          : (at + by + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  return (
+    <span className="rte-more-wrap" data-rte-more>
+      <Tooltip content="More formatting" side="top">
+        <button
+          ref={button}
+          type="button"
+          className="rte-tool rte-more"
+          aria-label="More formatting"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={() => {
+            setOpen((was) => !was);
+          }}
+        >
+          <Icon name="more" size="small" />
+        </button>
+      </Tooltip>
+      {open && (
+        <div
+          ref={menu}
+          className="rte-menu"
+          role="menu"
+          aria-label="More formatting"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+              button.current?.focus();
+            } else if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              move(1);
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              move(-1);
+            } else if (event.key === 'Home') {
+              event.preventDefault();
+              move('first');
+            } else if (event.key === 'End') {
+              event.preventDefault();
+              move('last');
+            } else if (event.key === 'Tab') {
+              setOpen(false);
+            }
+          }}
+        >
+          {tools.map((tool) => (
+            <button
+              key={tool.label}
+              type="button"
+              className="rte-menu-item"
+              role={tool.pressed === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={tool.pressed}
+              aria-disabled={tool.disabled === true ? true : undefined}
+              tabIndex={-1}
+              data-rte-tier={tool.tier}
+              data-rte-tool={tool.label}
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onClick={() => {
+                if (tool.disabled === true) return;
+                setOpen(false);
+                tool.run();
+              }}
+            >
+              <span className="rte-menu-glyph" aria-hidden="true">
+                {tool.glyph}
+              </span>
+              <span className="rte-menu-label">{tool.label}</span>
+              {tool.shortcut !== undefined && (
+                <kbd className="rte-menu-kbd" aria-hidden="true">
+                  {formatShortcut(tool.shortcut, MAC)}
+                </kbd>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -636,6 +815,166 @@ export function RichEditor({
     setPicker(null);
   };
 
+  /*
+   * The toolbar, in its groups (LAI-1209). Each tool once, here: the bar and
+   * *More formatting* both read it, so a tool's name, shortcut and state can
+   * never differ between the two. The shortcuts are the editor's own
+   * (tiptap's StarterKit, list and history keymaps), not new ones.
+   */
+  const groups: readonly (readonly ToolSpec[])[] = [
+    [
+      {
+        label: 'Bold',
+        glyph: <Glyph text="B" />,
+        pressed: state.bold,
+        disabled: !rich,
+        shortcut: 'Mod+B',
+        tier: 1,
+        run: () => chain().toggleBold().run(),
+      },
+      {
+        label: 'Italic',
+        glyph: <Glyph text="I" />,
+        pressed: state.italic,
+        disabled: !rich,
+        shortcut: 'Mod+I',
+        tier: 1,
+        run: () => chain().toggleItalic().run(),
+      },
+      {
+        label: 'Strikethrough',
+        glyph: <Glyph text="S" />,
+        pressed: state.strike,
+        disabled: !rich,
+        shortcut: 'Mod+Shift+S',
+        tier: 3,
+        run: () => chain().toggleStrike().run(),
+      },
+      {
+        label: 'Inline code',
+        glyph: <Glyph d={ICON.code} />,
+        pressed: state.code,
+        disabled: !rich,
+        shortcut: 'Mod+E',
+        tier: 3,
+        run: () => chain().toggleCode().run(),
+      },
+    ],
+    [
+      {
+        label: 'Bulleted list',
+        glyph: <Glyph d={ICON.bullet} />,
+        pressed: state.bullet,
+        disabled: !rich,
+        shortcut: 'Mod+Shift+8',
+        tier: 1,
+        run: () => chain().toggleBulletList().run(),
+      },
+      {
+        label: 'Numbered list',
+        glyph: <Glyph d={ICON.ordered} />,
+        pressed: state.ordered,
+        disabled: !rich,
+        shortcut: 'Mod+Shift+7',
+        tier: 4,
+        run: () => chain().toggleOrderedList().run(),
+      },
+      {
+        label: 'Checklist',
+        glyph: <Glyph d={ICON.task} />,
+        pressed: state.task,
+        disabled: !rich,
+        shortcut: 'Mod+Shift+9',
+        tier: 3,
+        run: () => chain().toggleTaskList().run(),
+      },
+      {
+        label: 'Quote',
+        glyph: <Glyph d={ICON.quote} />,
+        pressed: state.quote,
+        disabled: !rich,
+        shortcut: 'Mod+Shift+B',
+        tier: 3,
+        run: () => chain().toggleBlockquote().run(),
+      },
+      {
+        label: 'Code block',
+        glyph: <Glyph d={ICON.codeBlock} />,
+        pressed: state.codeBlock,
+        disabled: !rich,
+        shortcut: 'Mod+Alt+C',
+        tier: 3,
+        run: () => chain().toggleCodeBlock().run(),
+      },
+    ],
+    [
+      {
+        label: 'Link',
+        glyph: <Glyph d={ICON.link} />,
+        pressed: state.link,
+        disabled: !rich,
+        tier: 1,
+        run: () => {
+          const href: unknown = editor.getAttributes('link').href;
+          setPicker(
+            picker?.kind === 'link'
+              ? null
+              : { kind: 'link', href: typeof href === 'string' ? href : '' },
+          );
+        },
+      },
+      {
+        label: 'Table',
+        glyph: <Glyph d={ICON.table} />,
+        disabled: !rich || state.table,
+        tier: 2,
+        run: () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+      },
+      {
+        label: 'Mention someone',
+        glyph: <Glyph text="@" />,
+        disabled: !rich || people.length === 0,
+        tier: 2,
+        run: () => {
+          const before = editor.state.selection.$from.nodeBefore?.text ?? '';
+          chain()
+            .insertContent({
+              type: 'text',
+              text: before === '' || /\s$/.test(before) ? '@' : ' @',
+            })
+            .run();
+        },
+      },
+      {
+        label: 'Link a card',
+        glyph: <Glyph d={ICON.card} />,
+        disabled: !rich || cards.length === 0,
+        tier: 2,
+        run: () => {
+          setPicker(picker?.kind === 'card' ? null : { kind: 'card', query: '', active: 0 });
+        },
+      },
+    ],
+    [
+      {
+        label: 'Undo',
+        glyph: <Glyph d={ICON.undo} />,
+        disabled: !rich || !state.canUndo,
+        shortcut: 'Mod+Z',
+        tier: 4,
+        run: () => chain().undo().run(),
+      },
+      {
+        label: 'Redo',
+        glyph: <Glyph d={ICON.redo} />,
+        disabled: !rich || !state.canRedo,
+        shortcut: 'Mod+Shift+Z',
+        tier: 4,
+        run: () => chain().redo().run(),
+      },
+    ],
+  ];
+
   const cardMatches = picker?.kind === 'card' ? cardsMatching(cards, picker.query) : [];
   const empty = rich ? state.empty : source.trim() === '';
 
@@ -682,136 +1021,32 @@ export function RichEditor({
             }}
           />
         </span>
-        <span className="rte-sep" aria-hidden="true" />
-        <Tool
-          label="Bold"
-          pressed={state.bold}
-          disabled={!rich}
-          onRun={() => chain().toggleBold().run()}
-        >
-          <Glyph text="B" />
-        </Tool>
-        <Tool
-          label="Italic"
-          pressed={state.italic}
-          disabled={!rich}
-          onRun={() => chain().toggleItalic().run()}
-        >
-          <Glyph text="I" />
-        </Tool>
-        <Tool
-          label="Strikethrough"
-          pressed={state.strike}
-          disabled={!rich}
-          onRun={() => chain().toggleStrike().run()}
-        >
-          <Glyph text="S" />
-        </Tool>
-        <Tool
-          label="Inline code"
-          pressed={state.code}
-          disabled={!rich}
-          onRun={() => chain().toggleCode().run()}
-        >
-          <Glyph d={ICON.code} />
-        </Tool>
-        <span className="rte-sep" aria-hidden="true" />
-        <Tool
-          label="Bulleted list"
-          pressed={state.bullet}
-          disabled={!rich}
-          onRun={() => chain().toggleBulletList().run()}
-        >
-          <Glyph d={ICON.bullet} />
-        </Tool>
-        <Tool
-          label="Numbered list"
-          pressed={state.ordered}
-          disabled={!rich}
-          onRun={() => chain().toggleOrderedList().run()}
-        >
-          <Glyph d={ICON.ordered} />
-        </Tool>
-        <Tool
-          label="Checklist"
-          pressed={state.task}
-          disabled={!rich}
-          onRun={() => chain().toggleTaskList().run()}
-        >
-          <Glyph d={ICON.task} />
-        </Tool>
-        <Tool
-          label="Quote"
-          pressed={state.quote}
-          disabled={!rich}
-          onRun={() => chain().toggleBlockquote().run()}
-        >
-          <Glyph d={ICON.quote} />
-        </Tool>
-        <Tool
-          label="Code block"
-          pressed={state.codeBlock}
-          disabled={!rich}
-          onRun={() => chain().toggleCodeBlock().run()}
-        >
-          <Glyph d={ICON.codeBlock} />
-        </Tool>
-        <span className="rte-sep" aria-hidden="true" />
-        <Tool
-          label="Link"
-          pressed={state.link}
-          disabled={!rich}
-          onRun={() => {
-            const href: unknown = editor.getAttributes('link').href;
-            setPicker(
-              picker?.kind === 'link'
-                ? null
-                : { kind: 'link', href: typeof href === 'string' ? href : '' },
-            );
-          }}
-        >
-          <Glyph d={ICON.link} />
-        </Tool>
-        <Tool
-          label="Table"
-          disabled={!rich || state.table}
-          onRun={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-        >
-          <Glyph d={ICON.table} />
-        </Tool>
-        <Tool
-          label="Mention someone"
-          disabled={!rich || people.length === 0}
-          onRun={() => {
-            const before = editor.state.selection.$from.nodeBefore?.text ?? '';
-            chain()
-              .insertContent({
-                type: 'text',
-                text: before === '' || /\s$/.test(before) ? '@' : ' @',
-              })
-              .run();
-          }}
-        >
-          <Glyph text="@" />
-        </Tool>
-        <Tool
-          label="Link a card"
-          disabled={!rich || cards.length === 0}
-          onRun={() => {
-            setPicker(picker?.kind === 'card' ? null : { kind: 'card', query: '', active: 0 });
-          }}
-        >
-          <Glyph d={ICON.card} />
-        </Tool>
-        <span className="rte-sep" aria-hidden="true" />
-        <Tool label="Undo" disabled={!rich || !state.canUndo} onRun={() => chain().undo().run()}>
-          <Glyph d={ICON.undo} />
-        </Tool>
-        <Tool label="Redo" disabled={!rich || !state.canRedo} onRun={() => chain().redo().run()}>
-          <Glyph d={ICON.redo} />
-        </Tool>
+        {groups.map((group) => (
+          <Fragment key={group[0]?.label}>
+            {/* A separator goes when every tool after it has moved to More. */}
+            <span
+              className="rte-sep"
+              aria-hidden="true"
+              data-rte-tier={Math.min(...group.map((t) => t.tier))}
+            />
+            {group.map((tool) => (
+              <Tool
+                key={tool.label}
+                label={tool.label}
+                pressed={tool.pressed}
+                disabled={tool.disabled}
+                shortcut={tool.shortcut}
+                tier={tool.tier}
+                onRun={tool.run}
+              >
+                {tool.glyph}
+              </Tool>
+            ))}
+          </Fragment>
+        ))}
         <span className="rte-grow" />
-        <Tool label="Markdown" pressed={mode === 'source'} onRun={toggleSource}>
+        <MoreTools tools={groups.flat().filter((tool) => tool.tier > 1)} />
+        <Tool label="Markdown source" pressed={mode === 'source'} onRun={toggleSource} tier={1}>
           <Glyph text="M↓" />
         </Tool>
       </div>

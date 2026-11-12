@@ -580,4 +580,32 @@ void describe('the Review dialog (LAI-1169)', () => {
       await h.close();
     }
   });
+
+  // LAI-1209: the Send back dialog over it, both themes, both widths — only
+  // with `LAIKA_SHOTS` set; the behaviour is asserted elsewhere.
+  for (const width of [1440, 390]) {
+    void test(
+      `Send back, both themes, at ${String(width)} (screenshots only)`,
+      {
+        skip: SHOTS === undefined,
+      },
+      async () => {
+        const h = await openOn('LC-2', server().stub, width);
+        try {
+          await h.page.keyboard.press('s');
+          const sendBack = h.page.getByRole('dialog', { name: 'Send back LC-2' });
+          await sendBack.waitFor({ timeout: 10_000 });
+          await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
+          for (const theme of ['Light', 'Dark']) {
+            await setTheme(h.page, theme);
+            await new Promise((r) => setTimeout(r, 300));
+            assert.ok(await sendBack.isVisible());
+            await shoot(h.page, `send-back-${theme.toLowerCase()}-${String(width)}`);
+          }
+        } finally {
+          await h.close();
+        }
+      },
+    );
+  }
 });
