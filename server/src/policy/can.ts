@@ -935,6 +935,15 @@ function canProjectAction(
     case 'time.report.read_project':
       return isLead;
 
+    // | View logged days of the people in the space | ✓ (session only) | — | — |
+    //
+    // D-148 (LAI-1175): the Time logging grid — each person's hours a day
+    // against a flat eight — for the people of the spaces this reader leads.
+    // The one per-person read a space admin has; which people, and that the
+    // reader is among them, is the service's.
+    case 'time.days.read_project':
+      return isLead;
+
     default:
       return assertNever(action);
   }

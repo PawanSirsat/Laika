@@ -152,6 +152,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'budget.set': 'Set token budgets',
   'project.leave': 'Leave a project',
   'time.report.read_project': "View the space's time totals",
+  'time.days.read_project': 'View logged days of the people in the space',
 };
 
 /**

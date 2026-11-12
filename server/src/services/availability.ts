@@ -118,8 +118,11 @@ function zoneOf(place: string | null | undefined): string {
   return place !== null && place !== undefined && isTimeZone(place) ? place : 'UTC';
 }
 
-/** Each person's today, by id — one read of their places. */
-export function todaysFor(db: Db, userIds: readonly string[], now: number): Map<string, string> {
+/**
+ * Each person's zone, by id — their place's, `UTC` when they set none or
+ * set one the runtime does not know. One read of their places.
+ */
+export function zonesFor(db: Db, userIds: readonly string[]): Map<string, string> {
   const places = new Map(
     userIds.length === 0
       ? []
@@ -130,7 +133,12 @@ export function todaysFor(db: Db, userIds: readonly string[], now: number): Map<
           .all()
           .map((r) => [r.userId, r.place]),
   );
-  return new Map(userIds.map((id) => [id, dayIn(zoneOf(places.get(id)), now)]));
+  return new Map(userIds.map((id) => [id, zoneOf(places.get(id))]));
+}
+
+/** Each person's today, by id — the date it is at `now` in their zone. */
+export function todaysFor(db: Db, userIds: readonly string[], now: number): Map<string, string> {
+  return new Map([...zonesFor(db, userIds)].map(([id, zone]) => [id, dayIn(zone, now)]));
 }
 
 function workWeekView(
