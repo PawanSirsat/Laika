@@ -1,8 +1,18 @@
-import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { useState } from 'react';
+import { AuthCard } from '../../components/auth/AuthCard.tsx';
+import { AuthAlert, AuthSummary } from '../../components/auth/AuthSummary.tsx';
+import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
-import { password as validatePassword, passwordsMatch } from '../../components/forms/validation.ts';
+import {
+  useFocusOnServerAnswer,
+  useValidatedForm,
+} from '../../components/forms/use-validated-form.ts';
+import {
+  PASSWORD_RULE,
+  password as validatePassword,
+  passwordsMatch,
+} from '../../components/forms/validation.ts';
 import { RESET_REFUSAL_COPY, type ResetRefusal } from '../../api/password-resets.ts';
 import './auth.css';
 
@@ -15,8 +25,10 @@ export interface ResetPasswordScreenProps {
   /** Set once the server has taken the new password. */
   readonly done?: { readonly sessionsEnded: number } | undefined;
   readonly submitting?: boolean;
-  /** A failure the reader can retry from the form (throttled, unreachable, a refused password). */
+  /** A failure the reader can retry from the form (throttled, unreachable). */
   readonly serverError?: string | undefined;
+  /** The server refused the password itself — shown under the field (LAI-1203). */
+  readonly passwordError?: string | undefined;
   readonly onSubmit?: ((password: string) => void) | undefined;
   readonly onSignIn?: (() => void) | undefined;
 }
@@ -27,7 +39,8 @@ export interface ResetPasswordScreenProps {
  *
  * Layout, validation and states only, like `LoginScreen`: no network, so
  * every state is reachable without a server. The password rule is setup's
- * (`validation.ts`), the one the server enforces on this endpoint too.
+ * (`validation.ts`), the one the server enforces on this endpoint too, and it
+ * is said before anyone types (LAI-1203).
  */
 export function ResetPasswordScreen({
   host,
@@ -36,18 +49,17 @@ export function ResetPasswordScreen({
   done,
   submitting = false,
   serverError,
+  passwordError,
   onSubmit,
   onSignIn,
 }: ResetPasswordScreenProps) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [touched, setTouched] = useState(false);
-
-  const signIn = (
-    <Button variant="secondary" fullWidth onClick={onSignIn}>
-      Go to sign in
-    </Button>
-  );
+  const form = useValidatedForm();
+  useFocusOnServerAnswer(form.focusFirstInvalid, {
+    serverError,
+    fieldErrors: passwordError === undefined ? {} : { password: passwordError },
+  });
 
   if (missingToken || refused !== undefined) {
     const copy =
@@ -58,41 +70,65 @@ export function ResetPasswordScreen({
           }
         : RESET_REFUSAL_COPY[refused];
     return (
-      <div className="auth">
-        <div className="auth-card" data-reset-state={refused ?? 'missing'}>
-          <BrandLockup size="md" className="auth-brand" />
-          <p className="auth-kicker auth-kicker-warn">RESET PASSWORD</p>
-          <header className="auth-head">
-            <h1 className="auth-title">{copy.title}</h1>
-            <p className="auth-host">{host}</p>
-          </header>
-          <p className="auth-note">{copy.body}</p>
-          {signIn}
-        </div>
-      </div>
+      <AuthCard tone="warn" data-reset-state={refused ?? 'missing'}>
+        <BrandLockup size="md" className="auth-brand" />
+        <header className="auth-head">
+          <span className="auth-glyph" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+              <rect
+                x="4"
+                y="11"
+                width="16"
+                height="10"
+                rx="2"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          </span>
+          <h1 className="auth-title">{copy.title}</h1>
+          <p className="auth-host">{host}</p>
+        </header>
+        <p className="auth-lede">{copy.body}</p>
+        <Button variant="secondary" fullWidth onClick={onSignIn}>
+          Go to sign in
+        </Button>
+      </AuthCard>
     );
   }
 
   if (done !== undefined) {
     return (
-      <div className="auth">
-        <div className="auth-card" data-reset-state="done">
-          <BrandLockup size="md" className="auth-brand" />
-          <p className="auth-kicker">RESET PASSWORD</p>
-          <header className="auth-head">
-            <h1 className="auth-title">Your password is set</h1>
-            <p className="auth-host">{host}</p>
-          </header>
-          <p className="auth-note" role="status">
-            Sign in with your new password.{' '}
-            {done.sessionsEnded > 0 &&
-              `You were signed out of ${String(done.sessionsEnded)} other session${done.sessionsEnded === 1 ? '' : 's'}.`}
-          </p>
-          <Button fullWidth onClick={onSignIn}>
-            Sign in
-          </Button>
-        </div>
-      </div>
+      <AuthCard data-reset-state="done">
+        <BrandLockup size="md" className="auth-brand" />
+        <header className="auth-head">
+          <span className="auth-glyph auth-glyph-ok" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+              <path
+                d="m5 12.5 4.5 4.5L19 7.5"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <h1 className="auth-title">Your password is set</h1>
+          <p className="auth-host">{host}</p>
+        </header>
+        {/* What happens next, in the order it happens: sign in here, and any
+            other device asks again. */}
+        <p className="auth-lede" role="status">
+          Sign in with your new password next.{' '}
+          {done.sessionsEnded > 0
+            ? `You were signed out of ${String(done.sessionsEnded)} other session${done.sessionsEnded === 1 ? '' : 's'}, so those devices will ask for it too.`
+            : 'Any other device you use will ask for it too.'}
+        </p>
+        <Button fullWidth onClick={onSignIn}>
+          Sign in
+        </Button>
+      </AuthCard>
     );
   }
 
@@ -101,58 +137,64 @@ export function ResetPasswordScreen({
   const valid = passwordCheck.ok && matchCheck.ok;
 
   return (
-    <div className="auth">
+    <AuthCard data-reset-state="form">
       <form
-        className="auth-card"
-        data-reset-state="form"
+        ref={form.formRef}
         noValidate
+        aria-labelledby="reset-title"
         onSubmit={(e) => {
           e.preventDefault();
-          setTouched(true);
-          if (!valid || submitting) return;
+          if (submitting || !form.attempt(valid)) return;
           onSubmit?.(password);
         }}
       >
         <BrandLockup size="md" className="auth-brand" />
-        <p className="auth-kicker">RESET PASSWORD</p>
         <header className="auth-head">
-          <h1 className="auth-title">Choose a new password</h1>
+          <h1 className="auth-title" id="reset-title">
+            Choose a new password
+          </h1>
           <p className="auth-host">{host}</p>
         </header>
-        <p className="auth-note">
+        <p className="auth-lede">
           This link works once. Setting a password signs you out everywhere else.
         </p>
 
-        {serverError !== undefined && (
-          <p className="auth-alert" role="alert">
-            {serverError}
-          </p>
-        )}
+        <AuthSummary>
+          {serverError !== undefined && <AuthAlert>{serverError}</AuthAlert>}
+        </AuthSummary>
 
         <PasswordInput
           label="New password"
           value={password}
           onChange={setPassword}
+          onBlur={() => {
+            form.blur('password', password);
+          }}
           autoComplete="new-password"
+          help={PASSWORD_RULE}
           showStrength
           required
           disabled={submitting}
-          error={touched && !passwordCheck.ok ? passwordCheck.message : undefined}
+          error={form.shown('password', passwordCheck) ?? passwordError}
         />
         <PasswordInput
           label="Confirm password"
           value={confirm}
           onChange={setConfirm}
+          onBlur={() => {
+            form.blur('confirm', confirm);
+          }}
           autoComplete="new-password"
           required
           disabled={submitting}
-          error={touched && !matchCheck.ok ? matchCheck.message : undefined}
+          {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
+          error={form.shown('confirm', matchCheck)}
         />
 
         <Button type="submit" fullWidth busy={submitting}>
           Set new password
         </Button>
       </form>
-    </div>
+    </AuthCard>
   );
 }

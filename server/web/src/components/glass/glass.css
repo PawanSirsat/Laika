@@ -102,7 +102,6 @@ body::before {
 .sidebar::before,
 .shell-head::before,
 .space-bar::before,
-.auth-card::before,
 .dd-panel::before,
 .overflow-menu-list::before {
   content: '';
@@ -123,9 +122,8 @@ body::before {
   backdrop-filter: blur(var(--glass-blur-1)) saturate(var(--glass-saturate));
 }
 
-/* Level 2 — the sign-in hero. */
-.glass-2::before,
-.auth-card::before {
+/* Level 2 — panels and cards; the signed-out card is a `GlassSurface` (LAI-1203). */
+.glass-2::before {
   background: var(--glass-sheen), var(--glass-2);
   backdrop-filter: blur(var(--glass-blur-2)) saturate(var(--glass-saturate));
 }
@@ -157,7 +155,7 @@ body::before {
 
 /* --------------------------------------------------------- never nest */
 
-:is(.glass-1, .glass-2, .glass-3, .sidebar, .shell-head, .space-bar, .auth-card)
+:is(.glass-1, .glass-2, .glass-3, .sidebar, .shell-head, .space-bar)
   :is(.glass-1, .glass-2, .glass-3, .dd-panel, .overflow-menu-list)::before {
   background: var(--glass-solid);
   backdrop-filter: none;
@@ -285,7 +283,6 @@ body::before {
   .sidebar::before,
   .shell-head::before,
   .space-bar::before,
-  .auth-card::before,
   .dd-panel::before,
   .overflow-menu-list::before {
     background: Canvas;

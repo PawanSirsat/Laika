@@ -94,13 +94,6 @@
   gap: 1rem;
 }
 
-/* The 404's mark, centred over its empty state. */
-.brand-not-found {
-  display: flex;
-  justify-content: center;
-  padding-top: var(--space-6);
-}
-
 /* ---------------------------------------------------------- icon loader */
 
 .brand-spinner {
