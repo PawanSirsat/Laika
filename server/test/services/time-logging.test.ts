@@ -1,8 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { loadActor, type ResolvedActor, withProject } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   analyticsViews,
+  orgRoleGrants,
   projectMemberships,
   projects,
   timeDrafts,
@@ -12,6 +14,7 @@ import {
   userTimeSettings,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
+import { can } from '../../src/policy/can.ts';
 import {
   getTimeLogging,
   TIME_LOGGING_THRESHOLD_MINUTES,
@@ -36,6 +39,7 @@ const TO = '2026-11-30';
 
 let t: TestDb;
 let owner: string;
+let orgId: string;
 let laika: string;
 let skynet: string;
 
@@ -134,6 +138,7 @@ beforeEach(() => {
   t = freshDb();
   const s = seed(t.db, NOW);
   owner = s.userId;
+  orgId = s.orgId;
   laika = s.projectId;
   skynet = newId();
   t.db
@@ -304,6 +309,89 @@ describe('scope', () => {
     // The owner is an implicit lead, not a member row: not listed to a lead.
     expect(v.people.some((p) => p.user.id === owner)).toBe(false);
     expect(looks()).toEqual([{ viewer: lead, subject: inLaika }]);
+  });
+
+  it('a space admin sees each person’s whole day, whichever spaces the time was on', () => {
+    const lead = person('Lead');
+    const cleo = person('Cleo');
+    member(lead, laika, 'lead');
+    member(cleo, laika);
+    member(cleo, skynet);
+    // Cleo's Monday: three hours on Laika, five on Skynet, which Lead does not lead.
+    t.db
+      .insert(timeEntries)
+      .values([
+        {
+          id: newId(),
+          userId: cleo,
+          projectId: laika,
+          day: '2026-11-02',
+          tz: 'UTC',
+          minutes: 180,
+          source: 'manual',
+          kind: 'work',
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        {
+          id: newId(),
+          userId: cleo,
+          projectId: skynet,
+          day: '2026-11-02',
+          tz: 'UTC',
+          minutes: 300,
+          source: 'manual',
+          kind: 'work',
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ])
+      .run();
+    const v = grid(lead);
+    expect(v.scope).toBe('lead');
+    expect(row(v, cleo).days).toEqual([
+      { day: '2026-11-02', confirmed_minutes: 480, drafted_minutes: 0 },
+    ]);
+  });
+
+  it('an implicit lead is not a space admin here: an admin without analytics who leads nothing by row is 403', () => {
+    // An admin holds implicit lead over every space through `open_all_projects`,
+    // and *See everyone's analytics* by default. Take the second away.
+    const admin = person('Admin');
+    t.db.update(users).set({ orgRole: 'admin' }).where(eq(users.id, admin)).run();
+    t.db
+      .insert(orgRoleGrants)
+      .values({
+        orgId,
+        orgRole: 'admin',
+        capability: 'see_people_analytics',
+        granted: 0,
+        setBy: owner,
+        updatedAt: NOW,
+      })
+      .run();
+    const other = person('Other');
+    member(other, laika);
+    expect(can(actor(admin), 'time.report.read')).toBe(false);
+    expect(
+      can(withProject(actor(admin), laika), 'time.days.read_project', { projectId: laika }),
+    ).toBe(true);
+    let thrown: unknown;
+    try {
+      grid(admin);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).details).toMatchObject({ action: 'time.report.read' });
+    expect(looks()).toEqual([]);
+    // A lead membership row on Laika opens Laika's people, and nobody else's.
+    member(admin, laika, 'lead');
+    const elsewhere = person('Elsewhere');
+    member(elsewhere, skynet);
+    const v = grid(admin);
+    expect(v.scope).toBe('lead');
+    expect(v.people.map((p) => p.user.id).sort()).toEqual([admin, other].sort());
   });
 
   it('an owner who also leads a space reads everyone', () => {

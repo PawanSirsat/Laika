@@ -285,6 +285,66 @@ describe('a space admin', () => {
     );
   });
 
+  it('an implicit lead is not a space admin here: an admin whose role lost analytics is 403 until a lead row says otherwise', async () => {
+    // Dan is an admin: implicit lead over every space, and *See everyone's
+    // analytics* by default. Take the grant away from the admin role.
+    const invite = seedInvite(h.db, {
+      orgId,
+      createdBy: ownerId,
+      email: 'dan@example.test',
+      orgRole: 'admin',
+    });
+    const res = await signUp(h.app, {
+      email: 'dan@example.test',
+      password: PASSWORD,
+      inviteToken: invite,
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const dan = {
+      cookie: cookieFrom(res),
+      id: h.db.select().from(users).where(eq(users.email, 'dan@example.test')).get()?.id ?? '',
+    };
+    h.db.update(users).set({ name: 'Dan' }).where(eq(users.id, dan.id)).run();
+    const off = {
+      see_people_analytics: false,
+      see_org_activity: true,
+      open_all_projects: true,
+      invite_people: true,
+      deactivate_people: true,
+      create_archive_projects: true,
+      manage_any_tokens: true,
+      change_org_settings: true,
+    };
+    const none = Object.fromEntries(Object.keys(off).map((k) => [k, false]));
+    await ok(
+      await req(
+        '/api/v1/org/permissions',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ grants: { admin: off, member: none, viewer: none } }),
+        },
+        cookie,
+      ),
+    );
+    const cleo = person('Cleo');
+    member(cleo, laika.id, 'member');
+    // No membership row anywhere: a member here, whatever the implicit lead says.
+    expect(await refusal(await days(`from=${FROM}&to=${TO}`, dan.cookie))).toEqual([
+      403,
+      'forbidden',
+      'time.report.read',
+    ]);
+    expect(looks()).toEqual([]);
+    // A lead membership row on Laika opens Laika's people — Ada, Cleo and Dan
+    // himself; Bea is in no space here — and nobody else's.
+    const elsewhere = person('Elsewhere');
+    entry(elsewhere, '2026-11-03', 480);
+    member(dan.id, laika.id, 'lead');
+    const g = (await ok(await days(`from=${FROM}&to=${TO}`, dan.cookie))) as Grid;
+    expect(g.scope).toBe('lead');
+    expect(g.people.map((p) => p.user.name)).toEqual(['Ada', 'Cleo', 'Dan']);
+  });
+
   it('a member leading nothing is refused by the action, and nothing is logged', async () => {
     expect(await refusal(await days(`from=${FROM}&to=${TO}`, bea.cookie))).toEqual([
       403,

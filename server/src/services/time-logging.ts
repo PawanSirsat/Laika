@@ -2,7 +2,7 @@ import { inArray } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole } from '../db/enums.ts';
-import { projectMemberships, projects, userAvailability, users } from '../db/schema.ts';
+import { projectMemberships, userAvailability, users } from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { readLoggedMany } from './analytics-views.ts';
 import { zonesFor } from './availability.ts';
@@ -19,10 +19,14 @@ import { stretch } from './time-summary.ts';
  *
  * An owner, or a holder of *See everyone's analytics* (`time.report.read`),
  * reads everyone: `scope: 'people'`. A space admin with no such grant reads
- * the people of the spaces they lead under §3.2's `time.days.read_project`
- * — themselves included, so their own row is on the same grid —
- * `scope: 'lead'`. A member who leads nothing is `403`, by `time.report.read`,
- * as the Time report refuses them. Every action is session only.
+ * the people of the spaces **a membership row says they lead** under §3.2's
+ * `time.days.read_project` — themselves included, so their own row is on the
+ * same grid — `scope: 'lead'`; the implicit lead an org grant confers over
+ * every space does not open this door. Each person's cells hold their
+ * **whole day, whichever spaces the time was on** — an eight-hour day is the
+ * person's, not a space's. A member who leads nothing is `403`, by
+ * `time.report.read`, as the Time report refuses them. Every action is
+ * session only.
  *
  * ## The server sends facts, the client the verdict
  *
@@ -120,11 +124,14 @@ function scopeOf(db: Db, actor: ResolvedActor): Scope {
     assertCan(actor, 'time.report.read');
     return { scope: 'people', candidates: null };
   }
-  const led = db
-    .select({ id: projects.id })
-    .from(projects)
-    .all()
-    .map((p) => p.id)
+  // "The spaces they lead" (D-148 item 4) are the ones a membership row says
+  // they lead — never the implicit lead an org grant confers over every
+  // space, which would hand an admin whose role lost *See everyone's
+  // analytics* everybody's days by another door. `can()` is still asked, so
+  // a token is refused there as `session_required`.
+  const led = actor.memberships
+    .filter((m) => m.role === 'lead')
+    .map((m) => m.projectId)
     .filter((id) => can(withProject(session, id), 'time.days.read_project', { projectId: id }));
   // A lead of nothing is a member: the Time report's own refusal.
   if (led.length === 0) assertCan(actor, 'time.report.read');
@@ -136,8 +143,8 @@ function scopeOf(db: Db, actor: ResolvedActor): Scope {
 
 /**
  * The distinct members of `led`. The reader is among them without being
- * added: a space admin holds `time.days.read_project` through a membership
- * row, so their own row is on the grid with their people's.
+ * added: `led` holds only spaces the reader has a lead membership row in, so
+ * their own row is on the grid with their people's by construction.
  */
 function ledPeople(db: Db, led: readonly string[]): string[] {
   const ids = new Set<string>();
