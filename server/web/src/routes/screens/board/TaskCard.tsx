@@ -365,10 +365,10 @@ export function TaskCard({
             variant="sprint"
             tone={sprint.active ? 'accent' : 'neutral'}
             glyphLabel={sprintGlyphLabel(sprint.active)}
-            title={`${sprintGlyphLabel(sprint.active)} ${sprint.label}`}
             className={
               sprint.active ? 'card-sprint card-sprint-on card-above' : 'card-sprint card-above'
             }
+            title={`Sprint ${sprint.label}${sprint.active ? ' (active)' : ''}`}
           >
             {sprint.label}
           </Chip>

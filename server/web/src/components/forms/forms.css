@@ -232,8 +232,27 @@
   opacity: 0.55;
 }
 
+/*
+ * **Press feedback** (LAI-1208): the button gives a little under the pointer
+ * and springs back, so a click is felt before its answer arrives. Transform
+ * only — nothing reflows — and a transition, not a keyframe, so a press let
+ * go half-way retargets from where it is. A full-width button gives less: 3%
+ * of a 600px button is a visible lurch.
+ */
+.button {
+  transition: transform var(--duration-instant) var(--ease-enter);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 .button-block {
   width: 100%;
+}
+
+.button-block:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .button-primary {
@@ -269,4 +288,20 @@
   background: var(--chip-pink);
   color: var(--bg-card);
   border-color: var(--chip-pink);
+}
+
+/* ------------------------------------------------------------ caps lock */
+
+/* Empty unless Caps Lock is on, and then a fact, not a fault: secondary ink,
+   never the error red. Collapses to nothing while empty. */
+.field-caps {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.field-caps:empty {
+  margin: 0;
+  height: 0;
 }

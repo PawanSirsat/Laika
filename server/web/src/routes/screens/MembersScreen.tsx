@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AddMemberForm } from './AddMemberForm.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
-import { ApiErrorState } from '../../components/ApiErrorState.tsx';
-import { EmptyState } from '../../components/EmptyState.tsx';
-import { LoadingState } from '../../components/LoadingState.tsx';
+import { ApiErrorPanel } from '../../components/ApiErrorPanel.tsx';
+import { EmptyPanel } from '../../components/EmptyPanel.tsx';
+import { Skeleton, SkeletonAvatar, SkeletonText } from '../../components/Skeleton.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { Dropdown } from '../../components/Dropdown.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
@@ -71,20 +71,22 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
   if (slug === undefined) {
     return (
       <div className="members">
-        <EmptyState
-          headline="No project chosen"
-          body="Open a project from Projects to see who is on it."
+        <EmptyPanel
+          variant="first-use"
+          icon="empty"
+          title="No project chosen"
+          why="Open a project from Projects to see who is on it."
         />
       </div>
     );
   }
 
   // A 404 here means the slug is wrong, which is a different problem from a
-  // permission failure — ApiErrorState tells them apart.
+  // permission failure — ApiErrorPanel tells them apart.
   if (projectError !== null) {
     return (
       <div className="members">
-        <ApiErrorState error={projectError} resource={`the project “${slug}”`} />
+        <ApiErrorPanel error={projectError} resource={`the project “${slug}”`} />
       </div>
     );
   }
@@ -101,11 +103,12 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
       </header>
 
       {members.actionError !== null && (
-        <ApiErrorState
+        <ApiErrorPanel
           error={members.actionError}
           resource="this project’s members"
           requiredRole="lead"
           verb="update"
+          size="compact"
         />
       )}
 
@@ -132,15 +135,23 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
         ))}
 
       {members.status === 'loading' ? (
-        <LoadingState shape="row" count={3} label="Loading members" />
+        <MembersSkeleton />
       ) : members.status === 'error' ? (
-        <ApiErrorState
+        <ApiErrorPanel
           error={members.error}
           resource="this project’s members"
           onRetry={members.reload}
         />
       ) : members.members.length === 0 ? (
-        <EmptyState headline="No members on this project yet" />
+        <EmptyPanel
+          variant={mayManage ? 'first-use' : 'no-permission'}
+          title="No members on this project yet"
+          why={
+            mayManage
+              ? 'Add member, above, brings people in. Their project role decides what they can change.'
+              : 'A space admin adds people here. Ask one if you should see someone.'
+          }
+        />
       ) : (
         <ul className="members-list">
           {members.members.map((member) => {
@@ -251,5 +262,28 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
         new yet (LAI-071).
       </p>
     </div>
+  );
+}
+
+/**
+ * The member list's own shape while it loads (LAI-1207): the real `.member`
+ * row — a 2rem face, a name line and an email line — so nothing moves when the
+ * people arrive. Three rows, a small project's usual size.
+ */
+function MembersSkeleton() {
+  return (
+    <Skeleton label="Loading members">
+      <ul className="members-list">
+        {[0, 1, 2].map((row) => (
+          <li key={row} className="member">
+            <SkeletonAvatar size="lg" />
+            <span className="member-who">
+              <SkeletonText width={`${String(9 + row * 2)}rem`} />
+              <SkeletonText size="small" width={`${String(12 + row)}rem`} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Skeleton>
   );
 }

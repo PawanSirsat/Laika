@@ -5,6 +5,19 @@
  */
 
 import type { TokenAlert } from '../../../api/token-alerts.ts';
+import { USAGE_RANGES, type UsageRange } from '../../../api/usage.ts';
+
+/** The range a page opens on when the address names none. */
+export const DEFAULT_RANGE: UsageRange = 30;
+
+/**
+ * `?range=` (LAI-1201): the period the page shows, so a reload or a pasted
+ * link keeps it. Read leniently — anything but 7, 30 or 90 is the default.
+ */
+export function usageRange(value: string | null | undefined): UsageRange {
+  const found = USAGE_RANGES.find((r) => String(r.days) === value);
+  return found === undefined ? DEFAULT_RANGE : found.days;
+}
 
 export interface ScopeProject {
   readonly id: string;
@@ -96,8 +109,10 @@ export function spaceRow(
 }
 
 /** One space's own Usage view: Insights → Usage & cost, `?project=` (LAI-814). */
-export function spaceUsageHref(slug: string): string {
-  return `/insights?tab=usage&project=${encodeURIComponent(slug)}`;
+export function spaceUsageHref(slug: string, range: number = DEFAULT_RANGE): string {
+  // The period travels with the space (LAI-1201): opening a row keeps the range read.
+  const period = range === DEFAULT_RANGE ? '' : `&range=${String(range)}`;
+  return `/insights?tab=usage&project=${encodeURIComponent(slug)}${period}`;
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   type Harness,
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { boardAction } from './board-menu.ts';
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -726,7 +727,7 @@ void describe('the live claim (LAI-597)', () => {
 
       await h.page.clock.fastForward(95_000);
 
-      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await boardAction(h.page, 'View settings');
       await h.page.waitForSelector('.view-settings');
       await h.page.locator('.vs-search').fill('Agent');
       await h.page.locator('.vs-add').first().click();

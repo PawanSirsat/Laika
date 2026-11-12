@@ -554,7 +554,7 @@
  * **The empty List, centred in the card** (LAI-717): the state takes the space
  * above the Create row and centres itself in it, so the two never meet.
  */
-.list-scroll-empty > .state {
+.list-scroll-empty > .empty-panel {
   flex: 1 1 auto;
 }
 

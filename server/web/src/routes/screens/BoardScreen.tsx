@@ -6,7 +6,9 @@ import { useDelayed } from '../../components/use-delayed.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { useCreateTask } from '../../components/create-task/use-create-task.ts';
-import { SpaceSlot } from '../../components/space/SpaceSlot.tsx';
+import { SpaceBarSlot, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
+import { BoardMenu, type BoardMenuItem } from './board/BoardMenu.tsx';
+import { SprintScope } from './board/SprintScope.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import {
@@ -38,11 +40,13 @@ import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, sprintLabelsOf, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
-import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { executionSignal } from '../../components/agent/execution-derive.ts';
-import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
+import {
+  useOfferTaskSource,
+  type TaskSource,
+} from '../../components/drawer/TaskSourceProvider.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
-import { isPriority, isTagName } from '../../api/task-filter.ts';
+import { applyTaskFilter, isPriority, isTagName } from '../../api/task-filter.ts';
 import { agentsOnTasks, matchesAgentFilter } from '../../api/selected-agent.ts';
 import {
   flashTasks,
@@ -85,7 +89,7 @@ import '../../components/markers.css';
 import './board/board.css';
 import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
-import { withProjectParam } from '../nav-url.ts';
+import { CREATE_SPACE_HREF, withProjectParam } from '../nav-url.ts';
 import { clockTime } from '../../api/time-label.ts';
 import { useGates } from '../../api/permissions.ts';
 
@@ -152,14 +156,6 @@ export function BoardScreen({
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   /** Whose members those are, so a chip can tell "loading" from "unknown" (LAI-717). */
   const [membersFor, setMembersFor] = useState<string | undefined>(undefined);
-  /**
-   * Which task's panel is open — **from the URL, not from state** (LAI-424).
-   *
-   * Held in `useState` the panel could not be linked to, a refresh lost it, and
-   * Back did not close it. That is the same shape as LAI-423: something the
-   * reader can plainly see that the address bar does not carry.
-   */
-  const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   /*
@@ -501,6 +497,9 @@ export function BoardScreen({
     };
   }, []);
   const boardView = view === 'kanban';
+  // The drawer is the space's now (LAI-1190); the URL still says it is open.
+  /** The task the drawer shows, from the URL: lists and cards mark it selected (LAI-1206). */
+  const openTaskId = params.get('task') ?? undefined;
   const drawerOpen = openTaskId !== undefined;
   useLayoutEffect(() => {
     presenter.current = (change, apply) => {
@@ -856,9 +855,176 @@ export function BoardScreen({
 
   const shownCount = shownTasks.length;
 
-  // Read from the board's own list so the panel re-renders after a move —
-  // holding a copy would show a stale status the moment the drag succeeded.
-  const openTask = openTaskId === undefined ? undefined : board.byId.get(openTaskId);
+  /*
+   * **The board's sprint scope, said out loud** (LAI-1198). The board opens on
+   * the active sprint (LAI-713, kept on purpose) while the List opens on every
+   * sprint, and the only sign was a chip — so moving between them changed what
+   * was shown with no warning (visual audit, finding 5). Both numbers are from
+   * the one task set the board already holds: the sprint's share of it, and
+   * all of it, so the two are counted the same way.
+   */
+  /*
+   * Drawn from the moment the URL names a sprint, empty until the sprint list
+   * and the task set have landed: the row's shape is decided before the words
+   * arrive, so their arrival cannot wrap it and move the lanes (LAI-727's
+   * no-shift rule).
+   */
+  const sprintShare = useMemo(() => {
+    if (view !== 'kanban' || sprintScope === undefined || sprintScope === 'none') return undefined;
+    const found = sprints.find((s) => s.id === sprintScope);
+    if (found === undefined || board.state.status !== 'ready') return null;
+    return {
+      sprintKey: sprintLabels.get(found.id)?.label ?? '',
+      name: found.name,
+      inSprint: applyTaskFilter(board.state.all, { sprint: found.id }).length,
+      total: board.state.all.length,
+      partial: board.state.truncated,
+    };
+  }, [view, sprintScope, sprints, sprintLabels, board.state]);
+  const sprintScopeLine =
+    sprintShare === undefined ? undefined : (
+      <SprintScope
+        share={sprintShare ?? undefined}
+        onShowAll={() => {
+          setParam('sprint', ALL_SPRINTS);
+        }}
+      />
+    );
+
+  /** Hidden columns, for the `⋯`'s dot and its menu — the List has none to hide. */
+  const hiddenColumnCount = view === 'list' || !mayAddColumn ? 0 : statuses.hidden.length;
+  const moreButton = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('.board-bar [data-board-more]');
+
+  /*
+   * The `⋯` menu (LAI-1198). **Only actions that exist** — an overflow with a
+   * greyed list of things Laika cannot do is the decoration the icons were
+   * supposed to avoid. View settings, Insights and Refresh were bare icons in
+   * the row; Hidden columns was an icon with a count. Each is a word here.
+   */
+  const overflowItems: BoardMenuItem[] = [
+    {
+      id: 'view-settings',
+      label: 'View settings',
+      onSelect: () => {
+        const at = overflowAt;
+        setOverflowAt(undefined);
+        // Hangs where the menu did, under the `⋯` that opened both.
+        setSettingsAt(at);
+      },
+    },
+    {
+      id: 'insights',
+      label: 'Insights',
+      onSelect: () => {
+        setOverflowAt(undefined);
+        setInsightsOpen(true);
+      },
+    },
+    {
+      id: 'refresh',
+      label: 'Refresh',
+      onSelect: () => {
+        setOverflowAt(undefined);
+        refresh();
+        statuses.reload();
+        moreButton()?.focus();
+      },
+    },
+    /*
+     * **Hidden columns (N)** (LAI-739): the way back for a column somebody
+     * hid. Only for a reader who may configure the board, and only when there
+     * is one.
+     */
+    ...(hiddenColumnCount > 0
+      ? [
+          {
+            id: 'hidden-columns',
+            label: `Hidden columns (${String(hiddenColumnCount)})`,
+            data: { 'data-hidden-columns': '' },
+            onSelect: () => {
+              setOverflowAt(undefined);
+              setHiddenOpen(true);
+            },
+          },
+        ]
+      : []),
+    {
+      id: 'space-settings',
+      label: 'Space settings',
+      onSelect: () => {
+        setOverflowAt(undefined);
+        onParamsChange(new URLSearchParams({ project: slug ?? '' }), { push: true });
+        window.location.assign(`/projects?project=${encodeURIComponent(slug ?? '')}`);
+      },
+    },
+    /*
+     * **Not on `/list`** (LAI-488): the tab bar has been the view switch since
+     * LAI-256. On `/board` — including a legacy `/board?view=list` link — it
+     * still works and stays.
+     */
+    ...(path !== '/list'
+      ? [
+          {
+            id: 'view',
+            label: view === 'list' ? 'Show as board' : 'Show as list',
+            onSelect: () => {
+              setOverflowAt(undefined);
+              setParam('view', view === 'list' ? undefined : 'list');
+            },
+          },
+        ]
+      : []),
+  ];
+
+  /*
+   * **The drawer reads the board's own list** (LAI-1190), offered to the
+   * space's drawer host rather than rendered here, so the panel re-renders
+   * after a move — holding a copy would show a stale status the moment the
+   * drag succeeded. Which task is open stays in the URL (LAI-424), where the
+   * host reads it; this screen no longer draws the panel at all.
+   */
+  const recent = stream.recent;
+  const taskSource = useMemo<TaskSource | undefined>(
+    () =>
+      slug === undefined
+        ? undefined
+        : {
+            slug,
+            byId: board.byId,
+            loading: board.state.status === 'loading',
+            members,
+            statuses: statuses.all,
+            sprints,
+            agentsAllowed: project?.agents_allowed,
+            listReadAt: board.state.asOf,
+            listReadOrder: board.state.readOrder,
+            movingId: board.movingId,
+            moveError: board.moveError,
+            onMove: (id, to) => {
+              void board.move(id, to);
+            },
+            refresh,
+            executionSignal: (taskId) => executionSignal(recent, taskId),
+          },
+    [
+      slug,
+      board.byId,
+      board.state.status,
+      members,
+      statuses.all,
+      sprints,
+      project?.agents_allowed,
+      board.state.asOf,
+      board.state.readOrder,
+      board.movingId,
+      board.moveError,
+      board.move,
+      refresh,
+      recent,
+    ],
+  );
+  useOfferTaskSource(taskSource);
 
   const openTaskInUrl = (taskId: string): void => {
     // **A history entry, unlike every other filter** (LAI-252): opening a task
@@ -954,7 +1120,21 @@ export function BoardScreen({
       <div className="board">
         <EmptyState
           headline="No projects yet"
-          body="Create the first one and point it at a repo."
+          body={
+            gates.org('project.create')
+              ? 'Create the first one and point it at a repo.'
+              : 'Nobody has added you to a space yet. Ask an owner or admin for one.'
+          }
+          {...(gates.org('project.create') && onNavigate !== undefined
+            ? {
+                action: {
+                  label: 'Create a space',
+                  onClick: () => {
+                    onNavigate(CREATE_SPACE_HREF);
+                  },
+                },
+              }
+            : {})}
         />
       </div>
     );
@@ -1011,119 +1191,117 @@ export function BoardScreen({
         owned by one task and contents owned by another, with the height agreed
         by correspondence.
       */}
-      <div className="board-bar">
-        <BoardToolbar
-          activeCount={activeCount}
-          status={statusScope}
-          statusName={filterNames.status}
-          statuses={statuses.all}
-          onStatus={(value) => {
-            setParam('status', value);
-          }}
-          sprint={sprintScope}
-          sprints={sprints.map((s) => ({
-            id: s.id,
-            label: `${sprintLabels.get(s.id)?.label ?? ''} · ${s.name}`,
-            // Marked and dated in the popover's list (LAI-726): already loaded.
-            active: s.status === 'active',
-            startsOn: s.starts_on,
-            endsOn: s.ends_on,
-          }))}
-          onSprint={(value) => {
-            setParam('sprint', value ?? ALL_SPRINTS);
-          }}
-          updated={updatedWindow}
-          onUpdated={(value) => {
-            setParam('updated', value);
-          }}
-          blocked={blockedOnly}
-          onBlocked={(value) => {
-            setParam('blocked', value ? 'true' : undefined);
-          }}
-          top={topOnly}
-          onTop={(value) => {
-            setParam('top', value ? 'true' : undefined);
-          }}
-          overdue={overdueOnly}
-          onOverdue={(value) => {
-            setParam('overdue', value ? 'true' : undefined);
-          }}
-          priority={priority}
-          assignee={assignee}
-          tag={tagScope}
-          ready={readyParam === 'true'}
-          notReady={readyParam === 'false'}
-          agentOnly={agentOnly}
-          selectedAgent={agentFilter}
-          agentChoices={agentChoices}
-          // The field is offered once a task in the space has an agent, or
-          // when a link already sets it — never as an empty list.
-          onSelectedAgent={
-            agentChoices.length > 0 || agentFilter !== undefined
-              ? (value) => {
-                  setParam('selected_agent', value);
-                }
-              : undefined
-          }
-          tags={knownTags}
-          members={[...members.values()]}
-          group={group}
-          onPriority={(value) => {
-            setParam('priority', value);
-          }}
-          onAssignee={(value) => {
-            setParam('assignee', value);
-          }}
-          onTag={(value) => {
-            setParam('tag', value);
-          }}
-          onReady={(value) => {
-            setParam('ready', value ? 'true' : undefined);
-          }}
-          onAgentOnly={(value) => {
-            setParam('agent', value ? 'true' : undefined);
-          }}
-          query={query}
-          theme={theme}
-          onQuery={(value) => {
-            setParam('q', value === '' ? undefined : value);
-          }}
-          onGroup={(value) => {
-            setParam('group', value === 'column' ? undefined : value);
-          }}
-          showGroup={view !== 'list'}
-          // Every filter in the one list — this used to be a literal that
-          // missed `sprint` (LAI-487). Sort, page, group and the open task
-          // are not filters and stay.
-          onClearFilters={clearFilters}
-          chips={chips}
-          filterButtonRef={filterButtonRef}
-          onRemoveFilter={removeFilter}
-          onInsights={() => {
-            setInsightsOpen(true);
-          }}
-          onViewSettings={(anchor) => {
-            setSettingsAt((at) => (at === undefined ? anchor : undefined));
-          }}
-          onRefresh={() => {
-            refresh();
-            statuses.reload();
-          }}
-          onOverflow={(anchor) => {
-            setOverflowAt((at) => (at === undefined ? anchor : undefined));
-          }}
-          // The board's own entry; the List has no columns to hide.
-          hiddenColumns={view === 'list' || !mayAddColumn ? 0 : statuses.hidden.length}
-          onHiddenColumns={() => {
-            setHiddenOpen(true);
-          }}
-        />
-        <SprintStats
-          scope={statsScope(sprintScope, sprintsKnown ? sprints : undefined, Date.now())}
-          counts={stats.counts}
-          partial={stats.partial}
-        />
-      </div>
+      {/*
+        **In the space's one toolbar** (LAI-1198), through `SpaceBarSlot`: the
+        row under the tabs is the same on every tab — search and filters, the
+        view's controls, then + Create — and on the board this row *is* the
+        view's controls. It sat below the space bar as a line of its own, which
+        put Create in the title row here and on a third line elsewhere.
+      */}
+      <SpaceBarSlot>
+        <div className="board-bar">
+          <BoardToolbar
+            activeCount={activeCount}
+            status={statusScope}
+            statusName={filterNames.status}
+            statuses={statuses.all}
+            onStatus={(value) => {
+              setParam('status', value);
+            }}
+            sprint={sprintScope}
+            sprints={sprints.map((s) => ({
+              id: s.id,
+              label: `${sprintLabels.get(s.id)?.label ?? ''} · ${s.name}`,
+              // Marked and dated in the popover's list (LAI-726): already loaded.
+              active: s.status === 'active',
+              startsOn: s.starts_on,
+              endsOn: s.ends_on,
+            }))}
+            onSprint={(value) => {
+              setParam('sprint', value ?? ALL_SPRINTS);
+            }}
+            updated={updatedWindow}
+            onUpdated={(value) => {
+              setParam('updated', value);
+            }}
+            blocked={blockedOnly}
+            onBlocked={(value) => {
+              setParam('blocked', value ? 'true' : undefined);
+            }}
+            top={topOnly}
+            onTop={(value) => {
+              setParam('top', value ? 'true' : undefined);
+            }}
+            overdue={overdueOnly}
+            onOverdue={(value) => {
+              setParam('overdue', value ? 'true' : undefined);
+            }}
+            priority={priority}
+            assignee={assignee}
+            tag={tagScope}
+            ready={readyParam === 'true'}
+            notReady={readyParam === 'false'}
+            agentOnly={agentOnly}
+            selectedAgent={agentFilter}
+            agentChoices={agentChoices}
+            // The field is offered once a task in the space has an agent, or
+            // when a link already sets it — never as an empty list.
+            onSelectedAgent={
+              agentChoices.length > 0 || agentFilter !== undefined
+                ? (value) => {
+                    setParam('selected_agent', value);
+                  }
+                : undefined
+            }
+            tags={knownTags}
+            members={[...members.values()]}
+            group={group}
+            onPriority={(value) => {
+              setParam('priority', value);
+            }}
+            onAssignee={(value) => {
+              setParam('assignee', value);
+            }}
+            onTag={(value) => {
+              setParam('tag', value);
+            }}
+            onReady={(value) => {
+              setParam('ready', value ? 'true' : undefined);
+            }}
+            onAgentOnly={(value) => {
+              setParam('agent', value ? 'true' : undefined);
+            }}
+            query={query}
+            theme={theme}
+            onQuery={(value) => {
+              setParam('q', value === '' ? undefined : value);
+            }}
+            onGroup={(value) => {
+              setParam('group', value === 'column' ? undefined : value);
+            }}
+            showGroup={view !== 'list'}
+            // Every filter in the one list — this used to be a literal that
+            // missed `sprint` (LAI-487). Sort, page, group and the open task
+            // are not filters and stay.
+            onClearFilters={clearFilters}
+            chips={chips}
+            filterButtonRef={filterButtonRef}
+            onRemoveFilter={removeFilter}
+            onOverflow={(anchor) => {
+              setOverflowAt((at) => (at === undefined ? anchor : undefined));
+            }}
+            overflowOpen={overflowAt !== undefined}
+            // The board's own entry; the List has no columns to hide.
+            hiddenColumns={hiddenColumnCount}
+            scope={sprintScopeLine}
+          />
+          <SprintStats
+            scope={statsScope(sprintScope, sprintsKnown ? sprints : undefined, Date.now())}
+            counts={stats.counts}
+            partial={stats.partial}
+          />
+        </div>
+      </SpaceBarSlot>
 
       {settingsAt !== undefined && (
         <ViewSettings
@@ -1180,71 +1358,14 @@ export function BoardScreen({
         supposed to avoid.
       */}
       {overflowAt !== undefined && (
-        <>
-          <div
-            className="bt-catcher"
-            aria-hidden="true"
-            onClick={() => {
-              setOverflowAt(undefined);
-            }}
-          />
-          <div
-            className="bt-menu"
-            role="menu"
-            style={{ top: `${String(overflowAt.top)}px`, right: `${String(overflowAt.right)}px` }}
-          >
-            {/*
-              **Hidden columns (N)** (LAI-739): the way back for a column
-              somebody hid. Only for a reader who may configure the board, and
-              only when there is one — an overflow lists actions that exist.
-            */}
-            {mayAddColumn && statuses.hidden.length > 0 && (
-              <button
-                type="button"
-                role="menuitem"
-                className="bt-menu-item"
-                onClick={() => {
-                  setOverflowAt(undefined);
-                  setHiddenOpen(true);
-                }}
-              >
-                Hidden columns ({statuses.hidden.length})
-              </button>
-            )}
-            <button
-              type="button"
-              role="menuitem"
-              className="bt-menu-item"
-              onClick={() => {
-                setOverflowAt(undefined);
-                onParamsChange(new URLSearchParams({ project: slug ?? '' }), { push: true });
-                window.location.assign(`/projects?project=${encodeURIComponent(slug ?? '')}`);
-              }}
-            >
-              Space settings
-            </button>
-            {/*
-              **Not on `/list`** (LAI-488). There it only cleared the legacy
-              `?view` while the path kept it a list, so the click did nothing;
-              the tab bar has been the view switch since LAI-256. On `/board`
-              — including a legacy `/board?view=list` link — it still works
-              and stays.
-            */}
-            {path !== '/list' && (
-              <button
-                type="button"
-                role="menuitem"
-                className="bt-menu-item"
-                onClick={() => {
-                  setOverflowAt(undefined);
-                  setParam('view', view === 'list' ? undefined : 'list');
-                }}
-              >
-                {view === 'list' ? 'Show as board' : 'Show as list'}
-              </button>
-            )}
-          </div>
-        </>
+        <BoardMenu
+          anchor={overflowAt}
+          items={overflowItems}
+          onClose={(returnFocus) => {
+            setOverflowAt(undefined);
+            if (returnFocus) moreButton()?.focus();
+          }}
+        />
       )}
 
       {insightsOpen && slug !== undefined && (
@@ -1719,76 +1840,6 @@ export function BoardScreen({
             sentence in and the columns get the whole width back.
           */}
         </div>
-      )}
-
-      {/*
-        Reuses `board.move` — the same call the drag uses, so a rejected
-        transition behaves identically in both places (LAI-056).
-
-        `mayEdit` is `mayWrite`: editing a task is member+ (§3.2) and that
-        permission is already resolved. A Viewer sees tags and gets no way to
-        change them, rather than a control that answers 403.
-      */}
-      {/*
-        **A drawer opened before the board has loaded** (LAI-293). `openTask` is
-        found in the board's own task list, so a deep link to
-        `/board?task=LC-12` — or a reload with the drawer open — rendered the
-        chrome with nothing inside it until the fetch landed.
-
-        Gated on `loading` rather than on `openTask === undefined` alone: once
-        the board *has* loaded and the id is still not there, the task does not
-        exist, and a skeleton that never resolves is a worse answer than an
-        empty drawer.
-      */}
-      {openTaskId !== undefined && openTask === undefined && board.state.status === 'loading' && (
-        <TaskDrawerContent>
-          <LoadingState shape="drawer" count={4} label="Loading this task" />
-        </TaskDrawerContent>
-      )}
-
-      {openTask !== undefined && (
-        <TaskDrawerContent>
-          <TaskDetailPanel
-            slug={slug}
-            executionSignal={executionSignal(stream.recent, openTask.id)}
-            sprints={sprints}
-            agentsAllowed={project?.agents_allowed}
-            /*
-             * Assigning to a sprint is member+ (§3.2) — the same rule the
-             * Sprints screen uses, asked through the same helper rather than
-             * re-derived here.
-             */
-            maySetSprint={
-              boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
-            }
-            statuses={statuses.all}
-            meId={me?.id}
-            meEmail={me?.email}
-            mayAssign={mayWrite}
-            mayEdit={mayWrite}
-            mayCreate={mayCreate}
-            onTagsChanged={() => {
-              refresh();
-            }}
-            onAssigned={refresh}
-            onTaskEdited={refresh}
-            onHandoffsChanged={refresh}
-            onOpen={openTaskInUrl}
-            task={openTask}
-            listReadAt={board.state.asOf}
-            listReadOrder={board.state.readOrder}
-            byId={board.byId}
-            members={members}
-            moving={board.movingId === openTask.id}
-            moveError={board.moveError}
-            onMove={(id, to) => {
-              void board.move(id, to);
-            }}
-            onClose={() => {
-              setParam('task', undefined);
-            }}
-          />
-        </TaskDrawerContent>
       )}
     </div>
   );

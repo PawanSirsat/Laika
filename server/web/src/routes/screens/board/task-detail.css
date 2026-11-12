@@ -303,12 +303,6 @@
   color: var(--text-secondary);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .panel {
-    transition: none;
-  }
-}
-
 /* ===========================================================================
  * The drawer's tabs (prototype line 1780), LAI-277.
  *

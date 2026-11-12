@@ -46,6 +46,12 @@ function carriesProject(path: string): boolean {
  * Returns the bare path when there is no project yet, when the destination is
  * org-level, or when the route is unknown — never a dangling `?project=`.
  */
+/**
+ * Where a space is created: the Spaces page with its form open (LAI-1191).
+ * The sidebar's *Create a space* and an empty board both lead here.
+ */
+export const CREATE_SPACE_HREF = '/projects?new=1';
+
 export function navHref(path: string, projectSlug: string | undefined): string {
   if (projectSlug === undefined || projectSlug === '') return path;
   if (!carriesProject(path)) return path;
