@@ -1,13 +1,21 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { useDialogFocus } from '../use-dialog-focus.ts';
 import './drawer.css';
 
-export const DRAWER_SLOT_ID = 'task-drawer-slot';
-
 export interface TaskDrawerProps {
-  /** The task shown, so closing can find its card when the opener has gone. */
+  /**
+   * The task shown, so closing can find its card when the opener has gone.
+   * Empty for the new-task form, which has no card.
+   */
   readonly taskId: string;
   readonly onClose: () => void;
+  /**
+   * The ids of what names the dialog — the task's key and title (LAI-1190,
+   * B3). The content draws them; the frame only points at them.
+   */
+  readonly labelledBy: string;
+  /** What the drawer shows: the task panel, its loading state, or the form. */
+  readonly children: ReactNode;
 }
 
 /**
@@ -46,11 +54,16 @@ export function drawerReturnTarget(
  * The chrome owns dismissal — Escape and the scrim — and the content owns its
  * own `×`, because the design draws that button inside the header beside the
  * task key. Both do the same thing: strip `?task=`.
+ *
+ * **A modal dialog, and the frame is the dialog** (LAI-1190, B3/B22): `role`,
+ * `aria-modal` and the label are here, and Tab is held inside by the app's one
+ * trap (`useDialogFocus`). The panel inside used to declare itself the dialog
+ * with no trap, so Tab walked out of a "modal" into the board behind it.
  */
 /** A swipe down the phone sheet's handle longer than this closes it (LAI-1122). */
 const SWIPE_CLOSE_PX = 60;
 
-export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
+export function TaskDrawer({ taskId, onClose, labelledBy, children }: TaskDrawerProps) {
   const dragFrom = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   // The task shown at close, not at open: a related-task link swaps it in place.
@@ -61,21 +74,21 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
   // StrictMode's second run of the effect does not record the panel instead.
   const opener = useRef<Element | null | undefined>(undefined);
 
-  useEffect(() => {
-    opener.current ??= document.activeElement;
+  useDialogFocus(panelRef, {
     // Focus the panel so a keyboard reader is inside the thing that just
     // opened, rather than left where the card was.
-    panelRef.current?.focus();
-    return () => {
-      // After the drawer has left the DOM. Only when focus went with it: a
-      // reader who closed it by clicking a sidebar link keeps that link.
-      queueMicrotask(() => {
-        const now = document.activeElement;
-        if (now !== null && now !== document.body && now.isConnected) return;
-        drawerReturnTarget(opener.current ?? null, shown.current)?.focus();
-      });
-    };
-  }, []);
+    initial: () => {
+      opener.current ??= document.activeElement;
+      return panelRef.current;
+    },
+    // After the drawer has left the DOM. Only when focus went with it: a
+    // reader who closed it by clicking a sidebar link keeps that link.
+    restore: () => {
+      const now = document.activeElement;
+      if (now !== null && now !== document.body && now.isConnected) return undefined;
+      return drawerReturnTarget(opener.current ?? null, shown.current);
+    },
+  });
 
   useEffect(() => {
     /*
@@ -96,7 +109,14 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
   return (
     <>
       <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
-      <div className="drawer" tabIndex={-1} ref={panelRef}>
+      <div
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        tabIndex={-1}
+        ref={panelRef}
+      >
         {/*
           The phone sheet's handle (LAI-1122): drawn only below 600px. A tap
           closes the sheet, and so does a downward swipe of more than 60px.
@@ -118,36 +138,8 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
         >
           <span className="drawer-handle-bar" aria-hidden="true" />
         </button>
-        {/* Where the view puts the task. The chrome knows the geometry; the
-            screen knows the task — see `TaskDrawerContent`. */}
-        <div id={DRAWER_SLOT_ID} className="drawer-slot" />
+        <div className="drawer-slot">{children}</div>
       </div>
     </>
   );
-}
-
-export interface TaskDrawerContentProps {
-  readonly children: ReactNode;
-}
-
-/**
- * A view's task detail, rendered into the drawer the space layout opened.
- *
- * A portal for the same reason `SpaceSlot` is one: the chrome belongs to the
- * space and the content belongs to the screen that has the data, and passing a
- * node upward through state would mean an effect per render.
- *
- * Renders nothing when there is no drawer — a screen asked for a task the
- * layout is not showing has nowhere to put it, which is correct rather than an
- * error.
- */
-export function TaskDrawerContent({ children }: TaskDrawerContentProps) {
-  const [host, setHost] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setHost(document.getElementById(DRAWER_SLOT_ID));
-  });
-
-  if (host === null) return null;
-  return createPortal(children, host);
 }

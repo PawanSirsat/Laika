@@ -83,8 +83,11 @@
 
 .space-bar {
   flex: none;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-subtle);
+  /* Level-1 glass (LAI-1132); the pane is `glass.css`'s ::before. */
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  border-bottom: 1px solid var(--glass-border);
   /* Was `13px 18px 0` for two stacked rows; one row needs less above it. */
   /* The addendum's 24px gutters (LAI-606). */
   padding: 12px 24px 0;
@@ -682,4 +685,374 @@
 .space-menu-item:focus-visible {
   background: var(--bg-card-hover);
   outline: none;
+}
+
+/* ------------------------------------------------- one header (LAI-1198) */
+
+/*
+ * Three rows on every tab: title, tabs, toolbar. The tabs' underline sits on
+ * the toolbar's top rule, so the bar's own gap would open a seam between them.
+ */
+.space-bar {
+  gap: 0;
+  /* The content's own gutter (`.board > …`, the calendar, the list), so the
+     header's left edge lines up with the lanes under it. */
+  padding-inline: 1.125rem;
+}
+
+.space-bar-top {
+  row-gap: 4px;
+}
+
+.space-key {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+
+/*
+ * The one toolbar: search and filters, the view's own controls, then Create.
+ * One line at every width — on a narrow toolbar the filters fold into one
+ * button and a sheet (`SpaceToolbar`'s `useFold`), which is what keeps the
+ * content high on a phone.
+ */
+.space-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.space-filters {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.space-toolbar .space-search {
+  flex: 0 1 12rem;
+  width: auto;
+  min-width: 7rem;
+}
+
+.space-toolbar-view {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The board's toolbar row, portalled in: the bar's line, not one of its own. */
+.space-bar-actions {
+  display: contents;
+}
+
+.space-toolbar .board-bar {
+  flex: 1 1 auto;
+  padding: 0;
+  border-bottom: 0;
+}
+
+/* The context line now sits in the toolbar, after the view's controls. */
+.space-toolbar .space-slot {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  padding-bottom: 0;
+}
+
+.space-toolbar .space-context {
+  flex: 0 1 auto;
+  text-align: right;
+}
+
+.space-toolbar .space-slot-actions {
+  margin-left: 0;
+}
+
+.space-toolbar .space-create {
+  margin-inline-start: auto;
+  height: 32px;
+}
+
+.space-filters-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-small);
+  line-height: 1.3;
+  text-align: center;
+}
+
+/*
+ * The tab strip's edge cue: a fade on whichever side has more to scroll to
+ * (`ViewTabs` sets the attributes from the strip's own scroll position).
+ */
+.view-tabs {
+  position: relative;
+  min-width: 0;
+}
+
+.view-tabs::before,
+.view-tabs::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 2px;
+  width: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.view-tabs::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-card), transparent);
+}
+
+.view-tabs::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-card), transparent);
+}
+
+.view-tabs[data-more-before]::before,
+.view-tabs[data-more-after]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-tabs::before,
+  .view-tabs::after {
+    transition: none;
+  }
+}
+
+/* The folded filters' sheet, from the bottom of a phone screen. */
+.space-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--scrim);
+}
+
+.space-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 71;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 80dvh;
+  overflow-y: auto;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-default);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  animation: space-sheet-in 160ms ease-out;
+}
+
+@keyframes space-sheet-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-sheet {
+    animation: none;
+  }
+}
+
+.space-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.space-sheet-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+}
+
+.space-sheet-clear {
+  border: 0;
+  background: none;
+  padding: 4px;
+  color: var(--accent);
+  font: inherit;
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.space-sheet-clear:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.space-sheet-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.space-sheet-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.space-sheet-body .space-select .dd-trigger {
+  max-width: none;
+}
+
+.space-sheet-done {
+  justify-content: center;
+  height: 40px;
+}
+
+/*
+ * Below 900px the rail is off-canvas and the shell's own head is nothing but
+ * the menu button — a whole 44px line before the space starts. On a space it
+ * floats over the start of the title row instead, which gives that line back.
+ */
+@media (max-width: 900px) {
+  .shell-body:has(.space) {
+    position: relative;
+  }
+
+  .shell-body:has(.space) > .shell-head-quiet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 5;
+    padding: 10px 0 0 12px;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  .space-bar {
+    padding: 10px 16px 0;
+  }
+
+  .space-bar-top > .space-bar-row {
+    padding-inline-start: 40px;
+  }
+}
+
+/* A phone: a compact title, and Create keeps its word but loses its width. */
+@media (max-width: 640px) {
+  .space-icon {
+    display: none;
+  }
+
+  .space-name {
+    font-size: var(--text-heading-sm);
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .space-identity {
+    flex: 0 1 auto;
+    gap: 6px;
+  }
+
+  .space-bar-row {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .space-live {
+    padding: 4px 6px;
+  }
+
+  .space-agents-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .space-bar-right .space-chip {
+    height: 30px;
+    padding: 0 8px;
+  }
+
+  .view-tab {
+    height: 36px;
+    padding: 0 9px;
+  }
+
+  .space-toolbar {
+    gap: 6px;
+    min-height: 40px;
+    padding: 4px 0;
+  }
+
+  .space-bar {
+    padding-top: 8px;
+  }
+
+  .space-toolbar .space-search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .space-toolbar .space-create {
+    padding: 0 10px;
+  }
+
+  /* The context line is a summary: kept for a screen reader, not a row. */
+  .space-toolbar .space-context {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .space-toolbar .space-slot {
+    flex: 0 0 auto;
+  }
+}
+
+/* A phone: name, key and live on one line with Agents and ⋯; the tabs under. */
+@media (max-width: 640px) {
+  .space-bar-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+  }
+
+  .space-bar-top > nav {
+    grid-column: 1 / -1;
+  }
+
+  .space-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }

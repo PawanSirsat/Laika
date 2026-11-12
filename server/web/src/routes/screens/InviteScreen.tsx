@@ -1,10 +1,18 @@
+import { AuthCard } from '../../components/auth/AuthCard.tsx';
+import { AuthAlert, AuthSummary } from '../../components/auth/AuthSummary.tsx';
+import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { useState } from 'react';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
 import {
+  useFocusOnServerAnswer,
+  useValidatedForm,
+} from '../../components/forms/use-validated-form.ts';
+import {
   email as validateEmail,
+  PASSWORD_RULE,
   password as validatePassword,
   passwordsMatch,
   required,
@@ -41,6 +49,11 @@ export interface InviteScreenProps {
   readonly onRequestNew?: (() => void) | undefined;
   readonly submitting?: boolean;
   readonly serverError?: string | undefined;
+  /**
+   * Per-field complaints from a `422`, keyed by the body's field name
+   * (`name`, `email`, `password`) — shown under that field (LAI-1203).
+   */
+  readonly fieldErrors?: Readonly<Record<string, string>> | undefined;
 }
 
 /** `expires in 6 days`, or `expires today` inside the last day. */
@@ -73,71 +86,73 @@ export function InviteScreen({
   onRequestNew,
   submitting = false,
   serverError,
+  fieldErrors = {},
 }: InviteScreenProps) {
   const [name, setName] = useState('');
   const [linkEmail, setLinkEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [touched, setTouched] = useState(false);
+  const form = useValidatedForm();
+  useFocusOnServerAnswer(form.focusFirstInvalid, { serverError, fieldErrors });
   const { theme } = useTheme();
 
   if (refused) {
     return (
-      <div className="auth">
-        <div className="auth-card auth-card-invite">
-          <p className="auth-kicker auth-kicker-warn">INVITE REFUSED</p>
-          <header className="auth-head">
-            <span className="auth-expired-glyph" aria-hidden="true">
-              {/* The design's clock, drawn rather than imported: there is no
-                  icon set in this app and a task may not add one. */}
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-                <path
-                  d="M12 7v5l3 2"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <h1 className="auth-title">This invite cannot be used</h1>
-            <p className="auth-host">{host}</p>
-          </header>
+      <AuthCard tone="warn" data-auth-state="refused">
+        <BrandLockup size="md" className="auth-brand" />
+        <header className="auth-head">
+          <span className="auth-glyph" aria-hidden="true">
+            {/* The design's clock, drawn rather than imported: there is no
+                icon set in this app and a task may not add one. */}
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+              <path
+                d="M12 7v5l3 2"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <h1 className="auth-title">This invite cannot be used</h1>
+          <p className="auth-host">{host}</p>
+        </header>
 
-          {/*
-            The design says "This invite has expired" and names the inviter. We
-            cannot: the server answers one status for unknown, expired and
-            already-used **on purpose**, so that posting guesses cannot confirm a
-            token exists. It also means there is no invite to read an inviter or
-            an expiry window from. Saying "expired" here would be a guess with
-            two-in-three odds, and the one thing worse than a vague message is a
-            confident wrong one.
-          */}
-          <p className="auth-note auth-refused-note">
-            The link is {INVITE_REFUSED_REASON}. Ask whoever invited you for a new one — your
-            pre-assigned role is kept.
-          </p>
+        {/*
+          The design says "This invite has expired" and names the inviter. We
+          cannot: the server answers one status for unknown, expired and
+          already-used **on purpose**, so that posting guesses cannot confirm a
+          token exists. It also means there is no invite to read an inviter or
+          an expiry window from. Saying "expired" here would be a guess with
+          two-in-three odds, and the one thing worse than a vague message is a
+          confident wrong one.
+        */}
+        <p className="auth-lede">
+          The link is {INVITE_REFUSED_REASON}. Ask whoever invited you for a new one — your
+          pre-assigned role is kept.
+        </p>
 
-          <Button variant="secondary" fullWidth onClick={onRequestNew}>
-            Back to sign in
-          </Button>
-        </div>
-      </div>
+        <Button variant="secondary" fullWidth onClick={onRequestNew}>
+          Back to sign in
+        </Button>
+      </AuthCard>
     );
   }
 
   if (loading || invite === undefined) {
     return (
-      <div className="auth">
-        <div className="auth-card auth-card-invite">
-          <p className="auth-kicker">ACCEPT INVITE</p>
-          <p className="auth-note" role="status">
-            <Spinner size="sm" />
-            Checking your invite…
-          </p>
-        </div>
-      </div>
+      <AuthCard tone="invite" data-auth-state="loading">
+        <BrandLockup size="md" className="auth-brand" />
+        <header className="auth-head">
+          <h1 className="auth-title">Accept your invite</h1>
+          <p className="auth-host">{host}</p>
+        </header>
+        <p className="auth-note auth-note-status" role="status">
+          <Spinner size="sm" />
+          Checking your invite…
+        </p>
+      </AuthCard>
     );
   }
 
@@ -147,7 +162,7 @@ export function InviteScreen({
   // address they are about to own.
   const isLinkInvite = invite.email === null;
 
-  const nameCheck = required(name, 'Your name');
+  const nameCheck = required(name, 'Full name');
   const emailCheck = isLinkInvite ? validateEmail(linkEmail) : { ok: true as const };
   const passwordCheck = validatePassword(password);
   const matchCheck = passwordsMatch(password, confirm);
@@ -157,14 +172,14 @@ export function InviteScreen({
   const ink = avatarColor(invite.inviter_name, theme);
 
   return (
-    <div className="auth">
+    <AuthCard tone="invite" wide data-auth-state="form">
       <form
-        className="auth-card auth-card-invite"
+        ref={form.formRef}
         noValidate
+        aria-labelledby="invite-title"
         onSubmit={(e) => {
           e.preventDefault();
-          setTouched(true);
-          if (!valid) return;
+          if (submitting || !form.attempt(valid)) return;
           onSubmit?.({
             name,
             password,
@@ -172,7 +187,14 @@ export function InviteScreen({
           });
         }}
       >
-        <p className="auth-kicker">ACCEPT INVITE</p>
+        <BrandLockup size="md" className="auth-brand" />
+
+        <header className="auth-head">
+          <h1 className="auth-title" id="invite-title">
+            Set up your account
+          </h1>
+          <p className="auth-host">{host}</p>
+        </header>
 
         <div className="auth-inviter">
           <span
@@ -195,11 +217,6 @@ export function InviteScreen({
           </span>
         </div>
 
-        <header className="auth-head">
-          <h1 className="auth-title">Set up your account</h1>
-          <p className="auth-host">{host}</p>
-        </header>
-
         <div className="auth-role">
           <div className="auth-role-top">
             <span className="auth-role-label">YOUR ROLE</span>
@@ -215,27 +232,28 @@ export function InviteScreen({
             </p>
           )}
 
-          <p className="auth-note">
+          <p className="auth-role-note">
             Your role is already set by the person who invited you. Only an Owner can change it
             later.
           </p>
         </div>
 
-        {serverError !== undefined && (
-          <p className="auth-alert" role="alert">
-            {serverError}
-          </p>
-        )}
+        <AuthSummary>
+          {serverError !== undefined && <AuthAlert>{serverError}</AuthAlert>}
+        </AuthSummary>
 
         <TextInput
           label="Full name"
           value={name}
           onChange={setName}
+          onBlur={() => {
+            form.blur('name', name);
+          }}
           autoComplete="name"
           autoFocus
           required
           disabled={submitting}
-          error={touched && !nameCheck.ok ? nameCheck.message : undefined}
+          error={form.shown('name', nameCheck) ?? fieldErrors.name}
         />
 
         {isLinkInvite ? (
@@ -244,11 +262,14 @@ export function InviteScreen({
             type="email"
             value={linkEmail}
             onChange={setLinkEmail}
+            onBlur={() => {
+              form.blur('email', linkEmail);
+            }}
             autoComplete="email"
             required
             disabled={submitting}
             help="This link is not tied to an address, so choose the one you will sign in with."
-            error={touched && !emailCheck.ok ? emailCheck.message : undefined}
+            error={form.shown('email', emailCheck) ?? fieldErrors.email}
           />
         ) : (
           <div className="auth-locked">
@@ -281,33 +302,42 @@ export function InviteScreen({
           label="Choose a password"
           value={password}
           onChange={setPassword}
+          onBlur={() => {
+            form.blur('password', password);
+          }}
           autoComplete="new-password"
+          help={PASSWORD_RULE}
           showStrength
           required
           disabled={submitting}
-          error={touched && !passwordCheck.ok ? passwordCheck.message : undefined}
+          error={form.shown('password', passwordCheck) ?? fieldErrors.password}
         />
 
         <PasswordInput
           label="Confirm password"
           value={confirm}
           onChange={setConfirm}
+          onBlur={() => {
+            form.blur('confirm', confirm);
+          }}
           autoComplete="new-password"
           required
           disabled={submitting}
-          error={touched && !matchCheck.ok ? matchCheck.message : undefined}
+          {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
+          error={form.shown('confirm', matchCheck)}
         />
 
-        <Button type="submit" fullWidth busy={submitting} variant="invite">
-          {`Join ${invite.org_name} as ${roleLabel}`}
-        </Button>
-
-        {/* D-007's consequence, said before they agree to it rather than after. */}
-        <p className="auth-fineprint">
-          By joining you agree that agent activity under your account is attributed to you in the
-          audit log.
-        </p>
+        <div className="auth-actions">
+          <Button type="submit" fullWidth busy={submitting} variant="invite">
+            {`Join ${invite.org_name} as ${roleLabel}`}
+          </Button>
+          {/* What happens next, said before the click (LAI-1203). */}
+          <p className="auth-fineprint">
+            You are signed in straight away and land on the board. Agent activity under your account
+            is attributed to you in the audit log.
+          </p>
+        </div>
       </form>
-    </div>
+    </AuthCard>
   );
 }

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { viewTabHref } from '../../routes/nav-url.ts';
 import { spaceTabGroups } from '../../routes/route-table.ts';
 
@@ -39,11 +40,58 @@ export function ViewTabs({
   params,
 }: ViewTabsProps) {
   const groups = spaceTabGroups(holds);
-  if (projectSlug === undefined || groups.length === 0) return null;
+  const list = useRef<HTMLUListElement>(null);
+  const [more, setMore] = useState<{ readonly before: boolean; readonly after: boolean }>({
+    before: false,
+    after: false,
+  });
+  const shown = projectSlug !== undefined && groups.length > 0;
+
+  /*
+   * **An edge cue where the strip scrolls** (LAI-1198). At 390 the strip was
+   * cut at "Sprin" with nothing to say there was more (visual audit, finding
+   * 4). The fade is drawn only on a side that has more to scroll to, so a
+   * strip that fits shows none — and the active tab is scrolled into view,
+   * so opening Meeting review on a phone does not hide the tab you are on.
+   */
+  useEffect(() => {
+    const ul = list.current;
+    if (ul === null) return;
+    const measure = (): void => {
+      const before = ul.scrollLeft > 1;
+      const after = ul.scrollLeft + ul.clientWidth < ul.scrollWidth - 1;
+      setMore((was) => (was.before === before && was.after === after ? was : { before, after }));
+    };
+    measure();
+    ul.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    observer?.observe(ul);
+    return () => {
+      ul.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [shown]);
+
+  useEffect(() => {
+    const ul = list.current;
+    const active = ul?.querySelector<HTMLElement>('.view-tab-active');
+    if (ul === null || ul === undefined || active === null || active === undefined) return;
+    const left = active.offsetLeft - ul.offsetLeft;
+    if (left < ul.scrollLeft || left + active.offsetWidth > ul.scrollLeft + ul.clientWidth) {
+      ul.scrollLeft = Math.max(0, left - 24);
+    }
+  }, [currentPath, shown]);
+
+  if (!shown) return null;
 
   return (
-    <nav className="view-tabs" aria-label="Views in this space">
-      <ul>
+    <nav
+      className="view-tabs"
+      aria-label="Views in this space"
+      data-more-before={more.before ? '' : undefined}
+      data-more-after={more.after ? '' : undefined}
+    >
+      <ul ref={list}>
         {groups.flatMap((tabs, index) => [
           ...(index === 0
             ? []

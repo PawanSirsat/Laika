@@ -23,6 +23,8 @@ export interface TextInputProps {
    * form — sign in, first boot, an invite, a reset (LAI-1191).
    */
   readonly autoFocus?: boolean;
+  /** Where a form validates on blur (LAI-1203). */
+  readonly onBlur?: (() => void) | undefined;
 }
 
 export function TextInput({
@@ -39,6 +41,7 @@ export function TextInput({
   readOnly = false,
   invalid = false,
   autoFocus = false,
+  onBlur,
 }: TextInputProps) {
   const input = useRef<HTMLInputElement | null>(null);
   useFirstFocus(input, autoFocus, disabled || readOnly);
@@ -53,6 +56,7 @@ export function TextInput({
           onChange={(e) => {
             onChange(e.target.value);
           }}
+          onBlur={onBlur}
           aria-describedby={describedBy}
           aria-invalid={invalid || undefined}
           aria-required={required || undefined}

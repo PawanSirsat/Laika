@@ -4,6 +4,7 @@ import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   reissueInvite,
   revokeInvite,
@@ -135,10 +136,17 @@ export function PeopleTab({
   const [pending, setPending] = useState<Pending | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | undefined>(undefined);
-  /** The last single role change, while it can be put back. */
-  const [undo, setUndo] = useState<
-    { readonly person: OrgUser; readonly from: string; readonly to: OrgRole } | undefined
-  >(undefined);
+  /**
+   * The last single role change's toast, while its Undo can put it back
+   * (LAI-1129: the app's one toast, not a strip of this tab's own). A later
+   * change, or a deactivation, takes it away.
+   */
+  const toast = useToast();
+  const undoToast = useRef<number | undefined>(undefined);
+  const retireUndo = (): void => {
+    if (undoToast.current !== undefined) toast.dismiss(undoToast.current);
+    undoToast.current = undefined;
+  };
   /** Who is being deactivated, through LAI-988's offboarding dialog. */
   const [offboarding, setOffboarding] = useState<OrgUser | undefined>(undefined);
   /** A re-issued link, shown once (LAI-984). */
@@ -209,7 +217,20 @@ export function PeopleTab({
       setConfirming(true);
       void onChange(person.id, { org_role: role })
         .then((ok) => {
-          if (ok) setUndo({ person, from: person.org_role, to: role });
+          if (!ok) return;
+          const from = person.org_role;
+          undoToast.current = toast.show({
+            text: `${person.name} is now ${article(role)} ${orgRoleLabel(role).toLowerCase()}.`,
+            tone: 'success',
+            mark: 'people-undo',
+            // A real reversal: the server puts the role they had back.
+            undo: async () => {
+              undoToast.current = undefined;
+              const back = await onChange(person.id, { org_role: from });
+              if (!back) throw new Error(`${person.name}’s role was not put back.`);
+              return `${person.name} is ${article(from)} ${orgRoleLabel(from as OrgRole).toLowerCase()} again.`;
+            },
+          });
         })
         .finally(() => {
           setConfirming(false);
@@ -411,26 +432,6 @@ export function PeopleTab({
             }}
           >
             Clear
-          </button>
-        </div>
-      )}
-
-      {undo !== undefined && (
-        <div className="org-undo" role="status" data-people-undo>
-          <span>
-            {undo.person.name} is now {article(undo.to)} {orgRoleLabel(undo.to).toLowerCase()}.
-          </span>
-          <button
-            type="button"
-            className="org-bulk-action org-undo-btn"
-            disabled={busy}
-            onClick={() => {
-              const { person, from } = undo;
-              setUndo(undefined);
-              void onChange(person.id, { org_role: from });
-            }}
-          >
-            Undo
           </button>
         </div>
       )}
@@ -657,7 +658,7 @@ export function PeopleTab({
                             disabled={busy}
                             onChange={(role) => {
                               if (role === person.org_role) return;
-                              setUndo(undefined);
+                              retireUndo();
                               setPending({ kind: 'role', person, role });
                             }}
                             options={PICKABLE.map((r) => ({ value: r, label: orgRoleLabel(r) }))}
@@ -839,7 +840,7 @@ export function PeopleTab({
           }}
           onDone={() => {
             setOffboarding(undefined);
-            setUndo(undefined);
+            retireUndo();
             onReload();
           }}
           onClose={() => {
