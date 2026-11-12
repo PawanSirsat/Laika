@@ -51,6 +51,7 @@ import {
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
 import { LoadingState } from '../LoadingState.tsx';
+import { BrandSpinner } from '../brand/BrandSpinner.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 import { usePermissions } from '../../api/permissions.ts';
 import { useDeveloperAccessMode } from '../../api/developer-compat.ts';
@@ -434,7 +435,13 @@ function DeveloperRoute() {
     if (moved !== undefined) setParams(new URLSearchParams(moved));
   }, [moved, setParams]);
   if (mode === undefined || moved !== undefined) {
-    return <LoadingState shape="card" count={1} label="Loading Developer access" />;
+    // Which page is coming — classic or V3 — is the thing being decided, so
+    // there is no shape for a skeleton to promise: the brand loader (LAI-1126).
+    return (
+      <div className="brand-panel-wait">
+        <BrandSpinner size="lg" label="Loading Developer access" />
+      </div>
+    );
   }
   const tabs = developerTabs(mode);
   const tab = currentTab(tabs, params);
