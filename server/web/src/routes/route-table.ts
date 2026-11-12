@@ -354,7 +354,8 @@ export const ROUTES: readonly Route[] = [
     group: null,
     status: 'ready',
     phase: 'Phase C',
-    palette: ['theme', 'font', 'dark', 'light', 'black', 'system', 'settings', 'appearance'],
+    // Not 'theme', 'dark' or 'light': those find *Switch theme*, the one-step action.
+    palette: ['font', 'black', 'system', 'oled', 'settings', 'colour', 'color'],
   },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
