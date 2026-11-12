@@ -559,9 +559,11 @@
   --layer-panel: 60;
   --layer-popover: 65;
   --layer-menu: 70;
-  --layer-tooltip: 75;
   --layer-dialog: 80;
   --layer-toast: 90;
+  /* Top of the ladder (LAI-1209): a tooltip on a dialog's control drew under
+     the dialog at 75. */
+  --layer-tooltip: 95;
 }
 /* ===================================================================
  * The interface font a reader chose (LAI-1125) — `theme/font.ts` sets

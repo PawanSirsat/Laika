@@ -91,7 +91,21 @@ export function Button({
 }: ButtonProps) {
   const reasonId = `${useId()}-reason`;
   const a = buttonAttributes(
-    { variant, size, disabled, busy, disabledReason, fullWidth, iconOnly: false, describedBy },
+    {
+      variant,
+      size,
+      disabled,
+      busy,
+      disabledReason,
+      fullWidth,
+      iconOnly: false,
+      // A Tooltip wrapping this passes its id as `aria-describedby` (LAI-1209):
+      // kept beside the reason's, never overwritten by it.
+      describedBy:
+        [describedBy, rest['aria-describedby']]
+          .filter((d) => d !== undefined && d !== '')
+          .join(' ') || undefined,
+    },
     reasonId,
   );
 

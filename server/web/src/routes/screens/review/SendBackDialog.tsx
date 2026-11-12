@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
 import { SEND_BACK_REASON_MAX, sendBackProblem } from '../../../api/review.ts';
 import '../profile/profile.css';
@@ -83,15 +85,17 @@ export function SendBackDialog({
           <h2 className="rating-title" id="send-back-title">
             Send back {taskKey}
           </h2>
-          <button
-            type="button"
-            className="rating-close"
-            onClick={close}
-            disabled={busy}
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button
+              type="button"
+              className="rating-close"
+              onClick={close}
+              disabled={busy}
+              aria-label="Close"
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
         <p className="rating-about" id="send-back-about">
           <strong>{title}</strong> goes back to in progress. Your reason is posted as a comment
@@ -122,18 +126,31 @@ export function SendBackDialog({
               setTouched(true);
             }}
           />
-          <span className="rating-hint">
+          <span className="rating-hint" id="send-back-hint">
             Required. {String(reason.trim().length)} of {String(SEND_BACK_REASON_MAX)} characters.
           </span>
         </label>
 
-        {touched && problem !== null && <p className="rating-hint rating-problem">{problem}</p>}
+        {touched && problem !== null && (
+          <p className="rating-hint rating-problem" id="send-back-problem">
+            {problem}
+          </p>
+        )}
 
         <footer className="rating-actions">
           <button type="button" className="rating-cancel" onClick={close} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="rating-submit" disabled={problem !== null || busy}>
+          {/* Why it is off, read with it (LAI-1209): the line that says so is
+              already on screen — the count, or the problem once touched. */}
+          <button
+            type="submit"
+            className="rating-submit"
+            disabled={problem !== null || busy}
+            aria-describedby={
+              problem === null ? undefined : touched ? 'send-back-problem' : 'send-back-hint'
+            }
+          >
             {busy && <Spinner size="sm" />}
             Send back
           </button>

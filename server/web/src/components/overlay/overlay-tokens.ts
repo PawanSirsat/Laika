@@ -26,7 +26,12 @@
  * - `dialog` 80 — every modal Dialog and the confirmation. A modal opened
  *   over another modal sits `2 × depth` above it (`overlay.css`), so a
  *   confirmation asked from a dialog is always on top of it.
- * - `toast` 90 — above everything, never blocking it.
+ * - `toast` 90 — above every surface, never blocking it.
+ * - `tooltip` 95 — above the dialog and the toast (LAI-1209): a tooltip on a
+ *   dialog's control drew under the dialog at 75.
+ * - `tooltip` 95 — a control's name and shortcut (LAI-1209). Above the dialog
+ *   whose controls it describes, however deep that dialog is stacked: a
+ *   tooltip under its own dialog is a tooltip nobody sees.
  *
  * ## The motion
  *
@@ -47,6 +52,8 @@ export const LAYER = {
   popover: 65,
   dialog: 80,
   toast: 90,
+  // Above the dialog (LAI-1209): a tooltip on a dialog's control must draw over it.
+  tooltip: 95,
   // The overlays' own (LAI-1205), declared in overlay.css, placed on that ladder.
   catcher: 64,
   sheet: 40,

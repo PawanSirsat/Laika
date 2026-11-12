@@ -8,6 +8,8 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { FOCUSABLE } from '../use-dialog-focus.ts';
+import { Icon } from '../icon/Icon.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { useModalLayer } from './layer-stack.ts';
 import './overlay.css';
 
@@ -137,15 +139,19 @@ export function Dialog({
           )}
         </div>
         {closeLabel !== false && (
-          <button
-            type="button"
-            className="overlay-dialog-close"
-            aria-label={closeLabel}
-            disabled={busy}
-            onClick={close}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          // The registry's drawn ×, named, with the shared tooltip and its key
+          // (LAI-1209): the same close on every dialog.
+          <Tooltip content={closeLabel} shortcut="Escape">
+            <button
+              type="button"
+              className="overlay-dialog-close"
+              aria-label={closeLabel}
+              disabled={busy}
+              onClick={close}
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         )}
       </header>
       <div className="overlay-dialog-body">{children}</div>

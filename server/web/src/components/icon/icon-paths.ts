@@ -28,7 +28,15 @@ export type IconName =
   | 'trash'
   | 'alert'
   | 'chevron-left'
-  | 'download';
+  | 'download'
+  | 'info'
+  | 'more'
+  | 'status'
+  | 'flag'
+  | 'person'
+  | 'agent'
+  | 'sprint'
+  | 'calendar';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -108,4 +116,28 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
   alert: ['M12 4 2.8 19.5h18.4z', 'M12 10v4.5', 'M12 17.25v.01'],
   'chevron-left': ['m15 6-6 6 6 6'],
   download: ['M12 4v11', 'm7 10 5 5 5-5', 'M5 20h14'],
+  // LAI-1209: the dialogs. An (i) for the info hints, three dots for an
+  // overflow menu, and the small leading marks on the Create task labels —
+  // a ring for status, a flag for priority, a person, an agent, a loop for the
+  // sprint, a calendar page for the due date.
+  info: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M12 11v5', 'M12 7.75v.01'],
+  more: [
+    'M6 10.75a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z',
+    'M12 10.75a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z',
+    'M18 10.75a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5z',
+  ],
+  status: ['M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z', 'M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z'],
+  flag: ['M5.5 20.5v-16', 'M5.5 4.5h11l-2.5 4 2.5 4h-11'],
+  person: ['M12 4a3.75 3.75 0 1 0 0 7.5A3.75 3.75 0 0 0 12 4z', 'M5 20a7 7 0 0 1 14 0'],
+  agent: [
+    'M7 8h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z',
+    'M12 4.5V8',
+    'M9.5 13h.01M14.5 13h.01',
+  ],
+  sprint: ['M19.5 12a7.5 7.5 0 1 1-2.2-5.3', 'M19.5 4.5V8H16'],
+  calendar: [
+    'M5.5 5h13a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z',
+    'M8 3v4M16 3v4M3.5 10h17',
+    'M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01',
+  ],
 };

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Dialog } from '../../../components/overlay/Dialog.tsx';
+import '../../../components/forms/button.css';
 import { statusOptions } from './status-options.ts';
 import { defaultMoveTarget, deleteBlockedReason } from '../../../api/status-derive.ts';
 import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
@@ -96,10 +97,25 @@ export function DeleteColumnDialog({
           <button type="button" className="cd-cancel" onClick={onClose}>
             Cancel
           </button>
+          {/* Why Delete is off (LAI-1209): a blocked column says so in the
+              body, which the button points at; one waiting on a choice says
+              so here. */}
+          {blocked === undefined && target === undefined && !busy && (
+            <span className="button-reason cd-reason" id="cd-delete-reason">
+              Choose where its tasks go
+            </span>
+          )}
           <button
             type="button"
             className="cd-confirm"
             disabled={!ready}
+            aria-describedby={
+              blocked !== undefined
+                ? 'cd-delete-blocked'
+                : target === undefined && !busy
+                  ? 'cd-delete-reason'
+                  : undefined
+            }
             onClick={() => {
               if (ready) onDelete(moveTo);
             }}
@@ -118,7 +134,7 @@ export function DeleteColumnDialog({
 
       {blocked !== undefined ? (
         <section className="cd-section">
-          <p className="cd-blocked" data-testid="delete-blocked">
+          <p className="cd-blocked" id="cd-delete-blocked" data-testid="delete-blocked">
             {blocked}
           </p>
         </section>

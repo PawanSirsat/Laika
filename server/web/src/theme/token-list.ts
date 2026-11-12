@@ -326,9 +326,9 @@ export const LAYER_TOKENS = [
   '--layer-panel',
   '--layer-popover',
   '--layer-menu',
-  '--layer-tooltip',
   '--layer-dialog',
   '--layer-toast',
+  '--layer-tooltip',
 ] as const;
 
 /**

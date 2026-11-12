@@ -565,7 +565,7 @@ void describe('the task feed (D-129, LAI-1122)', () => {
       await own.getByRole('button', { name: 'Edit comment' }).click();
       const editor = own.locator('.rich-editor');
       await editor.waitFor({ timeout: 10_000 });
-      await editor.getByRole('button', { name: 'Markdown' }).click();
+      await editor.getByRole('button', { name: 'Markdown source' }).click();
       const source = editor.locator('textarea');
       await source.waitFor({ timeout: 5_000 });
       await source.fill('Checked on Belka: the path is quoted.');

@@ -177,6 +177,12 @@ export function ConfirmDialog({
             <Button
               variant={danger ? 'danger' : 'primary'}
               disabled={!matches}
+              // Why it is off, beside it (LAI-1209): the word to type.
+              disabledReason={
+                !matches && !busy && typed !== undefined
+                  ? `Type “${typed.expected}” to confirm`
+                  : undefined
+              }
               busy={busy}
               onClick={confirm}
             >
