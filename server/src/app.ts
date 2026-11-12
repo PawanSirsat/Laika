@@ -29,6 +29,7 @@ import { meUsageRoutes } from './http/routes/me-usage.ts';
 import { otlpRoutes } from './http/routes/otlp.ts';
 import { meTimeRoutes, orgTimeRoutes } from './http/routes/time.ts';
 import { timeReportRoutes } from './http/routes/time-report.ts';
+import { timeLoggingRoutes } from './http/routes/time-logging.ts';
 import {
   projectBudgetRoutes,
   sprintBudgetRoutes,
@@ -360,6 +361,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/org`, orgTimeRoutes({ db }));
     // The Time report (D-130, LAI-1135): own, people, or a space admin's totals.
     app.route(`${API_BASE}/time`, timeReportRoutes({ db }));
+    // The Time logging grid (D-148, LAI-1175): everyone's days beside my days.
+    app.route(`${API_BASE}/time`, timeLoggingRoutes({ db }));
     app.route(
       `${API_BASE}/events`,
       eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),

@@ -393,6 +393,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | View the space's time totals | ✓ (session only) | — | — |
   // D-130 item 3 (LAI-1135); the three-person floor is the service's.
   ['time.report.read_project', true, false, false],
+  // | View logged days of the people in the space | ✓ (session only) | — | — |
+  // D-148 (LAI-1175); which people are shown is the service's.
+  ['time.days.read_project', true, false, false],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */

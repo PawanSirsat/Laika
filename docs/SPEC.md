@@ -505,7 +505,11 @@ the caller, or no one. It is *See everyone's analytics*, beside
 logged as a look at their time (§4.59). A report of the caller's own time is
 *Read and write own time entries*' and logs nothing; a space admin's totals
 are §3.2's *View the space's time totals*. A caller who holds neither and
-leads no space is `403`.
+leads no space is `403`. **The same action stands behind §6.4's `GET
+/time/days`** (D-148, LAI-1175), the Time logging grid of everyone's days;
+a space admin without it reads their spaces' people there under §3.2's
+*View logged days of the people in the space*, and anybody else is `403` by
+`time.report.read`.
 
 **The availability rows are D-131's** (LAI-1130): `availability.set_own`
 behind §6.4's `GET/PUT /me/availability`, `POST /me/availability/away` and
@@ -566,6 +570,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Set token budgets | ✓ (session only) | — | — |
 | Leave a project | ✓ | ✓ | ✓ |
 | View the space's time totals | ✓ (session only) | — | — |
+| View logged days of the people in the space | ✓ (session only) | — | — |
 
 **Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
 `task_create_min_role` (§4.3): `member`, the default, is the cell as written;
@@ -602,6 +607,21 @@ answers isolates nobody. D-088 item 7 is not amended. Refusals, each
 drafts are `drafts_not_allowed`, two spaces — asked for, or led with none
 named — are `one_space_only`, and a range that is not whole weeks is
 `range_not_whole_weeks`.
+
+**The people's logged days** (D-148, LAI-1175) are `time.days.read_project`,
+behind §6.4's `GET /time/days` for a caller with no `time.report.read` who
+leads a space: **the one per-person read a space admin has** — each member
+of the spaces they lead, themselves among them, by calendar day, with the
+minutes logged on each. "The spaces they lead" are the ones **a membership
+row says they lead**: the implicit lead an org grant confers over every space
+(`open_all_projects`) does not open this door, so an admin whose role lost
+*See everyone's analytics* reads nobody's days by it. Each person's cells
+are **their whole day, whichever spaces the time was on** — an eight-hour
+day is the person's, not a space's — so a space admin reads a member's
+minutes on spaces they do not lead, as a figure inside the day and never
+named. The weekly totals row above is unchanged, and no other per-person
+figure follows from this one: D-088 item 7 is amended for this grid only, as
+D-148 records. Session only, as every time row is.
 
 **Checkpoints and hand-offs** (§4.70 – §4.74, D-114 – D-116, LAI-544). The
 eight rows are `task.checkpoint.create`, `task.checkpoint.retag`,
@@ -2512,7 +2532,9 @@ subject pair is still recorded (D-102 rule 3). A read that shows several
 people per person — the Time report (§6.4, LAI-1135) — writes one row per
 person **named or shown**: everybody its `members` names, everybody a row
 shows, and everybody whose agent time is in its `agent_minutes`, the reader
-aside, each deduped on its own. A read of somebody's whole developer setup
+aside, each deduped on its own; the Time logging grid (`GET /time/days`,
+D-148, LAI-1175) writes one row per person it lists, the reader aside, the
+same way. A read of somebody's whole developer setup
 (§6.4's `GET /people/:id/developer-setup`, D-132, LAI-1137) is kind
 `developer_setup`. **Opening somebody's profile** (§6.4's `GET
 /users/:id/profile`, D-139 item 3, LAI-1150) is kind `profile`, and a `time`
@@ -4056,7 +4078,11 @@ credential is not an org credential with a project filter.
   budget, snapshots, look-back reports and usage reports alike (D-080, D-084).
   OpenTelemetry metrics (`POST /otlp/v1/metrics`, LAI-773) have their own
   bucket, **12 a minute with a burst of 60**, per token and per user for a
-  session — an exporter posts once a minute per running session.
+  session — an exporter posts once a minute per running session. **The
+  Time report and the Time logging grid each have a bucket of their own**
+  (`GET /time/report`, LAI-1135; `GET /time/days`, D-148, LAI-1175), 30 a
+  minute per person, so a run of filter clicks or month steps spends
+  neither the session's budget nor each other's.
   **Checkpoints and hand-offs have their own buckets** (proposal §4.4,
   LAI-545, LAI-546), per agent across its tokens, beside the general one:
   registering a checkpoint or a re-tag, **30 a burst, refilled one every 20
@@ -4181,6 +4207,7 @@ POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 2
 PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, an import included (a later Solidtime re-sync may put its original back), never a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
 GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
+GET    /api/v1/time/days                     ?from=&to= — the Time logging grid (D-148): { from, to, scope: people|lead, threshold_minutes, people: [{ user: { id, name, org_role, deactivated }, zone, joined_day, today_day, work_days, days: [{ day, confirmed_minutes, drafted_minutes }] }], truncated }, ≤ 92 days, people A–Z, at most 200 (truncated); every person shown logged as a look   (session only; owner / a role granted See everyone's analytics for everyone, a space admin for the people of the spaces they lead; 30/min on its own bucket; D-148, LAI-1175)
 GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)
 GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
 POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
@@ -5462,6 +5489,34 @@ parameter names anybody else.
   people, confirmed_minutes`, one line per week and nothing else, a withheld
   week's minutes empty. The route has a bucket of its own, 30 a minute per
   person, so filter clicks never spend the session's budget.
+- **The Time logging grid (D-148, LAI-1175).** `GET /time/days?from=&to=`
+  over at most 92 days (`422 range_too_long`, `range_backwards`, as the
+  summary; `to` past today is fine, a whole month is asked for) answers
+  `{ from, to, scope, threshold_minutes, people, truncated }`. **The server
+  decides `scope`**: `people` — everyone — under `time.report.read` (§3.1);
+  otherwise, for a caller who leads a space, `lead` — each member of the
+  spaces they lead, themselves among them — under §3.2's
+  `time.days.read_project`; otherwise `403` by `time.report.read`. Session
+  only, so a token is `403 session_required`. Each person is `{ user: { id,
+  name, org_role, deactivated }, zone, joined_day, today_day, work_days,
+  days }`: `days` only the days with time, ascending, each `{ day,
+  confirmed_minutes, drafted_minutes }` — live entries and **pending**
+  drafts, by each entry's filed day, the person's own calendar day, read
+  with the Time report's two WHEREs; `zone` their place's (§4.46), `UTC`
+  when unset; `joined_day` the day their account was made and `today_day`
+  today, both in that zone, so the client does no zone arithmetic;
+  `work_days` their working week (§4.85), Monday to Friday when they set
+  none. `threshold_minutes` is **served** — 480, D-148 item 2 — and the
+  verdict on each cell is the client's: full, under or nothing on a working
+  day from `joined_day` up to yesterday; today is hours so far; a day off, a
+  day before they joined or not yet come is not due. People A–Z by name then
+  id (D-088 item 1), at most 200 — `truncated` when cut. A deactivated person
+  is listed only with minutes in the stretch, flagged, and has no due days.
+  Agent minutes are never read. **Every person listed**, the caller aside,
+  is one §4.59 `time` look with no day, in the read's transaction and
+  deduped over ten minutes (D-135); a refused read logs nothing. Leave and
+  holidays are not read (LAI-1176). The route has a bucket of its own,
+  30 a minute per person, beside the report's.
 - **Availability (§4.85, §4.86, D-131, LAI-1130).** `GET /me/availability`
   answers `AvailabilityView`: `{ status, away: { until } | null,
   hours_per_week, note, tags, work_week: { days, start, end, minutes } |
@@ -6807,7 +6862,7 @@ call MCP; agents do.
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(your own for everyone; someone else's for owners and admins — D-139)* | 7 | Someone else's: `GET/PATCH /users/:id/profile` (a `profile` look, D-139 item 3), `GET /people/:id/activity`, `GET /users/:id/usage`, the head card's availability — for a holder of *See everyone's analytics* `GET /people/:id/load` (its one `time` look is the one opening the profile writes, D-135), never `GET /people/availability`, which logs a look at everyone it lists; for any other reader their row of that list, narrowed and unlogged (LAI-1159), and for *This week* `GET /people/:id/time` (a `time` look, D-139 item 4); your own: `GET /me/profile`, `GET /me/activity`, `GET /users/:id/usage` for yourself, `GET/PUT /me/availability`, `GET /me/time`, `GET /me/analytics-views?since=` (*Who looked*); the *Day* tab (the embedded My day, D-140, LAI-1161): `GET /me/time?day=` or `GET /people/:id/time?day=` (drafts read-only, D-102 rule 1) and, for someone else, `GET /people/:id/local-activity` — and for an owner or admin who may change their confirmed time (D-143, LAI-1165) `POST /people/:id/time-entries`, `PATCH/DELETE /people/:id/time-entries/:entryId` and `GET /people/:id/time-entries/:entryId/revisions`; the *Time report* tab (LAI-1138): `GET /time/report`, `members=<them>` or the reader's own, JSON and `format=csv`; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; your own *Developer access* (LAI-1156): `GET /devices`, `GET /agents`, `GET /project-setups`, `GET /tokens`, `GET /devices/pairing-requests` with `POST /devices/pairing-requests/:id/approve` and `…/deny`, `GET /me/developer-setup/activity`. No rating and no *Current load* on the profile (D-139 item 8: `POST /users/:id/ratings` and `GET /people/:id/load` stay in the API) | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137, **D-139**, D-140 (LAI-1148) |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
-| **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id` | — | ✅ D-130, D-131, D-136, D-137, D-138, LAI-1138, LAI-1139 |
+| **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id`; its *Time logging* view (`&view=days&month=YYYY-MM`, D-148, LAI-1175): `GET /time/days?from=&to=` for the month, each cell opening the person's *Day* (`/people?user=&tab=day&day=`) | — | ✅ D-130, D-131, D-136, D-137, D-138, D-148, LAI-1138, LAI-1139, LAI-1175 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -7313,6 +7368,34 @@ anything missing sends the task back.
   own — a role, an optional first card and an optional message, posted once;
   the row then reads *✓ Added to … as … · … was notified*, a `409` takes the
   space off the list and a `422 user_deactivated` says so. Cards on a phone.
+- **Time logging** (Insights → Time's third view, `&view=days&month=YYYY-MM`,
+  D-148, LAI-1175) — a month of people by calendar day, the owner's SolidTime
+  report in Laika: a month stepper of its own in the card's bar (two links,
+  the address the state; › disabled at the current month; no `month=` for
+  the current month), people **A–Z** down the left with their avatar, name
+  (a link to their profile) and role, *· deactivated* when so, pinned as
+  the days scroll; every calendar day a column, its number over its
+  weekday, weekends muted; each cell a **glyph and a figure, never colour
+  alone** — ✓ and the hours for a full day (the served `threshold_minutes`,
+  8h), ◷ and the hours for under it, ✕ for nothing — against the person's
+  own working days; **a muted — and the hours, muted, when there are any**
+  where nothing is due: a day off, a day before they joined, a day not yet
+  come, and every day of a person who has left (no ✕ after them, ever);
+  today is the hours so far with no verdict; any day with time on it, and
+  any due day, is a door; a legend under the stepper says all of this. A
+  **Total** column pinned on the right: the month's hours as `38h 20m`
+  (every minute, drafts, days off and days before joining included) and
+  *N / M days* — full days over due days — omitted for a deactivated person,
+  who owes none. A cell opens that person's *Day*
+  (`/people?user=&tab=day&day=`); the words for each cell are on hover and
+  for a screen reader. Caption *Everyone in {org}* for an owner or
+  analytics reader, *People in the spaces you lead* for a space admin, and
+  the same who-looked notice as Availability. Loading keeps the stepper and
+  skeletons the grid; an error is the server's sentence with Retry; an
+  empty month says *Nobody has time in {month}.*; a cut list says *Showing
+  the first N people, A–Z — the list was cut short.* On a phone the name
+  column narrows and the weekday labels go; the days scroll inside the
+  card, the page never sideways.
 - **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796, made
   for a busy day by LAI-810) — the week in the header between *previous* and
   *next*, with *Today* away from it, and while anything is drafted a confirm

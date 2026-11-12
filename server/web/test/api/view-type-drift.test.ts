@@ -811,6 +811,25 @@ const PAIRS: readonly Pair[] = [
     client: 'SpaceWeek',
     clientFile: 'time.ts',
   },
+  // The Time logging grid (D-148, LAI-1175): everyone's days beside my days.
+  {
+    server: 'TimeLoggingView',
+    serverFile: 'services/time-logging.ts',
+    client: 'TimeLogging',
+    clientFile: 'time-logging.ts',
+  },
+  {
+    server: 'TimeLoggingPersonView',
+    serverFile: 'services/time-logging.ts',
+    client: 'TimeLoggingPerson',
+    clientFile: 'time-logging.ts',
+  },
+  {
+    server: 'TimeLoggingDayView',
+    serverFile: 'services/time-logging.ts',
+    client: 'TimeLoggingDay',
+    clientFile: 'time-logging.ts',
+  },
   // The day's note (LAI-501), served in the day and by `PUT /me/time/days/:day/note`.
   {
     server: 'DayNoteView',
