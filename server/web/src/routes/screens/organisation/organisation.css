@@ -2638,6 +2638,13 @@
   grid-column: 1 / -1;
 }
 
+/* The time facts draw nothing until their settings are read, and nothing if
+   the read fails (each says so where it can); an empty titled card is worse
+   than none, so the card waits for a fact. */
+.org-time-card:not(:has(.org-fact)) {
+  display: none;
+}
+
 /* A long explanation reads at a measure, not across a 1300px card. */
 .org-fact-measure {
   max-width: 68ch;

@@ -152,5 +152,12 @@ export const TABS = (extra: ApiStub = {}): ApiStub =>
       unassigned: 1,
     },
     '/api/v1/presence': { enabled: false, present: [] },
+    '/api/v1/me/time-settings': {
+      org_mode: 'manual',
+      draft_my_time: false,
+      drafting: false,
+      min_sync_interval_s: 300,
+      breaks: [],
+    },
     ...extra,
   });

@@ -61,9 +61,9 @@ void describe('Overview: a figure with a next step leads to it', () => {
         0,
         'Blocked links to a list that cannot show blocked work',
       );
-      // Security is offered to a reader who may list tokens, and names the place.
+      // Security is offered to a reader who may list tokens, as a place.
       assert.equal(
-        await h.page.locator('[data-stat="security"] a').getAttribute('href'),
+        await h.page.locator('[data-security-link]').getAttribute('href'),
         '/organisation?tab=security',
       );
     } finally {

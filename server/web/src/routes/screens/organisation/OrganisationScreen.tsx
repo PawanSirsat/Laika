@@ -472,20 +472,6 @@ export function OrganisationScreen({
                   data={{ 'data-stat': 'invites' }}
                 />
               )}
-              {/* Security has no aggregate to count without reading every
-                  person's tokens one by one, so this tile names the place
-                  rather than inventing a number. */}
-              {canListTokens && (
-                <OrgStat
-                  label="Security"
-                  value="Tokens"
-                  sub="everyone’s, person by person"
-                  to="/organisation?tab=security"
-                  destination="Security"
-                  onNavigate={onNavigate}
-                  data={{ 'data-stat': 'security' }}
-                />
-              )}
             </dl>
 
             {org !== undefined && (
@@ -509,6 +495,39 @@ export function OrganisationScreen({
                         </span>
                       </dd>
                     </div>
+
+                    {/* Where everyone's tokens are (LAI-1210), for a reader who
+                        may list them. A place, not a count: there is no
+                        aggregate to count without reading every person's. */}
+                    {canListTokens && (
+                      <div className="org-fact" data-fact="tokens">
+                        <dt>Tokens</dt>
+                        <dd>
+                          <a
+                            className="org-fact-link"
+                            href="/organisation?tab=security"
+                            data-security-link
+                            onClick={(event) => {
+                              if (
+                                event.metaKey ||
+                                event.ctrlKey ||
+                                event.shiftKey ||
+                                event.altKey
+                              ) {
+                                return;
+                              }
+                              event.preventDefault();
+                              onNavigate('/organisation?tab=security');
+                            }}
+                          >
+                            Review everyone’s tokens on Security
+                          </a>
+                          <span className="org-fact-note">
+                            Each person’s, with the ones unused or about to expire marked.
+                          </span>
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                 </section>
 
@@ -575,7 +594,10 @@ export function OrganisationScreen({
                 {/* D-088 (LAI-787) and D-101 (LAI-956): the organisation's half
                     of time — the mode, and the breaks drawn on every My day.
                     Controls for whoever sets Time; words for everyone else. */}
-                <section className="org-card org-settings-wide" aria-labelledby="org-time-head">
+                <section
+                  className="org-card org-settings-wide org-time-card"
+                  aria-labelledby="org-time-head"
+                >
                   <header className="org-card-head">
                     <h2 id="org-time-head">Time</h2>
                   </header>
