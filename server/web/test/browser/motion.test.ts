@@ -299,19 +299,24 @@ void describe('a button gives under the pointer', () => {
       try {
         const button = h.page.locator('.button', { hasText: 'New space' }).first();
         await button.waitFor({ timeout: 20_000 });
-        assert.deepEqual(await style(button, ['transition-property', 'transition-duration']), {
-          'transition-property': 'transform',
-          'transition-duration': motion === 'normal' ? '0.09s' : '0s',
-        });
+        // LAI-1204's button also fades its colours; the press is the transform
+        // entry, on --duration-instant (0.09s, zero under reduce).
+        const t = await style(button, ['transition-property', 'transition-duration']);
+        const props = (t['transition-property'] ?? '').split(', ');
+        const times = (t['transition-duration'] ?? '').split(', ');
+        const at = props.indexOf('transform');
+        assert.ok(at !== -1, `the press is not a transition: ${JSON.stringify(t)}`);
+        assert.equal(times[at] ?? times[0], motion === 'normal' ? '0.09s' : '0s');
         const box = await button.boundingBox();
         assert.ok(box !== null, 'the button has no box');
         await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await h.page.mouse.down();
         try {
           await settled(button, 'the pressed button');
+          // LAI-1204's 2% give; under reduced motion it does not scale at all.
           assert.equal(
             (await style(button, ['transform'])).transform,
-            'matrix(0.97, 0, 0, 0.97, 0, 0)',
+            motion === 'normal' ? 'matrix(0.98, 0, 0, 0.98, 0, 0)' : 'none',
           );
         } finally {
           await h.page.mouse.up();

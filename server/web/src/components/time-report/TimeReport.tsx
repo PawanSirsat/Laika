@@ -23,7 +23,8 @@ import { avatarColorSolid } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { SpaceBadge } from '../SpaceBadge.tsx';
-import { Spinner } from '../Spinner.tsx';
+import { Button } from '../forms/Button.tsx';
+import { IconButton } from '../forms/IconButton.tsx';
 import {
   agentTail,
   barKey,
@@ -371,28 +372,26 @@ export function TimeReport({
 
       <div className="trep-bar" role="toolbar" aria-label="Report controls">
         <div className="trep-stepper">
-          <button
-            type="button"
-            className="trep-step"
-            aria-label={`Previous ${unit}`}
+          <IconButton
+            icon="chevron-left"
+            label={`Previous ${unit}`}
+            variant="secondary"
+            size="sm"
             data-tr-prev
             onClick={() => {
               const s = stepped(range, anchor, picked, -1);
               setAnchor(s.anchor);
               setPicked(s.picked);
             }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m15 6-6 6 6 6" />
-            </svg>
-          </button>
+          />
           <span className="trep-range-label" aria-live="polite" data-tr-label>
             {label}
           </span>
-          <button
-            type="button"
-            className="trep-step"
-            aria-label={`Next ${unit}`}
+          <IconButton
+            icon="chevron"
+            label={`Next ${unit}`}
+            variant="secondary"
+            size="sm"
             disabled={nextDisabled}
             data-tr-next
             onClick={() => {
@@ -400,11 +399,7 @@ export function TimeReport({
               setAnchor(s.anchor);
               setPicked(s.picked);
             }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </button>
+          />
         </div>
         <span className="trep-divider" aria-hidden="true" />
         {weekly ? (
@@ -536,23 +531,17 @@ export function TimeReport({
               ))}
             </div>
           )}
-          <button
-            type="button"
-            className="trep-export"
-            disabled={!ready || nothing || csv.busy}
-            aria-busy={csv.busy}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="download"
+            disabled={!ready || nothing}
+            busy={csv.busy}
             data-tr-export
             onClick={exportCsv}
           >
-            {csv.busy ? (
-              <Spinner size="sm" />
-            ) : (
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
-              </svg>
-            )}
             Export CSV
-          </button>
+          </Button>
         </div>
       </div>
       {csv.error !== undefined && (

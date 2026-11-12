@@ -42,6 +42,9 @@ const REDUCED_MOTION_EXEMPT: Readonly<Record<string, string>> = {
     'the arrival glow is held for 3.6s with steps(1, end), not faded: the state, not travel',
   'components/states.css': 'a still spinner closes its gap, or a gapped ring reads as broken',
   'routes/screens/my-day/day-skeleton.css': 'a still sheen is a stripe; the gradient is dropped',
+  'components/forms/button.css':
+    'a press under reduced motion still answers in colour but does not scale (LAI-1204): ' +
+    'the block only holds transform, the durations are already zero',
   'components/brand/brand.css':
     'its loops run on --motion-* (LAI-1126), not these tokens: paused on the first frame, ' +
     'and the splash lights its first step so it does not read as empty',

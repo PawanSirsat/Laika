@@ -158,8 +158,8 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
                 className="ss-confirm"
                 question={`Make this space public? Everyone in ${org} will see this space and its work, and can join it.`}
                 confirmLabel="Make public"
-                confirmClassName="ss-btn ss-btn-primary"
-                cancelClassName="ss-btn"
+                confirmClassName="button button-primary button-md"
+                cancelClassName="button button-secondary button-md"
                 confirmAction="confirm-public"
                 onConfirm={() => {
                   setConfirmingPublic(false);
