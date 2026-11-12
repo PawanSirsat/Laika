@@ -283,7 +283,18 @@ export function TaskCard({
             className={
               sprint.active ? 'card-sprint card-sprint-on t-code-sm' : 'card-sprint t-code-sm'
             }
+            title={`Sprint ${sprint.label}${sprint.active ? ' (active)' : ''}`}
           >
+            {/* A cycle mark and a pill (LAI-1198), so `S2` cannot be read as
+                the size chip `S` beside it — they were the same box. */}
+            <svg className="card-sprint-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
             {sprint.label}
           </span>
         )}

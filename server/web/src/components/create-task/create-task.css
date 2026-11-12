@@ -1,7 +1,7 @@
 /*
  * The Create task dialog (LAI-1167, D-145): a centred box about 680px wide
  * over the dimmed space, on the layer the Organisation dialogs use (scrim
- * 60, box 61; the dropdown menus and the toast sit at 70, above both). The
+ * 60, box 61; the dropdown menus at 70 and the app's toast at 90, above both). The
  * body scrolls; the header and the footer stay. On a phone it is a sheet
  * that fills the screen.
  */
@@ -187,7 +187,7 @@
 .ct-more-caret {
   display: inline-block;
   color: var(--text-secondary);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .ct-more[open] .ct-more-caret {

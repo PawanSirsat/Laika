@@ -7,7 +7,7 @@
 .confirm-layer {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--layer-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -17,9 +17,9 @@
 .confirm-scrim {
   position: absolute;
   inset: 0;
-  background: var(--scrim);
-  backdrop-filter: blur(2px);
-  animation: confirm-fade 140ms ease-out;
+  /* Darker, and frosted by `glass.css` (LAI-1132), which took the 2px blur. */
+  background: var(--glass-scrim);
+  animation: confirm-fade var(--duration-fast) var(--ease-enter);
 }
 
 .confirm {
@@ -30,12 +30,13 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.25rem 1.25rem 1rem;
-  border: 1px solid var(--border-card);
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-column);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-modal);
+  /* Level-3 glass over the frosted scrim (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-3);
+  box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
-  animation: confirm-in 160ms ease-out;
+  animation: confirm-in var(--duration-base) var(--ease-enter);
 }
 
 .confirm-head {
@@ -185,12 +186,5 @@
   from {
     opacity: 0;
     transform: translateY(0.5rem) scale(0.98);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .confirm,
-  .confirm-scrim {
-    animation: none;
   }
 }
