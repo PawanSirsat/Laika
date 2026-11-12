@@ -6,6 +6,7 @@ import { initials } from '../../../theme/initials.ts';
 import { spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { progressLine, progressOf } from './spaces-model.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * The pieces a space is drawn from on the Spaces page (D-103 item 12,
@@ -113,14 +114,14 @@ export function SpaceFaces({ space, theme }: { space: Project; theme: Theme }) {
       {shown.map((member) => {
         const colour = avatarColor(member.user_id, theme);
         return (
-          <span
-            key={member.user_id}
-            className="space-face"
-            style={{ background: colour.background, color: colour.foreground }}
-            title={member.name}
-          >
-            {initials(member.name)}
-          </span>
+          <Tooltip key={member.user_id} content={member.name}>
+            <span
+              className="space-face"
+              style={{ background: colour.background, color: colour.foreground }}
+            >
+              {initials(member.name)}
+            </span>
+          </Tooltip>
         );
       })}
       {overflow > 0 && <span className="space-face space-face-more">+{overflow}</span>}
@@ -220,24 +221,25 @@ export function SpaceActions({
         </button>
       )}
       {maySettings && (
-        <a
-          className={settingsLabel === 'icon' ? 'space-link space-gear' : 'space-link'}
-          href={`/spaces/${encodeURIComponent(space.slug)}/settings`}
-          title={`${space.name} settings`}
-          onClick={(event) => {
-            event.preventDefault();
-            handlers.onSettings(space);
-          }}
-        >
-          {settingsLabel === 'icon' ? (
-            <>
-              <NavIcon name="gear" size={16} />
-              <span className="visually-hidden">Settings</span>
-            </>
-          ) : (
-            'Settings'
-          )}
-        </a>
+        <Tooltip content={`${space.name} settings`}>
+          <a
+            className={settingsLabel === 'icon' ? 'space-link space-gear' : 'space-link'}
+            href={`/spaces/${encodeURIComponent(space.slug)}/settings`}
+            onClick={(event) => {
+              event.preventDefault();
+              handlers.onSettings(space);
+            }}
+          >
+            {settingsLabel === 'icon' ? (
+              <>
+                <NavIcon name="gear" size={16} />
+                <span className="visually-hidden">Settings</span>
+              </>
+            ) : (
+              'Settings'
+            )}
+          </a>
+        </Tooltip>
       )}
     </>
   );

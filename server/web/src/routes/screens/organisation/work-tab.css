@@ -567,6 +567,9 @@ button.work-person-chip:hover {
 }
 
 .work-tile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
   padding-inline: var(--space-1);
   color: var(--accent);
   font-size: var(--text-small);
@@ -582,4 +585,18 @@ button.work-person-chip:hover {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
+}
+
+/*
+ * The first and the last page (LAI-1214): off, but focusable, so the tooltip
+ * can say why — "This is the first page" — instead of a greyed button that
+ * says nothing.
+ */
+.work-pager .bar-control[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.work-pager .bar-control .icon {
+  margin-inline: -0.125rem;
 }

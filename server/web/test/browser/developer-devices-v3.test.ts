@@ -792,7 +792,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
         'None — it reaches no project',
       );
       assert.equal(
-        await body.getByRole('link', { name: 'Change access →' }).getAttribute('href'),
+        await body.getByRole('link', { name: 'Change access' }).getAttribute('href'),
         '/developer?tab=projects&tool=a5',
       );
       await body.getByRole('button', { name: 'Project access…' }).click();
@@ -812,7 +812,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
       // The row's line follows.
       assert.match(await tool(h.page, 'a5').locator('[data-line]').innerText(), /^1 project/);
 
-      await body.getByRole('link', { name: 'Change access →' }).click();
+      await body.getByRole('link', { name: 'Change access' }).click();
       await h.page.waitForURL(/tab=projects/, { timeout: 10_000 });
       assert.equal(here(h.page), '/developer?tab=projects&tool=a5');
     } finally {

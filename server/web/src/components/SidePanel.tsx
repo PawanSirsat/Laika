@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useModalLayer } from './overlay/layer-stack.ts';
 import './overlay/overlay.css';
 import './side-panel.css';
+import { Icon } from './icon/Icon.tsx';
+import { Tooltip } from './tooltip/Tooltip.tsx';
 
 export interface SidePanelProps {
   readonly title: ReactNode;
@@ -86,15 +88,17 @@ export function SidePanel({
             </h2>
             {subtitle !== undefined && <div className="side-panel-sub">{subtitle}</div>}
           </div>
-          <button
-            type="button"
-            className="side-panel-close"
-            aria-label={closeLabel}
-            ref={closeRef}
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content={closeLabel} shortcut="Escape">
+            <button
+              type="button"
+              className="side-panel-close"
+              aria-label={closeLabel}
+              ref={closeRef}
+              onClick={onClose}
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
         <div className="side-panel-body">{children}</div>
         {footer !== undefined && <footer className="side-panel-foot">{footer}</footer>}

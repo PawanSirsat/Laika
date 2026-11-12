@@ -27,6 +27,7 @@ import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts'
  * (`developer-insights.test.ts`), and *What agents can do* folds under step 4.
  */
 import { setupBlocks } from '../../src/routes/screens/connect/connect-agents.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotRenderTwice';
 
@@ -222,11 +223,7 @@ void describe('before a token exists', () => {
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
       const copy = h.page.locator('.conn-block').first().locator('.copy-button');
       assert.equal(await copy.isDisabled(), true, 'the prompt offers a copy with no token in it');
-      assert.match(
-        (await copy.getAttribute('title')) ?? '',
-        /mint/i,
-        'the disabled button does not say why',
-      );
+      assert.match(await tooltipText(copy), /mint/i, 'the disabled button does not say why');
     } finally {
       await h.close();
     }
@@ -868,7 +865,9 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       const done = h.page.getByRole('button', { name: 'Copied the setup prompt', exact: true });
       await done.waitFor({ timeout: 10_000 });
       assert.equal(await done.getAttribute('data-outcome'), 'copied');
-      assert.match(await done.innerText(), /Copied ✓/);
+      assert.match(await done.innerText(), /^Copied/);
+      // The tick is drawn, not typed (LAI-1214).
+      assert.equal(await done.locator('[data-icon="check"]').count(), 1);
 
       const copied = await h.page.evaluate(
         () => (window as unknown as { __copied: string[] }).__copied,

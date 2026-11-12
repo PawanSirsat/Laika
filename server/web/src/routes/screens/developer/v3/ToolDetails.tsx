@@ -51,6 +51,8 @@ import {
 import { catalogTool } from './tool-catalog.ts';
 import { checkLines, readiness } from './tool-readiness.ts';
 import { ToolUpdate, useUpdateStatus, useVerification } from './ToolUpdate.tsx';
+import { Icon } from '../../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 
 export const TOOL_PANEL_TITLE = 'dv3-tool-panel-title';
 
@@ -465,7 +467,8 @@ function ToolPanel({
                         if (!busy) onReconnect(agent);
                       }}
                     >
-                      Finish setup →
+                      Finish setup
+                      <Icon name="arrow-right" size="tiny" />
                     </button>
                   </div>
                 )}
@@ -504,7 +507,8 @@ function ToolPanel({
                     aria-label={`Set up a project for ${label}`}
                     onClick={follow(projectHref)}
                   >
-                    Set up a project →
+                    Set up a project
+                    <Icon name="arrow-right" size="tiny" />
                   </a>
                 </div>
               </NoteBlock>
@@ -641,7 +645,8 @@ function ToolPanel({
             {active && form !== 'access' && (
               <div className="dx-actions dv3-panel-actions">
                 <a className="dx-btn dx-btn-sm" href={projectHref} onClick={follow(projectHref)}>
-                  Change access →
+                  Change access
+                  <Icon name="arrow-right" size="tiny" />
                 </a>
                 {canManage && (
                   <button
@@ -775,9 +780,11 @@ function ToolPanel({
                     seen === undefined ? (
                       'Never'
                     ) : (
-                      <time dateTime={seen.iso} title={seen.full}>
-                        {seen.text.replace(/^just now$/, 'Just now')}
-                      </time>
+                      <Tooltip content={seen.full}>
+                        <time dateTime={seen.iso}>
+                          {seen.text.replace(/^just now$/, 'Just now')}
+                        </time>
+                      </Tooltip>
                     ),
                   id: 'last-seen',
                 },

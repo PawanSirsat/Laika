@@ -22,6 +22,7 @@ import type { Page } from 'playwright';
 import { capacityFor, NOW, orgStub, PRESENCE } from './capacity-org.ts';
 import { pick, valueOf } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tooltipText, tooltipTexts } from './tooltip-text.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -66,10 +67,7 @@ void describe('who is here', () => {
       assert.equal(await bea.locator('.cap-dot-away').count(), 1);
       assert.match(await bea.locator('.cap-status').innerText(), /^Away · 2[34] min$/);
       // The absolute time is one hover away.
-      assert.match(
-        (await bea.locator('.cap-status').getAttribute('title')) ?? '',
-        /a board action/,
-      );
+      assert.match(await tooltipText(bea.locator('.cap-status')), /a board action/);
 
       // The green is a real colour of its own, in both themes.
       for (const theme of ['Light', 'Dark']) {
@@ -296,10 +294,7 @@ void describe('finding people', () => {
       // A space chip's figure is committed work; backlog is on hover.
       const laika = pawan.locator('.cap-space', { hasText: 'Laika' });
       assert.match(await laika.innerText(), /^Laika\s*8\b/);
-      assert.match(
-        (await laika.getAttribute('title')) ?? '',
-        /8 committed in Laika.*12 in backlog/,
-      );
+      assert.match(await tooltipText(laika), /8 committed in Laika.*12 in backlog/);
     } finally {
       await h.close();
     }
@@ -770,22 +765,19 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
-      const titleOf = async (sel: string) =>
-        (await pawan.locator(sel).first().getAttribute('title')) ?? '';
+      const titleOf = async (sel: string) => await tooltipText(pawan.locator(sel).first());
       assert.match(await titleOf('.cap-load'), /^Load is committed work/);
       assert.match(await titleOf('.cap-overdue'), /past their due date/);
       assert.match(await titleOf('.cap-status'), /an agent session/);
-      const counts = await pawan
-        .locator('.cap-counts .cap-count, .cap-waits .cap-count')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      const counts = await tooltipTexts(
+        pawan.locator('.cap-counts .cap-count, .cap-waits .cap-count'),
+      );
       assert.equal(counts.length, 5);
       assert.ok(
         counts.every((t) => t.length > 20),
         `a count has no rule: ${counts.join(' | ')}`,
       );
-      const figs = await pawan
-        .locator('.cap-fig')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      const figs = await tooltipTexts(pawan.locator('.cap-fig'));
       assert.deepEqual(
         figs.map((t) => t.split(' ').slice(0, 3).join(' ')),
         ['Board actions they', 'Board actions made', 'Sprint moves and'],
@@ -797,17 +789,9 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       await h.page.getByRole('button', { name: 'List', exact: true }).click();
       const row = h.page.locator('.cap-list tbody tr', { hasText: 'Pawan Sirsat' });
       await row.waitFor();
-      assert.match(
-        (await row.locator('.cap-load').getAttribute('title')) ?? '',
-        /^Load is committed work/,
-      );
-      assert.match(
-        (await row.locator('.cap-overdue').getAttribute('title')) ?? '',
-        /past their due date/,
-      );
-      const cells = await row
-        .locator('td.cap-list-num')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      assert.match(await tooltipText(row.locator('.cap-load')), /^Load is committed work/);
+      assert.match(await tooltipText(row.locator('.cap-overdue')), /past their due date/);
+      const cells = await tooltipTexts(row.locator('td.cap-list-num'));
       assert.ok(
         cells.every((t) => t.length > 20),
         `a column has no rule: ${cells.join(' | ')}`,

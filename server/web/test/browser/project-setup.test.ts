@@ -1500,7 +1500,7 @@ void describe('Project setup, v3', () => {
       stub('v3', world, { '/api/v1/devices': { data: [device] } }),
     );
     try {
-      await h.page.getByRole('link', { name: 'Set up a project →', exact: true }).click();
+      await h.page.getByRole('link', { name: 'Set up a project', exact: true }).click();
       await h.page.locator('.dev-setup').waitFor({ timeout: 20_000 });
       assert.match(here(h.page), /tab=projects/);
     } finally {

@@ -26,6 +26,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -267,7 +268,7 @@ void describe('the Review page', () => {
       assert.equal(await chip.count(), 1);
       assert.equal(await chip.innerText(), 'check this one');
       assert.match(
-        (await chip.getAttribute('title')) ?? '',
+        await tooltipText(chip),
         /Finished in 1 min against a forecast of 2 h, and CI has not confirmed it/,
       );
       assert.equal(await h.page.locator('[data-stat="check"] .prof-stat-value').innerText(), '1');
@@ -297,8 +298,11 @@ void describe('the Review page', () => {
       const worked = rows.nth(1);
       assert.match(await worked.innerText(), /1 commit/);
       assert.match(await worked.innerText(), /PR/);
-      assert.match(await worked.innerText(), /✓ 1 passed/);
-      assert.match(await worked.innerText(), /✗ 1 failed/);
+      assert.match(await worked.innerText(), /1 passed/);
+      // Drawn, not typed (LAI-1214): the tick and the cross are registry icons.
+      assert.equal(await worked.locator('.rev-chip-pass [data-icon="check"]').count(), 1);
+      assert.match(await worked.innerText(), /1 failed/);
+      assert.equal(await worked.locator('.rev-chip-fail [data-icon="close"]').count(), 1);
       // The agent as harness and device (D-120), never the client's own word.
       assert.match(await worked.innerText(), /Omnigent · Belka/);
       assert.doesNotMatch(await worked.innerText(), /omnigent on Belka/);

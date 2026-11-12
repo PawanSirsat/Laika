@@ -1,6 +1,7 @@
 import { shortcutLabel } from './palette-model.ts';
 import { openPalette } from './palette-store.ts';
 import './command-palette.css';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface PaletteTriggerProps {
   /**
@@ -51,18 +52,20 @@ export function PaletteTrigger({ variant }: PaletteTriggerProps) {
 
   if (variant === 'header') {
     return (
-      <button
-        type="button"
-        className="cmdk-trigger cmdk-trigger-header"
-        aria-haspopup="dialog"
-        data-palette-trigger="header"
-        onClick={(event) => {
-          openPalette(event.currentTarget);
-        }}
-      >
-        <SearchGlyph />
-        <span className="visually-hidden">Search and commands ({hint})</span>
-      </button>
+      <Tooltip content="Search and commands" shortcut="Mod+K">
+        <button
+          type="button"
+          className="cmdk-trigger cmdk-trigger-header"
+          aria-haspopup="dialog"
+          data-palette-trigger="header"
+          onClick={(event) => {
+            openPalette(event.currentTarget);
+          }}
+        >
+          <SearchGlyph />
+          <span className="visually-hidden">Search and commands ({hint})</span>
+        </button>
+      </Tooltip>
     );
   }
 

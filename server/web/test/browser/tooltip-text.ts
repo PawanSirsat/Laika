@@ -19,3 +19,21 @@ export async function tooltipText(control: Locator): Promise<string> {
   }
   throw new Error(`no tooltip describes ${String(control)}`);
 }
+
+/**
+ * {@link tooltipText} for every element a locator matches, in order — a list's
+ * worth of rules read in one pass. An element with no tooltip reads as `''`,
+ * so a missing one shows in the list rather than throwing.
+ */
+export async function tooltipTexts(controls: Locator): Promise<string[]> {
+  return controls.evaluateAll((els) =>
+    els.map((el) => {
+      for (const id of (el.getAttribute('aria-describedby') ?? '').split(/\s+/)) {
+        const tip = id === '' ? null : document.getElementById(id);
+        if (tip?.getAttribute('role') !== 'tooltip') continue;
+        return (tip.querySelector('.tip-words') ?? tip).textContent ?? '';
+      }
+      return '';
+    }),
+  );
+}

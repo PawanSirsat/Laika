@@ -87,6 +87,7 @@ import { repoGroups, repoTitle, type RepoGroup } from './repo-groups.ts';
 import { RepoRows } from './RepoRows.tsx';
 import '../../connect/connect.css';
 import './project-setup-design.css';
+import { Icon } from '../../../../components/icon/Icon.tsx';
 
 export interface ProjectSetupTabProps {
   readonly origin: string;
@@ -811,7 +812,7 @@ function SetupWizard({
           toStep(2);
         }}
       >
-        Continue to prompt <span aria-hidden="true">→</span>
+        Continue to prompt <Icon name="arrow-right" size="tiny" />
       </button>
     );
   } else if (step === 2) {
@@ -844,7 +845,7 @@ function SetupWizard({
           }}
         >
           {target.committable ? 'I ran this prompt' : 'I pasted the block'}{' '}
-          <span aria-hidden="true">→</span>
+          <Icon name="arrow-right" size="tiny" />
         </button>
       </>
     );
@@ -886,7 +887,7 @@ function SetupWizard({
             toStep('done');
           }}
         >
-          Finish <span aria-hidden="true">→</span>
+          Finish <Icon name="arrow-right" size="tiny" />
         </button>
       </>
     );
@@ -1781,7 +1782,7 @@ function DoneCard({
         />
         <div className="dx-actions">
           <button type="button" className="dx-btn dx-btn-primary" onClick={onAnother}>
-            Set up another repository <span aria-hidden="true">→</span>
+            Set up another repository <Icon name="arrow-right" size="tiny" />
           </button>
           <a className="dx-btn" href={OVERVIEW_HREF} onClick={go(OVERVIEW_HREF)}>
             Back to overview
@@ -1903,7 +1904,7 @@ function SetupsList({ titleId, records, onRetry, agents, projects, setAddress }:
                     ? ` ${title} with ${tool.name} on ${device.device}`
                     : ` for ${title} on ${device.device}`}
                 </span>{' '}
-                <span aria-hidden="true">→</span>
+                <Icon name="arrow-right" size="tiny" />
               </button>
             );
           }}
@@ -1926,7 +1927,7 @@ function SetupsList({ titleId, records, onRetry, agents, projects, setAddress }:
           </div>
           <div className="dx-record-end">
             <button type="button" className="dx-btn dx-btn-primary dx-btn-sm" onClick={start}>
-              Set up a new repository <span aria-hidden="true">→</span>
+              Set up a new repository <Icon name="arrow-right" size="tiny" />
             </button>
           </div>
         </li>

@@ -3,6 +3,7 @@ import { BrandMark } from '../../components/brand/BrandMark.tsx';
 import { GlassSurface } from '../../components/glass/GlassSurface.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import './not-found.css';
+import { Icon } from '../../components/icon/Icon.tsx';
 
 /** Where a lost reader most often wants to be (LAI-1203). */
 export const NOT_FOUND_LINKS = [
@@ -74,6 +75,7 @@ export function NotFound({
                   window.history.back();
                 }}
               >
+                <Icon name="arrow-left" size="small" />
                 Go back
               </button>
             )}

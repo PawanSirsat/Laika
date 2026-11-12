@@ -82,9 +82,11 @@ after(async () => {
  */
 async function hoverSettled(el: Locator): Promise<void> {
   await el.scrollIntoViewIfNeeded();
-  await el.page().evaluate(
-    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
-  );
+  await el
+    .page()
+    .evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
   await el.hover();
 }
 

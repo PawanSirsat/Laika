@@ -28,6 +28,7 @@ import {
   type StubCall,
   watchFor,
 } from './harness.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 /** Set `LAIKA_SHOTS` to a directory to keep a picture of the tab with its bar. */
 const SHOTS = process.env.LAIKA_SHOTS;
@@ -794,6 +795,12 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       assert.equal((await keys(h.page)).length, 25);
       await until(async () => (await h.page.locator('.work-range').innerText()) === '1–25 of 30');
       assert.ok(await h.page.getByRole('button', { name: 'Previous page' }).isDisabled());
+      // Off with a reason (LAI-1214): focusable, and it says why.
+      const first = h.page.getByRole('button', { name: 'Previous page' });
+      assert.equal(await first.getAttribute('aria-disabled'), 'true');
+      assert.equal(await tooltipText(first), 'This is the first page');
+      await first.focus();
+      assert.ok(await first.evaluate((el) => document.activeElement === el));
 
       await h.page.getByRole('button', { name: 'Next page' }).click();
       await until(async () => (await keys(h.page))[0] === 'W-26');

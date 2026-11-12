@@ -56,6 +56,8 @@ import {
   type WorkFilter,
 } from './work-derive.ts';
 import './work-tab.css';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** A task to open, in its own space — the board's drawer (`?task=`). */
 export interface WorkTaskLink {
@@ -548,9 +550,11 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
             <span className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}>
               {row.sprint ?? 'No sprint'}
             </span>
-            <time className="work-updated" dateTime={updated.iso} title={updated.full}>
-              {updated.text}
-            </time>
+            <Tooltip content={updated.full}>
+              <time className="work-updated" dateTime={updated.iso}>
+                {updated.text}
+              </time>
+            </Tooltip>
           </span>
         </div>
       </li>
@@ -783,28 +787,36 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
               if (next !== undefined) setParams(withPageSize(params, next));
             }}
           />
-          <button
-            type="button"
-            className="bar-control"
-            aria-label="Previous page"
-            disabled={pageIndex === 0}
-            onClick={() => {
-              turn(stack.slice(0, -1));
-            }}
-          >
-            ‹ Previous
-          </button>
-          <button
-            type="button"
-            className="bar-control"
-            aria-label="Next page"
-            disabled={load.next === null}
-            onClick={() => {
-              if (load.next !== null) turn([...stack, load.next]);
-            }}
-          >
-            Next ›
-          </button>
+          <Tooltip content={pageIndex === 0 ? 'This is the first page' : 'Previous page'}>
+            <button
+              type="button"
+              className="bar-control"
+              aria-label="Previous page"
+              data-work-page="previous"
+              aria-disabled={pageIndex === 0 || undefined}
+              onClick={() => {
+                if (pageIndex > 0) turn(stack.slice(0, -1));
+              }}
+            >
+              <Icon name="chevron-left" size="tiny" />
+              Previous
+            </button>
+          </Tooltip>
+          <Tooltip content={load.next === null ? 'This is the last page' : 'Next page'}>
+            <button
+              type="button"
+              className="bar-control"
+              aria-label="Next page"
+              data-work-page="next"
+              aria-disabled={load.next === null || undefined}
+              onClick={() => {
+                if (load.next !== null) turn([...stack, load.next]);
+              }}
+            >
+              Next
+              <Icon name="chevron" size="tiny" />
+            </button>
+          </Tooltip>
         </nav>
       )}
     </div>
@@ -905,7 +917,8 @@ function WorkSummary({ count, filter, seesPeople, onFilter, onNavigate }: WorkSu
                     onNavigate(DECIDE_HREF);
                   }}
                 >
-                  Decide in Inbox ›
+                  Decide in Inbox
+                  <Icon name="chevron" size="tiny" />
                 </a>
               )}
             </span>

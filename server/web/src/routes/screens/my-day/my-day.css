@@ -1549,6 +1549,9 @@ p.inspector-length {
 }
 
 .plate-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   margin-left: auto;
   letter-spacing: 0;
   text-transform: none;

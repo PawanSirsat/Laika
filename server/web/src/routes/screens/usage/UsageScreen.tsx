@@ -46,6 +46,7 @@ import { useGates } from '../../../api/permissions.ts';
 import '../profile/profile.css';
 import './usage.css';
 import { prefersReducedMotion } from '../../../theme/motion.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface UsageScreenProps {
   readonly me: MeProfile | undefined;
@@ -366,40 +367,36 @@ function UsageBody({
     <>
       {/* One strip of six figures, as the owner's design draws them (LAI-1127). */}
       <dl className="usage-tiles">
-        <div
-          className="usage-stat"
-          data-stat="tokens"
-          title={`At least · ${exactTokens(totals.tokens)} tokens`}
-        >
-          <dt className="usage-stat-label">Tokens</dt>
-          <dd className="usage-stat-value">
-            <Figure
-              to={linked ? 'trend' : undefined}
-              what="Tokens per day"
-              value={compactTokens(totals.tokens)}
-            />
-          </dd>
-          <dd className="usage-stat-sub">
-            {space === null
-              ? 'at least · input, output, cache writes'
-              : 'at least · tied to this space’s tasks'}
-          </dd>
-        </div>
-        <div
-          className="usage-stat"
-          data-stat="cache-reads"
-          title={`${exactTokens(totals.cache_read)} cache reads`}
-        >
-          <dt className="usage-stat-label">Cache reads</dt>
-          <dd className="usage-stat-value">
-            <Figure
-              to={linked ? 'cache' : undefined}
-              what="Cache"
-              value={compactTokens(totals.cache_read)}
-            />
-          </dd>
-          <dd className="usage-stat-sub">not in tokens</dd>
-        </div>
+        <Tooltip content={`At least · ${exactTokens(totals.tokens)} tokens`}>
+          <div className="usage-stat" data-stat="tokens">
+            <dt className="usage-stat-label">Tokens</dt>
+            <dd className="usage-stat-value">
+              <Figure
+                to={linked ? 'trend' : undefined}
+                what="Tokens per day"
+                value={compactTokens(totals.tokens)}
+              />
+            </dd>
+            <dd className="usage-stat-sub">
+              {space === null
+                ? 'at least · input, output, cache writes'
+                : 'at least · tied to this space’s tasks'}
+            </dd>
+          </div>
+        </Tooltip>
+        <Tooltip content={`${exactTokens(totals.cache_read)} cache reads`}>
+          <div className="usage-stat" data-stat="cache-reads">
+            <dt className="usage-stat-label">Cache reads</dt>
+            <dd className="usage-stat-value">
+              <Figure
+                to={linked ? 'cache' : undefined}
+                what="Cache"
+                value={compactTokens(totals.cache_read)}
+              />
+            </dd>
+            <dd className="usage-stat-sub">not in tokens</dd>
+          </div>
+        </Tooltip>
         {space === null ? (
           <div className="usage-stat" data-stat="unattributed">
             <dt className="usage-stat-label">Unattributed</dt>
@@ -439,37 +436,41 @@ function UsageBody({
           <dd className="usage-stat-sub">average</dd>
         </div>
         {/* LAI-773: what the same tokens would cost on the API — never the bill. */}
-        <div className="usage-stat" data-stat="cost" title={costCaveats(totals.cost).join(' · ')}>
-          <dt className="usage-stat-label">Cost</dt>
-          <dd className="usage-stat-value">
-            <Figure
-              to={linked ? 'breakdown' : undefined}
-              what="Breakdown"
-              value={costText(totals.cost)}
-            />
-          </dd>
-          <dd className="usage-stat-sub">{COST_LABEL}</dd>
-          {costCaveats(totals.cost).map((line) => (
-            <dd key={line} className="usage-stat-sub usage-cost-caveat">
-              {line}
+        <Tooltip content={costCaveats(totals.cost).join(' · ')}>
+          <div className="usage-stat" data-stat="cost">
+            <dt className="usage-stat-label">Cost</dt>
+            <dd className="usage-stat-value">
+              <Figure
+                to={linked ? 'breakdown' : undefined}
+                what="Breakdown"
+                value={costText(totals.cost)}
+              />
             </dd>
-          ))}
-        </div>
-        <div className="usage-stat" data-stat="cache" title="Of input-side tokens">
-          <dt className="usage-stat-label">From cache</dt>
-          <dd className="usage-stat-value">
-            <Figure
-              to={linked ? 'cache' : undefined}
-              what="Cache"
-              value={percent(usage.cache.share)}
-            />
-          </dd>
-          <dd className="usage-stat-sub">
-            {usage.cache.saving_usd === null
-              ? 'of input-side tokens'
-              : `saved ${usd(usage.cache.saving_usd)}`}
-          </dd>
-        </div>
+            <dd className="usage-stat-sub">{COST_LABEL}</dd>
+            {costCaveats(totals.cost).map((line) => (
+              <dd key={line} className="usage-stat-sub usage-cost-caveat">
+                {line}
+              </dd>
+            ))}
+          </div>
+        </Tooltip>
+        <Tooltip content="Of input-side tokens">
+          <div className="usage-stat" data-stat="cache">
+            <dt className="usage-stat-label">From cache</dt>
+            <dd className="usage-stat-value">
+              <Figure
+                to={linked ? 'cache' : undefined}
+                what="Cache"
+                value={percent(usage.cache.share)}
+              />
+            </dd>
+            <dd className="usage-stat-sub">
+              {usage.cache.saving_usd === null
+                ? 'of input-side tokens'
+                : `saved ${usd(usage.cache.saving_usd)}`}
+            </dd>
+          </div>
+        </Tooltip>
       </dl>
 
       {usage.telemetry !== null && usage.telemetry.tokens > 0 && (

@@ -19,6 +19,7 @@ import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
 import { usePermissions } from '../../api/permissions.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -225,16 +226,22 @@ export function Sidebar({
             {orgName !== undefined && <span className="sidebar-orgline">{orgName}</span>}
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar-toggle"
-          aria-expanded={!collapsed}
-          aria-controls="sidebar"
-          onClick={onToggleCollapse}
-        >
-          <NavIcon name={collapsed ? 'rail-open' : 'rail-close'} size={17} />
-          <span className="sidebar-tip">{collapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
-        </button>
+        {/* The shared Tooltip (LAI-1214), not the rail's own name reveal: the
+            toggle has no words of its own, so the name is its aria-label and
+            the tooltip shows it on hover and focus, below it in both states.
+            No key collapses the rail today, so none is shown. */}
+        <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            aria-controls="sidebar"
+            onClick={onToggleCollapse}
+          >
+            <NavIcon name={collapsed ? 'rail-open' : 'rail-close'} size={17} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="sidebar-nav">

@@ -485,6 +485,9 @@
 }
 
 .rev-approvals-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--accent);

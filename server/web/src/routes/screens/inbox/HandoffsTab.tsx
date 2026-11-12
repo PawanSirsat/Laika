@@ -46,6 +46,7 @@ import {
 import { plainClick, taskHref } from '../my-day/task-link.ts';
 import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 import '../../../components/agent/agent.css';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /** Offers expire in minutes; a visible tab re-reads twice a minute, quietly. */
 const POLL_MS = 30_000;
@@ -524,7 +525,7 @@ function HandoffRow({
               : 'A registered agent'
           }
         />
-        <span aria-hidden="true">→</span>
+        <Icon name="arrow-right" size="tiny" />
         <span className="visually-hidden">to</span>
         <Party
           agent={row.to_agent}

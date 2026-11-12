@@ -21,6 +21,7 @@ import {
 import { dayLong } from './week-derive.ts';
 import './day-skeleton.css';
 import './overview.css';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export type OverviewScope = ReportRange;
 
@@ -252,41 +253,43 @@ function Figures({
               // A narrow column takes the Timeline's short figure; the title keeps the long.
               const short = sum > 0 ? compact(sum) : '—';
               return (
-                <li
-                  key={d.day}
-                  className={d.day === openDay ? 'myday-ov-day myday-ov-day-open' : 'myday-ov-day'}
-                  data-ov-day={d.day}
-                  title={`${dayLong(d.day)} · ${figure}`}
-                >
-                  {!dense && (
-                    <span className="myday-ov-day-figure">
-                      <span className="myday-ov-day-long">{figure}</span>
-                      <span className="myday-ov-day-short">{short}</span>
+                <Tooltip key={d.day} content={`${dayLong(d.day)} · ${figure}`}>
+                  <li
+                    className={
+                      d.day === openDay ? 'myday-ov-day myday-ov-day-open' : 'myday-ov-day'
+                    }
+                    data-ov-day={d.day}
+                  >
+                    {!dense && (
+                      <span className="myday-ov-day-figure">
+                        <span className="myday-ov-day-long">{figure}</span>
+                        <span className="myday-ov-day-short">{short}</span>
+                      </span>
+                    )}
+                    <span className="myday-ov-day-bar" aria-hidden="true">
+                      <span
+                        className="myday-ov-day-fill"
+                        style={{ height: `${String(Math.round(d.height * 100))}%` }}
+                      >
+                        {sum > 0 && (
+                          <span
+                            className="myday-ov-day-drafted"
+                            style={{ height: `${String(Math.round((d.drafted / sum) * 100))}%` }}
+                          />
+                        )}
+                      </span>
                     </span>
-                  )}
-                  <span className="myday-ov-day-bar" aria-hidden="true">
-                    <span
-                      className="myday-ov-day-fill"
-                      style={{ height: `${String(Math.round(d.height * 100))}%` }}
-                    >
-                      {sum > 0 && (
-                        <span
-                          className="myday-ov-day-drafted"
-                          style={{ height: `${String(Math.round((d.drafted / sum) * 100))}%` }}
-                        />
-                      )}
+                    <span className="myday-ov-day-name">
+                      {dense
+                        ? i % 7 === 0
+                          ? String(Number(d.day.slice(8)))
+                          : ''
+                        : bars.length > 7
+                          ? String(Number(d.day.slice(8)))
+                          : weekdayShort(d.day)}
                     </span>
-                  </span>
-                  <span className="myday-ov-day-name">
-                    {dense
-                      ? i % 7 === 0
-                        ? String(Number(d.day.slice(8)))
-                        : ''
-                      : bars.length > 7
-                        ? String(Number(d.day.slice(8)))
-                        : weekdayShort(d.day)}
-                  </span>
-                </li>
+                  </li>
+                </Tooltip>
               );
             })}
           </ol>
