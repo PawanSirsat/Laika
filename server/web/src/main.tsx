@@ -5,11 +5,10 @@ import { initFont } from './theme/font.ts';
 import { initTheme } from './theme/theme.ts';
 import './index.css';
 
-// Before React renders, so the first paint React produces is already themed.
-// This cannot be an inline <script> in index.html: the CSP is `script-src 'self'`
-// with no 'unsafe-inline' (LAI-023, verified in LAI-103). Module scripts are
-// deferred, so a dark-mode reader may still see one light frame — a smaller
-// price than relaxing the policy.
+// Before React renders. `public/theme-boot.js` already put the stored theme and
+// font on <html> before the first paint (LAI-1212) — a classic same-origin
+// script, since the CSP has no 'unsafe-inline' (LAI-023, LAI-103); these calls
+// are the authority and re-apply the same answer from the real modules.
 initTheme();
 // The interface font a reader chose on this device (LAI-1125), for the same
 // reason and in the same place — the sign-in screen is set in it too.

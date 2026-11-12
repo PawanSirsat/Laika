@@ -10,6 +10,10 @@
          'self' only, and the flat mark is the one that holds at 16px. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Laika</title>
+    <!-- The stored theme and font on <html> before the first paint (LAI-1212).
+         A classic same-origin script, not inline — the CSP forbids inline —
+         and not a module, because modules are deferred past first paint. -->
+    <script src="/theme-boot.js"></script>
   </head>
   <body>
     <!--
