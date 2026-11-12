@@ -25,10 +25,11 @@
   /* A held press selects the label on touch without this. */
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  /* On the motion tokens (LAI-1208), which motion.css zeroes under reduced motion. */
   transition:
     var(--transition),
-    color 120ms ease,
-    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-instant) var(--ease-enter);
 }
 
 .button-sm {
@@ -156,13 +157,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .button {
-    transition:
-      var(--transition),
-      color 120ms ease;
-  }
-
-  /* Colour still answers the press; nothing moves. */
+  /* Colour still answers the press; nothing moves. The transition durations
+     are already zero (motion.css); this only holds the scale. */
   .button:not(:disabled, [aria-disabled='true']):active {
     transform: none;
   }

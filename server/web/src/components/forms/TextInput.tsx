@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Field } from './Field.tsx';
+import { useFirstFocus } from './use-first-focus.ts';
 import './forms.css';
 
 export interface TextInputProps {
@@ -32,6 +33,13 @@ export interface TextInputProps {
   readonly width?: 'full' | 'short';
   readonly layout?: 'stack' | 'row';
   readonly after?: ReactNode;
+  /**
+   * Focused when it mounts: the first field of a page that is nothing but its
+   * form — sign in, first boot, an invite, a reset (LAI-1191).
+   */
+  readonly autoFocus?: boolean;
+  /** Where a form validates on blur (LAI-1203). */
+  readonly onBlur?: (() => void) | undefined;
 }
 
 export function TextInput({
@@ -54,7 +62,11 @@ export function TextInput({
   width = 'full',
   layout = 'stack',
   after,
+  autoFocus = false,
+  onBlur,
 }: TextInputProps) {
+  const input = useRef<HTMLInputElement | null>(null);
+  useFirstFocus(input, autoFocus, disabled || readOnly);
   const classes = [
     'input',
     appearance === 'code' ? 'input-code' : '',
@@ -85,6 +97,7 @@ export function TextInput({
           onChange={(e) => {
             onChange(e.target.value);
           }}
+          onBlur={onBlur}
           aria-describedby={describedBy}
           aria-invalid={invalid || undefined}
           aria-required={required || undefined}
@@ -93,6 +106,7 @@ export function TextInput({
           placeholder={placeholder}
           autoComplete={autoComplete}
           spellCheck={appearance === 'code' ? false : undefined}
+          ref={input}
         />
       )}
     </Field>

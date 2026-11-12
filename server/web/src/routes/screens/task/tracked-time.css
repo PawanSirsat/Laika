@@ -127,7 +127,7 @@
 
 /* A slow breath on the running dot — and none for a reader who asked for less. */
 .tt-dot-live {
-  animation: tt-breathe 1.6s ease-in-out infinite;
+  animation: tt-breathe var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 @keyframes tt-breathe {
@@ -154,15 +154,5 @@
 
   .tt-end {
     margin-left: auto;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tt-timer {
-    transition: none;
-  }
-
-  .tt-dot-live {
-    animation: none;
   }
 }

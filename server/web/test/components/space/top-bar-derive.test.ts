@@ -10,6 +10,7 @@ import { describe, test } from 'node:test';
 import {
   CLUSTER_LIMIT,
   agentCount,
+  memberFilterLabel,
   agentsLive,
   cluster,
   nextPriority,
@@ -107,5 +108,15 @@ void describe('which agents are live, for the Agents chip (LAI-737)', () => {
   void test('CONTROL: a person in the browser names no agent, and nor does an unknown slug', () => {
     assert.deepEqual(agentsLive([person('a'), agent('b', 'teleporter')]), []);
     assert.deepEqual(agentsLive(undefined), []);
+  });
+});
+
+void describe('memberFilterLabel (LAI-1193)', () => {
+  void test('a face that shows initials is named by what pressing it does', () => {
+    assert.equal(memberFilterLabel('Ada Lovelace', false), "Show only Ada Lovelace's work");
+    assert.equal(
+      memberFilterLabel('Ada Lovelace', true),
+      "Showing only Ada Lovelace's work — press to clear",
+    );
   });
 });

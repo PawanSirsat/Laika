@@ -158,6 +158,13 @@ export function OrganisationScreen({
   const { theme } = useTheme();
 
   const [org, setOrg] = useState<Org | undefined>(undefined);
+  /**
+   * `GET /org` failed. The people and invites are still the screen's point, so
+   * the page stays, and Overview says the settings could not be read with a
+   * Retry — rather than the card silently vanishing (LAI-1194).
+   */
+  const [orgError, setOrgError] = useState<unknown>(null);
+  const [orgAttempt, setOrgAttempt] = useState(0);
   /** The person whose row is being changed, so two clicks cannot race. */
   const [changing, setChanging] = useState<string | undefined>(undefined);
   /**
@@ -191,20 +198,25 @@ export function OrganisationScreen({
   const [tokensFor, setTokensFor] = useState<string | undefined>(undefined);
   const { state: tokens, reload: reloadTokens } = useUserTokens(tokensFor);
   const [tokenError, setTokenError] = useState<string | undefined>(undefined);
+  /** What the last revoke did, said once the server took it (LAI-1194). */
+  const [tokenResult, setTokenResult] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
     getOrg(controller.signal)
-      .then(setOrg)
-      .catch(() => {
-        // The org card is absent rather than an error: the people and invites
-        // below are the screen's point, and losing the org's name should not
-        // lose them.
+      .then((read) => {
+        setOrg(read);
+        setOrgError(null);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        // The last good answer, if there was one, stays on screen.
+        setOrgError(cause);
       });
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [orgAttempt]);
 
   const revoke = (owner: { id: string; name: string }, token: TokenView): void => {
     const agent = tokenAgentLabel(token);
@@ -233,12 +245,16 @@ export function OrganisationScreen({
 
   const revokeNow = (owner: { id: string; name: string }, token: TokenView): void => {
     setTokenError(undefined);
+    setTokenResult(undefined);
     // **The owner's id, not just the token's.** The service refuses a token that
     // does not belong to the user in the path, which is what stops an admin
     // revoking anybody's token through anybody's URL — passing the id this token
     // was listed under is what keeps that check meaningful rather than a formality.
     revokeUserToken(owner.id, token.id)
       .then(() => {
+        setTokenResult(
+          `Revoked “${token.name}”. Anything that used it has stopped working; ${owner.name} can make a new one.`,
+        );
         reloadTokens();
       })
       .catch((cause: unknown) => {
@@ -366,9 +382,42 @@ export function OrganisationScreen({
     <div className="org">
       {header(context)}
 
+      {state.refreshError !== null && (
+        // The last good directory stays below; this says it may be stale.
+        <div className="org-refresh-error" role="alert" data-refresh-error>
+          <span>
+            Couldn’t refresh the organisation — what you see may be out of date.{' '}
+            {state.refreshError instanceof Error ? state.refreshError.message : ''}
+          </span>
+          <button type="button" className="bar-control" data-refresh-retry onClick={reload}>
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="org-body" data-tab={tab}>
         {tab === 'overview' && (
           <>
+            {orgError !== null && (
+              <div className="org-refresh-error" role="alert" data-org-error>
+                <span>
+                  {org === undefined
+                    ? 'Couldn’t load the organisation’s settings.'
+                    : 'Couldn’t refresh the organisation’s settings — these may be out of date.'}{' '}
+                  {orgError instanceof Error ? orgError.message : ''}
+                </span>
+                <button
+                  type="button"
+                  className="bar-control"
+                  data-org-retry
+                  onClick={() => {
+                    setOrgAttempt((n) => n + 1);
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {/* This week's pulse (LAI-989): `GET /org/overview`'s figures. */}
             <OrgPulse />
 
@@ -418,7 +467,7 @@ export function OrganisationScreen({
             {org !== undefined && (
               <section className="org-card" aria-labelledby="org-name">
                 <header className="org-card-head">
-                  <h2 id="org-name">Workspace settings</h2>
+                  <h2 id="org-name">Organisation settings</h2>
                 </header>
 
                 <dl className="org-facts">
@@ -734,6 +783,7 @@ export function OrganisationScreen({
                         aria-controls={`tokens-${person.id}`}
                         onClick={() => {
                           setTokenError(undefined);
+                          setTokenResult(undefined);
                           setTokensFor((open) => (open === person.id ? undefined : person.id));
                         }}
                       >
@@ -783,8 +833,9 @@ export function OrganisationScreen({
 
                       {tokens?.status === 'ready' &&
                         (tokens.tokens.length === 0 ? (
-                          <p className="org-tokens-empty">
-                            No tokens. Nothing of theirs is signed in to the API.
+                          <p className="org-tokens-empty" data-tokens-empty>
+                            No tokens. Nothing of theirs is signed in to the API, so there is
+                            nothing to revoke.
                           </p>
                         ) : (
                           // Grouped by kind (LAI-1046): a tool's credential is
@@ -827,6 +878,9 @@ export function OrganisationScreen({
                           {tokenError}
                         </p>
                       )}
+                      <p className="org-tokens-result" role="status" data-token-result>
+                        {tokenResult}
+                      </p>
                     </div>
                   )}
                 </li>

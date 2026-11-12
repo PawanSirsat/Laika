@@ -1,0 +1,46 @@
+/*
+ * The one tooltip (LAI-1193). Tokens only, both themes: the card surface with
+ * the default border, so it reads on the canvas and on a card alike.
+ *
+ * Positioned with two custom properties the component writes through the
+ * CSSOM after measuring (`tooltip-place.ts`) — never a style attribute.
+ */
+
+.tip {
+  --tip-x: 0px;
+  --tip-y: 0px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 70;
+  max-width: min(18rem, calc(100vw - 1rem));
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  white-space: normal;
+  pointer-events: auto;
+  transform: translate(var(--tip-x), var(--tip-y));
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-enter);
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip-open {
+  opacity: 1;
+}
+
+@starting-style {
+  .tip-open {
+    opacity: 0;
+  }
+}

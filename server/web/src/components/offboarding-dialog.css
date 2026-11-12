@@ -7,13 +7,15 @@
 .offb-scrim {
   position: fixed;
   inset: 0;
-  z-index: 62;
-  background: var(--scrim);
+  /* Over the side panel it is asked from, under its own pickers (LAI-1134). */
+  z-index: calc(var(--layer-panel) + 2);
+  /* Darker, and frosted by `glass.css` (LAI-1132). */
+  background: var(--glass-scrim);
 }
 
 .offb-dialog {
   position: fixed;
-  z-index: 63;
+  z-index: calc(var(--layer-panel) + 3);
   inset: 0;
   margin: auto;
   height: fit-content;
@@ -21,10 +23,11 @@
   width: min(30rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
+  /* Level-3 glass over the frosted scrim (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-3);
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-column);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--glass-highlight), var(--shadow-panel);
   padding: 1.125rem 1.25rem 1.25rem;
   display: flex;
   flex-direction: column;

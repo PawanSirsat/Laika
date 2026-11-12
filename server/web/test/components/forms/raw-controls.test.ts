@@ -63,10 +63,10 @@ const MIGRATED: Readonly<Record<string, Migrated>> = {
   'routes/screens/space-settings/AccessTab.tsx': { exceptions: 0, why: '', fields: true },
   'routes/screens/space-settings/DangerTab.tsx': { exceptions: 0, why: '', fields: true },
   'routes/screens/space-settings/MembersTab.tsx': {
-    exceptions: 5,
+    exceptions: 3,
     why:
-      'the undo toast’s two buttons (replaced by the shared Toast in PR #288), the ' +
-      'removable person chip, a search result row, and the inline "copy members" link',
+      'the removable person chip, a search result row, and the inline "copy members" link ' +
+      '(the undo toast’s two buttons went with the shared Toast, PR #288)',
   },
 };
 
@@ -144,11 +144,13 @@ void describe('migrated files stay on the primitives (LAI-1204)', () => {
 
   void test('the primitives are the ones the files reach for', () => {
     // A migrated file that imports neither is not migrated; it is empty of buttons.
+    // The shared InlineConfirm (LAI-1129) counts: it carries a confirm pair, which
+    // is what AccessTab's only plain buttons were.
     for (const file of Object.keys(MIGRATED)) {
       const src = readFileSync(`${SRC}${file}`, 'utf8');
       assert.match(
         src,
-        /from '(?:\.\.?\/)+(?:components\/)?forms\/(?:Button|IconButton|TextInput|Textarea)\.tsx'|from '\.\/(?:Button|IconButton)\.tsx'|from '\.\.\/icon\/Icon\.tsx'/,
+        /from '(?:\.\.?\/)+(?:components\/)?forms\/(?:Button|IconButton|TextInput|Textarea)\.tsx'|from '\.\/(?:Button|IconButton)\.tsx'|from '\.\.\/icon\/Icon\.tsx'|from '(?:\.\.\/)+components\/InlineConfirm\.tsx'/,
         `${file} imports no primitive`,
       );
     }

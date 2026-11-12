@@ -324,3 +324,19 @@
   font-size: var(--text-body);
   color: var(--text-primary);
 }
+
+/* ------------------------------------------------------------ caps lock */
+
+/* Empty unless Caps Lock is on, and then a fact, not a fault: secondary ink,
+   never the error red. Collapses to nothing while empty. */
+.field-caps {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.field-caps:empty {
+  margin: 0;
+  height: 0;
+}
