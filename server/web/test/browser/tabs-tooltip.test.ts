@@ -275,11 +275,13 @@ void describe('the shared tooltip (LAI-1193)', () => {
     const h = await open('/board?project=laika-core', STUB, { before: strictCsp });
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      const refresh = h.page.getByRole('button', { name: 'Refresh the board' });
+      // The board's ⋯ (LAI-1198 folded Refresh, Insights and View settings
+      // into it); it is the toolbar's one icon button left in the row.
+      const refresh = h.page.locator('.bt [data-board-more]');
       await refresh.waitFor({ timeout: 20_000 });
 
       // The name is the control's own aria-label, not the tooltip.
-      assert.equal(await refresh.getAttribute('aria-label'), 'Refresh the board');
+      assert.match((await refresh.getAttribute('aria-label')) ?? '', /^More board actions/);
       assert.equal(await refresh.getAttribute('title'), null);
       const tipId = (await refresh.getAttribute('aria-describedby')) ?? '';
       assert.notEqual(tipId, '');
@@ -294,7 +296,7 @@ void describe('the shared tooltip (LAI-1193)', () => {
       await h.page.waitForTimeout(150);
       assert.equal(await tip.isVisible(), false, 'shown before the delay');
       await tip.waitFor({ state: 'visible', timeout: 2_000 });
-      assert.equal(await tip.innerText(), 'Refresh the board');
+      assert.equal(await tip.innerText(), 'More board actions');
       const box = await tip.boundingBox();
       assert.ok(
         box !== null && box.x >= 0 && box.x + box.width <= 1440 && box.y >= 0,
@@ -316,13 +318,13 @@ void describe('the shared tooltip (LAI-1193)', () => {
 
       // Keyboard focus shows it too, and moving focus away hides it.
       await h.page.mouse.move(700, 700);
-      const insights = h.page.getByRole('button', { name: 'Insights' });
+      const insights = refresh;
       await insights.focus();
       const insightsTip = h.page.locator(
         `[id="${(await insights.getAttribute('aria-describedby')) ?? ''}"]`,
       );
       await insightsTip.waitFor({ state: 'visible', timeout: 2_000 });
-      assert.equal(await insightsTip.innerText(), 'Insights');
+      assert.equal(await insightsTip.innerText(), 'More board actions');
       await h.page.keyboard.press('Tab');
       await insightsTip.waitFor({ state: 'hidden', timeout: 2_000 });
 

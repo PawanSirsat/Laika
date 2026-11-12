@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { ProjectTag } from '../../api/tags.ts';
 import type { Member } from '../../api/tasks.ts';
 import { useShell } from '../shell/shell-context.ts';
+import { useToast } from '../toast/ToastProvider.tsx';
 import { typingIn } from '../typing-in.ts';
 import { CreateTaskDialog, type CreateOutcome } from './CreateTaskDialog.tsx';
-import { CreatedToast, type CreatedToastState } from './CreatedToast.tsx';
 import {
   CreateTaskContext,
   type CreateTask,
@@ -28,7 +28,9 @@ const TOAST_MS = 6_000;
 
 /**
  * The space's one way to create a task (LAI-1167, D-145): the state of the
- * Create task dialog, the three ways in, and the toast that outlives it.
+ * Create task dialog, the three ways in, and the toast that outlives it —
+ * the app's one toast (`useToast()`, LAI-1129), so it stacks with every other
+ * and is not a second toast system beside it.
  *
  * **Not in the URL.** The task drawer is content and lives in `?task=`; the
  * dialog is an action. A half-typed form cannot survive a refresh, and Back
@@ -59,8 +61,10 @@ export function CreateTaskProvider({
   const [opening, setOpening] = useState<CreateTaskOpenOptions | null>(null);
   /** What had focus when the dialog opened, to give it back on close. */
   const restore = useRef<HTMLElement | null>(null);
-  const [toast, setToast] = useState<CreatedToastState | undefined>(undefined);
-  const toastSeq = useRef(0);
+  const toast = useToast();
+  /** Read when *Open* is pressed, not when the toast was made. */
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
   const canOpen = mayCreate && slug !== undefined;
 
@@ -112,32 +116,32 @@ export function CreateTaskProvider({
     };
   }, [canOpen, open]);
 
-  // A *created* toast goes by itself; a *created, but…* waits to be read.
-  useEffect(() => {
-    if (toast?.tone !== 'status') return;
-    const timer = setTimeout(() => {
-      setToast((now) => (now?.id === toast.id ? undefined : now));
-    }, TOAST_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [toast]);
-
-  const onCreated = useCallback((outcome: CreateOutcome): void => {
-    toastSeq.current += 1;
-    const { task, failed } = outcome;
-    setToast(
-      failed.length === 0
-        ? { id: toastSeq.current, tone: 'status', text: `${task.key} created`, taskId: task.id }
-        : {
-            id: toastSeq.current,
-            tone: 'alert',
-            text: `${task.key} created, but ${failed.map((f) => f.what).join(' and ')}`,
-            detail: failed.map((f) => f.said).join(' '),
-            taskId: task.id,
+  // A *created* toast goes by itself; a *created, but…* is an alert, and
+  // waits to be read (the shared toast keeps an error until it is closed).
+  const onCreated = useCallback(
+    (outcome: CreateOutcome): void => {
+      const { task, failed } = outcome;
+      const ok = failed.length === 0;
+      toast.show({
+        text: ok
+          ? `${task.key} created`
+          : `${task.key} created, but ${failed.map((f) => f.what).join(' and ')}`,
+        tone: ok ? 'success' : 'error',
+        ...(ok ? { duration: TOAST_MS } : { detail: failed.map((f) => f.said).join(' ') }),
+        mark: 'created-toast',
+        action: {
+          label: 'Open',
+          run: () => {
+            // A history entry, as the board's own open is (LAI-252): Back closes it.
+            const next = new URLSearchParams(paramsRef.current);
+            next.set('task', task.id);
+            setParams(next, { push: true });
           },
-    );
-  }, []);
+        },
+      });
+    },
+    [toast, setParams],
+  );
 
   const value = useMemo<CreateTask>(
     () => ({ open, close, mayCreate: canOpen }),
@@ -166,19 +170,6 @@ export function CreateTaskProvider({
           }
         />
       )}
-      <CreatedToast
-        toast={toast}
-        onOpen={(taskId) => {
-          // A history entry, as the board's own open is (LAI-252): Back closes it.
-          const next = new URLSearchParams(params);
-          next.set('task', taskId);
-          setParams(next, { push: true });
-          setToast(undefined);
-        }}
-        onClose={() => {
-          setToast(undefined);
-        }}
-      />
     </CreateTaskContext.Provider>
   );
 }

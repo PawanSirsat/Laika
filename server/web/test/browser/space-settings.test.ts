@@ -31,6 +31,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { pick } from './dropdown.ts';
+import { boardAction } from './board-menu.ts';
 
 const SLUG = 'laika';
 const SETTINGS = `/spaces/${SLUG}/settings`;
@@ -915,9 +916,9 @@ void describe('ways in', () => {
       '/api/v1/presence': { data: [], next_cursor: null },
     });
     try {
-      const trigger = h.page.locator('.bt-icon[aria-label="View settings"]');
-      await trigger.waitFor({ timeout: 20_000 });
-      await trigger.click();
+      // In the board's ⋯ since LAI-1198, labelled.
+      await h.page.locator('.board-bar [data-board-more]').waitFor({ timeout: 20_000 });
+      await boardAction(h.page, 'View settings');
       const panel = h.page.getByRole('dialog', { name: 'View settings' });
       await panel.waitFor();
       assert.equal(

@@ -26,9 +26,9 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
-import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
+import { SpaceBand, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
-import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { useDismiss } from '../../../components/use-dismiss.ts';
 import { PRIORITY_NAMES, PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { tagColor } from './tag-colors.ts';
@@ -122,13 +122,20 @@ export interface BoardToolbarProps {
    */
   readonly filterButtonRef: RefObject<HTMLButtonElement | null>;
   /** The four right-hand actions. Each does something real or is not drawn. */
-  readonly onInsights: () => void;
-  readonly onViewSettings: (anchor: { top: number; right: number }) => void;
-  readonly onRefresh: () => void;
+  /**
+   * Opens the `⋯` menu, anchored under it (LAI-1198). View settings,
+   * Insights, Refresh and Hidden columns live there now, each with its word.
+   */
   readonly onOverflow: (anchor: { top: number; right: number }) => void;
-  /** Hidden columns on this board; the entry is drawn only when there are any (LAI-739). */
+  /** Whether that menu is open, for the `⋯`'s `aria-expanded`. */
+  readonly overflowOpen?: boolean | undefined;
+  /**
+   * Hidden columns, counted on the `⋯` (review round 1 asked for them to be
+   * seen, not only listed): a dot on it and the number in its name.
+   */
   readonly hiddenColumns?: number | undefined;
-  readonly onHiddenColumns?: (() => void) | undefined;
+  /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
+  readonly scope?: ReactNode;
 }
 
 /**
@@ -172,36 +179,6 @@ const PRIORITIES: readonly TaskPriority[] = ['p1', 'p2', 'p3'];
  * reference and less crowded. The controls are the same and write the same URL
  * parameters; only where you reach them changed.
  */
-function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void) {
-  const box = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onDown = (event: MouseEvent): void => {
-      /*
-       * **A dropdown's panel is not outside** (LAI-726). It is portalled to
-       * `<body>`, so it is never inside `box` — without this, choosing an
-       * option in the Filter popover would close the popover.
-       */
-      if (isInDropdownPanel(event.target)) return;
-      if (box.current !== null && !box.current.contains(event.target as Node)) close('outside');
-    };
-    const onKey = (event: KeyboardEvent): void => {
-      // An Escape a dropdown already used to close itself is not this one's.
-      if (event.key === 'Escape' && !event.defaultPrevented) close('escape');
-    };
-
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
-
-  return box;
-}
 
 /**
  * One field in the Filter popover's grid (LAI-717, LAI-726).
@@ -303,12 +280,10 @@ export function BoardToolbar({
   chips,
   onRemoveFilter,
   filterButtonRef,
-  onInsights,
-  onViewSettings,
-  onRefresh,
   onOverflow,
-  hiddenColumns,
-  onHiddenColumns,
+  overflowOpen = false,
+  hiddenColumns = 0,
+  scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
   const filterButton = filterButtonRef;
@@ -371,8 +346,19 @@ export function BoardToolbar({
       if (shift > 0) pop.style.translate = `-${String(shift)}px 0`;
     };
     place();
+    /*
+     * Again once the row has re-laid out (LAI-1198): in the header's one-line
+     * toolbar a narrower window shrinks search and steps the figures down a
+     * tier *after* the resize event, which moves the button the pop hangs
+     * from. The row's own size changes are when that settles.
+     */
+    const row = pop.closest('.bt');
+    const observer =
+      row !== null && typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
+    if (row !== null) observer?.observe(row);
     window.addEventListener('resize', place);
     return () => {
+      observer?.disconnect();
       window.removeEventListener('resize', place);
     };
   }, [open]);
@@ -964,89 +950,27 @@ export function BoardToolbar({
           </span>
         )}
 
-        {/* **Hidden columns (N)**, where it can be seen (review round 1) —
-            not only in the ⋯ menu. An icon and the count: Cancelled starts
-            hidden, so this is on most boards and must cost little width. */}
-        {hiddenColumns !== undefined && hiddenColumns > 0 && onHiddenColumns !== undefined && (
-          <Tooltip content={`Hidden columns (${String(hiddenColumns)})`}>
-            <button
-              type="button"
-              className="bt-icon bt-hidden-columns"
-              data-hidden-columns=""
-              aria-label={`Hidden columns (${String(hiddenColumns)})`}
-              onClick={onHiddenColumns}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
-              </svg>
-              <span className="bt-hidden-count" aria-hidden="true">
-                {hiddenColumns}
-              </span>
-            </button>
-          </Tooltip>
-        )}
-
         <span className="bt-spacer" />
         <span id="board-stats-slot" className="bt-stats-slot" />
 
-        <Tooltip content="Insights">
-          <button type="button" className="bt-icon" aria-label="Insights" onClick={onInsights}>
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-              <path d="M3 17l5-5 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M15 8h5v5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </Tooltip>
-
-        <Tooltip content="View settings">
+        {/*
+          **One labelled overflow, not four bare icons** (LAI-1198). View
+          settings, Insights, Refresh and Hidden columns are in the menu this
+          opens, each with its word; a hidden column still shows here as a dot,
+          and in the button's name.
+        */}
+        <Tooltip content="More board actions">
           <button
             type="button"
             className="bt-icon"
-            aria-label="View settings"
-            aria-haspopup="dialog"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              onViewSettings({
-                top: rect.bottom + 6,
-                right: Math.max(8, window.innerWidth - rect.right),
-              });
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-              <circle cx="9" cy="6" r="2" />
-              <circle cx="15" cy="12" r="2" />
-              <circle cx="8" cy="18" r="2" />
-            </svg>
-          </button>
-        </Tooltip>
-
-        <Tooltip content="Refresh the board">
-          <button
-            type="button"
-            className="bt-icon"
-            aria-label="Refresh the board"
-            onClick={onRefresh}
-          >
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-              <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
-              <path d="M20 5v6h-6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </Tooltip>
-
-        <Tooltip content="More actions">
-          <button
-            type="button"
-            className="bt-icon"
-            aria-label="More actions"
+            data-board-more=""
+            aria-label={
+              hiddenColumns > 0
+                ? `More board actions — ${String(hiddenColumns)} hidden ${hiddenColumns === 1 ? 'column' : 'columns'}`
+                : 'More board actions'
+            }
             aria-haspopup="menu"
+            aria-expanded={overflowOpen}
             onClick={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
               onOverflow({
@@ -1060,6 +984,7 @@ export function BoardToolbar({
               <circle cx="12" cy="12" r="1.7" />
               <circle cx="19" cy="12" r="1.7" />
             </svg>
+            {hiddenColumns > 0 && <span className="bt-more-dot" aria-hidden="true" />}
           </button>
         </Tooltip>
       </div>
@@ -1069,13 +994,21 @@ export function BoardToolbar({
       own under the controls. Covered rather than removed while the popover is
       open, so nothing under it moves.
     */}
-      <FilterChips
-        chips={chips}
-        covered={open === 'filter'}
-        onRemove={onRemoveFilter}
-        onClearAll={onClearFilters}
-        filterButtonRef={filterButton}
-      />
+      {/*
+        **Under the header, not inside it** (LAI-1198): the toolbar is one line
+        on every tab, so what the filters are doing gets the band below it —
+        the row content starts from, with the sprint scope at its end.
+      */}
+      <SpaceBand>
+        <FilterChips
+          chips={chips}
+          covered={open === 'filter'}
+          onRemove={onRemoveFilter}
+          onClearAll={onClearFilters}
+          filterButtonRef={filterButton}
+          trailing={scope}
+        />
+      </SpaceBand>
     </>
   );
 }

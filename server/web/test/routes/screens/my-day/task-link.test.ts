@@ -13,6 +13,7 @@ import {
   taskHref,
 } from '../../../../src/routes/screens/my-day/task-link.ts';
 import { code } from '../../../helpers/code.ts';
+import { taskHref as shellHref } from '../../../../src/routes/task-href.ts';
 
 const click = (over: Partial<Parameters<typeof plainClick>[0]> = {}) => ({
   button: 0,
@@ -39,11 +40,23 @@ void describe('where a card opens', () => {
         'utf8',
       ),
     );
-    assert.match(
-      outlet,
-      /`\/board\?project=\$\{encodeURIComponent\(projectSlug\)\}&task=\$\{encodeURIComponent\(id\)\}`/,
-    );
-    assert.match(outlet, /`\/board\?q=\$\{encodeURIComponent\(taskKey\)\}`/);
+    /*
+     * Since LAI-1190 the shell builds its links through `routes/task-href.ts`
+     * rather than writing them inline: it must still call that helper, and the
+     * helper must still answer the same two addresses as this one.
+     */
+    assert.match(outlet, /navigate\(taskHref\(\{ id, key \}, projectSlug\)\)/);
+    for (const slug of ['atlas', undefined]) {
+      // Compared as addresses: one encodes a space `%20`, the other `+`.
+      const read = (href: string) => {
+        const url = new URL(href, 'http://x');
+        return [url.pathname, [...url.searchParams.entries()]];
+      };
+      assert.deepEqual(
+        read(shellHref({ id: 't 1', key: 'LAI-1' }, slug)),
+        read(taskHref({ id: 't 1', key: 'LAI-1' }, slug)),
+      );
+    }
   });
 });
 

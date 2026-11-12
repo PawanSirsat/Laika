@@ -7,6 +7,11 @@ export interface InsightsScreenProps {
   readonly tabs: readonly PageTab[];
   readonly current: string;
   readonly onNavigate: (to: string) => void;
+  /**
+   * The reader's open token alerts (LAI-1191): the count the sidebar's badge
+   * shows, drawn on the Usage tab where they are. Absent or zero, no count.
+   */
+  readonly alerts?: number | undefined;
   /** The open tab's screen — Capacity or Usage & cost, exactly as they were. */
   readonly children: ReactNode;
 }
@@ -17,7 +22,13 @@ export interface InsightsScreenProps {
  * selectors are its header controls, so they sit in this page's header;
  * Capacity is live and has no period to choose.
  */
-export function InsightsScreen({ tabs, current, onNavigate, children }: InsightsScreenProps) {
+export function InsightsScreen({
+  tabs,
+  current,
+  onNavigate,
+  alerts,
+  children,
+}: InsightsScreenProps) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <div className="page">
@@ -32,6 +43,12 @@ export function InsightsScreen({ tabs, current, onNavigate, children }: Insights
             tabs={tabs}
             current={current}
             onNavigate={onNavigate}
+            {...(alerts !== undefined && alerts > 0
+              ? {
+                  counts: { usage: alerts },
+                  countNoun: alerts === 1 ? 'token alert' : 'token alerts',
+                }
+              : {})}
           />
         }
       />
