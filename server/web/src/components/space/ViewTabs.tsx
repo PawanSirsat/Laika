@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
 import { viewTabHref } from '../../routes/nav-url.ts';
 import { spaceTabGroups } from '../../routes/route-table.ts';
+import { TAB_ACTIVE, TAB_ITEM, TabStrip, rovingTabIndex } from '../tabs/TabStrip.tsx';
 
 export interface ViewTabsProps {
   readonly currentPath: string;
@@ -30,6 +30,11 @@ export interface ViewTabsProps {
  * the ways of looking at the work, then how it is going. The hairline is a
  * list item of its own, `role="presentation"`, so the tabs stay one list a
  * screen reader counts as eight.
+ *
+ * **On the one tab strip** (LAI-1193), as `PageTabs` is: one Tab stop,
+ * Left/Right/Home/End, and at 390px a fade on the edge that hides a view,
+ * with the current view scrolled into view (visual audit #4). Still a `nav`
+ * of links — each view is its own screen.
  */
 export function ViewTabs({
   currentPath,
@@ -40,64 +45,20 @@ export function ViewTabs({
   params,
 }: ViewTabsProps) {
   const groups = spaceTabGroups(holds);
-  const list = useRef<HTMLUListElement>(null);
-  const [more, setMore] = useState<{ readonly before: boolean; readonly after: boolean }>({
-    before: false,
-    after: false,
-  });
-  const shown = projectSlug !== undefined && groups.length > 0;
-
-  /*
-   * **An edge cue where the strip scrolls** (LAI-1198). At 390 the strip was
-   * cut at "Sprin" with nothing to say there was more (visual audit, finding
-   * 4). The fade is drawn only on a side that has more to scroll to, so a
-   * strip that fits shows none — and the active tab is scrolled into view,
-   * so opening Meeting review on a phone does not hide the tab you are on.
-   */
-  useEffect(() => {
-    const ul = list.current;
-    if (ul === null) return;
-    const measure = (): void => {
-      const before = ul.scrollLeft > 1;
-      const after = ul.scrollLeft + ul.clientWidth < ul.scrollWidth - 1;
-      setMore((was) => (was.before === before && was.after === after ? was : { before, after }));
-    };
-    measure();
-    ul.addEventListener('scroll', measure, { passive: true });
-    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
-    observer?.observe(ul);
-    return () => {
-      ul.removeEventListener('scroll', measure);
-      observer?.disconnect();
-    };
-  }, [shown]);
-
-  useEffect(() => {
-    const ul = list.current;
-    const active = ul?.querySelector<HTMLElement>('.view-tab-active');
-    if (ul === null || ul === undefined || active === null || active === undefined) return;
-    const left = active.offsetLeft - ul.offsetLeft;
-    if (left < ul.scrollLeft || left + active.offsetWidth > ul.scrollLeft + ul.clientWidth) {
-      ul.scrollLeft = Math.max(0, left - 24);
-    }
-  }, [currentPath, shown]);
-
-  if (!shown) return null;
+  if (projectSlug === undefined || groups.length === 0) return null;
+  const anyActive = groups.some((tabs) => tabs.some((route) => route.path === currentPath));
+  let position = -1;
 
   return (
-    <nav
-      className="view-tabs"
-      aria-label="Views in this space"
-      data-more-before={more.before ? '' : undefined}
-      data-more-after={more.after ? '' : undefined}
-    >
-      <ul ref={list}>
+    <nav className="view-tabs" aria-label="Views in this space">
+      <TabStrip activeKey={currentPath} element="ul">
         {groups.flatMap((tabs, index) => [
           ...(index === 0
             ? []
             : [<li key={`rule-${String(index)}`} className="view-tab-rule" role="presentation" />]),
           ...tabs.map((route) => {
             const active = route.path === currentPath;
+            position += 1;
             const href = viewTabHref(
               route.path,
               projectSlug,
@@ -112,6 +73,9 @@ export function ViewTabs({
                   href={href}
                   className={active ? 'view-tab view-tab-active' : 'view-tab'}
                   aria-current={active ? 'page' : undefined}
+                  tabIndex={rovingTabIndex(active, position, anyActive)}
+                  {...{ [TAB_ITEM]: '' }}
+                  {...(active ? { [TAB_ACTIVE]: '' } : {})}
                   onClick={(event) => {
                     // Modified clicks stay the browser's — new tab, new window.
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -128,7 +92,7 @@ export function ViewTabs({
             );
           }),
         ])}
-      </ul>
+      </TabStrip>
     </nav>
   );
 }

@@ -102,8 +102,8 @@ void describe('the tabs (LAI-505)', () => {
           ['Overview', 'To review 5', 'Confirmed 4', 'All'],
         );
         assert.equal(
-          await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-current'),
-          'page',
+          await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-selected'),
+          'true',
         );
         await h.page.locator('[data-day-tab="review"]').click();
         await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
@@ -210,12 +210,12 @@ void describe('the tabs (LAI-505)', () => {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
       await until(
         async () =>
-          (await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-current')) ===
-          'page',
+          (await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-selected')) ===
+          'true',
       );
       assert.equal(
-        await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-current'),
-        'page',
+        await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-selected'),
+        'true',
       );
     } finally {
       await h.close();

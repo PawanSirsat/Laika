@@ -1,5 +1,6 @@
 import { useLive } from './SpaceLive.tsx';
 import { agentCount, agentsLive } from './top-bar-derive.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { useShell } from '../shell/shell-context.ts';
@@ -96,51 +97,52 @@ export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
       </div>
 
       <div className="space-bar-right">
-        <button
-          type="button"
-          className={
-            agentOnly
-              ? 'space-chip space-chip-on space-agents-start'
-              : 'space-chip space-agents-start'
-          }
-          aria-pressed={agentOnly}
-          title={`Show only agent-authored work${agentSummary(agents, live)}`}
-          onClick={() => {
-            onAgentOnly(!agentOnly);
-          }}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            aria-hidden="true"
+        <Tooltip content={`Show only agent-authored work${agentSummary(agents, live)}`}>
+          <button
+            type="button"
+            className={
+              agentOnly
+                ? 'space-chip space-chip-on space-agents-start'
+                : 'space-chip space-agents-start'
+            }
+            aria-pressed={agentOnly}
+            onClick={() => {
+              onAgentOnly(!agentOnly);
+            }}
           >
-            <rect x="4" y="8" width="16" height="12" rx="3" />
-            <path d="M12 4v4M9 14h.01M15 14h.01" />
-          </svg>
-          {/*
-            **Nothing until presence lands** (LAI-606): the word stays, the
-            number arrives when it arrives.
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              aria-hidden="true"
+            >
+              <rect x="4" y="8" width="16" height="12" rx="3" />
+              <path d="M12 4v4M9 14h.01M15 14h.01" />
+            </svg>
+            {/*
+              **Nothing until presence lands** (LAI-606): the word stays, the
+              number arrives when it arrives.
+            */}
+            <span className="space-agents-label">
+              <span className="space-agents-word">Agents</span> {agents}
+            </span>
+            {/*
+              **The number counts people, the marks count agents** — what the
+              number means, and which agents the marks are, is said in words for
+              a screen reader and in the title for a pointer.
           */}
-          <span className="space-agents-label">
-            <span className="space-agents-word">Agents</span> {agents}
-          </span>
-          {/*
-            **The number counts people, the marks count agents** — what the
-            number means, and which agents the marks are, is said in words for
-            a screen reader and in the title for a pointer.
-          */}
-          {agents !== undefined && (
-            <span className="visually-hidden">{agentSummary(agents, live)}</span>
-          )}
-          {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
-          {live.slice(0, 3).map((client) => (
-            <AgentMark key={client} client={client} size="sm" />
-          ))}
-        </button>
+            {agents !== undefined && (
+              <span className="visually-hidden">{agentSummary(agents, live)}</span>
+            )}
+            {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
+            {live.slice(0, 3).map((client) => (
+              <AgentMark key={client} client={client} size="sm" />
+            ))}
+          </button>
+        </Tooltip>
 
         {slug !== undefined && <SpaceMenu slug={slug} />}
       </div>

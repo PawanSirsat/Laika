@@ -24,7 +24,8 @@ import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { cluster } from '../../../components/space/top-bar-derive.ts';
+import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { SpaceBand, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
 import { useDismiss } from '../../../components/use-dismiss.ts';
@@ -214,22 +215,23 @@ function FilterField({
         {children(labelId)}
       </label>
       {set && (
-        <button
-          type="button"
-          className="bt-reset"
-          title={`Reset ${label}`}
-          onClick={() => {
-            onReset();
-            // The reset is about to disappear with the value it reset; the
-            // field it belonged to is where the reader's attention is.
-            cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
-          </svg>
-          <span className="visually-hidden">Reset {label}</span>
-        </button>
+        <Tooltip content={`Reset ${label}`}>
+          <button
+            type="button"
+            className="bt-reset"
+            aria-label={`Reset ${label}`}
+            onClick={() => {
+              onReset();
+              // The reset is about to disappear with the value it reset; the
+              // field it belonged to is where the reader's attention is.
+              cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -567,22 +569,23 @@ export function BoardToolbar({
               const colour = avatarColor(member.user_id, theme);
               const on = assignee === member.user_id;
               return (
-                <button
+                <Tooltip
                   key={member.user_id}
-                  type="button"
-                  className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
-                  style={{ background: colour.background, color: colour.foreground }}
-                  aria-pressed={on}
-                  title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                  onClick={() => {
-                    onAssignee(on ? undefined : member.user_id);
-                  }}
+                  content={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
                 >
-                  {initials(member.name)}
-                  <span className="visually-hidden">
-                    {on ? ' — showing only their work, click to clear' : ' — show only their work'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
+                    style={{ background: colour.background, color: colour.foreground }}
+                    aria-pressed={on}
+                    aria-label={memberFilterLabel(member.name, on)}
+                    onClick={() => {
+                      onAssignee(on ? undefined : member.user_id);
+                    }}
+                  >
+                    {initials(member.name)}
+                  </button>
+                </Tooltip>
               );
             })}
             {/*
@@ -956,33 +959,34 @@ export function BoardToolbar({
           opens, each with its word; a hidden column still shows here as a dot,
           and in the button's name.
         */}
-        <button
-          type="button"
-          className="bt-icon"
-          data-board-more=""
-          title="More"
-          aria-label={
-            hiddenColumns > 0
-              ? `More board actions — ${String(hiddenColumns)} hidden ${hiddenColumns === 1 ? 'column' : 'columns'}`
-              : 'More board actions'
-          }
-          aria-haspopup="menu"
-          aria-expanded={overflowOpen}
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            onOverflow({
-              top: rect.bottom + 6,
-              right: Math.max(8, window.innerWidth - rect.right),
-            });
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="5" cy="12" r="1.7" />
-            <circle cx="12" cy="12" r="1.7" />
-            <circle cx="19" cy="12" r="1.7" />
-          </svg>
-          {hiddenColumns > 0 && <span className="bt-more-dot" aria-hidden="true" />}
-        </button>
+        <Tooltip content="More board actions">
+          <button
+            type="button"
+            className="bt-icon"
+            data-board-more=""
+            aria-label={
+              hiddenColumns > 0
+                ? `More board actions — ${String(hiddenColumns)} hidden ${hiddenColumns === 1 ? 'column' : 'columns'}`
+                : 'More board actions'
+            }
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              onOverflow({
+                top: rect.bottom + 6,
+                right: Math.max(8, window.innerWidth - rect.right),
+              });
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.7" />
+              <circle cx="12" cy="12" r="1.7" />
+              <circle cx="19" cy="12" r="1.7" />
+            </svg>
+            {hiddenColumns > 0 && <span className="bt-more-dot" aria-hidden="true" />}
+          </button>
+        </Tooltip>
       </div>
 
       {/*

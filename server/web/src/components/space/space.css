@@ -806,46 +806,13 @@
 }
 
 /*
- * The tab strip's edge cue: a fade on whichever side has more to scroll to
- * (`ViewTabs` sets the attributes from the strip's own scroll position).
+ * The tab strip's edge cue is `TabStrip`'s own mask (LAI-1193): a fade on
+ * whichever side has more to scroll to. LAI-1198 drew a second one here with
+ * pseudo-elements; the merge train kept one.
  */
 .view-tabs {
   position: relative;
   min-width: 0;
-}
-
-.view-tabs::before,
-.view-tabs::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 2px;
-  width: 28px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.view-tabs::before {
-  left: 0;
-  background: linear-gradient(to right, var(--bg-card), transparent);
-}
-
-.view-tabs::after {
-  right: 0;
-  background: linear-gradient(to left, var(--bg-card), transparent);
-}
-
-.view-tabs[data-more-before]::before,
-.view-tabs[data-more-after]::after {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .view-tabs::before,
-  .view-tabs::after {
-    transition: none;
-  }
 }
 
 /* The folded filters' sheet, from the bottom of a phone screen. */

@@ -11,7 +11,8 @@ import { createPortal } from 'react-dom';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
-import { cluster } from './top-bar-derive.ts';
+import { cluster, memberFilterLabel } from './top-bar-derive.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { BAR_SLOT_ID, SLOT_ID, useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 import { Dropdown } from '../Dropdown.tsx';
@@ -305,22 +306,23 @@ function FilterControls({
             const colour = avatarColor(member.user_id, theme);
             const on = assignee === member.user_id;
             return (
-              <button
+              <Tooltip
                 key={member.user_id}
-                type="button"
-                className={on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'}
-                style={{ background: colour.background, color: colour.foreground }}
-                aria-pressed={on}
-                title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                onClick={() => {
-                  onAssignee(on ? undefined : member.user_id);
-                }}
+                content={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
               >
-                {initials(member.name)}
-                <span className="visually-hidden">
-                  {on ? ` — showing only their work, click to clear` : ` — show only their work`}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className={on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'}
+                  style={{ background: colour.background, color: colour.foreground }}
+                  aria-pressed={on}
+                  aria-label={memberFilterLabel(member.name, on)}
+                  onClick={() => {
+                    onAssignee(on ? undefined : member.user_id);
+                  }}
+                >
+                  {initials(member.name)}
+                </button>
+              </Tooltip>
             );
           })}
           {overflow > 0 && <span className="space-member-more">+{overflow}</span>}

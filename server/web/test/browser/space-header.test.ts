@@ -169,33 +169,26 @@ void describe('the header at 390', () => {
       before: (page) => page.setViewportSize(PHONE),
     });
     try {
-      const nav = h.page.locator('.view-tabs');
-      await nav.waitFor({ timeout: 20_000 });
-      await until(async () => (await nav.getAttribute('data-more-after')) !== null);
-      const strip = await h.page.evaluate(() => {
-        const ul = document.querySelector('.view-tabs ul');
-        return { sw: ul?.scrollWidth ?? 0, cw: ul?.clientWidth ?? 0 };
-      });
+      // The cue is the shared TabStrip's mask (LAI-1193), on the strip itself.
+      const ul = h.page.locator('.view-tabs ul');
+      await ul.waitFor({ timeout: 20_000 });
+      const has = async (c: string) =>
+        ((await ul.getAttribute('class')) ?? '').split(' ').includes(c);
+      await until(() => has('tab-strip-fade-end'));
+      const strip = await ul.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
       assert.ok(strip.sw > strip.cw, 'positive control: the tabs fit, so there is nothing to cue');
-      assert.equal(
-        await nav.getAttribute('data-more-before'),
-        null,
-        'a cue at the start, at the start',
+      assert.equal(await has('tab-strip-fade-start'), false, 'a cue at the start, at the start');
+      assert.notEqual(
+        await ul.evaluate((el) => getComputedStyle(el).maskImage),
+        'none',
+        'the end cue is not drawn',
       );
-      const fade = () =>
-        h.page.evaluate(
-          () => getComputedStyle(document.querySelector('.view-tabs')!, '::after').opacity,
-        );
-      // A 120ms fade in; wait it out rather than read it mid-way.
-      await until(async () => (await fade()) === '1').catch(() => undefined);
-      assert.equal(await fade(), '1', 'the end cue is not drawn');
 
-      await h.page.evaluate(() => {
-        const ul = document.querySelector('.view-tabs ul')!;
-        ul.scrollLeft = ul.scrollWidth;
+      await ul.evaluate((el) => {
+        el.scrollLeft = el.scrollWidth;
       });
-      await until(async () => (await nav.getAttribute('data-more-before')) !== null);
-      assert.equal(await nav.getAttribute('data-more-after'), null, 'a cue at the end, at the end');
+      await until(() => has('tab-strip-fade-start'));
+      assert.equal(await has('tab-strip-fade-end'), false, 'a cue at the end, at the end');
     } finally {
       await h.close();
     }
