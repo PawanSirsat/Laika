@@ -51,6 +51,8 @@ export function SpaceSettingsScreen({
   const gates = useGates(true);
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
+  /** Bumped by Retry on a failed load, to read the space again. */
+  const [attempt, setAttempt] = useState(0);
   /** Every space the reader can see, archived too — counts for *Next task*, and Copy members' list. */
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const members = useMembers(slug);
@@ -99,7 +101,7 @@ export function SpaceSettingsScreen({
     return () => {
       controller.abort();
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
   const reloadSpaces = useCallback((signal?: AbortSignal) => {
     everyPage((cursor) => listProjects({ cursor, limit: 200, archived: 'include' }, signal))
@@ -129,7 +131,13 @@ export function SpaceSettingsScreen({
         <ScreenHeader variant="page" title="Space settings" context={slug} />
         <div className="ss">
           {error !== null ? (
-            <ApiErrorState error={error} resource={`the space “${slug}”`} />
+            <ApiErrorState
+              error={error}
+              resource={`the space “${slug}”`}
+              onRetry={() => {
+                setAttempt((n) => n + 1);
+              }}
+            />
           ) : (
             <LoadingState shape="row" count={4} label="Loading space settings" />
           )}
@@ -159,6 +167,8 @@ export function SpaceSettingsScreen({
     <div className="ss-page" data-space={project.slug}>
       <div className="ss-backbar">
         <BackLink onNavigate={go} />
+        {/* On a phone the header's Open board would take a row of its own; it sits here instead. */}
+        <OpenBoardLink href={openBoard} go={go} className="ss-open-board ss-open-board-compact" />
       </div>
       <ScreenHeader
         variant="page"
@@ -184,8 +194,14 @@ export function SpaceSettingsScreen({
         description={
           <>
             <span className="ss-key">
-              {project.prefix}
-              {project.repo !== null && <> · {project.repo}</>}
+              <span className="ss-key-chip" title="Task key prefix" data-key-chip>
+                {project.prefix}
+              </span>
+              {project.repo !== null && (
+                <span className="ss-repo" title={project.repo}>
+                  {project.repo}
+                </span>
+              )}
             </span>
             <span className="ss-reader" data-reader={mayEdit ? 'manager' : 'reader'}>
               {gates.settled
@@ -212,17 +228,7 @@ export function SpaceSettingsScreen({
           />
         }
       >
-        <a
-          className="ss-open-board"
-          href={openBoard}
-          onClick={(event) => {
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            go(openBoard);
-          }}
-        >
-          Open board
-        </a>
+        <OpenBoardLink href={openBoard} go={go} className="ss-open-board ss-open-board-wide" />
       </ScreenHeader>
 
       <div className="ss">
@@ -247,6 +253,7 @@ export function SpaceSettingsScreen({
               mayEdit={mayEdit}
               onSaved={saved}
               onNavigate={onNavigate}
+              memberCount={members.status === 'ready' ? members.members.length : undefined}
             />
             <HandoffPolicySection
               slug={project.slug}
@@ -254,7 +261,12 @@ export function SpaceSettingsScreen({
             />
           </>
         ) : current === 'danger' ? (
-          <DangerTab project={project} mayArchive={mayArchive} onSaved={saved} />
+          <DangerTab
+            project={project}
+            mayArchive={mayArchive}
+            onSaved={saved}
+            onNavigate={go}
+          />
         ) : (
           <GeneralTab
             project={project}
@@ -266,6 +278,30 @@ export function SpaceSettingsScreen({
         )}
       </div>
     </div>
+  );
+}
+
+function OpenBoardLink({
+  href,
+  go,
+  className,
+}: {
+  readonly href: string;
+  readonly go: (to: string) => void;
+  readonly className: string;
+}) {
+  return (
+    <a
+      className={className}
+      href={href}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        go(href);
+      }}
+    >
+      Open board
+    </a>
   );
 }
 
