@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { closeBrowser, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open } from './my-day-clock.ts';
 import { AGENT, at, TODAY, YESTERDAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
@@ -75,6 +75,19 @@ after(async () => {
   await closeBrowser();
 });
 
+/**
+ * Hover a mark on the track once it is scrolled into view and settled a
+ * frame: a scroll clears the hover card, and Playwright's own scroll-then-hover
+ * would lose it a frame later (as my-day-v3's hoverOnTrack).
+ */
+async function hoverSettled(el: Locator): Promise<void> {
+  await el.scrollIntoViewIfNeeded();
+  await el.page().evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+  await el.hover();
+}
+
 void describe('the AGENTS lane (LAI-833)', () => {
   for (const theme of ['Light', 'Dark']) {
     void test(`${theme}: when the agent worked sits under the blocks, blue on a card and grey on none`, async () => {
@@ -88,7 +101,6 @@ void describe('the AGENTS lane (LAI-833)', () => {
           els.map((el) => ({
             kind: el.getAttribute('data-agent-run'),
             start: Number(el.getAttribute('data-agent-start')),
-            title: el.getAttribute('title') ?? '',
             colour: getComputedStyle(el).backgroundColor,
           })),
         );
@@ -101,8 +113,19 @@ void describe('the AGENTS lane (LAI-833)', () => {
             ['card', 13 * 60],
           ],
         );
-        assert.match(runs[0]?.title ?? '', /^Agent working .+ · 9 min$/);
-        assert.match(runs[1]?.title ?? '', / · on no card$/);
+        // What a run is is the Timeline's hover card (LAI-1214: the bare
+        // title= that duplicated it is gone).
+        const card = h.page.locator('[data-dayline-tip="agent"]');
+        await hoverSettled(h.page.locator('[data-agent-run]').nth(0));
+        await card.waitFor({ timeout: 5_000 });
+        assert.match(await card.innerText(), /Agent working[\s\S]*9 min/);
+        await hoverSettled(h.page.locator('[data-agent-run]').nth(1));
+        await until(async () => /On no card/.test(await card.innerText()));
+        assert.equal(
+          await h.page.locator('[data-agent-run][title]').count(),
+          0,
+          'a bare title is back',
+        );
         assert.notEqual(runs[0]?.colour, 'rgba(0, 0, 0, 0)', 'a bar on a card is invisible');
         assert.notEqual(runs[0]?.colour, runs[1]?.colour, 'on a card and on none look the same');
 

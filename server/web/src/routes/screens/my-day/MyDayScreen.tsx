@@ -39,6 +39,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { AgentStrip } from './AgentStrip.tsx';
@@ -79,7 +80,15 @@ import { usePhone } from './use-phone.ts';
 import { initials } from '../../../theme/initials.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
-import { addDays, canAddTime, dayIn, dayTotals, DRAFT_READERS, isDay } from './my-day-derive.ts';
+import {
+  addDays,
+  canAddTime,
+  dayIn,
+  dayTotals,
+  DRAFT_READERS,
+  isDay,
+  plural,
+} from './my-day-derive.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
 import { ShortcutSheet } from './ShortcutSheet.tsx';
@@ -110,6 +119,7 @@ import './my-day.css';
 import './lists.css';
 // After my-day.css: the phone's rules (LAI-518) win at equal specificity.
 import './phone.css';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface MyDayScreenProps {
   /** `?day=` — a calendar day in the reader's zone; today when absent. */
@@ -797,6 +807,18 @@ export function MyDayScreen({
   const dayPlan = confirmPlan(view.drafts);
   const readyMinutes = dayPlan.ready.reduce((sum, d) => sum + d.minutes, 0);
   const busy = pending !== undefined;
+  /**
+   * Why Confirm day is off, when it is (LAI-1214): it stays focusable
+   * (`aria-disabled`) and its tooltip says why, rather than a greyed button
+   * that only a mouse hovering on a `title=` could ask about.
+   */
+  const confirmReason =
+    dayPlan.ready.length > 0
+      ? undefined
+      : view.drafts.length === 0
+        ? 'Every block of this day is confirmed'
+        : `${plural(dayPlan.needCard.length, 'block needs', 'blocks need')} a task before it can be confirmed`;
+  const confirmOff = busy || confirmReason !== undefined;
   const instant = (m: number): number =>
     line.midnight === undefined ? 0 : instantOf(line.midnight, m);
   const block = (id: string): LaneBlock | undefined => line.blocks.find((b) => b.id === id);
@@ -1406,46 +1428,48 @@ export function MyDayScreen({
   // switch and the avatar in the shell's top bar.
   const own = !notOwn && addable;
   const phoneBeside = (
-    <button
-      type="button"
-      className="myday-chip myday-head-icon"
-      ref={besideButton}
-      aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
-      title={notOwn ? 'Agent time' : 'Agent time and On your plate'}
-      aria-expanded={drawerMode === 'cards'}
-      data-beside-button
-      onClick={() => {
-        if (selection !== undefined) {
-          setSelection(undefined);
-          setBeside(true);
-        } else {
-          setBeside((open) => !open);
-        }
-      }}
-    >
-      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-        <rect
-          x="1.5"
-          y="2"
-          width="13"
-          height="5"
-          rx="1.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-        />
-        <rect
-          x="1.5"
-          y="9.5"
-          width="13"
-          height="4.5"
-          rx="1.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-        />
-      </svg>
-    </button>
+    <Tooltip content={notOwn ? 'Agent time' : 'Agent time and On your plate'}>
+      <button
+        type="button"
+        className="myday-chip myday-head-icon"
+        ref={besideButton}
+        data-beside-phone
+        aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
+        aria-expanded={drawerMode === 'cards'}
+        data-beside-button
+        onClick={() => {
+          if (selection !== undefined) {
+            setSelection(undefined);
+            setBeside(true);
+          } else {
+            setBeside((open) => !open);
+          }
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+          <rect
+            x="1.5"
+            y="2"
+            width="13"
+            height="5"
+            rx="1.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          />
+          <rect
+            x="1.5"
+            y="9.5"
+            width="13"
+            height="4.5"
+            rx="1.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          />
+        </svg>
+      </button>
+    </Tooltip>
   );
   const avatar =
     me === undefined ? null : (
@@ -1505,24 +1529,25 @@ export function MyDayScreen({
                       void timerDiscard();
                     }}
                   />
-                  <button
-                    type="button"
-                    className="myday-chip myday-head-icon"
-                    data-add-time
-                    title="Add time (N)"
-                    aria-label="Add time"
-                    disabled={busy || batching}
-                    onClick={addTime}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 12 12" aria-hidden="true">
-                      <path
-                        d="M6 1.5v9M1.5 6h9"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
+                  <Tooltip content="Add time" shortcut="N">
+                    <button
+                      type="button"
+                      className="myday-chip myday-head-icon"
+                      data-add-time="phone"
+                      aria-label="Add time"
+                      disabled={busy || batching}
+                      onClick={addTime}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 12 12" aria-hidden="true">
+                        <path
+                          d="M6 1.5v9M1.5 6h9"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </Tooltip>
                   <DaySettings
                     settings={settings}
                     held={view.drafts_held}
@@ -1541,42 +1566,51 @@ export function MyDayScreen({
           : view.drafts.length > 0
             ? {
                 action: (
-                  <button
-                    type="button"
-                    className="myday-chip myday-chip-primary myday-phone-confirm"
-                    data-confirm-day
-                    ref={confirmButton}
-                    disabled={busy || dayPlan.ready.length === 0}
-                    title={
-                      dayPlan.needCard.length > 0
+                  <Tooltip
+                    content={
+                      confirmReason ??
+                      (dayPlan.needCard.length > 0
                         ? `${String(dayPlan.needCard.length)} without a task stay in To review`
-                        : `Confirm every drafted block of ${dayLong(view.day)}`
+                        : `Confirm every drafted block of ${dayLong(view.day)}`)
                     }
-                    onClick={() => {
-                      setSummary(true);
-                    }}
                   >
-                    {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-                    {dayPlan.ready.length === 0
-                      ? 'Confirm day'
-                      : `Confirm ${duration(readyMinutes)}`}
-                  </button>
+                    <button
+                      type="button"
+                      className="myday-chip myday-chip-primary myday-phone-confirm"
+                      data-confirm-phone
+                      data-confirm-day
+                      ref={confirmButton}
+                      disabled={busy}
+                      aria-disabled={confirmOff || undefined}
+                      onClick={() => {
+                        if (!confirmOff) setSummary(true);
+                      }}
+                    >
+                      {pending === 'confirm-day' && (
+                        <Spinner size="sm" label="Confirming the day" />
+                      )}
+                      {dayPlan.ready.length === 0
+                        ? 'Confirm day'
+                        : `Confirm ${duration(readyMinutes)}`}
+                    </button>
+                  </Tooltip>
                 ),
               }
             : addable && view.state !== 'future'
               ? {
                   action: (
-                    <button
-                      type="button"
-                      className="myday-chip myday-head-button"
-                      data-day-note-button
-                      title="A note for whoever reads your day"
-                      onClick={() => {
-                        setSummary(true);
-                      }}
-                    >
-                      {view.day_note === null ? 'Day note' : 'Edit day note'}
-                    </button>
+                    <Tooltip content="A note for whoever reads your day">
+                      <button
+                        type="button"
+                        className="myday-chip myday-head-button"
+                        data-day-note-button
+                        onClick={() => {
+                          setSummary(true);
+                        }}
+                      >
+                        {view.day_note === null ? 'Day note' : 'Edit day note'}
+                      </button>
+                    </Tooltip>
                   ),
                 }
               : {})}
@@ -1652,7 +1686,7 @@ export function MyDayScreen({
                       </>
                     }
                     label="Who can see this"
-                    title={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Who looked in the last 15 minutes shows under the eye.`}
+                    tooltip={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Who looked in the last 15 minutes shows under the eye.`}
                     triggerClassName="myday-lock myday-lock-link myday-who-trigger"
                     width="who"
                     align="left"
@@ -1689,17 +1723,19 @@ export function MyDayScreen({
                 <div className="myday-below">
                   {/* A phone walks the days one at a time (LAI-502); the width decides, in CSS. */}
                   <div className="myday-daynav" data-day-nav>
-                    <button
-                      type="button"
-                      className="myday-week-step"
-                      aria-label="Previous day"
-                      disabled={batching}
-                      onClick={() => {
-                        onDay(addDays(view.day, -1));
-                      }}
-                    >
-                      <span aria-hidden="true">‹</span>
-                    </button>
+                    <Tooltip content="Previous day">
+                      <button
+                        type="button"
+                        className="myday-week-step"
+                        aria-label="Previous day"
+                        disabled={batching}
+                        onClick={() => {
+                          onDay(addDays(view.day, -1));
+                        }}
+                      >
+                        <Icon name="chevron-left" size="small" />
+                      </button>
+                    </Tooltip>
                     <span className="myday-daynav-title">
                       <strong>{dayLong(view.day)}</strong>
                       {totals.confirmed + totals.drafted > 0 && (
@@ -1709,17 +1745,24 @@ export function MyDayScreen({
                         </span>
                       )}
                     </span>
-                    <button
-                      type="button"
-                      className="myday-week-step"
-                      aria-label="Next day"
-                      disabled={batching || view.day >= view.today}
-                      onClick={() => {
-                        onDay(addDays(view.day, 1));
-                      }}
+                    <Tooltip
+                      content={
+                        view.day >= view.today ? 'Today is the latest day there is' : 'Next day'
+                      }
                     >
-                      <span aria-hidden="true">›</span>
-                    </button>
+                      <button
+                        type="button"
+                        className="myday-week-step"
+                        aria-label="Next day"
+                        disabled={batching}
+                        aria-disabled={view.day >= view.today || undefined}
+                        onClick={() => {
+                          if (view.day < view.today) onDay(addDays(view.day, 1));
+                        }}
+                      >
+                        <Icon name="chevron" size="small" />
+                      </button>
+                    </Tooltip>
                   </div>
                   <WeekStrip
                     week={view.week}
@@ -1759,94 +1802,102 @@ export function MyDayScreen({
                     void timerDiscard();
                   }}
                 />
-                <button
-                  type="button"
-                  className="myday-chip myday-head-button"
-                  data-add-time
-                  title="Add time (N)"
-                  aria-label="Add time"
-                  disabled={busy || batching}
-                  onClick={addTime}
-                >
-                  <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
-                    <path
-                      d="M6 1.5v9M1.5 6h9"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="myday-head-text">Add time</span>
-                  <kbd className="myday-kbd myday-kbd-hint">N</kbd>
-                </button>
-                {/* Fill gaps (the design, LAI-513): today's gaps before now, one after another. */}
-                {view.day === view.today && gapsBeforeNow.length > 0 && (
+                <Tooltip content="Add time" shortcut="N">
                   <button
                     type="button"
-                    className="myday-chip myday-head-button myday-fill-gaps"
-                    data-fill-gaps
-                    title="Walk through each gap and fill it with a task"
+                    className="myday-chip myday-head-button"
+                    data-add-time
+                    aria-label="Add time"
                     disabled={busy || batching}
-                    onClick={() => {
-                      const first = gapsBeforeNow[0];
-                      if (first !== undefined) {
-                        pickGap(first);
-                        setFillRun(true);
-                      }
-                    }}
+                    onClick={addTime}
                   >
-                    <span className="myday-head-text">Fill gaps</span>
-                    <span className="myday-fill-gaps-sub">
-                      {String(gapsBeforeNow.length)} ·{' '}
-                      {duration(gapsBeforeNow.reduce((sum, g) => sum + g.end - g.start, 0))}
-                    </span>
+                    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+                      <path
+                        d="M6 1.5v9M1.5 6h9"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <span className="myday-head-text">Add time</span>
+                    <kbd className="myday-kbd myday-kbd-hint">N</kbd>
                   </button>
+                </Tooltip>
+                {/* Fill gaps (the design, LAI-513): today's gaps before now, one after another. */}
+                {view.day === view.today && gapsBeforeNow.length > 0 && (
+                  <Tooltip content="Walk through each gap and fill it with a task">
+                    <button
+                      type="button"
+                      className="myday-chip myday-head-button myday-fill-gaps"
+                      data-fill-gaps
+                      disabled={busy || batching}
+                      onClick={() => {
+                        const first = gapsBeforeNow[0];
+                        if (first !== undefined) {
+                          pickGap(first);
+                          setFillRun(true);
+                        }
+                      }}
+                    >
+                      <span className="myday-head-text">Fill gaps</span>
+                      <span className="myday-fill-gaps-sub">
+                        {String(gapsBeforeNow.length)} ·{' '}
+                        {duration(gapsBeforeNow.reduce((sum, g) => sum + g.end - g.start, 0))}
+                      </span>
+                    </button>
+                  </Tooltip>
                 )}
               </>
             )}
             {!notOwn && addable && view.state !== 'future' && (
-              <button
-                type="button"
-                className="myday-chip myday-chip-primary myday-confirm-day"
-                data-confirm-day
-                ref={confirmButton}
-                disabled={busy || dayPlan.ready.length === 0}
-                title={
-                  dayPlan.needCard.length > 0
+              <Tooltip
+                content={
+                  confirmReason ??
+                  (dayPlan.needCard.length > 0
                     ? `${String(dayPlan.needCard.length)} without a task stay in To review`
-                    : 'Confirm every draft on this day (Enter on a single item)'
+                    : 'Confirm every draft on this day (Enter on a single item)')
                 }
-                onClick={() => {
-                  setSummary(true);
-                }}
               >
-                {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-                <span className="myday-confirm-label">
-                  {view.drafts.length === 0 ? 'Day confirmed' : 'Confirm day'}
-                  {dayPlan.ready.length > 0 && (
-                    <span className="myday-confirm-sub">
-                      {dayPlan.needCard.length > 0
-                        ? ` ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`
-                        : ` ${duration(readyMinutes)}`}
-                    </span>
-                  )}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className="myday-chip myday-chip-primary myday-confirm-day"
+                  data-confirm-day
+                  ref={confirmButton}
+                  disabled={busy}
+                  aria-disabled={confirmOff || undefined}
+                  onClick={() => {
+                    if (!confirmOff) setSummary(true);
+                  }}
+                >
+                  {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
+                  <span className="myday-confirm-label">
+                    {view.drafts.length === 0 ? 'Day confirmed' : 'Confirm day'}
+                    {dayPlan.ready.length > 0 && (
+                      <span className="myday-confirm-sub">
+                        {dayPlan.needCard.length > 0
+                          ? ` ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`
+                          : ` ${duration(readyMinutes)}`}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </Tooltip>
             )}
             {!notOwn && addable && view.drafts.length === 0 && view.state !== 'future' && (
-              <button
-                type="button"
-                className="myday-chip myday-head-button"
-                data-day-note-button
-                title="A note for whoever reads your day"
-                onClick={() => {
-                  setSummary(true);
-                }}
-              >
-                <span className="myday-head-text">
-                  {view.day_note === null ? 'Day note' : 'Edit day note'}
-                </span>
-              </button>
+              <Tooltip content="A note for whoever reads your day">
+                <button
+                  type="button"
+                  className="myday-chip myday-head-button"
+                  data-day-note-button
+                  onClick={() => {
+                    setSummary(true);
+                  }}
+                >
+                  <span className="myday-head-text">
+                    {view.day_note === null ? 'Day note' : 'Edit day note'}
+                  </span>
+                </button>
+              </Tooltip>
             )}
             {!notOwn && !orgOff && (
               <DaySettings
@@ -1860,60 +1911,62 @@ export function MyDayScreen({
               />
             )}
             {!notOwn && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
-            <button
-              type="button"
-              className="myday-chip myday-head-icon"
-              ref={besideButton}
-              aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
-              title={notOwn ? 'Agent time' : 'Agent time and On your plate'}
-              aria-expanded={drawerMode === 'cards'}
-              data-beside-button
-              onClick={() => {
-                if (selection !== undefined) {
-                  setSelection(undefined);
-                  setBeside(true);
-                } else {
-                  setBeside((open) => !open);
-                }
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-                <rect
-                  x="1.5"
-                  y="2"
-                  width="13"
-                  height="5"
-                  rx="1.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                />
-                <rect
-                  x="1.5"
-                  y="9.5"
-                  width="13"
-                  height="4.5"
-                  rx="1.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                />
-              </svg>
-            </button>
-            {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1191). */}
-            {!orgOff && (
+            <Tooltip content={notOwn ? 'Agent time' : 'Agent time and On your plate'}>
               <button
                 type="button"
                 className="myday-chip myday-head-icon"
-                aria-label="Keyboard shortcuts"
-                title="Keyboard shortcuts (?)"
-                data-shortcuts-button
+                ref={besideButton}
+                aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
+                aria-expanded={drawerMode === 'cards'}
+                data-beside-button
                 onClick={() => {
-                  setSheet(true);
+                  if (selection !== undefined) {
+                    setSelection(undefined);
+                    setBeside(true);
+                  } else {
+                    setBeside((open) => !open);
+                  }
                 }}
               >
-                ?
+                <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect
+                    x="1.5"
+                    y="2"
+                    width="13"
+                    height="5"
+                    rx="1.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                  <rect
+                    x="1.5"
+                    y="9.5"
+                    width="13"
+                    height="4.5"
+                    rx="1.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                </svg>
               </button>
+            </Tooltip>
+            {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1191). */}
+            {!orgOff && (
+              <Tooltip content="Keyboard shortcuts" shortcut="?">
+                <button
+                  type="button"
+                  className="myday-chip myday-head-icon"
+                  aria-label="Keyboard shortcuts"
+                  data-shortcuts-button
+                  onClick={() => {
+                    setSheet(true);
+                  }}
+                >
+                  <Icon name="help" size="small" />
+                </button>
+              </Tooltip>
             )}
           </ScreenHeader>
         ) : embedded === undefined ? null : (
@@ -2169,14 +2222,16 @@ export function MyDayScreen({
                 <h2 className="myday-drawer-title">
                   {notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
                 </h2>
-                <button
-                  type="button"
-                  className="myday-week-step inspector-close"
-                  aria-label="Close (Esc)"
-                  onClick={closeDrawer}
-                >
-                  ×
-                </button>
+                <Tooltip content="Close" shortcut="Escape">
+                  <button
+                    type="button"
+                    className="myday-week-step inspector-close"
+                    aria-label="Close (Esc)"
+                    onClick={closeDrawer}
+                  >
+                    <Icon name="close" size="small" />
+                  </button>
+                </Tooltip>
               </header>
               <div className="myday-drawer-cards">
                 <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />

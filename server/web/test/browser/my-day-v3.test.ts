@@ -11,6 +11,7 @@ import { after, describe, test } from 'node:test';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open } from './my-day-clock.ts';
 import { AGENT, at, TODAY, viewOf, weekData, weekStub } from './my-day-week.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 /** The agent at 9:00–9:10 on a card and 9:10–9:15 on none — inside d1 — and at 1 PM. */
 const LANE = [
@@ -96,10 +97,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       const legend = await h.page.locator('.dayline-totals').innerText();
       assert.match(legend, /Confirmed[\s\S]*Drafted[\s\S]*No task yet[\s\S]*Gaps/);
       assert.doesNotMatch(legend, /unaccounted|Needs a card/);
-      assert.match(
-        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /4 unaccounted/,
-      );
+      assert.match(await tooltipText(h.page.locator('[data-stat="gaps"]')), /4 unaccounted/);
 
       const axis = await h.page.locator('.dayline-axis').boundingBox();
       const row = await h.page.locator('.dayline-row').boundingBox();
@@ -400,7 +398,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
     const h = await openToday();
     try {
       await hoverOnTrack(h, '[data-block-id="d1"]');
-      const tip = h.page.locator('[role="tooltip"]');
+      const tip = h.page.locator('[data-dayline-tip]');
       await tip.waitFor({ timeout: 5_000 });
       const said = await tip.innerText();
       assert.match(said, /Drafted/);

@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { closeBrowser, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open } from './my-day-clock.ts';
 import { at, TODAY, YESTERDAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
@@ -75,6 +75,19 @@ after(async () => {
   await closeBrowser();
 });
 
+/**
+ * Hover a mark on the track once it is scrolled into view and settled a
+ * frame: a scroll clears the hover card, and Playwright's own scroll-then-hover
+ * would lose it a frame later (as my-day-v3's hoverOnTrack).
+ */
+async function hoverSettled(el: Locator): Promise<void> {
+  await el.scrollIntoViewIfNeeded();
+  await el.page().evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+  await el.hover();
+}
+
 void describe('the SIGNALS lane (LAI-834)', () => {
   for (const theme of ['Light', 'Dark']) {
     void test(`${theme}: prompts and commits sit in their five minutes, above the blocks`, async () => {
@@ -88,7 +101,6 @@ void describe('the SIGNALS lane (LAI-834)', () => {
           els.map((el) => ({
             kind: el.getAttribute('data-signal'),
             start: Number(el.getAttribute('data-signal-start')),
-            title: el.getAttribute('title') ?? '',
             colour: getComputedStyle(el).backgroundColor,
           })),
         );
@@ -100,8 +112,19 @@ void describe('the SIGNALS lane (LAI-834)', () => {
             ['commit', 9 * 60 + 40],
           ],
         );
-        assert.match(marks[0]?.title ?? '', /^2 prompts, /);
-        assert.match(marks[2]?.title ?? '', /^3 commits, /);
+        // What a mark counts is the Timeline's hover card (LAI-1214: the bare
+        // title= that duplicated it is gone).
+        const card = h.page.locator('[data-dayline-tip="signal"]');
+        await hoverSettled(h.page.locator('[data-signal]').nth(0));
+        await card.waitFor({ timeout: 5_000 });
+        assert.match(await card.innerText(), /Prompts\s*2/);
+        await hoverSettled(h.page.locator('[data-signal]').nth(2));
+        await until(async () => /Commits\s*3/.test(await card.innerText()));
+        assert.equal(
+          await h.page.locator('[data-signal][title]').count(),
+          0,
+          'a bare title is back',
+        );
         for (const m of marks) {
           assert.notEqual(m.colour, 'rgba(0, 0, 0, 0)', `a ${String(m.kind)} is drawn invisible`);
         }

@@ -1,6 +1,8 @@
 import type { MyDayWeekDay } from '../../../api/time.ts';
 import { addDays, dayLabel } from './my-day-derive.ts';
 import { weekTiles } from './week-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface WeekStripProps {
   readonly week: readonly MyDayWeekDay[];
@@ -38,17 +40,19 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
   return (
     <nav className="myday-week" aria-label="Week">
       <div className="myday-week-nav">
-        <button
-          type="button"
-          className="myday-week-step"
-          aria-label="Previous week"
-          disabled={locked}
-          onClick={() => {
-            onPick(previous);
-          }}
-        >
-          <span aria-hidden="true">‹</span>
-        </button>
+        <Tooltip content="Previous week">
+          <button
+            type="button"
+            className="myday-week-step"
+            aria-label="Previous week"
+            disabled={locked}
+            onClick={() => {
+              onPick(previous);
+            }}
+          >
+            <Icon name="chevron-left" size="small" />
+          </button>
+        </Tooltip>
         <button
           type="button"
           className="myday-week-step myday-week-today"
@@ -59,17 +63,20 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
         >
           Today
         </button>
-        <button
-          type="button"
-          className="myday-week-step"
-          aria-label="Next week"
-          disabled={following > today || locked}
-          onClick={() => {
-            onPick(following);
-          }}
-        >
-          <span aria-hidden="true">›</span>
-        </button>
+        <Tooltip content={following > today ? 'This is the latest week there is' : 'Next week'}>
+          <button
+            type="button"
+            className="myday-week-step"
+            aria-label="Next week"
+            disabled={locked}
+            aria-disabled={following > today || undefined}
+            onClick={() => {
+              if (following <= today) onPick(following);
+            }}
+          >
+            <Icon name="chevron" size="small" />
+          </button>
+        </Tooltip>
       </div>
       <ol className="myday-week-days">
         {tiles.map((tile) => {

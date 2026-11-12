@@ -3,6 +3,7 @@ import { after, describe, test } from 'node:test';
 import { closeBrowser, refuse, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import { QUIET, SETTINGS, TOMORROW, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 /**
  * The page's states as the owner's `MyDay.dc.html` draws them (LAI-513): the
@@ -216,7 +217,7 @@ void describe('the page states as designed (LAI-513)', () => {
     try {
       const trigger = h.page.locator('[data-who-can-see] > button');
       await trigger.waitFor({ timeout: 20_000 });
-      assert.match((await trigger.getAttribute('title')) ?? '', /Drafts: you, owners and admins/);
+      assert.match(await tooltipText(trigger), /Drafts: you, owners and admins/);
       await trigger.click();
       const panel = h.page.getByRole('region', { name: 'Who can see this' });
       await panel.waitFor({ timeout: 5_000 });
@@ -243,10 +244,7 @@ void describe('the page states as designed (LAI-513)', () => {
       const confirm = h.page.locator('[data-confirm-day]');
       await confirm.waitFor({ timeout: 20_000 });
       assert.match(await confirm.innerText(), /^Confirm day\s+3 ready · 3 h 50 min$/);
-      assert.match(
-        (await confirm.getAttribute('title')) ?? '',
-        /2 without a task stay in To review/,
-      );
+      assert.match(await tooltipText(confirm), /2 without a task stay in To review/);
       await h.page
         .locator(`[data-week-day="${YESTERDAY}"], .myday-week-day`)
         .first()

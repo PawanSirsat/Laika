@@ -1,11 +1,19 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLayer } from '../../../components/overlay/layer-stack.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface HeaderPopoverProps {
   /** The trigger's content. */
   readonly trigger: ReactNode;
   readonly label: string;
-  readonly title?: string | undefined;
+  /**
+   * The trigger's tooltip (LAI-1214) — the shared Tooltip, on hover and on
+   * keyboard focus; the label when absent. It was a bare `title=`, which a
+   * keyboard and a touch screen never show.
+   */
+  readonly tooltip?: string | undefined;
+  /** The trigger's key, as `T`: a keycap in the tooltip and `aria-keyshortcuts`. */
+  readonly shortcut?: string | undefined;
   readonly className?: string | undefined;
   readonly triggerClassName?: string | undefined;
   readonly disabled?: boolean | undefined;
@@ -45,7 +53,8 @@ const FOCUSABLE =
 export function HeaderPopover({
   trigger,
   label,
-  title,
+  tooltip,
+  shortcut,
   className,
   triggerClassName,
   disabled = false,
@@ -157,21 +166,22 @@ export function HeaderPopover({
       className={['myday-pop', className ?? ''].filter((c) => c !== '').join(' ')}
       {...(dataAttr === undefined ? {} : { [dataAttr]: '' })}
     >
-      <button
-        type="button"
-        className={triggerClassName ?? 'myday-chip'}
-        aria-label={label}
-        title={title ?? label}
-        aria-expanded={open}
-        aria-controls={id}
-        {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
-        disabled={disabled}
-        onClick={() => {
-          setOpen(!open);
-        }}
-      >
-        {trigger}
-      </button>
+      <Tooltip content={tooltip ?? label} shortcut={shortcut}>
+        <button
+          type="button"
+          className={triggerClassName ?? 'myday-chip'}
+          aria-label={label}
+          aria-expanded={open}
+          aria-controls={id}
+          {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
+          disabled={disabled}
+          onClick={() => {
+            setOpen(!open);
+          }}
+        >
+          {trigger}
+        </button>
+      </Tooltip>
       {open && (
         <div
           ref={panel}

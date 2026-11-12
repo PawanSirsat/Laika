@@ -39,6 +39,7 @@ import {
   type DayData,
 } from './my-day-week.ts';
 import { NARROW_QUERY } from '../../src/components/sidebar/sidebar-state.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 /** A duration as LAI-830 prints one: `19 min`, `1 h 35 min`, `2 h`. */
 function dur(minutes: number): string {
@@ -345,13 +346,10 @@ void describe('gaps and breaks (4, D)', () => {
       // 11:30–12:00, 12:45–1:30 and 4:30–4:45: the design counts five minutes
       // and up (LAI-510); a shorter one is a breath (timeline-derive's test).
       assert.equal(await h.page.locator('.dayline-gap').count(), 3);
-      // The legend's compact figure, and the count in the button's title (LAI-512).
+      // The legend's compact figure, and the count in the button's tooltip (LAI-512, LAI-1214).
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
       assert.match(stat, /1h 30m/);
-      assert.match(
-        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /3 unaccounted/,
-      );
+      assert.match(await tooltipText(h.page.locator('[data-stat="gaps"]')), /3 unaccounted/);
       // Which gap, and how long, is in its name whatever fits on the line:
       // CI's fonts draw "+ 30 min" wider than this Mac's, and it is a "+".
       const gaps = h.page.locator('.dayline-gap');
@@ -388,10 +386,7 @@ void describe('gaps and breaks (4, D)', () => {
         ended_at: at(EARLIER, 12, 0),
       });
       assert.equal(await h.page.locator('.dayline-gap').count(), 2);
-      assert.match(
-        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /2 unaccounted/,
-      );
+      assert.match(await tooltipText(h.page.locator('[data-stat="gaps"]')), /2 unaccounted/);
       const drawn = h.page.locator('.dayline-break');
       assert.equal(await drawn.getAttribute('aria-label'), 'Break 11:30 AM–12:00 PM — not counted');
       assert.ok(breakShows(await drawn.innerText()), 'the break shows something else');
@@ -439,10 +434,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
         (await button.innerText()).trim(),
         new RegExp(`^Confirm day\\s+3 ready · ${dur(95 + 110 + 25)}$`),
       );
-      assert.match(
-        (await button.getAttribute('title')) ?? '',
-        /2 without a task stay in To review/,
-      );
+      assert.match(await tooltipText(button), /2 without a task stay in To review/);
       await button.click();
       // The summary first (LAI-503): what confirms, what stays, then Confirm.
       const summary = h.page.locator('[data-confirm-summary]');
@@ -885,7 +877,7 @@ void describe('honest signals (G)', () => {
       assert.doesNotMatch(await block.innerText(), /\d+p \d+c/);
       await block.scrollIntoViewIfNeeded();
       await block.hover();
-      const tip = h.page.locator('[role="tooltip"]');
+      const tip = h.page.locator('[data-dayline-tip]');
       await tip.waitFor({ timeout: 5_000 });
       assert.match(await tip.innerText(), /18 prompts · 3 commits/);
       assert.equal(await h.page.locator('[data-signal-dot], [data-signal-tick]').count(), 0);
@@ -1020,10 +1012,7 @@ void describe('review round 1', () => {
       // 10:15–10:40, 11:20–11:30, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
       assert.match(stat, /1h 45m/);
-      assert.match(
-        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /4 unaccounted/,
-      );
+      assert.match(await tooltipText(h.page.locator('[data-stat="gaps"]')), /4 unaccounted/);
     } finally {
       await h.close();
     }

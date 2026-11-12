@@ -36,7 +36,13 @@ export type IconName =
   | 'person'
   | 'agent'
   | 'sprint'
-  | 'calendar';
+  | 'calendar'
+  | 'minus'
+  | 'help'
+  | 'arrow-right'
+  | 'arrow-left'
+  | 'pin'
+  | 'chevron-down';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -140,4 +146,19 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
     'M8 3v4M16 3v4M3.5 10h17',
     'M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01',
   ],
+  // LAI-1214: the pages. The Timeline's zoom out beside `plus`; a ring with a
+  // question mark for the keyboard-shortcuts sheet (it was a typed `?`); the
+  // arrows that ended "Next →" and began "← Back" as typed characters; a pin
+  // for the sidebar's pinned spaces.
+  minus: ['M5 12h14'],
+  help: [
+    'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z',
+    'M9.6 9.4a2.5 2.5 0 0 1 4.85.85c0 1.65-2.45 2.25-2.45 3.75',
+    'M12 16.75v.01',
+  ],
+  'arrow-right': ['M5 12h14', 'm13 6 6 6-6 6'],
+  'arrow-left': ['M19 12H5', 'm11 6-6 6 6 6'],
+  // A menu that opens downward (it was a typed ▾).
+  'chevron-down': ['m6 9 6 6 6-6'],
+  pin: ['M9 4.5h6', 'M10 4.5v5.5L7 13.5h10L14 10V4.5', 'M12 13.5v6'],
 };

@@ -22,6 +22,7 @@ import {
 } from './harness.ts';
 import { open } from './my-day-clock.ts';
 import { SETTINGS, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { tooltipText } from './tooltip-text.ts';
 
 /** Today's ISO weekday, 1 (Monday) – 7: the schedule names today and no other day. */
 const ISO_TODAY = ((new Date(`${TODAY}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
@@ -131,7 +132,7 @@ void describe('My day: the organisation’s breaks on the Timeline', () => {
       assert.equal(await pill.getAttribute('data-worked'), '30');
       assert.equal(await pill.locator('[data-scheduled-worked]').innerText(), '30m worked');
       assert.equal(await pill.locator('[data-break-kind="meal"]').count(), 1, 'Lunch has no fork');
-      assert.match((await pill.getAttribute('title')) ?? '', /30 min off, 30 min worked/);
+      assert.match(await tooltipText(pill), /30 min off, 30 min worked/);
       // Its bar: worked first, then off, half each.
       const segs = pill.locator('.dayline-scheduled-seg');
       assert.equal(await segs.count(), 2);
