@@ -62,6 +62,11 @@ const AREA_FILES = [
   'components/SidePanel.tsx',
   'components/CopyButton.tsx',
   'components/wizard/StepRail.tsx',
+  // LAI-1213's leftovers in this area (its coordination note).
+  'components/Dropdown.tsx',
+  'routes/screens/profile/InfoTip.tsx',
+  'components/agent/ExecutionStateLine.tsx',
+  'components/agent-states/AgentStateGallery.tsx',
 ] as const;
 
 /**
