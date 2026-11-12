@@ -90,8 +90,9 @@ function boxOf(el: Element): Box {
  *   mouse click that focuses the control does not count as resting on it.
  * - **Escape dismisses it, and only it** (LAI-1209): the key is spent before
  *   any dialog or menu underneath sees it, so the first Escape closes the
- *   tooltip and the second the dialog. It stays dismissed until the pointer or
- *   the focus leaves and comes back.
+ *   tooltip and the second the dialog — **unless focus is in a field being
+ *   typed in**, whose Escape it is: the tooltip closes and the key goes on. It
+ *   stays dismissed until the pointer or the focus leaves and comes back.
  * - **Never covers the field being typed in**: it is placed on the side away
  *   from it, and a key typed into a field hides it.
  * - **Touch**: a long press ({@link LONG_PRESS_MS}) shows it and the click
@@ -267,14 +268,19 @@ export function Tooltip({
     if (!open) return;
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
-        // On `window`, in the capture phase: before every listener on
-        // `document` and before React's root, so the dialog, menu or editor
-        // underneath never sees this Escape. WCAG 1.4.13 *dismissible* — and
-        // the dialog's own Escape still works, on the next press.
-        event.preventDefault();
-        event.stopPropagation();
         dismissed.current = true;
         close();
+        // Someone typing in a field meant Escape for that field — cancel the
+        // edit, close the dialog — not for a tooltip the pointer happened to
+        // leave open beside it: it closes, and the key goes on.
+        const field = typingIn();
+        if (field !== null && trigger.current?.contains(field) !== true) return;
+        // Otherwise it is spent here, on `window` in the capture phase: before
+        // every listener on `document` and before React's root, so the dialog,
+        // menu or editor underneath never sees it. WCAG 1.4.13 *dismissible* —
+        // and the dialog's own Escape still works, on the next press.
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
       if (['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(event.key)) return;

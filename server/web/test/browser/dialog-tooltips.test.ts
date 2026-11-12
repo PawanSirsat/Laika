@@ -364,6 +364,23 @@ void describe('the Create task dialog (LAI-1209)', () => {
       await h.close();
     }
   });
+  void test('Escape typed in a field is the field’s: the tooltip closes and the dialog gets the key', async () => {
+    const h = await createTask();
+    try {
+      const box = h.page.locator(DIALOG);
+      const close = box.getByRole('button', { name: 'Close', exact: true });
+      const tip = await tooltipOf(close);
+      await close.hover();
+      await tip.waitFor({ state: 'visible', timeout: 2_000 });
+      await h.page.locator('.ct-title-input').focus();
+      await h.page.keyboard.press('Escape');
+      // An empty draft closes at once: the dialog saw this Escape.
+      await box.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await tip.isVisible(), false);
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 /** The vertical centres of the toolbar's visible items, rounded: one value is one row. */
