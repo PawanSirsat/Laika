@@ -14,6 +14,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -202,7 +203,7 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         'the today chip is not marked today',
       );
       assert.equal((await today.innerText()).trim(), 'Due today');
-      assert.match((await today.getAttribute('title')) ?? '', /\d{4}/, 'no full date on hover');
+      assert.match(await tipText(today), /\d{4}/, 'no full date on hover');
 
       assert.equal(
         await card(h, 'LAI-5').locator('.card-due').count(),

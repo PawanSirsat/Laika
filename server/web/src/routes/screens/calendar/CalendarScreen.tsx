@@ -33,6 +33,8 @@ import {
   type CalendarDay,
   type CalendarWeek,
 } from './calendar-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './calendar.css';
 
 export interface CalendarScreenProps {
@@ -244,36 +246,36 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
     const overdue = isOverdue(task, now);
     const status = statusNameOf(task, statuses.byId);
     return (
-      <button
-        key={task.id}
-        type="button"
-        className={overdue ? 'cal-task cal-task-overdue' : 'cal-task'}
-        tabIndex={tabbable ? 0 : -1}
-        aria-label={`${task.key} ${task.title}, ${status}, priority ${task.priority.toUpperCase()}${
-          overdue ? ', overdue' : ''
-        }${task.created_via === 'mcp' ? ', filed by an agent' : ''}`}
-        onClick={() => {
-          openTask(task.id);
-        }}
-        title={`${task.key} — ${task.title} · ${status}`}
-      >
-        <span className="cal-task-line">
-          <span className="cal-task-key">{task.key}</span>
-          <span className="cal-task-title">{task.title}</span>
-          {task.created_via === 'mcp' && <span className="cal-task-agent" aria-hidden="true" />}
-        </span>
-        <span className="cal-task-line cal-task-meta">
-          {/* Its status, as the project calls it, in its kind's colour (LAI-739
+      <Tooltip key={task.id} content={`${task.key} — ${task.title} · ${status}`} lazy>
+        <button
+          type="button"
+          className={overdue ? 'cal-task cal-task-overdue' : 'cal-task'}
+          tabIndex={tabbable ? 0 : -1}
+          aria-label={`${task.key} ${task.title}, ${status}, priority ${task.priority.toUpperCase()}${
+            overdue ? ', overdue' : ''
+          }${task.created_via === 'mcp' ? ', filed by an agent' : ''}`}
+          onClick={() => {
+            openTask(task.id);
+          }}
+        >
+          <span className="cal-task-line">
+            <span className="cal-task-key">{task.key}</span>
+            <span className="cal-task-title">{task.title}</span>
+            {task.created_via === 'mcp' && <span className="cal-task-agent" aria-hidden="true" />}
+          </span>
+          <span className="cal-task-line cal-task-meta">
+            {/* Its status, as the project calls it, in its kind's colour (LAI-739
               review round 1). */}
-          <span className={`cal-task-status cal-status-${task.status}`}>
-            {statusNameOf(task, statuses.byId)}
+            <span className={`cal-task-status cal-status-${task.status}`}>
+              {statusNameOf(task, statuses.byId)}
+            </span>
+            <span className={`cal-task-pri cal-pri-${task.priority}`}>
+              {task.priority.toUpperCase()}
+            </span>
+            {overdue && <span className="cal-task-flag">Overdue</span>}
           </span>
-          <span className={`cal-task-pri cal-pri-${task.priority}`}>
-            {task.priority.toUpperCase()}
-          </span>
-          {overdue && <span className="cal-task-flag">Overdue</span>}
-        </span>
-      </button>
+        </button>
+      </Tooltip>
     );
   };
 
@@ -295,31 +297,33 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
 
       <div className="cal-bar">
         <div className="cal-nav">
-          <button
-            type="button"
-            className="cal-btn cal-btn-icon"
-            aria-label={`Previous ${unit}`}
-            title={`Previous ${unit}`}
-            onClick={() => {
-              go(view === 'month' ? addMonths(focusAt, -1) : addDays(focusAt, -7));
-            }}
-          >
-            <span aria-hidden="true">‹</span>
-          </button>
+          <Tooltip content={`Previous ${unit}`}>
+            <button
+              type="button"
+              className="cal-btn cal-btn-icon"
+              aria-label={`Previous ${unit}`}
+              onClick={() => {
+                go(view === 'month' ? addMonths(focusAt, -1) : addDays(focusAt, -7));
+              }}
+            >
+              <Icon name="chevron-left" size="small" />
+            </button>
+          </Tooltip>
           <h2 className="cal-title" aria-live="polite">
             {heading}
           </h2>
-          <button
-            type="button"
-            className="cal-btn cal-btn-icon"
-            aria-label={`Next ${unit}`}
-            title={`Next ${unit}`}
-            onClick={() => {
-              go(view === 'month' ? addMonths(focusAt, 1) : addDays(focusAt, 7));
-            }}
-          >
-            <span aria-hidden="true">›</span>
-          </button>
+          <Tooltip content={`Next ${unit}`}>
+            <button
+              type="button"
+              className="cal-btn cal-btn-icon"
+              aria-label={`Next ${unit}`}
+              onClick={() => {
+                go(view === 'month' ? addMonths(focusAt, 1) : addDays(focusAt, 7));
+              }}
+            >
+              <Icon name="chevron" size="small" />
+            </button>
+          </Tooltip>
         </div>
         <div className="cal-tools">
           <button
@@ -695,16 +699,18 @@ function DayList({ at, anchor, tasks, overdue, renderChip, onClose, onPick }: Da
             month: 'long',
           })}
         </p>
-        <button
-          type="button"
-          className="cal-btn cal-btn-icon"
-          aria-label="Close"
-          onClick={() => {
-            onClose(true);
-          }}
-        >
-          <span aria-hidden="true">×</span>
-        </button>
+        <Tooltip content="Close" shortcut="Escape">
+          <button
+            type="button"
+            className="cal-btn cal-btn-icon"
+            aria-label="Close"
+            onClick={() => {
+              onClose(true);
+            }}
+          >
+            <Icon name="close" size="small" />
+          </button>
+        </Tooltip>
       </div>
       <div className="cal-items cal-daylist-items">{tasks.map((t) => renderChip(t))}</div>
     </div>

@@ -27,6 +27,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -775,7 +776,7 @@ void describe('All sprints is always named (LAI-727 review)', () => {
     try {
       await reads(h, `All sprints ${summary(undefined)}`);
       const left = h.page.locator('.bstats-left');
-      assert.equal(await left.getAttribute('title'), 'No sprint end date');
+      assert.equal(await tipText(left), 'No sprint end date');
       assert.equal(await left.locator('.visually-hidden').textContent(), 'No sprint end date');
     } finally {
       await h.close();
@@ -1284,7 +1285,7 @@ void describe('a board too long to read says its figures are partial (LAI-727)',
     });
     try {
       await h.page.locator('.bstats-partial').waitFor({ timeout: 20_000 });
-      assert.match((await h.page.locator('.bstats-partial').getAttribute('title')) ?? '', /first/i);
+      assert.match(await tipText(h.page.locator('.bstats-partial')), /first/i);
     } finally {
       await h.close();
     }

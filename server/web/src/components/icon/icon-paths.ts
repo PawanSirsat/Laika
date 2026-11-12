@@ -61,7 +61,10 @@ export type IconName =
   | 'reply'
   | 'swap'
   | 'play'
-  | 'dot';
+  | 'dot'
+  | 'tag'
+  | 'hash'
+  | 'question';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -217,4 +220,12 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
   swap: ['M4 8h14', 'm14.5 4.5 3.5 3.5-3.5 3.5', 'M20 16H6', 'm9.5 12.5-3.5 3.5 3.5 3.5'],
   play: ['M8 5.5v13l10.5-6.5z'],
   dot: ['M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z'],
+  // View settings' field marks (LAI-1213): a tag, the key's hash, a question.
+  tag: ['M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9z', 'M8 8h.01'],
+  hash: ['M9.5 4 8 20M16 4l-1.5 16', 'M4.5 9h15M4 15h15'],
+  question: [
+    'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z',
+    'M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6',
+    'M12 17h.01',
+  ],
 };

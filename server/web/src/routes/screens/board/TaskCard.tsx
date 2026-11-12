@@ -31,6 +31,8 @@ import {
 import { cardExecutionState, liveClaimDetail } from '../../../components/agent/execution-derive.ts';
 import { handoffState } from '../../../components/agent/handoff-derive.ts';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 export interface TaskCardProps {
   readonly task: TaskSummary;
@@ -299,27 +301,25 @@ export function TaskCard({
         accountable person, never the agent, and nothing says *assigned*.
       */}
       {shownAgent !== null && attribution !== null && (
-        <p
-          className="card-attribution card-above"
-          data-lane={attribution.lane}
-          title={attribution.spoken}
-        >
-          <span className="card-agent">
-            <AgentChip
-              client={selectedHarness(shownAgent)}
-              device={agentDevice(shownAgent)}
-              // Told apart from another on this board that shares both (LAI-583).
-              twin={twinsOnTasks(byId).get(shownAgent.id)}
-              owner={shownAgent.owner.name}
-            />
-          </span>
-          {attribution.relation !== '' && (
-            <span className="card-attribution-relation" aria-hidden="true">
-              {attribution.relation}
+        <Tooltip content={attribution.spoken} lazy>
+          <p className="card-attribution card-above" data-lane={attribution.lane}>
+            <span className="card-agent">
+              <AgentChip
+                client={selectedHarness(shownAgent)}
+                device={agentDevice(shownAgent)}
+                // Told apart from another on this board that shares both (LAI-583).
+                twin={twinsOnTasks(byId).get(shownAgent.id)}
+                owner={shownAgent.owner.name}
+              />
             </span>
-          )}
-          <span className="visually-hidden">{attribution.spoken}</span>
-        </p>
+            {attribution.relation !== '' && (
+              <span className="card-attribution-relation" aria-hidden="true">
+                {attribution.relation}
+              </span>
+            )}
+            <span className="visually-hidden">{attribution.spoken}</span>
+          </p>
+        </Tooltip>
       )}
 
       <div className="card-foot">
@@ -410,12 +410,17 @@ export function TaskCard({
           </Chip>
         )}
         {fields.deps && task.blocked_by.length > 0 && (
-          <span className="card-deps card-above t-meta" title="Dependencies">
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-              <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
-            </svg>
-            {task.blocked_by.length}
-          </span>
+          <Tooltip
+            content={`Blocked by ${String(task.blocked_by.length)} ${task.blocked_by.length === 1 ? 'task' : 'tasks'}`}
+            lazy
+          >
+            <span className="card-deps card-above t-meta">
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+                <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
+              </svg>
+              {task.blocked_by.length}
+            </span>
+          </Tooltip>
         )}
 
         {/*
@@ -427,21 +432,25 @@ export function TaskCard({
           is missing, and then a child shows `↳ …`.
         */}
         {fields.subtasks && progress !== undefined && (
-          <span className="card-subtasks card-above t-meta" title="Subtasks done">
-            <span aria-hidden="true">↳</span> {progress.done}/{progress.total}
-          </span>
+          <Tooltip content="Subtasks done" lazy>
+            <span className="card-subtasks card-above t-meta">
+              <Icon name="parent" size="tiny" /> {progress.done}/{progress.total}
+            </span>
+          </Tooltip>
         )}
         {fields.subtasks && task.parent_task_id !== null && (
-          <span
-            className="card-parent card-above t-meta"
-            title={
+          <Tooltip
+            content={
               parent === undefined
                 ? 'Subtask of a task outside this board'
                 : `Subtask of ${parent.title}`
             }
+            lazy
           >
-            <span aria-hidden="true">↳</span> {parent?.key ?? '…'}
-          </span>
+            <span className="card-parent card-above t-meta">
+              <Icon name="parent" size="tiny" /> {parent?.key ?? '…'}
+            </span>
+          </Tooltip>
         )}
 
         {/*
@@ -497,12 +506,14 @@ export function TaskCard({
                 through* an agent. Who created it is `created_by`, which is
                 not always the person accountable. */}
             {byAgent && (
-              <span className="card-bot" title={createdThroughAgentTitle(creator)}>
-                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
-                  <rect x="4" y="8" width="16" height="12" rx="3" />
-                  <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
-                </svg>
-              </span>
+              <Tooltip content={createdThroughAgentTitle(creator)} lazy>
+                <span className="card-bot">
+                  <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+                    <rect x="4" y="8" width="16" height="12" rx="3" />
+                    <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
+                  </svg>
+                </span>
+              </Tooltip>
             )}
           </span>
         )}

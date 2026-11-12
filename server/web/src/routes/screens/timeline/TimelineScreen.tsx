@@ -51,6 +51,8 @@ import {
 import './timeline.css';
 import { pickProject } from '../../../api/pick-project.ts';
 import { withProjectParam } from '../../nav-url.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /** What a sprint's dates say about it, in the lozenge's words. */
 const PHASE_LABEL = { past: 'Ended', current: 'Active', future: 'Planned' } as const;
@@ -483,44 +485,44 @@ export function TimelineScreen() {
 
         <div className="tlx-toolbar">
           <div className="tlx-pan" role="group" aria-label="Scroll the timeline">
-            <button
-              type="button"
-              className="tlx-tool tlx-tool-icon"
-              aria-label={`Earlier — back ${zoom === 'weeks' ? 'a week' : 'a few weeks'}`}
-              title="Earlier (←)"
-              disabled={!moreLeft}
-              onClick={() => {
-                panBy(-panStep * 2);
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                <path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2.2" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="tlx-tool"
-              title="Scroll to today"
-              onClick={() => {
-                scrollToDay(todayIndex, 1 / 3);
-              }}
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              className="tlx-tool tlx-tool-icon"
-              aria-label={`Later — on ${zoom === 'weeks' ? 'a week' : 'a few weeks'}`}
-              title="Later (→)"
-              disabled={!moreRight}
-              onClick={() => {
-                panBy(panStep * 2);
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-                <path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.2" />
-              </svg>
-            </button>
+            {/* Disabled at the chart's edge: the chart itself shows there is nothing further. */}
+            <Tooltip content="Earlier — or ← with the chart focused">
+              <button
+                type="button"
+                className="tlx-tool tlx-tool-icon"
+                aria-label={`Earlier — back ${zoom === 'weeks' ? 'a week' : 'a few weeks'}`}
+                disabled={!moreLeft}
+                onClick={() => {
+                  panBy(-panStep * 2);
+                }}
+              >
+                <Icon name="chevron-left" size="small" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Scroll to today">
+              <button
+                type="button"
+                className="tlx-tool"
+                onClick={() => {
+                  scrollToDay(todayIndex, 1 / 3);
+                }}
+              >
+                Today
+              </button>
+            </Tooltip>
+            <Tooltip content="Later — or → with the chart focused">
+              <button
+                type="button"
+                className="tlx-tool tlx-tool-icon"
+                aria-label={`Later — on ${zoom === 'weeks' ? 'a week' : 'a few weeks'}`}
+                disabled={!moreRight}
+                onClick={() => {
+                  panBy(panStep * 2);
+                }}
+              >
+                <Icon name="chevron" size="small" />
+              </button>
+            </Tooltip>
           </div>
           <span className="tlx-zoom-label" id="tlx-zoom-label">
             Zoom
@@ -807,9 +809,9 @@ function SprintGroup({
           </button>
           <SprintKey index={index + 1} className="tlx-sprint-key" />
           <span className="tlx-sprint-text">
-            <span className="tlx-sprint-name" title={sprint.goal ?? sprint.name}>
-              {sprint.name}
-            </span>
+            <Tooltip content={sprint.goal ?? sprint.name} lazy>
+              <span className="tlx-sprint-name">{sprint.name}</span>
+            </Tooltip>
             <span className="tlx-sprint-meta">
               {formatRange(sprint.starts_on, sprint.ends_on)} ·{' '}
               {countdownText(countdownFor(sprint, now))}
@@ -820,29 +822,33 @@ function SprintGroup({
 
         <div className="tlx-track">
           {/* A pointer shortcut for the chevron — not a second tab stop. */}
-          <div
-            className={`tlx-bar tlx-bar-${phase}`}
-            style={{ left: span.start * dayWidth, width: span.days * dayWidth }}
-            title={`${key} ${sprint.name} · ${formatRange(sprint.starts_on, sprint.ends_on)}${
+          <Tooltip
+            content={`${key} ${sprint.name} · ${formatRange(sprint.starts_on, sprint.ends_on)}${
               progress === undefined ? '' : ` · ${progress} done`
             }${blockedLabel === '' ? '' : ` · ${blockedLabel}`}${
-              sprint.goal === null ? '' : `\n${sprint.goal}`
+              sprint.goal === null ? '' : ` — ${sprint.goal}`
             }`}
-            onClick={onToggle}
+            lazy
           >
-            {done !== undefined && (
-              <span
-                className="tlx-bar-fill"
-                style={{ width: `${String(done.percent)}%` }}
-                aria-hidden="true"
-              />
-            )}
-            <span className="tlx-bar-name">
-              <b>{key}</b> {sprint.name}
-            </span>
-            {roomForCount && count}
-            {roomForBlocked && blockedNote}
-          </div>
+            <div
+              className={`tlx-bar tlx-bar-${phase}`}
+              style={{ left: span.start * dayWidth, width: span.days * dayWidth }}
+              onClick={onToggle}
+            >
+              {done !== undefined && (
+                <span
+                  className="tlx-bar-fill"
+                  style={{ width: `${String(done.percent)}%` }}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="tlx-bar-name">
+                <b>{key}</b> {sprint.name}
+              </span>
+              {roomForCount && count}
+              {roomForBlocked && blockedNote}
+            </div>
+          </Tooltip>
           {aside.length > 0 && (
             <span
               className="tlx-bar-aside"
@@ -931,45 +937,50 @@ function TaskRow({
           }}
         >
           <span className="tlx-task-key">{task.key}</span>
-          <span className="tlx-task-title" title={task.title}>
-            {task.title}
-          </span>
+          <Tooltip content={task.title} lazy>
+            <span className="tlx-task-title">{task.title}</span>
+          </Tooltip>
         </button>
         {/*
           The label gives way before the title does: at a narrow width it
           shrinks to its icon, and the tooltip keeps the sentence.
         */}
         {blocked === true && (
-          <span className="tlx-task-blocked" title="Blocked by an open task in this sprint">
-            <LockIcon />
-            <span className="tlx-task-blocked-text">Blocked</span>
-          </span>
+          <Tooltip content="Blocked by an open task in this sprint" lazy>
+            <span className="tlx-task-blocked">
+              <LockIcon />
+              <span className="tlx-task-blocked-text">Blocked</span>
+            </span>
+          </Tooltip>
         )}
         {blocked === undefined && (
-          <span
-            className="tlx-task-blocked tlx-task-unknown"
-            title="Blocked by a task in another sprint or in no sprint, whose status is not loaded here"
+          <Tooltip
+            content="Blocked by a task in another sprint or in no sprint, whose status is not loaded here"
+            lazy
           >
-            <LockIcon />
-            <span className="tlx-task-blocked-text">Blocked?</span>
-          </span>
+            <span className="tlx-task-blocked tlx-task-unknown">
+              <LockIcon />
+              <span className="tlx-task-blocked-text">Blocked?</span>
+            </span>
+          </Tooltip>
         )}
         {/* The status's name — the column's word — coloured by its kind (LAI-739). */}
         <span className={`timeline-task-status timeline-task-${task.status}`}>
           {statusNameOf(task, statusesById)}
         </span>
         {ink === undefined ? (
-          <span className="tlx-avatar tlx-avatar-none" title="Unassigned">
-            –
-          </span>
+          <Tooltip content="Unassigned" lazy>
+            <span className="tlx-avatar tlx-avatar-none">–</span>
+          </Tooltip>
         ) : (
-          <span
-            className="tlx-avatar"
-            style={{ background: ink.background, color: ink.foreground }}
-            title={who?.name ?? 'Unknown member'}
-          >
-            {who === undefined ? '?' : initials(who.name)}
-          </span>
+          <Tooltip content={who?.name ?? 'Unknown member'} lazy>
+            <span
+              className="tlx-avatar"
+              style={{ background: ink.background, color: ink.foreground }}
+            >
+              {who === undefined ? '?' : initials(who.name)}
+            </span>
+          </Tooltip>
         )}
       </div>
       <div className="tlx-track" />

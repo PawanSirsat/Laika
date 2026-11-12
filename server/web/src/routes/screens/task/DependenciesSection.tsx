@@ -13,6 +13,7 @@ import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 import './task-panel.css';
 
 export interface DependenciesSectionProps {
@@ -146,17 +147,21 @@ export function DependenciesSection({
               ]}
               onChange={setPicked}
             />
-            <button
-              type="button"
-              className="dep-confirm"
-              disabled={busy || picked === ''}
-              onClick={() => {
-                void act(() => addDependency(task.id, picked));
-              }}
-            >
-              {busy && <Spinner size="sm" />}
-              Link
-            </button>
+            <DisabledReason reason={!busy && picked === '' ? 'Choose a task first' : undefined}>
+              <button
+                type="button"
+                className="dep-confirm"
+                disabled={busy}
+                aria-disabled={picked === '' ? true : undefined}
+                onClick={() => {
+                  if (picked === '') return;
+                  void act(() => addDependency(task.id, picked));
+                }}
+              >
+                {busy && <Spinner size="sm" />}
+                Link
+              </button>
+            </DisabledReason>
             <button
               type="button"
               className="dep-cancel"

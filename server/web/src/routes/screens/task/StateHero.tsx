@@ -356,7 +356,7 @@ export function StateHero({
                   revealFinishSummary(latest.number);
                 }}
               >
-                Full summary in activity ↓
+                Full summary in activity <Icon name="arrow-down" size="tiny" />
               </a>
             </p>
             {facts !== undefined && (

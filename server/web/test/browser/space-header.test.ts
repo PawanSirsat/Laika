@@ -15,6 +15,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, open, until } from './harness.ts';
 import { PROJECT, SPACE_TABS, TASKS, spaceStub } from './space-header-fixture.ts';
+import { tipText } from './tooltip-probe.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -348,7 +349,6 @@ void describe('the board says which sprint it shows', () => {
           sizeRadius: r(size),
           sprintHeight: sprint.getBoundingClientRect().height,
           mark: sprint.querySelector('svg') !== null,
-          title: sprint.getAttribute('title') ?? '',
         };
       });
       assert.ok(m !== null, 'no card carries both a sprint and a size — this proves nothing');
@@ -358,7 +358,12 @@ void describe('the board says which sprint it shows', () => {
       );
       assert.ok(m.sizeRadius < m.sprintRadius, 'the size chip is as round as the sprint badge');
       assert.equal(m.mark, true, 'the sprint badge has no mark of its own');
-      assert.match(m.title, /^Sprint S\d/, 'the badge does not say it is a sprint');
+      // Its words are the shared tooltip's now (LAI-1213), not a bare title.
+      assert.match(
+        await tipText(h.page.locator('article.card .card-sprint').first()),
+        /^Sprint S\d/,
+        'the badge does not say it is a sprint',
+      );
     } finally {
       await h.close();
     }

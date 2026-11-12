@@ -355,7 +355,7 @@ void describe('the state panel complete (LAI-1122)', () => {
     const h = await openTask('Launcher runs visible');
     try {
       const link = h.page.locator('[data-hero="review"]').getByRole('link', {
-        name: 'Full summary in activity ↓',
+        name: 'Full summary in activity',
       });
       await link.waitFor({ timeout: 10_000 });
       assert.equal(await link.getAttribute('href'), '#activity');

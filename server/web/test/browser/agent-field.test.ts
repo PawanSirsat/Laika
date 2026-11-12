@@ -31,6 +31,7 @@ import {
 import { offered, pick } from './dropdown.ts';
 import { AGENT_SAVE_DEADLINE_MS } from '../../src/api/agent-writes.ts';
 import { NEVER_REPORTED, reported } from '../helpers/launcher.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -903,7 +904,7 @@ void describe('the List’s Agent column and the agent filter', () => {
         assert.equal(await sideways(), 0, `${theme}: the page scrolls sideways at 390`);
       }
       // Still named: on hover, and read aloud with its product and device.
-      assert.match((await cell.getAttribute('title')) ?? '', /^Claude Code · laptop-1 — /);
+      assert.match(await tipText(cell), /^Claude Code · laptop-1 — /);
       assert.equal(
         ((await cell.textContent()) ?? '').replace(/\s+/g, ' ').trim(),
         'Claude Code · laptop-1',
@@ -2116,7 +2117,7 @@ void describe('two agents that share a harness and a device', () => {
       assert.equal(folded(await cell('t2').textContent()), FIRST);
       assert.equal(folded(await cell('t1').textContent()), SECOND);
       assert.match(
-        (await cell('t1').getAttribute('title')) ?? '',
+        await tipText(cell('t1')),
         /^Claude Code · laptop-1 \(Second laptop agent\) — /,
       );
       // On screen, the narrow cell shows what differs, not two `laptop…`.

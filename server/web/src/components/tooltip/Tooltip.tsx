@@ -124,7 +124,13 @@ export function Tooltip({
 }: TooltipProps) {
   const id = useId();
   const tipId = `tip-${id.replace(/[^a-zA-Z0-9-]/g, '')}`;
-  const [open, setOpen] = useState(false);
+  const [wanted, setOpen] = useState(false);
+  /**
+   * Empty words show nothing (LAI-1213): a control whose tooltip comes and
+   * goes with its state — a reason only while it is held back — keeps one
+   * stable element instead of being remounted, and its focus, when it changes.
+   */
+  const open = wanted && content !== '';
   /** Whether it has been reached yet — always, unless `lazy`. */
   const [armed, setArmed] = useState(!lazy);
   const [placed, setPlaced] = useState<'top' | 'bottom'>(side);

@@ -8,6 +8,7 @@ import { DependenciesSection } from './DependenciesSection.tsx';
 import { SubtasksSection } from './SubtasksSection.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 import './task-panel.css';
 
 export interface LinksCardProps {
@@ -244,16 +245,20 @@ function ParentRow({ task, parent, candidates, mayEdit, onOpen, onChange }: Pare
             ]}
             onChange={setPicked}
           />
-          <button
-            type="button"
-            className="dep-confirm"
-            disabled={busy || picked === ''}
-            onClick={() => {
-              void run(picked);
-            }}
-          >
-            Set
-          </button>
+          <DisabledReason reason={!busy && picked === '' ? 'Choose a task first' : undefined}>
+            <button
+              type="button"
+              className="dep-confirm"
+              disabled={busy}
+              aria-disabled={picked === '' ? true : undefined}
+              onClick={() => {
+                if (picked === '') return;
+                void run(picked);
+              }}
+            >
+              Set
+            </button>
+          </DisabledReason>
           <button
             type="button"
             className="dep-cancel"
@@ -335,16 +340,22 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
               setDraft(event.target.value);
             }}
           />
-          <button
-            type="button"
-            className="dep-confirm"
-            disabled={busy || dateInputToMs(draft) === null}
-            onClick={() => {
-              void run(dateInputToMs(draft));
-            }}
+          <DisabledReason
+            reason={!busy && dateInputToMs(draft) === null ? 'Pick a date first' : undefined}
           >
-            Save
-          </button>
+            <button
+              type="button"
+              className="dep-confirm"
+              disabled={busy}
+              aria-disabled={dateInputToMs(draft) === null ? true : undefined}
+              onClick={() => {
+                if (dateInputToMs(draft) === null) return;
+                void run(dateInputToMs(draft));
+              }}
+            >
+              Save
+            </button>
+          </DisabledReason>
           <button
             type="button"
             className="dep-cancel"

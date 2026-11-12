@@ -22,6 +22,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -426,7 +427,7 @@ void describe('the task feed (D-129, LAI-1122)', () => {
         'Ada Lovelace via Claude Code · laptop-1 · claude-opus-5-5',
       );
       assert.equal(squash(await head.locator('.who-chip').innerText()), 'Claude Code · laptop-1');
-      assert.match((await head.locator('time').getAttribute('title')) ?? '', /\d{4}, \d/);
+      assert.match(await tipText(head.locator('time')), /\d{4}, \d/);
     } finally {
       await h.close();
     }
@@ -528,7 +529,7 @@ void describe('the task feed (D-129, LAI-1122)', () => {
       assert.match(await own.innerText(), /Checking the Terminal viewer/);
       const edited = own.locator('.cmt-edited');
       assert.equal((await edited.innerText()).trim(), 'Edited');
-      assert.match((await edited.getAttribute('title')) ?? '', /^Edited \w{3} \d/);
+      assert.match(await tipText(edited), /^Edited \w{3} \d/);
       assert.equal(
         await h.page.locator('#panel-all [data-comment-kind="reason"] .cmt-sent-back').count(),
         1,

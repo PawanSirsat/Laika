@@ -25,6 +25,7 @@ import { PersonLink } from '../../../components/PersonLink.tsx';
 import { createdViaLine, priorityWords, pullRequestLine } from './rail-derive.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 import './task-panel.css';
 
 export interface TaskMetaProps {
@@ -741,16 +742,22 @@ function OutsideIdRow({ value, mayEdit, onChange }: OutsideIdRowProps) {
               setDraft(event.target.value);
             }}
           />
-          <button
-            type="button"
-            className="dep-confirm"
-            disabled={busy || !isOutsideId(draft)}
-            onClick={() => {
-              void run(draft.trim());
-            }}
+          <DisabledReason
+            reason={!busy && !isOutsideId(draft) ? 'An outside id looks like LAI-123' : undefined}
           >
-            Save
-          </button>
+            <button
+              type="button"
+              className="dep-confirm"
+              disabled={busy}
+              aria-disabled={!isOutsideId(draft) ? true : undefined}
+              onClick={() => {
+                if (!isOutsideId(draft)) return;
+                void run(draft.trim());
+              }}
+            >
+              Save
+            </button>
+          </DisabledReason>
           <button
             type="button"
             className="dep-cancel"

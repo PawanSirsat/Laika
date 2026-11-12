@@ -167,6 +167,7 @@ export function SpaceToolbar({
               ref={searchRef}
               type="search"
               placeholder="Search"
+              aria-keyshortcuts="/"
               value={query}
               onChange={(event) => {
                 onQuery(event.target.value);

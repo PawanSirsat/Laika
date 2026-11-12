@@ -4,6 +4,8 @@ import type { Swimlane } from './group-lanes.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './board.css';
 
 export interface KanbanViewProps extends Omit<LaneRowProps, 'showColumnConfig' | 'theme'> {
@@ -79,22 +81,24 @@ export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: Kanb
         return (
           <section key={lane.key} className="swim" aria-labelledby={`swim-${lane.key || 'none'}`}>
             <header className="swim-head">
-              <button
-                type="button"
-                className="swim-toggle"
-                aria-expanded={!shut}
-                onClick={() => {
-                  toggle(lane.key);
-                }}
-              >
-                <span
-                  className={shut ? 'swim-chevron' : 'swim-chevron swim-chevron-open'}
-                  aria-hidden="true"
+              <Tooltip content={`${shut ? 'Expand' : 'Collapse'} ${lane.name}`}>
+                <button
+                  type="button"
+                  className="swim-toggle"
+                  aria-label={`${shut ? 'Expand' : 'Collapse'} ${lane.name}`}
+                  aria-expanded={!shut}
+                  onClick={() => {
+                    toggle(lane.key);
+                  }}
                 >
-                  ›
-                </span>
-                <span className="visually-hidden">{shut ? 'Expand' : 'Collapse'} </span>
-              </button>
+                  <span
+                    className={shut ? 'swim-chevron' : 'swim-chevron swim-chevron-open'}
+                    aria-hidden="true"
+                  >
+                    <Icon name="chevron" size="tiny" />
+                  </span>
+                </button>
+              </Tooltip>
 
               {lane.avatarId !== undefined && (
                 <span
@@ -113,12 +117,12 @@ export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: Kanb
               </h3>
               {/* Every card in the row; the rows are ranked by the open ones,
                   which the hover says (LAI-819). */}
-              <span
-                className="swim-count"
-                title={`${String(lane.open)} open of ${String(lane.count)} — rows are ordered by open work`}
+              <Tooltip
+                content={`${String(lane.open)} open of ${String(lane.count)} — rows are ordered by open work`}
+                lazy
               >
-                {lane.count}
-              </span>
+                <span className="swim-count">{lane.count}</span>
+              </Tooltip>
             </header>
 
             {!shut && (
