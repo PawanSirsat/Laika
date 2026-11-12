@@ -186,7 +186,12 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         (await past.getAttribute('class'))?.includes('card-due-overdue'),
         'the overdue chip is not marked overdue',
       );
-      assert.match(await past.innerText(), /⚠/, 'the overdue chip carries no mark');
+      // A drawn warning triangle since LAI-1206, named aloud — not a ⚠ glyph.
+      assert.equal(
+        await past.locator('svg[data-mark="alert"]').count(),
+        1,
+        'the overdue chip carries no mark',
+      );
       assert.match(await past.innerText(), /\d{1,2} [A-Z][a-z]{2}/, 'the overdue chip has no date');
 
       const today = card(h, 'LAI-4').locator('.card-due');

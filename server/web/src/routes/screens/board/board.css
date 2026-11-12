@@ -404,11 +404,6 @@
   gap: var(--space-1);
 }
 
-.marker-ready {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border: 1px solid var(--chip-green-border);
-}
 .marker-blocked {
   color: var(--overdue);
   background: var(--blocked-bg);
@@ -422,22 +417,10 @@
 /* The card's stale pill that stood here was removed with it (LAI-701, D-069):
    the server still flags staleness and the Activity tab still lists it. */
 
-/* A dependency outside the loaded set — stated, not guessed. */
-.marker-unknown {
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border: 1px solid var(--chip-orange-border);
-}
+/* The card's ready, sent-back and deps-unknown markers are `Chip`s since
+   LAI-1206: their box and tones live in `components/chip/chip.css`. */
 
-/* Sent back from review (D-082): the review gate's own orange, as the
-   profile's "sent back" verdict wears it. */
-.marker-sent-back {
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border: 1px solid var(--chip-orange-border);
-}
-
-.card-avatar {
+.card-avatar:not(.avatar) {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: var(--radius-pill);
@@ -691,6 +674,10 @@
    * is worth more than the convenience of setting it locally.
    */
   text-wrap: pretty;
+  /* A title with no break opportunity — a branch name, a file path, a
+     120-character identifier — breaks where it must instead of running past
+     the clamp's edge (LAI-1206, found with worst-case data). */
+  overflow-wrap: anywhere;
   /* Two lines, then an ellipsis — the design clamps, and an unclamped title
      pushes the footer around as cards differ in length. */
   display: -webkit-box;
@@ -712,26 +699,8 @@
   margin-top: 12px;
 }
 
-/**
- * One chip style, for every tag (LAI-066, D-027).
- *
- * The per-tone rules that used to live here — `--chip-pink-bg` for `agent`, `--accent-bg`
- * for `presence` and so on — went with the demo module that invented them.
- * **D-027 refused a per-tag palette on purpose**: a colour has to be chosen,
- * stored, kept distinguishable in both themes, and explained to whoever adds
- * the tenth tag. Tags are now real (LAI-079) and are plain strings, with no
- * colour to render even if we wanted one.
- */
-.card-tag {
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  line-height: 1;
-  padding: 0.1875rem 0.3125rem;
-  border-radius: var(--radius-chip);
-  background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-}
+/* Tags are `Chip`s since LAI-1206 (`components/chip/chip.css`), one hue per
+   work-type from `tag-colors.ts` (LAI-606). */
 
 /* The exception, stated before the footer rather than as one marker among many. */
 /**
@@ -973,22 +942,8 @@
   animation: rail-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
-/* The sprint tag on a card — real, from `task.sprint_id`. Violet when the task
-   is in the active sprint, neutral otherwise, as the design has it. */
-.card-sprint {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  padding: 0.0625rem 0.25rem;
-  border-radius: var(--radius-chip);
-  background: var(--bg-column);
-  color: var(--text-muted);
-}
-
-.card-sprint-on {
-  background: var(--chip-pink-bg);
-  color: var(--chip-pink);
-}
+/* The sprint on a card — real, from `task.sprint_id` — is the `Chip` sprint
+   pill since LAI-1206: accent when active, a dashed outline otherwise. */
 
 /* ----------------------------------------------------- card footer (LAI-263) */
 
@@ -1535,135 +1490,11 @@
 }
 
 /*
- * Chip anatomy — one block, one answer (LAI-606 consolidation).
- *
- * This replaces five overlapping blocks appended across the session, whose
- * net cascade is reproduced here exactly. The framing (padding, border
- * colour, fill) reads the shared `--chip-*` levers, currently "nothing";
- * the per-hue colour classes are kept even though `.t-label`'s
- * `color: inherit` currently beats them on bundle order — the tinted-chip
- * phase re-scopes them rather than this one changing anything visible.
- *
- * **Order matters here**: the base `.marker`/`.card-sprint` framing must stay
- * *after* the early `.marker-*` state rules (~line 380), because it wins some
- * of their properties on order alone. Folding it upward flips those winners.
+ * Chip anatomy (LAI-606 consolidation) moved to `components/chip/chip.css`
+ * with LAI-1206: the tag, sprint and marker chips on a card are one `Chip`
+ * primitive, and the five overlapping blocks that stood here — whose winners
+ * depended on source order — went with them.
  */
-.card-tag,
-.card-sprint,
-.marker {
-  padding: var(--chip-padding);
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--chip-border);
-  background: var(--chip-bg);
-  border-radius: var(--radius-chip);
-  text-transform: none;
-}
-
-.card-tag {
-  color: var(--chip-neutral);
-}
-
-.card-sprint,
-.card-sprint-on {
-  color: var(--text-muted);
-  border: 1px solid var(--chip-border);
-  background: var(--chip-bg);
-}
-
-.card-tag-orange {
-  color: var(--chip-orange);
-  border-color: var(--chip-orange-border);
-}
-.card-tag-green {
-  color: var(--chip-green);
-  border-color: var(--chip-green-border);
-}
-.card-tag-blue {
-  color: var(--chip-blue);
-  border-color: var(--chip-blue-border);
-}
-.card-tag-pink {
-  color: var(--chip-pink);
-  border-color: var(--chip-pink-border);
-}
-.card-tag-neutral {
-  color: var(--chip-neutral);
-  border-color: var(--border-default);
-}
-
-/* Unrendered today; kept because the cascade above was built around it. */
-.marker-blocked {
-  color: var(--overdue);
-  border: 1px solid var(--overdue-border);
-  background: var(--blocked-bg);
-}
-
-/*
- * One outlined chip colour per work-type (LAI-606).
- *
- * Text and border only — the fill stays transparent, so a card with three tags
- * gains three thin outlines rather than three blocks of colour.
- */
-.card-tag-orange {
-  color: var(--chip-orange);
-  border-color: var(--chip-orange-border);
-}
-.card-tag-green {
-  color: var(--chip-green);
-  border-color: var(--chip-green-border);
-}
-.card-tag-blue {
-  color: var(--chip-blue);
-  border-color: var(--chip-blue-border);
-}
-.card-tag-pink {
-  color: var(--chip-pink);
-  border-color: var(--chip-pink-border);
-}
-.card-tag-neutral {
-  color: var(--chip-neutral);
-  border-color: var(--border-default);
-}
-
-/*
- * Chip geometry from the shared tokens (LAI-606).
- *
- * Padding and radius were set per chip, so "what a chip looks like" had three
- * answers that had drifted apart. One rule, one answer — the colour still comes
- * from the chip's own `--chip-*`, which is the part that legitimately varies.
- */
-.card-tag,
-.card-sprint,
-.marker {
-  padding: var(--chip-padding);
-  border-radius: var(--radius-chip);
-  border-width: 1px;
-  border-style: solid;
-  background: transparent;
-}
-
-/*
- * Cards, made plain (LAI-606).
- *
- * Every chip reads the shared framing tokens, which are currently "nothing".
- * Colour still comes from the chip's own `--chip-*` — that is the part which
- * legitimately varies, and the only part left doing any work.
- */
-.card-tag,
-.card-sprint,
-.marker {
-  padding: var(--chip-padding);
-  border-color: var(--chip-border);
-  background: var(--chip-bg);
-  border-radius: var(--radius-chip);
-}
-
-.marker-ready {
-  color: var(--chip-green);
-  border-color: var(--chip-border);
-  background: var(--chip-bg);
-}
 
 /*
  * Blocked stays framed — it is the one warning on a card — but its text is one
@@ -1748,66 +1579,6 @@
  * footer button, tag hues). Two classes win on specificity instead.
  * ===================================================================== */
 
-/* Tags and the ready marker: tinted — text, 12% fill, 30% border. */
-.card .card-tag {
-  color: var(--chip-neutral);
-  background: var(--chip-neutral-bg);
-  border-color: var(--chip-neutral-border);
-}
-
-.card .card-tag-orange {
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border-color: var(--chip-orange-border);
-}
-.card .card-tag-green {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
-}
-.card .card-tag-blue {
-  color: var(--chip-blue);
-  background: var(--chip-blue-bg);
-  border-color: var(--chip-blue-border);
-}
-.card .card-tag-pink {
-  color: var(--chip-pink);
-  background: var(--chip-pink-bg);
-  border-color: var(--chip-pink-border);
-}
-.card .card-tag-purple {
-  color: var(--chip-purple);
-  background: var(--chip-purple-bg);
-  border-color: var(--chip-purple-border);
-}
-
-.card .marker-ready {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
-}
-
-/* Chip box: the prototype's — 3px 5px on the 8.5px label line, r4. */
-.card .card-tag,
-.card .marker {
-  padding: var(--chip-padding);
-  border-radius: var(--radius-chip);
-  display: inline-flex;
-  align-items: center;
-}
-
-/* The sprint chip: mono on the faint accent tint, not a bare outline. */
-.card .card-sprint,
-.card .card-sprint-on {
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-chip);
-  padding: 3px 4px;
-  display: inline-flex;
-  align-items: center;
-}
-
 /* Blocked: fully rounded, the 2px bar curving inside it (LAI-605). */
 .card .card-blocked {
   color: var(--overdue);
@@ -1846,11 +1617,10 @@
   align-self: center;
 }
 
-/* The 26px avatar, and the accent bot badge as a 15px square. */
+/* The avatar is the shared `Avatar` (LAI-1206) at the prototype's 26px;
+   the accent bot badge is a 15px square on its corner. */
 .card .card-avatar {
-  width: 26px;
-  height: 26px;
-  border: 0;
+  --avatar-size: 26px;
 }
 
 .card .card-bot {
@@ -1895,10 +1665,9 @@
   margin-top: 8px;
 }
 
-.kanban-dense .card .card-tag,
-.kanban-dense .card .marker {
-  min-height: 20px;
-  padding: 2px 8px;
+.kanban-dense .card .chip {
+  height: 1.125rem;
+  padding-inline: 0.3125rem;
 }
 
 .kanban-dense .card .card-foot {
@@ -1906,8 +1675,7 @@
 }
 
 .kanban-dense .card .card-avatar {
-  width: 28px;
-  height: 28px;
+  --avatar-size: 1.25rem;
 }
 
 /*
@@ -1931,8 +1699,7 @@
 /* --------------------------------------------- subtasks and the due date (D-066) */
 
 .card-subtasks,
-.card-parent,
-.card-due {
+.card-parent {
   display: flex;
   align-items: center;
   gap: 0.1875rem;
@@ -1944,30 +1711,118 @@
   color: var(--text-muted);
 }
 
-.card-due-overdue {
-  color: var(--overdue);
-  font-weight: var(--weight-bold);
+/*
+ * The due chip is a `Chip` status since LAI-1206: red with a warning triangle
+ * once it is past, amber with a clock on the day (`components/chip/chip.css`).
+ * Its tone is set on the chip itself, so the `.t-meta` cascade the old
+ * scoped rules fought (LAI-701) no longer reaches it.
+ */
+
+/* =====================================================================
+ * Card states and the attribution line (LAI-1206).
+ *
+ * Every state is a different drawing, not only a different colour: hover
+ * strengthens the edge, keyboard focus adds a ring outside the card, the card
+ * open in the drawer wears a double accent edge, and a card in a drag goes
+ * dashed and faint where it was picked up from.
+ * ===================================================================== */
+
+/* On the motion tokens (LAI-1208): motion.css zeroes them under reduced motion. */
+.card {
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
 }
 
-/* Due today (LAI-701): amber, the board's "needs attention, not yet late". */
-.card-due-today {
-  color: var(--chip-orange);
-  font-weight: var(--weight-bold);
+/* Keyboard focus: the ring sits outside, so it never covers the content. */
+.card:has(.card-open:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The card whose task the drawer shows. */
+.card.card-selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-card);
+}
+
+/* Where a dragged card came from: a dashed ghost, until the drop lands. */
+.card.card-dragging {
+  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--accent-border);
+  box-shadow: none;
+}
+
+/* The live state line: one line, the label never cut, the detail ellipsised —
+   it wrapped to three lines on a 218px lane (visual audit, problem 7). */
+.card .exec-state {
+  align-items: center;
+  min-width: 0;
+  margin-top: 8px;
+  white-space: nowrap;
+}
+
+.card .exec-state-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /*
- * **Scoped under `.card`, or neither colour shows** (LAI-701). The chip also
- * carries `.t-meta`, and `type.css` loads after this file, so a single-class
- * rule loses on source order and both states paint `--text-muted` — measured
- * by the card-footer test, which found overdue and today painting alike. The
- * same cascade `.card .card-blocked` already answers above.
+ * Whose work, and which agent: the agent's chip, then its relation to the
+ * person — `for Ada`, `requested for Ada`. The agent's label holds its room
+ * up to the chip's cap; the relation is what gives way, and the whole
+ * sentence is in the line's screen-reader text either way.
  */
-.card .card-due-overdue {
-  color: var(--overdue);
+.card .card-attribution {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  margin: 8px 0 0;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
 }
 
-.card .card-due-today {
-  color: var(--chip-orange);
+.card .card-attribution .card-agent {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(10.5rem, 60%);
+}
+
+.card-attribution-relation {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Exempt the avatar from the give-way rule above: `.card-foot > .card-above`
+   sets `min-width: 0` and `overflow: hidden` so markers can yield, and the
+   avatar's corner badge sits 4px outside its wrapper. Defensive (LAI-1206):
+   a clipped badge was seen once in a transient layout and could not be
+   reproduced after fonts settle, so no test fails without this rule. */
+.card .card-foot > .card-who {
+  flex: none;
+  min-width: max-content;
+  overflow: visible;
+}
+
+/* Chips in the meta row line up on the key's baseline, not the avatar's foot. */
+.card .card-foot > .chip {
+  align-self: center;
+}
+
+/* A tag truncates only when the card itself cannot fit it, not at the
+   chip's default cap; the whole word stays readable to assistive tech and
+   in the task view either way. */
+.card .card-tag {
+  --chip-max: 100%;
 }
 
 /*
@@ -1987,11 +1842,4 @@
   border-radius: var(--radius-pill);
   font-family: var(--font-ui);
   font-weight: var(--weight-bold);
-}
-
-.card-sprint-mark {
-  width: 0.625rem;
-  height: 0.625rem;
-  flex: none;
-  stroke: currentColor;
 }

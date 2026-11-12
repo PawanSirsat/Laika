@@ -1,5 +1,7 @@
 import { BrandMark } from '../brand/BrandMark.tsx';
 import { Wordmark } from '../brand/Wordmark.tsx';
+import { Chip } from '../chip/Chip.tsx';
+import { COUNT_CAP, formatCount } from '../chip/chip-model.ts';
 import {
   GROUP_TITLES,
   NAV_GROUPS,
@@ -75,11 +77,6 @@ function withTab(href: string, tab: string | undefined): string {
   const params = new URLSearchParams(at === -1 ? '' : href.slice(at + 1));
   params.set('tab', tab);
   return `${at === -1 ? href : href.slice(0, at)}?${params.toString()}`;
-}
-
-/** A count as the rail's badge has room for it. */
-function badge(count: number): string {
-  return count > 99 ? '99+' : String(count);
 }
 
 /**
@@ -187,14 +184,16 @@ export function Sidebar({
 
                   {/* Only where a count is real and non-zero: a fixture
                       badge or a zero badge is noise. */}
+                  {/* The shared count badge (LAI-1206): `99+` past the cap,
+                      the exact number in words for a screen reader. */}
                   {counted && (
-                    <span className="sidebar-count">
-                      {badge(count)}
+                    <Chip variant="count" className="sidebar-count">
+                      {formatCount(count)}
                       <span className="visually-hidden">
-                        {' '}
+                        {count > COUNT_CAP ? ` — ${String(count)}` : ''}{' '}
                         {target === undefined ? 'waiting' : count === 1 ? target.one : target.many}
                       </span>
-                    </span>
+                    </Chip>
                   )}
                 </a>
               </li>
