@@ -124,6 +124,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No such space',
     body: 'Space settings open from a space: its ⋯ menu, or the gear on its card under Spaces.',
   },
+  '/task/:key': {
+    headline: 'No such task',
+    body: 'A task page opens by its key, as in /task/LAI-42, or from Expand in a task drawer.',
+  },
   '/login': {
     headline: 'Sign-in did not load',
     body: 'Reload the page. If it keeps happening the instance may be restarting.',
