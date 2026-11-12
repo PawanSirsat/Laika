@@ -23,7 +23,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
-import { tooltipText, tooltipTexts } from './tooltip-text.ts';
+import { tipText, tipTexts } from './tooltip-probe.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -650,7 +650,7 @@ void describe('an owner', () => {
       );
       assert.deepEqual(values, ['9M 4% · $108.50', '3M 1% · $36.20', '243M 95% · tied to no task']);
       // The rows add up to the Tokens tile, exactly: each row's tooltip is its count.
-      const exact = (await tooltipTexts(card.locator('.usage-row-value'))).map((t) =>
+      const exact = (await tipTexts(card.locator('.usage-row-value'))).map((t) =>
         Number(t.split(' tokens')[0]?.replace(/,/g, '')),
       );
       assert.deepEqual(exact, [9_000_000, 3_000_000, 242_973_258]);
@@ -1115,7 +1115,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       assert.match(await card.locator('.usage-alert').nth(1).innerText(), /2\.1M \/ 2\.5M/);
       // The whole sentence is the line's tooltip (LAI-1214; the row's title= until then).
       assert.equal(
-        await tooltipText(card.locator('.usage-alert-line').nth(1)),
+        await tipText(card.locator('.usage-alert-line').nth(1)),
         'LAI-770 reached 80% of its budget — 2.1M of 2.5M.',
       );
       assert.equal(

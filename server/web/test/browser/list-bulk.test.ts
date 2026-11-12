@@ -265,7 +265,9 @@ void describe('selecting rows in the List', () => {
       const menu = h.page.locator('.list-menu');
       await menu.waitFor();
       // The task's own status is offered first, ticked, and never sent.
-      assert.equal(await text(menu.locator('.list-menu-current')), '✓ Backlog');
+      const current = menu.locator('.list-menu-current');
+      assert.equal(await text(current), 'Backlog');
+      assert.equal(await current.locator('.list-menu-tick svg').getAttribute('data-icon'), 'check');
       assert.ok(!h.page.url().includes('task='), 'opening the menu opened the drawer');
 
       await menu.locator('.list-menu-item', { hasText: 'To do' }).click();

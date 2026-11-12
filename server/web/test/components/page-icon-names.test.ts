@@ -27,6 +27,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { code } from '../helpers/code.ts';
+import { elements, hasWords as sharedHasWords, insideTooltip } from '../helpers/jsx-buttons.ts';
 
 const SRC = fileURLToPath(new URL('../../src/', import.meta.url));
 
@@ -104,64 +105,21 @@ function walk(dir: string): string[] {
   });
 }
 
-/** Each `<tag …>…</tag>`: where it starts, its opening tag and what it holds. Same tags do not nest here. */
-function elements(
-  src: string,
-  tag: string,
-): { readonly at: number; readonly open: string; readonly inner: string }[] {
-  const out: { at: number; open: string; inner: string }[] = [];
-  const start = new RegExp(`<${tag}\\b`, 'g');
-  let m: RegExpExecArray | null;
-  while ((m = start.exec(src)) !== null) {
-    let depth = 0;
-    let quote: string | undefined;
-    let i = m.index + m[0].length;
-    for (; i < src.length; i++) {
-      const c = src[i];
-      if (quote !== undefined) {
-        if (c === quote) quote = undefined;
-        continue;
-      }
-      if (depth > 0 && (c === "'" || c === '"' || c === '`')) quote = c;
-      else if (depth === 0 && c === '"') quote = c;
-      else if (c === '{') depth += 1;
-      else if (c === '}') depth -= 1;
-      else if (c === '>' && depth === 0) break;
-    }
-    const open = src.slice(m.index, i + 1);
-    if (open.endsWith('/>')) {
-      out.push({ at: m.index, open, inner: '' });
-      continue;
-    }
-    const end = src.indexOf(`</${tag}>`, i);
-    out.push({ at: m.index, open, inner: end === -1 ? '' : src.slice(i + 1, end) });
-  }
-  return out;
-}
-
 const HIDDEN_WORDS = /<span className="visually-hidden"[^>]*>[\s\S]*?<\/span>/g;
 
-/** Words a sighted reader sees: tags and screen-reader-only text dropped. */
+/**
+ * Words a sighted reader sees: the shared reader's `hasWords`, with
+ * screen-reader-only text taken out first — an icon with a hidden label is
+ * still icon-only on screen, and still owes the sighted reader a tooltip.
+ */
 function hasWords(inner: string): boolean {
-  let text = inner.replace(HIDDEN_WORDS, ' ').replace(/<[^>]*>/g, ' ');
-  for (let guard = 0; guard < 10 && /\{[^{}]*\}/.test(text); guard++) {
-    text = text.replace(/\{([^{}]*)\}/g, (_, body: string) =>
-      body.trim() === '' || /&&\s*$/.test(body.trim()) ? ' ' : ' WORDS ',
-    );
-  }
-  return /[\p{L}\p{N}]/u.test(text);
+  return sharedHasWords(inner.replace(HIDDEN_WORDS, ' '));
 }
 
 const named = (open: string, inner: string): boolean =>
   /\baria-label(?:ledby)?=/.test(open) || inner.includes('className="visually-hidden"');
 
-const inTooltip = (src: string, at: number): boolean =>
-  /<Tooltip\b[^<]*>$/.test(
-    src
-      .slice(0, at)
-      .replace(/\{\s*\}/g, '')
-      .trimEnd(),
-  );
+const inTooltip = insideTooltip;
 
 const files = [
   ...AREA_DIRS.flatMap((dir) => walk(join(SRC, dir)).map((path) => relative(SRC, path))),

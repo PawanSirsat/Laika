@@ -67,7 +67,7 @@ import { DevicesSection } from './DevicesSection.tsx';
 import { goToAgent } from './go-to-agent.ts';
 import '../tokens/tokens.css';
 import './agents.css';
-import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 
 export interface AgentsTabProps {
   readonly me: MeProfile | undefined;
@@ -1073,7 +1073,7 @@ function RegisterWizard({
             </button>
           )}
           {step < 5 ? (
-            <Tooltip content={continueReason ?? ''}>
+            <DisabledReason reason={continueReason}>
               <button
                 type="button"
                 className="bar-control bar-control-primary"
@@ -1085,7 +1085,7 @@ function RegisterWizard({
               >
                 Continue
               </button>
-            </Tooltip>
+            </DisabledReason>
           ) : (
             <button
               type="button"
@@ -1703,9 +1703,10 @@ export function RenameForm({
         <button type="button" className="bar-control" onClick={onCancel}>
           Cancel
         </button>
-        <Tooltip
-          content={
-            problem ?? (name.trim() === agent.display_name ? 'Change the name to save it' : '')
+        <DisabledReason
+          reason={
+            problem ??
+            (name.trim() === agent.display_name ? 'Change the name to save it' : undefined)
           }
         >
           <button
@@ -1718,7 +1719,7 @@ export function RenameForm({
             {pending && <Spinner size="sm" />}
             Save name
           </button>
-        </Tooltip>
+        </DisabledReason>
       </div>
     </form>
   );
@@ -1805,7 +1806,7 @@ export function AccessForm({
         <button type="button" className="bar-control" onClick={onCancel}>
           Cancel
         </button>
-        <Tooltip content={unchanged ? 'Change an access level to save' : ''}>
+        <DisabledReason reason={unchanged ? 'Change an access level to save' : undefined}>
           <button
             type="button"
             className="bar-control bar-control-primary"
@@ -1819,7 +1820,7 @@ export function AccessForm({
             {pending && <Spinner size="sm" />}
             Save access
           </button>
-        </Tooltip>
+        </DisabledReason>
       </div>
     </div>
   );

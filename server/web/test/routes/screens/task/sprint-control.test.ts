@@ -28,7 +28,12 @@ before(async () => {
 
 void describe('the task panel can change a sprint', () => {
   void test('the field exists and offers every sprint plus none', () => {
-    assert.match(meta, /meta-label">Sprint</, 'the Sprint row is gone');
+    // The label leads with its decorative mark since LAI-1213.
+    assert.match(
+      meta,
+      /meta-label">\s*(?:<Icon name="sprint"[^>]*\/>\s*)?Sprint\s*</,
+      'the Sprint row is gone',
+    );
     assert.match(meta, /value=\{task\.sprint_id \?\? ''\}/, 'the control stopped reading the task');
     /*
      * **"No sprint" is the half most likely to be dropped.** Backlog work

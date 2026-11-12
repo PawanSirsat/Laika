@@ -37,12 +37,35 @@ export type IconName =
   | 'agent'
   | 'sprint'
   | 'calendar'
-  | 'minus'
-  | 'help'
+  | 'parent'
+  | 'eye'
+  | 'share'
+  | 'expand'
+  | 'arrow-up'
+  | 'arrow-down'
   | 'arrow-right'
-  | 'arrow-left'
-  | 'pin'
-  | 'chevron-down';
+  | 'pencil'
+  | 'clock'
+  | 'doc'
+  | 'checklist'
+  | 'link'
+  | 'estimate'
+  | 'activity'
+  | 'subtasks'
+  | 'blocked'
+  | 'proof'
+  | 'tokens'
+  | 'focus'
+  | 'chevron-down'
+  | 'reply'
+  | 'swap'
+  | 'play'
+  | 'dot'
+  | 'tag'
+  | 'hash'
+  | 'question'
+  | 'minus'
+  | 'arrow-left';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -146,19 +169,67 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
     'M8 3v4M16 3v4M3.5 10h17',
     'M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01',
   ],
-  // LAI-1214: the pages. The Timeline's zoom out beside `plus`; a ring with a
-  // question mark for the keyboard-shortcuts sheet (it was a typed `?`); the
-  // arrows that ended "Next →" and began "← Back" as typed characters; a pin
-  // for the sidebar's pinned spaces.
-  minus: ['M5 12h14'],
-  help: [
-    'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z',
-    'M9.6 9.4a2.5 2.5 0 0 1 4.85.85c0 1.65-2.45 2.25-2.45 3.75',
-    'M12 16.75v.01',
+  // LAI-1213: the space views and the task. A corner arrow for "subtask of",
+  // an eye for watching, the share graph for copying a link, the two corners
+  // of expand-to-page, plain arrows for sort order and "goes to", a pencil for
+  // an edit, and the task's section marks — a clock, a
+  // page, a checklist, a chain link, a gauge, a pulse line, nested rows, a
+  // barred circle, a seal, a coin stack and a focus frame.
+  parent: ['M6 4.5V12a4 4 0 0 0 4 4h8.5', 'm15 12.5 3.5 3.5-3.5 3.5'],
+  eye: [
+    'M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z',
+    'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   ],
+  share: [
+    'M18 2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+    'M6 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+    'M18 16.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+    'M8.2 10.8 15.8 6.2M8.2 13.2l7.6 4.6',
+  ],
+  expand: ['M14 4h6v6M10 20H4v-6', 'M20 4l-7 7M4 20l7-7'],
+  'arrow-up': ['M12 19V5', 'm6 11 6-6 6 6'],
+  'arrow-down': ['M12 5v14', 'm6 13 6 6 6-6'],
   'arrow-right': ['M5 12h14', 'm13 6 6 6-6 6'],
-  'arrow-left': ['M19 12H5', 'm11 6-6 6 6 6'],
-  // A menu that opens downward (it was a typed ▾).
+  pencil: ['M4.5 19.5 5.5 15 15.5 5a2.1 2.1 0 0 1 3 3l-10 10z', 'M13.5 7l3 3'],
+  clock: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M12 7.5V12l3 2'],
+  doc: [
+    'M7 3.5h7l4.5 4.5v11a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z',
+    'M13.5 3.5V8.5h5',
+    'M8.5 13h7M8.5 16.5h5',
+  ],
+  checklist: ['m4 6.5 1.5 1.5 3-3', 'm4 13.5 1.5 1.5 3-3', 'M11.5 7h8.5M11.5 14h8.5M11.5 19h8.5'],
+  link: [
+    'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1',
+    'M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
+  ],
+  estimate: ['M4 16a8 8 0 1 1 16 0', 'M12 16l3.5-4.5', 'M4 19.5h16'],
+  activity: ['M3.5 12h4l2.5-6 4 12 2.5-6h4'],
+  subtasks: ['M5 5h9', 'M9 12h10', 'M9 19h10', 'M5 5v14M5 12h2M5 19h2'],
+  blocked: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M6 6l12 12'],
+  proof: ['M12 3 19 6v5.5c0 4.2-3 7.7-7 9.5-4-1.8-7-5.3-7-9.5V6z', 'm8.75 12 2.25 2.25 4.25-4.5'],
+  tokens: [
+    'M12 4c4.14 0 7.5 1.34 7.5 3s-3.36 3-7.5 3-7.5-1.34-7.5-3 3.36-3 7.5-3z',
+    'M4.5 7v5c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V7',
+    'M4.5 12v5c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-5',
+  ],
+  focus: ['M4 8.5V4h4.5M15.5 4H20v4.5M20 15.5V20h-4.5M8.5 20H4v-4.5'],
   'chevron-down': ['m6 9 6 6 6-6'],
-  pin: ['M9 4.5h6', 'M10 4.5v5.5L7 13.5h10L14 10V4.5', 'M12 13.5v6'],
+  // The task feed's marks (LAI-1213), which were typed characters: sent back,
+  // a work request handed across, started, and anything else.
+  reply: ['M9.5 14.5 4.5 9.5l5-5', 'M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-2'],
+  swap: ['M4 8h14', 'm14.5 4.5 3.5 3.5-3.5 3.5', 'M20 16H6', 'm9.5 12.5-3.5 3.5 3.5 3.5'],
+  play: ['M8 5.5v13l10.5-6.5z'],
+  dot: ['M12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z'],
+  // View settings' field marks (LAI-1213): a tag, the key's hash, a question.
+  tag: ['M3.5 12.5V4.5a1 1 0 0 1 1-1h8l8 8-9 9z', 'M8 8h.01'],
+  hash: ['M9.5 4 8 20M16 4l-1.5 16', 'M4.5 9h15M4 15h15'],
+  question: [
+    'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z',
+    'M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6',
+    'M12 17h.01',
+  ],
+  // LAI-1214: the Timeline's zoom out beside `plus`, and 404's Go back
+  // (LAI-1213 added `arrow-right`, `chevron-down` and `question`, used too).
+  minus: ['M5 12h14'],
+  'arrow-left': ['M19 12H5', 'm11 6-6 6 6 6'],
 };

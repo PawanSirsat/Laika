@@ -26,7 +26,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
-import { tooltipText } from './tooltip-text.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -268,7 +268,7 @@ void describe('the Review page', () => {
       assert.equal(await chip.count(), 1);
       assert.equal(await chip.innerText(), 'check this one');
       assert.match(
-        await tooltipText(chip),
+        await tipText(chip),
         /Finished in 1 min against a forecast of 2 h, and CI has not confirmed it/,
       );
       assert.equal(await h.page.locator('[data-stat="check"] .prof-stat-value').innerText(), '1');
@@ -841,7 +841,7 @@ void describe('the task panel and the card (D-082)', () => {
       await card.waitFor({ timeout: 20_000 });
       const marker = card.locator('.marker-sent-back');
       assert.match(await marker.innerText(), /sent back/);
-      assert.equal(await marker.getAttribute('title'), 'Sent back: The lint run exits 1.');
+      assert.equal(await tipText(marker), 'Sent back: The lint run exits 1.');
 
       await card.click();
       const panel = h.page.locator('.drawer');

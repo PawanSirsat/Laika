@@ -3,6 +3,7 @@ import { formatDurationMs } from '../../../api/duration.ts';
 import { DashLink } from './DashLink.tsx';
 import type { MetricsState } from './use-dashboard.ts';
 import { completedIn } from './summary-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** `4 h 12 min`, `3 d 2 h` — a duration a person reads, not milliseconds (LAI-830). */
 function humanMs(ms: number): string {
@@ -88,28 +89,28 @@ export function Throughput({
             {view!.throughput.map((d) => {
               const said = `${dayLabel(d.day)}: ${String(d.completed)} completed`;
               return (
-                <li
-                  key={d.day}
-                  className={d.completed === 0 ? 'dash-tp-bar dash-tp-bar-zero' : 'dash-tp-bar'}
-                  style={{ height: `${String(Math.max(3, (d.completed / peak) * 100))}%` }}
-                  data-active={focusDay === d.day ? '' : undefined}
-                  data-day={d.day}
-                  tabIndex={0}
-                  aria-label={said}
-                  title={said}
-                  onFocus={() => {
-                    setFocusDay(d.day);
-                  }}
-                  onBlur={() => {
-                    setFocusDay(undefined);
-                  }}
-                  onMouseEnter={() => {
-                    setFocusDay(d.day);
-                  }}
-                  onMouseLeave={() => {
-                    setFocusDay(undefined);
-                  }}
-                />
+                <Tooltip key={d.day} content={said} lazy>
+                  <li
+                    className={d.completed === 0 ? 'dash-tp-bar dash-tp-bar-zero' : 'dash-tp-bar'}
+                    style={{ height: `${String(Math.max(3, (d.completed / peak) * 100))}%` }}
+                    data-active={focusDay === d.day ? '' : undefined}
+                    data-day={d.day}
+                    tabIndex={0}
+                    aria-label={said}
+                    onFocus={() => {
+                      setFocusDay(d.day);
+                    }}
+                    onBlur={() => {
+                      setFocusDay(undefined);
+                    }}
+                    onMouseEnter={() => {
+                      setFocusDay(d.day);
+                    }}
+                    onMouseLeave={() => {
+                      setFocusDay(undefined);
+                    }}
+                  />
+                </Tooltip>
               );
             })}
           </ul>

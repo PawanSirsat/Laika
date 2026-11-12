@@ -1,4 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface InfoTipProps {
   /** What the button opens, for a screen reader: *"About these figures"*. */
@@ -43,6 +45,12 @@ export function InfoTip({ label, children }: InfoTipProps) {
     setShift(over > 0 ? -Math.min(over, Math.max(room, 0)) : 0);
   }, [open]);
 
+  // Through the CSSOM, not a style attribute (LAI-1214): a `style=` breaks a
+  // strict `style-src-attr`, and the panel carries none now.
+  useLayoutEffect(() => {
+    panel.current?.style.setProperty('--prof-info-shift', `${String(shift)}px`);
+  }, [shift, open]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -78,27 +86,25 @@ export function InfoTip({ label, children }: InfoTipProps) {
         button.current?.focus();
       }}
     >
-      <button
-        ref={button}
-        type="button"
-        className="prof-info-button"
-        aria-label={label}
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => {
-          setOpen((was) => !was);
-        }}
-      >
-        i
-      </button>
-      {open && (
-        <div
-          ref={panel}
-          className="prof-info-pop"
-          id={id}
-          role="note"
-          style={shift === 0 ? undefined : { transform: `translateX(${String(shift)}px)` }}
+      {/* Drawn, not typed (LAI-1214): the registry's (i), one weight in every
+          font, and its name on hover and focus like any icon-only button. */}
+      <Tooltip content={label}>
+        <button
+          ref={button}
+          type="button"
+          className="prof-info-button"
+          aria-label={label}
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => {
+            setOpen((was) => !was);
+          }}
         >
+          <Icon name="info" size="small" />
+        </button>
+      </Tooltip>
+      {open && (
+        <div ref={panel} className="prof-info-pop" id={id} role="note">
           {children}
         </div>
       )}

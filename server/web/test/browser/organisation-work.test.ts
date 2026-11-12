@@ -28,7 +28,7 @@ import {
   type StubCall,
   watchFor,
 } from './harness.ts';
-import { tooltipText } from './tooltip-text.ts';
+import { tipText } from './tooltip-probe.ts';
 
 /** Set `LAIKA_SHOTS` to a directory to keep a picture of the tab with its bar. */
 const SHOTS = process.env.LAIKA_SHOTS;
@@ -798,7 +798,7 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       // Off with a reason (LAI-1214): focusable, and it says why.
       const first = h.page.getByRole('button', { name: 'Previous page' });
       assert.equal(await first.getAttribute('aria-disabled'), 'true');
-      assert.equal(await tooltipText(first), 'This is the first page');
+      assert.equal(await tipText(first), 'This is the first page');
       await first.focus();
       assert.ok(await first.evaluate((el) => document.activeElement === el));
 
@@ -990,7 +990,7 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
           assert.equal(await text(h.page.locator('.list-bulk-count')), '2 selected');
           const status = h.page.locator('.list-bulk-action', { hasText: 'Status' });
           assert.ok(await status.isDisabled(), 'Status offered across two spaces');
-          assert.equal(await status.getAttribute('title'), 'Choose one space to change status');
+          assert.equal(await tipText(status), 'Choose one space to change status');
           // The tint is the accent's and stays under the pointer; an
           // unselected row under the pointer is the card's hover.
           const first = h.page.locator('.work-row').first();
@@ -1123,7 +1123,7 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
       // Only Laika's row left: that space's columns, read once.
       await check(h.page, 'ONR-356').uncheck();
       await until(async () => !(await status.isDisabled()));
-      assert.equal(await status.getAttribute('title'), null);
+      assert.equal(await status.getAttribute('aria-disabled'), null);
       await until(() => statusReads().length === 1);
       await status.click();
       const items = h.page.locator('.list-menu-item');
@@ -1178,20 +1178,20 @@ void describe('Work: selecting rows and the bulk bar (D-147, LAI-1170)', () => {
       const status = slow.page.locator('.list-bulk-action', { hasText: 'Status' });
       await status.waitFor({ timeout: 10_000 });
       assert.ok(await status.isDisabled());
-      assert.equal(await status.getAttribute('title'), 'Loading statuses…');
+      assert.equal(await tipText(status), 'Loading statuses…');
       assert.equal(await status.getAttribute('aria-busy'), 'true');
       assert.equal(await text(status), 'Status', 'the button swapped its label');
       // The first read is refused: still held as loading, not "choose a space".
       releaseStatuses();
       await until(() => statusReads === 1);
       await slow.page.waitForTimeout(200);
-      assert.equal(await status.getAttribute('title'), 'Loading statuses…');
+      assert.equal(await tipText(status), 'Loading statuses…');
       // Selecting the space again asks again, and this time it answers.
       await check(slow.page, 'LAI-12').uncheck();
       await check(slow.page, 'LAI-12').check();
       await until(() => statusReads === 2);
       await until(async () => !(await status.isDisabled()));
-      assert.equal(await status.getAttribute('title'), null);
+      assert.equal(await status.getAttribute('aria-disabled'), null);
       assert.equal(await status.getAttribute('aria-busy'), null);
     } finally {
       releaseStatuses();

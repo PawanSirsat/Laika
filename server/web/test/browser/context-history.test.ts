@@ -25,7 +25,7 @@ import {
 import { answerConfirm } from './confirm.ts';
 import { pick } from './dropdown.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
-import { tooltipText } from './tooltip-text.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const NOW = Date.now();
 const SLUG = 'laika-core';
@@ -698,7 +698,7 @@ void describe('Delivered to', () => {
 
       // The absolute time is there for hover and for a screen reader.
       const when = mine.locator('time');
-      assert.ok((await tooltipText(when)).length > 10);
+      assert.ok((await tipText(when)).length > 10);
       assert.equal(
         await when.getAttribute('datetime'),
         new Date(MINE_ON_3.delivered_at).toISOString(),

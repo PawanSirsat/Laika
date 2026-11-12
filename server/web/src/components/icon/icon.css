@@ -27,3 +27,15 @@
   width: var(--leading-reading);
   height: var(--leading-reading);
 }
+
+/*
+ * A section's leading mark (LAI-1213): the task drawer's and the Workroom's
+ * headings, and the small meta beside a sprint or a due date. Decoration —
+ * `aria-hidden`, as every unnamed Icon is — in the muted ink, so it helps the
+ * eye find a section without out-shouting the words beside it.
+ */
+.section-mark {
+  margin-inline-end: var(--space-1);
+  color: var(--text-muted);
+  vertical-align: -0.125em;
+}

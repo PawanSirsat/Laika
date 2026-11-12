@@ -18,6 +18,8 @@ import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentDevice, agentProductName, selectedHarness } from '../../../api/selected-agent.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './list.css';
 
 /**
@@ -316,24 +318,26 @@ export function ListView({
                           : 'none'
                       }
                     >
-                      <button
-                        type="button"
-                        className="list-sort"
-                        title={`Sort by ${column.label}`}
-                        onClick={() => {
-                          onSort(nextSort(sort, column.key));
-                        }}
-                      >
-                        {column.label}
-                        {/* The active arrow is text; the resting glyph on every
+                      <Tooltip content={`Sort by ${column.label}`} lazy>
+                        <button
+                          type="button"
+                          className="list-sort"
+
+                          onClick={() => {
+                            onSort(nextSort(sort, column.key));
+                          }}
+                        >
+                          {column.label}
+                          {/* The active arrow is text; the resting glyph on every
                         other sortable header is CSS (`list.css`), so it never
                         enters a header's name for a screen reader or a test. */}
-                        {sort.key === column.key && (
-                          <span className="list-sort-arrow" aria-hidden="true">
-                            {sort.ascending ? '▲' : '▼'}
-                          </span>
-                        )}
-                      </button>
+                          {sort.key === column.key && (
+                            <span className="list-sort-arrow" aria-hidden="true">
+                              <Icon name={sort.ascending ? 'arrow-up' : 'arrow-down'} size="tiny" />
+                            </span>
+                          )}
+                        </button>
+                      </Tooltip>
                     </th>
                   ),
                 )}
@@ -408,16 +412,19 @@ export function ListView({
                             🔒
                           </span>
                         )}
-                        <span className="list-title" title={row.title}>
-                          {row.title}
-                        </span>
+                        <Tooltip content={row.title} lazy>
+                          <span className="list-title">{row.title}</span>
+                        </Tooltip>
                       </span>
                       {(row.labels !== '' || row.blockedBy !== '' || row.parentKey !== '') && (
                         <span className="list-sub">
                           {row.parentKey !== '' && (
-                            <span className="list-parent" title="Subtask of">
-                              {row.parentKey}
-                            </span>
+                            <Tooltip
+                              content={`Subtask of ${row.parentKey.replace(/^↳\s*/, '')}`}
+                              lazy
+                            >
+                              <span className="list-parent">{row.parentKey}</span>
+                            </Tooltip>
                           )}
                           {row.labels !== '' && <span className="list-labels">{row.labels}</span>}
                           {row.blockedBy !== '' && (
@@ -429,26 +436,28 @@ export function ListView({
 
                     <td>
                       {mayEdit ? (
-                        <button
-                          type="button"
-                          className={`list-status list-status-button list-tone-${row.statusTone}`}
-                          aria-haspopup="menu"
-                          aria-expanded={statusMenu?.id === row.id}
-                          aria-busy={moving || undefined}
-                          disabled={moving}
-                          title="Change status"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
-                          }}
-                        >
-                          {/* The label stays while the move is in flight and a
+                        <Tooltip content="Change status" lazy>
+                          <button
+                            type="button"
+                            className={`list-status list-status-button list-tone-${row.statusTone}`}
+                            aria-haspopup="menu"
+                            aria-expanded={statusMenu?.id === row.id}
+                            aria-busy={moving || undefined}
+                            disabled={moving}
+
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
+                            }}
+                          >
+                            {/* The label stays while the move is in flight and a
                             spinner joins it (LAI-293): a pill that swaps its
                             word resizes under the pointer. The caret is CSS,
                             so it never enters the pill's text. */}
-                          {moving && <Spinner />}
-                          {row.status}
-                        </button>
+                            {moving && <Spinner />}
+                            {row.status}
+                          </button>
+                        </Tooltip>
                       ) : (
                         <span className={`list-status list-tone-${row.statusTone}`}>
                           {row.status}
@@ -487,9 +496,9 @@ export function ListView({
                         >
                           {row.initials}
                         </span>
-                        <span className="list-who" title={row.who}>
-                          {row.who}
-                        </span>
+                        <Tooltip content={row.who} lazy>
+                          <span className="list-who">{row.who}</span>
+                        </Tooltip>
                       </span>
                     </td>
 
@@ -500,29 +509,31 @@ export function ListView({
                     {showAgent && (
                       <td className="list-agent">
                         {row.agent !== null && (
-                          <span
-                            className="list-agent-cell"
-                            title={`${row.agentLabel} — ${row.agent.owner.name}’s agent`}
+                          <Tooltip
+                            content={`${row.agentLabel} — ${row.agent.owner.name}’s agent`}
+                            lazy
                           >
-                            <AgentMark client={selectedHarness(row.agent)} size="sm" />
-                            <span className="list-agent-text">
-                              <span className="visually-hidden">
-                                {agentProductName(row.agent)} ·{' '}
+                            <span className="list-agent-cell">
+                              <AgentMark client={selectedHarness(row.agent)} size="sm" />
+                              <span className="list-agent-text">
+                                <span className="visually-hidden">
+                                  {agentProductName(row.agent)} ·{' '}
+                                </span>
+                                {row.agentTwin === undefined ? (
+                                  agentDevice(row.agent)
+                                ) : (
+                                  // Two here share a harness and a device: the
+                                  // cell shows what differs, which an
+                                  // ellipsis would cut from the end (LAI-583).
+                                  <>
+                                    <span className="visually-hidden">{row.agentPlace} (</span>
+                                    {row.agentTwin}
+                                    <span className="visually-hidden">)</span>
+                                  </>
+                                )}
                               </span>
-                              {row.agentTwin === undefined ? (
-                                agentDevice(row.agent)
-                              ) : (
-                                // Two here share a harness and a device: the
-                                // cell shows what differs, which an
-                                // ellipsis would cut from the end (LAI-583).
-                                <>
-                                  <span className="visually-hidden">{row.agentPlace} (</span>
-                                  {row.agentTwin}
-                                  <span className="visually-hidden">)</span>
-                                </>
-                              )}
                             </span>
-                          </span>
+                          </Tooltip>
                         )}
                       </td>
                     )}
@@ -542,30 +553,39 @@ export function ListView({
                       and second. */}
                     <td className={`list-due list-tone-${row.dueTone}`}>
                       {row.due !== '' && (
-                        <span title={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}>
-                          {row.dueTone === 'bad' && <span aria-hidden="true">⚠ </span>}
-                          {row.due}
-                        </span>
+                        <Tooltip
+                          content={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}
+                          lazy
+                        >
+                          <span>
+                            {row.dueTone === 'bad' && (
+                              <>
+                                <Icon name="alert" size="tiny" label="Past due" />{' '}
+                              </>
+                            )}
+                            {row.due}
+                          </span>
+                        </Tooltip>
                       )}
                     </td>
 
                     <td className={`list-created list-tone-${row.createdTone}`}>
-                      <time dateTime={row.created.iso} title={row.created.full}>
-                        {row.created.text}
-                      </time>
+                      <Tooltip content={row.created.full} lazy>
+                        <time dateTime={row.created.iso}>{row.created.text}</time>
+                      </Tooltip>
                     </td>
 
                     <td className={`list-updated list-tone-${row.updatedTone}`}>
-                      <time
-                        dateTime={row.updated.iso}
-                        title={
+                      <Tooltip
+                        content={
                           row.updatedNote === ''
                             ? row.updated.full
                             : `${row.updated.full} · ${row.updatedNote}`
                         }
+                        lazy
                       >
-                        {row.updated.text}
-                      </time>
+                        <time dateTime={row.updated.iso}>{row.updated.text}</time>
+                      </Tooltip>
                     </td>
                   </tr>
                 );

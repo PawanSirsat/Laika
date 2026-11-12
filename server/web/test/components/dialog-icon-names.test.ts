@@ -21,6 +21,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { code } from '../helpers/code.ts';
+import { buttons, hasWords, insideTooltip, named } from '../helpers/jsx-buttons.ts';
 
 const SRC = fileURLToPath(new URL('../../src/', import.meta.url));
 
@@ -52,56 +53,6 @@ function walk(dir: string): string[] {
     return path.endsWith('.tsx') ? [path] : [];
   });
 }
-
-/** Each `<button …>…</button>`: its opening tag and what it holds. Buttons do not nest. */
-function buttons(src: string): { readonly open: string; readonly inner: string }[] {
-  const out: { open: string; inner: string }[] = [];
-  const start = /<button\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = start.exec(src)) !== null) {
-    let depth = 0;
-    let quote: string | undefined;
-    let i = m.index + m[0].length;
-    for (; i < src.length; i++) {
-      const c = src[i];
-      if (quote !== undefined) {
-        if (c === quote) quote = undefined;
-        continue;
-      }
-      if (depth > 0 && (c === "'" || c === '"' || c === '`')) quote = c;
-      else if (depth === 0 && c === '"') quote = c;
-      else if (c === '{') depth += 1;
-      else if (c === '}') depth -= 1;
-      else if (c === '>' && depth === 0) break;
-    }
-    const open = src.slice(m.index, i + 1);
-    if (open.endsWith('/>')) {
-      out.push({ open, inner: '' });
-      continue;
-    }
-    const end = src.indexOf('</button>', i);
-    out.push({ open, inner: end === -1 ? '' : src.slice(i + 1, end) });
-  }
-  return out;
-}
-
-/**
- * Whether a button's content has words of its own. Tags are dropped (an
- * `<Icon>` says nothing); an expression is words unless all it holds is a
- * condition guarding a tag (`{busy && <Spinner />}`) — `{label}` or
- * `{children}` may be words, and is given the benefit of the doubt.
- */
-function hasWords(inner: string): boolean {
-  let text = inner.replace(/<[^>]*>/g, ' ');
-  for (let guard = 0; guard < 10 && /\{[^{}]*\}/.test(text); guard++) {
-    text = text.replace(/\{([^{}]*)\}/g, (_, body: string) =>
-      body.trim() === '' || /&&\s*$/.test(body.trim()) ? ' ' : ' WORDS ',
-    );
-  }
-  return /[\p{L}\p{N}]/u.test(text);
-}
-
-const named = (open: string): boolean => /\baria-label(?:ledby)?=/.test(open);
 
 const files = walk(SRC)
   .filter((path) => DRAWS_A_DIALOG.test(readFileSync(path, 'utf8')))
@@ -166,13 +117,7 @@ void describe('the migrated dialogs show it too (LAI-1209)', () => {
       // Each icon-only button sits directly inside a <Tooltip …>.
       const bare = buttons(src)
         .filter((b) => !hasWords(b.inner))
-        .filter((b) => {
-          const before = src
-            .slice(0, src.indexOf(b.open))
-            .replace(/\{\s*\}/g, '')
-            .trimEnd();
-          return !/<Tooltip\b[^<]*>$/.test(before);
-        })
+        .filter((b) => !insideTooltip(src, b.at))
         .map((b) => b.open);
       assert.deepEqual(bare, [], `${file}: an icon-only <button> with no Tooltip around it`);
       assert.doesNotMatch(

@@ -43,7 +43,7 @@ import {
   YESTERDAY,
 } from './my-day-week.ts';
 import { hoursWords, weekOf } from '../../src/components/time-report/time-report-derive.ts';
-import { tooltipText } from './tooltip-text.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const GRACE_ROW = { id: 'u2', name: 'Grace Hopper', deactivated: false } as const;
 
@@ -442,9 +442,9 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
         // The design's one link (LAI-509): its words say who reads drafts.
         const lock = h.page.locator('.screen-page .myday-lock');
         assert.match(await lock.innerText(), /Who can see this/);
-        assert.match(await tooltipText(lock), /Drafts: you, owners and admins/);
+        assert.match(await tipText(lock), /Drafts: you, owners and admins/);
         assert.match(
-          await tooltipText(lock),
+          await tipText(lock),
           /owners, admins and anyone the owner lets see everyone’s analytics/,
         );
         // A popover since LAI-513: the design's grid of who sees what.

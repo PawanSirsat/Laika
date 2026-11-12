@@ -28,6 +28,7 @@ import {
   landedState,
   whyNotActionable,
 } from './review-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './meeting-review.css';
 
 export interface MeetingReviewScreenProps {
@@ -325,7 +326,7 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                     </button>
 
                     <div className="mr-apply-group">
-                      <span className="mr-count" aria-live="polite">
+                      <span className="mr-count" id="mr-count" aria-live="polite">
                         {accepted.size === 0
                           ? 'Nothing accepted yet'
                           : `${String(accepted.size)} of ${String(detail.proposals.length)} accepted`}
@@ -337,6 +338,8 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                            the control says so by being unavailable rather than
                            by sending nothing and reporting success. */
                         disabled={busy || accepted.size === 0}
+                        // Why it is off is the count beside it (LAI-1213).
+                        aria-describedby={accepted.size === 0 ? 'mr-count' : undefined}
                         onClick={apply}
                       >
                         {busy && <Spinner size="sm" />}
@@ -412,7 +415,7 @@ function ProposalRow({
                   <>
                     <span className="mr-change-from">{change.from}</span>
                     <span className="mr-change-arrow" aria-hidden="true">
-                      →
+                      <Icon name="arrow-right" size="tiny" />
                     </span>
                   </>
                 )}

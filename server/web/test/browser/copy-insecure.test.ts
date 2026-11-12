@@ -184,7 +184,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
       assert.equal(await copyWith(clip, button), h.origin);
       await button.and(h.page.locator('[data-outcome="copied"]')).waitFor({ timeout: 10_000 });
       assert.equal((await button.innerText()).trim(), 'Copied');
-      assert.equal(await button.locator('[data-icon="check"]').count(), 1);
+      assert.equal(await button.locator('svg').getAttribute('data-icon'), 'check');
     } finally {
       await clip.close();
       await h.close();

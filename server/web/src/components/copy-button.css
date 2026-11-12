@@ -16,12 +16,6 @@
   white-space: nowrap;
 }
 
-/* The tick after *Copied* (LAI-1214): drawn, a hair from the word. */
-.copy-button .icon {
-  margin-left: 0.25rem;
-  vertical-align: -0.125em;
-}
-
 .copy-button:hover:not(:disabled, [aria-disabled='true']) {
   color: var(--text-primary);
   border-color: var(--border-default);

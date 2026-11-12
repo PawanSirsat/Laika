@@ -25,51 +25,9 @@ import { orgStub } from './capacity-org.ts';
 import { closeBrowser, open as openPage, setTheme, until, type Harness } from './harness.ts';
 import { open as openDay } from './my-day-clock.ts';
 import { TODAY, weekData, weekStub } from './my-day-week.ts';
-import { tooltipText } from './tooltip-text.ts';
+import { strictCsp, tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
-
-/** The server's policy with `style-src-attr` tightened to `'none'` (as dialog-tooltips.test.ts). */
-const STRICT_CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "style-src-elem 'self'",
-  "style-src-attr 'none'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'none'",
-].join('; ');
-
-declare global {
-  interface Window {
-    __cspViolations?: string[];
-  }
-}
-
-async function strictCsp(p: Page): Promise<void> {
-  await p.addInitScript(() => {
-    window.__cspViolations = [];
-    document.addEventListener('securitypolicyviolation', (event) => {
-      window.__cspViolations?.push(
-        `${event.violatedDirective} ${event.sourceFile}:${String(event.lineNumber)} ${event.sample}`,
-      );
-    });
-  });
-  await p.route('**/*', async (route) => {
-    if (route.request().resourceType() !== 'document') {
-      await route.fallback();
-      return;
-    }
-    const response = await route.fetch();
-    await route.fulfill({
-      response,
-      headers: { ...response.headers(), 'content-security-policy': STRICT_CSP },
-    });
-  });
-}
 
 async function violations(p: Page): Promise<string[]> {
   return p.evaluate(() => window.__cspViolations ?? []);
@@ -166,8 +124,8 @@ void describe('My day: names, tooltips, keys and reasons (LAI-1214)', () => {
       await showsOnHover(add, /^Add time\s?N$/);
       await showsOnFocus(help, /^Keyboard shortcuts\s?\?$/);
       await showsOnHover(beside, /Agent time and On your plate/);
-      // Drawn, not typed: the ? is the registry's help icon.
-      assert.equal(await help.locator('[data-icon="help"]').count(), 1);
+      // Drawn, not typed: the ? is the registry's question icon.
+      assert.equal(await help.locator('[data-icon="question"]').count(), 1);
       assert.equal((await help.innerText()).trim(), '');
       assert.deepEqual(await violations(h.page), []);
     } finally {
@@ -205,7 +163,7 @@ void describe('My day: names, tooltips, keys and reasons (LAI-1214)', () => {
       const nextDay = h.page.getByRole('button', { name: 'Next week' });
       assert.equal(await nextDay.getAttribute('aria-disabled'), 'true');
       assert.equal(await nextDay.isDisabled(), true);
-      assert.equal(await tooltipText(nextDay), 'This is the latest week there is');
+      assert.equal(await tipText(nextDay), 'This is the latest week there is');
       await nextDay.focus();
       assert.equal(
         await nextDay.evaluate((el) => document.activeElement === el),
@@ -220,7 +178,7 @@ void describe('My day: names, tooltips, keys and reasons (LAI-1214)', () => {
         await zoomIn.click();
       }
       await until(async () => (await zoomIn.getAttribute('aria-disabled')) === 'true');
-      assert.equal(await tooltipText(zoomIn), 'As far in as it goes');
+      assert.equal(await tipText(zoomIn), 'As far in as it goes');
       await showsOnFocus(zoomIn, /^As far in as it goes$/);
       assert.deepEqual(await violations(h.page), []);
     } finally {
@@ -316,7 +274,7 @@ void describe('Insights (LAI-1214)', () => {
       const head = h.page.locator('.cap-list thead th.cap-list-num').first();
       await head.waitFor({ timeout: 20_000 });
       assert.equal(await head.getAttribute('title'), null, 'a bare title= is back');
-      assert.ok((await tooltipText(head)).length > 20, 'the column lost its rule');
+      assert.ok((await tipText(head)).length > 20, 'the column lost its rule');
       const tip = await tipOf(head);
       await head.hover();
       await tip.waitFor({ state: 'visible', timeout: 3_000 });

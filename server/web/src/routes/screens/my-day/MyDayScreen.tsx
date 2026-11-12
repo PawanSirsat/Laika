@@ -1964,7 +1964,7 @@ export function MyDayScreen({
                     setSheet(true);
                   }}
                 >
-                  <Icon name="help" size="small" />
+                  <Icon name="question" size="small" />
                 </button>
               </Tooltip>
             )}

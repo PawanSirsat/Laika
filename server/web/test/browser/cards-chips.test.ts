@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { asServed, closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 const HOUR = 3_600_000;
@@ -490,7 +491,7 @@ void describe('attribution, from the fixture’s fields (four lanes)', () => {
     try {
       await boardReady(h.page);
       assert.equal(
-        await card(h.page, 'w1').locator('.card-bot').getAttribute('title'),
+        await tipText(card(h.page, 'w1').locator('.card-bot')),
         'Created through an agent by Bartholomew Fitzgerald',
       );
     } finally {

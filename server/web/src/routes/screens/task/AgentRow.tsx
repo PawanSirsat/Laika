@@ -30,6 +30,7 @@ import { AgentPicker, NO_AGENT } from '../../../components/agent/AgentPicker.tsx
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
 import { PingButton } from '../../../components/agent/PingButton.tsx';
 import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 export interface AgentRowProps {
   readonly task: TaskSummary;
@@ -324,7 +325,10 @@ export function AgentRow({
         />
       ) : (
         <>
-          <p className="meta-label">Agent</p>
+          <p className="meta-label">
+            <Icon name="agent" size="small" className="section-mark" />
+            Agent
+          </p>
           <div className="meta-value meta-agent">
             {mayEdit && load.kind === 'loading' ? (
               <span className="meta-muted" role="status">

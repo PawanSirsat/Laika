@@ -1,5 +1,5 @@
 import { Icon } from '../icon/Icon.tsx';
-import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { DisabledReason } from '../tooltip/DisabledReason.tsx';
 
 /*
  * Styled by `routes/screens/connect/connect.css` — see the note at the top of
@@ -47,7 +47,7 @@ export function StepRail({ label, intro, steps, current, onSelect }: StepRailPro
               {/* A locked step with a reason stays focusable and says why in
                   the shared Tooltip (LAI-1214) — a title= on a disabled button
                   reached neither a keyboard nor a touch screen. */}
-              <Tooltip content={!s.open ? (s.lockedReason ?? '') : ''}>
+              <DisabledReason reason={s.open ? undefined : s.lockedReason}>
                 <button
                   type="button"
                   className="conn-rail-step"
@@ -69,7 +69,7 @@ export function StepRail({ label, intro, steps, current, onSelect }: StepRailPro
                     <span className="conn-rail-sub">{s.sub}</span>
                   </span>
                 </button>
-              </Tooltip>
+              </DisabledReason>
             </li>
           );
         })}

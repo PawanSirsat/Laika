@@ -71,10 +71,12 @@ export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
           <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>
           {/* The key every task in it carries (`LC` for `LC-42`), from the same read. */}
           {spaceKey !== undefined && (
-            <span className="space-key" title={`Tasks in this space are keyed ${spaceKey}-…`}>
-              <span className="visually-hidden">Key </span>
-              {spaceKey}
-            </span>
+            <Tooltip content={`Tasks in this space are keyed ${spaceKey}-…`}>
+              <span className="space-key">
+                <span className="visually-hidden">Key </span>
+                {spaceKey}
+              </span>
+            </Tooltip>
           )}
         </div>
 

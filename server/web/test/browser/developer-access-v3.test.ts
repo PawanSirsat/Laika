@@ -23,7 +23,7 @@ import {
 } from '../../src/routes/screens/developer/v3/overview-state.ts';
 import { closeBrowser, open, refuse, setTheme, type ApiStub, type Harness } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
-import { tooltipText } from './tooltip-text.ts';
+import { tipText } from './tooltip-probe.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -839,7 +839,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       });
       // A locked step says why in words, not only by being greyed out.
       assert.equal(
-        await tooltipText(h.page.locator('[data-step="tool"] button')),
+        await tipText(h.page.locator('[data-step="tool"] button')),
         'Add a device first',
       );
       // Off with a reason, it is still reached by Tab (LAI-1214: it was `disabled`).

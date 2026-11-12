@@ -27,12 +27,11 @@ void describe('formatShortcut', () => {
     assert.equal(formatShortcut('j', false), 'J');
   });
 
-  void test('an arrow key is its arrow, on either keyboard (LAI-1214)', () => {
+  void test('an arrow is its arrow, and a symbol is itself (LAI-1213)', () => {
     assert.equal(formatShortcut('ArrowLeft', true), '←');
     assert.equal(formatShortcut('ArrowRight', false), '→');
-    assert.equal(formatShortcut('ArrowUp', false), '↑');
-    assert.equal(formatShortcut('ArrowDown', true), '↓');
-    // aria-keyshortcuts keeps the DOM's key name, which a screen reader says.
+    assert.equal(formatShortcut('/', false), '/');
+    assert.equal(formatShortcut('.', true), '.');
     assert.equal(ariaShortcut('ArrowLeft', true), 'ArrowLeft');
   });
 });

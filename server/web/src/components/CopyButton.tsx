@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import './copy-button.css';
-import { Icon } from './icon/Icon.tsx';
 import { Tooltip } from './tooltip/Tooltip.tsx';
+import { Icon } from './icon/Icon.tsx';
+import './copy-button.css';
 
 /**
  * Copy, on a board that is not a secure context (LAI-622).
@@ -159,10 +159,10 @@ export interface CopyButtonProps {
   readonly what?: string | undefined;
   readonly disabled?: boolean | undefined;
   /**
-   * Why it is disabled — the shared Tooltip (LAI-1214), on hover and on
-   * keyboard focus: with a reason the button stays focusable
-   * (`aria-disabled`), because a bare `title=` on a disabled button is
-   * reachable by neither.
+   * Why it is disabled — in the shared tooltip, with the button kept
+   * focusable (`aria-disabled`) so a keyboard reaches the reason too
+   * (LAI-1213; it was a bare `title` on a natively disabled button, which
+   * neither a keyboard nor a touch screen could ever read).
    */
   readonly disabledReason?: string | undefined;
   readonly className?: string | undefined;
@@ -198,33 +198,35 @@ export function CopyButton({
       ? undefined
       : `${outcome === 'copied' ? 'Copied' : label} ${what}`;
 
-  return (
-    <Tooltip content={disabled ? (disabledReason ?? '') : ''}>
-      <button
-        type="button"
-        className={className === undefined ? 'copy-button' : `copy-button ${className}`}
-        data-outcome={outcome ?? 'idle'}
-        disabled={disabled && disabledReason === undefined}
-        aria-disabled={(disabled && disabledReason !== undefined) || undefined}
-        {...(named !== undefined ? { 'aria-label': named } : {})}
-        onClick={(event) => {
-          if (disabled) return;
-          const from = event.currentTarget;
-          void copyText(text, from).then((result) => {
-            if (result === 'select') selectText(selects?.current ?? showing(from, text));
-            announce(result);
-          });
-        }}
-      >
-        {shown}
-        {outcome === 'copied' && <Icon name="check" size="tiny" />}
-        {outcome === 'select' && (
-          <span className="visually-hidden">
-            {' '}
-            — the text is selected, press Command or Control C
-          </span>
-        )}
-      </button>
-    </Tooltip>
+  const explained = disabled && disabledReason !== undefined && disabledReason !== '';
+  const button = (
+    <button
+      type="button"
+      className={className === undefined ? 'copy-button' : `copy-button ${className}`}
+      data-outcome={outcome ?? 'idle'}
+      disabled={disabled && !explained}
+      aria-disabled={explained ? true : undefined}
+      {...(named !== undefined ? { 'aria-label': named } : {})}
+      onClick={(event) => {
+        if (explained) return;
+        const from = event.currentTarget;
+        void copyText(text, from).then((result) => {
+          if (result === 'select') selectText(selects?.current ?? showing(from, text));
+          announce(result);
+        });
+      }}
+    >
+      {shown}
+      {outcome === 'copied' && (
+        <>
+          {' '}
+          <Icon name="check" size="tiny" />
+        </>
+      )}
+      {outcome === 'select' && (
+        <span className="visually-hidden"> — the text is selected, press Command or Control C</span>
+      )}
+    </button>
   );
+  return explained ? <Tooltip content={disabledReason}>{button}</Tooltip> : button;
 }

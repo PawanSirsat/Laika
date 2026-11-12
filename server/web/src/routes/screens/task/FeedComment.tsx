@@ -6,6 +6,8 @@ import { CommentBody } from './CommentBody.tsx';
 import { foldLabel, type CommentKind } from './feed-groups.ts';
 import { REVEAL_FINISH_EVENT, roundOf } from './reveal-finish.ts';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './feed.css';
 
 export interface FeedCommentProps {
@@ -130,9 +132,9 @@ export function FeedComment({
 
   const edited =
     comment.edited_at === null ? null : (
-      <span className="cmt-edited" title={`Edited ${timeLabel(comment.edited_at, now).full}`}>
-        Edited
-      </span>
+      <Tooltip content={`Edited ${timeLabel(comment.edited_at, now).full}`} lazy>
+        <span className="cmt-edited">Edited</span>
+      </Tooltip>
     );
 
   const actions = mayChange ? (
@@ -183,7 +185,7 @@ export function FeedComment({
         <div className={`cmt-card cmt-card-${variant}`} data-comment-kind={variant}>
           {variant === 'reason' && (
             <span className="cmt-sent-back">
-              <span aria-hidden="true">↩</span> Sent back
+              <Icon name="reply" size="tiny" /> Sent back
             </span>
           )}
           <CommentBody body={body} people={people} meId={meId} />
