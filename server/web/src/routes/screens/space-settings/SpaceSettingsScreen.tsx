@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
@@ -53,6 +54,37 @@ export function SpaceSettingsScreen({
   /** Every space the reader can see, archived too — counts for *Next task*, and Copy members' list. */
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const members = useMembers(slug);
+  /** General holds unsaved changes: leaving it asks first (B11, LAI-1129). */
+  const [generalDirty, setGeneralDirty] = useState(false);
+  const confirm = useConfirm();
+
+  /**
+   * Every way out that this screen draws — another tab, *← Spaces*, *Open
+   * board* — goes through here, so unsaved General changes are never thrown
+   * away without a yes. Reloading or closing the page gets the browser's
+   * warning, which GeneralTab arms itself.
+   */
+  const go = useCallback(
+    (to: string): void => {
+      if (!generalDirty) {
+        onNavigate(to);
+        return;
+      }
+      void confirm({
+        title: 'Discard your changes?',
+        body: 'General has changes that are not saved. Leaving it throws them away.',
+        confirmLabel: 'Discard changes',
+        cancelLabel: 'Keep editing',
+        danger: true,
+        icon: 'warning',
+      }).then((yes) => {
+        if (!yes) return;
+        setGeneralDirty(false);
+        onNavigate(to);
+      });
+    },
+    [generalDirty, confirm, onNavigate],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,7 +124,7 @@ export function SpaceSettingsScreen({
     return (
       <div className="ss-page">
         <div className="ss-backbar">
-          <BackLink onNavigate={onNavigate} />
+          <BackLink onNavigate={go} />
         </div>
         <ScreenHeader variant="page" title="Space settings" context={slug} />
         <div className="ss">
@@ -126,7 +158,7 @@ export function SpaceSettingsScreen({
   return (
     <div className="ss-page" data-space={project.slug}>
       <div className="ss-backbar">
-        <BackLink onNavigate={onNavigate} />
+        <BackLink onNavigate={go} />
       </div>
       <ScreenHeader
         variant="page"
@@ -176,7 +208,7 @@ export function SpaceSettingsScreen({
               members: members.status === 'ready' ? members.members.length : undefined,
             }}
             countNoun="people"
-            onNavigate={onNavigate}
+            onNavigate={go}
           />
         }
       >
@@ -186,7 +218,7 @@ export function SpaceSettingsScreen({
           onClick={(event) => {
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
-            onNavigate(openBoard);
+            go(openBoard);
           }}
         >
           Open board
@@ -229,6 +261,7 @@ export function SpaceSettingsScreen({
             counts={summary?.task_counts}
             mayEdit={mayEdit}
             onSaved={saved}
+            onDirtyChange={setGeneralDirty}
           />
         )}
       </div>
