@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ResetPasswordScreen } from './ResetPasswordScreen.tsx';
 import { useShell } from '../../components/shell/shell-context.ts';
 import { ApiError } from '../../api/errors.ts';
+import { fieldErrors } from '../../api/setup.ts';
 import { consumeResetLink, resetRefusal, RESET_REFUSAL_COPY } from '../../api/password-resets.ts';
 
 type Refused = Exclude<ReturnType<typeof resetRefusal>, 'throttled' | undefined>;
@@ -34,6 +35,7 @@ export function ResetPasswordRoute() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [passwordError, setPasswordError] = useState<string | undefined>(undefined);
   const [refused, setRefused] = useState<Refused | undefined>(undefined);
   const [done, setDone] = useState<{ sessionsEnded: number } | undefined>(undefined);
 
@@ -41,6 +43,7 @@ export function ResetPasswordRoute() {
     async (password: string) => {
       setSubmitting(true);
       setError(undefined);
+      setPasswordError(undefined);
       try {
         const view = await consumeResetLink(token, password);
         setToken('');
@@ -52,6 +55,10 @@ export function ResetPasswordRoute() {
         } else if (why !== undefined) {
           setToken('');
           setRefused(why);
+        } else if (fieldErrors(cause).new_password !== undefined) {
+          // The server refused the password itself (§6.3 `422`, field
+          // `new_password`): it belongs under the field, not in a banner.
+          setPasswordError(fieldErrors(cause).new_password);
         } else {
           setError(
             cause instanceof ApiError
@@ -74,6 +81,7 @@ export function ResetPasswordRoute() {
       done={done}
       submitting={submitting}
       serverError={error}
+      passwordError={passwordError}
       onSubmit={(password) => {
         void submit(password);
       }}
