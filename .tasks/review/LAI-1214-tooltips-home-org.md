@@ -106,3 +106,10 @@ condition-based disables listed in the census; `profile/InfoTip` vs
 `InfoHint`; `developer/v3/DxIcon` into the registry; the rail's collapsed link
 names (needs a `side="right"` Tooltip); no key collapses the rail; `EmptyState`
 action labels cannot carry an icon.
+
+**Merged with LAI-1213 (#341)** on polly's note, reusing its shared pieces
+(lazy Tooltip, arrow keycaps, glyphs, CopyButton, tooltip-probe, jsx-buttons,
+DisabledReason); its leftovers here done: Dropdown's native titles, InfoTip's
+typed i (and its style= attribute), agent-state bare titles. **Merges after
+#341.** Gate results are in the log; shard 2's harness-theme and shard 4's
+devices-tab hang are pre-existing (evidence there).
