@@ -188,10 +188,3 @@
     transform: translateY(0.5rem) scale(0.98);
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .confirm,
-  .confirm-scrim {
-    animation: none;
-  }
-}

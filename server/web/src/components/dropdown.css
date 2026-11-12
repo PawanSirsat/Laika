@@ -85,7 +85,7 @@
   height: 0.875rem;
   margin-left: auto;
   stroke: var(--text-muted);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .dd-trigger[aria-expanded='true'] .dd-chevron {
@@ -406,4 +406,21 @@
 
 .dd-tag-neutral {
   border-color: var(--border-default);
+}
+
+/*
+ * **Opening** (LAI-1208): a short fade, from the strong ease-out, so the panel
+ * arrives rather than blinks in. Opacity only, on purpose: `Dropdown.tsx`
+ * places the panel by measuring its own box (`getBoundingClientRect`), and a
+ * transform mid-flight would be measured as an offset and "corrected" into a
+ * wrong place. No exit: a picker closes the instant it is answered.
+ */
+.dd-panel {
+  animation: dd-panel-in var(--duration-fast) var(--ease-enter);
+}
+
+@keyframes dd-panel-in {
+  from {
+    opacity: 0;
+  }
 }

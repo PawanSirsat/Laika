@@ -180,7 +180,7 @@
   padding: 0;
   cursor: pointer;
   position: relative;
-  transition: transform 0.1s ease;
+  transition: transform var(--duration-instant) var(--ease-standard);
 }
 
 .space-member:hover {
@@ -199,16 +199,6 @@
 .space-member-on {
   box-shadow: 0 0 0 2px var(--accent);
   z-index: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .space-member {
-    transition: none;
-  }
-
-  .space-member:hover {
-    transform: none;
-  }
 }
 
 .space-member-more {
@@ -262,7 +252,7 @@
 }
 
 .space-live-live .space-live-dot {
-  animation: space-pulse 2s ease-in-out infinite;
+  animation: space-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 .space-live-catching-up {
@@ -290,12 +280,6 @@
   }
   50% {
     opacity: 0.35;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .space-live-live .space-live-dot {
-    animation: none;
   }
 }
 

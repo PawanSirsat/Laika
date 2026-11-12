@@ -95,13 +95,7 @@
   background: var(--bg-column);
   border-radius: var(--radius-chip);
   /* Painted, not animated, when the reader has asked for less motion. */
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-  }
+  animation: skeleton-pulse var(--duration-shimmer) var(--ease-standard) infinite;
 }
 
 @keyframes skeleton-pulse {
@@ -303,7 +297,7 @@
   border: 2px solid currentColor;
   /* The gap that makes it read as rotating rather than as a ring. */
   border-top-color: transparent;
-  animation: spinner-turn 0.7s linear infinite;
+  animation: spinner-turn var(--duration-spinner) linear infinite;
   /* Optical: a ring beside text sits high without this. */
   vertical-align: -0.125em;
 }
@@ -327,8 +321,8 @@
  */
 @media (prefers-reduced-motion: reduce) {
   .spinner {
-    animation: none;
-    /* Without the spin, a gapped ring reads as broken. Close it. */
+    /* Stood still by the global rule in `styles/motion.css` (LAI-1208).
+       Without the spin, a gapped ring reads as broken. Close it. */
     border-top-color: currentColor;
     opacity: 0.55;
   }

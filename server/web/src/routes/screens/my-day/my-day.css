@@ -2279,7 +2279,7 @@ p.inspector-length {
   height: 0.5rem;
   border-radius: 50%;
   background: var(--accent);
-  animation: myday-pulse 1.6s ease-in-out infinite;
+  animation: myday-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 .myday-timer-paused .myday-timer-dot {
