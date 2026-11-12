@@ -108,7 +108,7 @@ void describe('loading holds its space and waits', () => {
       assert.doesNotMatch(d, /\d(?:ms|s)\b/, `a raw duration: ${d}`);
     }
     assert.ok(
-      timed.filter((d) => /var\(--duration-/.test(d)).length >= 2,
+      timed.filter((d) => d.includes('var(--duration-')).length >= 2,
       'the kit motion is not on --duration-* tokens',
     );
   });
