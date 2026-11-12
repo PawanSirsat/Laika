@@ -306,14 +306,11 @@ export const GLASS_SHARED_TOKENS = [
   '--glass-saturate',
 ] as const;
 
-/** Motion (LAI-1132): durations and easings every transition shares. */
-export const MOTION_TOKENS = [
-  '--duration-fast',
-  '--duration-base',
-  '--duration-slow',
-  '--ease-standard',
-  '--ease-emphasised',
-] as const;
+/*
+ * Motion tokens are not listed here: `theme/motion.ts` owns them and
+ * `styles/motion.css` declares them (LAI-1208). LAI-1132 kept five of the same
+ * names in theme.css; the merge train kept one copy.
+ */
 
 /**
  * The layer ladder (LAI-1132), low to high. Order is the contract — a

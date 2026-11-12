@@ -555,10 +555,14 @@ void describe('the toast', () => {
       );
       try {
         await removeTomas(h);
-        const name = await h.page
-          .locator('[data-toast]')
-          .evaluate((el) => getComputedStyle(el).animationName);
-        assert.equal(name, reduce ? 'none' : 'toast-in');
+        const { name, duration } = await h.page.locator('[data-toast]').evaluate((el) => ({
+          name: getComputedStyle(el).animationName,
+          duration: getComputedStyle(el).animationDuration,
+        }));
+        // Reduced motion zeroes the duration token (LAI-1208): the entrance
+        // is declared either way and takes no time under reduce.
+        assert.equal(name, 'toast-in');
+        assert.equal(duration === '0s', reduce, `toast-in ran for ${duration}`);
       } finally {
         await h.close();
       }

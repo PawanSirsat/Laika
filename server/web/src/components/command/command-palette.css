@@ -87,7 +87,7 @@
   position: absolute;
   inset: 0;
   background: var(--scrim);
-  animation: cmdk-fade 120ms ease-out;
+  animation: cmdk-fade var(--duration-fast) var(--ease-enter);
 }
 
 .cmdk-panel {
@@ -104,7 +104,7 @@
   color: var(--text-primary);
   font-family: var(--font-ui);
   overflow: hidden;
-  animation: cmdk-in 140ms ease-out;
+  animation: cmdk-in var(--duration-base) var(--ease-enter);
 }
 
 .cmdk-panel-loading {
@@ -337,12 +337,5 @@
   from {
     opacity: 0;
     transform: translateY(-0.375rem) scale(0.99);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cmdk-scrim,
-  .cmdk-panel {
-    animation: none;
   }
 }

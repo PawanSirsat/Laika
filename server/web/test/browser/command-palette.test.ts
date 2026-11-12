@@ -581,12 +581,14 @@ void describe('accessibility and layout', () => {
     try {
       await ready(h.page);
       await openWithKeys(h.page);
-      const names = await h.page.evaluate(() =>
+      // motion.css zeroes the duration tokens (LAI-1208): the entrance is
+      // still declared and runs in no time.
+      const durations = await h.page.evaluate(() =>
         ['.cmdk-panel', '.cmdk-scrim'].map(
-          (s) => getComputedStyle(document.querySelector(s)!).animationName,
+          (s) => getComputedStyle(document.querySelector(s)!).animationDuration,
         ),
       );
-      assert.deepEqual(names, ['none', 'none']);
+      assert.deepEqual(durations, ['0s', '0s']);
     } finally {
       await h.close();
     }

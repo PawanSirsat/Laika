@@ -27,7 +27,6 @@ import {
   GLASS_CONTRAST_PAIRS,
   GLASS_SHARED_TOKENS,
   LAYER_TOKENS,
-  MOTION_TOKENS,
   RADIUS_TOKENS,
   SPACE_TOKENS,
   SHARED_MISC_TOKENS,
@@ -134,7 +133,6 @@ void describe('every themed token exists in both themes', () => {
       ...FAMILY_TOKENS,
       ...SHARED_MISC_TOKENS,
       ...GLASS_SHARED_TOKENS,
-      ...MOTION_TOKENS,
       ...LAYER_TOKENS,
     ]);
     assert.deepEqual(
@@ -156,7 +154,6 @@ void describe('token-list.ts matches tokens.css', () => {
       ...FAMILY_TOKENS,
       ...SHARED_MISC_TOKENS,
       ...GLASS_SHARED_TOKENS,
-      ...MOTION_TOKENS,
       ...LAYER_TOKENS,
     ];
     assert.deepEqual(
@@ -176,7 +173,6 @@ void describe('token-list.ts matches tokens.css', () => {
       ...FAMILY_TOKENS,
       ...SHARED_MISC_TOKENS,
       ...GLASS_SHARED_TOKENS,
-      ...MOTION_TOKENS,
       ...LAYER_TOKENS,
     ]);
     const unlisted = [...new Set([...light.keys(), ...dark.keys()])].filter((t) => !listed.has(t));

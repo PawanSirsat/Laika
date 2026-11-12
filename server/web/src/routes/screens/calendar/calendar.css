@@ -55,7 +55,11 @@
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   cursor: pointer;
-  transition: var(--transition);
+  /* --transition's colour fade, on the duration token so it stops under
+     reduced motion as it did when this screen asked the question (LAI-1200). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .cal-btn:hover:not(:disabled) {
@@ -111,7 +115,11 @@
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   cursor: pointer;
-  transition: var(--transition);
+  /* --transition's colour fade, on the duration token so it stops under
+     reduced motion as it did when this screen asked the question (LAI-1200). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .cal-switch-option[aria-pressed='true'] {
@@ -385,7 +393,11 @@
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   cursor: pointer;
-  transition: var(--transition);
+  /* --transition's colour fade, on the duration token so it stops under
+     reduced motion as it did when this screen asked the question (LAI-1200). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .cal-task:hover {
@@ -678,14 +690,4 @@
   font-weight: var(--weight-medium);
   line-height: 1.4;
   color: var(--text-muted);
-}
-
-/* ------------------------------------------------------------- motion off */
-
-@media (prefers-reduced-motion: reduce) {
-  .cal-btn,
-  .cal-switch-option,
-  .cal-task {
-    transition: none;
-  }
 }

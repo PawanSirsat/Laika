@@ -2574,14 +2574,3 @@
     margin-right: var(--space-4);
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .org-scroll-inner {
-    scroll-behavior: auto;
-  }
-
-  .org-mode,
-  .perm-group-toggle {
-    transition: none;
-  }
-}
