@@ -671,7 +671,9 @@ export function Dropdown<V extends string = string>({
             shown[index + 1] !== undefined &&
             shown[index + 1]!.pinned !== true;
           return (
-            <Tooltip key={option.value} content={option.title ?? ''} lazy>
+            // An option's whole name on hover — a cut label stays readable — lazily,
+            // so a long list carries no tooltip until one is pointed at.
+            <Tooltip key={option.value} content={option.title ?? option.label} lazy>
               <div
                 id={optionId(indexOf.get(option.value) ?? index)}
                 data-index={index}
