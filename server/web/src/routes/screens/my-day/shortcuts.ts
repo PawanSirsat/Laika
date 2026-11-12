@@ -24,7 +24,14 @@ export type Shortcut =
   | 'help'
   | 'close'
   | 'add'
-  | 'timer';
+  | 'timer'
+  /** The View (LAI-1174): D, W, M, Y, and − / + one step out or in. */
+  | 'view-day'
+  | 'view-week'
+  | 'view-month'
+  | 'view-year'
+  | 'zoom-in'
+  | 'zoom-out';
 
 /** What a key event carries that matters here — a real one, or a test's. */
 export interface KeyLike {
@@ -52,6 +59,10 @@ const LETTERS: Readonly<Record<string, Shortcut>> = {
   k: 'prev',
   n: 'add',
   t: 'timer',
+  d: 'view-day',
+  w: 'view-week',
+  m: 'view-month',
+  y: 'view-year',
 };
 
 export function shortcutFor(event: KeyLike): Shortcut | undefined {
@@ -61,6 +72,8 @@ export function shortcutFor(event: KeyLike): Shortcut | undefined {
   if (event.key === 'Escape') return 'close';
   if (event.key === 'ArrowRight') return 'right';
   if (event.key === 'ArrowLeft') return 'left';
+  if (event.key === '+' || event.key === '=') return 'zoom-in';
+  if (event.key === '-') return 'zoom-out';
   if (event.key === 'Enter') {
     const tag = (event.target?.tagName ?? '').toUpperCase();
     return ACTS_ON_ENTER.has(tag) ? undefined : 'confirm';
@@ -96,6 +109,16 @@ export const SHORTCUT_GROUPS: readonly {
     rows: [
       ['← →', 'Move between blocks'],
       ['← → on an edge', 'Move that edge 5 min'],
+    ],
+  },
+  {
+    name: 'The view',
+    rows: [
+      ['D W M Y', 'Day, week, month or year'],
+      ['− +', 'Zoom out or in'],
+      ['← →', 'Previous or next week, month or year'],
+      ['Esc', 'Zoom out a step'],
+      ['Ctrl or ⌘ + scroll', 'Zoom on what is under the pointer'],
     ],
   },
 ];
