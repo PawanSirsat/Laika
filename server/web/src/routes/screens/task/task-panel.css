@@ -111,9 +111,15 @@
  * Jira's issue view. Only for somebody who may edit: the attribute is set by
  * the component that knows, and a reader's markup carries none.
  */
-[data-editable] {
-  transition: var(--transition);
-}
+/*
+ * **No transition on it** (LAI-1132). `var(--transition)` faded the
+ * background in from transparent, and a transition only moves on a rendered
+ * frame: until one lands, the hovered part still reads transparent (measured
+ * with the animation timeline frozen). On the glass branch CI read the hover
+ * 150 ms in and got transparent — `task-panel-editing.test.ts`, dark. The soft
+ * background now shows on the hover's own style change, with no frame to
+ * wait for.
+ */
 
 .doc-field {
   position: relative;
@@ -240,6 +246,14 @@
 .panel-head-action:focus-visible {
   border-color: var(--border-default);
   color: var(--text-primary);
+}
+
+/*
+ * The ⋯ button and its menu, as one box for outside-click (LAI-1190). Draws
+ * nothing itself, so the menu still hangs from the header's action row.
+ */
+.panel-overflow-anchor {
+  display: contents;
 }
 
 .panel-overflow {
@@ -1723,6 +1737,11 @@
 }
 
 /* The icon actions: one square each, no words, the count beside the eye. */
+/* The Workroom's *Expand* is a link (LAI-1199), drawn as the row's buttons. */
+.panel-expand {
+  text-decoration: none;
+}
+
 .panel-head-actions .panel-head-action {
   display: inline-flex;
   align-items: center;
@@ -1795,7 +1814,7 @@
   border-right: 2px solid var(--text-muted);
   border-bottom: 2px solid var(--text-muted);
   transform: rotate(-45deg);
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
   flex: none;
 }
 
@@ -2128,7 +2147,6 @@
   height: 100%;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  transition: width var(--transition);
 }
 
 /* The row is the hit area: key and title in one button, the rest beside it. */

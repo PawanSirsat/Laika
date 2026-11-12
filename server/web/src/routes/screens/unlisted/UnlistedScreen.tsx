@@ -1,15 +1,12 @@
 import { everyPage } from '../../../api/every-page.ts';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePolled } from '../../../api/use-polled.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
-import {
-  listUnlisted,
-  newestFirst,
-  openUnlistedCount,
-  type UnlistedWork,
-} from '../../../api/unlisted.ts';
+import { StaleNotice } from '../../../components/StaleNotice.tsx';
+import { listUnlisted, newestFirst, openUnlistedCount } from '../../../api/unlisted.ts';
 import { listAllUsers } from '../../../api/users.ts';
 import { UnlistedList } from './UnlistedList.tsx';
 import './unlisted.css';
@@ -28,6 +25,13 @@ export interface UnlistedScreenProps {
 const UNLISTED_PAGE = 25;
 
 /**
+ * How often the queue is read again while the page is open (LAI-1128). Agents
+ * log here at any time; a queue that only changed on a reload was a queue
+ * whose count disagreed with the sidebar's.
+ */
+const POLL_MS = 30_000;
+
+/**
  * Unlisted work triage (SPEC §4.14, LAI-413; compact since LAI-754).
  *
  * `log_unlisted_work` is the one MCP tool with no REST twin, and without this
@@ -43,30 +47,30 @@ const UNLISTED_PAGE = 25;
  * else (LAI-082), so this screen is not reached by anyone it would refuse.
  */
 export function UnlistedScreen({ onOpenTask, onChanged }: UnlistedScreenProps) {
-  const [rows, setRows] = useState<readonly UnlistedWork[] | undefined>(undefined);
   const [names, setNames] = useState<ReadonlyMap<string, string>>(new Map());
-  const [error, setError] = useState<unknown>(null);
   const [includeDismissed, setIncludeDismissed] = useState(false);
   const [shown, setShown] = useState(UNLISTED_PAGE);
 
-  const load = (signal?: AbortSignal): void => {
-    everyPage((cursor) => listUnlisted({ includeDismissed, cursor, limit: 200 }, signal))
-      .then(({ items }) => {
-        setRows(newestFirst(items));
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setError(cause);
-      });
-  };
-
-  useEffect(() => {
-    const controller = new AbortController();
-    load(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [includeDismissed]);
+  /*
+   * Every page, newest first, re-read on a timer (`usePolled`, LAI-1128): a
+   * good read clears any error, and a failed re-read keeps the rows on screen
+   * with a stale notice rather than replacing them with an error page.
+   * Showing dismissed rows is a different question, so it starts again.
+   */
+  const fetchQueue = useCallback(
+    (signal: AbortSignal) =>
+      everyPage((cursor) => listUnlisted({ includeDismissed, cursor, limit: 200 }, signal)).then(
+        ({ items }) => newestFirst(items),
+      ),
+    [includeDismissed],
+  );
+  const queue = usePolled(fetchQueue, {
+    ms: POLL_MS,
+    keepOnError: true,
+    pauseWhenHidden: true,
+    key: includeDismissed ? 'with-dismissed' : 'open',
+  });
+  const rows = queue.data;
 
   /*
    * Who logged each note. **Inactive people included**: a note keeps its
@@ -116,8 +120,15 @@ export function UnlistedScreen({ onOpenTask, onChanged }: UnlistedScreenProps) {
         task or dismiss it.
       </p>
 
-      {error !== null ? (
-        <ApiErrorState error={error} resource="the unlisted queue" scope="organisation" />
+      {queue.stale && <StaleNotice readAt={queue.readAt} onRetry={queue.retry} />}
+
+      {queue.status === 'error' ? (
+        <ApiErrorState
+          error={queue.error}
+          resource="the unlisted queue"
+          scope="organisation"
+          onRetry={queue.retry}
+        />
       ) : rows === undefined ? (
         <LoadingState shape="row" count={3} label="Loading unlisted work" />
       ) : rows.length === 0 ? (
@@ -136,7 +147,7 @@ export function UnlistedScreen({ onOpenTask, onChanged }: UnlistedScreenProps) {
             names={names}
             onOpenTask={onOpenTask}
             onChanged={() => {
-              load();
+              queue.retry();
               onChanged?.();
             }}
           />

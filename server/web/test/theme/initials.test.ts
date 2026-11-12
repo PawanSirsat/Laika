@@ -43,6 +43,15 @@ void describe('initials', () => {
     assert.equal(initials('ada lovelace'), 'AL');
   });
 
+  void test('a name that starts outside the basic plane is never half a character (LAI-1206)', () => {
+    // `word[0]` returned a lone surrogate here: the `�` disc.
+    assert.equal(initials('🦊 Fox'), '🦊F');
+    assert.equal(initials('𝒜da Lovelace'), '𝒜L');
+    assert.equal(initials('Jo'), 'J');
+    // A letter and its combining mark stay together.
+    assert.equal(initials('e\u0301mile Zola'), 'E\u0301Z');
+  });
+
   void test('non-latin names keep their own first characters', () => {
     // No transliteration, no dropping to `?` — the letters are the person's.
     assert.equal(initials('Ada Лавлейс'), 'AЛ');

@@ -1,3 +1,5 @@
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { formatCount } from '../../../components/chip/chip-model.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
@@ -37,12 +39,7 @@ import { reviewSince, statusSubline } from '../task/rail-derive.ts';
 import { checklistProgress } from '../task/acceptance-derive.ts';
 import { SendBackDialog } from '../review/SendBackDialog.tsx';
 import { PingButton } from '../../../components/agent/PingButton.tsx';
-import {
-  acceptReview,
-  getTaskRounds,
-  sendBackReview,
-  type TaskRounds,
-} from '../../../api/review.ts';
+import { useTaskReview, useTaskRounds } from '../task/use-task-review.ts';
 import { agentLabel } from '../../../api/selected-agent.ts';
 import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
@@ -64,6 +61,8 @@ import { HandoffSection } from '../../../components/agent/HandoffSection.tsx';
 import type { HandoffOffer } from '../../../api/handoffs.ts';
 import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
 import '../../../components/markers.css';
@@ -72,6 +71,11 @@ import './task-detail.css';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
+  /**
+   * The id the drawer is labelled by (LAI-1190, B3): the title carries it,
+   * and the key carries it with `-key`. Absent, the panel names nothing.
+   */
+  readonly headingId?: string | undefined;
   /**
    * The newest live frame that changes this task's execution (LAI-543), by
    * `seq`. When it moves the panel re-reads its activity quietly.
@@ -158,6 +162,12 @@ export interface TaskDetailPanelProps {
    * Review badge, as it does after a decision on the Review screen.
    */
   readonly onReviewDecided?: (() => void) | undefined;
+  /**
+   * The task's full page, the Workroom (LAI-1199): a link, so a cmd-click
+   * opens a tab, and `onExpand` for a plain click. Absent, no *Expand*.
+   */
+  readonly expandHref?: string | undefined;
+  readonly onExpand?: (() => void) | undefined;
 }
 
 /**
@@ -202,6 +212,7 @@ const LAST_SEEN_TICK_MS = 30_000;
  */
 export function TaskDetailPanel({
   slug,
+  headingId,
   agentsAllowed,
   task,
   byId,
@@ -227,6 +238,8 @@ export function TaskDetailPanel({
   listReadOrder = 0,
   executionSignal,
   onReviewDecided,
+  expandHref,
+  onExpand,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
   /*
@@ -365,82 +378,52 @@ export function TaskDetailPanel({
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowButton = useRef<HTMLButtonElement>(null);
+  /*
+   * **The overflow menu is a layer of its own** (LAI-1190, B22). Escape and a
+   * press outside close the menu and nothing else — the hook marks the Escape
+   * spent, so the drawer behind does not close with it. Escape hands focus
+   * back to ⋯, where the reader was.
+   */
+  const overflowBox = useDismiss(overflowOpen, (reason) => {
+    setOverflowOpen(false);
+    if (reason === 'escape') overflowButton.current?.focus();
+  });
+  const confirm = useConfirm();
+  /** Why the last detach was refused (B4): it used to fail in silence. */
+  const [detachError, setDetachError] = useState<string | undefined>(undefined);
+  const detach = async (): Promise<void> => {
+    setOverflowOpen(false);
+    const yes = await confirm({
+      title: 'Detach from parent?',
+      body: `${task.key} stops being a subtask of ${parent?.key ?? 'its parent'}. Nothing else about it changes.`,
+      confirmLabel: 'Detach',
+    });
+    if (!yes) return;
+    setDetachError(undefined);
+    try {
+      await updateTask(task.id, { parent_task_id: null });
+      onTaskEdited();
+    } catch (cause) {
+      setDetachError(
+        cause instanceof ApiError && cause.message !== ''
+          ? cause.message
+          : 'The task could not be detached.',
+      );
+    }
+  };
   const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
   const now = Date.now();
 
-  /*
-   * **The rounds, read once** (LAI-1117) for the state panel, the proof and
-   * the feed's finish summaries — keyed on `updated_at`, which the store keeps
-   * current from the stream, as the proof section always was.
-   */
-  const [roundsRead, setRoundsRead] = useState<{
-    readonly rounds: TaskRounds | undefined;
-    readonly failed: boolean;
-  }>({ rounds: undefined, failed: false });
-  useEffect(() => {
-    const controller = new AbortController();
-    setRoundsRead((was) => ({ rounds: was.rounds, failed: false }));
-    getTaskRounds(task.id, controller.signal)
-      .then((answer) => {
-        if (!controller.signal.aborted) setRoundsRead({ rounds: answer, failed: false });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted)
-          setRoundsRead((was) => ({ rounds: was.rounds, failed: true }));
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [task.id, task.updated_at]);
+  /* The rounds (LAI-1117) and the review decision (D-129, D-146), shared with the Workroom (LAI-1199). */
+  const roundsRead = useTaskRounds(task.id, task.updated_at);
   const rounds = roundsRead.rounds;
-
-  /*
-   * **Accept and Send back from the panel** (D-129 item 5; *Accept*, D-146): the Review
-   * screen's endpoints and dialog, offered to the reader the server lets
-   * decide. A refusal is shown as the server words it.
-   */
-  const [deciding, setDeciding] = useState<'accept' | 'send_back' | null>(null);
-  const [decideError, setDecideError] = useState<string | undefined>(undefined);
-  const [sendingBack, setSendingBack] = useState(false);
-  const [sendBackError, setSendBackError] = useState<string | undefined>(undefined);
-  const sendBackOpener = useRef<HTMLElement | null>(null);
-  const decided = (): void => {
+  const review = useTaskReview(task.id, () => {
     onTaskEdited();
     detail.refresh();
     onReviewDecided?.();
-  };
-  const accept = (): void => {
-    setDeciding('accept');
-    setDecideError(undefined);
-    acceptReview(task.id)
-      .then(decided)
-      .catch((cause: unknown) => {
-        setDecideError(
-          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
-        );
-      })
-      .finally(() => {
-        setDeciding(null);
-      });
-  };
-  const sendBack = (reason: string): void => {
-    setDeciding('send_back');
-    setSendBackError(undefined);
-    sendBackReview(task.id, reason)
-      .then(() => {
-        setSendingBack(false);
-        decided();
-      })
-      .catch((cause: unknown) => {
-        setSendBackError(
-          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
-        );
-      })
-      .finally(() => {
-        setDeciding(null);
-      });
-  };
+  });
   const [copied, setCopied] = useState('');
 
   /**
@@ -637,14 +620,7 @@ export function TaskDetailPanel({
    */
 
   return (
-    <div
-      className="panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${task.key} — ${task.title}`}
-      tabIndex={-1}
-      ref={panelRef}
-    >
+    <div className="panel" tabIndex={-1} ref={panelRef}>
       <header className="panel-head">
         {/*
           **A breadcrumb and plain icons** (D-066), as the owner's screenshot
@@ -674,14 +650,25 @@ export function TaskDetailPanel({
               </span>
             </>
           )}
-          <span className="panel-key" aria-current="page">
+          <span
+            className="panel-key"
+            aria-current="page"
+            {...(headingId === undefined ? {} : { id: `${headingId}-key` })}
+          >
             {task.key}
           </span>
           {/* The card's id elsewhere, beside its key (LAI-780, D-129). */}
           {task.external_ref !== null && isOutsideId(task.external_ref) && (
-            <span className="panel-outside-id" title="Outside id">
+            // The shared `ref` chip (LAI-1206): a square mono tab with a link
+            // mark, named aloud as what it is.
+            <Chip
+              variant="ref"
+              glyphLabel="Outside id"
+              title="Outside id"
+              className="panel-outside-id"
+            >
               {task.external_ref}
-            </span>
+            </Chip>
           )}
         </nav>
 
@@ -715,7 +702,9 @@ export function TaskDetailPanel({
                 />
                 <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
               </svg>
-              <span className="panel-head-count">{watchers?.length ?? '–'}</span>
+              <span className="panel-head-count">
+                {watchers === undefined ? '–' : formatCount(watchers.length)}
+              </span>
             </button>
           )}
 
@@ -748,56 +737,84 @@ export function TaskDetailPanel({
             {copied}
           </span>
 
-          <button
-            type="button"
-            className="panel-head-action"
-            aria-expanded={overflowOpen}
-            aria-label="More actions"
-            onClick={() => {
-              setOverflowOpen((open) => !open);
-            }}
-          >
-            <span aria-hidden="true">⋯</span>
-          </button>
+          <div className="panel-overflow-anchor" ref={overflowBox}>
+            <button
+              type="button"
+              className="panel-head-action"
+              aria-expanded={overflowOpen}
+              aria-label="More actions"
+              ref={overflowButton}
+              onClick={() => {
+                setOverflowOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden="true">⋯</span>
+            </button>
 
-          {overflowOpen && (
-            <ul className="panel-overflow">
-              <li>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    void copyText(task.key, event.currentTarget);
-                    setOverflowOpen(false);
-                  }}
-                >
-                  Copy task key
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    void copyText(window.location.href, event.currentTarget);
-                    setOverflowOpen(false);
-                  }}
-                >
-                  Copy link to this task
-                </button>
-              </li>
-              {mayEdit === true && task.parent_task_id !== null && (
+            {overflowOpen && (
+              <ul className="panel-overflow">
                 <li>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(event) => {
+                      void copyText(task.key, event.currentTarget);
                       setOverflowOpen(false);
-                      void updateTask(task.id, { parent_task_id: null }).then(onTaskEdited);
                     }}
                   >
-                    Detach from parent
+                    Copy task key
                   </button>
                 </li>
-              )}
-            </ul>
+                <li>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      void copyText(window.location.href, event.currentTarget);
+                      setOverflowOpen(false);
+                    }}
+                  >
+                    Copy link to this task
+                  </button>
+                </li>
+                {mayEdit === true && task.parent_task_id !== null && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void detach();
+                      }}
+                    >
+                      Detach from parent
+                    </button>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+
+          {expandHref !== undefined && (
+            <a
+              className="panel-head-action panel-expand"
+              href={expandHref}
+              aria-label="Expand to full page"
+              title="Expand to full page"
+              onClick={(event) => {
+                // A modified click is the browser's: a new tab or window.
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                if (onExpand === undefined) return;
+                event.preventDefault();
+                onExpand();
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </a>
           )}
 
           <button type="button" className="panel-close" onClick={onClose}>
@@ -813,7 +830,7 @@ export function TaskDetailPanel({
             The title as a heading, click to edit — the design writes it as text
             you type into rather than a field.
           */}
-          <h2 className="panel-title">
+          <h2 className="panel-title" {...(headingId === undefined ? {} : { id: headingId })}>
             <InlineEdit
               value={task.title}
               placeholder="Untitled task"
@@ -837,6 +854,11 @@ export function TaskDetailPanel({
           {moveError !== undefined && (
             <p className="panel-alert" role="alert">
               {moveError}
+            </p>
+          )}
+          {detachError !== undefined && (
+            <p className="panel-alert" role="alert">
+              {detachError}
             </p>
           )}
 
@@ -865,14 +887,10 @@ export function TaskDetailPanel({
             nameOf={(id) => personName(id, members)}
             claimNow={claimNow}
             mayDecide={mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
-            deciding={deciding}
-            decideError={decideError}
-            onAccept={accept}
-            onSendBack={(opener) => {
-              sendBackOpener.current = opener;
-              setSendBackError(undefined);
-              setSendingBack(true);
-            }}
+            deciding={review.deciding}
+            decideError={review.decideError}
+            onAccept={review.accept}
+            onSendBack={review.openSendBack}
             ping={
               mayEdit === true &&
               task.selected_agent !== undefined &&
@@ -899,17 +917,15 @@ export function TaskDetailPanel({
             people={people}
             meId={meId}
           />
-          {sendingBack && (
+          {review.sendingBack && (
             <SendBackDialog
               taskKey={task.key}
               title={task.title}
-              busy={deciding === 'send_back'}
-              error={sendBackError}
-              onSend={sendBack}
-              onClose={() => {
-                setSendingBack(false);
-              }}
-              restoreFocus={() => sendBackOpener.current}
+              busy={review.deciding === 'send_back'}
+              error={review.sendBackError}
+              onSend={review.sendBack}
+              onClose={review.closeSendBack}
+              restoreFocus={review.sendBackOpener}
             />
           )}
 

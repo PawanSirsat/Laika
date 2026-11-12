@@ -49,13 +49,17 @@ void describe('the spinner', () => {
   /**
    * `.skeleton` already stops animating under `prefers-reduced-motion`. Once
    * skeletons are still, a spinner is the only moving thing on the page.
+   *
+   * The stopping is the global rule's (LAI-1208): the turn runs on
+   * `--duration-spinner`, which `styles/motion.css` zeroes under reduced
+   * motion (`motion-tokens.test.ts`). The local block only repaints.
    */
   void test('stops spinning under reduced motion, without disappearing', () => {
+    assert.match(css, /\.spinner \{[^}]*animation: spinner-turn var\(--duration-spinner\)/s);
     const reduced = /@media \(prefers-reduced-motion: reduce\) \{\s*\.spinner \{([^}]*)\}/s.exec(
       css,
     );
-    assert.ok(reduced, 'the spinner ignores prefers-reduced-motion');
-    assert.match(reduced[1] ?? '', /animation: none/);
+    assert.ok(reduced, 'the still spinner is not repainted under prefers-reduced-motion');
     // Still visible: removing it would take the feedback away, not the motion.
     assert.doesNotMatch(reduced[1] ?? '', /display:\s*none/);
     // A gapped ring that is not turning reads as broken, so the gap closes.
