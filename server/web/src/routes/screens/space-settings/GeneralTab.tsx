@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Project } from '../../../api/projects.ts';
 import { settingsFieldErrors, updateSpace } from '../../../api/space-settings.ts';
+import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 import { SPACE_COLORS, spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
 import {
   draftOf,
@@ -16,6 +17,11 @@ export interface GeneralTabProps {
   readonly counts: Readonly<Record<string, number>> | undefined;
   readonly mayEdit: boolean;
   readonly onSaved: (project: Project) => void;
+  /**
+   * Whether the form holds changes not yet saved, so the screen can ask before
+   * a tab switch throws them away (B11). Told `false` when the tab goes.
+   */
+  readonly onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }
 
 /**
@@ -25,10 +31,16 @@ export interface GeneralTabProps {
  * task, and a half-typed name should not land on everybody's sidebar. The
  * server's refusal goes under the field it names — a `422` from validation,
  * a `409` for a prefix another space holds or held.
+ *
+ * Beside Save, *Saving… / Saved / Couldn't save — Retry* (`SaveStatus`,
+ * LAI-1129), *Saved* only on the server's answer. **Unsaved changes are
+ * guarded** (B11): the screen asks before another tab replaces this one, and
+ * the browser warns before the page is reloaded or left.
  */
-export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProps) {
+export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }: GeneralTabProps) {
   const [draft, setDraft] = useState<GeneralDraft>(() => draftOf(project));
-  const [saving, setSaving] = useState(false);
+  const status = useSaveStatus();
+  const saving = status.state.kind === 'saving';
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [failure, setFailure] = useState<string | undefined>(undefined);
 
@@ -37,29 +49,56 @@ export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProp
     setDraft(draftOf(project));
   }, [project]);
 
-  const dirty = isDirty(project, draft);
+  const dirty = mayEdit && isDirty(project, draft);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
+  );
+
+  // Reloading or leaving the page with changes unsaved gets the browser's own warning.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, [dirty]);
   const next = nextTaskKey(mayEdit ? draft.prefix : project.prefix, counts);
 
   const set = (patch: Partial<GeneralDraft>): void => {
     setDraft((current) => ({ ...current, ...patch }));
     setFailure(undefined);
+    // *Saved* was about the values before this edit.
+    status.reset();
   };
 
+  // The whole save — its answer handled too — is what Retry runs again.
   const save = (): void => {
-    setSaving(true);
-    setErrors({});
-    setFailure(undefined);
-    updateSpace(project.slug, generalPatch(project, draft))
-      .then(onSaved)
-      .catch((cause: unknown) => {
-        const byField = settingsFieldErrors(cause);
-        setErrors(byField);
-        if (Object.keys(byField).length === 0) {
-          setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
-        }
+    const patch = generalPatch(project, draft);
+    status
+      .run(() => {
+        setErrors({});
+        setFailure(undefined);
+        return updateSpace(project.slug, patch).then(onSaved, (cause: unknown) => {
+          const byField = settingsFieldErrors(cause);
+          setErrors(byField);
+          if (Object.keys(byField).length === 0) {
+            setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
+          }
+          throw cause;
+        });
       })
-      .finally(() => {
-        setSaving(false);
+      .catch(() => {
+        // Said under the field it names, or above Save, and by the status.
       });
   };
 
@@ -211,6 +250,7 @@ export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProp
 
       {mayEdit && (
         <footer className="ss-card-foot">
+          <SaveStatus className="ss-save-status" state={status.state} onRetry={status.retry} />
           {failure !== undefined && (
             <p className="ss-field-error ss-foot-error" role="alert">
               {failure}
@@ -224,6 +264,7 @@ export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProp
               setDraft(draftOf(project));
               setErrors({});
               setFailure(undefined);
+              status.reset();
             }}
           >
             Discard

@@ -61,6 +61,12 @@ import {
 import { countLabel, monthYear } from './profile-derive.ts';
 import { OverviewRows } from './overview/OverviewRows.tsx';
 import { UsageCard } from './UsageCard.tsx';
+import {
+  TAB_ACTIVE,
+  TAB_ITEM,
+  TabStrip,
+  rovingTabIndex,
+} from '../../../components/tabs/TabStrip.tsx';
 import './profile.css';
 
 export interface ProfileScreenProps {
@@ -215,7 +221,13 @@ export function ProfileScreen({
     return (
       <div className="prof">
         {chrome()}
-        <PermissionDenied resource="member profiles" requiredRole="admin" scope="organisation" />
+        {/* The grant, not a role (LAI-1191): an owner may give it to any role. */}
+        <PermissionDenied
+          resource="member profiles"
+          requiredRole="admin"
+          grant="See everyone’s analytics"
+          scope="organisation"
+        />
       </div>
     );
   }
@@ -372,25 +384,30 @@ export function ProfileScreen({
         tabs={
           offered.length > 1 ? (
             <nav className="prof-tabs" aria-label={`${user.name}’s profile`}>
-              {offered.map((id) => (
-                <a
-                  key={id}
-                  href={tabHref(id)}
-                  className={id === shownTab ? 'prof-tab prof-tab-active' : 'prof-tab'}
-                  aria-current={id === shownTab ? 'page' : undefined}
-                  data-profile-tab={id}
-                  onClick={follow(() => {
-                    onTab(id);
-                  })}
-                >
-                  {profileTabLabel(id, own)}
-                  {id === 'dev' && own && toFixLabel(ownSetup.toFix) !== undefined && (
-                    <span className="prof-tab-badge" data-profile-tab-badge>
-                      {toFixLabel(ownSetup.toFix)}
-                    </span>
-                  )}
-                </a>
-              ))}
+              <TabStrip activeKey={shownTab} className="prof-tabs-strip">
+                {offered.map((id, index) => (
+                  <a
+                    key={id}
+                    href={tabHref(id)}
+                    className={id === shownTab ? 'prof-tab prof-tab-active' : 'prof-tab'}
+                    aria-current={id === shownTab ? 'page' : undefined}
+                    tabIndex={rovingTabIndex(id === shownTab, index, offered.includes(shownTab))}
+                    data-profile-tab={id}
+                    {...{ [TAB_ITEM]: '' }}
+                    {...(id === shownTab ? { [TAB_ACTIVE]: '' } : {})}
+                    onClick={follow(() => {
+                      onTab(id);
+                    })}
+                  >
+                    {profileTabLabel(id, own)}
+                    {id === 'dev' && own && toFixLabel(ownSetup.toFix) !== undefined && (
+                      <span className="prof-tab-badge" data-profile-tab-badge>
+                        {toFixLabel(ownSetup.toFix)}
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </TabStrip>
             </nav>
           ) : undefined
         }

@@ -183,8 +183,11 @@
    * did not stand out was to raise the *card* (`--bg-card-hover`), not to sink the
    * lane. Caught by the other SHELL session, in both themes.
    */
-  background: var(--bg-column);
-  border: 1px solid var(--border-column);
+  /* Level-1 glass *tint* (LAI-1132): translucent over the ambient layer, no
+     blur — cards scroll in it, and they stay solid. */
+  background: var(--glass-sheen), var(--glass-1);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight);
   border-radius: var(--radius-column);
   /* The prototype's column: 12px top, 10px sides (LAI-605). */
   padding: 12px 10px 10px;
@@ -1978,4 +1981,30 @@
 
 .card .card-due-today {
   color: var(--chip-orange);
+}
+
+/*
+ * The sprint badge, unmistakable for the size chip (LAI-1198). Both were a
+ * small mono box — `S2` beside `S` read as one thing twice (visual audit,
+ * finding 5). The sprint is a **pill with a cycle mark**; the size keeps its
+ * square chip. Last in the file on purpose: the framing cascade above sets
+ * `.card-sprint`'s radius more than once (`.card .card-sprint` last, ~1810),
+ * and this must win on order at the same specificity.
+ * PR #315's `SprintKey` component is the shared form of this; when it lands,
+ * this rule and `.sprint-key` in `board-toolbar.css` fold into it.
+ */
+.card .card-sprint,
+.card .card-sprint-on {
+  gap: 0.1875rem;
+  padding: 2px 7px 2px 5px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-ui);
+  font-weight: var(--weight-bold);
+}
+
+.card-sprint-mark {
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: none;
+  stroke: currentColor;
 }

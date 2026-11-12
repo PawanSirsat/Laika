@@ -265,6 +265,10 @@ export function ReviewDialog({
                 className="rev-open"
                 href={boardHref(item)}
                 onClick={(event) => {
+                  // Modified clicks stay the browser's — new tab, new
+                  // window — as the Sidebar's do (LAI-1129).
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  if (event.button !== 0) return;
                   event.preventDefault();
                   onNavigate(boardHref(item));
                 }}

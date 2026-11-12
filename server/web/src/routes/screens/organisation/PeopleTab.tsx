@@ -4,6 +4,7 @@ import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   reissueInvite,
   revokeInvite,
@@ -93,17 +94,6 @@ type Pending =
   | { readonly kind: 'reactivate'; readonly person: OrgUser }
   | { readonly kind: 'revoke'; readonly invite: PendingInvite };
 
-/**
- * What the last consequential action did, once the server answered
- * (LAI-1194): one line, in words, and Undo only where undoing is real — a
- * single role change. A deactivation is not offered one: its sessions and
- * tokens are already gone, and Reactivate does not bring them back.
- */
-interface Result {
-  readonly text: string;
-  readonly undo?: { readonly person: OrgUser; readonly from: string };
-}
-
 const many = (n: number): string => `${String(n)} ${n === 1 ? 'person' : 'people'}`;
 
 /**
@@ -150,8 +140,25 @@ export function PeopleTab({
   const [pending, setPending] = useState<Pending | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | undefined>(undefined);
-  /** What the last action did, and its Undo while it can be put back. */
-  const [result, setResult] = useState<Result | undefined>(undefined);
+  /**
+   * The last single role change's toast, while its Undo can put it back
+   * (LAI-1129: the app's one toast, not a strip of this tab's own). A later
+   * change, or a deactivation, takes it away.
+   */
+  const toast = useToast();
+  const undoToast = useRef<number | undefined>(undefined);
+  const retireUndo = (): void => {
+    if (undoToast.current !== undefined) toast.dismiss(undoToast.current);
+    undoToast.current = undefined;
+  };
+  /**
+   * What the last consequential action did, once the server answered
+   * (LAI-1194), said in the app's one toast (LAI-1129).
+   */
+  const say = (text: string, tone: 'success' | 'info' = 'success'): void => {
+    retireUndo();
+    toast.show({ text, tone, mark: 'people-result' });
+  };
   /** Who is being deactivated, through LAI-988's offboarding dialog. */
   const [offboarding, setOffboarding] = useState<OrgUser | undefined>(undefined);
   /** A re-issued link, shown once (LAI-984). */
@@ -202,7 +209,7 @@ export function PeopleTab({
     done: (changed: number) => string,
   ) => {
     setBulk(label);
-    setResult(undefined);
+    retireUndo();
     let changed = 0;
     try {
       for (const id of ids) if (await onChange(id, patch)) changed += 1;
@@ -212,12 +219,13 @@ export function PeopleTab({
     }
     // Counted from the server's answers, never assumed: a refusal for one
     // person is said under the table, and this line says how many took.
-    setResult({
-      text:
-        changed === ids.length
-          ? done(changed)
-          : `${done(changed)} ${String(ids.length - changed)} could not be changed — the reason is under the table.`,
-    });
+    if (changed === ids.length) say(done(changed));
+    else {
+      say(
+        `${done(changed)} ${String(ids.length - changed)} could not be changed — the reason is under the table.`,
+        'info',
+      );
+    }
   };
 
   const closeConfirm = (): void => {
@@ -233,12 +241,21 @@ export function PeopleTab({
       setConfirming(true);
       void onChange(person.id, { org_role: role })
         .then((ok) => {
-          if (ok) {
-            setResult({
-              text: `${person.name} is now ${article(role)} ${orgRoleLabel(role).toLowerCase()}.`,
-              undo: { person, from: person.org_role },
-            });
-          }
+          if (!ok) return;
+          retireUndo();
+          const from = person.org_role;
+          undoToast.current = toast.show({
+            text: `${person.name} is now ${article(role)} ${orgRoleLabel(role).toLowerCase()}.`,
+            tone: 'success',
+            mark: 'people-undo',
+            // A real reversal: the server puts the role they had back.
+            undo: async () => {
+              undoToast.current = undefined;
+              const back = await onChange(person.id, { org_role: from });
+              if (!back) throw new Error(`${person.name}’s role was not put back.`);
+              return `${person.name} is ${article(from)} ${orgRoleLabel(from as OrgRole).toLowerCase()} again.`;
+            },
+          });
         })
         .finally(() => {
           setConfirming(false);
@@ -274,14 +291,11 @@ export function PeopleTab({
     if (pending.kind === 'reactivate') {
       const { person } = pending;
       setConfirming(true);
-      setResult(undefined);
+      retireUndo();
       void onChange(person.id, { is_active: true })
         .then((ok) => {
-          if (ok) {
-            setResult({
-              text: `${person.name} can sign in again. Their old sessions and tokens stay ended.`,
-            });
-          }
+          if (ok)
+            say(`${person.name} can sign in again. Their old sessions and tokens stay ended.`);
         })
         .finally(() => {
           setConfirming(false);
@@ -295,9 +309,9 @@ export function PeopleTab({
     revokeInvite(invite.id)
       .then(() => {
         closeConfirm();
-        setResult({
-          text: `The invite for ${invite.email ?? 'anyone with the link'} is revoked; its link no longer works.`,
-        });
+        say(
+          `The invite for ${invite.email ?? 'anyone with the link'} is revoked; its link no longer works.`,
+        );
         onReload();
       })
       .catch((cause: unknown) => {
@@ -475,49 +489,6 @@ export function PeopleTab({
           </button>
         </div>
       )}
-
-      {/* Always in the tree, so a screen reader hears each new result. */}
-      <div className="org-result-live" role="status" aria-live="polite">
-        {result !== undefined && (
-          <div className="org-undo" data-people-result>
-            <span className="org-result-text">{result.text}</span>
-            {result.undo !== undefined && (
-              <span className="org-undo-btn" data-people-undo>
-                <button
-                  type="button"
-                  className="org-bulk-action"
-                  disabled={busy}
-                  onClick={() => {
-                    const undo = result.undo;
-                    if (undo === undefined) return;
-                    const { person, from } = undo;
-                    setResult(undefined);
-                    void onChange(person.id, { org_role: from }).then((ok) => {
-                      if (ok) {
-                        setResult({
-                          text: `${person.name} is ${article(from)} ${orgRoleLabel(from as OrgRole).toLowerCase()} again.`,
-                        });
-                      }
-                    });
-                  }}
-                >
-                  Undo
-                </button>
-              </span>
-            )}
-            <button
-              type="button"
-              className="org-result-dismiss"
-              aria-label="Dismiss this message"
-              onClick={() => {
-                setResult(undefined);
-              }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          </div>
-        )}
-      </div>
 
       {filter === 'pending' ? (
         <div className="org-pending" data-people-pending>
@@ -758,7 +729,7 @@ export function PeopleTab({
                             disabled={busy}
                             onChange={(role) => {
                               if (role === person.org_role) return;
-                              setResult(undefined);
+                              retireUndo();
                               setPending({ kind: 'role', person, role });
                             }}
                             options={PICKABLE.map((r) => ({ value: r, label: orgRoleLabel(r) }))}
@@ -956,8 +927,8 @@ export function PeopleTab({
             });
           }}
           onDone={() => {
-            setResult({ text: `${offboarding.name} is deactivated and can no longer sign in.` });
             setOffboarding(undefined);
+            say(`${offboarding.name} is deactivated and can no longer sign in.`);
             onReload();
           }}
           onClose={() => {

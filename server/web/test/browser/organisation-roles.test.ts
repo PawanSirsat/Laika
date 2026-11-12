@@ -408,7 +408,8 @@ void describe('role management', () => {
       assert.equal(patch.path, '/api/v1/users/u2', 'patched the wrong person');
       assert.deepEqual(patch.body, { org_role: 'admin' });
 
-      await h.page.locator('[data-people-undo] button').click();
+      // The app's toast (LAI-1129): Undo by name, beside its Dismiss.
+      await h.page.locator('[data-people-undo]').getByRole('button', { name: 'Undo' }).click();
       await until(() => h.calls.filter((c: StubCall) => c.method === 'PATCH').length === 2);
       const undone = h.calls.filter((c: StubCall) => c.method === 'PATCH')[1];
       assert.equal(undone?.path, '/api/v1/users/u2');

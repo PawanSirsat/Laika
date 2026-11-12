@@ -46,8 +46,10 @@
 }
 
 .org-stat {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
   display: flex;
@@ -168,8 +170,10 @@
 }
 
 .org-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   padding: var(--space-4);
 }
@@ -2268,23 +2272,6 @@
 
 /* ------------------------------- LAI-987's features in LAI-893's tab (LAI-999) */
 
-.org-undo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin: 0 var(--space-5) var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-card);
-  background: var(--accent-bg);
-  font-size: var(--text-body);
-  color: var(--text-primary);
-}
-
-.org-undo-btn {
-  margin-left: auto;
-}
-
 .org-people-space {
   flex: none;
 }
@@ -2363,11 +2350,6 @@
 }
 
 @media (max-width: 40rem) {
-  .org-undo {
-    margin-left: var(--space-4);
-    margin-right: var(--space-4);
-  }
-
   .org-invites li {
     flex-wrap: wrap;
   }
@@ -2412,39 +2394,6 @@
   text-align: right;
 }
 
-/* What the last action did, and Undo where undoing is real. */
-.org-result-live:empty {
-  display: none;
-}
-
-.org-result-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.org-result-dismiss {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  margin: 0;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-body);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.org-result-dismiss:hover {
-  color: var(--text-primary);
-  background: var(--bg-card-hover);
-}
-
-.org-result-dismiss:focus-visible,
 .org-people-empty-clear:focus-visible,
 .perm-group-toggle:focus-visible {
   outline: 2px solid var(--accent);
@@ -2632,8 +2581,7 @@
   }
 
   .org-mode,
-  .perm-group-toggle,
-  .org-result-dismiss {
+  .perm-group-toggle {
     transition: none;
   }
 }

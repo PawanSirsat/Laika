@@ -49,26 +49,25 @@ void describe('People: consequential actions confirm, then say what happened', (
       assert.equal(patches(h).length, 0, 'the change went out before the confirmation');
       await dialog.locator('[data-confirm-ok] button').click();
 
-      const result = h.page.locator('[data-people-result]');
+      // The app's one toast (LAI-1129), with a real Undo.
+      const result = h.page.locator('[data-people-undo]');
       await result.waitFor({ timeout: 10_000 });
       assert.equal(
-        (await result.locator('.org-result-text').innerText()).trim(),
+        (await result.locator('.toast-text').innerText()).trim(),
         'Tomas Nel is now an admin.',
       );
       assert.equal(
-        await h.page.locator('.org-result-live').getAttribute('role'),
+        await result.locator('.toast-text').getAttribute('role'),
         'status',
         'the result is not announced',
       );
 
-      await result.locator('[data-people-undo] button').click();
+      await result.getByRole('button', { name: 'Undo' }).click();
       await until(() => patches(h, '/api/v1/users/u2').length === 2);
       assert.deepEqual(patches(h, '/api/v1/users/u2')[1]?.body, { org_role: 'member' });
-      await until(async () =>
-        (await h.page.locator('[data-people-result]').innerText()).includes('again'),
-      );
+      await until(async () => (await result.innerText()).includes('again'));
       assert.equal(
-        (await h.page.locator('[data-people-result] .org-result-text').innerText()).trim(),
+        (await result.locator('.toast-text').innerText()).trim(),
         'Tomas Nel is a member again.',
       );
     } finally {
@@ -88,7 +87,7 @@ void describe('People: consequential actions confirm, then say what happened', (
       assert.equal(await dialog.count(), 0, 'Escape did not close the confirmation');
       await h.page.waitForTimeout(300);
       assert.equal(patches(h).length, 0);
-      assert.equal(await h.page.locator('[data-people-result]').count(), 0);
+      assert.equal(await h.page.locator('[data-toast]').count(), 0);
     } finally {
       await h.close();
     }
@@ -120,7 +119,11 @@ void describe('People: consequential actions confirm, then say what happened', (
       const result = h.page.locator('[data-people-result]');
       await result.waitFor({ timeout: 10_000 });
       assert.match(await result.innerText(), /Sam Okafor can sign in again/);
-      assert.equal(await result.locator('[data-people-undo]').count(), 0, 'Undo offered for it');
+      assert.equal(
+        await result.getByRole('button', { name: 'Undo' }).count(),
+        0,
+        'Undo offered for it',
+      );
     } finally {
       await h.close();
     }
@@ -145,7 +148,7 @@ void describe('People: consequential actions confirm, then say what happened', (
       const result = h.page.locator('[data-people-result]');
       await result.waitFor({ timeout: 10_000 });
       assert.equal(
-        (await result.locator('.org-result-text').innerText()).trim(),
+        (await result.locator('.toast-text').innerText()).trim(),
         '1 person is now admin. 1 could not be changed — the reason is under the table.',
       );
       assert.equal(await h.page.locator('.org-people-error').innerText(), REFUSED);
@@ -175,7 +178,7 @@ void describe('People: consequential actions confirm, then say what happened', (
       assert.ok(h.calls.some((c) => c.method === 'DELETE' && c.path === '/api/v1/invites/i1'));
 
       // Dismissing it is a keyboard action like any other.
-      await result.locator('.org-result-dismiss').focus();
+      await result.locator('.toast-close').focus();
       await h.page.keyboard.press('Enter');
       await until(async () => (await h.page.locator('[data-people-result]').count()) === 0);
       assert.equal(await h.page.locator('[data-people-result]').count(), 0);

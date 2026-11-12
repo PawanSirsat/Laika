@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type { FilterKey } from './filter-keys.ts';
 import type { FilterChip } from './filter-chips.ts';
 
@@ -13,6 +13,11 @@ export interface FilterChipsProps {
   readonly onClearAll: () => void;
   /** Where focus goes when the control that had it is gone with its filter. */
   readonly filterButtonRef: RefObject<HTMLButtonElement | null>;
+  /**
+   * What the filters leave, at the row's end — the board's sprint scope
+   * (LAI-1198). Drawn only with the chips: it explains them.
+   */
+  readonly trailing?: ReactNode;
 }
 
 /**
@@ -31,6 +36,7 @@ export function FilterChips({
   onRemove,
   onClearAll,
   filterButtonRef,
+  trailing,
 }: FilterChipsProps) {
   if (chips.length === 0) return null;
 
@@ -87,6 +93,7 @@ export function FilterChips({
       >
         Clear all
       </button>
+      {trailing}
     </div>
   );
 }

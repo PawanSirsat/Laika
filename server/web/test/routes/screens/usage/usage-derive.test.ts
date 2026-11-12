@@ -17,6 +17,7 @@ import {
   scopeOptions,
   spaceRow,
   spaceUsageHref,
+  usageRange,
 } from '../../../../src/routes/screens/usage/usage-derive.ts';
 
 const PROJECTS = [
@@ -172,5 +173,21 @@ void describe('LAI-1127: the Budget alerts card and the Breakdown tabs', () => {
     assert.equal(breakdownTab('model', breakdownTabs(false), false), 'model');
     // Space picked on the organisation, then a space chosen: Space is gone.
     assert.equal(breakdownTab('space', breakdownTabs(false), true), 'developer');
+  });
+});
+
+void describe('the period is ?range= (LAI-1201)', () => {
+  void test('7, 30 and 90 are read; anything else is 30 days', () => {
+    assert.equal(usageRange('7'), 7);
+    assert.equal(usageRange('90'), 90);
+    assert.equal(usageRange('30'), 30);
+    assert.equal(usageRange(null), 30);
+    assert.equal(usageRange('14'), 30);
+    assert.equal(usageRange('7d'), 30);
+  });
+
+  void test('a space’s link carries a period other than the default', () => {
+    assert.equal(spaceUsageHref('laika', 7), '/insights?tab=usage&project=laika&range=7');
+    assert.equal(spaceUsageHref('laika', 30), '/insights?tab=usage&project=laika');
   });
 });
