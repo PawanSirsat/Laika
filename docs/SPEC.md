@@ -6798,7 +6798,7 @@ call MCP; agents do.
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
-| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134 |
+| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
@@ -7353,6 +7353,23 @@ anything missing sends the task back.
   message drawn as plain text and the first card, a space they can no longer
   open named as gone — with *Mark read* and *Mark all read*, and the unread
   count on *My day* in the rail; nothing at all when there is nothing.
+  **The View** (LAI-1174, the owner's *My Day Calendar Zoom*): *Day · Week ·
+  Month · Year* as one radio group under the header, with − / + one step out
+  or in, the keys D, W, M, Y and − / +, Esc a step out, and Ctrl/⌘ + scroll or
+  a pinch on what is under the pointer; the view is the address's `span=`
+  beside `day=`, Day when absent. **Day is the page above, unchanged.** Week is
+  seven columns over the hours its blocks fill — never clamped to a fixed
+  window — two blocks at once side by side, a block opening its day in the
+  editor; Month is Monday-first weeks, each day its total, its two largest
+  tasks and a bar, a week number opening the week; Year is twelve small
+  months coloured by quartile of the year's own working days. **No target**:
+  every bar is a share of the period's busiest day, and a day nothing reached
+  says *no signal* (`—`), never zero hours. Opening a part zooms into it from
+  where it sat and leaving zooms back (520 ms, one scale for both axes); less
+  motion is no movement. The wider views edit nothing: *Add time*, *Fill
+  gaps*, *Confirm day*, the lists and the drawer are Day's. Somebody else's
+  day (`?user=`) reads the same views through `/people/:id`; a profile's
+  embedded day is Day only.
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
   menu opens the reader's own) — the owner's design *Laika Profile*
   (2026-11-06, D-139, LAI-1148). **One profile for two cases**: an owner or

@@ -104,17 +104,29 @@ import { Toast, type ToastState } from './Toast.tsx';
 import { usePeople, ViewingSwitch } from './ViewingSwitch.tsx';
 import { WhoLooked } from './WhoLooked.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
+import { SpanStage, type BlockPick } from './SpanStage.tsx';
+import { periodLabel, startsAfter, stepPeriod, zoomSpan, type Span as ViewSpan } from './span.ts';
+import { ViewSwitch } from './ViewSwitch.tsx';
 import { dayLong } from './week-derive.ts';
 import './my-day.css';
 // The lists as designed (LAI-514), after `my-day.css` so its rules win.
 import './lists.css';
 // After my-day.css: the phone's rules (LAI-518) win at equal specificity.
 import './phone.css';
+// The View's Week, Month and Year (LAI-1174).
+import './span.css';
 
 export interface MyDayScreenProps {
   /** `?day=` — a calendar day in the reader's zone; today when absent. */
   readonly day: string | undefined;
   readonly onDay: (day: string) => void;
+  /**
+   * `?span=` — Day, Week, Month or Year around `day` (LAI-1174); Day when
+   * absent. A profile's embedded day is Day only.
+   */
+  readonly span?: ViewSpan | undefined;
+  /** Change the view, and the day with it when given — one history entry. */
+  readonly onSpan?: ((span: ViewSpan, day?: string) => void) | undefined;
   /** Whose plate (LAI-796): their own open tasks. */
   readonly me?: MeProfile | undefined;
   /** The review queue the shell holds for the sidebar's badge. */
@@ -279,6 +291,8 @@ const ready = (d: TimeDraft): boolean => d.task !== null || d.project !== null |
 export function MyDayScreen({
   day,
   onDay,
+  span: spanProp,
+  onSpan,
   me,
   queue,
   queueCapped,
@@ -317,6 +331,28 @@ export function MyDayScreen({
   /** Whose entries a write goes to: `undefined` is the reader's own. */
   const entrySubject = notOwn ? subjectId : undefined;
   const selectedDay = isDay(day) ? day : dayIn(tz, Date.now());
+  /** The View (LAI-1174): wider than Day only on the page itself, with somewhere to change it. */
+  const viewSpan: ViewSpan =
+    embedded === undefined && onSpan !== undefined ? (spanProp ?? 'day') : 'day';
+  const wide = viewSpan !== 'day';
+  /** Day a moment ago: the wider view arrives by zooming out of it. */
+  const lastSpan = useRef<ViewSpan>(viewSpan);
+  const fromDay = lastSpan.current === 'day';
+  useEffect(() => {
+    lastSpan.current = viewSpan;
+  }, [viewSpan]);
+  /** A block opened from Week, put in the editor once its day has loaded. */
+  const pendingPick = useRef<{ readonly day: string; readonly pick: BlockPick } | undefined>(
+    undefined,
+  );
+  const goSpan = useCallback(
+    (next: ViewSpan, nextDay?: string, pick?: BlockPick): void => {
+      pendingPick.current =
+        pick === undefined || nextDay === undefined ? undefined : { day: nextDay, pick };
+      onSpan?.(next, nextDay);
+    },
+    [onSpan],
+  );
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [pending, setPending] = useState<string | undefined>(undefined);
   const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
@@ -449,6 +485,21 @@ export function MyDayScreen({
       return gaps.some((g) => g.start === prev.start && g.end === prev.end) ? prev : undefined;
     });
   }, [load]);
+
+  // A block Week opened goes into the editor when its day is the one loaded (LAI-1174).
+  useEffect(() => {
+    const p = pendingPick.current;
+    if (p === undefined || load.kind !== 'ready' || load.view.day !== p.day || wide) return;
+    pendingPick.current = undefined;
+    setSelection(p.pick);
+  }, [load, wide]);
+
+  // The wider views edit nothing: the editor and the drawer close as one is opened.
+  useEffect(() => {
+    if (!wide) return;
+    setSelection(undefined);
+    setBeside(false);
+  }, [wide]);
 
   // Undo is offered for about ten seconds; anything else says its word and goes.
   useEffect(() => {
@@ -1326,9 +1377,41 @@ export function MyDayScreen({
         setBeside(false);
         return true;
       }
+      // With nothing left to close, Esc steps the View out (LAI-1174).
+      if (wide && dialog === null) {
+        const out = zoomSpan(viewSpan, 'out');
+        if (out !== undefined) goSpan(out);
+        return out !== undefined;
+      }
       return false;
     }
     if (dialog !== null || busy) return false;
+    if (onSpan !== undefined && embedded === undefined) {
+      const views: Partial<Record<typeof shortcut, ViewSpan>> = {
+        'view-day': 'day',
+        'view-week': 'week',
+        'view-month': 'month',
+        'view-year': 'year',
+      };
+      const to = views[shortcut];
+      if (to !== undefined) {
+        if (to !== viewSpan) goSpan(to);
+        return true;
+      }
+      if (shortcut === 'zoom-in' || shortcut === 'zoom-out') {
+        const next = zoomSpan(viewSpan, shortcut === 'zoom-in' ? 'in' : 'out');
+        if (next !== undefined) goSpan(next);
+        return true;
+      }
+      if (wide && (shortcut === 'left' || shortcut === 'right')) {
+        const nextDay = stepPeriod(viewSpan, selectedDay, shortcut === 'right' ? 1 : -1);
+        // Not into a period that has not begun, as the › button.
+        if (shortcut === 'left' || !startsAfter(viewSpan, nextDay, view.today))
+          goSpan(viewSpan, nextDay);
+        return true;
+      }
+      if (wide) return false;
+    }
     if (shortcut === 'add') {
       if (!canEdit || !addable) return false;
       addTime();
@@ -1455,7 +1538,7 @@ export function MyDayScreen({
       </MyDayPhoneBar>
     ) : null;
   const phoneHead =
-    phone && embedded === undefined ? (
+    phone && embedded === undefined && !wide ? (
       <MyDayPhoneHead
         view={view}
         readOnly={notOwn}
@@ -1575,7 +1658,44 @@ export function MyDayScreen({
       <div className="myday-column">
         {phoneBar}
         {phoneHead}
-        {embedded === undefined && phoneHead === undefined ? (
+        {phoneHead !== undefined && onSpan !== undefined && !orgOff && (
+          <div className="myday-phone-view">
+            <ViewSwitch
+              span={viewSpan}
+              day={selectedDay}
+              today={view.today}
+              withNav={false}
+              disabled={batching}
+              onSpan={(next) => {
+                goSpan(next);
+              }}
+              onStep={() => undefined}
+              onToday={() => undefined}
+            />
+          </div>
+        )}
+        {phone && wide && embedded === undefined ? (
+          // A phone's wider view (LAI-1174): the bar above already holds the
+          // person, the eye and the switcher, so the head is the period and the View.
+          <div className="myday-phone-view myday-phone-span" data-phone-span>
+            <p className="myday-phone-span-title">{periodLabel(viewSpan, selectedDay)}</p>
+            <ViewSwitch
+              span={viewSpan}
+              day={selectedDay}
+              today={view.today}
+              withNav
+              onSpan={(next) => {
+                goSpan(next);
+              }}
+              onStep={(by) => {
+                goSpan(viewSpan, stepPeriod(viewSpan, selectedDay, by));
+              }}
+              onToday={() => {
+                goSpan(viewSpan, view.today);
+              }}
+            />
+          </div>
+        ) : embedded === undefined && phoneHead === undefined ? (
           <ScreenHeader
             variant="page"
             title={title}
@@ -1586,23 +1706,25 @@ export function MyDayScreen({
                 )
               ) : (
                 <>
-                  <span className="myday-figure" data-day-total>
-                    <span className="myday-figure-total">
-                      {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
-                      {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+                  {!wide && (
+                    <span className="myday-figure" data-day-total>
+                      <span className="myday-figure-total">
+                        {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
+                        {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+                      </span>
+                      <span className="myday-figure-sub">
+                        {view.state === 'future'
+                          ? 'not started'
+                          : emptyKind === 'past'
+                            ? 'no signal'
+                            : totals.drafted > 0
+                              ? `${duration(totals.drafted)} to review`
+                              : totals.confirmed > 0
+                                ? `${duration(totals.confirmed)} confirmed`
+                                : 'nothing yet'}
+                      </span>
                     </span>
-                    <span className="myday-figure-sub">
-                      {view.state === 'future'
-                        ? 'not started'
-                        : emptyKind === 'past'
-                          ? 'no signal'
-                          : totals.drafted > 0
-                            ? `${duration(totals.drafted)} to review`
-                            : totals.confirmed > 0
-                              ? `${duration(totals.confirmed)} confirmed`
-                              : 'nothing yet'}
-                    </span>
-                  </span>
+                  )}
                   {/* My availability (D-131, LAI-1139): yours to set, so never on someone else's day. */}
                   {!notOwn && <AvailabilityPopover />}
                 </>
@@ -1610,9 +1732,9 @@ export function MyDayScreen({
             }
             description={
               <span className="myday-subtitle">
-                <span>
-                  {dayLong(view.day)}
-                  {view.day === view.today && ' · today'}
+                <span data-view-label>
+                  {wide ? periodLabel(viewSpan, selectedDay) : dayLong(view.day)}
+                  {!wide && view.day === view.today && ' · today'}
                 </span>
                 <span className="myday-subtitle-dot" aria-hidden="true" />
                 {notOwn ? (
@@ -1667,8 +1789,40 @@ export function MyDayScreen({
               </span>
             }
             below={
-              orgOff ? undefined : (
+              orgOff ? undefined : wide ? (
                 <div className="myday-below">
+                  <ViewSwitch
+                    span={viewSpan}
+                    day={selectedDay}
+                    today={view.today}
+                    withNav
+                    onSpan={(next) => {
+                      goSpan(next);
+                    }}
+                    onStep={(by) => {
+                      goSpan(viewSpan, stepPeriod(viewSpan, selectedDay, by));
+                    }}
+                    onToday={() => {
+                      goSpan(viewSpan, view.today);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="myday-below">
+                  {onSpan !== undefined && (
+                    <ViewSwitch
+                      span={viewSpan}
+                      day={selectedDay}
+                      today={view.today}
+                      withNav={false}
+                      disabled={batching}
+                      onSpan={(next) => {
+                        goSpan(next);
+                      }}
+                      onStep={() => undefined}
+                      onToday={() => undefined}
+                    />
+                  )}
                   {/* A phone walks the days one at a time (LAI-502); the width decides, in CSS. */}
                   <div className="myday-daynav" data-day-nav>
                     <button
@@ -1741,28 +1895,31 @@ export function MyDayScreen({
                     void timerDiscard();
                   }}
                 />
-                <button
-                  type="button"
-                  className="myday-chip myday-head-button"
-                  data-add-time
-                  title="Add time (N)"
-                  aria-label="Add time"
-                  disabled={busy || batching}
-                  onClick={addTime}
-                >
-                  <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
-                    <path
-                      d="M6 1.5v9M1.5 6h9"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="myday-head-text">Add time</span>
-                  <kbd className="myday-kbd myday-kbd-hint">N</kbd>
-                </button>
+                {/* The wider views edit nothing (LAI-1174): Add time, Fill gaps and Confirm day are Day's. */}
+                {!wide && (
+                  <button
+                    type="button"
+                    className="myday-chip myday-head-button"
+                    data-add-time
+                    title="Add time (N)"
+                    aria-label="Add time"
+                    disabled={busy || batching}
+                    onClick={addTime}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+                      <path
+                        d="M6 1.5v9M1.5 6h9"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <span className="myday-head-text">Add time</span>
+                    <kbd className="myday-kbd myday-kbd-hint">N</kbd>
+                  </button>
+                )}
                 {/* Fill gaps (the design, LAI-513): today's gaps before now, one after another. */}
-                {view.day === view.today && gapsBeforeNow.length > 0 && (
+                {!wide && view.day === view.today && gapsBeforeNow.length > 0 && (
                   <button
                     type="button"
                     className="myday-chip myday-head-button myday-fill-gaps"
@@ -1786,7 +1943,7 @@ export function MyDayScreen({
                 )}
               </>
             )}
-            {!notOwn && addable && view.state !== 'future' && (
+            {!wide && !notOwn && addable && view.state !== 'future' && (
               <button
                 type="button"
                 className="myday-chip myday-chip-primary myday-confirm-day"
@@ -1815,7 +1972,7 @@ export function MyDayScreen({
                 </span>
               </button>
             )}
-            {!notOwn && addable && view.drafts.length === 0 && view.state !== 'future' && (
+            {!wide && !notOwn && addable && view.drafts.length === 0 && view.state !== 'future' && (
               <button
                 type="button"
                 className="myday-chip myday-head-button"
@@ -1930,129 +2087,146 @@ export function MyDayScreen({
           </p>
         )}
 
-        <div className="myday" data-myday-ready>
-          {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
-          {orgOff ? (
-            <DayOff
-              onOpenSettings={() => {
-                onNavigate('/organisation');
-              }}
-            />
-          ) : emptyKind !== undefined ? (
-            <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />
-          ) : phone ? (
-            <TimelineMobile
-              view={view}
-              line={line}
-              selection={selection}
-              onSelect={(next) => {
-                if (next.kind === 'gap') pickGap(next);
-                else setSelection(next);
-              }}
-              onAgent={() => {
-                // An agent's bar opens Agent time in the sheet, as the header's button does.
-                setSelection(undefined);
-                setBeside(true);
-              }}
-              readOnly={notOwn}
-            />
-          ) : (
-            <Timeline
-              view={view}
-              line={line}
+        {wide ? (
+          <div className="myday" data-myday-span={viewSpan}>
+            <SpanStage
+              span={viewSpan}
+              day={selectedDay}
+              today={view.today}
+              tz={tz}
+              subjectId={subjectId}
               nowMs={now}
-              zoom={zoom}
-              onZoom={setZoom}
-              selection={selection}
-              onSelect={(next) => {
-                if (next.kind === 'gap') pickGap(next);
-                else setSelection(next);
-              }}
-              onEdge={onEdge}
-              onDropEntry={onDropEntry}
-              onTimerClick={() => {
-                // The running timer's controls are the header's pill: a click
-                // on its block hands the keyboard to them.
-                document.querySelector<HTMLElement>('[data-timer] button')?.focus();
-              }}
-              busy={busy}
-              readOnly={!canEdit}
-              lockDrafts={notOwn}
+              fromDay={fromDay}
+              onOpen={goSpan}
             />
-          )}
-          <div className="myday-main">
-            {showLists && (
-              <UntimedTray
-                drafts={view.drafts}
-                entries={view.entries}
-                selected={selectedId}
-                readOnly={notOwn}
-                draggable={!notOwn && addable && !busy}
-                onPick={(item) => {
-                  setSelection(item);
-                }}
-              />
-            )}
-            {showLists && (
-              <DayTabs
-                current={shownTab}
-                counts={{ review: view.drafts.length, confirmed: view.entries.length }}
-                onPick={pickTab}
-              />
-            )}
-            {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
-            {showLists && inTab('overview') && !notOwn && <ForYouCard onNavigate={onNavigate} />}
-            {showLists && inTab('overview') && (
-              <OverviewTab
-                view={view}
-                meId={me?.id}
-                subjectId={subjectId}
-                subjectName={subjectName}
-              />
-            )}
-            {showLists && inTab('review') && (
-              <DraftList
-                // A new day starts with nothing ticked.
-                key={`drafts-${view.day}`}
-                drafts={view.drafts}
-                pending={pending}
-                batch={
-                  batch.kind === 'running' && batch.day === view.day ? batch : { kind: 'idle' }
-                }
-                selected={selectedId}
-                onSelect={(draft) => {
-                  setSelection({ kind: 'draft', id: draft.id });
-                }}
-                onNavigate={onNavigate}
-                readOnly={notOwn}
-                draftOff={draftOff}
-                assignOptions={assignOptions}
-                onBulk={(kind, chosen, card) =>
-                  runBatch(
-                    'bulk',
-                    kind === 'assign' && card !== undefined ? `Putting on ${card}` : RUNNING[kind],
-                    view.day,
-                    chosen.map((d) => d.id),
-                    (api, progress) => runBulk(kind, chosen, api, progress, card),
-                  )
-                }
-              />
-            )}
-            {showLists && inTab('confirmed') && (
-              <EntryList
-                key={`entries-${view.day}`}
-                entries={view.entries}
-                selected={selectedId}
-                readOnly={notOwn}
-                subjectName={subjectName}
-                onSelect={(entry) => {
-                  setSelection({ kind: 'entry', id: entry.id });
-                }}
-                onNavigate={onNavigate}
-              />
-            )}
           </div>
-        </div>
+        ) : (
+          <div className="myday" data-myday-ready>
+            {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
+            {orgOff ? (
+              <DayOff
+                onOpenSettings={() => {
+                  onNavigate('/organisation');
+                }}
+              />
+            ) : emptyKind !== undefined ? (
+              <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />
+            ) : phone ? (
+              <TimelineMobile
+                view={view}
+                line={line}
+                selection={selection}
+                onSelect={(next) => {
+                  if (next.kind === 'gap') pickGap(next);
+                  else setSelection(next);
+                }}
+                onAgent={() => {
+                  // An agent's bar opens Agent time in the sheet, as the header's button does.
+                  setSelection(undefined);
+                  setBeside(true);
+                }}
+                readOnly={notOwn}
+              />
+            ) : (
+              <Timeline
+                view={view}
+                line={line}
+                nowMs={now}
+                zoom={zoom}
+                onZoom={setZoom}
+                selection={selection}
+                onSelect={(next) => {
+                  if (next.kind === 'gap') pickGap(next);
+                  else setSelection(next);
+                }}
+                onEdge={onEdge}
+                onDropEntry={onDropEntry}
+                onTimerClick={() => {
+                  // The running timer's controls are the header's pill: a click
+                  // on its block hands the keyboard to them.
+                  document.querySelector<HTMLElement>('[data-timer] button')?.focus();
+                }}
+                busy={busy}
+                readOnly={!canEdit}
+                lockDrafts={notOwn}
+              />
+            )}
+            <div className="myday-main">
+              {showLists && (
+                <UntimedTray
+                  drafts={view.drafts}
+                  entries={view.entries}
+                  selected={selectedId}
+                  readOnly={notOwn}
+                  draggable={!notOwn && addable && !busy}
+                  onPick={(item) => {
+                    setSelection(item);
+                  }}
+                />
+              )}
+              {showLists && (
+                <DayTabs
+                  current={shownTab}
+                  counts={{ review: view.drafts.length, confirmed: view.entries.length }}
+                  onPick={pickTab}
+                />
+              )}
+              {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
+              {showLists && inTab('overview') && !notOwn && <ForYouCard onNavigate={onNavigate} />}
+              {showLists && inTab('overview') && (
+                <OverviewTab
+                  view={view}
+                  meId={me?.id}
+                  subjectId={subjectId}
+                  subjectName={subjectName}
+                />
+              )}
+              {showLists && inTab('review') && (
+                <DraftList
+                  // A new day starts with nothing ticked.
+                  key={`drafts-${view.day}`}
+                  drafts={view.drafts}
+                  pending={pending}
+                  batch={
+                    batch.kind === 'running' && batch.day === view.day ? batch : { kind: 'idle' }
+                  }
+                  selected={selectedId}
+                  onSelect={(draft) => {
+                    setSelection({ kind: 'draft', id: draft.id });
+                  }}
+                  onNavigate={onNavigate}
+                  readOnly={notOwn}
+                  draftOff={draftOff}
+                  assignOptions={assignOptions}
+                  onBulk={(kind, chosen, card) =>
+                    runBatch(
+                      'bulk',
+                      kind === 'assign' && card !== undefined
+                        ? `Putting on ${card}`
+                        : RUNNING[kind],
+                      view.day,
+                      chosen.map((d) => d.id),
+                      (api, progress) => runBulk(kind, chosen, api, progress, card),
+                    )
+                  }
+                />
+              )}
+              {showLists && inTab('confirmed') && (
+                <EntryList
+                  key={`entries-${view.day}`}
+                  entries={view.entries}
+                  selected={selectedId}
+                  readOnly={notOwn}
+                  subjectName={subjectName}
+                  onSelect={(entry) => {
+                    setSelection({ kind: 'entry', id: entry.id });
+                  }}
+                  onNavigate={onNavigate}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         <Toast
           toast={toast}

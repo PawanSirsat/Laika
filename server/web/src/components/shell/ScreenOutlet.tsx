@@ -33,6 +33,7 @@ import {
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
+import { parseSpan } from '../../routes/screens/my-day/span.ts';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
@@ -256,6 +257,7 @@ function UsageRoute() {
  * The reader's own day (LAI-787). `?day=` names which; absent is today. A
  * day picked is a URL, so back and forward walk the days as they were seen.
  * `?user=` is somebody else's day, read only (LAI-959), picked the same way.
+ * `?span=` is the View — week, month or year around the day (LAI-1174).
  */
 function MyDayRoute() {
   const {
@@ -274,6 +276,15 @@ function MyDayRoute() {
       onDay={(day) => {
         const next = new URLSearchParams(params);
         next.set('day', day);
+        setParams(next, { push: true });
+      }}
+      span={parseSpan(params.get('span'))}
+      onSpan={(span, day) => {
+        // Day is the page as it always was: no `span=` in its address.
+        const next = new URLSearchParams(params);
+        if (span === 'day') next.delete('span');
+        else next.set('span', span);
+        if (day !== undefined) next.set('day', day);
         setParams(next, { push: true });
       }}
       user={params.get('user') ?? undefined}
