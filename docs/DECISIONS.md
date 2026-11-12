@@ -7367,3 +7367,50 @@ profile's *See their cards in Work* links follow the tab.
 **The server is unchanged.** Every endpoint the tab calls existed; the bar's requests are
 the List's. Work is now defined in SPEC §11.4.2 (the Organisation row and its endpoints) and
 §11.4.2.1; it was built from LAI-952 without a SPEC entry.
+
+## D-148 — The Time logging grid: eight hours a day, per person, for owners, admins and the space's lead
+
+**Date:** 2026-11-12 · **Decided by:** Pawan (owner); recorded by build-1175 for Belka.
+Task LAI-1175. Amends, **for this grid only**, D-088 items 1 and 7, D-101 item 4, D-130
+item 3 and D-136.
+
+**Decision.** SolidTime's *Time logging* report comes to Laika as a third view under
+Insights → Time, **Time logging** (`/insights?tab=time&view=days[&month=YYYY-MM]`): a
+month of people by calendar day, each cell the hours they logged that day with a verdict,
+and a Total of hours and *N / M days*.
+
+1. **Placement.** Beside *Time report* and *Availability*, with a month stepper of its own
+   in the card's bar. The address is the state: the current month has no `month=`.
+2. **A flat eight hours a day** is the verdict — full, under, nothing — and it is allowed
+   **here and nowhere else**. D-088 item 1 and D-101 item 4 (no per-person utilisation
+   figure) stand everywhere else: there is still no score, no ranking, no utilisation on
+   the Time report, Availability, Capacity or a profile. The threshold is **served**
+   (`threshold_minutes: 480`); the client never types it.
+3. **Cells count confirmed and drafted minutes**, apart, as My day shows a day.
+4. **Readers.** An owner, or a role granted *See everyone's analytics*
+   (`time.report.read`), sees everyone. **A space admin sees the people of the spaces they
+   lead** — themselves among them — under a new §3.2 action, `time.days.read_project`,
+   session only. `time.report.read_project` is not reused: its row promises no per-person
+   split (D-136), and that row stays true. So D-088 item 7, D-130 item 3 and D-136 are
+   amended for this grid only: **the one per-person read a space admin has**. A member who
+   leads nothing is `403`.
+5. **Working days** are each person's `work_days` from My availability, Monday to Friday
+   when unset. A day is **not due** before the person joined (`users.created_at`, the
+   invite-accept moment, in their zone) or on or after today in their zone; today is hours
+   so far with no verdict. A day off with time on it counts toward hours, never toward days.
+   A deactivated person is listed only with minutes in the month, flagged, **and owes no
+   days** — `users` keeps no leaving date, so their working days would otherwise count on
+   for ever.
+6. **Every person shown is a `time` look** (§4.59), the reader aside, deduped over ten
+   minutes as the Time report's are (D-135); a refused read logs nothing, and the people past
+   the 200-row cap, never shown, are never logged.
+7. **The server returns local days and facts, the client the verdict.** Days are each
+   entry's filed day (`time_entries.day`, `time_drafts.day`), already the person's own
+   calendar day, so zones are automatic; the server also sends `zone`, `joined_day` and
+   `today_day` in the person's zone, so the client does no zone arithmetic. The zone is the
+   person's place (§4.46), **`UTC` when unset** — a Johannesburg person with no place reads
+   *today* two hours late around midnight; self-correcting, and a later refinement may use
+   the latest entry's `tz`.
+8. **Leave and holidays are deferred** to LAI-1176: the organisation has no dated
+   holidays yet, and away periods are neither backdatable nor kept past 30 days. Until then a
+   holiday or a day on leave reads as a working day with nothing on it.
