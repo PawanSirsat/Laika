@@ -984,7 +984,7 @@
 
 .ss-self-note {
   margin: 0;
-  font-size: var(--text-tiny);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -1005,14 +1005,13 @@
   border: 2px solid var(--border-default);
   border-radius: 50%;
   background: var(--bg-input);
-  transition:
-    border-color var(--transition),
-    box-shadow var(--transition);
 }
 
 .ss-choice-on .ss-choice-dot {
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 3px var(--bg-input), inset 0 0 0 8px var(--accent);
+  box-shadow:
+    inset 0 0 0 3px var(--bg-input),
+    inset 0 0 0 8px var(--accent);
 }
 
 .ss-effect {
@@ -1075,12 +1074,6 @@
 
   .ss-typed {
     max-width: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ss-choice-dot {
-    transition: none;
   }
 }
 

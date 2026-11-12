@@ -153,8 +153,11 @@ void describe('a lead', () => {
         'a lead is offered both visibilities',
       );
       // The owner's design, word for word; no org name in this stub's org.
-      assert.match(await card(h, 'private').innerText(), /Only members can see the board\./);
-      assert.match(await card(h, 'public').innerText(), /can find it and join\./);
+      assert.match(
+        await card(h, 'private').innerText(),
+        /Only people added to it can find it and open its board\./,
+      );
+      assert.match(await card(h, 'public').innerText(), /can find it, read its board and join it/);
       assert.equal(await checked(h, 'private'), true, 'private is the current value');
 
       await card(h, 'public').click();
@@ -274,7 +277,7 @@ void describe('a member who is not a space admin', () => {
       await openAccess(h);
       assert.equal(await h.page.locator('[data-visibility][role="radio"]').count(), 0);
       assert.equal(await card(h, 'public').getAttribute('aria-current'), 'true');
-      assert.match(await card(h, 'public').innerText(), /can find it and join/);
+      assert.match(await card(h, 'public').innerText(), /can find it, read its board and join it/);
       assert.equal(
         await h.page.locator('.ss-reader').innerText(),
         'Space settings · read only — space admins change these',

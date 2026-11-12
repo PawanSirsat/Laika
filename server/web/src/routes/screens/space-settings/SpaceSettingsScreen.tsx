@@ -261,12 +261,7 @@ export function SpaceSettingsScreen({
             />
           </>
         ) : current === 'danger' ? (
-          <DangerTab
-            project={project}
-            mayArchive={mayArchive}
-            onSaved={saved}
-            onNavigate={go}
-          />
+          <DangerTab project={project} mayArchive={mayArchive} onSaved={saved} onNavigate={go} />
         ) : (
           <GeneralTab
             project={project}

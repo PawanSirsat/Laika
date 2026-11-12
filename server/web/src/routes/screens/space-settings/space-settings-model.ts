@@ -184,7 +184,14 @@ export function keyChange(
   project: Pick<Project, 'prefix'>,
   draftPrefix: string,
   counts: Readonly<Record<string, number>> | undefined,
-): { readonly from: string; readonly to: string; readonly next: string | undefined; readonly existing: number | undefined } | undefined {
+):
+  | {
+      readonly from: string;
+      readonly to: string;
+      readonly next: string | undefined;
+      readonly existing: number | undefined;
+    }
+  | undefined {
   const to = draftPrefix.trim().toUpperCase();
   if (to === project.prefix || !PREFIX_SHAPE.test(to)) return undefined;
   const existing =
@@ -202,7 +209,11 @@ export function filterMembers<T extends { readonly name: string; readonly email:
   members: readonly T[],
   query: string,
 ): readonly T[] {
-  const words = query.trim().toLowerCase().split(/\s+/).filter((w) => w !== '');
+  const words = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== '');
   if (words.length === 0) return members;
   return members.filter((m) => {
     const hay = `${m.name} ${m.email}`.toLowerCase();

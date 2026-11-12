@@ -16,7 +16,6 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, until, type Harness, type StubCall } from './harness.ts';
 import { pick } from './dropdown.ts';
-import { answerConfirm } from './confirm.ts';
 import {
   MEMBERS,
   ME_MEMBER,
@@ -338,11 +337,8 @@ void describe('Members', () => {
           return Math.round(el.getBoundingClientRect().height / lh);
         });
         assert.equal(lines, 1, `${sel} wrapped`);
-        assert.ok(
-          (await row.locator(sel).getAttribute('title'))?.startsWith('maximilian') ||
-            (await row.locator(sel).getAttribute('title'))?.startsWith('Maximilian'),
-          `${sel} lost its full text`,
-        );
+        const title = (await row.locator(sel).getAttribute('title')) ?? '';
+        assert.match(title, /^maximilian/i, `${sel} lost its full text`);
       }
       assert.equal(
         await h.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -364,7 +360,7 @@ void describe('Access', () => {
     try {
       await settled(h);
       const effect = h.page.locator('[data-visibility-effect]');
-      await until(async () => /3 members/.test(await effect.innerText()), 10_000);
+      await until(async () => (await effect.innerText()).includes('3 members'), 10_000);
       assert.match(await effect.innerText(), /Right now: only its 3 members .* can see Mobile\./);
 
       const priv = h.page.locator('[data-visibility="private"]');
@@ -380,7 +376,7 @@ void describe('Access', () => {
       await said.waitFor({ timeout: 5_000 });
       assert.deepEqual(patches(h), [], 'made public without asking');
       await said.click();
-      await until(async () => /everyone in Kvelld/.test(await effect.innerText()), 10_000);
+      await until(async () => (await effect.innerText()).includes('everyone in Kvelld'), 10_000);
       assert.match(await effect.innerText(), /Right now: everyone in Kvelld can find Mobile/);
       assert.deepEqual(patches(h), [{ visibility: 'public' }]);
       assert.equal(
