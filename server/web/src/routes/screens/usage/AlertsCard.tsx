@@ -7,6 +7,7 @@ import {
   type TokenAlert,
 } from '../../../api/token-alerts.ts';
 import { compactTokens } from '../../../api/usage.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { alertRows } from './usage-derive.ts';
 
@@ -23,6 +24,10 @@ export const ALERTS_COLLAPSED = 6;
  * In-app only: nothing here is emailed or sent anywhere. Soft: an alert
  * refuses nothing, and putting one away changes only this person's view.
  * *Dismiss all* is one `POST …/dismiss` per alert — there is no bulk route.
+ *
+ * Putting alerts away says so in the app's toast once the server has taken
+ * them (LAI-1129) — with no Undo, because there is no endpoint that brings a
+ * dismissed alert back, and no confirm either: it takes nothing that matters.
  */
 export function AlertsCard({
   alerts,
@@ -37,6 +42,7 @@ export function AlertsCard({
   const [error, setError] = useState<string | undefined>(undefined);
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
+  const toast = useToast();
 
   const open = alertRows((alerts ?? []).filter((a) => !gone.has(a.id)));
   const shown = expanded ? open : open.slice(0, ALERTS_COLLAPSED);
@@ -55,7 +61,14 @@ export function AlertsCard({
           setError(cause instanceof ApiError ? cause.message : 'That alert could not be put away.');
         }
         setBusy(false);
-        if (done.length > 0) onChanged();
+        if (done.length > 0) {
+          toast.show({
+            text: done.length === 1 ? 'Alert put away.' : `${String(done.length)} alerts put away.`,
+            tone: 'success',
+            mark: 'alert-dismissed',
+          });
+          onChanged();
+        }
       },
     );
   };

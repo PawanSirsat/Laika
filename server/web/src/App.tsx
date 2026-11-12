@@ -1,5 +1,6 @@
 import { AppShell } from './components/AppShell.tsx';
 import { ConfirmProvider } from './components/ConfirmProvider.tsx';
+import { ToastProvider } from './components/toast/ToastProvider.tsx';
 
 /**
  * The app is the shell (LAI-019). Routing, the sidebar and the screen frame all
@@ -7,10 +8,13 @@ import { ConfirmProvider } from './components/ConfirmProvider.tsx';
  * provider when one is needed.
  */
 export function App() {
-  // The one yes-or-no every screen asks with (LAI-522).
+  // The one yes-or-no every screen asks with (LAI-522), and the one toast
+  // every screen says what happened with (LAI-1129).
   return (
     <ConfirmProvider>
-      <AppShell />
+      <ToastProvider>
+        <AppShell />
+      </ToastProvider>
     </ConfirmProvider>
   );
 }

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { useLive } from '../../../components/space/SpaceLive.tsx';
 import { useEvents } from '../../../api/use-events.ts';
-import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.ts';
-import { useProjectTasks } from '../../../api/use-project-tasks.ts';
+import { listMembers, type Member } from '../../../api/tasks.ts';
+import { useTaskSummaries } from '../../../api/use-task-summaries.ts';
 import { staleTasks } from '../../../api/board-derive.ts';
 import { ActivityPanels } from './ActivityPanels.tsx';
 import { agentNamesFrom } from '../../../api/selected-agent.ts';
@@ -33,18 +34,11 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
   const stream = useEvents(slug);
   /*
    * The project's one task set (LAI-724), shared with every other tab and live
-   * through the store. A failure is an empty list, as it was.
+   * through the store. **A failure is a failure** (LAI-1128): it was an empty
+   * list, which read "0 stale tasks" about a space nobody could read.
    */
-  const set = useProjectTasks(slug);
-  const tasks = useMemo(
-    (): readonly TaskSummary[] | undefined =>
-      set?.status === 'ready'
-        ? set.tasks.filter((t): t is TaskSummary => !('deleted' in t))
-        : set?.status === 'error'
-          ? []
-          : undefined,
-    [set?.status, set?.tasks],
-  );
+  const read = useTaskSummaries(slug);
+  const tasks = read.status === 'ok' ? read.tasks : undefined;
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   /**
    * The space's presence (LAI-724) — the same answer the frame already holds
@@ -84,6 +78,14 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
 
   if (slug === undefined) {
     return <EmptyState headline="No space chosen" body="Pick a space to see its activity." />;
+  }
+
+  if (read.status === 'error') {
+    return (
+      <div className="act">
+        <ApiErrorState error={read.error} resource="this space’s tasks" onRetry={read.retry} />
+      </div>
+    );
   }
 
   if (tasks === undefined) {
