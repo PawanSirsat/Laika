@@ -52,7 +52,11 @@ export function PaletteTrigger({ variant }: PaletteTriggerProps) {
 
   if (variant === 'header') {
     return (
-      <Tooltip content="Search and commands" shortcut="Mod+K">
+      // The key in the words, not as `shortcut`: that would put
+      // `aria-keyshortcuts` on every page, and a viewer's board must carry
+      // none (card-reorder.test.ts, LAI-473) — the sidebar row says it the
+      // same way.
+      <Tooltip content={`Search and commands (${hint})`}>
         <button
           type="button"
           className="cmdk-trigger cmdk-trigger-header"

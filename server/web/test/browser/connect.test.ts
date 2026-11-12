@@ -861,6 +861,8 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       await mint(h);
       await goTo(h, 3);
       const copy = h.page.getByRole('button', { name: 'Copy the setup prompt', exact: true });
+      // Enabled, its tooltip has nothing to say: no empty bubble, no description (LAI-1214).
+      assert.equal(await copy.getAttribute('aria-describedby'), null);
       await copy.click();
       const done = h.page.getByRole('button', { name: 'Copied the setup prompt', exact: true });
       await done.waitFor({ timeout: 10_000 });

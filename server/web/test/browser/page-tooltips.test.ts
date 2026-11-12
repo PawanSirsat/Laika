@@ -8,7 +8,7 @@
  *   still focusable; the Timeline's zoom limit says so; drawn icons, not
  *   typed ‹ › − + ×;
  * - the app shell: the rail toggle's tooltip on hover and focus, and at 390
- *   the phone bar's menu and ⌘K triggers, the palette's key as a keycap;
+ *   the phone bar's menu and ⌘K triggers, the palette's key in the words;
  * - Insights: Capacity's column rules are tooltips, shown on hover;
  * - no CSP violation anywhere.
  *
@@ -87,12 +87,24 @@ async function myDay(width = 1440, height = 900): Promise<Harness> {
     },
   });
   try {
-    await h.page.locator('[data-dayline]').waitFor({ timeout: 20_000 });
+    await h.page
+      .locator(width > 900 ? '[data-dayline]' : '[data-phone-head]')
+      .waitFor({ timeout: 20_000 });
+    await settle(h.page);
   } catch (cause) {
     await h.close();
     throw cause;
   }
   return h;
+}
+
+/**
+ * Past the Tooltip's arrival window: focus that lands as a control mounts is
+ * a surface's first focus, not the reader's, and shows nothing (Tooltip's
+ * `ARRIVAL_MS`, 300 — not imported: Tooltip.tsx imports its CSS).
+ */
+async function settle(page: Page): Promise<void> {
+  await page.waitForTimeout(400);
 }
 
 /** The tooltip element a control is described by. */
@@ -119,6 +131,10 @@ async function showsOnHover(control: Locator, words: RegExp): Promise<void> {
 /** Keyboard focus shows it too — the thing a bare title= never did. */
 async function showsOnFocus(control: Locator, words: RegExp): Promise<void> {
   const tip = await tipOf(control);
+  // From somewhere else: focusing what already has focus fires no focusin.
+  await control.page().evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+  });
   await control.focus();
   await tip.waitFor({ state: 'visible', timeout: 3_000 });
   assert.match((await tip.innerText()).replace(/\s+/g, ' '), words);
@@ -182,21 +198,21 @@ void describe('My day: names, tooltips, keys and reasons (LAI-1214)', () => {
     }
   });
 
-  void test('at the zoom limit and on today, a step is off with a reason — and still reachable by keyboard', async () => {
+  void test('at the zoom limit and in this week, a step is off with a reason — and still reachable by keyboard', async () => {
     const h = await myDay();
     try {
-      // Today: there is no next day, and the button says so rather than greying out mutely.
-      const nextDay = h.page.getByRole('button', { name: 'Next day' }).first();
+      // This week: there is no next one, and the button says so rather than greying out mutely.
+      const nextDay = h.page.getByRole('button', { name: 'Next week' });
       assert.equal(await nextDay.getAttribute('aria-disabled'), 'true');
       assert.equal(await nextDay.isDisabled(), true);
-      assert.equal(await tooltipText(nextDay), 'Today is the latest day there is');
+      assert.equal(await tooltipText(nextDay), 'This is the latest week there is');
       await nextDay.focus();
       assert.equal(
         await nextDay.evaluate((el) => document.activeElement === el),
         true,
         'a step off with a reason took no focus',
       );
-      await showsOnFocus(nextDay, /^Today is the latest day there is$/);
+      await showsOnFocus(nextDay, /^This is the latest week there is$/);
 
       // Zoom in until it goes no further: the tooltip says that instead of a figure.
       const zoomIn = h.page.locator('[data-zoom-step="in"]');
@@ -225,7 +241,7 @@ void describe('My day: names, tooltips, keys and reasons (LAI-1214)', () => {
         const control =
           width > 900
             ? h.page.locator('[data-shortcuts-button]')
-            : h.page.getByRole('button', { name: 'Next day' }).first();
+            : h.page.locator('[data-phone-head]').getByRole('button', { name: 'Next day' });
         const tip = await tipOf(control);
         await control.focus();
         await tip.waitFor({ state: 'visible', timeout: 3_000 });
@@ -268,19 +284,16 @@ void describe('the app shell (LAI-1214)', () => {
   });
 
   for (const theme of ['Light', 'Dark']) {
-    void test(`${theme} at 390: the phone bar's menu and search are named and tooltipped, ⌘K as a keycap`, async () => {
+    void test(`${theme} at 390: the phone bar's menu and search are named and tooltipped, the palette's key in the words`, async () => {
       const h = await myDay(390, 844);
       try {
         await setTheme(h.page, theme);
         const menu = h.page.locator('.shell-navtoggle');
         const search = h.page.locator('[data-palette-trigger="header"]');
         await showsOnFocus(menu, /^Open navigation$/);
-        assert.match((await search.getAttribute('aria-keyshortcuts')) ?? '', /^(Meta|Control)\+K$/);
-        const tip = await tipOf(search);
-        await search.focus();
-        await tip.waitFor({ state: 'visible', timeout: 3_000 });
-        assert.match(await tip.innerText(), /Search and commands/);
-        assert.match(await tip.locator('.tip-kbd').innerText(), /^(⌘K|Ctrl\+K)$/);
+        // The key is in the words (no aria-keyshortcuts on any page — LAI-473).
+        assert.equal(await search.getAttribute('aria-keyshortcuts'), null);
+        await showsOnFocus(search, /^Search and commands \((⌘K|Ctrl K)\)$/);
         await shoot(h.page, `shell-${theme.toLowerCase()}-390`);
         assert.deepEqual(await violations(h.page), []);
       } finally {
