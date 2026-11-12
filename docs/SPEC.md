@@ -612,9 +612,16 @@ named — are `one_space_only`, and a range that is not whole weeks is
 behind §6.4's `GET /time/days` for a caller with no `time.report.read` who
 leads a space: **the one per-person read a space admin has** — each member
 of the spaces they lead, themselves among them, by calendar day, with the
-minutes logged on each. The weekly totals row above is unchanged, and no
-other per-person figure follows from this one: D-088 item 7 is amended for
-this grid only, as D-148 records. Session only, as every time row is.
+minutes logged on each. "The spaces they lead" are the ones **a membership
+row says they lead**: the implicit lead an org grant confers over every space
+(`open_all_projects`) does not open this door, so an admin whose role lost
+*See everyone's analytics* reads nobody's days by it. Each person's cells
+are **their whole day, whichever spaces the time was on** — an eight-hour
+day is the person's, not a space's — so a space admin reads a member's
+minutes on spaces they do not lead, as a figure inside the day and never
+named. The weekly totals row above is unchanged, and no other per-person
+figure follows from this one: D-088 item 7 is amended for this grid only, as
+D-148 records. Session only, as every time row is.
 
 **Checkpoints and hand-offs** (§4.70 – §4.74, D-114 – D-116, LAI-544). The
 eight rows are `task.checkpoint.create`, `task.checkpoint.retag`,
@@ -7371,13 +7378,15 @@ anything missing sends the task back.
   weekday, weekends muted; each cell a **glyph and a figure, never colour
   alone** — ✓ and the hours for a full day (the served `threshold_minutes`,
   8h), ◷ and the hours for under it, ✕ for nothing — against the person's
-  own working days; a muted dash where nothing is due: a day off (with the
-  hours in muted figures when any were logged), a day before they joined,
-  a day not yet come; today is the hours so far with no verdict; a legend
-  under the stepper says all of this. A **Total** column pinned on the
-  right: the month's hours as `38h 20m` (every minute, drafts and days off
-  included) and *N / M days* — full days over due days — omitted for a
-  deactivated person, who owes none. A cell opens that person's *Day*
+  own working days; **a muted — and the hours, muted, when there are any**
+  where nothing is due: a day off, a day before they joined, a day not yet
+  come, and every day of a person who has left (no ✕ after them, ever);
+  today is the hours so far with no verdict; any day with time on it, and
+  any due day, is a door; a legend under the stepper says all of this. A
+  **Total** column pinned on the right: the month's hours as `38h 20m`
+  (every minute, drafts, days off and days before joining included) and
+  *N / M days* — full days over due days — omitted for a deactivated person,
+  who owes none. A cell opens that person's *Day*
   (`/people?user=&tab=day&day=`); the words for each cell are on hover and
   for a screen reader. Caption *Everyone in {org}* for an owner or
   analytics reader, *People in the spaces you lead* for a space admin, and

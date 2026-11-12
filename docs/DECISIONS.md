@@ -7390,17 +7390,24 @@ and a Total of hours and *N / M days*.
 4. **Readers.** An owner, or a role granted *See everyone's analytics*
    (`time.report.read`), sees everyone. **A space admin sees the people of the spaces they
    lead** — themselves among them — under a new §3.2 action, `time.days.read_project`,
-   session only. `time.report.read_project` is not reused: its row promises no per-person
-   split (D-136), and that row stays true. So D-088 item 7, D-130 item 3 and D-136 are
-   amended for this grid only: **the one per-person read a space admin has**. A member who
-   leads nothing is `403`.
+   session only. "The spaces they lead" are the ones **a membership row says they lead**:
+   the implicit lead an org grant confers over every space does not open this door, so an
+   admin whose role lost *See everyone's analytics* reads nobody's days by it. **Each
+   person's cells are their whole day, whichever spaces the time was on** — an eight-hour
+   day is the person's, not a space's — so a space admin sees a member's minutes on spaces
+   they do not lead, inside the day's figure and never named. `time.report.read_project` is
+   not reused: its row promises no per-person split (D-136), and that row stays true. So
+   D-088 item 7, D-130 item 3 and D-136 are amended for this grid only: **the one
+   per-person read a space admin has**. A member who leads nothing is `403`.
 5. **Working days** are each person's `work_days` from My availability, Monday to Friday
-   when unset. A day is **not due** before the person joined (`users.created_at`, the
-   invite-accept moment, in their zone) or on or after today in their zone; today is hours
-   so far with no verdict. A day off with time on it counts toward hours, never toward days.
-   A deactivated person is listed only with minutes in the month, flagged, **and owes no
-   days** — `users` keeps no leaving date, so their working days would otherwise count on
-   for ever.
+   when unset. A day is **not due** before the person joined (`users.created_at`, the day
+   the account was made — an import's is the import's day, not when they first logged time —
+   in their zone) or on or after today in their zone; today is hours so far with no verdict.
+   **Time on a day that owed nothing is still shown**, as muted hours, and counts toward
+   the month's hours, never toward days — a day off, a day before they joined (an imported
+   person's history), a day not yet come. A deactivated person is listed only with minutes
+   in the month, flagged, **owes no days, and gets no verdict on any day** — `users` keeps no
+   leaving date, so their working days would otherwise count on for ever and read as ✕.
 6. **Every person shown is a `time` look** (§4.59), the reader aside, deduped over ten
    minutes as the Time report's are (D-135); a refused read logs nothing, and the people past
    the 200-row cap, never shown, are never logged.

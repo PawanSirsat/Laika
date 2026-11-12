@@ -72,12 +72,34 @@ permissions.ts` (one label), `server/src/services/time-report.ts` (extract
       entry; D-148 appended after D-147; LAI-1176 filed in `.tasks/backlog/`.
 - [x] Screenshots at 1440 and 390, both themes, owner and lead, read back.
 
+## Review round 1 (CHIEF, 2026-11-12) — fixed
+
+1. **Implicit lead closed.** `scopeOf` takes `led` from the actor's own
+   `project_memberships` rows with role `lead`, then asks `can()`; an admin
+   whose role lost *See everyone's analytics* and leads nothing by row is 403
+   by `time.report.read`, no look logged. `can()` row comment, §3.2 paragraph
+   and D-148 item 4 say so. Tests: service (grants row written directly) and
+   route (`PUT /org/permissions`); mutation "all projects instead of the
+   membership rows" → exactly those two tests red, on their assertion.
+2. **Whole day across spaces recorded.** D-148 item 4 and §3.2: each
+   person's cells are their whole day, whichever spaces the time was on.
+   Service test: Cleo in Laika (led) and Skynet (not led) → 480 in one cell.
+3. **Time on a day that owed nothing keeps its figure.** `isDoor(cell)` in
+   the derive module: any day with minutes, and any due day, is a door;
+   `before`/`future` with time draw the muted dash and figure like `off`.
+   §11.4.2.1 and D-148 item 5 reworded (`joined_day` is the day the account
+   was made). Derive and browser assertions.
+4. **No verdict after someone left.** New cell state `left` for a
+   deactivated person: an empty day is a dash and no door, a day with time
+   keeps its muted figure, Total keeps hours only. Derive and browser
+   assertions.
+
 ## Notes
 
-- Deviation from the plan: `ledPeople` does not seed the reader. A space admin
-  holds `time.days.read_project` through a membership row, so they are among
-  the led spaces' members already; the seed was dead code and a mutation
-  dropping it survived, so it went rather than keep a claim nothing proved.
+- `ledPeople` does not seed the reader: `led` holds only spaces the reader
+  has a lead membership row in (round 1), so their own row is on the grid by
+  construction. Before round 1 the seed was dead code and a mutation dropping
+  it survived, so it went rather than keep a claim nothing proved.
 - Deviation from the plan: `users` is read for every candidate **before** the
   A–Z cut (names decide the order), and only places and working days after
   it. The plan's "three batch reads over the shown ids" is two.
