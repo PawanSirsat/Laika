@@ -3,7 +3,8 @@ import { useGates } from '../../api/permissions.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
-import { NavIcon } from './NavIcon.tsx';
+import { Icon } from '../icon/Icon.tsx';
+import { Spinner } from '../Spinner.tsx';
 import { menuStep } from './menu-keys.ts';
 import type { MeProfile } from '../../api/me.ts';
 
@@ -148,9 +149,9 @@ export function SidebarFooter({
             }}
           >
             Switch to {next}
-            <span className="user-menu-glyph" aria-hidden="true">
-              {next === 'dark' ? '☾' : '☀'}
-            </span>
+            {/* Drawn, not typed (LAI-1204): ☾ and ☀ came out at a different
+                weight in every font, and as emoji on some phones. */}
+            <Icon name={next === 'dark' ? 'moon' : 'sun'} className="user-menu-glyph" />
             <span className="visually-hidden"> theme — currently {theme}</span>
           </button>
           <a
@@ -167,12 +168,18 @@ export function SidebarFooter({
             role="menuitem"
             className="user-menu-item user-menu-signout"
             disabled={signingOut}
+            aria-busy={signingOut || undefined}
             onClick={() => {
               setOpen(false);
               onSignOut();
             }}
           >
-            {signingOut ? 'Signing out…' : 'Sign out'}
+            {/* The busy rule (LAI-293): the word you pressed stays, a spinner
+                says it is working. It read "Signing out…" until LAI-1204 —
+                the one label swap the sweep's regex could not see, because
+                it has a space in it. */}
+            {signingOut && <Spinner size="sm" />}
+            Sign out
           </button>
         </div>
       )}
@@ -205,7 +212,7 @@ export function SidebarFooter({
           <span className="sidebar-user-name">{user.name}</span>
           <span className="sidebar-user-role">{user.org_role}</span>
         </span>
-        {!collapsed && <NavIcon name="chevron" size={12} className="user-menu-caret" />}
+        {!collapsed && <Icon name="chevron" size="tiny" className="user-menu-caret" />}
       </button>
     </div>
   );
