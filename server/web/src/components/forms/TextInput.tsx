@@ -16,6 +16,8 @@ export interface TextInputProps {
   readonly readOnly?: boolean;
   /** Invalid, with the explanation shown by the form. See `Field`. */
   readonly invalid?: boolean;
+  /** Where a form validates on blur (LAI-1203). */
+  readonly onBlur?: (() => void) | undefined;
 }
 
 export function TextInput({
@@ -31,6 +33,7 @@ export function TextInput({
   autoComplete,
   readOnly = false,
   invalid = false,
+  onBlur,
 }: TextInputProps) {
   return (
     <Field label={label} help={help} error={error} invalid={invalid} required={required}>
@@ -43,6 +46,7 @@ export function TextInput({
           onChange={(e) => {
             onChange(e.target.value);
           }}
+          onBlur={onBlur}
           aria-describedby={describedBy}
           aria-invalid={invalid || undefined}
           aria-required={required || undefined}

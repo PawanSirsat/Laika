@@ -35,6 +35,7 @@ import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
+import { WorkroomScreen } from '../../routes/screens/workroom/WorkroomScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
 import { slugOfKey, taskHref, withTaskOpen } from '../../routes/task-href.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
@@ -53,6 +54,7 @@ import {
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
 import { LoadingState } from '../LoadingState.tsx';
+import { BrandSpinner } from '../brand/BrandSpinner.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 import { usePermissions } from '../../api/permissions.ts';
 import { useDeveloperAccessMode } from '../../api/developer-compat.ts';
@@ -451,7 +453,13 @@ function DeveloperRoute() {
     if (moved !== undefined) setParams(new URLSearchParams(moved));
   }, [moved, setParams]);
   if (mode === undefined || moved !== undefined) {
-    return <LoadingState shape="card" count={1} label="Loading Developer access" />;
+    // Which page is coming — classic or V3 — is the thing being decided, so
+    // there is no shape for a skeleton to promise: the brand loader (LAI-1126).
+    return (
+      <div className="brand-panel-wait">
+        <BrandSpinner size="lg" label="Loading Developer access" />
+      </div>
+    );
   }
   const tabs = developerTabs(mode);
   const tab = currentTab(tabs, params);
@@ -529,6 +537,17 @@ function SpaceSettingsRoute() {
   );
 }
 
+/** A task's own page, by key (LAI-1199). */
+function WorkroomRoute() {
+  const {
+    route: { path, route, navigate },
+    me,
+  } = useShell();
+  const key = route === undefined ? undefined : routeParams(route.path, path)?.key;
+  if (key === undefined || me === undefined) return null;
+  return <WorkroomScreen taskKey={key} navigate={navigate} />;
+}
+
 function ProfileRoute() {
   const {
     route: { params, setParams, navigate },
@@ -583,6 +602,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/developer': { Component: DeveloperRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
   '/spaces/:slug/settings': { Component: SpaceSettingsRoute, layout: 'plain' },
+  '/task/:key': { Component: WorkroomRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },

@@ -510,8 +510,18 @@ void describe('a mention that names somebody is a pill (LAI-868)', () => {
 type Rgb = readonly [number, number, number];
 type Rgba = readonly [number, number, number, number];
 
-/** `rgb(r, g, b)` or `rgba(r, g, b, a)`, as `getComputedStyle` writes them. */
+/**
+ * `rgb(r, g, b)` or `rgba(r, g, b, a)`, as `getComputedStyle` writes them —
+ * or `color(srgb r g b / a)`, channels 0–1, which is how Chromium writes any
+ * `color-mix()` result. The accent's fill and line are mixed from `--accent`
+ * since LAI-1126, so a pill on the accent arrives in that form.
+ */
 function parse(css: string): Rgba {
+  const srgb = /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)$/.exec(css);
+  if (srgb !== null) {
+    const [r, g, b] = [srgb[1], srgb[2], srgb[3]].map((v) => Number(v) * 255);
+    return [r ?? 0, g ?? 0, b ?? 0, srgb[4] === undefined ? 1 : Number(srgb[4])];
+  }
   const n = /^rgba?\(([^)]+)\)$/
     .exec(css)?.[1]
     ?.split(',')
