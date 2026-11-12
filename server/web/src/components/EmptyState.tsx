@@ -11,6 +11,13 @@ export interface EmptyStateProps {
   /** One line. What the reader can do about it, or why it is empty. */
   readonly body?: string;
   readonly action?: { readonly label: string; readonly onClick: () => void };
+  /**
+   * Draw the headline as a heading of this level, for an empty state that
+   * stands in for a section's title (LAI-1128). A paragraph by default.
+   */
+  readonly headingLevel?: 2 | 3 | undefined;
+  /** The headline's id, so a section can be labelled by it and focus can return to it. */
+  readonly headingId?: string | undefined;
 }
 
 /**
@@ -20,13 +27,19 @@ export interface EmptyStateProps {
  * you may not see it). Rendering "empty" for a `forbidden` response is a lie
  * the reader cannot detect, which is why they are three components.
  */
-export function EmptyState({ headline, body, action }: EmptyStateProps) {
+export function EmptyState({ headline, body, action, headingLevel, headingId }: EmptyStateProps) {
+  const Headline = headingLevel === undefined ? 'p' : headingLevel === 2 ? 'h2' : 'h3';
   return (
     <div className="state state-empty">
       <div className="state-icon">
         <StateIcon name="empty" />
       </div>
-      <p className="state-headline">{headline}</p>
+      <Headline
+        className="state-headline"
+        {...(headingId === undefined ? {} : { id: headingId, tabIndex: -1 })}
+      >
+        {headline}
+      </Headline>
       {body !== undefined && <p className="state-body">{body}</p>}
       {action !== undefined && (
         <div className="state-action">

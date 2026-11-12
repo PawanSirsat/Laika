@@ -387,7 +387,7 @@ void describe('Copy inside a dialog, served over plain HTTP', () => {
     try {
       await assertInsecure(h);
       await h.page.locator('.card', { hasText: 'Org settings' }).first().click({ timeout: 20_000 });
-      const button = h.page.locator('.panel[aria-modal="true"]').getByRole('button', {
+      const button = h.page.locator('.drawer[aria-modal="true"]').getByRole('button', {
         name: 'Copy link to this task',
         exact: true,
       });

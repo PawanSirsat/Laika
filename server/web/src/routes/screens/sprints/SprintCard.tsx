@@ -9,6 +9,7 @@ import {
 import { LockIcon } from '../../../components/LockIcon.tsx';
 import { formatRange, sprintDays, type SprintProgress } from './sprint-derive.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
+import { SprintKey } from './SprintKey.tsx';
 
 export interface SprintCardProps {
   readonly sprint: Sprint;
@@ -83,7 +84,7 @@ export function SprintCard(props: SprintCardProps) {
         design fits in a third of one.
       */}
       <div className="sprint-row">
-        <span className="sprint-id">S{props.index}</span>
+        <SprintKey index={props.index} className="sprint-id" />
 
         <span className={`sprint-status sprint-status-${sprint.status}`}>{sprint.status}</span>
 
@@ -147,6 +148,13 @@ export function SprintCard(props: SprintCardProps) {
               incl. {props.subtasks} {props.subtasks === 1 ? 'subtask' : 'subtasks'}
             </span>
           )}
+          {/* Labelled only when it is a forecast; the no-forecast line
+              already starts with the word. */}
+          {line !== null && (forecast?.forecast ?? null) !== null && (
+            <span className="sprint-forecast-label" aria-hidden="true">
+              Forecast
+            </span>
+          )}
           {line !== null && forecast !== undefined && (
             <span
               className={
@@ -206,14 +214,20 @@ export function SprintCard(props: SprintCardProps) {
                 className="sprint-button"
                 onClick={props.onEdit}
                 disabled={busy}
+                aria-label={`Edit ${sprint.name}`}
               >
                 Edit
               </button>
+              {/* Quiet until it is asked for (LAI-1195): a red button on every
+                  row, the running sprint included, read as an alarm. The
+                  confirm that follows is where the danger is said. */}
               <button
                 type="button"
-                className="sprint-button sprint-button-danger"
+                className="sprint-button sprint-button-quiet"
                 onClick={props.onDelete}
                 disabled={busy}
+                data-delete-for={sprint.id}
+                aria-label={`Delete ${sprint.name}`}
               >
                 {pending === `remove:${sprint.id}` && <Spinner size="sm" />}
                 Delete
