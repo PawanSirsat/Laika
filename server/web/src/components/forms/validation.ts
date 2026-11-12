@@ -58,6 +58,12 @@ export function password(value: string): Validity {
   return OK;
 }
 
+/**
+ * The rule, said before anyone types (LAI-1203) — on every field where a
+ * password is chosen. The same number `password()` enforces, never a copy.
+ */
+export const PASSWORD_RULE = `At least ${String(MIN_PASSWORD_LENGTH)} characters. Length beats symbols — a few unrelated words work well.`;
+
 export function passwordsMatch(value: string, confirmation: string): Validity {
   if (confirmation === '') return fail('Confirm your password.');
   return value === confirmation ? OK : fail('The two passwords do not match.');

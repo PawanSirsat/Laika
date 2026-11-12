@@ -1,6 +1,7 @@
 import { type AgentClient } from '../../api/agent-clients.ts';
 import { harnessName } from '../../api/selected-agent.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import './agent.css';
 
 export interface AgentChipProps {
@@ -37,24 +38,27 @@ export function AgentChip({ client, device, owner, twin }: AgentChipProps) {
   const name = harnessName(client);
   const where = twin === undefined ? device : `${device} (${twin})`;
   return (
-    <span
-      className="agent-chip"
-      data-agent-chip={client}
-      title={owner === undefined ? `${name} on ${where}` : `${owner}’s ${name} on ${where}`}
+    // Whose agent, and where, on hover or focus: the shared tooltip, lazy for
+    // a board's worth of cards (LAI-1213; a bare `title` until then).
+    <Tooltip
+      content={owner === undefined ? `${name} on ${where}` : `${owner}’s ${name} on ${where}`}
+      lazy
     >
-      <AgentMark client={client} size="sm" />
-      <span className="agent-chip-text">
-        {name} ·{' '}
-        {twin === undefined ? (
-          device
-        ) : (
-          <>
-            <span className="visually-hidden">{device} (</span>
-            {twin}
-            <span className="visually-hidden">)</span>
-          </>
-        )}
+      <span className="agent-chip" data-agent-chip={client}>
+        <AgentMark client={client} size="sm" />
+        <span className="agent-chip-text">
+          {name} ·{' '}
+          {twin === undefined ? (
+            device
+          ) : (
+            <>
+              <span className="visually-hidden">{device} (</span>
+              {twin}
+              <span className="visually-hidden">)</span>
+            </>
+          )}
+        </span>
       </span>
-    </span>
+    </Tooltip>
   );
 }

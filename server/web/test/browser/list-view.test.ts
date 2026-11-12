@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { asServed, closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 import { pick } from './dropdown.ts';
+import { boardAction } from './board-menu.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -676,7 +678,7 @@ void describe('the List sort lives in the URL (LAI-485)', () => {
       await h.page.waitForURL(/page=2/, { timeout: 10_000 });
       const before = await firstKey(h);
 
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await boardAction(h.page, 'Refresh');
       await h.page.waitForTimeout(600);
       await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
 
@@ -751,10 +753,7 @@ void describe('timestamps read as moments (LAI-486)', () => {
     try {
       assert.equal((await cell(h, 'LC-1', 'updated').innerText()).trim(), 'just now');
       assert.equal((await cell(h, 'LC-2', 'updated').innerText()).trim(), '25 Sep, 3:30 PM');
-      assert.equal(
-        await cell(h, 'LC-2', 'created').getAttribute('title'),
-        'Fri 25 Sep 2026, 3:30:00 PM',
-      );
+      assert.equal(await tipText(cell(h, 'LC-2', 'created')), 'Fri 25 Sep 2026, 3:30:00 PM');
       assert.ok(
         (await cell(h, 'LC-1', 'created').getAttribute('datetime')) !== null,
         'no machine-readable moment',
@@ -1141,7 +1140,7 @@ const tabTo = async (h: Harness, label: 'Board' | 'List'): Promise<void> => {
 };
 
 const vsLabels = async (h: Harness): Promise<string[]> => {
-  await h.page.locator('button[title="View settings"]').click();
+  await boardAction(h.page, 'View settings');
   await h.page.locator('.vs-label').first().waitFor({ timeout: 5_000 });
   const labels = (await h.page.locator('.vs-label').allInnerTexts()).map((t) =>
     t.trim().toLowerCase(),
@@ -1151,7 +1150,7 @@ const vsLabels = async (h: Harness): Promise<string[]> => {
 };
 
 const moreItems = async (h: Harness): Promise<string[]> => {
-  await h.page.locator('button[title="More"]').click();
+  await h.page.locator('button[data-board-more]').click();
   await h.page.locator('.bt-menu').waitFor({ timeout: 5_000 });
   const items = (await h.page.locator('.bt-menu .bt-menu-item').allInnerTexts()).map((t) =>
     t.trim(),

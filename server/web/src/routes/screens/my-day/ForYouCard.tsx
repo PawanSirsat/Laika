@@ -4,6 +4,7 @@ import { timeLabel } from '../../../api/time-label.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import '../../../components/availability/availability.css';
 import { CardLink } from './CardLink.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface ForYouCardProps {
   readonly onNavigate: (to: string) => void;
@@ -154,9 +155,11 @@ function NoticeRow({
             )}
           </p>
         )}
-        <time className="avail-quiet foryou-when" dateTime={when.iso} title={when.full}>
-          {when.text}
-        </time>
+        <Tooltip content={when.full}>
+          <time className="avail-quiet foryou-when" dateTime={when.iso}>
+            {when.text}
+          </time>
+        </Tooltip>
       </div>
       {unread && (
         <button

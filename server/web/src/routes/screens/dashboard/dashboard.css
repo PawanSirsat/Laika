@@ -17,7 +17,7 @@
   gap: var(--space-4);
   min-width: 0;
   /* The space bar's own gutters (`space.css`), so the cards line up under it. */
-  padding: var(--space-4) 1.5rem var(--space-6);
+  padding: var(--space-4) 1.125rem var(--space-6);
 }
 
 .dash,
@@ -104,10 +104,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132): translucent, no blur over a smooth ground. */
+  background: var(--glass-sheen), var(--glass-2);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--glass-highlight), var(--shadow-card);
   padding: var(--space-4);
 }
 
@@ -221,9 +222,59 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * **Every figure is a link** (LAI-1195): the card is the target, through one
+ * stretched link per card, so it reads as one control and a screen reader
+ * hears the figure as the link's name. The overdue count is its own link,
+ * lifted above the stretch.
+ */
+.dash-stat {
+  position: relative;
+}
+
+.dash-stat-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dash-stat-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.dash-stat:hover {
+  border-color: var(--border-default);
+}
+
+.dash-stat:hover .dash-stat-n {
+  color: var(--accent);
+}
+
+.dash-stat-link:focus-visible {
+  outline: none;
+}
+
+.dash-stat:has(.dash-stat-link:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .dash-stat-overdue {
+  position: relative;
+  z-index: 1;
   color: var(--overdue);
   font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.dash-stat-overdue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 /* A caveat on the figure — "only 2 of 301 open tasks have a due date" (LAI-817).
@@ -258,7 +309,24 @@
   }
 }
 
+/* A phone keeps two figures a row (LAI-1195): four full-width cards pushed
+   the status chart a whole screen down. The icon gives way, the sub-line
+   wraps rather than cutting "1 overdue" off. */
 @container dash (max-width: 34rem) {
+  .dash-stat {
+    padding: var(--space-3);
+  }
+
+  .dash-stat-icon {
+    display: none;
+  }
+
+  .dash-stat-sub {
+    white-space: normal;
+  }
+}
+
+@container dash (max-width: 17rem) {
   .dash-stats {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -662,6 +730,10 @@ thead .dash-contrib-n {
 /* --------------------------------------------------- throughput & cycle */
 
 .dash-tp-bars {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
   display: flex;
   align-items: flex-end;
   /* Spread across the card: eight days are not bunched at the left, and
@@ -683,6 +755,69 @@ thead .dash-contrib-n {
 
 .dash-tp-bar-zero {
   background: var(--border-subtle);
+}
+
+/* A bar is a stop for the keyboard (LAI-1195); the readout under the chart
+   says its day and count, so focus never relies on a hover title. */
+.dash-tp-bar {
+  align-self: flex-end;
+  cursor: default;
+}
+
+.dash-tp-bar:hover,
+.dash-tp-bar[data-active] {
+  background: var(--accent);
+}
+
+.dash-tp-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dash-tp-readout {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.dash-tp-readout strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.dash-card-link {
+  color: var(--accent);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.dash-card-link:hover {
+  text-decoration: underline;
+}
+
+.dash-card-link:focus-visible,
+.dash-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.dash-retry {
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-1) var(--space-3);
+  margin-left: var(--space-2);
+  cursor: pointer;
 }
 
 .dash-tp-axis {

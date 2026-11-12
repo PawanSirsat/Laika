@@ -110,7 +110,7 @@ export const TOOL_STATUS: Readonly<Record<ToolChipKey, StatusCopy>> = {
     tone: 'warn',
     meaning:
       'There is no live credential for it on the device yet, its credential has expired, or nothing has used the one it has.',
-    todo: 'Run its Add tool command on the device, or use Finish setup → on its row.',
+    todo: 'Run its Add tool command on the device, or use Finish setup on its row.',
   },
   idle: {
     word: 'Idle',
@@ -224,7 +224,7 @@ export const DEVICE_STATUS: Readonly<Record<DeviceChipKey, StatusCopy>> = {
     tone: 'ok',
     meaning:
       'The device holds a key this board approved, so tools are added to it without a secret passing through the browser.',
-    todo: 'Nothing. Add tool → puts a coding tool on it.',
+    todo: 'Nothing. Add tool puts a coding tool on it.',
   },
   confirm: {
     word: 'Imported — confirm it’s yours',

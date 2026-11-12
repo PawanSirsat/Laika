@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { barHeight } from './usage-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * The Usage page's bars per thing (LAI-769), shared with the profile's Tokens
@@ -42,13 +43,14 @@ export function BarRows({
               style={{ width: `${String(barHeight(row.tokens, max))}%` }}
             />
           </span>
-          <span
-            className="usage-row-value"
-            title={`${exactTokens(row.tokens)} tokens · ${exactTokens(row.cacheRead)} cache reads`}
+          <Tooltip
+            content={`${exactTokens(row.tokens)} tokens · ${exactTokens(row.cacheRead)} cache reads`}
           >
-            {compactTokens(row.tokens)}
-            {row.note !== undefined && <span className="usage-row-note">{row.note}</span>}
-          </span>
+            <span className="usage-row-value">
+              {compactTokens(row.tokens)}
+              {row.note !== undefined && <span className="usage-row-note">{row.note}</span>}
+            </span>
+          </Tooltip>
         </li>
       ))}
     </ul>

@@ -51,6 +51,8 @@ import {
 import { catalogTool } from './tool-catalog.ts';
 import { checkLines, readiness } from './tool-readiness.ts';
 import { ToolUpdate, useUpdateStatus, useVerification } from './ToolUpdate.tsx';
+import { Icon } from '../../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 
 export const TOOL_PANEL_TITLE = 'dv3-tool-panel-title';
 
@@ -118,6 +120,9 @@ const HELPER_FOLD = `${TOOL_PANEL_TITLE}-helper`;
  * **Disconnect tool…** stays at the foot, behind a confirmation naming what
  * stops.
  */
+/** The id of the line saying why *Reconnect* is unavailable. */
+const RECONNECT_WHY = 'dv3-reconnect-why';
+
 export function ToolDetails({
   listed,
   now,
@@ -338,7 +343,7 @@ function ToolPanel({
           .then((next) => {
             retire();
             onChanged(next);
-            announce(`${label} disconnected.`);
+            announce(`${label} disconnected. Its credential no longer works.`);
             onDisconnected();
           })
           .catch((cause: unknown) => {
@@ -428,7 +433,12 @@ function ToolPanel({
                 created={rotated}
                 label={label}
                 title="New credential — copy it now, it is not shown again"
-                onDone={forget}
+                // Dismissed by saying so (LAI-1197); after it, it cannot come back.
+                doneLabel="I’ve saved it"
+                onDone={() => {
+                  forget();
+                  announce(`${label}’s new credential is hidden now and cannot be shown again.`);
+                }}
               />
             </div>
           )}
@@ -457,7 +467,8 @@ function ToolPanel({
                         if (!busy) onReconnect(agent);
                       }}
                     >
-                      Finish setup →
+                      Finish setup
+                      <Icon name="arrow-right" size="tiny" />
                     </button>
                   </div>
                 )}
@@ -496,7 +507,8 @@ function ToolPanel({
                     aria-label={`Set up a project for ${label}`}
                     onClick={follow(projectHref)}
                   >
-                    Set up a project →
+                    Set up a project
+                    <Icon name="arrow-right" size="tiny" />
                   </a>
                 </div>
               </NoteBlock>
@@ -633,7 +645,8 @@ function ToolPanel({
             {active && form !== 'access' && (
               <div className="dx-actions dv3-panel-actions">
                 <a className="dx-btn dx-btn-sm" href={projectHref} onClick={follow(projectHref)}>
-                  Change access →
+                  Change access
+                  <Icon name="arrow-right" size="tiny" />
                 </a>
                 {canManage && (
                   <button
@@ -692,6 +705,7 @@ function ToolPanel({
                     type="button"
                     className="dx-btn dx-btn-sm"
                     aria-disabled={busy || replaceable === undefined || undefined}
+                    aria-describedby={replaceable === undefined ? RECONNECT_WHY : undefined}
                     onClick={() => {
                       if (!busy) rotate();
                     }}
@@ -700,6 +714,13 @@ function ToolPanel({
                   </button>
                 )}
               </div>
+            )}
+            {/* Never a button that does nothing without saying why (LAI-1191, the audit's B10). */}
+            {canManage && active && !paired && replaceable === undefined && (
+              <p className="dv3-note" id={RECONNECT_WHY} data-reconnect-why>
+                No live credential to replace — it expired or was revoked. Set this tool up again
+                from Connect to give it a new one.
+              </p>
             )}
             {cloud && active && <p className="dv3-note">{CLOUD_NOTE}</p>}
           </DetailsFold>
@@ -759,9 +780,11 @@ function ToolPanel({
                     seen === undefined ? (
                       'Never'
                     ) : (
-                      <time dateTime={seen.iso} title={seen.full}>
-                        {seen.text.replace(/^just now$/, 'Just now')}
-                      </time>
+                      <Tooltip content={seen.full}>
+                        <time dateTime={seen.iso}>
+                          {seen.text.replace(/^just now$/, 'Just now')}
+                        </time>
+                      </Tooltip>
                     ),
                   id: 'last-seen',
                 },

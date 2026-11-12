@@ -1,0 +1,125 @@
+/*
+ * The avatar, its presence dot and the group (LAI-1206). Existing tokens only
+ * (D-020); the disc's colour is the inline style `avatar-color.ts` picks.
+ */
+
+.avatar {
+  --avatar-size: 1.5rem;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  vertical-align: middle;
+}
+
+.avatar-16 {
+  --avatar-size: 1rem;
+}
+.avatar-20 {
+  --avatar-size: 1.25rem;
+}
+.avatar-24 {
+  --avatar-size: 1.5rem;
+}
+.avatar-32 {
+  --avatar-size: 2rem;
+}
+
+.avatar-disc {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-default);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Initials at 16px are one letter's room: the tiny step, no tracking. */
+.avatar-16 .avatar-disc {
+  letter-spacing: 0;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * The presence dot: a ring of the surface behind it so it reads on any disc,
+ * and a different *shape* per state — filled for online, a half-fill for
+ * away, hollow for offline — so it is not told by colour alone.
+ */
+.avatar-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 0.5rem;
+  height: 0.5rem;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 2px var(--bg-card);
+}
+
+.avatar-presence-online {
+  background: var(--chip-green);
+}
+
+.avatar-presence-away {
+  background: linear-gradient(90deg, var(--chip-orange) 50%, var(--bg-card) 50%);
+  border: 1.5px solid var(--chip-orange);
+}
+
+.avatar-presence-offline {
+  background: var(--bg-card);
+  border: 1.5px solid var(--text-muted);
+}
+
+.avatar-16 .avatar-presence {
+  width: 0.375rem;
+  height: 0.375rem;
+}
+
+/* ---------------------------------------------------------------- group */
+
+.avatar-group {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+/* Overlap by a quarter, each disc ringed in the surface it sits on. */
+.avatar-group > .avatar + .avatar {
+  margin-left: calc(var(--avatar-size) * -0.25);
+}
+
+.avatar-group > .avatar > .avatar-disc {
+  box-shadow: 0 0 0 2px var(--bg-card);
+}
+
+.avatar-more .avatar-disc {
+  background: var(--bg-column);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.avatar-more {
+  width: auto;
+  min-width: var(--avatar-size);
+}
+
+/* `+128` widens into a lozenge rather than shrinking its digits. */
+.avatar-more .avatar-disc {
+  padding: 0 0.25rem;
+}

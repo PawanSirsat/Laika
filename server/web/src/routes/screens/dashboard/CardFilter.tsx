@@ -10,6 +10,8 @@ import {
 } from 'react';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * A dashboard card's own filter: an icon with a count, and a compact popover
@@ -59,6 +61,9 @@ export function CardFilter({
     pop.current?.querySelector<HTMLElement>('.dcf-fields [role="combobox"]')?.focus();
   };
 
+  // On the overlay stack while open (LAI-1205): Escape is its only on top.
+  const { isTop } = useLayer('popover', open);
+
   useEffect(() => {
     if (!open) return;
     focusFirstField();
@@ -70,7 +75,7 @@ export function CardFilter({
     };
     const onKey = (event: KeyboardEvent): void => {
       // An Escape a dropdown already used to close itself is not this one's.
-      if (event.key === 'Escape' && !event.defaultPrevented) close(true);
+      if (event.key === 'Escape' && !event.defaultPrevented && isTop()) close(true);
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -78,29 +83,30 @@ export function CardFilter({
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, close]);
+  }, [open, close, isTop]);
 
   return (
     <span ref={anchor} className="dcf-anchor">
-      <button
-        ref={button}
-        type="button"
-        className={active > 0 ? 'dcf-button dcf-button-on' : 'dcf-button'}
-        aria-label={`${title} filters${active > 0 ? `, ${String(active)} active` : ''}`}
-        title={`Filter ${title}`}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls={open ? popId : undefined}
-        onClick={() => {
-          if (open) close(true);
-          else setOpen(true);
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-          <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
-        </svg>
-        {active > 0 && <span className="dcf-badge">{active}</span>}
-      </button>
+      <Tooltip content={`Filter ${title}`}>
+        <button
+          ref={button}
+          type="button"
+          className={active > 0 ? 'dcf-button dcf-button-on' : 'dcf-button'}
+          aria-label={`${title} filters${active > 0 ? `, ${String(active)} active` : ''}`}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          aria-controls={open ? popId : undefined}
+          onClick={() => {
+            if (open) close(true);
+            else setOpen(true);
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
+          </svg>
+          {active > 0 && <span className="dcf-badge">{active}</span>}
+        </button>
+      </Tooltip>
       {open && (
         <div ref={pop} id={popId} className="dcf-pop" role="dialog" aria-label={`${title} filters`}>
           <div className="dcf-head">

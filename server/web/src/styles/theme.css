@@ -32,6 +32,15 @@
  * with one override the owner set: every *accent* use is purple, while the
  * prototype's blue survives only as the in-progress status colour
  * (`--chip-blue`). Status is never the accent.
+ *
+ * ## The brand (LAI-1126)
+ *
+ * The owner's brand sheet supplies seven primitives — Ink, Slate, Steel, Mist
+ * Blue, Glacier, Fog, Paper — declared as `--brand-*` in every block. Dark's
+ * surfaces, lines and text are mapped onto that scale; light's sit on Paper
+ * and Fog with Ink text. The accent became the brand periwinkle by an owner
+ * decision made in one line (`--accent-source`, shared block), and status
+ * blue moved to sky so the two blues never meet.
  */
 
 /* ===================================================================
@@ -39,33 +48,38 @@
  * =================================================================== */
 :root {
   /* ---- surfaces: canvas → column → card, and the steps are the design ---- */
-  --bg-canvas: #0c0c0f;
-  --bg-column: #141418;
-  --bg-card: #1b1b20;
-  --bg-card-hover: #1f1f24;
+  /* Brand scale (LAI-1126): Ink canvas, a half step to the column, Slate card. */
+  --bg-canvas: #0b0f1a;
+  --bg-column: #121826;
+  --bg-card: #1c2332;
+  --bg-card-hover: #222a3b;
   /* The neutral count badge fills with the card colour — one step up. */
-  --bg-pill: #1b1b20;
+  --bg-pill: #1c2332;
   /* The search field sits one step *below* its bar: the canvas colour. */
-  --bg-input: #0c0c0f;
+  --bg-input: #0b0f1a;
   /* The prototype's sidebar is a card-coloured panel with a border. */
-  --sidebar-tint: #1b1b20;
+  --sidebar-tint: #1c2332;
 
   /* ---- borders ---- */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-default: rgba(255, 255, 255, 0.2);
+  /* Fog at low alpha, so a line is the brand's cool grey, not neutral white. */
+  --border-subtle: rgba(185, 194, 214, 0.1);
+  --border-default: rgba(185, 194, 214, 0.24);
   /* Cards draw the subtle line; columns draw none — tub against canvas. */
-  --border-card: rgba(255, 255, 255, 0.08);
+  --border-card: rgba(185, 194, 214, 0.1);
   --border-column: transparent;
 
   /* ---- text ---- */
-  --text-primary: #f3f3f5;
-  --text-secondary: #a4a4ae;
-  --text-muted: #9a9aa4;
+  /* Paper, Fog, Glacier. */
+  --text-primary: #f4f7fb;
+  --text-secondary: #b9c2d6;
+  --text-muted: #8fa7c6;
 
-  /* ---- accent: one colour, for "this one" ---- */
-  --accent: #a78bfa;
-  --accent-bg: rgba(167, 139, 250, 0.14);
-  --accent-border: rgba(167, 139, 250, 0.4);
+  /* ---- accent: one colour, for "this one" ----
+     Which hue is picked once, in the shared block (`--accent-source`, LAI-1126);
+     the fill and line are mixed from it so a revert moves all three. */
+  --accent: var(--accent-source);
+  --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
   /* Near-black ink on the solid accent fill — the prototype's, not white. */
   --on-accent: #0b1020;
 
@@ -82,12 +96,14 @@
   --chip-green-bg: rgba(47, 208, 138, 0.13);
   --chip-green-border: rgba(47, 208, 138, 0.32);
   /*
-   * The prototype's blue. It doubles as the in-progress status colour there;
-   * here it is *only* status — the accent above is purple and never this.
+   * The in-progress status colour, and *only* status. It was the prototype's
+   * #5b8cff; with the brand accent periwinkle (LAI-1126) that sat within a few
+   * degrees of hue of the accent, so status moved to sky — cyan-leaning, so
+   * "in progress" and "this one" never read as the same blue.
    */
-  --chip-blue: #5b8cff;
-  --chip-blue-bg: rgba(91, 140, 255, 0.14);
-  --chip-blue-border: rgba(91, 140, 255, 0.4);
+  --chip-blue: #38bdf8;
+  --chip-blue-bg: rgba(56, 189, 248, 0.13);
+  --chip-blue-border: rgba(56, 189, 248, 0.38);
   --chip-pink: #f4636d;
   --chip-pink-bg: rgba(244, 99, 109, 0.12);
   --chip-pink-border: rgba(244, 99, 109, 0.36);
@@ -95,9 +111,9 @@
   --chip-purple-bg: rgba(167, 139, 250, 0.14);
   --chip-purple-border: rgba(167, 139, 250, 0.4);
   /* Neutral tags: secondary text on the tub, edged with the subtle line. */
-  --chip-neutral: #a4a4ae;
-  --chip-neutral-bg: #141418;
-  --chip-neutral-border: rgba(255, 255, 255, 0.08);
+  --chip-neutral: #b9c2d6;
+  --chip-neutral-bg: #121826;
+  --chip-neutral-border: rgba(185, 194, 214, 0.1);
 
   /* ---- brand-mark tile (LAI-740): light in both themes, so every vendor's
      own colours keep their contrast; ink draws the single-colour marks ---- */
@@ -177,11 +193,84 @@
   --on-space: #ffffff;
 
   /* ---- overlays ---- */
-  --scrim: rgba(0, 0, 0, 0.55);
-  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --scrim: rgba(5, 8, 15, 0.6);
+  --shadow-modal: 0 24px 60px rgba(5, 8, 15, 0.55);
+
+  /* ---- brand (LAI-1126): the owner's "Cool & Non-Vibrant" sheet ---- */
+  /* The seven primitives, verbatim. Fixed in every theme: they are the
+     brand's own names, and the semantic tokens above are mapped from them. */
+  --brand-ink: #0b0f1a;
+  --brand-slate: #1c2332;
+  --brand-steel: #2e3a4f;
+  --brand-mist: #4b6282;
+  --brand-glacier: #8fa7c6;
+  --brand-fog: #b9c2d6;
+  --brand-paper: #f4f7fb;
+  /* The two accents on offer; `--accent-source` in the shared block picks. */
+  --brand-periwinkle: #8da4f2;
+  --brand-legacy-purple: #a78bfa;
+  /* The mark: ice blue → Glacier → lavender, a pale rim, a soft blue glow. */
+  --brand-mark-1: #a9c6ee;
+  --brand-mark-2: #8fa7c6;
+  --brand-mark-3: #a7a4e6;
+  --brand-mark-rim: rgba(244, 247, 251, 0.55);
+  --brand-glow: rgba(111, 143, 232, 0.45);
+  /* The dot of the wordmark's i. */
+  --brand-dot: #6f8fe8;
+  /* Loaders: the Steel track and the Glacier arc/step. */
+  --brand-track: rgba(46, 58, 79, 0.9);
+  --brand-active: #8fa7c6;
+  /* The splash ground: Ink to a slightly lighter navy, a glassy panel. */
+  --brand-splash-from: #0b0f1a;
+  --brand-splash-to: #141c2e;
+  --brand-splash-arc: rgba(143, 167, 198, 0.07);
+  --brand-panel: rgba(28, 35, 50, 0.55);
+
+  /* ---- glass (LAI-1132): the owner's "greater impact" frosted surfaces ----
+     Three levels — 1 chrome (rails, bars), 2 panels and cards, 3 floating
+     (menus, popovers, dialogs, toasts) — each a translucent Slate over the
+     ambient layer, with the opaque step it falls back to. `--glass-solid` is
+     the surface a glass element inside another glass element uses instead
+     (never nest a blur). Alphas are set by the worst-case AA rule in
+     tokens.test.ts: text on each level clears 4.5:1 composited over the
+     brightest point of the ambient layer behind it. */
+  --glass-1: rgba(12, 18, 34, 0.56);
+  --glass-2: rgba(16, 22, 38, 0.64);
+  --glass-3: rgba(20, 27, 44, 0.74);
+  --glass-1-solid: #121826;
+  --glass-2-solid: #1c2332;
+  --glass-3-solid: #222a3b;
+  --glass-solid: #1c2332;
+  --glass-hover: rgba(185, 194, 214, 0.07);
+  --glass-border: rgba(190, 205, 240, 0.22);
+  --glass-border-strong: rgba(190, 205, 240, 0.38);
+  /* A crisp line of light along the top edge with a faint inner rim, and a
+     faint cool sheen in the top-left corner. The AA pairs in
+     tokens.test.ts measure the level's tint only, not the sheen over it. */
+  --glass-highlight:
+    inset 0 1px 0 rgba(244, 247, 251, 0.24), inset 0 0 0 1px rgba(160, 182, 235, 0.07);
+  --glass-sheen: linear-gradient(135deg, rgba(160, 182, 245, 0.06), transparent 55%);
+  --glass-glow: 0 0 0 1px rgba(141, 164, 242, 0.55), 0 0 12px rgba(111, 143, 232, 0.22);
+  /* The scrim a modal surface floats over: darker than `--scrim`, and blurred. */
+  --glass-scrim: rgba(5, 8, 15, 0.55);
+  /* The focus ring that holds on any glass: a canvas inner ring, a bright
+     outer, and a soft brand glow beyond it. */
+  --focus-ring: 0 0 0 2px #0b0f1a, 0 0 0 4px #b8c8ff, 0 0 10px rgba(141, 164, 242, 0.3);
+
+  /* ---- the ambient layer behind the shell (LAI-1132) ----
+     v3, owner: "keep it simple". Brand Ink, with one faint, large lift
+     toward the top and nothing else — no discs, no arcs, no hazes, no
+     motion. `--ambient-peak` is the lightest stop: the AA worst case the
+     glass pairs in tokens.test.ts are measured over. */
+  --ambient-base: linear-gradient(180deg, #0f1422 0%, #0b0f1a 60%);
+  --ambient-peak: #0f1422;
 
   /* ---- elevation ---- */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(5, 8, 15, 0.35);
+  /* LAI-1132: one shadow per elevation, so a level never invents its own. */
+  --shadow-panel: 0 18px 48px rgba(3, 6, 12, 0.5);
+  --shadow-popover: 0 12px 32px rgba(3, 6, 12, 0.5);
+  --shadow-toast: 0 10px 28px rgba(3, 6, 12, 0.55);
 }
 
 /* ===================================================================
@@ -189,26 +278,28 @@
  * owner's light purple. Same token list, different values — nothing else.
  * =================================================================== */
 :root[data-theme='light'] {
-  --bg-canvas: #eef0f6;
-  --bg-column: #e7e9f1;
+  /* Brand scale (LAI-1126): a Paper canvas, a Fog-tinted column, white cards,
+     Ink text. */
+  --bg-canvas: #f4f7fb;
+  --bg-column: #e8edf4;
   --bg-card: #ffffff;
-  --bg-card-hover: #fafafa;
+  --bg-card-hover: #f7f9fc;
   --bg-pill: #ffffff;
-  --bg-input: #eef0f6;
+  --bg-input: #f4f7fb;
   --sidebar-tint: #ffffff;
 
-  --border-subtle: rgba(15, 23, 42, 0.09);
-  --border-default: rgba(15, 23, 42, 0.2);
-  --border-card: rgba(15, 23, 42, 0.09);
+  --border-subtle: rgba(11, 15, 26, 0.09);
+  --border-default: rgba(11, 15, 26, 0.2);
+  --border-card: rgba(11, 15, 26, 0.09);
   --border-column: transparent;
 
-  --text-primary: #171a21;
-  --text-secondary: #5a6070;
-  --text-muted: #606775;
+  --text-primary: #0b0f1a;
+  --text-secondary: #4b5a72;
+  --text-muted: #56637a;
 
-  --accent: #7c3aed;
-  --accent-bg: rgba(124, 58, 237, 0.09);
-  --accent-border: rgba(124, 58, 237, 0.34);
+  --accent: var(--accent-source);
+  --accent-bg: color-mix(in srgb, var(--accent) 9%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 34%, transparent);
   --on-accent: #ffffff;
 
   --overdue: #c42630;
@@ -221,18 +312,18 @@
   --chip-green: #0a6f4c;
   --chip-green-bg: rgba(10, 111, 76, 0.1);
   --chip-green-border: rgba(10, 111, 76, 0.3);
-  --chip-blue: #2158e0;
-  --chip-blue-bg: rgba(33, 88, 224, 0.09);
-  --chip-blue-border: rgba(33, 88, 224, 0.34);
+  --chip-blue: #0369a1;
+  --chip-blue-bg: rgba(3, 105, 161, 0.09);
+  --chip-blue-border: rgba(3, 105, 161, 0.32);
   --chip-pink: #c42630;
   --chip-pink-bg: rgba(196, 38, 48, 0.08);
   --chip-pink-border: rgba(196, 38, 48, 0.32);
   --chip-purple: #6d3ddb;
   --chip-purple-bg: rgba(109, 61, 219, 0.1);
   --chip-purple-border: rgba(109, 61, 219, 0.34);
-  --chip-neutral: #5a6070;
-  --chip-neutral-bg: #e7e9f1;
-  --chip-neutral-border: rgba(15, 23, 42, 0.09);
+  --chip-neutral: #4b5a72;
+  --chip-neutral-bg: #e8edf4;
+  --chip-neutral-border: rgba(11, 15, 26, 0.09);
 
   --logo-tile: #ffffff;
   --logo-tile-border: rgba(15, 23, 42, 0.09);
@@ -300,10 +391,61 @@
   --space-green: #0a6f4c;
   --on-space: #ffffff;
 
-  --scrim: rgba(24, 24, 27, 0.4);
-  --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);
+  --scrim: rgba(11, 15, 26, 0.4);
+  --shadow-modal: 0 24px 60px rgba(11, 15, 26, 0.22);
 
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.07);
+  /* ---- brand (LAI-1126) ---- */
+  --brand-ink: #0b0f1a;
+  --brand-slate: #1c2332;
+  --brand-steel: #2e3a4f;
+  --brand-mist: #4b6282;
+  --brand-glacier: #8fa7c6;
+  --brand-fog: #b9c2d6;
+  --brand-paper: #f4f7fb;
+  /* Deeper than dark's, so white text on a solid accent fill clears AA. */
+  --brand-periwinkle: #3f5bd1;
+  --brand-legacy-purple: #7c3aed;
+  /* The same glass a step deeper, so the pale mark holds on a Paper ground. */
+  --brand-mark-1: #8fb2e6;
+  --brand-mark-2: #7591bc;
+  --brand-mark-3: #8a86d9;
+  --brand-mark-rim: rgba(255, 255, 255, 0.7);
+  --brand-glow: rgba(63, 91, 209, 0.22);
+  --brand-dot: #4f74e0;
+  --brand-track: rgba(75, 98, 130, 0.22);
+  --brand-active: #4b6282;
+  --brand-splash-from: #f4f7fb;
+  --brand-splash-to: #dfe5ee;
+  --brand-splash-arc: rgba(75, 98, 130, 0.08);
+  --brand-panel: rgba(255, 255, 255, 0.6);
+
+  /* ---- glass (LAI-1132) ---- */
+  --glass-1: rgba(255, 255, 255, 0.56);
+  --glass-2: rgba(255, 255, 255, 0.62);
+  --glass-3: rgba(255, 255, 255, 0.74);
+  --glass-1-solid: #ffffff;
+  --glass-2-solid: #ffffff;
+  --glass-3-solid: #ffffff;
+  --glass-solid: #ffffff;
+  --glass-hover: rgba(11, 15, 26, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-border-strong: rgba(75, 98, 130, 0.36);
+  --glass-highlight: inset 0 1px 0 #ffffff, inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  --glass-sheen: linear-gradient(135deg, rgba(143, 178, 230, 0.1), transparent 55%);
+  --glass-glow: 0 0 0 1px rgba(63, 91, 209, 0.5), 0 0 12px rgba(63, 91, 209, 0.16);
+  --glass-scrim: rgba(11, 15, 26, 0.32);
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #2f48b8, 0 0 10px rgba(63, 91, 209, 0.2);
+
+  /* ---- the ambient layer (LAI-1132): Paper, settling into a faint Fog
+     toward the bottom. `--ambient-peak` is the darkest stop, its AA worst
+     case. */
+  --ambient-base: linear-gradient(180deg, #f4f7fb 40%, #edf1f7 100%);
+  --ambient-peak: #edf1f7;
+
+  --shadow-card: 0 1px 2px rgba(11, 15, 26, 0.07);
+  --shadow-panel: 0 18px 48px rgba(30, 41, 66, 0.18);
+  --shadow-popover: 0 12px 32px rgba(30, 41, 66, 0.16);
+  --shadow-toast: 0 10px 28px rgba(30, 41, 66, 0.2);
 }
 
 /* ===================================================================
@@ -320,8 +462,24 @@
    * face earlier the same day; the final brief defers to the prototype, and
    * the package stays installed but unreferenced.
    */
-  --font-ui: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-ui: var(--font-face-plus-jakarta-sans);
   --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
+
+  /*
+   * The interface faces a reader may choose (LAI-1125), one stack each.
+   * `--font-ui` points at one of them: the default here, the others through
+   * `:root[data-font]` below, which `theme/font.ts` sets. Declaring a face
+   * downloads nothing — a browser fetches a font file only once text on the
+   * page is set in it — so the faces nobody picked cost no request.
+   */
+  --font-face-plus-jakarta-sans:
+    'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-poppins: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-commissioner:
+    'Commissioner Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-average-sans: 'Average Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-carter-one: 'Carter One', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-short-stack: 'Short Stack', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /*
    * The type scale — sizes and their line-heights — lives in `styles/type.css`,
@@ -360,4 +518,83 @@
   /* Colour only — the transition every control shares. Cards gliding between
      lanes is the one movement, and lives in board-motion.css (D-071). */
   --transition: background-color 120ms ease, border-color 120ms ease;
+
+  /*
+   * ==== OWNER DECISION (LAI-1126): the accent is the brand periwinkle ====
+   * One line picks the accent for every theme. To go back to the purple the
+   * owner set in LAI-605, change it to `var(--brand-legacy-purple)` — the fill,
+   * the line and the on-accent ink all follow, and both values stay AA.
+   */
+  --accent-source: var(--brand-periwinkle);
+
+  /* Brand motion (LAI-1126): the icon loader's turn and the splash's step. */
+  --motion-spin: 1.1s;
+  --motion-step: 1.6s;
+
+  /* ---- glass, colour-free (LAI-1132) ----
+     Blur per level, capped: the guard in glass-guard.test.ts refuses any
+     blur over 32px and any blur literal outside glass.css. */
+  --glass-blur-1: 12px;
+  --glass-blur-2: 16px;
+  --glass-blur-3: 20px;
+  --glass-blur-scrim: 6px;
+  --glass-saturate: 1.2;
+
+  /* Motion tokens (--duration-*, --ease-*) live in one place: styles/motion.css
+     (LAI-1208). LAI-1132 defined five of them here too; the merge train kept one. */
+
+  /*
+   * ---- layers (LAI-1132): one ladder, low to high ----
+   * Fixes B16 — a Dropdown (60) opened from a SidePanel (61) painted under
+   * it. Anything that opens *from* a surface sits above it: popovers and
+   * menus outrank panels, dialogs outrank menus, toasts outrank everything.
+   * Screens with their own local stacking (the board's 30/31 popovers, the
+   * timeline) keep their numbers; these are the shared surfaces'.
+   */
+  --layer-sticky: 5;
+  --layer-header: 10;
+  --layer-sidebar: 15;
+  --layer-drawer: 20;
+  --layer-overlay: 40;
+  --layer-panel: 60;
+  --layer-popover: 65;
+  --layer-menu: 70;
+  --layer-dialog: 80;
+  --layer-toast: 90;
+  /* Top of the ladder (LAI-1209): a tooltip on a dialog's control drew under
+     the dialog at 75. */
+  --layer-tooltip: 95;
+}
+/* ===================================================================
+ * The interface font a reader chose (LAI-1125) — `theme/font.ts` sets
+ * `data-font`; the default, Plus Jakarta Sans, carries none, as dark does.
+ * Each block re-points `--font-ui` and nothing else, so every component
+ * follows without knowing a family name. `--font-mono` never changes.
+ *
+ * **Average Sans, Carter One and Short Stack ship one weight.** Where the
+ * UI asks for 600–800, a browser would otherwise smear the 400 into a fake
+ * bold; `font-synthesis-weight: none` keeps the real letterforms, and those
+ * faces carry emphasis by size and colour instead. The picker says so.
+ * =================================================================== */
+:root[data-font='poppins'] {
+  --font-ui: var(--font-face-poppins);
+}
+
+:root[data-font='commissioner'] {
+  --font-ui: var(--font-face-commissioner);
+}
+
+:root[data-font='average-sans'] {
+  --font-ui: var(--font-face-average-sans);
+  font-synthesis-weight: none;
+}
+
+:root[data-font='carter-one'] {
+  --font-ui: var(--font-face-carter-one);
+  font-synthesis-weight: none;
+}
+
+:root[data-font='short-stack'] {
+  --font-ui: var(--font-face-short-stack);
+  font-synthesis-weight: none;
 }

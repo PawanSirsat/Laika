@@ -13,6 +13,7 @@ import {
 } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import { at, weekData, weekStub, TOMORROW } from './my-day-week.ts';
+import { tipText } from './tooltip-probe.ts';
 
 /**
  * The editor as the design draws it (D-110 items 5, 7, 8 and 9, LAI-504):
@@ -403,7 +404,7 @@ void describe('the editor as designed (LAI-515)', () => {
       if ((await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).count()) === 1) {
         assert.equal(await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).isDisabled(), true);
         assert.equal(
-          await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).getAttribute('title'),
+          await tipText(panel.locator(`[data-new-entry-day="${TOMORROW}"]`)),
           'You can’t add time ahead of the day',
         );
       }

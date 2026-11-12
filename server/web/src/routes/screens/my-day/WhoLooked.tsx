@@ -8,6 +8,7 @@ import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { lookingNow, reachesPast, type LookingNow } from './who-looked-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** Newest first, a page at a time, until a page reaches past the window. */
 const PAGE = 50;
@@ -101,7 +102,7 @@ export function WhoLooked({ open, onOpenChange }: WhoLookedProps) {
   return (
     <HeaderPopover
       label="Who is looking at your day"
-      title="Who is looking"
+      tooltip="Who is looking"
       triggerClassName="myday-chip myday-head-icon myday-looked-button"
       dataAttr="data-who-looked"
       width="wide"
@@ -150,9 +151,11 @@ export function WhoLooked({ open, onOpenChange }: WhoLookedProps) {
                   {initials(person.name)}
                 </span>
                 <span className="myday-looked-who">{person.name}</span>
-                <time className="myday-looked-when" dateTime={label.iso} title={label.full}>
-                  {label.text}
-                </time>
+                <Tooltip content={label.full}>
+                  <time className="myday-looked-when" dateTime={label.iso}>
+                    {label.text}
+                  </time>
+                </Tooltip>
               </li>
             );
           })}
