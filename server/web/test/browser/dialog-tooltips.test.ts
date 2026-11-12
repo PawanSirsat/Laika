@@ -395,7 +395,7 @@ void describe('the worst case (LAI-1209, break-ui)', () => {
       const fit = await h.page.locator(`${DIALOG} .ct-head`).evaluate((head) => {
         const key = head.querySelector('.ct-space-key')?.getBoundingClientRect();
         const mark = head.querySelector('.ct-space-mark')?.getBoundingClientRect();
-        const words = head.querySelector('.ct-space') as HTMLElement | null;
+        const words = head.querySelector('.ct-space');
         return {
           overflows: head.scrollWidth > head.clientWidth,
           keyInside: key !== undefined && key.right <= head.getBoundingClientRect().right,
