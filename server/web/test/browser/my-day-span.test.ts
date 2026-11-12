@@ -3,7 +3,15 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
-import { addDays, EARLIER, weekData, weekStub, YESTERDAY, type DayData } from './my-day-week.ts';
+import {
+  addDays,
+  EARLIER,
+  viewOf,
+  weekData,
+  weekStub,
+  YESTERDAY,
+  type DayData,
+} from './my-day-week.ts';
 import {
   chunks,
   isoWeek,
@@ -73,7 +81,16 @@ function daysRoutes(data: Map<string, DayData>): ApiStub {
 
 function stub(): ApiStub {
   const data = weekData();
-  return { ...weekStub(data), ...daysRoutes(data) };
+  // The page still reads the day in the address for its header: ← in Month
+  // puts it a month back, past the fixture's three weeks, so it is served too.
+  const back = stepPeriod('month', TODAY, -1);
+  const again = stepPeriod('month', back, 1);
+  return {
+    ...weekStub(data),
+    ...daysRoutes(data),
+    [`/api/v1/me/time?day=${back}`]: () => viewOf(back, data),
+    [`/api/v1/me/time?day=${again}`]: () => viewOf(again, data),
+  };
 }
 
 const spanOf = (page: Page): string | null => new URL(page.url()).searchParams.get('span');
@@ -107,7 +124,10 @@ async function sampled(page: Page): Promise<number> {
 
 /** The layer the stage shows now, once nothing is leaving. */
 async function settled(page: Page, layer: string): Promise<void> {
-  await page.locator(`[data-layer="${layer}"][data-layer-role="current"]`).waitFor();
+  const current = page.locator(`[data-layer="${layer}"][data-layer-role="current"]`);
+  await current.waitFor();
+  // Loaded, not just mounted: a slower machine (CI) still shows the skeleton here.
+  await current.locator('.span-card:not([aria-busy])').waitFor();
   await until(async () => (await page.locator('[data-layer-role="leaving"]').count()) === 0);
 }
 

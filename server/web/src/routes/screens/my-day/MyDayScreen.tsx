@@ -1678,7 +1678,7 @@ export function MyDayScreen({
           // A phone's wider view (LAI-1174): the bar above already holds the
           // person, the eye and the switcher, so the head is the period and the View.
           <div className="myday-phone-view myday-phone-span" data-phone-span>
-            <h1 className="myday-phone-span-title">{periodLabel(viewSpan, selectedDay)}</h1>
+            <p className="myday-phone-span-title">{periodLabel(viewSpan, selectedDay)}</p>
             <ViewSwitch
               span={viewSpan}
               day={selectedDay}
