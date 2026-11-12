@@ -72,7 +72,8 @@ drawer), #322 (space header ⋯), #317 (palette).
 
 - `components/tooltip/Tooltip.tsx` — `shortcut` (keycap + `aria-keyshortcuts`,
   `⌘B` on a Mac, `Ctrl+B` elsewhere, `shortcut.ts`), `tone="hint"`, `toggle`;
-  Escape spent on `window` capture so the dialog under it never sees it; a
+  Escape spent on `window` capture so the dialog under it never sees it —
+  unless focus is in a text field, whose Escape it is; a
   key typed into a field hides it; placement avoids the focused field
   (`tooltip-place.ts`); 500ms long press on touch, the click after it
   swallowed. New `tooltip` layer (95) in `overlay-tokens.ts`/`overlay.css`:
@@ -118,7 +119,7 @@ polly to file): tooltips for the non-modal popovers above; `title=` on the
 blocker chip `<li>` in CreateTaskFields; the editor's own `ICON` paths could
 move into the registry.
 
-**Tests**: `test/browser/dialog-tooltips.test.ts` (11 + 2 screenshot-only),
+**Tests**: `test/browser/dialog-tooltips.test.ts` (12 + 2 screenshot-only),
 `test/components/dialog-icon-names.test.ts` (guard, 47 cases over the
 census), `test/components/tooltip/shortcut.test.ts`, four new cases in
-`tooltip-place.test.ts`. Thirteen mutations, all red (see the log).
+`tooltip-place.test.ts`. Fourteen mutations, all red (see the log).
