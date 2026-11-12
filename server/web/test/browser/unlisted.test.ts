@@ -56,7 +56,30 @@ function server(notes: Note[]): { stub: ApiStub; notes: Note[] } {
   const state = { notes };
   const stub: ApiStub = {
     '/api/v1/me': ME,
-    '/api/v1/projects': { data: [], next_cursor: null },
+    // One space to promote into, so the picker takes it (LAI-1128).
+    '/api/v1/projects': {
+      data: [
+        {
+          id: 'p1',
+          slug: 'laika-core',
+          prefix: 'LC',
+          name: 'Laika Core',
+          description: null,
+          repo: null,
+          visibility: 'private',
+          context_md: '',
+          archived_at: null,
+          created_at: 1,
+          updated_at: 1,
+          task_counts: { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+          blocked_count: 0,
+          member_count: 1,
+          members: [],
+          last_activity_at: 2,
+        },
+      ],
+      next_cursor: null,
+    },
     '/api/v1/users': {
       data: [
         { id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', org_role: 'owner' },
@@ -175,8 +198,11 @@ void describe('the compact unlisted page', () => {
 
       await h.page.locator('.unl-line').first().click();
       await h.page.locator('.unl-promote').click();
-      await h.page.locator('.unl-form input').first().fill('laika-core');
-      await h.page.locator('.unl-form .bar-control-primary').click();
+      // The space is a picker of where the reader may create tasks; with one
+      // such space it is already chosen (LAI-1128, B15).
+      const create = h.page.locator('.unl-form .bar-control-primary');
+      await until(async () => !(await create.isDisabled()));
+      await create.click();
 
       await h.page
         .locator('.unl-link', { hasText: 'Open LAI-7' })

@@ -445,11 +445,14 @@ button.work-person-chip:hover {
 
 /* ------------------------------------------------- the table and its groups */
 
-.work-table .scroll-cue-region {
+.work-table {
   display: grid;
   gap: var(--space-3);
   /* Room for the cards' shadows, which a scrolling box would clip. */
   padding: 2px 2px var(--space-1);
+  /* The scroller ScrollCue fades and labels (LAI-1201, LAI-1196). */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 
 /* Never narrower than its seven columns: past this it scrolls (LAI-1196). */

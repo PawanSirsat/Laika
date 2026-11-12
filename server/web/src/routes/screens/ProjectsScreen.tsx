@@ -378,7 +378,7 @@ export function ProjectsScreen({
         )}
       </ScreenHeader>
 
-      {creating && (
+      {creating && mayCreate && (
         <form
           ref={formRef}
           className="projects-form"

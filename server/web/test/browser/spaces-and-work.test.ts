@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { LAIKA, ONROUTE, task } from './capacity-org.ts';
 import {
   closeBrowser,
@@ -25,6 +25,22 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
+
+/**
+ * Which edges of a ScrollCue have columns past them, from the shared
+ * component's attributes (LAI-1201's `data-more-start` / `data-more-end`,
+ * which the merge train kept over LAI-1196's `data-scroll`). `start` means
+ * scrolled to the start with more to the right, as LAI-1196 named it.
+ */
+const scrollEdge = async (cue: Locator): Promise<'none' | 'start' | 'middle' | 'end'> => {
+  const moreBefore = (await cue.getAttribute('data-more-start')) === 'true';
+  const moreAfter = (await cue.getAttribute('data-more-end')) === 'true';
+  return moreBefore && moreAfter ? 'middle' : moreAfter ? 'start' : moreBefore ? 'end' : 'none';
+};
+
+/** The ScrollCue wrapping the scroller with this class. */
+const cueOf = (page: Page, scroller: string): Locator =>
+  page.locator('.scroll-cue', { has: page.locator(scroller) }).first();
 
 const NOW = Date.now();
 
@@ -376,11 +392,12 @@ void describe('Spaces: the page is its URL (LAI-1196)', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       for (const theme of ['light', 'dark']) {
         await setTheme(h.page, theme);
-        const wrap = h.page.locator('.spaces-table-wrap').first();
-        await until(async () => (await wrap.getAttribute('data-scroll')) === 'start');
-        assert.equal(await wrap.getAttribute('data-scroll'), 'start', `${theme}: no cue at 768`);
+        const wrap = cueOf(h.page, '.spaces-table-wrap');
+        await until(async () => (await scrollEdge(wrap)) === 'start');
+        assert.equal(await scrollEdge(wrap), 'start', `${theme}: no cue at 768`);
         // Read once the fade has finished, not part-way through it.
-        const cue = () => wrap.evaluate((el) => getComputedStyle(el, '::after').opacity);
+        const cue = () =>
+          wrap.locator('.scroll-cue-edge-end').evaluate((el) => getComputedStyle(el).opacity);
         await until(async () => (await cue()) === '1');
         const shadow = await cue();
         assert.equal(shadow, '1', `${theme}: the right-edge cue is not drawn`);
@@ -390,7 +407,7 @@ void describe('Spaces: the page is its URL (LAI-1196)', () => {
         );
         assert.ok(page <= 1, `${theme}: the page itself scrolls sideways by ${String(page)}px`);
       }
-      const region = h.page.locator('.spaces-table-wrap .scroll-cue-region').first();
+      const region = h.page.locator('.spaces-table-wrap').first();
       assert.equal(
         await region.getAttribute('tabindex'),
         '0',
@@ -399,13 +416,13 @@ void describe('Spaces: the page is its URL (LAI-1196)', () => {
       await region.evaluate((el) => {
         el.scrollLeft = el.scrollWidth;
       });
-      const wrap = h.page.locator('.spaces-table-wrap').first();
-      await until(async () => (await wrap.getAttribute('data-scroll')) === 'end');
-      assert.equal(await wrap.getAttribute('data-scroll'), 'end');
+      const wrap = cueOf(h.page, '.spaces-table-wrap');
+      await until(async () => (await scrollEdge(wrap)) === 'end');
+      assert.equal(await scrollEdge(wrap), 'end');
 
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      await until(async () => (await wrap.getAttribute('data-scroll')) === 'none');
-      assert.equal(await wrap.getAttribute('data-scroll'), 'none', 'a cue where nothing is hidden');
+      await until(async () => (await scrollEdge(wrap)) === 'none');
+      assert.equal(await scrollEdge(wrap), 'none', 'a cue where nothing is hidden');
       assert.equal(await region.getAttribute('tabindex'), null);
     } finally {
       await h.close();
@@ -614,9 +631,9 @@ void describe('Work: the table at tablet width (LAI-1196)', () => {
     const h = await openWork('/organisation?tab=work', workWorld(), 768);
     try {
       await workKeys(h.page);
-      const wrap = h.page.locator('.work-table');
-      await until(async () => (await wrap.getAttribute('data-scroll')) === 'start');
-      assert.equal(await wrap.getAttribute('data-scroll'), 'start');
+      const wrap = cueOf(h.page, '.work-table');
+      await until(async () => (await scrollEdge(wrap)) === 'start');
+      assert.equal(await scrollEdge(wrap), 'start');
       assert.ok(await h.page.locator('.work-head').isVisible(), 'the column names are gone at 768');
       const page = await h.page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth,
@@ -624,8 +641,8 @@ void describe('Work: the table at tablet width (LAI-1196)', () => {
       assert.ok(page <= 1, `the page itself scrolls sideways by ${String(page)}px`);
 
       await h.page.setViewportSize({ width: 390, height: 844 });
-      await until(async () => (await wrap.getAttribute('data-scroll')) === 'none');
-      assert.equal(await wrap.getAttribute('data-scroll'), 'none', 'a phone scrolls the table');
+      await until(async () => (await scrollEdge(wrap)) === 'none');
+      assert.equal(await scrollEdge(wrap), 'none', 'a phone scrolls the table');
       assert.equal(await h.page.locator('.work-head').isVisible(), false);
     } finally {
       await h.close();

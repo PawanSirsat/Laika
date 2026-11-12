@@ -491,7 +491,9 @@
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  overflow: hidden;
+  /* The scroller ScrollCue fades and labels (LAI-1201, LAI-1196). */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 
 /* Never squeezed below its columns: past this it scrolls, with the cue

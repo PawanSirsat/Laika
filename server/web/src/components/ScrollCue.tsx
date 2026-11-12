@@ -1,95 +1,74 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import './scroll-cue.css';
 
-export interface ScrollCueProps {
-  /** Names the scrolling region for a screen reader: "Your spaces table". */
-  readonly label: string;
-  /** Extra class on the outer wrapper, for the screen's own border and card. */
-  readonly className?: string | undefined;
-  readonly children: ReactNode;
-}
-
 /**
- * A region that scrolls sideways and says so (LAI-1196): a shadow on each
- * edge that has columns past it, and a line of text under it while anything
- * is off-screen. Focusable only while it scrolls, so a keyboard reader can
- * reach the hidden columns with the arrow keys and is not given a tab stop
- * that does nothing at 1440.
+ * A wide table that scrolls sideways inside its card, and says so (LAI-1201).
+ *
+ * On a phone a table of many columns cannot fit; the page must not scroll
+ * sideways, so the table does — and a scroll nobody can see is a column
+ * nobody finds. Each edge that has more beyond it fades, and a line under the
+ * table says to scroll. The scroller is a labelled region in the tab order
+ * while it scrolls, so a keyboard reader can move it with the arrow keys.
  */
-export function ScrollCue({ label, className, children }: ScrollCueProps) {
-  const { ref, edge } = useScrollCue<HTMLDivElement>();
-  const scrolls = edge !== 'none';
+export function ScrollCue({
+  className,
+  label,
+  children,
+}: {
+  /** The scroller's own class — its border, background, radius. */
+  readonly className: string;
+  /** What the region holds, for a screen reader. */
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: false, end: false });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+    const read = (): void => {
+      const max = el.scrollWidth - el.clientWidth;
+      const start = el.scrollLeft > 1;
+      const end = max > 1 && el.scrollLeft < max - 1;
+      setEdges((was) => (was.start === start && was.end === end ? was : { start, end }));
+    };
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(read);
+    observer?.observe(el);
+    if (el.firstElementChild !== null) observer?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener('scroll', read);
+      observer?.disconnect();
+    };
+  }, []);
+
+  const scrolls = edges.start || edges.end;
   return (
-    <>
-      <div
-        className={className === undefined ? 'scroll-cue' : `scroll-cue ${className}`}
-        data-scroll={edge}
-      >
+    <div
+      className="scroll-cue"
+      data-more-start={edges.start ? 'true' : undefined}
+      data-more-end={edges.end ? 'true' : undefined}
+    >
+      <div className="scroll-cue-frame">
         <div
           ref={ref}
-          className="scroll-cue-region"
+          className={className}
           role="region"
           aria-label={label}
           tabIndex={scrolls ? 0 : undefined}
         >
           {children}
         </div>
+        <span className="scroll-cue-edge scroll-cue-edge-start" aria-hidden="true" />
+        <span className="scroll-cue-edge scroll-cue-edge-end" aria-hidden="true" />
       </div>
-      <p className="scroll-cue-hint" aria-hidden="true">
-        Scroll sideways to see every column.
-      </p>
-    </>
+      {scrolls && (
+        <p className="scroll-cue-hint" aria-hidden="true">
+          {edges.end ? 'Scroll sideways for more columns →' : '← Scroll back for the first columns'}
+        </p>
+      )}
+    </div>
   );
-}
-
-/** Which edges have columns hidden past them. `none`: everything fits. */
-type ScrollEdge = 'none' | 'start' | 'middle' | 'end';
-
-/**
- * Where a sideways-scrolling region stands (LAI-1196), for a cue that shows
- * only when there is something off-screen: a table narrower than its columns
- * at 768 or 390 otherwise reads as complete, with the last columns silently
- * cut off. Re-measured on scroll and whenever the region or its content
- * resizes.
- *
- * `start` means more to the right (scrolled to the start); `end` more to the
- * left; `middle` both. The returned ref goes on the scrolling element, and the
- * edge on its `data-scroll` attribute, which `scroll-cue.css` draws.
- */
-function useScrollCue<T extends HTMLElement>(): {
-  readonly ref: (node: T | null) => void;
-  readonly edge: ScrollEdge;
-} {
-  const [node, setNode] = useState<T | null>(null);
-  const [edge, setEdge] = useState<ScrollEdge>('none');
-  const frame = useRef(0);
-
-  const measure = useCallback(() => {
-    if (node === null) return;
-    const max = node.scrollWidth - node.clientWidth;
-    // Right-to-left scrolls negative; the distance from the start is what counts.
-    const at = Math.abs(node.scrollLeft);
-    setEdge(max <= 1 ? 'none' : at <= 1 ? 'start' : at >= max - 1 ? 'end' : 'middle');
-  }, [node]);
-
-  useEffect(() => {
-    if (node === null) return;
-    measure();
-    const onScroll = (): void => {
-      cancelAnimationFrame(frame.current);
-      frame.current = requestAnimationFrame(measure);
-    };
-    node.addEventListener('scroll', onScroll, { passive: true });
-    const observer =
-      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
-    observer?.observe(node);
-    if (node.firstElementChild !== null) observer?.observe(node.firstElementChild);
-    return () => {
-      node.removeEventListener('scroll', onScroll);
-      observer?.disconnect();
-      cancelAnimationFrame(frame.current);
-    };
-  }, [node, measure]);
-
-  return { ref: setNode, edge };
 }

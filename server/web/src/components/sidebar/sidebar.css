@@ -14,8 +14,11 @@
   width: 13.25rem; /* 212px */
   flex: none;
   box-sizing: border-box;
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-subtle);
+  /* Level-1 glass (LAI-1132): transparent, the pane is `glass.css`'s ::before
+     — never a blur on the sidebar itself, which would trap its fixed popover. */
+  background: transparent;
+  isolation: isolate;
+  border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -43,21 +46,15 @@
   box-sizing: border-box;
 }
 
-/* The mark: 28px, radius 9, ground --text-primary, glyph --bg-card. */
+/* The brand mark (LAI-1126), 28px: the glass L on the sidebar's own ground —
+   it replaced the prototype's inverted tile with a glyph in it. */
 .sidebar-logo {
   width: 1.75rem;
   height: 1.75rem;
   flex: none;
-  border-radius: 0.5625rem;
-  background: var(--text-primary);
-  color: var(--bg-card);
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.sidebar-logo svg {
-  stroke: currentColor;
 }
 
 .sidebar-identity {
