@@ -978,3 +978,119 @@ void describe('no task is read (LAI-992)', () => {
     }
   });
 });
+
+void describe('the view lives in the address (LAI-1201)', () => {
+  const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(key);
+
+  void test('search, chip, space and sort are written to the URL and survive a reload', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const search = h.page.getByRole('searchbox', { name: 'Search people' });
+      await search.fill('bea');
+      await until(() => param(h.page, 'q') === 'bea');
+      await pick(h.page.getByRole('combobox', { name: 'Sort' }), 'name');
+      await until(() => param(h.page, 'sort') === 'name');
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), 'p1');
+      await until(() => param(h.page, 'space') === 'p1');
+      await h.page.locator('.cap-chip', { hasText: 'Online now' }).click();
+      await until(() => param(h.page, 'show') === 'online');
+
+      await h.page.reload();
+      await h.page.getByRole('searchbox', { name: 'Search people' }).waitFor({ timeout: 20_000 });
+      const again = h.page.getByRole('searchbox', { name: 'Search people' });
+      assert.equal(await again.inputValue(), 'bea', 'the reload forgot the search');
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Sort' })), 'name');
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Space' })), 'p1');
+      assert.equal(
+        await h.page.locator('.cap-chip', { hasText: 'Online now' }).getAttribute('aria-pressed'),
+        'true',
+      );
+
+      // Clearing empties the address of every filter it wrote.
+      await again.fill('nobody-here');
+      await h.page.getByRole('button', { name: 'Clear search and filters' }).click();
+      await until(() => param(h.page, 'q') === null && param(h.page, 'show') === null);
+      assert.equal(param(h.page, 'q'), null);
+      assert.equal(param(h.page, 'show'), null);
+      assert.equal(param(h.page, 'space'), null);
+      assert.equal(param(h.page, 'sort'), 'name', 'clearing filters is not resetting the sort');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a pasted link opens the filter it names; one it does not know is ignored', async () => {
+    const h = await open('/insights?tab=capacity&show=never&sort=bogus', orgStub('owner'));
+    try {
+      await h.page.locator('.cap-chip').first().waitFor({ timeout: 20_000 });
+      await until(
+        async () =>
+          (await h.page
+            .locator('.cap-chip', { hasText: 'Never seen' })
+            .getAttribute('aria-pressed')) === 'true',
+      );
+      assert.equal(
+        await h.page.locator('.cap-chip', { hasText: 'Never seen' }).getAttribute('aria-pressed'),
+        'true',
+        '?show=never did not open the Never seen chip',
+      );
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Sort' })), 'online');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the list on a phone (LAI-1201)', () => {
+  void test('at 390 the table scrolls inside its card with a fade and a hint; at 768 and 1440 the page never scrolls sideways', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      await h.page.getByRole('button', { name: 'List', exact: true }).click();
+      await h.page.locator('.cap-list').waitFor({ timeout: 10_000 });
+      for (const theme of ['Light', 'Dark']) {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
+        await setTheme(h.page, theme);
+        for (const width of [1440, 768, 390]) {
+          await h.page.setViewportSize({ width, height: 900 });
+          const overflow = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          );
+          assert.ok(overflow <= 0, `${theme} at ${String(width)}: ${String(overflow)} px sideways`);
+        }
+        const cue = h.page.locator('.scroll-cue');
+        await until(async () => (await cue.getAttribute('data-more-end')) === 'true');
+        assert.equal(await cue.getAttribute('data-more-end'), 'true', `${theme}: no edge cue`);
+        const hint = h.page.locator('.scroll-cue-hint');
+        assert.ok(await hint.isVisible(), `${theme}: no hint to scroll`);
+        const fade = cue.locator('.scroll-cue-edge-end');
+        await until(
+          async () => (await fade.evaluate((el) => getComputedStyle(el).opacity)) === '1',
+        );
+        assert.equal(await fade.evaluate((el) => getComputedStyle(el).opacity), '1');
+        const region = h.page.getByRole('region', { name: 'People and their load' });
+        assert.equal(await region.getAttribute('tabindex'), '0', 'the scroller is not focusable');
+        // Scrolled to its end, the cue turns round.
+        await region.evaluate((el) => {
+          el.scrollLeft = el.scrollWidth;
+        });
+        await until(async () => (await cue.getAttribute('data-more-start')) === 'true');
+        assert.equal(await cue.getAttribute('data-more-start'), 'true', `${theme}: no start cue`);
+        assert.equal(await cue.getAttribute('data-more-end'), null);
+        await region.evaluate((el) => {
+          el.scrollLeft = 0;
+        });
+        await until(async () => (await cue.getAttribute('data-more-start')) === null);
+        assert.equal(await cue.getAttribute('data-more-start'), null);
+      }
+      // Wide enough for every column (an owner's table, with its activity
+      // column, is wider than a 1440 screen's content): no cue, no hint.
+      await h.page.setViewportSize({ width: 1920, height: 1000 });
+      await until(async () => (await h.page.locator('.scroll-cue-hint').count()) === 0);
+      assert.equal(await h.page.locator('.scroll-cue-hint').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
