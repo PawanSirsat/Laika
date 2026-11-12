@@ -17,6 +17,11 @@ export function duration(minutes: number): string {
   return formatHours(minutes);
 }
 
+/** A month's time to the nearest hour, as the Year view's cards print it (LAI-1174): `143 h`. */
+export function roundHours(minutes: number): string {
+  return `${String(Math.round(minutes / 60))} h`;
+}
+
 /** An agent's time, minutes however long (D-088 item 8): `142 min`. */
 /**
  * `1h 20m`, `45m`, `2h` — the short figure the design's Timelines print on
