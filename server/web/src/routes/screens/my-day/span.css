@@ -1,0 +1,831 @@
+/*
+ * My day's View — Week, Month, Year and the switch between them (LAI-1174,
+ * the owner's *My Day Calendar Zoom*). Its shapes and movement in Laika's own
+ * tokens, both themes from theme.css; nothing new defined there. Nothing here
+ * is wider than its card, so 390 px never scrolls sideways.
+ */
+
+/* ------------------------------------------------------------------ the switch */
+
+.span-switch {
+  --span-index: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.span-switch-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.span-nav {
+  display: inline-flex;
+  align-items: stretch;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.span-nav-step,
+.span-nav-today {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 600;
+  padding: 0 0.625rem;
+  cursor: pointer;
+}
+
+.span-nav-today {
+  border-inline: 1px solid var(--border-default);
+}
+
+.span-nav-step:hover:not(:disabled),
+.span-nav-today:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.span-nav-step:disabled,
+.span-nav-today:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.span-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.span-crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.span-crumb {
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.span-crumb-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.span-crumb-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* Four views, one radio group, a thumb that slides to the one picked. */
+.span-seg {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(4, 62px);
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.span-seg-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 62px;
+  height: calc(100% - 4px);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  transform: translateX(calc(var(--span-index) * 62px));
+  transition: transform 0.36s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.span-seg-option {
+  position: relative;
+  height: 26px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.span-seg-option[aria-checked='true'] {
+  color: var(--text-primary);
+}
+
+.span-zoom {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.span-zoom-step {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.span-zoom-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ------------------------------------------------------------------- the stage */
+
+.span-stage {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.span-layer {
+  transform-origin: 0 0;
+  min-width: 0;
+}
+
+/* The layer being left sits over the new one until the movement is done. */
+.span-layer[data-layer-role='leaving'] {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.span-stage[data-zooming] .span-layer[data-layer-role='current'] {
+  z-index: 2;
+}
+
+.span-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+
+.span-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
+
+.span-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.span-figure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.span-figure strong {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.span-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.span-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.span-swatch-c {
+  background: var(--accent);
+}
+
+.span-swatch-d {
+  border: 1.5px dashed var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.span-quiet,
+.span-hint {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.span-hint {
+  margin-left: auto;
+}
+
+/* A day's bar: confirmed solid, to review hatched — each a share of the period's busiest day. */
+.span-bar {
+  display: flex;
+  height: 4px;
+  width: 100%;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-column);
+}
+
+.span-bar-c {
+  background: var(--accent);
+}
+
+.span-bar-d {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--accent-bg) 0 3px,
+    var(--accent-border) 3px 6px
+  );
+}
+
+/* --------------------------------------------------------------------- the week */
+
+.span-week {
+  --span-hours: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.span-week-head,
+.span-week-grid {
+  display: grid;
+  grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+  gap: 0 4px;
+}
+
+.span-week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.span-week-day:hover {
+  background: var(--bg-card-hover);
+}
+
+.span-week-day[data-state='future'] {
+  opacity: 0.55;
+}
+
+.span-week-name {
+  font-size: var(--text-small);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.span-week-day[data-today] .span-week-name {
+  color: var(--accent);
+}
+
+.span-week-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  min-height: 1em;
+}
+
+.span-week-hours {
+  display: grid;
+  grid-template-rows: repeat(var(--span-hours), 48px);
+}
+
+.span-week-hour {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  transform: translateY(-0.5em);
+}
+
+.span-week-col {
+  position: relative;
+  min-width: 0;
+  height: calc(var(--span-hours) * 48px);
+  border-radius: var(--radius-xs);
+  background:
+    repeating-linear-gradient(to bottom, var(--border-subtle) 0 1px, transparent 1px 48px),
+    var(--bg-column);
+}
+
+.span-week-col[data-state='future'] {
+  opacity: 0.55;
+}
+
+.span-week-nosignal {
+  position: absolute;
+  inset: 8px 4px auto;
+  padding: 6px 4px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-small);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.span-week-block {
+  --b-top: 0%;
+  --b-height: 0%;
+  --b-left: 0%;
+  --b-width: 100%;
+  position: absolute;
+  top: var(--b-top);
+  height: var(--b-height);
+  left: calc(var(--b-left) + 2px);
+  width: calc(var(--b-width) - 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 3px;
+  padding: 3px 5px;
+  overflow: hidden;
+  border: 1.5px dashed var(--accent-border);
+  border-radius: var(--radius-xs);
+  background: var(--accent-bg);
+  font: inherit;
+  font-size: var(--text-small);
+  text-align: left;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.span-week-block[data-kind='confirmed'] {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.span-week-block[data-kind='confirmed'][data-meeting] {
+  border-color: var(--kind-meeting-border);
+  background: var(--kind-meeting-bg);
+  color: var(--kind-meeting);
+}
+
+.span-week-block[data-needs-card] {
+  border: 1px solid var(--chip-orange);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--chip-orange-bg) 0 6px,
+    var(--chip-orange-border) 6px 12px
+  );
+  color: var(--chip-orange);
+}
+
+.span-week-key,
+.span-week-len {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.span-week-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.span-week-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--overdue);
+  pointer-events: none;
+}
+
+.span-week-now::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--overdue);
+}
+
+/* -------------------------------------------------------------------- the month */
+
+.span-month {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.span-month-head,
+.span-month-row {
+  display: grid;
+  grid-template-columns: 44px repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.span-month-head {
+  font-size: var(--text-small);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.span-month-week {
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.span-month-week:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.span-month-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 96px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  font: inherit;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.span-month-cell:hover {
+  background: var(--bg-card-hover);
+}
+
+.span-month-cell[data-kind='future'] {
+  opacity: 0.55;
+}
+
+.span-month-cell[data-out] {
+  opacity: 0.35;
+}
+
+.span-month-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+}
+
+.span-month-date {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.span-month-cell[data-today] .span-month-date {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.span-month-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+
+.span-month-chip {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+  padding: 1px 4px;
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg-column);
+  font-size: var(--text-small);
+}
+
+.span-month-chip[data-drafted] {
+  border-left-style: dashed;
+  border-left-color: var(--accent-border);
+}
+
+.span-month-chip[data-untied] {
+  border-left: 3px solid var(--chip-orange);
+}
+
+.span-month-chip-key {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.span-month-chip-len {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.span-month-cell .span-bar {
+  margin-top: auto;
+}
+
+/* --------------------------------------------------------------------- the year */
+
+.span-year {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--space-4);
+}
+
+.span-year-month {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-card);
+}
+
+.span-year-title {
+  display: flex;
+  justify-content: space-between;
+  border: 0;
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  background: none;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: 800;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.span-year-title:hover {
+  background: var(--bg-card-hover);
+}
+
+.span-year-month[data-current] .span-year-title > span:first-child {
+  color: var(--accent);
+}
+
+.span-year-total {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.span-year-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 24px);
+  gap: 4px;
+}
+
+.span-year-day {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--heat-empty);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.span-year-day[data-kind='future'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.span-year-day[data-heat='1'] {
+  background: var(--heat-gh-1);
+  color: var(--text-primary);
+}
+
+.span-year-day[data-heat='2'] {
+  background: var(--heat-gh-2);
+  color: var(--text-primary);
+}
+
+.span-year-day[data-heat='3'] {
+  background: var(--heat-gh-3);
+  color: var(--on-accent);
+}
+
+.span-year-day[data-heat='4'] {
+  background: var(--heat-gh-4);
+  color: var(--on-accent);
+}
+
+.span-year-day[data-today] {
+  box-shadow:
+    0 0 0 1.5px var(--bg-card),
+    0 0 0 3.5px var(--text-primary);
+}
+
+.span-heat-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.span-heat-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------- a phone */
+
+@media (max-width: 900px) {
+  .span-switch-tools {
+    margin-left: 0;
+  }
+
+  .span-seg {
+    grid-template-columns: repeat(4, 48px);
+  }
+
+  .span-seg-thumb {
+    width: 48px;
+    transform: translateX(calc(var(--span-index) * 48px));
+  }
+
+  .span-crumbs {
+    order: 3;
+    width: 100%;
+  }
+
+  .span-card {
+    padding: var(--space-3);
+  }
+
+  /* The week as seven rows, each its day and its blocks in a line. */
+  .span-week-head {
+    display: none;
+  }
+
+  .span-week-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .span-week-hours {
+    display: none;
+  }
+
+  .span-week-col {
+    height: auto;
+    min-height: 40px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px;
+    background: var(--bg-column);
+  }
+
+  .span-week-col::before {
+    content: attr(data-label);
+    width: 100%;
+    font-size: var(--text-small);
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  .span-week-block {
+    position: static;
+    width: auto;
+    height: auto;
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .span-week-nosignal {
+    position: static;
+  }
+
+  .span-week-now {
+    display: none;
+  }
+
+  .span-month-head,
+  .span-month-row {
+    grid-template-columns: 28px repeat(7, minmax(0, 1fr));
+    gap: 2px;
+  }
+
+  .span-month-cell {
+    min-height: 52px;
+    padding: 3px;
+  }
+
+  .span-month-chip,
+  .span-month-total {
+    display: none;
+  }
+
+  .span-year {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .span-year-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+  }
+
+  .span-year-day {
+    width: auto;
+    height: 18px;
+    font-size: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .span-seg-thumb,
+  .span-seg-option {
+    transition: none;
+  }
+}
+
+/* A phone's head: on Day, the View under the day's own head; wider, the period and the View. */
+.myday-phone-view {
+  padding: var(--space-2) var(--space-4) 0;
+}
+
+.myday-phone-span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+
+.myday-phone-span-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: 800;
+  color: var(--text-primary);
+}
