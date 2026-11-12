@@ -489,19 +489,19 @@ void describe('the task feed (D-129, LAI-1122)', () => {
         .locator('#panel-all .feed-row[data-event-icon]')
         .evaluateAll((els) =>
           els.map((el) => [
-            el.querySelector('.feed-icon')?.textContent ?? '',
+            el.querySelector('.feed-icon svg')?.getAttribute('data-icon') ?? '',
             (el.querySelector('.feed-what')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
           ]),
         );
       assert.deepEqual(rows, [
-        ['+', 'Created this task · via MCP · Polly'],
-        ['⇄', 'Sent the work request to Claude Code · laptop-1'],
-        ['→', 'Moved Backlog → In progress · Claude Code 2.1.280 · claude-opus-5-5'],
-        ['▶', 'Accepted and started work · Claude Code 2.1.280 · claude-opus-5-5'],
-        ['✓', 'Marked Terminal viewer built'],
-        ['→', 'Moved In progress → Review · Claude Code 2.1.280 · claude-opus-5-5'],
-        ['↩', 'Sent back Review → In progress'],
-        ['▶', 'Accepted and started work'],
+        ['plus', 'Created this task · via MCP · Polly'],
+        ['swap', 'Sent the work request to Claude Code · laptop-1'],
+        ['arrow-right', 'Moved Backlog → In progress · Claude Code 2.1.280 · claude-opus-5-5'],
+        ['play', 'Accepted and started work · Claude Code 2.1.280 · claude-opus-5-5'],
+        ['check', 'Marked Terminal viewer built'],
+        ['arrow-right', 'Moved In progress → Review · Claude Code 2.1.280 · claude-opus-5-5'],
+        ['reply', 'Sent back Review → In progress'],
+        ['play', 'Accepted and started work'],
       ]);
       // The status names are pills.
       assert.deepEqual(

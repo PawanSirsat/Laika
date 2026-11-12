@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useShell } from '../shell/shell-context.ts';
 import { spaceSettingsHref } from '../../routes/space-settings-url.ts';
+import { Icon } from '../icon/Icon.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 /**
@@ -56,7 +57,7 @@ export function SpaceMenu({ slug }: { readonly slug: string }) {
             setAt({ top: box.bottom + 6, right: Math.max(8, window.innerWidth - box.right) });
           }}
         >
-          <span aria-hidden="true">⋯</span>
+          <Icon name="more" size="small" />
         </button>
       </Tooltip>
       {at !== undefined &&

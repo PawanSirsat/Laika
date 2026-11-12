@@ -59,6 +59,14 @@ export interface TooltipProps {
    * keeps it while reading. Hover and focus still show it as usual.
    */
   readonly toggle?: boolean | undefined;
+  /**
+   * Render nothing until the control is first reached — hovered, focused or
+   * pressed (LAI-1213). For the many small markers on a card, a list row or a
+   * timeline bar, where a board of three hundred cards would otherwise carry
+   * thousands of hidden tooltips it may never show. The description joins
+   * `aria-describedby` at the same moment, so it is never linked to nothing.
+   */
+  readonly lazy?: boolean | undefined;
 }
 
 function assign<T>(ref: Ref<T> | undefined, value: T | null): void {
@@ -112,10 +120,13 @@ export function Tooltip({
   side = 'bottom',
   tone = 'label',
   toggle = false,
+  lazy = false,
 }: TooltipProps) {
   const id = useId();
   const tipId = `tip-${id.replace(/[^a-zA-Z0-9-]/g, '')}`;
   const [open, setOpen] = useState(false);
+  /** Whether it has been reached yet — always, unless `lazy`. */
+  const [armed, setArmed] = useState(!lazy);
   const [placed, setPlaced] = useState<'top' | 'bottom'>(side);
   const trigger = useRef<HTMLElement | null>(null);
   const tip = useRef<HTMLDivElement | null>(null);
@@ -167,7 +178,11 @@ export function Tooltip({
       if (press !== undefined) clearTimeout(press.timer);
       press = undefined;
     };
+    const arm = (): void => {
+      setArmed(true);
+    };
     const onEnter = (event: PointerEvent): void => {
+      arm();
       if (event.pointerType !== 'touch') showSoon();
     };
     const onLeave = (event: PointerEvent): void => {
@@ -177,6 +192,7 @@ export function Tooltip({
       hideSoon(HIDE_AFTER_MS);
     };
     const onDown = (event: PointerEvent): void => {
+      arm();
       pressed.current = true;
       if (toggleRef.current) return;
       hideSoon(0);
@@ -224,6 +240,7 @@ export function Tooltip({
       if (swallowClick.current) event.preventDefault();
     };
     const onFocusIn = (): void => {
+      arm();
       if (pressed.current) return;
       showSoon();
     };
@@ -326,7 +343,8 @@ export function Tooltip({
   }, [open, side, content]);
 
   const own = children.props;
-  const describedBy = [own['aria-describedby'], tipId].filter(Boolean).join(' ');
+  const describedBy =
+    [own['aria-describedby'], armed ? tipId : undefined].filter(Boolean).join(' ') || undefined;
   const keycap = shortcut === undefined ? undefined : formatShortcut(shortcut, MAC);
 
   return (
@@ -339,31 +357,32 @@ export function Tooltip({
         'aria-describedby': describedBy,
         ...(shortcut === undefined ? {} : { 'aria-keyshortcuts': ariaShortcut(shortcut, MAC) }),
       })}
-      {createPortal(
-        <div
-          ref={tip}
-          id={tipId}
-          role="tooltip"
-          className={`tip tip-${placed} tip-${tone}${open ? ' tip-open' : ''}`}
-          hidden={!open}
-          data-tooltip=""
-          onPointerEnter={clear}
-          onPointerLeave={() => {
-            hideSoon(HIDE_AFTER_MS);
-          }}
-        >
-          {keycap === undefined ? (
-            content
-          ) : (
-            <>
-              <span className="tip-words">{content}</span>
-              {/* Read as part of the description: "Bold, Command B". */}
-              <kbd className="tip-kbd">{keycap}</kbd>
-            </>
-          )}
-        </div>,
-        document.body,
-      )}
+      {armed &&
+        createPortal(
+          <div
+            ref={tip}
+            id={tipId}
+            role="tooltip"
+            className={`tip tip-${placed} tip-${tone}${open ? ' tip-open' : ''}`}
+            hidden={!open}
+            data-tooltip=""
+            onPointerEnter={clear}
+            onPointerLeave={() => {
+              hideSoon(HIDE_AFTER_MS);
+            }}
+          >
+            {keycap === undefined ? (
+              content
+            ) : (
+              <>
+                <span className="tip-words">{content}</span>
+                {/* Read as part of the description: "Bold, Command B". */}
+                <kbd className="tip-kbd">{keycap}</kbd>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

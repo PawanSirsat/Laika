@@ -6,6 +6,8 @@ import type { ProjectStatus } from '../../../api/statuses.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { DependenciesSection } from './DependenciesSection.tsx';
 import { SubtasksSection } from './SubtasksSection.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './task-panel.css';
 
 export interface LinksCardProps {
@@ -83,7 +85,10 @@ export function LinksCard({
 
   return (
     <section className="meta-card meta-links" aria-label="Links and dates">
-      <h3 className="meta-card-title">Links &amp; dates</h3>
+      <h3 className="meta-card-title">
+        <Icon name="link" size="small" className="section-mark" />
+        Links &amp; dates
+      </h3>
       <div className="meta-rows">
         {!hasChildren && (
           <ParentRow
@@ -183,35 +188,41 @@ function ParentRow({ task, parent, candidates, mayEdit, onOpen, onChange }: Pare
 
   return (
     <div className="meta-row meta-row-parent">
-      <p className="meta-label">Parent</p>
+      <p className="meta-label">
+        <Icon name="parent" size="small" className="section-mark" />
+        Parent
+      </p>
       {task.parent_task_id !== null ? (
         <div className="meta-value meta-parent">
           {parent === undefined ? (
             <span className="meta-quiet">A task outside this page.</span>
           ) : (
-            <button
-              type="button"
-              className="meta-task-link"
-              title={parent.title}
-              onClick={() => {
-                onOpen(parent.id);
-              }}
-            >
-              <span className="meta-task-key">{parent.key}</span> {parent.title}
-            </button>
+            <Tooltip content={parent.title} lazy>
+              <button
+                type="button"
+                className="meta-task-link"
+                onClick={() => {
+                  onOpen(parent.id);
+                }}
+              >
+                <span className="meta-task-key">{parent.key}</span> {parent.title}
+              </button>
+            </Tooltip>
           )}
           {mayEdit && (
-            <button
-              type="button"
-              className="dep-remove"
-              disabled={busy}
-              aria-label="Detach from parent"
-              onClick={() => {
-                void run(null);
-              }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            <Tooltip content="Detach from parent">
+              <button
+                type="button"
+                className="dep-remove"
+                disabled={busy}
+                aria-label="Detach from parent"
+                onClick={() => {
+                  void run(null);
+                }}
+              >
+                <Icon name="close" size="tiny" />
+              </button>
+            </Tooltip>
           )}
         </div>
       ) : !mayEdit ? (
@@ -305,7 +316,10 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
 
   return (
     <div className={`meta-row meta-row-${id}`}>
-      <p className="meta-label">{label}</p>
+      <p className="meta-label">
+        <Icon name="calendar" size="small" className="section-mark" />
+        {label}
+      </p>
       {editing ? (
         <div className="meta-value dep-add meta-add" data-editable={id}>
           <label className="visually-hidden" htmlFor={`${id}-date`}>
@@ -361,35 +375,41 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
         </p>
       ) : (
         <div className="meta-value meta-date" data-editable={mayEdit ? id : undefined}>
-          <button
-            type="button"
-            className={overdue ? 'meta-date-chip meta-date-overdue' : 'meta-date-chip'}
-            disabled={!mayEdit}
-            title={overdue ? 'Past due and still open' : undefined}
-            onClick={() => {
-              setDraft(msToDateInput(value));
-              setEditing(true);
-            }}
+          <Tooltip
+            content={`${overdue ? 'Past due and still open' : label}${mayEdit ? ' — change' : ''}`}
+            lazy
           >
-            {overdue && (
-              <span className="meta-date-warn" aria-label="Overdue">
-                ⚠
-              </span>
-            )}
-            <time dateTime={new Date(value).toISOString()}>{dateLabel(value)}</time>
-          </button>
-          {mayEdit && (
             <button
               type="button"
-              className="dep-remove"
-              disabled={busy}
-              aria-label={`Clear ${label.toLowerCase()}`}
+              className={overdue ? 'meta-date-chip meta-date-overdue' : 'meta-date-chip'}
+              disabled={!mayEdit}
               onClick={() => {
-                void run(null);
+                setDraft(msToDateInput(value));
+                setEditing(true);
               }}
             >
-              <span aria-hidden="true">×</span>
+              {overdue && (
+                <span className="meta-date-warn">
+                  <Icon name="alert" size="tiny" label="Overdue" />
+                </span>
+              )}
+              <time dateTime={new Date(value).toISOString()}>{dateLabel(value)}</time>
             </button>
+          </Tooltip>
+          {mayEdit && (
+            <Tooltip content={`Clear ${label.toLowerCase()}`}>
+              <button
+                type="button"
+                className="dep-remove"
+                disabled={busy}
+                aria-label={`Clear ${label.toLowerCase()}`}
+                onClick={() => {
+                  void run(null);
+                }}
+              >
+                <Icon name="close" size="tiny" />
+              </button>
+            </Tooltip>
           )}
         </div>
       )}

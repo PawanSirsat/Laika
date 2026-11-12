@@ -6,6 +6,8 @@ import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../ap
 import { copyText } from '../../../components/CopyButton.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { listMentionable, type MentionableUser } from '../../../api/mentions.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
@@ -634,16 +636,17 @@ export function TaskDetailPanel({
               {parent === undefined ? (
                 <span className="panel-crumb panel-crumb-quiet">a task outside this page</span>
               ) : (
-                <button
-                  type="button"
-                  className="panel-crumb panel-crumb-parent"
-                  title={parent.title}
-                  onClick={() => {
-                    onOpen(parent.id);
-                  }}
-                >
-                  <span aria-hidden="true">↳</span> {parent.key}
-                </button>
+                <Tooltip content={`Subtask of ${parent.title}`}>
+                  <button
+                    type="button"
+                    className="panel-crumb panel-crumb-parent"
+                    onClick={() => {
+                      onOpen(parent.id);
+                    }}
+                  >
+                    <Icon name="parent" size="tiny" /> {parent.key}
+                  </button>
+                </Tooltip>
               )}
               <span className="panel-crumb-sep" aria-hidden="true">
                 /
@@ -675,81 +678,75 @@ export function TaskDetailPanel({
         <div className="panel-head-actions">
           {/* Watch, as an eye with the count — the design's icon row. */}
           {meId !== undefined && (
-            <button
-              type="button"
-              className={
-                watching
-                  ? 'panel-head-action panel-head-watch on'
-                  : 'panel-head-action panel-head-watch'
-              }
-              aria-pressed={watching}
-              aria-label={watching ? 'Unwatch' : 'Watch'}
-              title={
+            <Tooltip
+              content={`${watching ? 'Unwatch' : 'Watch'}${
                 watchers === undefined
-                  ? 'Watching'
-                  : `${String(watchers.length)} watching${named.length > 0 ? `: ${named.join(', ')}` : ''}`
-              }
-              disabled={watchBusy}
-              onClick={() => {
-                void toggleWatch();
-              }}
+                  ? ''
+                  : ` · ${String(watchers.length)} watching${named.length > 0 ? `: ${named.join(', ')}` : ''}`
+              }`}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-                <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
-              </svg>
-              <span className="panel-head-count">
-                {watchers === undefined ? '–' : formatCount(watchers.length)}
-              </span>
-            </button>
+              <button
+                type="button"
+                className={
+                  watching
+                    ? 'panel-head-action panel-head-watch on'
+                    : 'panel-head-action panel-head-watch'
+                }
+                aria-pressed={watching}
+                aria-label={watching ? 'Unwatch' : 'Watch'}
+                disabled={watchBusy}
+                onClick={() => {
+                  void toggleWatch();
+                }}
+              >
+                <Icon name="eye" size="small" />
+                <span className="panel-head-count">
+                  {watchers === undefined ? '–' : formatCount(watchers.length)}
+                </span>
+              </button>
+            </Tooltip>
           )}
 
-          <button
-            type="button"
-            className="panel-head-action"
-            aria-label="Copy link to this task"
-            title="Copy link"
-            onClick={(event) => {
-              // Through the one clipboard implementation (CopyButton's), not a
-              // second call site of its own. The button is passed so the copy
-              // stays inside this modal (LAI-760). Share is this (D-129 item 6).
-              void copyText(window.location.href, event.currentTarget).then((outcome) => {
-                setCopied(outcome === 'copied' ? 'Copied' : 'Press ⌘C to copy');
-                window.setTimeout(() => {
-                  setCopied('');
-                }, 2_000);
-              });
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="18" cy="5" r="2.5" stroke="currentColor" strokeWidth="2" />
-              <circle cx="6" cy="12" r="2.5" stroke="currentColor" strokeWidth="2" />
-              <circle cx="18" cy="19" r="2.5" stroke="currentColor" strokeWidth="2" />
-              <path d="M8.2 10.8 15.8 6.2M8.2 13.2l7.6 4.6" stroke="currentColor" strokeWidth="2" />
-            </svg>
-          </button>
+          <Tooltip content="Copy link">
+            <button
+              type="button"
+              className="panel-head-action"
+              aria-label="Copy link to this task"
+              onClick={(event) => {
+                // Through the one clipboard implementation (CopyButton's), not a
+                // second call site of its own. The button is passed so the copy
+                // stays inside this modal (LAI-760). Share is this (D-129 item 6).
+                void copyText(window.location.href, event.currentTarget).then((outcome) => {
+                  setCopied(outcome === 'copied' ? 'Copied' : 'Press ⌘C to copy');
+                  window.setTimeout(() => {
+                    setCopied('');
+                  }, 2_000);
+                });
+              }}
+            >
+              <Icon name="share" size="small" />
+            </button>
+          </Tooltip>
           {/* Present before the click, so the words are announced (LAI-1117). */}
           <span className="panel-copied" role="status" aria-live="polite">
             {copied}
           </span>
 
           <div className="panel-overflow-anchor" ref={overflowBox}>
-            <button
-              type="button"
-              className="panel-head-action"
-              aria-expanded={overflowOpen}
-              aria-label="More actions"
-              ref={overflowButton}
-              onClick={() => {
-                setOverflowOpen((open) => !open);
-              }}
-            >
-              <span aria-hidden="true">⋯</span>
-            </button>
+            <Tooltip content="More actions">
+              <button
+                type="button"
+                className="panel-head-action"
+                aria-expanded={overflowOpen}
+                aria-label="More actions"
+                ref={overflowButton}
+                onClick={() => {
+                  setOverflowOpen((open) => !open);
+                }}
+              >
+                <Icon name="more" size="small" />
+              </button>
+            </Tooltip>
 
             {overflowOpen && (
               <ul className="panel-overflow">
@@ -792,35 +789,29 @@ export function TaskDetailPanel({
           </div>
 
           {expandHref !== undefined && (
-            <a
-              className="panel-head-action panel-expand"
-              href={expandHref}
-              aria-label="Expand to full page"
-              title="Expand to full page"
-              onClick={(event) => {
-                // A modified click is the browser's: a new tab or window.
-                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                if (onExpand === undefined) return;
-                event.preventDefault();
-                onExpand();
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </a>
+            <Tooltip content="Expand to full page">
+              <a
+                className="panel-head-action panel-expand"
+                href={expandHref}
+                aria-label="Expand to full page"
+                onClick={(event) => {
+                  // A modified click is the browser's: a new tab or window.
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  if (onExpand === undefined) return;
+                  event.preventDefault();
+                  onExpand();
+                }}
+              >
+                <Icon name="expand" size="small" />
+              </a>
+            </Tooltip>
           )}
 
-          <button type="button" className="panel-close" onClick={onClose}>
-            <span className="visually-hidden">Close</span>
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="panel-close" aria-label="Close" onClick={onClose}>
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </div>
       </header>
 
@@ -941,6 +932,7 @@ export function TaskDetailPanel({
               <span
                 className={descriptionOpen ? 'meta-chevron meta-chevron-open' : 'meta-chevron'}
               />
+              <Icon name="doc" size="small" className="section-mark" />
               Description
             </button>
             {descriptionOpen &&
@@ -1050,6 +1042,7 @@ export function TaskDetailPanel({
                 <span
                   className={acceptanceOpen ? 'meta-chevron meta-chevron-open' : 'meta-chevron'}
                 />
+                <Icon name="checklist" size="small" className="section-mark" />
                 Acceptance
               </button>
               {acceptanceOpen && (

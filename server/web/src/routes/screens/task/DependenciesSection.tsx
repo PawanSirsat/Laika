@@ -11,6 +11,8 @@ import {
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './task-panel.css';
 
 export interface DependenciesSectionProps {
@@ -85,7 +87,10 @@ export function DependenciesSection({
       {/* The two Jira link types we have, as two rows of the rail's Links &
           dates card (LAI-1122) — the Linked tasks section's, moved. */}
       <div className="meta-row meta-row-wide meta-row-blocked-by dep-section">
-        <p className="meta-label">Blocked by</p>
+        <p className="meta-label">
+          <Icon name="blocked" size="small" className="section-mark" />
+          Blocked by
+        </p>
         <div className="meta-value meta-line">
           {task.blocked_by.length === 0 && <span className="meta-quiet">Nothing</span>}
           {mayEdit && !adding && (
@@ -175,7 +180,10 @@ export function DependenciesSection({
       </div>
 
       <div className="meta-row meta-row-wide meta-row-blocks">
-        <p className="meta-label">Blocks</p>
+        <p className="meta-label">
+          <Icon name="arrow-right" size="small" className="section-mark" />
+          Blocks
+        </p>
         <div className="meta-value meta-line">
           {task.blocks.length === 0 && <span className="meta-quiet">Nothing</span>}
         </div>
@@ -228,10 +236,17 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
         <span className="dep-relation visually-hidden">{relation}</span>
         <span className="dep-chip-title">A task outside this page</span>
         {onRemove !== undefined && (
-          <button type="button" className="dep-remove" disabled={busy} onClick={onRemove}>
-            <span className="visually-hidden">Unlink</span>
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content="Unlink">
+            <button
+              type="button"
+              className="dep-remove"
+              disabled={busy}
+              onClick={onRemove}
+              aria-label="Unlink"
+            >
+              <Icon name="close" size="tiny" />
+            </button>
+          </Tooltip>
         )}
       </li>
     );
@@ -250,32 +265,35 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
         {relation}
       </span>
       <span className="dep-chip-key">{task.key}</span>
-      <span className="dep-chip-title" title={task.title}>
-        {task.title}
-      </span>
+      <Tooltip content={task.title} lazy>
+        <span className="dep-chip-title">{task.title}</span>
+      </Tooltip>
       {/* The blocker's own state, on the right where the design puts it — it is
           the answer to "is this still in my way". */}
       <span className={`dep-status dep-status-${task.status}`}>{task.status_name}</span>
-      <span
-        className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
-        title={who?.name ?? 'Unassigned'}
-        aria-hidden="true"
-        {...(ink === undefined
-          ? {}
-          : { style: { background: ink.background, color: ink.foreground } })}
-      >
-        {who === undefined ? '—' : initials(who.name)}
-      </span>
-      {onRemove !== undefined && (
-        <button
-          type="button"
-          className="dep-remove"
-          disabled={busy}
-          onClick={onRemove}
-          aria-label={`Unlink ${task.key}`}
+      <Tooltip content={who?.name ?? 'Unassigned'} lazy>
+        <span
+          className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
+          aria-hidden="true"
+          {...(ink === undefined
+            ? {}
+            : { style: { background: ink.background, color: ink.foreground } })}
         >
-          <span aria-hidden="true">×</span>
-        </button>
+          {who === undefined ? '—' : initials(who.name)}
+        </span>
+      </Tooltip>
+      {onRemove !== undefined && (
+        <Tooltip content="Unlink">
+          <button
+            type="button"
+            className="dep-remove"
+            disabled={busy}
+            onClick={onRemove}
+            aria-label={`Unlink ${task.key}`}
+          >
+            <Icon name="close" size="tiny" />
+          </button>
+        </Tooltip>
       )}
     </li>
   );

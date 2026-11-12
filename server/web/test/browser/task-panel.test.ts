@@ -695,7 +695,10 @@ void describe('the Jira-shaped task view (D-066)', () => {
         await openById(h);
         const chip = h.page.locator('.meta-row-due .meta-date-chip');
         assert.ok(await chip.evaluate((el) => el.classList.contains('meta-date-overdue')));
-        assert.match(await chip.innerText(), /⚠/);
+        assert.equal(
+          await chip.locator('.meta-date-warn [data-icon="alert"]').getAttribute('aria-label'),
+          'Overdue',
+        );
         const colour = await chip.evaluate((el) => getComputedStyle(el).borderColor);
         assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the chip lost its border`);
         colours.push(colour);

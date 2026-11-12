@@ -17,10 +17,12 @@ import { threadOrder, type ThreadItem } from '../board/thread-order.ts';
 import { CommentComposer } from './CommentComposer.tsx';
 import { FeedComment } from './FeedComment.tsx';
 import { actorKey, commentKind, runPositions, type RunPosition } from './feed-groups.ts';
-import { FEED_GLYPHS, feedLines, feedMeta } from './feed-line.ts';
+import { FEED_ICONS, feedLines, feedMeta } from './feed-line.ts';
 import type { CardCandidate, MentionCandidate } from './LazyRichEditor.tsx';
 import { WhoDidThis } from './WhoDidThis.tsx';
 import { Tabs } from '../../../components/tabs/Tabs.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './feed.css';
 
 export interface ActivityFeedProps {
@@ -311,13 +313,14 @@ export function ActivityFeed({
             {actor.session !== undefined && <span className="feed-sr"> · {actor.session}</span>}
           </span>
           {actor.badge}
-          <time
-            className={comment ? 'cmt-when feed-when' : 'panel-time feed-when'}
-            dateTime={when.iso}
-            title={when.full}
-          >
-            {when.text}
-          </time>
+          <Tooltip content={when.full} lazy>
+            <time
+              className={comment ? 'cmt-when feed-when' : 'panel-time feed-when'}
+              dateTime={when.iso}
+            >
+              {when.text}
+            </time>
+          </Tooltip>
         </p>
       </div>
     );
@@ -393,32 +396,36 @@ export function ActivityFeed({
         {lines.map((line, i) => (
           <div key={i} className="feed-row" data-event-icon={line.icon}>
             <span className="feed-gutter" aria-hidden="true">
-              <span className="feed-icon">{FEED_GLYPHS[line.icon]}</span>
+              <span className="feed-icon">
+                <Icon name={FEED_ICONS[line.icon]} size="tiny" />
+              </span>
             </span>
-            <p className="panel-event-what feed-what" title={timeLabel(event.created_at, now).full}>
-              {line.text}
-              {line.object !== undefined && (
-                <>
-                  {' '}
-                  <strong className="feed-object">{line.object}</strong>
-                </>
-              )}
-              {line.tail !== undefined && ` ${line.tail}`}
-              {line.move !== undefined && (
-                <>
-                  {' '}
-                  <span className="feed-pill">{line.move.from}</span>
-                  <span className="feed-arrow"> → </span>
-                  <span className="feed-pill">{line.move.to}</span>
-                </>
-              )}
-              {meta !== undefined && i === lines.length - 1 && (
-                <>
-                  {' '}
-                  <span className="feed-meta">· {meta}</span>
-                </>
-              )}
-            </p>
+            <Tooltip content={timeLabel(event.created_at, now).full} lazy>
+              <p className="panel-event-what feed-what">
+                {line.text}
+                {line.object !== undefined && (
+                  <>
+                    {' '}
+                    <strong className="feed-object">{line.object}</strong>
+                  </>
+                )}
+                {line.tail !== undefined && ` ${line.tail}`}
+                {line.move !== undefined && (
+                  <>
+                    {' '}
+                    <span className="feed-pill">{line.move.from}</span>
+                    <span className="feed-arrow"> → </span>
+                    <span className="feed-pill">{line.move.to}</span>
+                  </>
+                )}
+                {meta !== undefined && i === lines.length - 1 && (
+                  <>
+                    {' '}
+                    <span className="feed-meta">· {meta}</span>
+                  </>
+                )}
+              </p>
+            </Tooltip>
           </div>
         ))}
       </li>
@@ -462,7 +469,10 @@ export function ActivityFeed({
 
   return (
     <section className="panel-section panel-activity-section" id="activity">
-      <h3 className="panel-section-title">Activity</h3>
+      <h3 className="panel-section-title">
+        <Icon name="activity" size="small" className="section-mark" />
+        Activity
+      </h3>
       {detail.status === 'loading' ? (
         <LoadingState shape="row" count={3} label="Loading comments and activity" />
       ) : detail.status === 'error' ? (

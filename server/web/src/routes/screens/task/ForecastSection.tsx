@@ -31,6 +31,8 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { similarRows } from './rail-derive.ts';
 import { Chip } from '../../../components/chip/Chip.tsx';
 import { SIZE_TONES } from '../../../components/chip/chip-model.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './forecast.css';
 
 export interface ForecastSectionProps {
@@ -242,12 +244,12 @@ export function ForecastSection({
           {rough && (
             <>
               <Sep />
-              <span
-                className="fc-rough"
-                title="Few estimates here have been checked, or they have often been far off. More under Why."
+              <Tooltip
+                content="Few estimates here have been checked, or they have often been far off. More under Why."
+                lazy
               >
-                rough estimate
-              </span>
+                <span className="fc-rough">rough estimate</span>
+              </Tooltip>
             </>
           )}
         </p>
@@ -367,16 +369,18 @@ export function ForecastSection({
               <span className="fc-similar-lead">Similar finished tasks:</span>
               {why.similar.map((s) => (
                 <span key={s.task_id} className="fc-similar-item">
-                  <button
-                    type="button"
-                    className="fc-similar-link"
-                    title={s.title}
-                    onClick={() => {
-                      onOpen(s.task_id);
-                    }}
-                  >
-                    {s.key}
-                  </button>
+                  <Tooltip content={s.title} lazy>
+                    <button
+                      type="button"
+                      className="fc-similar-link"
+
+                      onClick={() => {
+                        onOpen(s.task_id);
+                      }}
+                    >
+                      {s.key}
+                    </button>
+                  </Tooltip>
                   <span className="fc-similar-time">{buildLabel(s.build_ms)}</span>
                 </span>
               ))}
@@ -395,7 +399,10 @@ export function ForecastSection({
   if (!compact) {
     return (
       <section className="panel-section fc" aria-label="Effort" data-section="effort">
-        <h3 className="panel-section-title">Effort</h3>
+        <h3 className="panel-section-title">
+          <Icon name="clock" size="small" className="section-mark" />
+          Effort
+        </h3>
         {headline}
         {extras}
         {actualLines}
@@ -424,7 +431,10 @@ export function ForecastSection({
   return (
     <section className="panel-section fc fc-compact" aria-label="Effort" data-section="effort">
       <div className="est-row">
-        <h3 className="panel-section-title est-label">Effort</h3>
+        <h3 className="panel-section-title est-label">
+          <Icon name="clock" size="small" className="section-mark" />
+          Effort
+        </h3>
         <div className="est-value">
           {headline}
           {extras}
@@ -439,16 +449,18 @@ export function ForecastSection({
             {similarList.map((s) => (
               <li key={s.task_id} className="est-similar-item">
                 <span className="est-similar-line">
-                  <button
-                    type="button"
-                    className="est-similar-link"
-                    title={s.title}
-                    onClick={() => {
-                      onOpen(s.task_id);
-                    }}
-                  >
-                    {s.key}
-                  </button>
+                  <Tooltip content={s.title} lazy>
+                    <button
+                      type="button"
+                      className="est-similar-link"
+
+                      onClick={() => {
+                        onOpen(s.task_id);
+                      }}
+                    >
+                      {s.key}
+                    </button>
+                  </Tooltip>
                   <span className="est-similar-title">{s.title}</span>
                 </span>
                 {s.took !== null && <span className="est-similar-time">{s.took}</span>}
