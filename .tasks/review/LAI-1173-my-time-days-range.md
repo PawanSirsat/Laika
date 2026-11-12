@@ -5,8 +5,9 @@ area: server
 assignee: core
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-12T10:00:00Z
+finished: 2026-11-12T11:00:00Z
 ---
 
 ## Goal
@@ -19,21 +20,22 @@ no state and no per-day tasks. This adds the read. The web half is LAI-1174.
 
 ## Acceptance criteria
 
-- [ ] `GET /me/time/days?from=&to=&tz=` answers `{ from, to, tz, today, days }`,
+- [x] `GET /me/time/days?from=&to=&tz=` answers `{ from, to, tz, today, days }`,
       one row per day: `{ day, state, confirmed_minutes, drafted_minutes,
       untied_minutes, top_tasks }`. The top tasks are at most three, largest
       first.
-- [ ] `state` comes from the day view's own `stateOf`: a day with nothing is
+- [x] `state` comes from the day view's own `stateOf`: a day with nothing is
       `no_signal`, and a day after `today` is `future`.
-- [ ] Bounded by the summary's `stretch()`: 92 days, `range_too_long`,
+- [x] Bounded by the summary's `stretch()`: 92 days, `range_too_long`,
       `range_backwards`. An unknown `tz` gets `422`.
-- [ ] Read with `GET /me/time`'s readers (`entriesOn`, `draftsOn`), under its
+- [x] Read with `GET /me/time`'s readers (`entriesOn`, `draftsOn`), under its
       actions. Session only: a token gets `403`.
-- [ ] `GET /people/:id/time/days` is the same answer under
+- [x] `GET /people/:id/time/days` is the same answer under
       `people.analytics.read`, logged as a look with no day.
-- [ ] `server/test/http/routes/time-days.test.ts` covers each of the above,
-      including agreement with the summary's `by_day`.
-- [ ] Named cross-area edit (D-033): SPEC §3.1's `people.analytics.read`
+- [x] `server/test/http/routes/time-days.test.ts` covers each of the above,
+      including agreement with the summary's `by_day`;
+      `server/test/services/time-days.test.ts` mirrors the service (structure guard).
+- [x] Named cross-area edit (D-033): SPEC §3.1's `people.analytics.read`
       paragraph, two §6.4 endpoint lines and a §6.4 contract bullet after
       *A stretch of days (LAI-526)*.
 
