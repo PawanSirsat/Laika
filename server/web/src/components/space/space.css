@@ -86,6 +86,13 @@
   /* Level-1 glass (LAI-1132); the pane is `glass.css`'s ::before. */
   position: relative;
   isolation: isolate;
+  /*
+   * Above the space's content (merge train, LAI-1132 x LAI-1198): the glass
+   * makes this bar a stacking context, and since LAI-1198 the board toolbar
+   * and its popovers live inside it — at `z-index: auto` the board painted
+   * over them. Below the drawer's scrim (20), which must still cover it.
+   */
+  z-index: 3;
   background: transparent;
   border-bottom: 1px solid var(--glass-border);
   /* Was `13px 18px 0` for two stacked rows; one row needs less above it. */
