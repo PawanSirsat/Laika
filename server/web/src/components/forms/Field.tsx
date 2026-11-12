@@ -1,4 +1,7 @@
 import { useId, type ReactNode } from 'react';
+import { Icon } from '../icon/Icon.tsx';
+import type { IconName } from '../icon/icon-paths.ts';
+import { InfoHint } from '../tooltip/InfoHint.tsx';
 import { charCount, describedByIds } from './field-model.ts';
 import './forms.css';
 
@@ -62,6 +65,17 @@ export interface FieldProps {
   }) => ReactNode;
   /** Anything under the control that is not help: a preview, a note. */
   readonly after?: ReactNode;
+  /**
+   * A small mark before the label, for scanning a long form (LAI-1209).
+   * Decoration: `aria-hidden`, so the field is still named by its words alone.
+   */
+  readonly icon?: IconName | undefined;
+  /**
+   * Secondary help behind an (i) beside the label (LAI-1209) — the *why* or
+   * the difference, never something the field cannot be used safely without;
+   * that is `help`, which stays on screen.
+   */
+  readonly hint?: { readonly label: string; readonly text: string } | undefined;
 }
 
 /**
@@ -92,6 +106,8 @@ export function Field({
   layout = 'stack',
   children,
   after,
+  icon,
+  hint,
 }: FieldProps) {
   const generated = useId();
   const inputId = id ?? generated;
@@ -108,8 +124,12 @@ export function Field({
     errorId: error !== undefined ? errorId : undefined,
   });
 
-  const labelEl = (
-    <label className="field-label" htmlFor={inputId}>
+  const labelOnly = (
+    <label
+      className={icon === undefined ? 'field-label' : 'field-label field-label-iconed'}
+      htmlFor={inputId}
+    >
+      {icon !== undefined && <Icon name={icon} size="small" className="field-label-icon" />}
       {label}
       {required && (
         <span className="field-required" aria-hidden="true" title="Required">
@@ -119,6 +139,17 @@ export function Field({
       {optional && !required && <span className="field-optional">Optional</span>}
     </label>
   );
+  // The (i) sits beside the label, not inside it: a button inside a <label>
+  // would hand its clicks to the control the label names.
+  const labelEl =
+    hint === undefined ? (
+      labelOnly
+    ) : (
+      <div className="field-label-row">
+        {labelOnly}
+        <InfoHint label={hint.label}>{hint.text}</InfoHint>
+      </div>
+    );
 
   const helpEl = help !== undefined && (
     <p className="field-help" id={helpId}>

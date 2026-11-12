@@ -19,6 +19,7 @@
   --layer-dropdown: 70;
   --layer-dialog: 80;
   --layer-toast: 90;
+  --layer-tooltip: 95;
 
   --overlay-in: 200ms;
   --overlay-scrim-in: 160ms;

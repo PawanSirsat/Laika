@@ -2,6 +2,7 @@ import { useId, type ButtonHTMLAttributes, type MouseEvent, type Ref } from 'rea
 import { Icon } from '../icon/Icon.tsx';
 import type { IconName } from '../icon/icon-paths.ts';
 import { Spinner } from '../Spinner.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { buttonAttributes, type ButtonSize, type ButtonVariant } from './button-model.ts';
 import './button.css';
 
@@ -34,6 +35,16 @@ export interface IconButtonProps extends Passthrough {
   readonly onClick?: ((event: MouseEvent<HTMLButtonElement>) => void) | undefined;
   readonly describedBy?: string | undefined;
   readonly ref?: Ref<HTMLButtonElement> | undefined;
+  /**
+   * The shared Tooltip, showing the label (LAI-1209) — an icon has no words a
+   * sighted mouse or keyboard user can read, so by default it gets them on
+   * hover and focus. A string shows other words (still never the name);
+   * `false` only where something else on screen already says it.
+   */
+  readonly tooltip?: string | false | undefined;
+  /** Its keyboard shortcut, as `Mod+B` or `Escape`: a keycap in the tooltip and `aria-keyshortcuts`. */
+  readonly shortcut?: string | undefined;
+  readonly tooltipSide?: 'top' | 'bottom' | undefined;
 }
 
 /**
@@ -56,6 +67,9 @@ export function IconButton({
   onClick,
   describedBy,
   ref,
+  tooltip,
+  shortcut,
+  tooltipSide,
   ...rest
 }: IconButtonProps) {
   const reasonId = `${useId()}-reason`;
@@ -68,33 +82,48 @@ export function IconButton({
       disabledReason,
       fullWidth: false,
       iconOnly: true,
-      describedBy,
+      // A Tooltip wrapping this hands its id in as `aria-describedby`; kept,
+      // not overwritten by the reason's.
+      describedBy:
+        [describedBy, rest['aria-describedby']]
+          .filter((d) => d !== undefined && d !== '')
+          .join(' ') || undefined,
     },
     reasonId,
   );
 
+  const button = (
+    <button
+      {...rest}
+      ref={ref}
+      type="button"
+      className={a.className}
+      aria-label={label}
+      disabled={a.disabled}
+      aria-disabled={a.ariaDisabled}
+      aria-busy={a.ariaBusy}
+      aria-describedby={a.describedBy}
+      onClick={(event) => {
+        if (a.inert) {
+          event.preventDefault();
+          return;
+        }
+        onClick?.(event);
+      }}
+    >
+      {busy ? <Spinner size="sm" /> : <Icon name={icon} size="small" />}
+    </button>
+  );
+
   return (
     <>
-      <button
-        {...rest}
-        ref={ref}
-        type="button"
-        className={a.className}
-        aria-label={label}
-        disabled={a.disabled}
-        aria-disabled={a.ariaDisabled}
-        aria-busy={a.ariaBusy}
-        aria-describedby={a.describedBy}
-        onClick={(event) => {
-          if (a.inert) {
-            event.preventDefault();
-            return;
-          }
-          onClick?.(event);
-        }}
-      >
-        {busy ? <Spinner size="sm" /> : <Icon name={icon} size="small" />}
-      </button>
+      {tooltip === false ? (
+        button
+      ) : (
+        <Tooltip content={tooltip ?? label} shortcut={shortcut} side={tooltipSide}>
+          {button}
+        </Tooltip>
+      )}
       {a.showsReason && (
         <span className="button-reason" id={reasonId}>
           {disabledReason}

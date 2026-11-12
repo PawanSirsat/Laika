@@ -15,6 +15,24 @@
   color: var(--text-primary);
 }
 
+.field-label-iconed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* LAI-1209: the label's mark — quieter than its words, the same size on every field. */
+.field-label-icon {
+  color: var(--text-muted);
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
 .field-required {
   color: var(--overdue);
   margin-left: 2px;

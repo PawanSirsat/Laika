@@ -25,6 +25,9 @@
  *   over another modal sits `2 × depth` above it (`overlay.css`), so a
  *   confirmation asked from a dialog is always on top of it.
  * - `toast` 90 — above everything, never blocking it.
+ * - `tooltip` 95 — a control's name and shortcut (LAI-1209). Above the dialog
+ *   whose controls it describes, however deep that dialog is stacked: a
+ *   tooltip under its own dialog is a tooltip nobody sees.
  *
  * ## The motion
  *
@@ -51,6 +54,7 @@ export const LAYER = {
   dropdown: 70,
   dialog: 80,
   toast: 90,
+  tooltip: 95,
 } as const;
 
 export type LayerName = keyof typeof LAYER;

@@ -12,7 +12,9 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 70;
+  /* Above the dialog it describes (`overlay-tokens.ts`, LAI-1209). The
+     fallback is for a page that never loaded overlay.css. */
+  z-index: var(--layer-tooltip, 95);
   max-width: min(18rem, calc(100vw - 1rem));
   padding: 0.3125rem 0.5rem;
   border: 1px solid var(--border-default);
@@ -29,6 +31,37 @@
   transform: translate(var(--tip-x), var(--tip-y));
   opacity: 0;
   transition: opacity 120ms ease-out;
+}
+
+/* A control's name: a few words, on one line where they fit. */
+.tip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* An info button's explanation: a sentence or two, in the reading weight. */
+.tip-hint {
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.5rem 0.625rem;
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* The shortcut, as a keycap: quieter than the name, in the mono face. */
+.tip-kbd {
+  flex: none;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-column);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .tip[hidden] {
