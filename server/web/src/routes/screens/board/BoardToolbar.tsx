@@ -29,6 +29,7 @@ import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
 import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 import { PRIORITY_NAMES, PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { tagColor } from './tag-colors.ts';
@@ -174,6 +175,9 @@ const PRIORITIES: readonly TaskPriority[] = ['p1', 'p2', 'p3'];
  */
 function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void) {
   const box = useRef<HTMLDivElement | null>(null);
+  // On the overlay stack while open (LAI-1205): Escape is this popover's only
+  // while nothing — a confirmation, a dialog — is open above it.
+  const { isTop } = useLayer('popover', open);
 
   useEffect(() => {
     if (!open) return;
@@ -189,7 +193,7 @@ function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void
     };
     const onKey = (event: KeyboardEvent): void => {
       // An Escape a dropdown already used to close itself is not this one's.
-      if (event.key === 'Escape' && !event.defaultPrevented) close('escape');
+      if (event.key === 'Escape' && !event.defaultPrevented && isTop()) close('escape');
     };
 
     document.addEventListener('mousedown', onDown);
@@ -198,7 +202,7 @@ function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, close]);
+  }, [open, close, isTop]);
 
   return box;
 }

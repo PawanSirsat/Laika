@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 
 /**
  * A dashboard card's own filter: an icon with a count, and a compact popover
@@ -59,6 +60,9 @@ export function CardFilter({
     pop.current?.querySelector<HTMLElement>('.dcf-fields [role="combobox"]')?.focus();
   };
 
+  // On the overlay stack while open (LAI-1205): Escape is its only on top.
+  const { isTop } = useLayer('popover', open);
+
   useEffect(() => {
     if (!open) return;
     focusFirstField();
@@ -70,7 +74,7 @@ export function CardFilter({
     };
     const onKey = (event: KeyboardEvent): void => {
       // An Escape a dropdown already used to close itself is not this one's.
-      if (event.key === 'Escape' && !event.defaultPrevented) close(true);
+      if (event.key === 'Escape' && !event.defaultPrevented && isTop()) close(true);
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -78,7 +82,7 @@ export function CardFilter({
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, close]);
+  }, [open, close, isTop]);
 
   return (
     <span ref={anchor} className="dcf-anchor">

@@ -445,6 +445,9 @@ void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
  * `margin: auto` — so the add-column dialog sat against the left edge (x=18 at
  * 1366, where ec1281a had 492) and its scrim left undimmed strips at both
  * sides. Measured at a laptop, a 900px window and a phone.
+ *
+ * Since LAI-1205 both are the shared Dialog: centred down to a phone, where
+ * they are a bottom sheet the width of the screen instead.
  */
 void describe('the column dialogs (LAI-726 round 2)', () => {
   const DIALOGS = [
@@ -482,7 +485,7 @@ void describe('the column dialogs (LAI-726 round 2)', () => {
           const g = await box.evaluate((el) => {
             const r = el.getBoundingClientRect();
             // The scrim drawn with this dialog: its sibling.
-            const scrim = el.parentElement?.querySelector('.column-dialog-scrim');
+            const scrim = el.parentElement?.querySelector('.overlay-scrim');
             const s = scrim?.getBoundingClientRect();
             return {
               left: r.left,
@@ -503,10 +506,16 @@ void describe('the column dialogs (LAI-726 round 2)', () => {
             Math.abs(g.left - g.right) <= 1,
             `${at}: not centred across — ${String(g.left)}px left, ${String(g.right)}px right`,
           );
-          assert.ok(
-            Math.abs(g.top - g.bottom) <= 1,
-            `${at}: not centred down — ${String(g.top)}px above, ${String(g.bottom)}px below`,
-          );
+          if (width <= 544) {
+            // A phone (34rem and under): a sheet on the bottom edge.
+            assert.equal(g.bottom, 0, `${at}: the sheet is not on the bottom edge`);
+            assert.equal(g.left, 0, `${at}: the sheet is not the width of the screen`);
+          } else {
+            assert.ok(
+              Math.abs(g.top - g.bottom) <= 1,
+              `${at}: not centred down — ${String(g.top)}px above, ${String(g.bottom)}px below`,
+            );
+          }
           assert.ok(g.scrim !== null, `${at}: no scrim beside the dialog`);
           assert.deepEqual(
             g.scrim,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { usePopoverLayer } from '../../../components/overlay/layer-stack.ts';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { formatDurationMs } from '../../../api/duration.ts';
@@ -37,6 +38,8 @@ export function BoardInsights({ slug, onClose }: BoardInsightsProps) {
     | { status: 'ready'; data: MetricsView }
     | { status: 'error'; why: string }
   >({ status: 'loading' });
+  // Escape closes it, as every other popover (LAI-1205) — it had none.
+  usePopoverLayer(true, onClose);
 
   useEffect(() => {
     const controller = new AbortController();
