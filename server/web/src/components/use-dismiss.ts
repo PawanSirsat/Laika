@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { isInDropdownPanel } from './dropdown-model.ts';
+import { useLayer } from './overlay/layer-stack.ts';
 
 /** Why a popover closed: Escape, or a press somewhere outside it. */
 export type DismissReason = 'escape' | 'outside';
@@ -17,6 +18,9 @@ export type DismissReason = 'escape' | 'outside';
  * Escape something inside already used (`TaskDrawer`, LAI-827). Without the
  * mark, Escape in the overflow menu closed the menu and the whole drawer with
  * it (B22). An Escape a dropdown already spent is not this one's either.
+ *
+ * **On the overlay stack while open** (LAI-1205): Escape is this popover's only
+ * while nothing — a confirmation, a dialog — is open above it.
  */
 export function useDismiss<T extends HTMLElement = HTMLDivElement>(
   open: boolean,
@@ -25,6 +29,7 @@ export function useDismiss<T extends HTMLElement = HTMLDivElement>(
   const box = useRef<T | null>(null);
   const latest = useRef(close);
   latest.current = close;
+  const { isTop } = useLayer('popover', open);
 
   useEffect(() => {
     if (!open) return;
@@ -41,7 +46,7 @@ export function useDismiss<T extends HTMLElement = HTMLDivElement>(
       }
     };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || !isTop()) return;
       event.preventDefault();
       latest.current('escape');
     };
@@ -52,7 +57,7 @@ export function useDismiss<T extends HTMLElement = HTMLDivElement>(
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, isTop]);
 
   return box;
 }

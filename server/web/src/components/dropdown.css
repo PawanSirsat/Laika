@@ -103,8 +103,8 @@
  */
 .dd-panel {
   position: fixed;
-  /* Above any panel it opens from (B16, LAI-1132). */
-  z-index: var(--layer-menu);
+  /* Above any panel it opens from (B16, LAI-1132, LAI-1205). */
+  z-index: var(--layer-dropdown);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;

@@ -1,13 +1,16 @@
 /*
  * The confirmation (LAI-522): a card over a dimmed page, the mark in a
- * tinted circle, the words, the thing affected, and the two buttons. Above
- * every other layer (the drawer and the sheet are 60–61). Tokens only.
+ * tinted circle, the words, the thing affected, and the two buttons. On the
+ * dialog layer (`overlay.css`, LAI-1205), above any modal it was asked from.
+ * Tokens only.
  */
 
 .confirm-layer {
+  /* Modals beneath it; `ConfirmDialog` sets it from the stack. */
+  --overlay-depth: 0;
   position: fixed;
   inset: 0;
-  z-index: var(--layer-dialog);
+  z-index: calc(var(--layer-dialog) + var(--overlay-depth) * 2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,7 +22,7 @@
   inset: 0;
   /* Darker, and frosted by `glass.css` (LAI-1132), which took the 2px blur. */
   background: var(--glass-scrim);
-  animation: confirm-fade var(--duration-fast) var(--ease-enter);
+  transition: opacity var(--overlay-scrim-in) var(--overlay-ease-out);
 }
 
 .confirm {
@@ -36,7 +39,13 @@
   background: var(--glass-sheen), var(--glass-3);
   box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
-  animation: confirm-in var(--duration-base) var(--ease-enter);
+  transition:
+    opacity var(--overlay-in) var(--overlay-ease-out),
+    transform var(--overlay-in) var(--overlay-ease-out);
+}
+
+.confirm:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .confirm-head {
@@ -176,15 +185,18 @@
   }
 }
 
-@keyframes confirm-fade {
-  from {
+/*
+ * Open motion, the Dialog's (LAI-1205): a fade and a small rise, from a
+ * starting style so a reopen mid-entrance retargets rather than restarts.
+ * None under reduced motion. It leaves at once — the caller unmounts it.
+ */
+@starting-style {
+  .confirm-scrim {
     opacity: 0;
   }
-}
 
-@keyframes confirm-in {
-  from {
+  .confirm {
     opacity: 0;
-    transform: translateY(0.5rem) scale(0.98);
+    transform: translateY(var(--overlay-rise)) scale(var(--overlay-scale));
   }
 }
