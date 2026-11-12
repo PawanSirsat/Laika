@@ -286,14 +286,16 @@ void describe('reduced motion', () => {
         const button = document.querySelector<HTMLElement>('.kit-btn')!;
         return {
           bars: bars.length,
-          barAnimations: [...new Set(bars.map((b) => getComputedStyle(b).animationName))],
-          bodyAnimation: getComputedStyle(body).animationName,
+          barAnimations: [...new Set(bars.map((b) => getComputedStyle(b).animationDuration))],
+          bodyAnimation: getComputedStyle(body).animationDuration,
           buttonTransition: getComputedStyle(button).transitionDuration,
         };
       });
       assert.ok(motion.bars >= 8, `only ${String(motion.bars)} skeleton bars`);
-      assert.deepEqual(motion.barAnimations, ['none']);
-      assert.equal(motion.bodyAnimation, 'none');
+      // The pulse runs on --duration-pulse, which motion.css zeroes (LAI-1208).
+      assert.deepEqual(motion.barAnimations, ['0s']);
+      // The body's entrance runs on a zeroed token (LAI-1208): no time at all.
+      assert.equal(motion.bodyAnimation, '0s');
       assert.match(motion.buttonTransition, /^0s(, 0s)*$/);
     } finally {
       await h.close();

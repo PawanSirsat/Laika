@@ -909,10 +909,3 @@
     --tlx-side-cue: 9.5rem;
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .tlx-chevron svg,
-  .timeline-tray-toggle svg {
-    transition: none;
-  }
-}

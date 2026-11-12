@@ -19,7 +19,7 @@
   inset: 0;
   /* Darker, and frosted by `glass.css` (LAI-1132), which took the 2px blur. */
   background: var(--glass-scrim);
-  animation: confirm-fade 140ms ease-out;
+  animation: confirm-fade var(--duration-fast) var(--ease-enter);
 }
 
 .confirm {
@@ -36,7 +36,7 @@
   background: var(--glass-sheen), var(--glass-3);
   box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
-  animation: confirm-in 160ms ease-out;
+  animation: confirm-in var(--duration-base) var(--ease-enter);
 }
 
 .confirm-head {

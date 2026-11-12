@@ -95,11 +95,21 @@ void describe('loading holds its space and waits', () => {
     assert.match(rulesFor(".skeleton-region[data-shown='false']"), /visibility:\s*hidden/);
   });
 
-  void test('reduced motion stops every animation and transition the kit adds', () => {
-    const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-    assert.ok(reduced.length > 50, 'no reduced-motion block');
-    assert.match(reduced, /animation:\s*none/);
-    assert.match(reduced, /transition:\s*none/);
-    assert.match(reduced, /transform:\s*none/);
+  // Reduced motion is answered once, in styles/motion.css (LAI-1208): it zeroes
+  // every --duration-* token, so the kit's motion stops because it runs on them.
+  void test('reduced motion: every timed animation and transition the kit adds is on a token', () => {
+    assert.ok(!css.includes('prefers-reduced-motion'), 'the kit asks the question again');
+    const timed = [...css.matchAll(/(?:animation|transition)\s*:[^;]*;/g)].map((m) => m[0]);
+    assert.ok(
+      timed.some((d) => d.includes('animation')),
+      'positive control: the kit animates',
+    );
+    for (const d of timed) {
+      assert.doesNotMatch(d, /\d(?:ms|s)\b/, `a raw duration: ${d}`);
+    }
+    assert.ok(
+      timed.filter((d) => /var\(--duration-/.test(d)).length >= 2,
+      'the kit motion is not on --duration-* tokens',
+    );
   });
 });

@@ -34,11 +34,7 @@ const TOKEN_SHEETS = new Set(['styles/motion.css', 'styles/theme.css', 'styles/t
  * Component stylesheets allowed a raw time literal, each with the reason and
  * the change that retires it.
  */
-const RAW_TIMING_EXEMPT: Readonly<Record<string, string>> = {
-  'components/confirm-dialog.css':
-    'its two animation lines sit beside lines PR #291 (glass) rewrites; ' +
-    'they move to --duration-fast/--duration-base with --ease-enter when #291 lands',
-};
+const RAW_TIMING_EXEMPT: Readonly<Record<string, string>> = {};
 
 /** Stylesheets allowed their own `prefers-reduced-motion` block, and why. */
 const REDUCED_MOTION_EXEMPT: Readonly<Record<string, string>> = {
@@ -46,6 +42,9 @@ const REDUCED_MOTION_EXEMPT: Readonly<Record<string, string>> = {
     'the arrival glow is held for 3.6s with steps(1, end), not faded: the state, not travel',
   'components/states.css': 'a still spinner closes its gap, or a gapped ring reads as broken',
   'routes/screens/my-day/day-skeleton.css': 'a still sheen is a stripe; the gradient is dropped',
+  'components/brand/brand.css':
+    'its loops run on --motion-* (LAI-1126), not these tokens: paused on the first frame, ' +
+    'and the splash lights its first step so it does not read as empty',
 };
 
 async function stylesheets(): Promise<Map<string, string>> {

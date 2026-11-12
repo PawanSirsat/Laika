@@ -824,7 +824,7 @@
   border-radius: var(--radius-card) var(--radius-card) 0 0;
   box-shadow: var(--shadow-modal);
   color: var(--text-primary);
-  animation: space-sheet-in 160ms ease-out;
+  animation: space-sheet-in var(--duration-base) var(--ease-enter);
 }
 
 @keyframes space-sheet-in {
@@ -833,13 +833,6 @@
     opacity: 0;
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .space-sheet {
-    animation: none;
-  }
-}
-
 .space-sheet-head {
   display: flex;
   align-items: center;

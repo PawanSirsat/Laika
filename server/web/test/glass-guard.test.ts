@@ -165,11 +165,15 @@ void describe('fallbacks exist', () => {
     });
   }
 
-  void test('one global reduced-motion rule in theme.css', () => {
-    const theme = code(readFileSync(join(SRC, THEME), 'utf8'));
+  // One global reduced-motion rule, and it is motion.css's (LAI-1208): the
+  // merge train dropped theme.css's copy so the question is asked once.
+  void test('one global reduced-motion rule, in motion.css', () => {
+    const motion = code(readFileSync(join(SRC, 'styles/motion.css'), 'utf8'));
     assert.match(
-      theme,
-      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\*,\s*\*::before,\s*\*::after/,
+      motion,
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\*,\s*(\*)?::before,\s*(\*)?::after/,
     );
+    const theme = code(readFileSync(join(SRC, THEME), 'utf8'));
+    assert.ok(!theme.includes('prefers-reduced-motion'), 'theme.css asks the question again');
   });
 });

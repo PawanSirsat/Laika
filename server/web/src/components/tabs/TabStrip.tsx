@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { scrollToReveal, stripOverflow, tabKeyTarget } from './tab-keys.ts';
 import './tabs.css';
+import { prefersReducedMotion } from '../../theme/motion.ts';
 
 /** Marks an element as one of a strip's tabs, for the keys and the scroll. */
 export const TAB_ITEM = 'data-tab-item';
@@ -88,7 +89,7 @@ export function TabStrip({
       const left = box.left - frame.left + el.scrollLeft;
       const to = scrollToReveal({ left, width: box.width }, el, FADE_PX);
       if (to === undefined) return;
-      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const still = prefersReducedMotion();
       el.scrollTo({ left: to, behavior: smooth && !still ? 'smooth' : 'auto' });
       measure();
     },
