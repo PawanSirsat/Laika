@@ -384,6 +384,14 @@ void describe('the Workroom (LAI-1213)', () => {
   });
 });
 
+/** Wait for the tooltip to show and its fade to finish, so the picture has it. */
+async function settled(control: Locator): Promise<void> {
+  const tip = await tooltipOf(control);
+  await until(() => shown(tip), 2_000);
+  assert.equal(await shown(tip), true, 'the tooltip did not show for the screenshot');
+  await control.page().waitForTimeout(300);
+}
+
 void describe('screenshots, light and dark, 1440 and 390 (LAI-1213)', () => {
   void test(
     'board, drawer and Workroom with a tooltip open',
@@ -401,7 +409,7 @@ void describe('screenshots, light and dark, 1440 and 390 (LAI-1213)', () => {
             await setTheme(b.page, theme);
             const menu = b.page.getByRole('button', { name: 'Space menu' });
             await menu.focus();
-            await until(async () => shown(await tooltipOf(menu)), 2_000);
+            await settled(menu);
             await b.page.screenshot({ path: name('board') });
           } finally {
             await b.close();
@@ -414,7 +422,7 @@ void describe('screenshots, light and dark, 1440 and 390 (LAI-1213)', () => {
             await d.page.locator('.drawer .panel-head').waitFor({ timeout: 20_000 });
             const close = d.page.locator('.drawer .panel-close');
             await close.focus();
-            await until(async () => shown(await tooltipOf(close)), 2_000);
+            await settled(close);
             await d.page.screenshot({ path: name('drawer') });
           } finally {
             await d.close();
@@ -426,7 +434,7 @@ void describe('screenshots, light and dark, 1440 and 390 (LAI-1213)', () => {
             await setTheme(w.page, theme);
             const focus = w.page.locator('.wr-tool[aria-pressed]');
             await focus.focus();
-            await until(async () => shown(await tooltipOf(focus)), 2_000);
+            await settled(focus);
             await w.page.screenshot({ path: name('workroom') });
           } finally {
             await w.close();
