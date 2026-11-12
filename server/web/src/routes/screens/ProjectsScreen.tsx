@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useConfirm } from '../../components/ConfirmProvider.tsx';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -34,7 +35,7 @@ import type { MeProfile } from '../../api/me.ts';
 import { type Member } from '../../api/tasks.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
-import { required } from '../../components/forms/validation.ts';
+import { required, type Validity } from '../../components/forms/validation.ts';
 import './projects.css';
 import { useGates } from '../../api/permissions.ts';
 
@@ -123,6 +124,9 @@ export function ProjectsScreen({
   const changeQuery = (patch: Partial<SpacesQuery>): void => {
     onParamsChange(writeSpacesQuery(params, patch));
   };
+  const confirm = useConfirm();
+  /** What the last join, archive or restore did, said once (LAI-1196). */
+  const [notice, setNotice] = useState<string | undefined>(undefined);
 
   /**
    * Explicit membership from `me.memberships`, never from the summary's
@@ -145,20 +149,27 @@ export function ProjectsScreen({
   // reader already leads: Join on a space they implicitly lead is a dead control.
   const split = gates.settled ? both : { ...both, joinable: [] };
   const counts = spaceCounts(split);
-  const sections = sectionsFor(split, query.filter, query.q);
+  const sections = sectionsFor(split, query.filter, query.q, query.sort);
 
   /**
    * A join or a restore, then a re-read: the lists decide membership and
    * archiving, so neither is patched locally into a state the server never
    * confirmed.
    */
-  const act = async (slug: string, run: () => Promise<unknown>, failed: string): Promise<void> => {
+  const act = async (
+    slug: string,
+    run: () => Promise<unknown>,
+    failed: string,
+    done: string,
+  ): Promise<void> => {
     setBusy(slug);
     setActionError(undefined);
+    setNotice(undefined);
     try {
       await run();
       list.reload();
       archivedList.reload();
+      setNotice(done);
     } catch (cause) {
       setActionError(cause instanceof ApiError ? cause.message : failed);
     } finally {
@@ -181,14 +192,41 @@ export function ProjectsScreen({
       onOpenSettings(space.slug);
     },
     onJoin: (space) => {
-      void act(space.slug, () => joinProject(space.slug), 'Could not join that space. Try again.');
+      void act(
+        space.slug,
+        () => joinProject(space.slug),
+        'Could not join that space. Try again.',
+        `You joined ${space.name}. It is listed under Your spaces.`,
+      );
     },
     onRestore: (space) => {
       void act(
         space.slug,
         () => setProjectArchived(space.slug, false),
         'Could not restore that space. Try again.',
+        `${space.name} is restored and open for work again.`,
       );
+    },
+    /*
+     * **Asked first, with what it does** (LAI-1196). The same `PATCH` the
+     * space's Danger tab sends, so the same two grants show the button and the
+     * server still decides; the dialog says what changes and how to undo it.
+     */
+    onArchive: (space) => {
+      void confirm({
+        title: `Archive ${space.name}?`,
+        body: `Its board becomes read-only: nobody can add or move tasks, and agents stop picking up its work. Nothing is deleted. It moves to Archived, where it can be restored.`,
+        confirmLabel: 'Archive space',
+        danger: true,
+      }).then((yes) => {
+        if (!yes) return;
+        void act(
+          space.slug,
+          () => setProjectArchived(space.slug, true),
+          'Could not archive that space. Try again.',
+          `${space.name} is archived. Find it under Archived to restore it.`,
+        );
+      });
     },
   };
 
@@ -226,28 +264,55 @@ export function ProjectsScreen({
         )}
       </section>
     );
-  // `?new=1` opens the form (LAI-1191): *Create a space* in the sidebar and on
-  // an empty board lead here. Only a reader who may create sees it.
-  const [creating, setCreating] = useState(() => params.get('new') === '1');
+  /*
+   * **The form is the URL** (LAI-1196): `?new=1` opens it — the address the
+   * sidebar's and an empty board's *Create a space* lead to (LAI-1191) — so a
+   * reload keeps it open and Back closes it. Only a reader who may create
+   * sees it; anyone else gets the plain page.
+   */
+  const creating = mayCreate && params.get('new') === '1';
+  const setCreating = (open: boolean): void => {
+    const next = new URLSearchParams(params);
+    if (open) next.set('new', '1');
+    else next.delete('new');
+    onParamsChange(next);
+  };
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [prefix, setPrefix] = useState('');
   const [visibility, setVisibility] = useState('private');
+  /** Show each field's problem: after a submit, or once that field is edited. */
   const [touched, setTouched] = useState(false);
+  /*
+   * Slug and prefix edited by hand: from then on the name no longer rewrites
+   * them. Kept apart from `touched` (LAI-1196) — pressing Create on an empty
+   * form used to set the one flag and freeze the suggestions for good.
+   */
+  const [edited, setEdited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<unknown>(null);
   const [serverFields, setServerFields] = useState<Readonly<Record<string, string>>>({});
 
-  const nameCheck = required(name, 'Project name');
-  const slugCheck = required(slug, 'Slug');
-  const prefixCheck = required(prefix, 'Key prefix');
+  const nameCheck = required(name, 'Name');
+  const slugCheck = patterned(slug, 'Slug', SLUG_PATTERN, 'Use lowercase words joined by hyphens.');
+  const prefixCheck = patterned(
+    prefix,
+    'Key prefix',
+    PREFIX_PATTERN,
+    'Use 2–8 letters and digits, starting with a letter.',
+  );
   const valid = nameCheck.ok && slugCheck.ok && prefixCheck.ok;
+  const formRef = useRef<HTMLFormElement>(null);
+  // Opening the form puts the cursor in Name — the one field nothing suggests.
+  useEffect(() => {
+    if (creating) formRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+  }, [creating]);
 
   const onNameChange = (next: string): void => {
     setName(next);
     // Suggested, not locked: both are editable, and once someone edits the slug
     // we stop overwriting it.
-    if (!touched) {
+    if (!edited) {
       setSlug(slugify(next));
       setPrefix(suggestPrefix(next));
     }
@@ -260,17 +325,17 @@ export function ProjectsScreen({
 
     try {
       const project = await createProject({
-        name,
-        slug,
-        prefix,
+        name: name.trim(),
+        slug: slug.trim(),
+        prefix: prefix.trim().toUpperCase(),
         visibility: visibility === 'public' ? 'public' : 'private',
       });
       list.add(project);
-      setCreating(false);
       setName('');
       setSlug('');
       setPrefix('');
       setTouched(false);
+      setEdited(false);
       onOpen(project.slug);
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'unprocessable') {
@@ -299,7 +364,7 @@ export function ProjectsScreen({
             ? `${String(counts.all)} space${counts.all === 1 ? '' : 's'}`
             : undefined
         }
-        description="Spaces you can see. Opening one loads its board; the choice lives in the URL."
+        description="Every space you are in, and the public ones you can join. Open one to see its board."
       >
         {/* Only for holders of `project.create` (LAI-970's permission source). */}
         {mayCreate && !creating && (
@@ -315,7 +380,9 @@ export function ProjectsScreen({
 
       {creating && mayCreate && (
         <form
+          ref={formRef}
           className="projects-form"
+          aria-labelledby="projects-form-title"
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
@@ -323,18 +390,37 @@ export function ProjectsScreen({
             if (valid) void submit();
           }}
         >
-          <h2 className="projects-form-title">New space</h2>
+          <h2 id="projects-form-title" className="projects-form-title">
+            New space
+          </h2>
+          <p className="projects-form-lead">
+            You become its Space admin. Its board opens as soon as it is created.
+          </p>
 
           {/* A 403 here is a normal outcome, not a fault: a Member cannot create
               projects (§3.1). ApiErrorState renders that as permission-denied. */}
-          {createError !== null && (
+          {createError instanceof ApiError && createError.status === 403 ? (
             <ApiErrorState
               error={createError}
-              resource="a new project"
+              resource="a new space"
               requiredRole="admin"
               scope="organisation"
             />
-          )}
+          ) : createError !== null ? (
+            /*
+             * **Said as a create that failed** (LAI-1196): the shared error state
+             * reads "Could not load a new space", a load nobody asked for. A
+             * refusal with field errors points at the fields; anything else
+             * says what the server said, and the form keeps what was typed.
+             */
+            <p className="projects-error projects-form-error" role="alert">
+              {Object.keys(serverFields).length > 0
+                ? 'The space was not created. Fix the fields marked below and try again.'
+                : `The space was not created. ${
+                    createError instanceof ApiError ? createError.message : 'Try again.'
+                  }`}
+            </p>
+          ) : null}
 
           <TextInput
             label="Name"
@@ -349,6 +435,7 @@ export function ProjectsScreen({
             value={slug}
             onChange={(v) => {
               setTouched(true);
+              setEdited(true);
               setSlug(v);
             }}
             required
@@ -361,11 +448,14 @@ export function ProjectsScreen({
             value={prefix}
             onChange={(v) => {
               setTouched(true);
+              setEdited(true);
               setPrefix(v);
             }}
             required
             disabled={submitting}
-            help="2–8 letters and digits, starting with a letter. Task keys look like LC-42."
+            help={`2–8 letters and digits, starting with a letter. Task keys will look like ${
+              prefixCheck.ok ? prefix.trim().toUpperCase() : 'KEY'
+            }-42.`}
             error={touched && !prefixCheck.ok ? prefixCheck.message : serverFields.prefix}
           />
           <Select
@@ -378,7 +468,7 @@ export function ProjectsScreen({
 
           <div className="projects-form-actions">
             <Button type="submit" busy={submitting}>
-              Create project
+              Create space
             </Button>
             <Button
               variant="secondary"
@@ -396,7 +486,7 @@ export function ProjectsScreen({
       )}
 
       {list.status === 'loading' ? (
-        <LoadingState shape="card" count={3} label="Loading projects" />
+        <LoadingState shape="card" count={3} label="Loading spaces" />
       ) : list.status === 'error' ? (
         <ApiErrorState
           error={list.error}
@@ -472,6 +562,9 @@ export function ProjectsScreen({
               {actionError}
             </p>
           )}
+          <p className="projects-notice" role="status" data-empty={notice === undefined}>
+            {notice}
+          </p>
 
           {contextFor !== undefined && (
             <ProjectContextPanel
@@ -503,4 +596,19 @@ export function ProjectsScreen({
       )}
     </div>
   );
+}
+
+/** The server's own patterns (`server/src/http/routes/projects.ts`), checked early. */
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PREFIX_PATTERN = /^[A-Za-z][A-Za-z0-9]{1,7}$/;
+
+/**
+ * Required, then shaped like the server will accept (LAI-1196) — so a typo is
+ * named beside its field before a round trip, not after. The server still
+ * decides: its `422` field errors are shown the same way.
+ */
+function patterned(value: string, field: string, pattern: RegExp, hint: string): Validity {
+  const present = required(value, field);
+  if (!present.ok) return present;
+  return pattern.test(value.trim()) ? present : { ok: false, message: hint };
 }
