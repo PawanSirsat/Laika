@@ -676,7 +676,7 @@ void describe('the List sort lives in the URL (LAI-485)', () => {
       await h.page.waitForURL(/page=2/, { timeout: 10_000 });
       const before = await firstKey(h);
 
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.locator('button[aria-label="Refresh the board"]').click();
       await h.page.waitForTimeout(600);
       await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
 
@@ -1141,7 +1141,7 @@ const tabTo = async (h: Harness, label: 'Board' | 'List'): Promise<void> => {
 };
 
 const vsLabels = async (h: Harness): Promise<string[]> => {
-  await h.page.locator('button[title="View settings"]').click();
+  await h.page.locator('button[aria-label="View settings"]').click();
   await h.page.locator('.vs-label').first().waitFor({ timeout: 5_000 });
   const labels = (await h.page.locator('.vs-label').allInnerTexts()).map((t) =>
     t.trim().toLowerCase(),
@@ -1151,7 +1151,7 @@ const vsLabels = async (h: Harness): Promise<string[]> => {
 };
 
 const moreItems = async (h: Harness): Promise<string[]> => {
-  await h.page.locator('button[title="More"]').click();
+  await h.page.locator('button[aria-label="More actions"]').click();
   await h.page.locator('.bt-menu').waitFor({ timeout: 5_000 });
   const items = (await h.page.locator('.bt-menu .bt-menu-item').allInnerTexts()).map((t) =>
     t.trim(),

@@ -330,7 +330,7 @@ void describe('subtasks and due dates on the cards', () => {
       await until(async () => (await h.page.locator('.card-due').count()) === 1);
       assert.equal(await h.page.locator('.card-due').count(), 1, 'nothing to hide');
 
-      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await h.page.locator('.bt-icon[aria-label="View settings"]').click();
       await h.page.locator('.vs-remove[data-field="subtasks"]').click();
       await h.page.locator('.vs-remove[data-field="due"]').click();
       await until(

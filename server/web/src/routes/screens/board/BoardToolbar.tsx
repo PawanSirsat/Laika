@@ -24,7 +24,8 @@ import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { cluster } from '../../../components/space/top-bar-derive.ts';
+import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
 import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
@@ -237,22 +238,23 @@ function FilterField({
         {children(labelId)}
       </label>
       {set && (
-        <button
-          type="button"
-          className="bt-reset"
-          title={`Reset ${label}`}
-          onClick={() => {
-            onReset();
-            // The reset is about to disappear with the value it reset; the
-            // field it belonged to is where the reader's attention is.
-            cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
-          </svg>
-          <span className="visually-hidden">Reset {label}</span>
-        </button>
+        <Tooltip content={`Reset ${label}`}>
+          <button
+            type="button"
+            className="bt-reset"
+            aria-label={`Reset ${label}`}
+            onClick={() => {
+              onReset();
+              // The reset is about to disappear with the value it reset; the
+              // field it belonged to is where the reader's attention is.
+              cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -581,22 +583,23 @@ export function BoardToolbar({
               const colour = avatarColor(member.user_id, theme);
               const on = assignee === member.user_id;
               return (
-                <button
+                <Tooltip
                   key={member.user_id}
-                  type="button"
-                  className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
-                  style={{ background: colour.background, color: colour.foreground }}
-                  aria-pressed={on}
-                  title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                  onClick={() => {
-                    onAssignee(on ? undefined : member.user_id);
-                  }}
+                  content={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
                 >
-                  {initials(member.name)}
-                  <span className="visually-hidden">
-                    {on ? ' — showing only their work, click to clear' : ' — show only their work'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
+                    style={{ background: colour.background, color: colour.foreground }}
+                    aria-pressed={on}
+                    aria-label={memberFilterLabel(member.name, on)}
+                    onClick={() => {
+                      onAssignee(on ? undefined : member.user_id);
+                    }}
+                  >
+                    {initials(member.name)}
+                  </button>
+                </Tooltip>
               );
             })}
             {/*
@@ -965,90 +968,100 @@ export function BoardToolbar({
             not only in the ⋯ menu. An icon and the count: Cancelled starts
             hidden, so this is on most boards and must cost little width. */}
         {hiddenColumns !== undefined && hiddenColumns > 0 && onHiddenColumns !== undefined && (
-          <button
-            type="button"
-            className="bt-icon bt-hidden-columns"
-            data-hidden-columns=""
-            aria-label={`Hidden columns (${String(hiddenColumns)})`}
-            title={`Hidden columns (${String(hiddenColumns)})`}
-            onClick={onHiddenColumns}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
+          <Tooltip content={`Hidden columns (${String(hiddenColumns)})`}>
+            <button
+              type="button"
+              className="bt-icon bt-hidden-columns"
+              data-hidden-columns=""
+              aria-label={`Hidden columns (${String(hiddenColumns)})`}
+              onClick={onHiddenColumns}
             >
-              <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
-            </svg>
-            <span className="bt-hidden-count" aria-hidden="true">
-              {hiddenColumns}
-            </span>
-          </button>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
+              </svg>
+              <span className="bt-hidden-count" aria-hidden="true">
+                {hiddenColumns}
+              </span>
+            </button>
+          </Tooltip>
         )}
 
         <span className="bt-spacer" />
         <span id="board-stats-slot" className="bt-stats-slot" />
 
-        <button type="button" className="bt-icon" title="Insights" onClick={onInsights}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M3 17l5-5 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M15 8h5v5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="visually-hidden">Insights</span>
-        </button>
+        <Tooltip content="Insights">
+          <button type="button" className="bt-icon" aria-label="Insights" onClick={onInsights}>
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+              <path d="M3 17l5-5 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M15 8h5v5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </Tooltip>
 
-        <button
-          type="button"
-          className="bt-icon"
-          title="View settings"
-          aria-haspopup="dialog"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            onViewSettings({
-              top: rect.bottom + 6,
-              right: Math.max(8, window.innerWidth - rect.right),
-            });
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-            <circle cx="9" cy="6" r="2" />
-            <circle cx="15" cy="12" r="2" />
-            <circle cx="8" cy="18" r="2" />
-          </svg>
-          <span className="visually-hidden">View settings</span>
-        </button>
+        <Tooltip content="View settings">
+          <button
+            type="button"
+            className="bt-icon"
+            aria-label="View settings"
+            aria-haspopup="dialog"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              onViewSettings({
+                top: rect.bottom + 6,
+                right: Math.max(8, window.innerWidth - rect.right),
+              });
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+              <circle cx="9" cy="6" r="2" />
+              <circle cx="15" cy="12" r="2" />
+              <circle cx="8" cy="18" r="2" />
+            </svg>
+          </button>
+        </Tooltip>
 
-        <button type="button" className="bt-icon" title="Refresh the board" onClick={onRefresh}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
-            <path d="M20 5v6h-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="visually-hidden">Refresh</span>
-        </button>
+        <Tooltip content="Refresh the board">
+          <button
+            type="button"
+            className="bt-icon"
+            aria-label="Refresh the board"
+            onClick={onRefresh}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+              <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
+              <path d="M20 5v6h-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </Tooltip>
 
-        <button
-          type="button"
-          className="bt-icon"
-          title="More"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            onOverflow({
-              top: rect.bottom + 6,
-              right: Math.max(8, window.innerWidth - rect.right),
-            });
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="5" cy="12" r="1.7" />
-            <circle cx="12" cy="12" r="1.7" />
-            <circle cx="19" cy="12" r="1.7" />
-          </svg>
-          <span className="visually-hidden">More actions</span>
-        </button>
+        <Tooltip content="More actions">
+          <button
+            type="button"
+            className="bt-icon"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              onOverflow({
+                top: rect.bottom + 6,
+                right: Math.max(8, window.innerWidth - rect.right),
+              });
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.7" />
+              <circle cx="12" cy="12" r="1.7" />
+              <circle cx="19" cy="12" r="1.7" />
+            </svg>
+          </button>
+        </Tooltip>
       </div>
 
       {/*

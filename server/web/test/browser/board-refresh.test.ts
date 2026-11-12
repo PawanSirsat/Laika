@@ -232,7 +232,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
         await new Promise((done) => setTimeout(done, 800));
         await route.continue();
       });
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.locator('button[aria-label="Refresh the board"]').click();
       await h.page.waitForTimeout(400);
 
       const mid = await h.page.evaluate(() => {
@@ -268,7 +268,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
         );
       });
       server.version = 2;
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.locator('button[aria-label="Refresh the board"]').click();
       await h.page.getByText('Task 2, renamed').waitFor({ timeout: 10_000 });
 
       const same = await h.page.evaluate(() => {
@@ -314,7 +314,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
       const draft = h.page.getByPlaceholder('What needs to be done?');
       await draft.fill('Half a thought');
 
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.locator('button[aria-label="Refresh the board"]').click();
       await h.page.waitForTimeout(800);
 
       assert.equal(await todo.locator('.lane-body').evaluate((el) => el.scrollTop), before);
@@ -333,7 +333,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
     try {
       await ready(h.page);
       server.fail = '500';
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.locator('button[aria-label="Refresh the board"]').click();
       const notice = h.page.getByRole('status').filter({ hasText: /could not refresh/i });
       await notice.waitFor({ timeout: 10_000 });
       assert.equal(await h.page.locator('.card').count(), 4, 'a failed refresh wiped the board');
@@ -354,7 +354,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
     try {
       await ready(h.page);
       server.fail = '403';
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.locator('button[aria-label="Refresh the board"]').click();
       await h.page.locator('.kanban').waitFor({ state: 'detached', timeout: 10_000 });
       assert.equal(await h.page.locator('.card').count(), 0);
     } finally {

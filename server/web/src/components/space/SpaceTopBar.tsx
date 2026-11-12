@@ -3,7 +3,8 @@ import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
-import { agentCount, agentsLive, cluster } from './top-bar-derive.ts';
+import { agentCount, agentsLive, cluster, memberFilterLabel } from './top-bar-derive.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
@@ -192,26 +193,25 @@ export function SpaceTopBar({
                 const colour = avatarColor(member.user_id, theme);
                 const on = assignee === member.user_id;
                 return (
-                  <button
+                  <Tooltip
                     key={member.user_id}
-                    type="button"
-                    className={
-                      on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'
-                    }
-                    style={{ background: colour.background, color: colour.foreground }}
-                    aria-pressed={on}
-                    title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                    onClick={() => {
-                      onAssignee(on ? undefined : member.user_id);
-                    }}
+                    content={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
                   >
-                    {initials(member.name)}
-                    <span className="visually-hidden">
-                      {on
-                        ? ` — showing only their work, click to clear`
-                        : ` — show only their work`}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className={
+                        on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'
+                      }
+                      style={{ background: colour.background, color: colour.foreground }}
+                      aria-pressed={on}
+                      aria-label={memberFilterLabel(member.name, on)}
+                      onClick={() => {
+                        onAssignee(on ? undefined : member.user_id);
+                      }}
+                    >
+                      {initials(member.name)}
+                    </button>
+                  </Tooltip>
                 );
               })}
               {overflow > 0 && <span className="space-member-more">+{overflow}</span>}
@@ -374,54 +374,55 @@ export function SpaceTopBar({
           everything after it are pushed across — one rule rather than a spacer
           element, which would be a node with no meaning.
         */}
-        <button
-          type="button"
-          className={
-            agentOnly
-              ? 'space-chip space-chip-on space-agents-start'
-              : 'space-chip space-agents-start'
-          }
-          aria-pressed={agentOnly}
-          title={`Show only agent-authored work${agentSummary(agents, live)}`}
-          onClick={() => {
-            onAgentOnly(!agentOnly);
-          }}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            aria-hidden="true"
+        <Tooltip content={`Show only agent-authored work${agentSummary(agents, live)}`}>
+          <button
+            type="button"
+            className={
+              agentOnly
+                ? 'space-chip space-chip-on space-agents-start'
+                : 'space-chip space-agents-start'
+            }
+            aria-pressed={agentOnly}
+            onClick={() => {
+              onAgentOnly(!agentOnly);
+            }}
           >
-            <rect x="4" y="8" width="16" height="12" rx="3" />
-            <path d="M12 4v4M9 14h.01M15 14h.01" />
-          </svg>
-          {/*
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              aria-hidden="true"
+            >
+              <rect x="4" y="8" width="16" height="12" rx="3" />
+              <path d="M12 4v4M9 14h.01M15 14h.01" />
+            </svg>
+            {/*
             **Nothing until presence lands** (LAI-606). This showed a spinner so
             the chip would not claim "Agents 0" before the count existed — but
             it then spun for ~3.2s *after* the board was usable, and a spinner
             for something nobody is waiting on is noise. The word stays, the
             number arrives when it arrives.
           */}
-          Agents {agents}
-          {/*
+            Agents {agents}
+            {/*
             **The number counts people, the marks count agents** (review round
             1) — "Agents 2" beside three marks read as a contradiction. The
             visible label stays the design's; what the number means, and which
             agents the marks are, is said in words for a screen reader and in
             the title for a pointer.
           */}
-          {agents !== undefined && (
-            <span className="visually-hidden">{agentSummary(agents, live)}</span>
-          )}
-          {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
-          {live.slice(0, 3).map((client) => (
-            <AgentMark key={client} client={client} size="sm" />
-          ))}
-        </button>
+            {agents !== undefined && (
+              <span className="visually-hidden">{agentSummary(agents, live)}</span>
+            )}
+            {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
+            {live.slice(0, 3).map((client) => (
+              <AgentMark key={client} client={client} size="sm" />
+            ))}
+          </button>
+        </Tooltip>
 
         {/* Before Create, so Create stays flush with the bar's end (LAI-293). */}
         {slug !== undefined && <SpaceMenu slug={slug} />}

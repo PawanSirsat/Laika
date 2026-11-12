@@ -915,7 +915,7 @@ void describe('ways in', () => {
       '/api/v1/presence': { data: [], next_cursor: null },
     });
     try {
-      const trigger = h.page.locator('.bt-icon[title="View settings"]');
+      const trigger = h.page.locator('.bt-icon[aria-label="View settings"]');
       await trigger.waitFor({ timeout: 20_000 });
       await trigger.click();
       const panel = h.page.getByRole('dialog', { name: 'View settings' });
