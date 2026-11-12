@@ -290,7 +290,8 @@ void describe('the People tab (LAI-893)', () => {
         await h.page.locator('[data-people-empty]').innerText(),
         /No one matches “zed@example.com”/,
       );
-      await h.page.locator('[data-people-empty] button').click();
+      // Invite, not the second empty-state action Show everyone (LAI-1194).
+      await h.page.locator('[data-people-empty] .org-people-empty-invite').click();
       const dialog = h.page.locator('[data-invite-dialog]');
       await dialog.waitFor({ timeout: 5_000 });
       assert.equal(await dialog.locator('[data-invite-emails]').inputValue(), 'zed@example.com');

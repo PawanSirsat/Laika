@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CommandPaletteHost } from './command/CommandPaletteHost.tsx';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
+import { ROUTES_WITH_THEIR_OWN_BRAND } from './Brand.tsx';
 import { ShellSidebar } from './shell/ShellSidebar.tsx';
 import { SessionGate } from './shell/SessionGate.tsx';
 import { ShellProvider } from './shell/ShellProvider.tsx';
@@ -217,6 +218,7 @@ function AppFrame() {
         {ownsChrome ? null : (
           <ShellHeader
             signedIn={signedIn}
+            brand={!ROUTES_WITH_THEIR_OWN_BRAND.includes(path)}
             navOpen={navOpen}
             onToggleNav={() => {
               setNavOpen((v) => !v);

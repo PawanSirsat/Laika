@@ -76,3 +76,12 @@ export function agentsLive(present: readonly PresenceEntry[] | undefined): Agent
   }
   return out;
 }
+
+/**
+ * The name of a face that filters by assignee (LAI-1193). The face shows
+ * initials only, so its name is the whole of what it does — set as
+ * `aria-label`, with the shorter words in its tooltip.
+ */
+export function memberFilterLabel(name: string, on: boolean): string {
+  return on ? `Showing only ${name}'s work — press to clear` : `Show only ${name}'s work`;
+}

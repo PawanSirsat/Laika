@@ -34,7 +34,7 @@ export function BySpaceRows({
   const whole = usage.totals.tokens;
 
   const rows: BarRow[] = spaces.map((p) => {
-    const to = spaceUsageHref(p.project.slug);
+    const to = spaceUsageHref(p.project.slug, usage.days);
     const kind = spaceRow(p.project.slug, offered);
     return {
       key: p.project.slug,

@@ -1,0 +1,739 @@
+/*
+ * The Workroom (LAI-1199): a task as a page, in three panels.
+ *
+ * **One scroller.** The app's `<main>` scrolls the page and with it the
+ * centre; the side panels are `sticky` beside it, as tall as the scroller
+ * (`--wr-viewport`, measured), so no column scrolls inside another on the
+ * same axis. Widths come in through `grid-template-columns` on the element's
+ * own `style` attribute — no injected `<style>`. Tokens only.
+ */
+
+.wr {
+  --wr-viewport: 100vh;
+  --wr-head: 0px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------------ header */
+
+.wr-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wr-back {
+  flex: none;
+  align-self: center;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+}
+
+.wr-back:hover,
+.wr-back:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.wr-head-main {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.wr-key {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.wr-status {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  padding: 0.125rem var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  border: 1px solid var(--chip-neutral-border);
+}
+
+.wr-status[data-category='in_progress'] {
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+
+.wr-status[data-category='review'] {
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+
+.wr-status[data-category='done'] {
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
+}
+
+.wr-title {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-heading-md);
+  line-height: var(--leading-heading-md);
+  font-weight: var(--weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.wr-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.wr-tool {
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-3);
+  min-height: 2rem;
+  cursor: pointer;
+}
+
+.wr-tool:hover,
+.wr-tool:focus-visible,
+.wr-tool[aria-pressed='true'] {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.wr-tool[aria-pressed='true'] {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.wr-contents-anchor {
+  position: relative;
+}
+
+.wr-contents {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 4;
+  width: min(20rem, 80vw);
+  max-height: calc(var(--wr-viewport) - 6rem);
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+
+/* ------------------------------------------------------------------ grid */
+
+.wr-grid {
+  display: grid;
+  align-items: start;
+  flex: 1;
+  min-height: 0;
+}
+
+.wr-left,
+.wr-right {
+  position: sticky;
+  top: var(--wr-head);
+  max-height: calc(var(--wr-viewport) - var(--wr-head));
+  /* Full height even when short, so the panel's surface reaches the foot. */
+  min-height: calc(var(--wr-viewport) - var(--wr-head));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-card);
+  min-width: 0;
+}
+
+.wr-left {
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.wr-right {
+  padding: var(--space-4);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.wr-left[hidden],
+.wr-right[hidden] {
+  display: none;
+}
+
+.wr-centre {
+  min-width: 0;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.wr-centre > * {
+  max-width: 72ch;
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------------------------ separator */
+
+.wr-separator {
+  position: sticky;
+  top: var(--wr-head);
+  width: 6px;
+  height: calc(var(--wr-viewport) - var(--wr-head));
+  cursor: col-resize;
+  touch-action: none;
+  display: flex;
+  justify-content: center;
+  background: transparent;
+}
+
+.wr-separator-grip {
+  width: 2px;
+  height: 100%;
+  background: var(--border-subtle);
+  transition: background var(--transition);
+}
+
+.wr-separator:hover .wr-separator-grip,
+.wr-separator:focus-visible .wr-separator-grip {
+  background: var(--accent);
+}
+
+.wr-separator:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------------ left */
+
+.wr-panel-title,
+.wr-section-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.wr-section-title {
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-primary);
+}
+
+.wr-areas {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+}
+
+.wr-area {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.wr-area:hover,
+.wr-area:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.wr-area[aria-current='true'] {
+  color: var(--accent);
+  background: var(--accent-bg);
+  font-weight: var(--weight-semibold);
+}
+
+.wr-group {
+  margin-bottom: var(--space-4);
+}
+
+.wr-group-title,
+.wr-notes-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.wr-count {
+  font-weight: var(--weight-normal);
+}
+
+.wr-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wr-link {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: var(--text-small);
+}
+
+.wr-link:hover,
+.wr-link:focus-visible {
+  background: var(--bg-card-hover);
+}
+
+.wr-link-key {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.wr-link-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wr-link-status {
+  grid-column: 2;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.wr-link-gone {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* ------------------------------------------------------------------ centre */
+
+.wr-section {
+  padding-block: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  scroll-margin-top: calc(var(--wr-head) + var(--space-2));
+}
+
+.wr-section:last-child {
+  border-bottom: 0;
+}
+
+.wr-section:focus {
+  outline: none;
+}
+
+.wr-section:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.wr-subtitle {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.wr-empty {
+  margin: var(--space-1) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.wr-footnote {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.wr-skeleton .skeleton-line {
+  margin-bottom: var(--space-2);
+}
+
+.wr-w-90 {
+  width: 90%;
+}
+
+.wr-w-75 {
+  width: 75%;
+}
+
+.wr-w-50 {
+  width: 50%;
+}
+
+.wr-inline-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+}
+
+.wr-inline-error p {
+  margin: 0;
+}
+
+.wr-run + .wr-run {
+  margin-top: var(--space-3);
+}
+
+.wr-run-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.wr-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.wr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--text-small);
+}
+
+.wr-row-badge,
+.wr-badge {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-pill);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.wr-row[data-tone='ok'] .wr-row-badge {
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
+}
+
+.wr-row[data-tone='warn'] .wr-row-badge {
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+
+.wr-row[data-tone='bad'] .wr-row-badge {
+  background: var(--chip-pink-bg);
+  color: var(--chip-pink);
+  border-color: var(--chip-pink-border);
+}
+
+.wr-row-title {
+  font-weight: var(--weight-medium);
+}
+
+.wr-row-detail {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.wr-row-time {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+/* ------------------------------------------------------------------ right */
+
+.wr-agents:focus {
+  outline: none;
+}
+
+.wr-lanes {
+  margin: 0 0 var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.wr-lane {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.wr-lane dd {
+  margin: 0;
+}
+
+.wr-lane-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.wr-lane-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.wr-lane[data-state='empty'] .wr-lane-value,
+.wr-lane[data-state='unknown'] .wr-lane-value {
+  color: var(--text-secondary);
+  font-weight: var(--weight-normal);
+}
+
+.wr-lane-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--border-default);
+}
+
+.wr-lane-dot[data-tone='live'] {
+  background: var(--chip-green);
+}
+
+.wr-lane-dot[data-tone='warn'] {
+  background: var(--chip-orange);
+}
+
+.wr-lane-dot[data-tone='done'] {
+  background: var(--chip-blue);
+}
+
+.wr-lane-dot[data-tone='bad'] {
+  background: var(--chip-pink);
+}
+
+.wr-lane-detail {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.wr-lane-source {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.wr-card {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.wr-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.wr-card-body {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.wr-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.wr-notes {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.wr-note + .wr-note {
+  margin-top: var(--space-2);
+}
+
+.wr-note-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-small);
+}
+
+.wr-note-meta {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+/* The rail's cards, inside a panel rather than the drawer's own column. */
+.wr-meta .panel-side,
+.wr-meta {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ one column */
+
+.wr-switcher {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  scrollbar-width: none;
+}
+
+.wr-tab {
+  flex: none;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-2) var(--space-3);
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+
+.wr-tab[aria-selected='true'] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.wr-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.wr[data-mode='one'] .wr-head {
+  position: static;
+}
+
+.wr[data-mode='one'] .wr-centre {
+  padding: var(--space-4);
+}
+
+@media (max-width: 600px) {
+  .wr-head {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .wr-title {
+    font-size: var(--text-heading-sm);
+    line-height: var(--leading-heading-sm);
+  }
+
+  .wr-centre > * {
+    max-width: none;
+  }
+}
+
+/* ------------------------------------------------------------------ states */
+
+.wr-loading {
+  padding: var(--space-5);
+  max-width: 72ch;
+  margin-inline: auto;
+}
+
+.wr-state {
+  max-width: 40rem;
+  margin: var(--space-6) auto;
+  padding: var(--space-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+}
+
+.wr-state-key {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.wr-state-title {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--text-heading-md);
+  line-height: var(--leading-heading-md);
+}
+
+.wr-state-body {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+}
+
+/* ------------------------------------------------------------------ focus mode */
+
+/* The app sidebar folds away with the side panels; the page keeps its header. */
+:root[data-workroom-focus] #sidebar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wr-separator-grip {
+    transition: none;
+  }
+}

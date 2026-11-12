@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import type { Page, Task, TaskPriority } from './tasks.ts';
+import type { Project } from './projects.ts';
 
 /**
  * Unlisted work (SPEC §4.14, API by LAI-405, screen by LAI-413).
@@ -126,4 +127,26 @@ export function firstLine(note: string): string {
       .map((line) => line.trim())
       .find((line) => line !== '') ?? ''
   );
+}
+
+/** The spaces a promote may land in: `undefined` while read, `null` if the read failed. */
+export type PromoteSpaces = readonly Pick<Project, 'slug'>[] | null | undefined;
+
+/**
+ * Why *Create task* cannot be pressed yet, in a few words — or `undefined`
+ * when it can (LAI-1128). A disabled button that does not say why is a
+ * control that looks broken.
+ */
+export function promoteBlocker(
+  spaces: PromoteSpaces,
+  slug: string,
+  title: string,
+): string | undefined {
+  if (spaces === undefined) return 'Loading the spaces you can add tasks to.';
+  if (spaces === null) return 'Could not load your spaces.';
+  if (spaces.length === 0)
+    return 'You cannot create tasks in any space. A space lead can give you access.';
+  if (slug === '' || !spaces.some((space) => space.slug === slug)) return 'Choose a space.';
+  if (title.trim() === '') return 'Give the task a title.';
+  return undefined;
 }
