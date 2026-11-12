@@ -43,20 +43,24 @@ export function timeView(
   return leads.length > 0 ? 'space' : 'none';
 }
 
-/** The two views under Insights → Time (frames 1g, 2g; LAI-1139), as `&view=`. */
-export type TimeSubview = 'report' | 'availability';
+/**
+ * The views under Insights → Time, as `&view=`: the report and Availability
+ * (frames 1g, 2g; LAI-1139), and the Time logging grid (D-148, LAI-1175).
+ */
+export type TimeSubview = 'report' | 'availability' | 'days';
 
 export const TIME_SUBVIEWS: readonly (readonly [TimeSubview, string])[] = [
   ['report', 'Time report'],
   ['availability', 'Availability'],
+  ['days', 'Time logging'],
 ];
 
-/** `&view=` read leniently: anything but `availability` is the report. */
+/** `&view=` read leniently: anything but a named view is the report. */
 export function timeSubview(value: string | null | undefined): TimeSubview {
-  return value === 'availability' ? 'availability' : 'report';
+  return value === 'availability' || value === 'days' ? value : 'report';
 }
 
 /** The address of one view; the report is the tab's own address. */
 export function timeSubviewHref(view: TimeSubview): string {
-  return view === 'report' ? '/insights?tab=time' : '/insights?tab=time&view=availability';
+  return view === 'report' ? '/insights?tab=time' : `/insights?tab=time&view=${view}`;
 }

@@ -412,6 +412,7 @@ function InsightsRoute() {
           leads={leads}
           orgName={orgName}
           subview={timeSubview(params.get('view'))}
+          month={params.get('month') ?? undefined}
           onNavigate={navigate}
         />
       ) : tab === 'usage' ? (
