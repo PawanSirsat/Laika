@@ -2,10 +2,11 @@
 id: LAI-1173
 title: 'GET /me/time/days: one row per day over a stretch, for My day Week, Month and Year'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-12T10:00:00Z
 ---
 
 ## Goal
