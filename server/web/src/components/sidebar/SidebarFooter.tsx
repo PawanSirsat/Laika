@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGates } from '../../api/permissions.ts';
+import { AppearancePanel } from '../AppearancePanel.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -22,6 +23,10 @@ export interface SidebarFooterProps {
  * reference): **My profile**, **Switch to dark / light**, **Developer access**
  * and **Sign out**. The theme row and the sign-out button that sat here
  * (LAI-064, LAI-249) moved into it, so the rail ends in one control.
+ *
+ * *Appearance…* opens the side panel with the theme and the interface font
+ * (LAI-1125); the quick theme row stays, as one click is still what most
+ * readers want.
  *
  * *My profile* is drawn for a reader who may open their own profile —
  * `profile.read_own`, every role since D-139 (LAI-1150), or `profile.read` —
@@ -47,6 +52,7 @@ export function SidebarFooter({
   const colour = avatarColor(user.id, theme);
   const next = theme === 'dark' ? 'light' : 'dark';
   const [open, setOpen] = useState(false);
+  const [appearance, setAppearance] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -120,6 +126,14 @@ export function SidebarFooter({
 
   return (
     <div className="sidebar-footer" ref={rootRef}>
+      {appearance && (
+        <AppearancePanel
+          onClose={() => {
+            setAppearance(false);
+          }}
+          restore={() => triggerRef.current}
+        />
+      )}
       {open && (
         <div
           ref={menuRef}
@@ -152,6 +166,18 @@ export function SidebarFooter({
               {next === 'dark' ? '☾' : '☀'}
             </span>
             <span className="visually-hidden"> theme — currently {theme}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="user-menu-item user-menu-appearance"
+            aria-haspopup="dialog"
+            onClick={() => {
+              setOpen(false);
+              setAppearance(true);
+            }}
+          >
+            Appearance…
           </button>
           <a
             role="menuitem"

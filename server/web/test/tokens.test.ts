@@ -24,6 +24,10 @@ import {
   CONTRAST_PAIRS,
   ELEVATION_TOKENS,
   FAMILY_TOKENS,
+  GLASS_CONTRAST_PAIRS,
+  GLASS_SHARED_TOKENS,
+  LAYER_TOKENS,
+  MOTION_TOKENS,
   RADIUS_TOKENS,
   SPACE_TOKENS,
   SHARED_MISC_TOKENS,
@@ -129,6 +133,9 @@ void describe('every themed token exists in both themes', () => {
       ...RADIUS_TOKENS,
       ...FAMILY_TOKENS,
       ...SHARED_MISC_TOKENS,
+      ...GLASS_SHARED_TOKENS,
+      ...MOTION_TOKENS,
+      ...LAYER_TOKENS,
     ]);
     assert.deepEqual(
       onlyDark.filter((k) => !themeIndependent.has(k)),
@@ -148,6 +155,9 @@ void describe('token-list.ts matches tokens.css', () => {
       ...RADIUS_TOKENS,
       ...FAMILY_TOKENS,
       ...SHARED_MISC_TOKENS,
+      ...GLASS_SHARED_TOKENS,
+      ...MOTION_TOKENS,
+      ...LAYER_TOKENS,
     ];
     assert.deepEqual(
       listed.filter((t) => !declared.has(t)),
@@ -165,6 +175,9 @@ void describe('token-list.ts matches tokens.css', () => {
       ...RADIUS_TOKENS,
       ...FAMILY_TOKENS,
       ...SHARED_MISC_TOKENS,
+      ...GLASS_SHARED_TOKENS,
+      ...MOTION_TOKENS,
+      ...LAYER_TOKENS,
     ]);
     const unlisted = [...new Set([...light.keys(), ...dark.keys()])].filter((t) => !listed.has(t));
     assert.deepEqual(
@@ -228,6 +241,152 @@ void describe('WCAG AA — body and secondary text on their own surfaces', () =>
       });
     }
   }
+});
+
+void describe('glass (LAI-1132)', () => {
+  const channel = (c: number): number => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  type Rgba = readonly [number, number, number, number];
+  const parse = (value: string): Rgba => {
+    const hex = /^#([0-9a-f]{6})$/i.exec(value);
+    if (hex?.[1] !== undefined) {
+      const h = hex[1];
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).concat(1) as unknown as Rgba;
+    }
+    const rgba = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/.exec(value);
+    assert.ok(rgba, `expected #rrggbb or rgba() for a composited contrast check, got ${value}`);
+    return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])];
+  };
+  /** Source-over: the colour a translucent glass actually shows over a backdrop. */
+  const over = (top: Rgba, bottom: Rgba): Rgba => {
+    const a = top[3];
+    return [
+      top[0] * a + bottom[0] * (1 - a),
+      top[1] * a + bottom[1] * (1 - a),
+      top[2] * a + bottom[2] * (1 - a),
+      1,
+    ];
+  };
+  const luminance = (c: Rgba): number =>
+    0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]);
+  const ratio = (a: Rgba, b: Rgba): number => {
+    const [la, lb] = [luminance(a), luminance(b)];
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+
+  for (const [name, vars] of [
+    ['light', () => light],
+    ['dark', () => dark],
+  ] as const) {
+    for (const pair of GLASS_CONTRAST_PAIRS) {
+      void test(`${name}: ${pair.text} on ${pair.glass} over ${pair.backdrop} clears AA`, () => {
+        const get = (t: string): string => {
+          const v = vars().get(t);
+          assert.ok(v !== undefined, `${t} missing in ${name}`);
+          return v;
+        };
+        const glass = parse(get(pair.glass));
+        // A glass level that turned opaque would pass while proving nothing
+        // about translucency — the point of this check.
+        assert.ok(glass[3] < 1, `${pair.glass} is opaque in ${name}; it is not glass`);
+        const surface = over(glass, parse(get(pair.backdrop)));
+        const r = ratio(parse(get(pair.text)), surface);
+        assert.ok(
+          r >= 4.5,
+          `${pair.text} on ${pair.glass} over ${pair.backdrop} in ${name} is ${r.toFixed(2)}:1 — ` +
+            'raise the level’s alpha, not its blur',
+        );
+      });
+    }
+  }
+
+  void test('the ambient ground is one calm gradient and --ambient-peak is its extreme', () => {
+    // v3 (owner: "keep it simple"): a single linear gradient of at most two
+    // stops, each within a hair of the brand canvas — no radial discs, arcs
+    // or hazes — and `--ambient-peak` is its worst case: the lightest stop in
+    // dark, the darkest in light.
+    for (const [name, vars, worse] of [
+      ['dark', () => dark, (a: number, b: number) => a > b],
+      ['light', () => light, (a: number, b: number) => a < b],
+    ] as const) {
+      const v = vars();
+      const raw = v.get('--ambient-base') ?? '';
+      assert.match(
+        raw,
+        /^linear-gradient\(/,
+        `--ambient-base in ${name} is not one linear gradient`,
+      );
+      assert.equal(
+        raw.match(/gradient\(/g)?.length,
+        1,
+        `--ambient-base in ${name} stacks gradients`,
+      );
+      assert.doesNotMatch(raw, /radial|conic|rgba/, `--ambient-base in ${name} is not simple`);
+      const stops = raw.match(/#[0-9a-f]{6}/gi) ?? [];
+      assert.ok(
+        stops.length >= 1 && stops.length <= 2,
+        `--ambient-base in ${name} has ${String(stops.length)} stops`,
+      );
+      const canvas = parse(v.get('--bg-canvas') ?? '');
+      const peakHex = v.get('--ambient-peak') ?? '';
+      const peak = luminance(parse(peakHex));
+      assert.ok(
+        stops.some((st) => st.toLowerCase() === peakHex.toLowerCase()),
+        `--ambient-peak in ${name} is not one of the ground's stops`,
+      );
+      for (const stop of stops) {
+        const c = parse(stop);
+        assert.ok(!worse(luminance(c), peak), `${stop} in ${name} passes --ambient-peak`);
+        // Low contrast: a tonal shift you sense rather than see.
+        assert.ok(
+          ratio(c, canvas) <= 1.1,
+          `${stop} in ${name} is ${ratio(c, canvas).toFixed(3)}:1 from the canvas — keep it calm`,
+        );
+      }
+      for (const gone of [
+        '--ambient-orb-1',
+        '--ambient-orb-2',
+        '--ambient-orb-3',
+        '--ambient-arc',
+        '--ambient-rim',
+      ]) {
+        assert.equal(v.get(gone), undefined, `${gone} is back in ${name}`);
+      }
+    }
+  });
+
+  void test('blur levels rise with elevation and stay under the 32px cap', async () => {
+    const css = await readFile(TOKENS_CSS, 'utf8');
+    const px = (t: string): number => {
+      const m = new RegExp(`${t}:\\s*(\\d+)px;`).exec(css);
+      assert.ok(m?.[1] !== undefined, `${t} not declared in px`);
+      return Number(m[1]);
+    };
+    const levels = ['--glass-blur-1', '--glass-blur-2', '--glass-blur-3'].map(px);
+    assert.deepEqual(
+      [...levels].sort((a, b) => a - b),
+      levels,
+      'blur must rise with the level',
+    );
+    for (const b of [...levels, px('--glass-blur-scrim')])
+      assert.ok(b <= 32, `${String(b)}px > 32px`);
+  });
+
+  void test('layers rise strictly in the listed order; menus and popovers outrank panels (B16)', () => {
+    const z = LAYER_TOKENS.map((t) => {
+      const v = dark.get(t);
+      assert.ok(v !== undefined && /^\d+$/.test(v), `${t} is not an integer layer`);
+      return Number(v);
+    });
+    for (let i = 1; i < z.length; i += 1) {
+      assert.ok((z[i] ?? 0) > (z[i - 1] ?? 0), `${LAYER_TOKENS[i] ?? '?'} does not rise`);
+    }
+    const at = (t: (typeof LAYER_TOKENS)[number]): number => z[LAYER_TOKENS.indexOf(t)] ?? 0;
+    assert.ok(at('--layer-menu') > at('--layer-panel'));
+    assert.ok(at('--layer-popover') > at('--layer-panel'));
+  });
 });
 
 void describe('every var(--token) a stylesheet uses is actually defined', () => {

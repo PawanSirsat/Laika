@@ -20,6 +20,7 @@ import { actorKey, commentKind, runPositions, type RunPosition } from './feed-gr
 import { FEED_GLYPHS, feedLines, feedMeta } from './feed-line.ts';
 import type { CardCandidate, MentionCandidate } from './LazyRichEditor.tsx';
 import { WhoDidThis } from './WhoDidThis.tsx';
+import { Tabs } from '../../../components/tabs/Tabs.tsx';
 import './feed.css';
 
 export interface ActivityFeedProps {
@@ -475,31 +476,31 @@ export function ActivityFeed({
             writes. Every filter is over rows this panel already loaded, so no
             tab can disagree with the one beside it.
           */}
-          <div className="panel-tabs" role="tablist" aria-label="Task activity">
-            {(
+          <Tabs
+            label="Task activity"
+            className="panel-tabs"
+            tabClassName="panel-tab"
+            selectedClassName="panel-tab-on"
+            idBase="tab"
+            panelId={(id) => `panel-${id}`}
+            selected={tab}
+            onSelect={setTab}
+            items={(
               [
                 ['all', 'All', everything.length],
                 ['comments', 'Comments', comments.length],
                 ['history', 'History', detail.activity.length],
                 ['changes', 'Changes', changes.length],
               ] as const
-            ).map(([id, label, count]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                id={`tab-${id}`}
-                aria-selected={tab === id}
-                aria-controls={`panel-${id}`}
-                className={tab === id ? 'panel-tab panel-tab-on' : 'panel-tab'}
-                onClick={() => {
-                  setTab(id);
-                }}
-              >
-                {label} <span className="panel-tab-count">{count}</span>
-              </button>
-            ))}
-          </div>
+            ).map(([id, label, count]) => ({
+              id,
+              label: (
+                <>
+                  {label} <span className="panel-tab-count">{count}</span>
+                </>
+              ),
+            }))}
+          />
 
           {/*
             **Only the showing tab is in the DOM.** A hidden tabpanel still

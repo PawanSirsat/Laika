@@ -24,6 +24,7 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
+import { boardAction } from './board-menu.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -138,7 +139,7 @@ async function openPanel(h: Harness): Promise<void> {
   await h.page.waitForSelector('.card-title');
   // The trigger moved into the board toolbar's icon cluster (LAI-290), where
   // Jira puts it — it used to be a text button in the slot below the bar.
-  await h.page.locator('.bt-icon[title="View settings"]').click();
+  await boardAction(h.page, 'View settings');
   await h.page.waitForSelector('.view-settings');
 }
 
