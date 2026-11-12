@@ -7400,9 +7400,12 @@ and a Total of hours and *N / M days*.
    D-088 item 7, D-130 item 3 and D-136 are amended for this grid only: **the one
    per-person read a space admin has**. A member who leads nothing is `403`.
 5. **Working days** are each person's `work_days` from My availability, Monday to Friday
-   when unset. A day is **not due** before the person joined (`users.created_at`, the day
-   the account was made — an import's is the import's day, not when they first logged time —
-   in their zone) or on or after today in their zone; today is hours so far with no verdict.
+   when unset. A day is **not due** before the person joined — the earlier of the day the
+   account was made (`users.created_at`) and their first day with any time, live entry or
+   pending draft, so an import's months of earlier time count from when they were logged
+   (LAI-1177; the first cut used the account's day alone and showed every imported person as
+   joining on the import's day) — in their zone, or on or after today in their zone; today is
+   hours so far with no verdict.
    **Time on a day that owed nothing is still shown**, as muted hours, and counts toward
    the month's hours, never toward days — a day off, a day before they joined (an imported
    person's history), a day not yet come. A deactivated person is listed only with minutes
