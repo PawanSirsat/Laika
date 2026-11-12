@@ -152,7 +152,7 @@ function hasWords(inner: string): boolean {
 }
 
 const named = (open: string, inner: string): boolean =>
-  /\baria-label(?:ledby)?=/.test(open) || /className="visually-hidden"/.test(inner);
+  /\baria-label(?:ledby)?=/.test(open) || inner.includes('className="visually-hidden"');
 
 const inTooltip = (src: string, at: number): boolean =>
   /<Tooltip\b[^<]*>$/.test(

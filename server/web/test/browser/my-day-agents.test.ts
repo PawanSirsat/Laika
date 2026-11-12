@@ -122,7 +122,7 @@ void describe('the AGENTS lane (LAI-833)', () => {
         await card.waitFor({ timeout: 5_000 });
         assert.match(await card.innerText(), /Agent working[\s\S]*9 min/);
         await hoverSettled(h.page.locator('[data-agent-run]').nth(1));
-        await until(async () => /On no card/.test(await card.innerText()));
+        await until(async () => (await card.innerText()).includes('On no card'));
         assert.equal(
           await h.page.locator('[data-agent-run][title]').count(),
           0,
