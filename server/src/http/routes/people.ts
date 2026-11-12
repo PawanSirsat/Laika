@@ -22,6 +22,7 @@ import {
 } from '../../services/people-load.ts';
 import {
   getPersonDay,
+  getPersonDays,
   getPersonLocalActivity,
   getPersonSummary,
 } from '../../services/people-analytics.ts';
@@ -35,7 +36,7 @@ import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery } from '../pagination.ts';
 import { parseBody, parseParams, parseQuery, strictObject, z } from '../validation.ts';
 import { PreviewQuery } from './local-activity.ts';
-import { EntryBody, EntryPatchBody, MyDayQuery, SummaryQuery } from './time.ts';
+import { DaysQuery, EntryBody, EntryPatchBody, MyDayQuery, SummaryQuery } from './time.ts';
 
 /**
  * `GET /api/v1/people/:id/activity?range=12w|52w` (SPEC §6.4, D-079, LAI-751):
@@ -118,6 +119,12 @@ export function peopleRoutes(options: { db: Db; sqlite: Database.Database }): Ho
     const actor = requireActor(c);
     const query = parseQuery(SummaryQuery, c.req.query());
     return c.json(getPersonSummary(db, actor, c.req.param('id'), query));
+  });
+
+  app.get('/:id/time/days', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(DaysQuery, c.req.query());
+    return c.json(getPersonDays(db, actor, c.req.param('id'), query));
   });
 
   app.get('/:id/local-activity', (c) => {
