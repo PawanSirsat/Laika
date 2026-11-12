@@ -1980,10 +1980,7 @@ void describe('two agents that share a harness and a device', () => {
           });
         assert.equal(await shown('t1'), 'Claude Code · Second laptop agent', theme);
         assert.equal(await shown('t2'), 'Claude Code · Laptop agent', theme);
-        assert.match(
-          (await chip('t1').getAttribute('title')) ?? '',
-          /on laptop-1 \(Second laptop agent\)$/,
-        );
+        assert.match(await tipText(chip('t1')), /on laptop-1 \(Second laptop agent\)$/);
         assert.equal(folded(await chip('t3').textContent()), 'Codex · desktop-2', theme);
       }
 
@@ -2116,10 +2113,7 @@ void describe('two agents that share a harness and a device', () => {
       await cell('t1').waitFor({ timeout: 20_000 });
       assert.equal(folded(await cell('t2').textContent()), FIRST);
       assert.equal(folded(await cell('t1').textContent()), SECOND);
-      assert.match(
-        await tipText(cell('t1')),
-        /^Claude Code · laptop-1 \(Second laptop agent\) — /,
-      );
+      assert.match(await tipText(cell('t1')), /^Claude Code · laptop-1 \(Second laptop agent\) — /);
       // On screen, the narrow cell shows what differs, not two `laptop…`.
       const visible = (id: string) =>
         cell(id).evaluate((el) => {

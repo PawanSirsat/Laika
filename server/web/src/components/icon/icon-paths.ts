@@ -44,7 +44,6 @@ export type IconName =
   | 'arrow-up'
   | 'arrow-down'
   | 'arrow-right'
-  | 'grip'
   | 'pencil'
   | 'clock'
   | 'doc'
@@ -170,8 +169,8 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
   ],
   // LAI-1213: the space views and the task. A corner arrow for "subtask of",
   // an eye for watching, the share graph for copying a link, the two corners
-  // of expand-to-page, plain arrows for sort order and "goes to", a grip for
-  // dragging, a pencil for rename, and the task's section marks — a clock, a
+  // of expand-to-page, plain arrows for sort order and "goes to", a pencil for
+  // an edit, and the task's section marks — a clock, a
   // page, a checklist, a chain link, a gauge, a pulse line, nested rows, a
   // barred circle, a seal, a coin stack and a focus frame.
   parent: ['M6 4.5V12a4 4 0 0 0 4 4h8.5', 'm15 12.5 3.5 3.5-3.5 3.5'],
@@ -189,7 +188,6 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
   'arrow-up': ['M12 19V5', 'm6 11 6-6 6 6'],
   'arrow-down': ['M12 5v14', 'm6 13 6 6 6-6'],
   'arrow-right': ['M5 12h14', 'm13 6 6 6-6 6'],
-  grip: ['M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01'],
   pencil: ['M4.5 19.5 5.5 15 15.5 5a2.1 2.1 0 0 1 3 3l-10 10z', 'M13.5 7l3 3'],
   clock: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M12 7.5V12l3 2'],
   doc: [
