@@ -53,6 +53,7 @@ import {
   visibleTabs,
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
+import { DocumentsTrialRoute } from '../documents/DocumentsTrialRoute.tsx';
 import { LoadingState } from '../LoadingState.tsx';
 import { BrandSpinner } from '../brand/BrandSpinner.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
@@ -616,6 +617,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/setup': { Component: SetupRoute, layout: 'own-chrome' },
   '/design/tokens': { Component: TokenReference, layout: 'plain' },
   '/design/states': { Component: StateGallery, layout: 'plain' },
+  '/design/documents': { Component: DocumentsTrialRoute, layout: 'plain' },
 };
 
 /**

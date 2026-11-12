@@ -30,6 +30,7 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   '/task/:key': "the task drawer's Expand button, on every view of a space (LAI-1199)",
   '/design/tokens': 'the token reference, linked from `/design/states`',
   '/design/states': 'a development reference, reached by typing the path',
+  '/design/documents': 'the deliverable design trial (LAI-1131), reached by typing the path',
   // The SPACES section is built from the project list rather than from
   // `ROUTES`, so these two are reachable without being in any group.
   '/board': 'the SPACES section — every space row opens its board',
