@@ -267,7 +267,20 @@ export const RADIUS_TOKENS = [
   '--radius-pill',
 ] as const;
 
-export const FAMILY_TOKENS = ['--font-ui', '--font-mono'] as const;
+/**
+ * `--font-ui` points at one of the `--font-face-*` stacks (LAI-1125); the
+ * picker previews each face through its token, so they are listed too.
+ */
+export const FAMILY_TOKENS = [
+  '--font-ui',
+  '--font-mono',
+  '--font-face-plus-jakarta-sans',
+  '--font-face-poppins',
+  '--font-face-commissioner',
+  '--font-face-average-sans',
+  '--font-face-carter-one',
+  '--font-face-short-stack',
+] as const;
 
 /**
  * Shared non-scale tokens: the chip framing lever (one place turns chip boxes

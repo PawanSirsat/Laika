@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
+import { initFont } from './theme/font.ts';
 import { initTheme } from './theme/theme.ts';
 import './index.css';
 
@@ -10,6 +11,9 @@ import './index.css';
 // deferred, so a dark-mode reader may still see one light frame — a smaller
 // price than relaxing the policy.
 initTheme();
+// The interface font a reader chose on this device (LAI-1125), for the same
+// reason and in the same place — the sign-in screen is set in it too.
+initFont();
 
 const container = document.getElementById('root');
 
