@@ -23,7 +23,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
 import { closeBrowser, open, setTheme, until, type Harness } from './harness.ts';
-import { ADA, DIALOG, stub } from './create-task-fixtures.ts';
+import { ADA, CORE, DIALOG, stub } from './create-task-fixtures.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -73,8 +73,12 @@ void after(async () => {
   await closeBrowser();
 });
 
-async function board(width: number, height: number): Promise<Harness> {
-  const h = await open('/board?project=laika-core', stub(ADA), {
+async function board(
+  width: number,
+  height: number,
+  extra: Parameters<typeof stub>[1] = {},
+): Promise<Harness> {
+  const h = await open('/board?project=laika-core', stub(ADA, extra), {
     before: async (p) => {
       await p.setViewportSize({ width, height });
       await strictCsp(p);
@@ -90,8 +94,12 @@ async function board(width: number, height: number): Promise<Harness> {
 }
 
 /** The board with the Create task dialog open and its editor loaded. */
-async function createTask(width = 1440, height = 900): Promise<Harness> {
-  const h = await board(width, height);
+async function createTask(
+  width = 1440,
+  height = 900,
+  extra: Parameters<typeof stub>[1] = {},
+): Promise<Harness> {
+  const h = await board(width, height, extra);
   try {
     await h.page.locator('.space-create').click();
     await h.page.locator(DIALOG).waitFor({ timeout: 5_000 });
@@ -371,6 +379,41 @@ function rows(toolbar: Locator): Promise<number[]> {
     ),
   ]);
 }
+
+void describe('the worst case (LAI-1209, break-ui)', () => {
+  void test('a very long space name is cut in the header at 390; its colour and key stay', async () => {
+    const name =
+      'The Extraordinarily Long Space Name That Nobody Would Choose But Somebody Did Anyway 2026';
+    const long = { ...CORE, name };
+    const h = await createTask(390, 844, {
+      '/api/v1/projects/laika-core': long,
+      '/api/v1/projects': { data: [{ ...long, task_counts: {}, members: [] }], next_cursor: null },
+    });
+    try {
+      const chip = h.page.locator(`${DIALOG} [data-space-chip]`);
+      await chip.locator('.ct-space-key').waitFor({ timeout: 5_000 });
+      const fit = await h.page.locator(`${DIALOG} .ct-head`).evaluate((head) => {
+        const key = head.querySelector('.ct-space-key')?.getBoundingClientRect();
+        const mark = head.querySelector('.ct-space-mark')?.getBoundingClientRect();
+        const words = head.querySelector('.ct-space') as HTMLElement | null;
+        return {
+          overflows: head.scrollWidth > head.clientWidth,
+          keyInside: key !== undefined && key.right <= head.getBoundingClientRect().right,
+          markDrawn: mark !== undefined && mark.width > 0,
+          cut: words !== null && words.scrollWidth > words.clientWidth,
+        };
+      });
+      assert.deepEqual(fit, { overflows: false, keyInside: true, markDrawn: true, cut: true });
+      assert.equal(
+        await h.page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        false,
+        'the page scrolls sideways',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
 
 void describe('the editor toolbar fits (LAI-1209)', () => {
   for (const [width, height] of [
