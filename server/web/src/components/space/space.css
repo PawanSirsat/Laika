@@ -83,8 +83,11 @@
 
 .space-bar {
   flex: none;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-subtle);
+  /* Level-1 glass (LAI-1132); the pane is `glass.css`'s ::before. */
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  border-bottom: 1px solid var(--glass-border);
   /* Was `13px 18px 0` for two stacked rows; one row needs less above it. */
   /* The addendum's 24px gutters (LAI-606). */
   padding: 12px 24px 0;

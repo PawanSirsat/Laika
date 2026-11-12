@@ -37,12 +37,7 @@ import { reviewSince, statusSubline } from '../task/rail-derive.ts';
 import { checklistProgress } from '../task/acceptance-derive.ts';
 import { SendBackDialog } from '../review/SendBackDialog.tsx';
 import { PingButton } from '../../../components/agent/PingButton.tsx';
-import {
-  acceptReview,
-  getTaskRounds,
-  sendBackReview,
-  type TaskRounds,
-} from '../../../api/review.ts';
+import { useTaskReview, useTaskRounds } from '../task/use-task-review.ts';
 import { agentLabel } from '../../../api/selected-agent.ts';
 import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
@@ -165,6 +160,12 @@ export interface TaskDetailPanelProps {
    * Review badge, as it does after a decision on the Review screen.
    */
   readonly onReviewDecided?: (() => void) | undefined;
+  /**
+   * The task's full page, the Workroom (LAI-1199): a link, so a cmd-click
+   * opens a tab, and `onExpand` for a plain click. Absent, no *Expand*.
+   */
+  readonly expandHref?: string | undefined;
+  readonly onExpand?: (() => void) | undefined;
 }
 
 /**
@@ -235,6 +236,8 @@ export function TaskDetailPanel({
   listReadOrder = 0,
   executionSignal,
   onReviewDecided,
+  expandHref,
+  onExpand,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
   /*
@@ -411,78 +414,14 @@ export function TaskDetailPanel({
   const { theme } = useTheme();
   const now = Date.now();
 
-  /*
-   * **The rounds, read once** (LAI-1117) for the state panel, the proof and
-   * the feed's finish summaries — keyed on `updated_at`, which the store keeps
-   * current from the stream, as the proof section always was.
-   */
-  const [roundsRead, setRoundsRead] = useState<{
-    readonly rounds: TaskRounds | undefined;
-    readonly failed: boolean;
-  }>({ rounds: undefined, failed: false });
-  useEffect(() => {
-    const controller = new AbortController();
-    setRoundsRead((was) => ({ rounds: was.rounds, failed: false }));
-    getTaskRounds(task.id, controller.signal)
-      .then((answer) => {
-        if (!controller.signal.aborted) setRoundsRead({ rounds: answer, failed: false });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted)
-          setRoundsRead((was) => ({ rounds: was.rounds, failed: true }));
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [task.id, task.updated_at]);
+  /* The rounds (LAI-1117) and the review decision (D-129, D-146), shared with the Workroom (LAI-1199). */
+  const roundsRead = useTaskRounds(task.id, task.updated_at);
   const rounds = roundsRead.rounds;
-
-  /*
-   * **Accept and Send back from the panel** (D-129 item 5; *Accept*, D-146): the Review
-   * screen's endpoints and dialog, offered to the reader the server lets
-   * decide. A refusal is shown as the server words it.
-   */
-  const [deciding, setDeciding] = useState<'accept' | 'send_back' | null>(null);
-  const [decideError, setDecideError] = useState<string | undefined>(undefined);
-  const [sendingBack, setSendingBack] = useState(false);
-  const [sendBackError, setSendBackError] = useState<string | undefined>(undefined);
-  const sendBackOpener = useRef<HTMLElement | null>(null);
-  const decided = (): void => {
+  const review = useTaskReview(task.id, () => {
     onTaskEdited();
     detail.refresh();
     onReviewDecided?.();
-  };
-  const accept = (): void => {
-    setDeciding('accept');
-    setDecideError(undefined);
-    acceptReview(task.id)
-      .then(decided)
-      .catch((cause: unknown) => {
-        setDecideError(
-          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
-        );
-      })
-      .finally(() => {
-        setDeciding(null);
-      });
-  };
-  const sendBack = (reason: string): void => {
-    setDeciding('send_back');
-    setSendBackError(undefined);
-    sendBackReview(task.id, reason)
-      .then(() => {
-        setSendingBack(false);
-        decided();
-      })
-      .catch((cause: unknown) => {
-        setSendBackError(
-          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
-        );
-      })
-      .finally(() => {
-        setDeciding(null);
-      });
-  };
+  });
   const [copied, setCopied] = useState('');
 
   /**
@@ -841,6 +780,32 @@ export function TaskDetailPanel({
             )}
           </div>
 
+          {expandHref !== undefined && (
+            <a
+              className="panel-head-action panel-expand"
+              href={expandHref}
+              aria-label="Expand to full page"
+              title="Expand to full page"
+              onClick={(event) => {
+                // A modified click is the browser's: a new tab or window.
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                if (onExpand === undefined) return;
+                event.preventDefault();
+                onExpand();
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </a>
+          )}
+
           <button type="button" className="panel-close" onClick={onClose}>
             <span className="visually-hidden">Close</span>
             <span aria-hidden="true">×</span>
@@ -911,14 +876,10 @@ export function TaskDetailPanel({
             nameOf={(id) => personName(id, members)}
             claimNow={claimNow}
             mayDecide={mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
-            deciding={deciding}
-            decideError={decideError}
-            onAccept={accept}
-            onSendBack={(opener) => {
-              sendBackOpener.current = opener;
-              setSendBackError(undefined);
-              setSendingBack(true);
-            }}
+            deciding={review.deciding}
+            decideError={review.decideError}
+            onAccept={review.accept}
+            onSendBack={review.openSendBack}
             ping={
               mayEdit === true &&
               task.selected_agent !== undefined &&
@@ -945,17 +906,15 @@ export function TaskDetailPanel({
             people={people}
             meId={meId}
           />
-          {sendingBack && (
+          {review.sendingBack && (
             <SendBackDialog
               taskKey={task.key}
               title={task.title}
-              busy={deciding === 'send_back'}
-              error={sendBackError}
-              onSend={sendBack}
-              onClose={() => {
-                setSendingBack(false);
-              }}
-              restoreFocus={() => sendBackOpener.current}
+              busy={review.deciding === 'send_back'}
+              error={review.sendBackError}
+              onSend={review.sendBack}
+              onClose={review.closeSendBack}
+              restoreFocus={review.sendBackOpener}
             />
           )}
 

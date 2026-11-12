@@ -183,8 +183,11 @@
    * did not stand out was to raise the *card* (`--bg-card-hover`), not to sink the
    * lane. Caught by the other SHELL session, in both themes.
    */
-  background: var(--bg-column);
-  border: 1px solid var(--border-column);
+  /* Level-1 glass *tint* (LAI-1132): translucent over the ambient layer, no
+     blur — cards scroll in it, and they stay solid. */
+  background: var(--glass-sheen), var(--glass-1);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight);
   border-radius: var(--radius-column);
   /* The prototype's column: 12px top, 10px sides (LAI-605). */
   padding: 12px 10px 10px;

@@ -55,3 +55,12 @@ export function slugOfKey(
   const prefix = key.slice(0, dash);
   return spaces.find((space) => space.prefix === prefix)?.slug;
 }
+
+/**
+ * The task's own page, the Workroom (LAI-1199): `/task/LAI-42`. By key, so
+ * the address is the name people say and paste, and a cmd-click opens it in
+ * a tab.
+ */
+export function workroomHref(key: string): string {
+  return `/task/${encodeURIComponent(key)}`;
+}

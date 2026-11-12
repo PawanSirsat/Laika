@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { slugOfKey, taskHref, withTaskOpen } from '../../src/routes/task-href.ts';
+import { slugOfKey, taskHref, withTaskOpen, workroomHref } from '../../src/routes/task-href.ts';
 
 void describe('taskHref', () => {
   void test('names the space and opens the drawer by id', () => {
@@ -65,5 +65,12 @@ void describe('slugOfKey', () => {
   void test('is undefined for a key no readable space owns, or no key at all', () => {
     assert.equal(slugOfKey('ZZ-1', spaces), undefined);
     assert.equal(slugOfKey('01JABCDEF', spaces), undefined);
+  });
+});
+
+void describe('workroomHref', () => {
+  void test('the task’s own page, by key, encoded (LAI-1199)', () => {
+    assert.equal(workroomHref('LAI-42'), '/task/LAI-42');
+    assert.equal(workroomHref('A B/1'), '/task/A%20B%2F1');
   });
 });

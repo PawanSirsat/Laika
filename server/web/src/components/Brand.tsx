@@ -1,40 +1,29 @@
-export interface BrandProps {
-  /**
-   * `dot` — the small accent mark the sidebar uses.
-   * `tile` — the 30px rounded tile with the Laika glyph, which design `5a`
-   * specifies for the auth card down to its stroke colour.
-   */
-  readonly variant?: 'dot' | 'tile';
-}
+import { BrandLockup } from './brand/BrandLockup.tsx';
 
 /**
- * The Laika mark and wordmark.
+ * The product's name on a page with no sidebar: the pre-auth header and the
+ * first-boot rail.
  *
  * Extracted from `Sidebar` because the identity outlives the navigation: a
  * signed-out page carries no app nav (LAI-062) but must still say what it is.
- * Keeping it inside the sidebar meant removing the nav also removed the name.
  *
- * Two marks rather than one because the design uses two. The sidebar's is a
- * small accent dot; the auth card's is a tile carrying the glyph, and `5a`
- * names its ground (`--text-primary`) and its stroke (`--bg-card`) — so the glyph is drawn
- * rather than approximated. It is inline SVG, not an asset: the CSP is
- * `script-src 'self'` with no external hosts (LAI-205), and a mark that needs a
- * network request is a mark that can fail to appear.
+ * Since LAI-1126 it is the brand lockup — the glass mark and the drawn
+ * wordmark from `components/brand/` — in place of the accent dot and the
+ * tile-with-a-glyph the prototype used. The auth cards place the lockup
+ * themselves, and the header then leaves it out (`ROUTES_WITH_THEIR_OWN_BRAND`)
+ * so a sign-in page says "Laika" once, not twice.
  */
-export function Brand({ variant = 'dot' }: BrandProps = {}) {
-  return (
-    <div className="sidebar-brand">
-      {variant === 'tile' ? (
-        <span className="brand-tile" aria-hidden="true">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" strokeWidth="2">
-            <circle cx="12" cy="12" r="4.5" />
-            <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
-          </svg>
-        </span>
-      ) : (
-        <span className="sidebar-mark" aria-hidden="true" />
-      )}
-      <span className="sidebar-wordmark">Laika</span>
-    </div>
-  );
+export function Brand() {
+  return <BrandLockup size="md" className="sidebar-brand" />;
 }
+
+/**
+ * Routes whose screen draws the lockup on its own card. The shell header skips
+ * its copy there — two in one viewport was the visual audit's duplicated
+ * "Laika".
+ */
+export const ROUTES_WITH_THEIR_OWN_BRAND: readonly string[] = [
+  '/login',
+  '/invite',
+  '/reset-password',
+];

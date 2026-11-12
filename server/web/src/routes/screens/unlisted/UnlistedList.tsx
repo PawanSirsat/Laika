@@ -1,10 +1,15 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
-import { useState } from 'react';
+import { Dropdown } from '../../../components/Dropdown.tsx';
+import { useEffect, useId, useState, type FormEvent } from 'react';
+import { everyPage } from '../../../api/every-page.ts';
+import { useGates } from '../../../api/permissions.ts';
+import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import {
   dismissUnlisted,
   firstLine,
   mayPromote,
+  promoteBlocker,
   promoteUnlisted,
   unlistedState,
   type UnlistedWork,
@@ -58,13 +63,65 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [justPromoted, setJustPromoted] = useState<PromotionResult | undefined>(undefined);
   const now = Date.now();
+  const formId = useId();
+
+  /*
+   * The spaces this reader may create a task in (B15, LAI-1128): every space
+   * they can see, narrowed by `task.create` from `GET /permissions`. It was a
+   * free-text box whose placeholder was a fixture's slug, so a typo was only
+   * found out when the server refused it. Read the first time a promote form
+   * opens, not with the queue.
+   */
+  const gates = useGates();
+  const [visible, setVisible] = useState<readonly Project[] | null | undefined>(undefined);
+  const [spacesAsked, setSpacesAsked] = useState(0);
+  const wantSpaces = promoting !== undefined || spacesAsked > 0;
+  useEffect(() => {
+    if (!wantSpaces) return;
+    const controller = new AbortController();
+    setVisible(undefined);
+    everyPage((cursor) =>
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        if (!controller.signal.aborted) setVisible(items.filter(isProject));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setVisible(null);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [wantSpaces, spacesAsked]);
+  const spaces: readonly Project[] | null | undefined =
+    visible === undefined || visible === null
+      ? visible
+      : !gates.settled
+        ? undefined
+        : gates.failed
+          ? null
+          : visible
+              .filter((space) => gates.project(space.id, 'task.create'))
+              .sort((a, b) => a.name.localeCompare(b.name));
+  // One space to choose from is no choice: take it.
+  const onlySlug = spaces?.length === 1 ? spaces[0]?.slug : undefined;
+  const chosen = slug === '' && onlySlug !== undefined ? onlySlug : slug;
+  const blocker = promoteBlocker(spaces, chosen, title);
+
+  const retrySpaces = (): void => {
+    if (gates.failed) gates.refresh();
+    setSpacesAsked((n) => n + 1);
+  };
 
   const promote = (): void => {
-    if (promoting === undefined) return;
+    if (promoting === undefined || blocker !== undefined || busy) return;
     setBusy(true);
     setActionError(undefined);
 
-    promoteUnlisted(promoting.id, { project_slug: slug.trim(), title: title.trim() })
+    promoteUnlisted(promoting.id, { project_slug: chosen, title: title.trim() })
       .then((result) => {
         // Kept so the link to the new task survives the refresh below — the
         // row's own `promoted_task_id` is an id, and a person needs the key.
@@ -204,18 +261,34 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                   </div>
 
                   {promoting?.id === row.id && mayPromote(row) && (
-                    <div className="unl-form">
-                      <label className="unl-field">
-                        <span className="unl-label">Project</span>
-                        <input
-                          className="unl-input"
-                          value={slug}
-                          placeholder="laika-core"
-                          onChange={(event) => {
-                            setSlug(event.target.value);
-                          }}
+                    <form
+                      className="unl-form"
+                      aria-label="Promote to task"
+                      onSubmit={(event: FormEvent) => {
+                        // Enter in the title submits, as a form does.
+                        event.preventDefault();
+                        promote();
+                      }}
+                    >
+                      <div className="unl-field">
+                        <span className="unl-label" id={`${formId}-space`}>
+                          Space
+                        </span>
+                        <Dropdown
+                          className="unl-space"
+                          aria-labelledby={`${formId}-space`}
+                          value={chosen}
+                          placeholder={spaces === undefined ? 'Loading spaces…' : 'Choose a space'}
+                          disabled={spaces === undefined || spaces === null || spaces.length === 0}
+                          noun="spaces"
+                          options={(spaces ?? []).map((space) => ({
+                            value: space.slug,
+                            label: space.name,
+                            detail: space.prefix,
+                          }))}
+                          onChange={setSlug}
                         />
-                      </label>
+                      </div>
                       <label className="unl-field unl-field-wide">
                         <span className="unl-label">Task title</span>
                         <input
@@ -227,6 +300,19 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                         />
                       </label>
                       <div className="unl-form-actions">
+                        {blocker !== undefined && (
+                          <p className="unl-hint" id={`${formId}-why`}>
+                            {blocker}
+                            {spaces === null && (
+                              <>
+                                {' '}
+                                <button type="button" className="unl-link" onClick={retrySpaces}>
+                                  Try again
+                                </button>
+                              </>
+                            )}
+                          </p>
+                        )}
                         <button
                           type="button"
                           className="bar-control"
@@ -237,16 +323,16 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                           Cancel
                         </button>
                         <button
-                          type="button"
+                          type="submit"
                           className="bar-control bar-control-primary"
-                          disabled={busy || slug.trim() === '' || title.trim() === ''}
-                          onClick={promote}
+                          disabled={busy || blocker !== undefined}
+                          aria-describedby={blocker === undefined ? undefined : `${formId}-why`}
                         >
                           {busy && <Spinner size="sm" />}
                           Create task
                         </button>
                       </div>
-                    </div>
+                    </form>
                   )}
                 </div>
               )}
