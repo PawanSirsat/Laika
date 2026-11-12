@@ -217,7 +217,7 @@ function server(
     seen.push(call);
     const row = rows.find((r) => r.task.id === id);
     rows = rows.filter((r) => r.task.id !== id);
-    return { ...(row?.task ?? {}), status: 'done' };
+    return { ...(row?.task ?? {}), status: 'done', status_name: 'Done' };
   };
   const stub: ApiStub = {
     '/api/v1/me': ME,

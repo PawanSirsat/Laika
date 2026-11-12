@@ -1,0 +1,23 @@
+/*
+ * The sprint key (LAI-1195). An outlined pill with a flag: the size chip is a
+ * filled square with a single letter, so the two no longer read alike. Tokens
+ * only; colour follows `currentColor`, which the screen sets per state.
+ */
+.sprint-key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.1875rem;
+  padding: 0.0625rem 0.375rem 0.0625rem 0.3125rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sprint-key svg {
+  flex: none;
+}

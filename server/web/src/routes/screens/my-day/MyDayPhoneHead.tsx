@@ -16,6 +16,11 @@ export interface MyDayPhoneHeadProps {
   readonly tools?: ReactNode;
   /** Confirm, or the day note — on the person's own day only. */
   readonly action?: ReactNode;
+  /**
+   * Time tracking is off for the organisation (LAI-1191): there is no day to
+   * walk, so no day row, week or total — only the page's name.
+   */
+  readonly off?: boolean;
 }
 
 /** What the line under the day says (the design's `phoneSub`). */
@@ -52,7 +57,15 @@ export function MyDayPhoneHead({
   onDay,
   tools,
   action,
+  off = false,
 }: MyDayPhoneHeadProps) {
+  if (off) {
+    return (
+      <header className="myday-phone-head myday-phone-head-off" data-phone-head>
+        <h1 className="myday-phone-off-title">{readOnly ? `${subjectName}’s day` : 'My day'}</h1>
+      </header>
+    );
+  }
   const confirmed = view.entries.reduce((n, e) => n + e.minutes, 0);
   const drafted = view.drafts.reduce((n, d) => n + d.minutes, 0);
   const firstName = subjectName.split(/\s+/)[0] ?? subjectName;

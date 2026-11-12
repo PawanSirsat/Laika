@@ -461,7 +461,7 @@
   stroke: currentColor;
   stroke-width: 2.4;
   color: var(--text-muted);
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .ds-chev-open {
