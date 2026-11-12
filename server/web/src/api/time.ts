@@ -455,6 +455,53 @@ export function getTimeSummary(
 }
 
 /**
+ * One task's time on a day; `task` null for time on no task — `untied` for
+ * drafted time nobody has put on anything yet, as {@link SummaryTask}.
+ */
+export interface DaysTask {
+  readonly task: TaskRef | null;
+  readonly project: ProjectRef | null;
+  readonly untied: boolean;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/** One day of a stretch: the day view's own state, its minutes, its largest tasks. */
+export interface DaysDay {
+  readonly day: string;
+  readonly state: DayState;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+  /** Of `drafted_minutes`, the part on nothing yet. */
+  readonly untied_minutes: number;
+  /** At most three, largest first. */
+  readonly top_tasks: readonly DaysTask[];
+}
+
+/**
+ * `GET /me/time/days?from=&to=&tz=` (LAI-1173): one row per day of a stretch
+ * of at most 92 days — My day's Week, Month and Year. Mirrors
+ * `services/time-days.ts`' `TimeDaysView`.
+ */
+export interface TimeDays {
+  readonly from: string;
+  readonly to: string;
+  readonly tz: string;
+  readonly today: string;
+  readonly days: readonly DaysDay[];
+}
+
+export function getMyDays(
+  from: string,
+  to: string,
+  tz: string,
+  signal?: AbortSignal,
+): Promise<TimeDays> {
+  const query = new URLSearchParams({ from, to, tz }).toString();
+  return request<TimeDays>(`/me/time/days?${query}`, opts(signal));
+}
+
+/**
  * The person on a Time report row (D-130). Mirrors `services/time-report.ts`'
  * `TimeReportPerson`, which the drift check reaches through
  * {@link TimeReportRow}'s field names only — so it is spelled out here.

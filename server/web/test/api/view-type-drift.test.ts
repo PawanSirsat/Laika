@@ -765,6 +765,25 @@ const PAIRS: readonly Pair[] = [
     client: 'SummaryKind',
     clientFile: 'time.ts',
   },
+  // My day's Week, Month and Year: one row per day (LAI-1173).
+  {
+    server: 'TimeDaysView',
+    serverFile: 'services/time-days.ts',
+    client: 'TimeDays',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'DaysDayView',
+    serverFile: 'services/time-days.ts',
+    client: 'DaysDay',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'DaysTaskView',
+    serverFile: 'services/time-days.ts',
+    client: 'DaysTask',
+    clientFile: 'time.ts',
+  },
   // The Time report (LAI-1135, D-130), paired by LAI-1138 with the component
   // that reads it. `TimeReportAnswer` is their union and stays named in the
   // server's census; `TimeReportPerson` is reached only through the row.

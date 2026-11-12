@@ -39,6 +39,13 @@ no state and no per-day tasks. This adds the read. The web half is LAI-1174.
       paragraph, two §6.4 endpoint lines and a §6.4 contract bullet after
       *A stretch of days (LAI-526)*.
 
+- [x] Named cross-area edit (D-033, §4.4), so neither guard sees half a
+      contract: `server/web/src/api/time.ts` (`TimeDays`, `DaysDay`,
+      `DaysTask`, `getMyDays`), `server/web/src/api/people-analytics.ts`
+      (`getPersonDays`), and three `PAIRS` entries in
+      `server/web/test/api/view-type-drift.test.ts`. No screen code: that is
+      LAI-1174.
+
 ## Notes / context
 
 Plan agreed with the owner 2026-11-12. A year is four reads on the client.
