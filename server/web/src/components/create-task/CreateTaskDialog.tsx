@@ -17,6 +17,7 @@ import type {
 } from '../../routes/screens/task/LazyRichEditor.tsx';
 import { useConfirm } from '../ConfirmProvider.tsx';
 import { Button } from '../forms/Button.tsx';
+import { IconButton } from '../forms/IconButton.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
 import { CreateTaskFields } from './CreateTaskFields.tsx';
@@ -384,16 +385,14 @@ export function CreateTaskDialog({
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              className="ct-close"
-              aria-label="Close"
+            <IconButton
+              icon="close"
+              label="Close"
+              size="sm"
               onClick={() => {
                 void requestClose();
               }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            />
           </header>
 
           <div className="ct-body">

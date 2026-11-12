@@ -1,3 +1,4 @@
+import { ScrollCue } from '../../../components/ScrollCue.tsx';
 import { asAgentClient } from '../../../api/agent-clients.ts';
 import type { CapacityEntry } from '../../../api/presence.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
@@ -40,7 +41,7 @@ export interface CapacityListProps {
 export function CapacityList({ people, now, theme, space, scale }: CapacityListProps) {
   const withActivity = people.some((p) => p.activity_14d_split !== undefined);
   return (
-    <div className="cap-list-wrap">
+    <ScrollCue className="cap-list-wrap" label="People and their load">
       <table className="cap-list">
         <thead>
           <tr>
@@ -247,6 +248,6 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
           })}
         </tbody>
       </table>
-    </div>
+    </ScrollCue>
   );
 }

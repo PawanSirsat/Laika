@@ -6,8 +6,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* Scrolling, the edge fade and the reveal are the tab strip's (tabs.css). */
 }
 
 .page-tab {

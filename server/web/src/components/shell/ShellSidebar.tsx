@@ -79,6 +79,11 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
         '/insights': tokenAlerts?.length,
         '/my-day': unreadNotices,
       }}
+      // The Insights badge is token alerts, and they are on Usage (LAI-1191,
+      // the audit's B8): the badge leads there and says what it counts.
+      countTargets={{
+        '/insights': { tab: 'usage', one: 'token alert', many: 'token alerts' },
+      }}
       user={me}
       onSignOut={signOut}
       signingOut={signingOut}

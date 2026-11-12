@@ -15,7 +15,11 @@ export interface SelectProps {
   readonly help?: string | undefined;
   readonly error?: string | undefined;
   readonly required?: boolean;
+  readonly optional?: boolean;
   readonly disabled?: boolean;
+  /** The control's id, for a screen that already names its fields. See `Field`. */
+  readonly id?: string | undefined;
+  readonly layout?: 'stack' | 'row';
 }
 
 /**
@@ -34,10 +38,21 @@ export function Select({
   help,
   error,
   required = false,
+  optional = false,
   disabled = false,
+  id,
+  layout = 'stack',
 }: SelectProps) {
   return (
-    <Field label={label} help={help} error={error} required={required}>
+    <Field
+      label={label}
+      id={id}
+      help={help}
+      error={error}
+      required={required}
+      optional={optional}
+      layout={layout}
+    >
       {({ inputId, describedBy, invalid }) => (
         <Dropdown
           id={inputId}

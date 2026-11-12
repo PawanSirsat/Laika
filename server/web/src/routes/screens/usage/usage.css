@@ -334,7 +334,7 @@
   max-width: 1.5rem;
   background: var(--accent);
   border-radius: 4px 4px 0 0;
-  transition: background-color 120ms ease;
+  transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
 .usage-col[data-active='true'] .usage-bar,
@@ -1186,4 +1186,66 @@
   .usage-plan-form > .usage-field:nth-child(2) {
     grid-column: auto;
   }
+}
+
+/* ------------------------------------------- figure links (LAI-1201) */
+
+/* A headline figure opens the card that breaks it down: it reads as the
+   figure it is, and says it is a link on hover and focus. */
+.usage-figure {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 2px;
+}
+
+.usage-figure:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--accent);
+}
+
+.usage-figure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The card a figure opened takes focus; a keyboard reader sees where. */
+.usage [data-section]:focus {
+  outline: none;
+}
+
+.usage [data-section]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The trend's text alternative (LAI-1201): a disclosure under the chart. */
+.usage-trend-table {
+  margin-top: 0.75rem;
+  font-size: var(--text-small);
+}
+
+.usage-trend-table summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  width: fit-content;
+  border-radius: 2px;
+}
+
+.usage-trend-table summary:hover {
+  color: var(--text-primary);
+}
+
+.usage-trend-table summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.usage-trend-table[open] summary {
+  margin-bottom: 0.5rem;
+}
+
+.usage-trend-table .usage-table {
+  font-size: var(--text-small);
 }
