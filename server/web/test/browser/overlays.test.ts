@@ -510,7 +510,8 @@ void describe('motion (LAI-1205)', () => {
         };
       });
       assert.equal(m.boxProps, 'opacity');
-      assert.equal(m.boxMs, '0.2s');
+      // --overlay-in is --duration-base, motion.css's dialog token (LAI-1208).
+      assert.equal(m.boxMs, '0.18s');
       assert.equal(m.boxTransform, 'none', 'the box transforms — a list portaled into it moves');
       assert.equal(m.headProps, 'transform');
     } finally {

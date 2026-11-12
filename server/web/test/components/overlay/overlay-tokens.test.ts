@@ -13,6 +13,7 @@ import {
   layerVar,
   type LayerName,
 } from '../../../src/components/overlay/overlay-tokens.ts';
+import { KEPT_UNDER_REDUCED_MOTION } from '../../../src/theme/motion.ts';
 
 const CSS = readFileSync(
   new URL('../../../src/components/overlay/overlay.css', import.meta.url),
@@ -30,7 +31,27 @@ function rootDeclarations(css: string): Map<string, string> {
   return found;
 }
 
-const declared = rootDeclarations(CSS);
+const MOTION_CSS = readFileSync(new URL('../../../src/styles/motion.css', import.meta.url), 'utf8');
+const MOTION_ROOT = rootDeclarations(MOTION_CSS);
+const THEME = readFileSync(new URL('../../../src/styles/theme.css', import.meta.url), 'utf8');
+
+/*
+ * One ladder (merge train): the shared layer names are theme.css's (LAI-1132)
+ * and overlay.css declares only the overlays' own — never the same name twice.
+ */
+const own = rootDeclarations(CSS);
+const theme = new Map(
+  [...THEME.matchAll(/(--layer-[a-z0-9-]+)\s*:\s*([^;]+);/g)].map(
+    (m) => [m[1] ?? '', (m[2] ?? '').trim()] as const,
+  ),
+);
+assert.ok(theme.size > 0, 'theme.css declares no layers — this test proves nothing');
+const declared = new Map([...theme].filter(([k]) => k.startsWith('--layer-')).concat([...own]));
+
+void test("overlay.css redeclares none of theme.css's layers", () => {
+  const twice = [...own.keys()].filter((k) => k.startsWith('--layer-') && theme.has(k));
+  assert.deepEqual(twice, []);
+});
 
 void describe('the CSS and the module say the same thing', () => {
   void test('every layer is declared with its number, and nothing else is', () => {
@@ -38,15 +59,23 @@ void describe('the CSS and the module say the same thing', () => {
     for (const name of names) {
       assert.equal(declared.get(layerVar(name)), String(LAYER[name]), `${layerVar(name)} differs`);
     }
-    const cssLayers = [...declared.keys()].filter((k) => k.startsWith('--layer-')).sort();
-    assert.deepEqual(cssLayers, names.map(layerVar).sort(), 'a layer in one file only');
+    // Every overlay-only layer is the module's; theme.css may hold more (sidebar…).
+    const cssLayers = [...own.keys()].filter((k) => k.startsWith('--layer-')).sort();
+    assert.deepEqual(
+      cssLayers,
+      names
+        .map(layerVar)
+        .filter((v) => !theme.has(v))
+        .sort(),
+      'a layer in one file only',
+    );
   });
 
   void test('every motion value is declared with its value, and nothing else is', () => {
     for (const [name, value] of Object.entries(MOTION)) {
       assert.equal(declared.get(`--${name}`), value, `--${name} differs`);
     }
-    const cssMotion = [...declared.keys()].filter((k) => k.startsWith('--overlay-')).sort();
+    const cssMotion = [...own.keys()].filter((k) => k.startsWith('--overlay-')).sort();
     assert.deepEqual(
       cssMotion,
       Object.keys(MOTION)
@@ -90,7 +119,12 @@ void describe('the order', () => {
 
 void describe('the motion', () => {
   void test('stays inside the review bands: a menu ≤ 200ms, a dialog ≤ 300ms', () => {
-    const ms = (v: string): number => Number(v.replace(/ms$/, ''));
+    // Durations are motion.css tokens (LAI-1208): read the value they name.
+    const ms = (v: string): number => {
+      const token = /^var\((--[a-z-]+)\)$/.exec(v)?.[1];
+      const raw = token === undefined ? v : (MOTION_ROOT.get(token) ?? 'NaN');
+      return Number(raw.replace(/ms$/, ''));
+    };
     assert.ok(ms(MOTION['overlay-menu-in']) >= 120 && ms(MOTION['overlay-menu-in']) <= 200);
     assert.ok(ms(MOTION['overlay-in']) >= 150 && ms(MOTION['overlay-in']) <= 300);
     assert.ok(ms(MOTION['overlay-sheet-in']) <= 300);
@@ -114,9 +148,13 @@ void describe('the motion', () => {
         );
       }
     }
-    assert.match(
-      CSS,
-      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.overlay-scrim,\s*\.overlay-dialog,\s*\.overlay-dialog > :not\(\[data-dropdown-panel\]\)\s*\{\s*transition: none;/,
-    );
+    // None under reduced motion: every duration is a motion.css token that
+    // motion.css zeroes (LAI-1208), the one place the question is asked.
+    for (const name of ['overlay-in', 'overlay-scrim-in', 'overlay-menu-in', 'overlay-sheet-in']) {
+      const token = /^var\((--duration-[a-z]+)\)$/.exec(MOTION[name as keyof typeof MOTION])?.[1];
+      assert.ok(token !== undefined, `${name} is not on a duration token`);
+      assert.ok(!KEPT_UNDER_REDUCED_MOTION.includes(token), `${token} is kept under reduce`);
+    }
+    assert.ok(!CSS.includes('prefers-reduced-motion'), 'overlay.css asks the question again');
   });
 });

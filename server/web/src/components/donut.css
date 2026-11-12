@@ -25,7 +25,7 @@
 
 .donut-slice {
   cursor: default;
-  transition: opacity 120ms ease;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 /* A hovered slice — or its legend row — stands out by the others stepping back. */
@@ -62,10 +62,4 @@
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .donut-slice {
-    transition: none;
-  }
 }

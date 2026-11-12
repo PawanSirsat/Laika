@@ -42,10 +42,12 @@
   margin: 0;
   padding: 0.25rem;
   list-style: none;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
+  /* Level-3 glass (LAI-1132): the pane is `glass.css`'s ::before. */
+  isolation: isolate;
+  background: transparent;
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-popover);
   /* Opens from its button, at the top right, not from its own middle. */
   transform-origin: top right;
   transition:
@@ -68,13 +70,6 @@
 .overflow-menu-list[data-keyboard] {
   transition: none;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .overflow-menu-list {
-    transition: none;
-  }
-}
-
 .overflow-menu-item {
   display: block;
   width: 100%;

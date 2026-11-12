@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { subscribeToEvents } from '../../../api/event-stream.ts';
+import { prefersReducedMotion } from '../../../theme/motion.ts';
 
 /**
  * Cards glide to where they now belong, and another person's change glows
@@ -119,7 +120,7 @@ export function readMotionContext(app: {
 }): MotionContext {
   return {
     supported: startFor(document) !== undefined,
-    reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    reducedMotion: prefersReducedMotion(),
     visible: document.visibilityState === 'visible',
     dragging: app.dragging,
     boardView: app.boardView,

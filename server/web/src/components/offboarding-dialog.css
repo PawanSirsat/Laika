@@ -7,13 +7,15 @@
 .offb-scrim {
   position: fixed;
   inset: 0;
-  z-index: 62;
-  background: var(--scrim);
+  /* Over the side panel it is asked from, under its own pickers (LAI-1134). */
+  z-index: calc(var(--layer-panel) + 2);
+  /* Darker, and frosted by `glass.css` (LAI-1132). */
+  background: var(--glass-scrim);
 }
 
 .offb-dialog {
   position: fixed;
-  z-index: 63;
+  z-index: calc(var(--layer-panel) + 3);
   inset: 0;
   margin: auto;
   height: fit-content;
@@ -21,10 +23,11 @@
   width: min(30rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
+  /* Level-3 glass over the frosted scrim (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-3);
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-column);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--glass-highlight), var(--shadow-panel);
   padding: 1.125rem 1.25rem 1.25rem;
   display: flex;
   flex-direction: column;
@@ -38,28 +41,12 @@
 }
 
 .offb-title {
+  flex: 1;
   margin: 0;
   font-size: var(--text-heading-md);
   font-weight: var(--weight-heavy);
   letter-spacing: -0.01em;
   color: var(--text-primary);
-}
-
-.offb-close {
-  margin-left: auto;
-  border: 0;
-  background: none;
-  color: var(--text-muted);
-  font-size: var(--text-heading-md);
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-chip);
-}
-
-.offb-close:hover {
-  color: var(--text-primary);
-  background: var(--bg-column);
 }
 
 .offb-about,
@@ -150,42 +137,6 @@
   gap: var(--space-2);
 }
 
-.offb-cancel,
-.offb-confirm {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font: inherit;
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  border-radius: var(--radius-control);
-  padding: 0.3125rem 0.875rem;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.offb-cancel {
-  color: var(--text-primary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-}
-
-.offb-confirm {
-  color: var(--on-accent);
-  background: var(--overdue);
-  border: 1px solid var(--overdue);
-}
-
-.offb-cancel:disabled,
-.offb-confirm:disabled,
-.offb-close:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.offb-cancel:focus-visible,
-.offb-confirm:focus-visible,
-.offb-close:focus-visible,
 .offb-option input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

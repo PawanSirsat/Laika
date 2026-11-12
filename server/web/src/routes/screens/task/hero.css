@@ -282,7 +282,7 @@
   border-radius: var(--radius-pill);
   background: var(--chip-green);
   box-shadow: 0 0 0 2px var(--chip-green-bg);
-  animation: hero-pulse 1.8s ease-out infinite;
+  animation: hero-pulse var(--duration-pulse) var(--ease-enter) infinite;
 }
 
 .hero-pulse-lost {
@@ -300,12 +300,6 @@
   }
   100% {
     box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hero-pulse {
-    animation: none;
   }
 }
 

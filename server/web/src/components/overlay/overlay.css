@@ -6,26 +6,25 @@
  */
 
 :root {
-  --layer-sticky: 10;
-  --layer-header: 20;
-  --layer-catcher: 30;
-  --layer-popover: 31;
+  /* The layers only overlays need (LAI-1205). The shared ladder — sticky,
+     header, panel, popover, menu, dialog, toast — is theme.css's (LAI-1132);
+     these sit on it, and overlay-tokens.ts holds the whole order. */
+  --layer-catcher: 64;
   --layer-sheet: 40;
   --layer-sheet-content: 41;
-  --layer-panel-scrim: 60;
-  --layer-panel: 61;
+  --layer-panel-scrim: 59;
   --layer-nested-scrim: 62;
   --layer-nested: 63;
   --layer-dropdown: 70;
-  --layer-dialog: 80;
-  --layer-toast: 90;
 
-  --overlay-in: 200ms;
-  --overlay-scrim-in: 160ms;
-  --overlay-menu-in: 140ms;
-  --overlay-sheet-in: 240ms;
-  --overlay-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --overlay-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Durations and curves are motion.css's tokens (LAI-1208), so reduced
+     motion zeroes them there; the eases are the same curves by name. */
+  --overlay-in: var(--duration-base);
+  --overlay-scrim-in: var(--duration-base);
+  --overlay-menu-in: var(--duration-fast);
+  --overlay-sheet-in: var(--duration-slow);
+  --overlay-ease-out: var(--ease-enter);
+  --overlay-ease-sheet: var(--ease-drawer);
   --overlay-rise: 0.5rem;
   --overlay-scale: 0.98;
   --overlay-menu-scale: 0.97;
@@ -260,14 +259,5 @@ html.overlay-scroll-locked.overlay-scroll-gutter {
     .overlay-dialog > :not([data-dropdown-panel]) {
       transform: translateY(var(--overlay-sheet-rise));
     }
-  }
-}
-
-/* Reduced motion: no movement and no fade — the overlay is simply there. */
-@media (prefers-reduced-motion: reduce) {
-  .overlay-scrim,
-  .overlay-dialog,
-  .overlay-dialog > :not([data-dropdown-panel]) {
-    transition: none;
   }
 }

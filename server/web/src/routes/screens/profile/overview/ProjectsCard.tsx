@@ -63,12 +63,12 @@ export function ProjectsCard({ projects }: { readonly projects: readonly Profile
   return (
     <OverviewCard
       name="projects"
-      title="Projects"
+      title="Spaces"
       count={projects.length}
       caption="open now · hours: 2 weeks · accepted, reviewed: 12 weeks"
     >
       {projects.length === 0 ? (
-        <p className="prof-empty">No projects yet.</p>
+        <p className="prof-empty">Not in any space yet.</p>
       ) : (
         <div role="table" className="ov-projects" aria-label="Their projects">
           <div role="rowgroup" className="ov-projects-head">

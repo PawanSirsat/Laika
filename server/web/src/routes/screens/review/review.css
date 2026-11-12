@@ -460,7 +460,7 @@
 /* ------------------------------------------- the dialog's neighbours (LAI-1169) */
 
 /* The Send back dialog opens over the Review dialog (scrim 60, box 61), so
-   its own pair sits one layer up; the dropdown menus and the toast stay at 70. */
+   its own pair sits one layer up; the dropdown menus stay at 70, the toast at 90. */
 .rev-scrim {
   z-index: 62;
 }
