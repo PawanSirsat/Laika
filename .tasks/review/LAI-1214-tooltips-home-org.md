@@ -79,7 +79,8 @@ when SidePanel's Close took focus as it opened and the first Escape was spent
 on a tooltip nobody asked for (LAI-1209's Add column dialog had the same);
 `shortcut.ts` draws arrow keys; Icon registry `minus`, `help`, `arrow-right`,
 `arrow-left`, `pin`, `chevron-down`; HeaderPopover `tooltip` + `shortcut`;
-CopyButton reason as aria-disabled + Tooltip; SidePanel close tooltipped.
+CopyButton reason as aria-disabled + Tooltip; SidePanel close tooltipped;
+StepRail's locked steps (Connect, v3 wizards) the same, tick drawn.
 
 **My day** — My day's keys as keycaps: Add time `N`, timer `T`, shortcuts `?`,
 General `G`, review `J`/`K`, Timeline `←`/`→`, closes `Esc`. Off with a
@@ -98,7 +99,7 @@ names, Tooltip, no bare `title=`, no typed glyph, exact exemptions that must
 still exist); `test/browser/page-tooltips.test.ts` (11: hover after the delay
 and focus, keys, reasons focusable, both themes, 390/1440, CSP 0, Capacity);
 `test/browser/tooltip-text.ts` helper; 26 existing browser files re-aimed from
-`title=` to the tooltip or from typed glyphs to icons. 12 mutations, all red.
+`title=` to the tooltip or from typed glyphs to icons. 13 mutations, all red.
 
 **Follow-ups, not filed** (CHIEF's numbering is polly's): the remaining
 condition-based disables listed in the census; `profile/InfoTip` vs
