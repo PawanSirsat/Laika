@@ -540,12 +540,8 @@
   --glass-blur-scrim: 6px;
   --glass-saturate: 1.2;
 
-  /* ---- motion (LAI-1132) ---- */
-  --duration-fast: 120ms;
-  --duration-base: 180ms;
-  --duration-slow: 280ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasised: cubic-bezier(0.3, 0, 0, 1.2);
+  /* Motion tokens (--duration-*, --ease-*) live in one place: styles/motion.css
+     (LAI-1208). LAI-1132 defined five of them here too; the merge train kept one. */
 
   /*
    * ---- layers (LAI-1132): one ladder, low to high ----
@@ -563,24 +559,12 @@
   --layer-panel: 60;
   --layer-popover: 65;
   --layer-menu: 70;
-  --layer-tooltip: 75;
   --layer-dialog: 80;
   --layer-toast: 90;
+  /* Top of the ladder (LAI-1209): a tooltip on a dialog's control drew under
+     the dialog at 75. */
+  --layer-tooltip: 95;
 }
-
-/* One rule for reduced motion (LAI-1132): every transition and animation is
-   cut to near-instant, so no component has to remember its own. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
 /* ===================================================================
  * The interface font a reader chose (LAI-1125) — `theme/font.ts` sets
  * `data-font`; the default, Plus Jakarta Sans, carries none, as dark does.

@@ -13,6 +13,13 @@ export interface PulseTile {
   readonly label: string;
   readonly value: string;
   readonly sub: string;
+  /**
+   * Where the figure leads (LAI-1210), and that place in words. Blocked and
+   * Overdue have none: Work cannot filter on either, and a link to an
+   * unfiltered list would claim to show them.
+   */
+  readonly to?: string;
+  readonly destination?: string;
 }
 
 export function pulseTiles(overview: OrgOverview): readonly PulseTile[] {
@@ -26,18 +33,24 @@ export function pulseTiles(overview: OrgOverview): readonly PulseTile[] {
         people.seen_this_week === 0
           ? 'none seen this week'
           : `${String(people.seen_this_week)} seen this week`,
+      to: '/insights?tab=capacity',
+      destination: 'Capacity',
     },
     {
       id: 'open',
       label: 'Open tasks',
       value: String(tasks.open),
       sub: 'not done or cancelled',
+      to: '/organisation?tab=work',
+      destination: 'Work',
     },
     {
       id: 'review',
       label: 'In review',
       value: String(tasks.in_review),
       sub: 'waiting on a person',
+      to: '/organisation?tab=work&status=review',
+      destination: 'Work, in review',
     },
     { id: 'blocked', label: 'Blocked', value: String(tasks.blocked), sub: 'waiting on other work' },
     { id: 'overdue', label: 'Overdue', value: String(tasks.overdue), sub: 'past their due date' },

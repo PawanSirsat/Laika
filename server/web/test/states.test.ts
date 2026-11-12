@@ -173,7 +173,10 @@ void describe('accessibility affordances', () => {
   });
 
   void test('skeleton animation respects prefers-reduced-motion', () => {
-    assert.ok(css.includes('prefers-reduced-motion'));
+    // Through the global rule (LAI-1208): the pulse runs on --duration-shimmer,
+    // which styles/motion.css sets to 0ms under reduced motion
+    // (motion-tokens.test.ts asserts that half).
+    assert.match(css, /\.skeleton\s*\{[^}]*animation:[^;]*var\(--duration-shimmer\)/);
   });
 });
 

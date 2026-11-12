@@ -45,6 +45,7 @@ import {
 import { useGates } from '../../../api/permissions.ts';
 import '../profile/profile.css';
 import './usage.css';
+import { prefersReducedMotion } from '../../../theme/motion.ts';
 
 export interface UsageScreenProps {
   readonly me: MeProfile | undefined;
@@ -664,7 +665,7 @@ function openSection(section: FigureSection): void {
   const target = document.querySelector<HTMLElement>(`.usage [data-section="${section}"]`);
   if (target === null) return;
   if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
-  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const still = prefersReducedMotion();
   target.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
   target.focus({ preventScroll: true });
 }

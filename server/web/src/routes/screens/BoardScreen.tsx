@@ -498,7 +498,9 @@ export function BoardScreen({
   }, []);
   const boardView = view === 'kanban';
   // The drawer is the space's now (LAI-1190); the URL still says it is open.
-  const drawerOpen = params.get('task') !== null;
+  /** The task the drawer shows, from the URL: lists and cards mark it selected (LAI-1206). */
+  const openTaskId = params.get('task') ?? undefined;
+  const drawerOpen = openTaskId !== undefined;
   useLayoutEffect(() => {
     presenter.current = (change, apply) => {
       if (change.origin === 'refresh' && change.changed !== undefined) {
@@ -1702,6 +1704,7 @@ export function BoardScreen({
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
+              selectedId={openTaskId}
               statuses={statuses.all}
               sprints={sprints}
               theme={theme}
@@ -1826,6 +1829,7 @@ export function BoardScreen({
                   }
                 : {})}
               sprintLabels={sprintLabels}
+              selectedId={openTaskId}
             />
           )}
 

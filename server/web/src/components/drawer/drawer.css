@@ -74,7 +74,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: drawer-slidein 0.2s ease;
+  animation: drawer-slidein var(--duration-slow) var(--ease-drawer);
 }
 
 .drawer:focus {
@@ -122,12 +122,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .drawer {
-    animation: none;
-  }
-}
-
 /* The handle is the phone sheet's only (LAI-1122). */
 .drawer-handle {
   display: none;
@@ -148,7 +142,7 @@
     max-height: 94dvh;
     border-radius: var(--radius-card) var(--radius-card) 0 0;
     border-bottom: none;
-    animation: drawer-sheet 0.22s ease;
+    animation: drawer-sheet var(--duration-slow) var(--ease-drawer);
   }
 
   .drawer-handle {

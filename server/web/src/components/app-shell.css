@@ -61,7 +61,7 @@
   border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   font-weight: var(--weight-semibold);
-  transition: top 120ms ease;
+  /* No transition: it is reached by Tab, and `top` is a layout property (LAI-1208). */
 }
 
 .skip-link:focus-visible {
@@ -195,12 +195,6 @@
 @media (max-width: 900px) {
   .shell-navtoggle {
     display: block;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skip-link {
-    transition: none;
   }
 }
 

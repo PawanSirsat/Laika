@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { ScrollRegion } from './ScrollRegion.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import {
@@ -140,7 +141,7 @@ export function ModelPricesSection() {
         </p>
       ) : (
         <>
-          <div className="org-prices-scroll">
+          <ScrollRegion label="Model prices table" className="org-prices-scroll">
             <table className="org-prices-table">
               <thead>
                 <tr>
@@ -270,7 +271,7 @@ export function ModelPricesSection() {
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
           {load.prices.can_set && editing === undefined && (
             <form
               className="org-price-new"

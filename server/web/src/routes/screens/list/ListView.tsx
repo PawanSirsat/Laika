@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { EmptyState } from '../../../components/EmptyState.tsx';
+import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { sprintGlyphLabel } from '../../../components/chip/chip-model.ts';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -37,7 +39,12 @@ export interface ListViewProps {
   readonly showAgent?: boolean | undefined;
   readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
-  readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
+  readonly sprintLabels: ReadonlyMap<
+    string,
+    { readonly label: string; readonly active?: boolean | undefined }
+  >;
+  /** The task open in the drawer: its row wears the open state (LAI-1206). */
+  readonly selectedId?: string | undefined;
   /** The project's statuses, so STATUS says what the board says (LAI-490, LAI-739). */
   readonly statuses: readonly ProjectStatus[];
   readonly sprints: readonly Sprint[];
@@ -114,6 +121,7 @@ export function ListView({
   byId,
   members,
   sprintLabels,
+  selectedId,
   statuses,
   sprints,
   theme,
@@ -231,15 +239,23 @@ export function ListView({
     return (
       <div className="list-pane">
         <div className="list-scroll list-scroll-empty">
-          <EmptyState
-            headline={filtered ? 'Nothing here for this filter' : 'No tasks in this project yet'}
-            {...(filtered
-              ? {
-                  body: 'Widen the range or switch the filter.',
-                  action: { label: 'Clear filters', onClick: onClearFilters },
-                }
-              : {})}
-          />
+          {/* LAI-1207: the kit's two variants. Filtered keeps its wording and
+              gains the reason; first use points at the Create row beneath it,
+              which is the action, so it carries no button of its own. */}
+          {filtered ? (
+            <EmptyPanel
+              variant="filtered"
+              title="Nothing here for this filter"
+              why="Widen the range or switch the filter."
+              onClearFilters={onClearFilters}
+            />
+          ) : (
+            <EmptyPanel
+              variant="first-use"
+              title="No tasks in this project yet"
+              why="Add the first one below, and it appears here and on the board."
+            />
+          )}
           {createRow}
         </div>
       </div>
@@ -338,10 +354,12 @@ export function ListView({
                       'list-row',
                       row.muted ? 'list-row-muted' : '',
                       isSelected ? 'list-row-selected' : '',
+                      row.id === selectedId ? 'list-row-open' : '',
                     ]
                       .filter((c) => c !== '')
                       .join(' ')}
                     aria-selected={mayEdit ? isSelected : undefined}
+                    aria-current={row.id === selectedId ? 'true' : undefined}
                     onClick={() => {
                       onOpen(row.id);
                     }}
@@ -509,7 +527,15 @@ export function ListView({
                       </td>
                     )}
 
-                    <td className="list-spr">{row.sprintTag}</td>
+                    {/* The card's sprint pill (LAI-1206), so the two cannot drift. */}
+                    <td className="list-spr">
+                      {row.sprintTag !== '' && (
+                        <SprintCell
+                          label={row.sprintTag}
+                          active={sprintActive(byId.get(row.id)?.sprint_id ?? null, sprintLabels)}
+                        />
+                      )}
+                    </td>
 
                     {/* A <time> with the whole moment on hover (LAI-486): the
                       cell says "27 Sep, 14:05", the tooltip says which year
@@ -667,5 +693,27 @@ export function ListView({
         />
       )}
     </div>
+  );
+}
+
+function sprintActive(
+  sprintId: string | null,
+  labels: ReadonlyMap<string, { readonly active?: boolean | undefined }>,
+): boolean {
+  return sprintId === null ? false : labels.get(sprintId)?.active === true;
+}
+
+/** The sprint as the card draws it: the round pill with the iteration mark. */
+function SprintCell({ label, active }: { readonly label: string; readonly active: boolean }) {
+  return (
+    <Chip
+      variant="sprint"
+      tone={active ? 'accent' : 'neutral'}
+      glyphLabel={sprintGlyphLabel(active)}
+      title={`${sprintGlyphLabel(active)} ${label}`}
+      className="list-sprint"
+    >
+      {label}
+    </Chip>
   );
 }

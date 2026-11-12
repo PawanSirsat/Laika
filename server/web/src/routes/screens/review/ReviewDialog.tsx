@@ -7,6 +7,8 @@ import {
   type ReviewQueueItem,
 } from '../../../api/review.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { typingIn } from '../../../components/typing-in.ts';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
@@ -182,15 +184,17 @@ export function ReviewDialog({
               </p>
             )}
           </div>
-          <button
-            ref={closeButton}
-            type="button"
-            className="rd-close"
-            aria-label="Close"
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button
+              ref={closeButton}
+              type="button"
+              className="rd-close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
 
         <div className="rd-body">
@@ -235,14 +239,18 @@ export function ReviewDialog({
 
         <footer className="rd-foot">
           <div className="rd-walk">
-            <button
-              type="button"
-              className="bar-control"
-              disabled={busy || position?.prev == null}
-              onClick={onPrev}
-            >
-              Prev
-            </button>
+            {/* The dialog's keys, said where they are used (LAI-1209): j, k, a
+                and s worked before, but nothing on screen told anyone. */}
+            <Tooltip content="Previous task" shortcut="K" side="top">
+              <button
+                type="button"
+                className="bar-control"
+                disabled={busy || position?.prev == null}
+                onClick={onPrev}
+              >
+                Prev
+              </button>
+            </Tooltip>
             <span className="rd-position" role="status">
               {position === null
                 ? item === undefined
@@ -250,14 +258,16 @@ export function ReviewDialog({
                   : ''
                 : `${String(position.index + 1)} of ${String(position.total)}`}
             </span>
-            <button
-              type="button"
-              className="bar-control"
-              disabled={busy || (item !== undefined && position?.next == null)}
-              onClick={onNext}
-            >
-              Next
-            </button>
+            <Tooltip content="Next task" shortcut="J" side="top">
+              <button
+                type="button"
+                className="bar-control"
+                disabled={busy || (item !== undefined && position?.next == null)}
+                onClick={onNext}
+              >
+                Next
+              </button>
+            </Tooltip>
           </div>
           <div className="rd-actions">
             {item !== undefined && (
@@ -278,29 +288,33 @@ export function ReviewDialog({
             )}
             {item !== undefined && decidable && (
               <>
-                <button
-                  ref={sendBackButton}
-                  type="button"
-                  className="bar-control"
-                  disabled={busy}
-                  onClick={(event) => {
-                    onSendBack(item, event.currentTarget);
-                  }}
-                >
-                  Send back…
-                </button>
-                <button
-                  ref={acceptButton}
-                  type="button"
-                  className="bar-control bar-control-primary"
-                  disabled={busy}
-                  onClick={() => {
-                    accept(item);
-                  }}
-                >
-                  {deciding && <Spinner size="sm" />}
-                  Accept
-                </button>
+                <Tooltip content="Send back" shortcut="S" side="top">
+                  <button
+                    ref={sendBackButton}
+                    type="button"
+                    className="bar-control"
+                    disabled={busy}
+                    onClick={(event) => {
+                      onSendBack(item, event.currentTarget);
+                    }}
+                  >
+                    Send back…
+                  </button>
+                </Tooltip>
+                <Tooltip content="Accept" shortcut="A" side="top">
+                  <button
+                    ref={acceptButton}
+                    type="button"
+                    className="bar-control bar-control-primary"
+                    disabled={busy}
+                    onClick={() => {
+                      accept(item);
+                    }}
+                  >
+                    {deciding && <Spinner size="sm" />}
+                    Accept
+                  </button>
+                </Tooltip>
               </>
             )}
           </div>

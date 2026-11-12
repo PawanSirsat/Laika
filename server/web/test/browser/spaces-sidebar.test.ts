@@ -662,6 +662,14 @@ void describe('the prototype geometry (LAI-249)', () => {
       const inbox = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
       assert.ok(await inbox.locator('.nav-icon').isVisible(), 'the icon went with the label');
       const opacity = (el: Element) => getComputedStyle(el).opacity;
+      // The collapse is instant now (LAI-1208), so the tip's own short fade can
+      // still be running: wait it out, asserted, before reading.
+      const tipStill = () =>
+        inbox
+          .locator('.sidebar-tip')
+          .evaluate((el) => el.getAnimations().every((a) => a.playState !== 'running'));
+      await until(tipStill);
+      assert.equal(await tipStill(), true, 'the tip never stopped fading');
       assert.equal(await inbox.locator('.sidebar-tip').evaluate(opacity), '0');
       assert.match(await inbox.locator('.sidebar-count').innerText(), /^2/);
       assert.equal(await h.page.locator('.space-row .space-badge').first().innerText(), 'L');
@@ -680,12 +688,14 @@ void describe('the prototype geometry (LAI-249)', () => {
         undefined,
         { timeout: 5000 },
       );
-      // …and on keyboard focus: the toggle, then Tab, is My day.
+      // …and on keyboard focus: the toggle, then Tab, is the first entry —
+      // Search, the command palette's trigger, since LAI-1192 — and its name
+      // shows as a tooltip the same way.
       await h.page.mouse.move(900, 500);
       await toggle.focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.match(focused, /My day/, 'Tab from the toggle does not reach the first entry');
+      assert.match(focused, /^Search/, 'Tab from the toggle does not reach the first entry');
       await h.page.waitForFunction(
         () => {
           const tip = document.activeElement?.querySelector('.sidebar-tip');

@@ -2575,13 +2575,341 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .org-scroll-inner {
-    scroll-behavior: auto;
+/* ---------------------------------------------------------------------------
+   LAI-1210 — the Organisation tabs pass.
+   --------------------------------------------------------------------------- */
+
+/* Overview: a figure with somewhere to go is one link the size of its tile. */
+.org-stat-linked {
+  position: relative;
+  transition: border-color var(--duration-fast) var(--ease-enter);
+}
+
+.org-stat-linked:hover {
+  border-color: var(--border-default);
+}
+
+.org-stat-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stretched over the whole tile, so the label is part of the target too. */
+.org-stat-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-card);
+}
+
+.org-stat-link:focus-visible {
+  outline: none;
+}
+
+.org-stat-link:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.org-stat-go {
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+}
+
+/* Overview's settings: three titled cards, two up on a wide screen. */
+.org-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.org-settings-grid > .org-card {
+  margin: 0;
+  min-width: 0;
+}
+
+.org-settings-wide {
+  grid-column: 1 / -1;
+}
+
+/* The time facts draw nothing until their settings are read, and nothing if
+   the read fails (each says so where it can); an empty titled card is worse
+   than none, so the card waits for a fact. */
+.org-time-card:not(:has(.org-fact)) {
+  display: none;
+}
+
+/* A long explanation reads at a measure, not across a 1300px card. */
+.org-fact-measure {
+  max-width: 68ch;
+}
+
+/* Security: a search over people, and what deserves a look in a panel. */
+.org-security-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.org-security-tools .org-people-search {
+  flex: 1 1 18rem;
+  max-width: 28rem;
+}
+
+.org-tokens-summary {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+/* Activity: one heading per day; the rows keep their own grid. */
+.oh-day {
+  margin: 0;
+  padding: 0;
+}
+
+.oh-day + .oh-day {
+  margin-top: var(--space-4);
+}
+
+.oh-day-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: var(--space-2) 0;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.oh-day-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.oh-clear {
+  align-self: end;
+}
+
+/* Roles: an area heading per group of rows, and a sentence per role. */
+.perm-group-head {
+  padding-top: var(--space-4);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-secondary);
+}
+
+.perm-group-size {
+  margin-left: 0.5rem;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-normal);
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.perm-table th[data-explained],
+.perm-table td[data-explained] {
+  background: var(--accent-bg);
+}
+
+.perm-explain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+.perm-explain-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.perm-explain-text {
+  flex-basis: 100%;
+  max-width: 75ch;
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.perm-find-tables {
+  margin: 0;
+}
+
+/* Integrations: each card says its state in its head. */
+.org-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.org-status-badge::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.org-status-badge[data-tone='on'] {
+  color: var(--text-primary);
+}
+
+.org-status-badge[data-tone='on']::before {
+  background: var(--chip-green);
+}
+
+.org-steps {
+  margin: 0 0 var(--space-3);
+  padding-left: 1.25rem;
+  max-width: 75ch;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-steps li + li {
+  margin-top: var(--space-1);
+}
+
+/* A grid item's minimum is its content's; a long payload URL made the card
+   wider than a phone and clipped its prose (critique, LAI-1210). */
+.org-body > *,
+.org-settings-grid > * {
+  min-width: 0;
+}
+
+.org-github-code {
+  overflow-wrap: anywhere;
+}
+
+/* People: Pending is not a role, so it stands apart from the role filters. */
+.org-segment-pending {
+  margin-left: 0.375rem;
+  position: relative;
+}
+
+.org-segment-pending::before {
+  content: '';
+  position: absolute;
+  left: -0.25rem;
+  top: 0.375rem;
+  bottom: 0.375rem;
+  width: 1px;
+  background: var(--border-default);
+}
+
+.org-pending-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+  padding: 0.625rem var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--accent-bg);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-pending-notice-open {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.org-pending-notice-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.org-row-menu {
+  display: inline-flex;
+}
+
+/* On a phone each person is a card, not a clipped table (V9, LAI-1210):
+   name and menu on the first line, role and last active under it. Spaces,
+   tools and last sign-in are on their profile, one tap away. */
+@media (max-width: 560px) {
+  .org-people-table {
+    min-width: 0;
   }
 
-  .org-mode,
-  .perm-group-toggle {
-    transition: none;
+  .org-people-header {
+    display: none;
+  }
+
+  .org-people-row.org-person {
+    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      'tick person actions'
+      '. role seen';
+    row-gap: 0.375rem;
+  }
+
+  .org-person > .org-people-tick {
+    grid-area: tick;
+  }
+
+  .org-person > .org-people-person {
+    grid-area: person;
+  }
+
+  .org-person > .org-people-actions {
+    grid-area: actions;
+  }
+
+  .org-person > .org-people-role {
+    grid-area: role;
+  }
+
+  .org-person > [data-last-active] {
+    grid-area: seen;
+    justify-self: end;
+  }
+
+  .org-person > [data-spaces],
+  .org-person > [data-agents],
+  .org-person > [data-last-sign-in] {
+    display: none;
+  }
+
+  .org-pending-notice {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
   }
 }

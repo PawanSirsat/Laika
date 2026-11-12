@@ -16,7 +16,24 @@ export function initials(name: string): string {
     .trim()
     .split(/\s+/)
     .filter((part) => part !== '');
-  const first = parts[0]?.[0] ?? '?';
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
+  const first = firstGrapheme(parts[0]) ?? '?';
+  const last = parts.length > 1 ? (firstGrapheme(parts[parts.length - 1]) ?? '') : '';
   return (first + last).toUpperCase();
+}
+
+/**
+ * The first user-perceived character (LAI-1206). `word[0]` is a UTF-16 code
+ * unit, so a name that begins with an emoji or an astral-plane letter
+ * rendered half a surrogate pair — the `�` disc. `Intl.Segmenter` keeps a
+ * whole grapheme (a flag, a skin-toned emoji, a letter with its combining
+ * mark); a runtime without it falls back to code points, which is still
+ * never half a character.
+ */
+function firstGrapheme(word: string | undefined): string | undefined {
+  if (word === undefined || word === '') return undefined;
+  if (typeof Intl.Segmenter === 'function') {
+    const [first] = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(word);
+    return first?.segment;
+  }
+  return Array.from(word)[0];
 }

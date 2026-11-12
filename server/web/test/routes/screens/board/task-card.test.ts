@@ -22,11 +22,16 @@ import { code } from '../../../helpers/code.ts';
 
 let card = '';
 let css = '';
+let chipCss = '';
 
 before(async () => {
   const dir = new URL('../../../../src/routes/screens/board/', import.meta.url);
   card = code(await readFile(fileURLToPath(new URL('TaskCard.tsx', dir)), 'utf8'));
   css = await readFile(fileURLToPath(new URL('board.css', dir)), 'utf8');
+  chipCss = await readFile(
+    fileURLToPath(new URL('../../../../src/components/chip/chip.css', import.meta.url)),
+    'utf8',
+  );
 });
 
 void describe('tags come from the API', () => {
@@ -73,10 +78,12 @@ void describe('TAG_COLORS (LAI-606, reversing D-027)', () => {
 
   void test('every hue the map hands out has a CSS rule', () => {
     // A mapping to a class with no rule renders an unstyled chip — the
-    // card-tag-purple gap this test exists to keep closed.
-    for (const hue of CHIP_COLORS) {
-      assert.match(css, new RegExp(`\\.card-tag-${hue}\\b`), `no .card-tag-${hue} rule`);
+    // card-tag-purple gap this test exists to keep closed. Tags are the shared
+    // `Chip` since LAI-1206, so the rule is its tone; neutral is the base.
+    for (const hue of CHIP_COLORS.filter((h) => h !== 'neutral')) {
+      assert.match(chipCss, new RegExp(`\\.chip-tone-${hue}\\b`), `no .chip-tone-${hue} rule`);
     }
+    assert.match(card, /tone=\{tagColor\(tag\)\}/, 'the card does not hand the hue to the chip');
   });
 });
 

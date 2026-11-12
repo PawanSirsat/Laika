@@ -574,7 +574,7 @@
   height: 0.5625rem;
   background-color: var(--text-secondary);
   transform: scale(0);
-  transition: transform 90ms ease;
+  transition: transform var(--duration-instant) var(--ease-enter);
   -webkit-mask: var(--tick) center / contain no-repeat;
   mask: var(--tick) center / contain no-repeat;
 }
@@ -585,12 +585,6 @@
 
 .auth-signin .checkbox-input:checked {
   border-color: var(--text-secondary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .auth-signin .checkbox-input::after {
-    transition: none;
-  }
 }
 
 .auth-signin .checkbox-label {

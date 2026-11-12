@@ -1,0 +1,89 @@
+/*
+ * Motion tokens (LAI-1208): every duration and curve the app uses, and the one
+ * rule that answers `prefers-reduced-motion`.
+ *
+ * Not in `theme.css`: that file is colour, type and shape, and motion does not
+ * change with the theme. `test/motion-tokens.test.ts` holds the line — no
+ * component stylesheet may write a time literal, a `cubic-bezier()` or
+ * `ease-in` of its own, and no stylesheet but this one asks the reduced-motion
+ * question (one named exemption, below).
+ *
+ * The names and values of `--duration-fast/base/slow`, `--ease-standard` and
+ * `--ease-emphasised` match the motion block PR #291 (LAI-1132) proposes for
+ * `theme.css`, so the two land as one set: whichever merges second deletes
+ * its copy, and the guard fails until one does.
+ *
+ * What to reach for:
+ *
+ * | token               | for                                             |
+ * | ------------------- | ----------------------------------------------- |
+ * | `--duration-instant`| press feedback; a tooltip once one is showing   |
+ * | `--duration-fast`   | hover and colour; chevrons; small fades; menus  |
+ * | `--duration-base`   | popovers, dialogs, toasts                       |
+ * | `--duration-slow`   | drawers and sheets — the largest surfaces       |
+ * | `--duration-glide`  | the board's card glide, 200ms by D-071          |
+ * | `--ease-standard`   | something changing in place                     |
+ * | `--ease-enter`      | something arriving (strong ease-out)            |
+ * | `--ease-exit`       | something leaving — keep it shorter than enter  |
+ * | `--ease-drawer`     | a large surface sliding in (iOS-like)           |
+ * | `--ease-emphasised` | the spring-like one: a small overshoot          |
+ *
+ * Keyboard-driven and high-frequency surfaces do not animate at all, and only
+ * `transform` and `opacity` move — a width, a height or a `top` relays the
+ * page out every frame.
+ */
+:root {
+  --duration-instant: 90ms;
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
+  --duration-glide: 200ms;
+
+  /* Ambient: loops that say "live" or "loading", and the arrival glow's hold. */
+  --duration-spinner: 700ms;
+  --duration-blink: 1.1s;
+  --duration-shimmer: 1.6s;
+  --duration-pulse: 2s;
+  --duration-flash: 3.6s;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-emphasised: cubic-bezier(0.3, 0, 0, 1.2);
+}
+
+/*
+ * **Reduced motion, in one place.** Every duration that moves something goes
+ * to zero, so an entrance lands at once, a transition jumps to its end and a
+ * loop stands still on its resting frame — the state change is still there,
+ * only the travel is gone. Colour fades ride `--transition` in `theme.css`
+ * and stay: a hover that changes colour is not motion.
+ *
+ * `--duration-flash` stays. The arrival glow is the state ("someone else just
+ * changed this"), and `board-motion.css` holds it with `steps(1, end)` rather
+ * than fading it — the one local reduced-motion block the guard allows.
+ *
+ * The universal rule is the backstop for anything not on a token: a third
+ * party's loop runs once, and no scroll is smoothed.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+    --duration-glide: 0ms;
+    --duration-spinner: 0ms;
+    --duration-blink: 0ms;
+    --duration-shimmer: 0ms;
+    --duration-pulse: 0ms;
+  }
+
+  *,
+  ::before,
+  ::after {
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

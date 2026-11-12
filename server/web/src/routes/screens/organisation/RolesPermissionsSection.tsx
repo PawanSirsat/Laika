@@ -9,6 +9,9 @@ import { ScrollRegion } from './ScrollRegion.tsx';
 import {
   actionName,
   cellFor,
+  explainRole,
+  findRows,
+  groupRows,
   heldNames,
   mayEditGrants,
   projectLabel,
@@ -128,13 +131,24 @@ function InAppLink({
   );
 }
 
-/** One role × action table. Rows, columns and every word in them come from the response. */
+/** `An admin`, `A member`, `A space admin` — the start of a sentence. */
+const article = (word: string): string => (/^[aeiou]/i.test(word) ? 'An' : 'A');
+
+/**
+ * One role × action table. Rows, columns and every word in them come from the
+ * response.
+ *
+ * LAI-1210: rows sit under a heading per area, the page's find narrows them,
+ * and *Explain a role* says in one sentence what a column holds — counted
+ * from the cells, never from a rule this client knows.
+ */
 function Matrix({
   id,
   title,
   roles,
   view,
   scope,
+  query,
   action,
   footer,
 }: {
@@ -143,71 +157,136 @@ function Matrix({
   readonly roles: readonly string[];
   readonly view: Permissions;
   readonly scope: 'org' | 'project';
+  readonly query: string;
   readonly action?: ReactNode;
   readonly footer?: ReactNode;
 }) {
+  const [explained, setExplained] = useState<string | undefined>(undefined);
+  const roleName = (role: string): string => (scope === 'project' ? projectRoleLabel(role) : role);
+  const all = rowsFor(view, scope);
+  const shown = findRows(all, query);
+  const explanation = explained === undefined ? undefined : explainRole(all, explained);
+  const where = scope === 'project' ? 'space' : 'organisation';
   return (
-    <section className="org-card perm-card" aria-labelledby={id}>
+    <section className="org-card perm-card" aria-labelledby={id} data-matrix={scope}>
       <header className="org-card-head">
         <h2 id={id}>{title}</h2>
         {action}
       </header>
-      <ScrollRegion label={`${title} table`}>
-        <table className="perm-table" data-scope={scope}>
-          <thead>
-            <tr>
-              <th scope="col">Action</th>
-              {roles.map((role) => (
-                <th key={role} scope="col" className="perm-role">
-                  {scope === 'project' ? projectRoleLabel(role) : role}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rowsFor(view, scope).map((row) => (
-              <tr key={row.action} data-action={row.action}>
-                <th scope="row" className="perm-action">
-                  <span className="perm-action-name">{actionName(row)}</span>
-                  {(row.session_only || row.read_only) && (
-                    <span className="perm-marks">
-                      {row.session_only && (
-                        <span
-                          className="org-chip perm-mark"
-                          data-mark="session-only"
-                          title="No token may do this, only a signed-in session"
-                        >
-                          Session only
-                        </span>
-                      )}
-                      {row.read_only && (
-                        <span
-                          className="org-chip perm-mark"
-                          data-mark="read-only"
-                          title="A read-only token may do this too"
-                        >
-                          Read
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </th>
-                {roles.map((role) => {
-                  const cell = cellFor(row, role);
-                  return (
-                    <td key={role} className="perm-cell" data-role={role} data-holding={cell.kind}>
-                      <span className="perm-cell-role" aria-hidden="true">
-                        {scope === 'project' ? projectRoleLabel(role) : role}
-                      </span>
-                      <span className="perm-cell-value">{cell.text}</span>
-                    </td>
-                  );
-                })}
-              </tr>
+      {roles.length > 0 && (
+        <div className="perm-explain">
+          <span className="perm-explain-label" id={`${id}-explain`}>
+            Explain a role
+          </span>
+          <div className="org-segmented" role="group" aria-labelledby={`${id}-explain`}>
+            {roles.map((role) => (
+              <button
+                key={role}
+                type="button"
+                className="org-segment"
+                data-explain-role={role}
+                aria-pressed={explained === role}
+                onClick={() => {
+                  setExplained((now) => (now === role ? undefined : role));
+                }}
+              >
+                {roleName(role)}
+              </button>
             ))}
-          </tbody>
-        </table>
-      </ScrollRegion>
+          </div>
+          {explained !== undefined && explanation !== undefined && (
+            <p className="perm-explain-text" role="status" data-explain>
+              {`${article(roleName(explained))} ${roleName(explained)} can take ${String(explanation.yes)} of ${String(explanation.total)} ${where} actions`}
+              {explanation.conditional.length > 0 &&
+                `, and ${String(explanation.conditional.length)} more with a condition: ${explanation.conditional.join('; ')}`}
+              {explanation.not.length === 0
+                ? '. There is nothing here it may not do.'
+                : `. Not: ${explanation.not.join(', ')}.`}
+            </p>
+          )}
+        </div>
+      )}
+      {shown.length === 0 ? (
+        <p className="org-note perm-none" data-matrix-none>
+          No {where} action matches “{query.trim()}”.
+        </p>
+      ) : (
+        <ScrollRegion label={`${title} table`}>
+          <table className="perm-table" data-scope={scope}>
+            <thead>
+              <tr>
+                <th scope="col">Action</th>
+                {roles.map((role) => (
+                  <th
+                    key={role}
+                    scope="col"
+                    className="perm-role"
+                    data-explained={explained === role || undefined}
+                  >
+                    {roleName(role)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            {groupRows(shown).map((group) => (
+              <tbody key={group.key} data-group={group.key}>
+                <tr className="perm-group-row">
+                  <th scope="rowgroup" colSpan={roles.length + 1} className="perm-group-head">
+                    {group.name}
+                    <span className="perm-group-size">{String(group.rows.length)}</span>
+                  </th>
+                </tr>
+                {group.rows.map((row) => (
+                  <tr key={row.action} data-action={row.action}>
+                    <th scope="row" className="perm-action">
+                      <span className="perm-action-name">{actionName(row)}</span>
+                      {(row.session_only || row.read_only) && (
+                        <span className="perm-marks">
+                          {row.session_only && (
+                            <span
+                              className="org-chip perm-mark"
+                              data-mark="session-only"
+                              title="No token may do this, only a signed-in session"
+                            >
+                              Session only
+                            </span>
+                          )}
+                          {row.read_only && (
+                            <span
+                              className="org-chip perm-mark"
+                              data-mark="read-only"
+                              title="A read-only token may do this too"
+                            >
+                              Read
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </th>
+                    {roles.map((role) => {
+                      const cell = cellFor(row, role);
+                      return (
+                        <td
+                          key={role}
+                          className="perm-cell"
+                          data-role={role}
+                          data-holding={cell.kind}
+                          data-explained={explained === role || undefined}
+                        >
+                          <span className="perm-cell-role" aria-hidden="true">
+                            {roleName(role)}
+                          </span>
+                          <span className="perm-cell-value">{cell.text}</span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            ))}
+          </table>
+        </ScrollRegion>
+      )}
       {footer}
     </section>
   );
@@ -232,6 +311,8 @@ export function RolesPermissionsSection({
   const [state, setState] = useState<PermissionsState>({ status: 'loading' });
   /** The find box over what the reader holds. */
   const [query, setQuery] = useState('');
+  /** The find over the two role tables. */
+  const [tableQuery, setTableQuery] = useState('');
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => {
     setAttempt((n) => n + 1);
@@ -430,12 +511,33 @@ export function RolesPermissionsSection({
 
       <GrantsCard orgRoles={view.org_roles} editable={mayEditGrants(me.actions)} onSaved={reload} />
 
+      {/* One find over both tables (LAI-1210); the box above finds what you hold. */}
+      <div className="perm-find perm-find-tables">
+        <label className="org-people-search">
+          <span className="org-people-search-glyph" aria-hidden="true">
+            ⌕
+          </span>
+          <input
+            type="search"
+            className="org-people-search-input"
+            data-matrix-find
+            placeholder="Find an action in the tables, e.g. token"
+            aria-label="Find an action in the role tables"
+            value={tableQuery}
+            onChange={(event) => {
+              setTableQuery(event.target.value);
+            }}
+          />
+        </label>
+      </div>
+
       <Matrix
         id="perm-org"
         title="Organisation roles"
         roles={view.org_roles}
         view={view}
         scope="org"
+        query={tableQuery}
         action={
           canChangeRoles ? (
             <InAppLink to="/organisation?tab=people" onNavigate={onNavigate}>
@@ -451,6 +553,7 @@ export function RolesPermissionsSection({
         roles={view.project_roles}
         view={view}
         scope="project"
+        query={tableQuery}
         footer={
           memberLinks.length > 0 && (
             <p className="org-note perm-members">

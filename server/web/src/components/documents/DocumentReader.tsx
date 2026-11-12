@@ -9,6 +9,7 @@ import {
   type Anchor,
   type Annotation,
 } from './annotations.ts';
+import { prefersReducedMotion } from '../../theme/motion.ts';
 
 /**
  * The reading surface of the deliverable trial (LAI-1131): a document with
@@ -156,7 +157,7 @@ export function DocumentReader({
   const go = useCallback((id: string) => {
     const target = document.getElementById(id);
     if (target === null) return;
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce = prefersReducedMotion();
     target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     target.focus({ preventScroll: true });
     history.replaceState(history.state, '', `${location.pathname}${location.search}#${id}`);

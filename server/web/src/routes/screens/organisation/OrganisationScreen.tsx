@@ -8,8 +8,8 @@ import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
 import { mayActOnSetupOf, OWNER_SETUP_NOTE, revokeRefusal } from '../../../api/owner-setup.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { invitableRoles } from '../invite-roles.ts';
-import { revokeInvite } from '../../../api/invites.ts';
+import { invitableRoles, orgRoleLabel } from '../invite-roles.ts';
+import { revokeInvite, type OrgRole } from '../../../api/invites.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import {
   agentRevokeImpact,
@@ -23,6 +23,7 @@ import { TokenRow } from '../../../components/TokenRow.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
 import { updateUser } from '../../../api/users.ts';
 import { initials } from '../../../theme/initials.ts';
+import { RISK_LABELS, riskSummary, searchPeople, tokenRisks } from './security-derive.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
@@ -40,6 +41,7 @@ import { InviteDialog } from './InviteDialog.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
 import { OrgPulse } from './OrgPulse.tsx';
+import { OrgStat } from './OrgStat.tsx';
 import { WorkTab, type WorkTaskLink } from './WorkTab.tsx';
 import { BoardBuildLine } from './BoardBuildLine.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
@@ -352,6 +354,9 @@ export function OrganisationScreen({
 
   const now = Date.now();
   const active = state.people.filter((p) => p.is_active).length;
+  /** Security's search (LAI-1210), in the address as `q`. */
+  const securityQuery = tab === 'security' ? (params.get('q') ?? '') : '';
+  const securityPeople = searchPeople(state.people, securityQuery);
 
   const people = `${String(state.people.length)}${state.truncated ? '+' : ''} ${
     state.people.length === 1 && !state.truncated ? 'person' : 'people'
@@ -419,132 +424,189 @@ export function OrganisationScreen({
               </div>
             )}
             {/* This week's pulse (LAI-989): `GET /org/overview`'s figures. */}
-            <OrgPulse />
+            <OrgPulse onNavigate={onNavigate} />
 
-            {/* The figures (LAI-796) — each a count the page already holds. */}
+            {/* The figures (LAI-796) — each a count the page already holds, and
+                each leads where its next step is (LAI-1210). */}
             <dl className="org-stats">
-              <div className="org-stat">
-                <dt>Members</dt>
-                <dd>
-                  <span className="org-stat-value">
-                    {String(active)}
-                    {state.truncated ? '+' : ''}
-                  </span>
-                  <span className="org-stat-sub">
-                    {admins} {admins === 1 ? 'admin' : 'admins'}
-                    {active === state.people.length
-                      ? ''
-                      : ` · ${String(state.people.length - active)} deactivated`}
-                  </span>
-                </dd>
-              </div>
-              <div className="org-stat">
-                <dt>Spaces</dt>
-                <dd>
-                  <span className="org-stat-value">
-                    {projects.status === 'ready'
-                      ? `${String(projects.projects.length)}${projects.nextCursor === null ? '' : '+'}`
-                      : '—'}
-                  </span>
-                  <span className="org-stat-sub">
-                    {projects.status === 'ready'
-                      ? `${String(projects.projects.filter((p) => p.archived_at === null).length)} active`
-                      : 'reading'}
-                  </span>
-                </dd>
-              </div>
+              <OrgStat
+                label="Members"
+                value={`${String(active)}${state.truncated ? '+' : ''}`}
+                sub={`${String(admins)} ${admins === 1 ? 'admin' : 'admins'}${
+                  active === state.people.length
+                    ? ''
+                    : ` · ${String(state.people.length - active)} deactivated`
+                }`}
+                to="/organisation?tab=people"
+                destination="People"
+                onNavigate={onNavigate}
+                data={{ 'data-stat': 'members' }}
+              />
+              <OrgStat
+                label="Spaces"
+                value={
+                  projects.status === 'ready'
+                    ? `${String(projects.projects.length)}${projects.nextCursor === null ? '' : '+'}`
+                    : '—'
+                }
+                sub={
+                  projects.status === 'ready'
+                    ? `${String(projects.projects.filter((p) => p.archived_at === null).length)} active`
+                    : 'reading'
+                }
+                to="/projects"
+                destination="Spaces"
+                onNavigate={onNavigate}
+                data={{ 'data-stat': 'spaces' }}
+              />
               {canInvite && (
-                <div className="org-stat">
-                  <dt>Pending invites</dt>
-                  <dd>
-                    <span className="org-stat-value">{String(state.invites.length)}</span>
-                    <span className="org-stat-sub">waiting to be accepted</span>
-                  </dd>
-                </div>
+                <OrgStat
+                  label="Pending invites"
+                  value={String(state.invites.length)}
+                  sub={state.invites.length === 0 ? 'nobody is waiting' : 'waiting to be accepted'}
+                  to={
+                    state.invites.length === 0 ? undefined : '/organisation?tab=people&show=pending'
+                  }
+                  destination="pending invites"
+                  onNavigate={onNavigate}
+                  data={{ 'data-stat': 'invites' }}
+                />
               )}
             </dl>
 
             {org !== undefined && (
-              <section className="org-card" aria-labelledby="org-name">
-                <header className="org-card-head">
-                  <h2 id="org-name">Organisation settings</h2>
-                </header>
+              <div className="org-settings-grid">
+                <section className="org-card" aria-labelledby="org-name">
+                  <header className="org-card-head">
+                    <h2 id="org-name">Organisation settings</h2>
+                  </header>
+                  <dl className="org-facts">
+                    {/* D-104 item 7 (LAI-999, from LAI-987). */}
+                    <OrgNameFact org={org} canEdit={canEditOrg} onSaved={setOrg} />
 
-                <dl className="org-facts">
-                  {/* D-104 item 7 (LAI-999, from LAI-987). */}
-                  <OrgNameFact org={org} canEdit={canEditOrg} onSaved={setOrg} />
-
-                  <div className="org-fact">
-                    <dt>Presence</dt>
-                    <dd>
-                      {org.presence_enabled ? 'recorded' : 'off'}
-                      <span className="org-fact-note">
-                        {org.presence_enabled
-                          ? 'Sessions appear on Capacity and the board.'
-                          : 'Nobody’s sessions are recorded. Capacity says so rather than showing an empty list.'}
-                      </span>
-                    </dd>
-                  </div>
-
-                  {/* D-079 (LAI-751): the organisation's half of local activity
-                      sharing. A switch for an owner or admin, a word for everyone
-                      else — they are who it is about, so they can always read it. */}
-                  <div className="org-fact" data-fact="developer-insights">
-                    <dt id="org-insights-label">Developer insights</dt>
-                    <dd>
-                      {canSetInsights ? (
-                        <Switch
-                          checked={org.developer_insights}
-                          labelledBy="org-insights-label"
-                          describedBy="org-insights-note"
-                          disabled={insightsBusy}
-                          onChange={setInsights}
-                        >
-                          {org.developer_insights ? 'On' : 'Off'}
-                        </Switch>
-                      ) : (
-                        <span>{org.developer_insights ? 'on' : 'off'}</span>
-                      )}
-                      <span className="org-fact-note" id="org-insights-note">
-                        When on, every connected machine’s local activity is collected: daily counts
-                        of prompts to agents, agent sessions, and commits pushed or not yet pushed,
-                        and agents’ token counts. They appear on that person’s profile as activity,
-                        and each person is told so on Developer access and Connect — never prompt
-                        text, file or repository names, branches or commit messages. Off stops it
-                        for everyone at once.{' '}
-                        <a
-                          className="org-fact-link"
-                          href={ACTIVITY_HREF}
-                          onClick={(event) => {
-                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-                              return;
-                            }
-                            event.preventDefault();
-                            onNavigate(ACTIVITY_HREF);
-                          }}
-                        >
-                          What developers see: Developer access · Activity
-                        </a>
-                      </span>
-                      {insightsError !== undefined && (
-                        <span className="org-fact-error" role="alert">
-                          {insightsError}
+                    <div className="org-fact">
+                      <dt>Presence</dt>
+                      <dd>
+                        {org.presence_enabled ? 'recorded' : 'off'}
+                        <span className="org-fact-note">
+                          {org.presence_enabled
+                            ? 'Sessions appear on Capacity and the board.'
+                            : 'Nobody’s sessions are recorded. Capacity says so rather than showing an empty list.'}
                         </span>
-                      )}
-                    </dd>
-                  </div>
+                      </dd>
+                    </div>
 
-                  {/* D-088 (LAI-787): the organisation's half of time — off, typed
-                      entries only, or drafts too. Controls for an owner or admin, a
-                      word for everyone else, as Developer insights above. */}
-                  <TimeModeFact canManage={canSetTime} />
+                    {/* Where everyone's tokens are (LAI-1210), for a reader who
+                        may list them. A place, not a count: there is no
+                        aggregate to count without reading every person's. */}
+                    {canListTokens && (
+                      <div className="org-fact" data-fact="tokens">
+                        <dt>Tokens</dt>
+                        <dd>
+                          <a
+                            className="org-fact-link"
+                            href="/organisation?tab=security"
+                            data-security-link
+                            onClick={(event) => {
+                              if (
+                                event.metaKey ||
+                                event.ctrlKey ||
+                                event.shiftKey ||
+                                event.altKey
+                              ) {
+                                return;
+                              }
+                              event.preventDefault();
+                              onNavigate('/organisation?tab=security');
+                            }}
+                          >
+                            Review everyone’s tokens on Security
+                          </a>
+                          <span className="org-fact-note">
+                            Each person’s, with the ones unused or about to expire marked.
+                          </span>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </section>
 
-                  {/* D-101 (LAI-956): the organisation's breaks, drawn on every
-                      person's My day. Editable by whoever sets Time; read by
-                      everyone else, and absent when there are none. */}
-                  <BreakScheduleFact canManage={canSetTime} />
-                </dl>
-              </section>
+                {/* D-079 (LAI-751): the organisation's half of local activity
+                    sharing. A switch for an owner or admin, a word for everyone
+                    else — they are who it is about, so they can always read it. */}
+                <section className="org-card" aria-labelledby="org-insights-head">
+                  <header className="org-card-head">
+                    <h2 id="org-insights-head">Developer insights</h2>
+                  </header>
+                  <dl className="org-facts">
+                    <div className="org-fact" data-fact="developer-insights">
+                      <dt id="org-insights-label">Developer insights</dt>
+                      <dd>
+                        {canSetInsights ? (
+                          <Switch
+                            checked={org.developer_insights}
+                            labelledBy="org-insights-label"
+                            describedBy="org-insights-note"
+                            disabled={insightsBusy}
+                            onChange={setInsights}
+                          >
+                            {org.developer_insights ? 'On' : 'Off'}
+                          </Switch>
+                        ) : (
+                          <span>{org.developer_insights ? 'on' : 'off'}</span>
+                        )}
+                        <span className="org-fact-note org-fact-measure" id="org-insights-note">
+                          When on, every connected machine’s local activity is collected: daily
+                          counts of prompts to agents, agent sessions, and commits pushed or not yet
+                          pushed, and agents’ token counts. They appear on that person’s profile as
+                          activity, and each person is told so on Developer access and Connect —
+                          never prompt text, file or repository names, branches or commit messages.
+                          Off stops it for everyone at once.{' '}
+                          <a
+                            className="org-fact-link"
+                            href={ACTIVITY_HREF}
+                            onClick={(event) => {
+                              if (
+                                event.metaKey ||
+                                event.ctrlKey ||
+                                event.shiftKey ||
+                                event.altKey
+                              ) {
+                                return;
+                              }
+                              event.preventDefault();
+                              onNavigate(ACTIVITY_HREF);
+                            }}
+                          >
+                            What developers see: Developer access · Activity
+                          </a>
+                        </span>
+                        {insightsError !== undefined && (
+                          <span className="org-fact-error" role="alert">
+                            {insightsError}
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                {/* D-088 (LAI-787) and D-101 (LAI-956): the organisation's half
+                    of time — the mode, and the breaks drawn on every My day.
+                    Controls for whoever sets Time; words for everyone else. */}
+                <section
+                  className="org-card org-settings-wide org-time-card"
+                  aria-labelledby="org-time-head"
+                >
+                  <header className="org-card-head">
+                    <h2 id="org-time-head">Time</h2>
+                  </header>
+                  <dl className="org-facts">
+                    <TimeModeFact canManage={canSetTime} />
+                    <BreakScheduleFact canManage={canSetTime} />
+                  </dl>
+                </section>
+              </div>
             )}
 
             <OrgSpaces projects={projects} onNavigate={onNavigate} />
@@ -591,6 +653,8 @@ export function OrganisationScreen({
                 setInvite({ text: text ?? '' });
               }}
               onReload={reload}
+              params={params}
+              setParams={setParams}
             />
             {canChangeRoles && (org?.extra_owners ?? []).length > 0 && (
               <ExtraOwners
@@ -671,10 +735,16 @@ export function OrganisationScreen({
             {/* AI provider: absent for a reader without `org.settings.edit`,
                 as it was on the single page — so is its card. */}
             {org?.ai !== undefined && (
-              <section className="org-card" aria-labelledby="org-ai">
+              <section className="org-card" aria-labelledby="org-ai" data-section="ai">
                 <header className="org-card-head">
                   <h2 id="org-ai">AI provider</h2>
+                  <span className="org-status-badge" data-tone={org.ai.configured ? 'on' : 'off'}>
+                    {org.ai.configured ? 'configured' : 'not set up'}
+                  </span>
                 </header>
+                <p className="org-note">
+                  The model Meeting reviews use to turn a transcript into proposals.
+                </p>
                 <dl className="org-facts">
                   {/* **Absent, not null**, for a reader without `org.settings.edit`
                       — so the question is whether the key is there, never whether it
@@ -744,8 +814,53 @@ export function OrganisationScreen({
               Every token anyone holds, person by person — revoke one and whatever uses it stops at
               once. Your own are on Developer access.
             </p>
+            {/* Finding one person among hundreds (LAI-1210); the search lives in
+                the address, `q`, as People's does. */}
+            <div className="org-security-tools">
+              <label className="org-people-search">
+                <span className="org-people-search-glyph" aria-hidden="true">
+                  ⌕
+                </span>
+                <input
+                  type="search"
+                  className="org-people-search-input"
+                  data-security-search
+                  placeholder="Find a person by name or email"
+                  aria-label="Find a person by name or email"
+                  value={securityQuery}
+                  onChange={(event) => {
+                    const next = new URLSearchParams(params);
+                    if (event.target.value === '') next.delete('q');
+                    else next.set('q', event.target.value);
+                    setParams(next);
+                  }}
+                />
+              </label>
+              <span className="org-people-shown" data-security-shown>
+                {securityPeople.length === state.people.length
+                  ? `${String(state.people.length)}${state.truncated ? '+' : ''} people`
+                  : `${String(securityPeople.length)} of ${String(state.people.length)}${state.truncated ? '+' : ''}`}
+              </span>
+            </div>
+            {securityPeople.length === 0 && (
+              <div className="org-people-empty" data-security-empty>
+                <p className="org-people-empty-title">No one matches “{securityQuery.trim()}”</p>
+                <p className="org-people-empty-body">Check the spelling of the name or email.</p>
+                <button
+                  type="button"
+                  className="org-people-empty-clear"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.delete('q');
+                    setParams(next);
+                  }}
+                >
+                  Show everyone
+                </button>
+              </div>
+            )}
             <ul className="org-people">
-              {state.people.map((person) => (
+              {securityPeople.map((person) => (
                 <li
                   key={person.id}
                   className={`org-person${person.is_active ? '' : ' org-person-inactive'}`}
@@ -754,6 +869,12 @@ export function OrganisationScreen({
                     <span className="org-person-name">
                       {person.name}
                       {person.id === me.id && <span className="org-chip org-chip-you">YOU</span>}
+                      <span className="org-chip" data-security-role>
+                        {orgRoleLabel(person.org_role as OrgRole)}
+                      </span>
+                      {!person.is_active && (
+                        <span className="org-chip org-chip-off">DEACTIVATED</span>
+                      )}
                     </span>
                     <span className="org-person-email">{person.email}</span>
                   </span>
@@ -781,6 +902,11 @@ export function OrganisationScreen({
                         className="org-tokens-toggle"
                         aria-expanded={tokensFor === person.id}
                         aria-controls={`tokens-${person.id}`}
+                        aria-label={
+                          tokensFor === person.id
+                            ? `Hide ${person.name}’s tokens`
+                            : `Show ${person.name}’s tokens`
+                        }
                         onClick={() => {
                           setTokenError(undefined);
                           setTokenResult(undefined);
@@ -831,6 +957,14 @@ export function OrganisationScreen({
                         />
                       )}
 
+                      {tokens?.status === 'ready' && tokens.tokens.length > 0 && (
+                        // What deserves a look, from the fields alone (LAI-1210).
+                        <p className="org-tokens-summary" data-token-summary>
+                          {riskSummary(tokens.tokens, now)}
+                          {tokens.truncated ? ' — the first page only' : ''}
+                        </p>
+                      )}
+
                       {tokens?.status === 'ready' &&
                         (tokens.tokens.length === 0 ? (
                           <p className="org-tokens-empty" data-tokens-empty>
@@ -857,6 +991,9 @@ export function OrganisationScreen({
                                       key={token.id}
                                       token={token}
                                       now={now}
+                                      flags={tokenRisks(token, now).map(
+                                        (risk) => RISK_LABELS[risk],
+                                      )}
                                       onRevoke={
                                         canRevokeTokens &&
                                         mayActOnSetupOf(me.org_role, person.org_role)

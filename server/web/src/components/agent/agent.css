@@ -1101,3 +1101,18 @@
   text-decoration: none;
   color: var(--text-muted);
 }
+
+/* LAI-1209: a form that marks its labels gives the picker's the same mark,
+   and an (i) beside it. */
+.agent-row-label:has(.field-label-icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.agent-row-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}

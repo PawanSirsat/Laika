@@ -259,8 +259,9 @@ void describe('General', () => {
       assert.equal(await h.page.locator('#ss-repo').inputValue(), 'PawanSirsat/Laika');
       await until(async () => (await h.page.locator('[data-next-key]').count()) === 1);
       assert.equal(await h.page.locator('[data-next-key]').innerText(), 'Next task: LAIKA-721');
+      // An editable setting is a `Field` in its row layout since LAI-1204.
       const help = await h.page
-        .locator('.ss-row', { has: h.page.locator('#ss-prefix') })
+        .locator('.field-row', { has: h.page.locator('#ss-prefix') })
         .innerText();
       assert.match(help, /Existing tasks keep their numbers\./);
       assert.match(help, /Old keys keep working\./);
@@ -349,6 +350,20 @@ void describe('General', () => {
         await error.waitFor({ timeout: 5_000 });
         assert.equal(await error.innerText(), message);
         assert.equal(await h.page.locator('#ss-prefix').getAttribute('aria-invalid'), 'true');
+        // The refusal takes the focus to the field it names (LAI-1204), not
+        // leaving it on Save, below and out of sight of the problem.
+        await until(async () => h.page.evaluate(() => document.activeElement?.id === 'ss-prefix'));
+        assert.equal(
+          await h.page.evaluate(() => document.activeElement?.id),
+          'ss-prefix',
+          'focus did not move to the refused field',
+        );
+        assert.ok(
+          ((await h.page.locator('#ss-prefix').getAttribute('aria-describedby')) ?? '')
+            .split(' ')
+            .includes('ss-prefix-error'),
+          'the field is not described by its error',
+        );
         // The typed key stays, so it can be corrected rather than retyped.
         assert.equal(await h.page.locator('#ss-prefix').inputValue(), 'ONR');
       } finally {

@@ -1,0 +1,29 @@
+/* One icon component (LAI-1204). Size is the line-height of the text beside it. */
+
+.icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+  /* An icon never takes a click from the control that holds it. */
+  pointer-events: none;
+}
+
+.icon-tiny {
+  width: var(--text-small);
+  height: var(--text-small);
+}
+
+.icon-small {
+  width: var(--leading-small);
+  height: var(--leading-small);
+}
+
+.icon-body {
+  width: var(--leading-body);
+  height: var(--leading-body);
+}
+
+.icon-reading {
+  width: var(--leading-reading);
+  height: var(--leading-reading);
+}

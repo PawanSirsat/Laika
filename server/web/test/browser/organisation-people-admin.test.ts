@@ -26,6 +26,7 @@ import {
   type StubCall,
   watchFor,
 } from './harness.ts';
+import { DEACTIVATES } from './row-menu.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { pick } from './dropdown.ts';
 
@@ -305,7 +306,7 @@ void describe('transfer ownership (D-104 item 2)', () => {
     );
     try {
       await ready(h.page);
-      await until(async () => (await h.page.locator('.org-deactivate').count()) > 0);
+      await until(async () => (await h.page.locator(DEACTIVATES).count()) > 0);
       assert.equal(await h.page.locator('.org-transfer').count(), 0);
       assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 0);
     } finally {

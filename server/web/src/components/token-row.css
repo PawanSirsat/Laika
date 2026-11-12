@@ -102,3 +102,15 @@
   font-size: var(--text-small);
   color: var(--text-muted);
 }
+
+/* A screen's note about this token (LAI-1210): Security's never-used, stale
+   and expiring flags. Primary ink on a faint orange ground, from the tokens. */
+.tok-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.375rem;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--chip-orange) 16%, transparent);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}

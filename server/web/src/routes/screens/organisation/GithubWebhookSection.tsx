@@ -114,7 +114,13 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
     <section className="org-card org-github" aria-labelledby="org-github" data-section="github">
       <header className="org-card-head">
         <h2 id="org-github">GitHub webhook</h2>
-        <span className="org-count" data-configured={webhook.configured}>
+        {/* A state, not a code tag (LAI-1210). "secret set", not
+            "connected": Laika cannot tell from here whether GitHub sends. */}
+        <span
+          className="org-status-badge"
+          data-tone={webhook.configured ? 'on' : 'off'}
+          data-configured={webhook.configured}
+        >
           {webhook.configured ? 'secret set' : 'not set up'}
         </span>
       </header>
@@ -124,6 +130,21 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
         claimed proof into confirmed or failed on the Review page. Laika never calls GitHub; it only
         reads what GitHub sends here.
       </p>
+
+      {!webhook.configured && issued === undefined && (
+        // The order the parts below are used in (LAI-1210), said once.
+        <ol className="org-steps" aria-label="Set up the GitHub webhook" data-github-steps>
+          <li>
+            Press <strong>Set secret</strong> below and copy the secret it shows once.
+          </li>
+          <li>
+            On GitHub, open the repository’s <em>Settings › Webhooks › Add webhook</em>.
+          </li>
+          <li>
+            Paste the payload URL and the secret, choose the content type and tick the events.
+          </li>
+        </ol>
+      )}
 
       <dl className="org-facts org-github-setup">
         <div className="org-fact">
