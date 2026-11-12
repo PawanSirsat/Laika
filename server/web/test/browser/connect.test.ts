@@ -796,7 +796,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /^2$/);
 
       await mint(h);
-      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /✓/);
+      assert.equal(await steps.nth(1).locator('.conn-step-n [data-icon="check"]').count(), 1);
       assert.equal(await steps.nth(1).locator('button').getAttribute('aria-current'), 'step');
       assert.match(await steps.nth(1).locator('.conn-rail-sub').innerText(), /claude-code/);
       // Step 3 happens on the reader's machine; minting does not tick it.
@@ -804,7 +804,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
 
       await h.page.locator('.conn-hide').click();
       await h.page.locator('.conn-forgotten').waitFor({ timeout: 10_000 });
-      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /✓/);
+      assert.equal(await steps.nth(1).locator('.conn-step-n [data-icon="check"]').count(), 1);
       assert.equal(await steps.nth(2).locator('button').isDisabled(), false);
     } finally {
       await h.close();
@@ -921,6 +921,8 @@ void describe('the wizard (LAI-740)', () => {
         true,
         true,
       ]);
+      // Locked with its reason, still reached by Tab (LAI-1214).
+      assert.equal(await tooltipText(rail.nth(2)), 'Mint a token first');
 
       await goTo(h, 2);
       const next = h.page.locator('.conn-continue');
@@ -1006,7 +1008,14 @@ void describe('the wizard (LAI-740)', () => {
         { timeout: 10_000 },
       );
       assert.equal(await sub.innerText(), 'Command copied');
-      assert.match(await h.page.locator('.conn-steps .conn-step-n').nth(2).innerText(), /✓/);
+      assert.equal(
+        await h.page
+          .locator('.conn-steps .conn-step-n')
+          .nth(2)
+          .locator('[data-icon="check"]')
+          .count(),
+        1,
+      );
     } finally {
       await h.close();
     }
@@ -1040,7 +1049,10 @@ void describe('the wizard (LAI-740)', () => {
       // `forget()` drops the blanked token a tick after blanking it, so the
       // lock returns on the next render — wait for it rather than sample it.
       await h.page.waitForFunction(
-        () => document.querySelectorAll<HTMLButtonElement>('.conn-rail-step')[2]?.disabled === true,
+        () =>
+          document
+            .querySelectorAll<HTMLButtonElement>('.conn-rail-step')[2]
+            ?.getAttribute('aria-disabled') === 'true',
         undefined,
         { timeout: 10_000 },
       );

@@ -60,6 +60,7 @@ const AREA_FILES = [
   'components/command/PaletteTrigger.tsx',
   'components/SidePanel.tsx',
   'components/CopyButton.tsx',
+  'components/wizard/StepRail.tsx',
 ] as const;
 
 /**
@@ -257,7 +258,9 @@ void describe('no bare title= on the pages (LAI-1214)', () => {
       let m: RegExpExecArray | null;
       while ((m = tag.exec(src)) !== null) {
         const open = elements(src.slice(m.index), m[1] ?? '')[0]?.open ?? '';
-        if (/\stitle=/.test(open)) titled.push(open.split('\n')[0] ?? open);
+        // A title= on the tag, or one handed in through a spread —
+        // `{...(locked ? { title: why } : {})}`, as StepRail's locked steps did.
+        if (/\stitle=|\{\s*title:/.test(open)) titled.push(open.split('\n')[0] ?? open);
       }
       assert.deepEqual(titled, [], `${file}: a bare title= — use the shared Tooltip`);
     });

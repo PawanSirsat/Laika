@@ -1,3 +1,6 @@
+import { Icon } from '../icon/Icon.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
+
 /*
  * Styled by `routes/screens/connect/connect.css` — see the note at the top of
  * `CodeBlock.tsx` (LAI-1044).
@@ -41,27 +44,32 @@ export function StepRail({ label, intro, steps, current, onSelect }: StepRailPro
           const state = here ? 'current' : s.done ? 'done' : 'todo';
           return (
             <li key={s.n} className="conn-step" data-state={state} data-locked={!s.open}>
-              <button
-                type="button"
-                className="conn-rail-step"
-                disabled={!s.open}
-                {...(here ? { 'aria-current': 'step' as const } : {})}
-                {...(!s.open && s.lockedReason !== undefined ? { title: s.lockedReason } : {})}
-                onClick={() => {
-                  onSelect(s.n);
-                }}
-              >
-                <span className="conn-step-n" aria-hidden="true">
-                  {s.done ? '✓' : s.n}
-                </span>
-                <span className="conn-rail-text">
-                  <span className="conn-rail-name">
-                    <span className="visually-hidden">Step {s.n}: </span>
-                    {s.name}
+              {/* A locked step with a reason stays focusable and says why in
+                  the shared Tooltip (LAI-1214) — a title= on a disabled button
+                  reached neither a keyboard nor a touch screen. */}
+              <Tooltip content={!s.open ? (s.lockedReason ?? '') : ''}>
+                <button
+                  type="button"
+                  className="conn-rail-step"
+                  disabled={!s.open && s.lockedReason === undefined}
+                  aria-disabled={(!s.open && s.lockedReason !== undefined) || undefined}
+                  {...(here ? { 'aria-current': 'step' as const } : {})}
+                  onClick={() => {
+                    if (s.open) onSelect(s.n);
+                  }}
+                >
+                  <span className="conn-step-n" aria-hidden="true">
+                    {s.done ? <Icon name="check" size="small" /> : s.n}
                   </span>
-                  <span className="conn-rail-sub">{s.sub}</span>
-                </span>
-              </button>
+                  <span className="conn-rail-text">
+                    <span className="conn-rail-name">
+                      <span className="visually-hidden">Step {s.n}: </span>
+                      {s.name}
+                    </span>
+                    <span className="conn-rail-sub">{s.sub}</span>
+                  </span>
+                </button>
+              </Tooltip>
             </li>
           );
         })}
