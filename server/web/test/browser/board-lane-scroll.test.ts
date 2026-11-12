@@ -794,8 +794,16 @@ void describe('scrolling the board (LAI-290)', () => {
  * of the DOM but painted somewhere else is the failure worth catching, and only
  * a rectangle can tell the difference.
  */
-void describe('where the board row sits (LAI-293)', () => {
-  void test('below the space bar and above the first lane', async () => {
+void describe('where the board row sits (LAI-293, LAI-1198)', () => {
+  /*
+   * **Back in the header since LAI-1198**, on purpose: the space has one
+   * header on every tab — title, tabs, then one toolbar whose middle slot is
+   * the view's own controls — and on the board that slot *is* this row. It
+   * sat below the bar from LAI-293, which put Create in the title row on the
+   * board and on a line of its own elsewhere. What this still protects: the
+   * row is under the tabs, above the lanes, and drawn exactly once.
+   */
+  void test('in the header’s toolbar, under the tabs and above the first lane', async () => {
     const h = await open('/board?project=laika-core', COLUMNS_STUB);
 
     try {
@@ -805,48 +813,54 @@ void describe('where the board row sits (LAI-293)', () => {
       const m = await h.page.evaluate(() => {
         const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
         return {
+          tabsBottom: box('.view-tabs')?.bottom ?? null,
           spaceBarBottom: box('.space-bar')?.bottom ?? null,
           presence: document.querySelector('.presence') !== null,
           barTop: box('.board-bar')?.top ?? null,
+          barBottom: box('.board-bar')?.bottom ?? null,
           laneTop: box('.lane')?.top ?? null,
         };
       });
 
-      assert.ok(m.barTop !== null, 'the board row is not rendered at all');
+      assert.ok(m.barTop !== null && m.barBottom !== null, 'the board row is not rendered at all');
       assert.ok(m.laneTop !== null, 'no lane to measure against');
       assert.ok(
-        m.spaceBarBottom !== null,
-        'no space bar — this test cannot tell where the row sits',
+        m.tabsBottom !== null && m.spaceBarBottom !== null,
+        'no tabs or space bar — this test cannot tell where the row sits',
       );
-      // WORKING NOW sat between the two until LAI-727; nothing does now.
-      assert.equal(m.presence, false, 'WORKING NOW is back between the bar and the row');
+      // WORKING NOW sat between the bar and the row until LAI-727; nothing does now.
+      assert.equal(m.presence, false, 'WORKING NOW is back');
       assert.ok(
-        m.spaceBarBottom <= m.barTop,
-        `the row is above the space bar (${String(m.barTop)} < ${String(m.spaceBarBottom)})`,
+        m.tabsBottom <= m.barTop,
+        `the row is above the tabs (${String(m.barTop)} < ${String(m.tabsBottom)})`,
       );
       assert.ok(
-        m.barTop < m.laneTop,
-        `the row is not above the lanes (${String(m.barTop)} >= ${String(m.laneTop)})`,
+        m.barBottom <= m.spaceBarBottom,
+        `the row hangs out of the header (${String(m.barBottom)} > ${String(m.spaceBarBottom)})`,
+      );
+      assert.ok(
+        m.spaceBarBottom <= m.laneTop,
+        `the lanes start inside the header (${String(m.laneTop)} < ${String(m.spaceBarBottom)})`,
       );
     } finally {
       await h.close();
     }
   });
 
-  void test('and no longer inside the space bar', async () => {
-    // The other half: moved, not copied.
+  void test('drawn once, in the toolbar row', async () => {
+    // Moved, not copied.
     const h = await open('/board?project=laika-core', COLUMNS_STUB);
 
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       await boardReady(h);
 
+      assert.equal(await h.page.locator('.bt').count(), 1, 'exactly one row expected');
       assert.equal(
-        await h.page.locator('.space-bar .bt').count(),
-        0,
-        'the toolbar is still in the space bar',
+        await h.page.locator('.space-toolbar .board-bar .bt').count(),
+        1,
+        'the row is not in the header’s toolbar',
       );
-      assert.equal(await h.page.locator('.board-bar .bt').count(), 1, 'exactly one row expected');
     } finally {
       await h.close();
     }
@@ -873,12 +887,15 @@ void describe('where the board row sits (LAI-293)', () => {
       const m = await h.page.evaluate(() => {
         const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
         const bar = box('.board-bar .bt');
+        // The row ends where Create begins since LAI-1198; the toolbar's
+        // last control — Create — is what ends where the columns end.
+        const end = box('.space-toolbar .space-create');
         const main = box('.board-main');
-        return bar === null || main === null
+        return bar === null || end === null || main === null
           ? null
           : {
               bl: Math.round(bar.left),
-              br: Math.round(bar.right),
+              br: Math.round(end.right),
               ml: Math.round(main.left),
               mr: Math.round(main.right),
             };
@@ -886,7 +903,7 @@ void describe('where the board row sits (LAI-293)', () => {
 
       assert.ok(m !== null, 'the row or the lane area is missing');
       assert.equal(m.bl, m.ml, 'the row starts at a different x from the columns');
-      assert.equal(m.br, m.mr, 'the row ends at a different x from the columns');
+      assert.equal(m.br, m.mr, 'the toolbar ends at a different x from the columns');
     } finally {
       await h.close();
     }
