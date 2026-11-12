@@ -23,8 +23,10 @@
   min-width: 0;
 }
 
-/* The sentence the page header carried while Work was a page of its own. */
+/* The sentence the page header carried while Work was a page of its own.
+   A measure, so it does not run the width of a 1440 canvas (LAI-1210). */
 .work-lead {
+  max-width: 75ch;
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-body);
@@ -269,6 +271,9 @@
 .work-summary {
   display: flex;
   flex-wrap: wrap;
+  /* Each tile its own height (LAI-1210): the Review tile's *Decide in Inbox*
+     line stretched Total and every tile beside it to match. */
+  align-items: flex-start;
   gap: var(--space-2);
 }
 

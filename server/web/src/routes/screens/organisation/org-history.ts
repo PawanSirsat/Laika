@@ -77,3 +77,71 @@ export function historyQuery(filters: HistoryFilters): HistoryQuery {
     ...(until === undefined ? {} : { until }),
   };
 }
+
+/** The address with every history filter removed; other params are kept. */
+export function withoutFilters(params: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(params);
+  for (const name of HISTORY_FILTERS) next.delete(name);
+  return next;
+}
+
+export interface DayGroup<T> {
+  /** `2026-11-12`, the reader's own calendar day. */
+  readonly key: string;
+  /** `Today`, `Yesterday`, `Mon 10 Nov`, or `Mon 10 Nov 2025` in another year. */
+  readonly label: string;
+  readonly rows: readonly T[];
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+const dayKey = (d: Date): string =>
+  `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * Rows grouped under the day they happened on (LAI-1210), in the order given —
+ * the history is newest first, so the groups are too. A day appears once even
+ * if a later page adds more of its rows, because grouping runs over every row
+ * loaded so far.
+ */
+export function dayGroups<T extends { readonly created_at: number }>(
+  rows: readonly T[],
+  now: number,
+): readonly DayGroup<T>[] {
+  const today = new Date(now);
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const groups: { key: string; label: string; rows: T[] }[] = [];
+  for (const row of rows) {
+    const when = new Date(row.created_at);
+    const key = dayKey(when);
+    let group = groups.find((g) => g.key === key);
+    if (group === undefined) {
+      const label =
+        key === dayKey(today)
+          ? 'Today'
+          : key === dayKey(yesterday)
+            ? 'Yesterday'
+            : `${WEEKDAYS[when.getDay()] ?? ''} ${String(when.getDate())} ${MONTH_NAMES[when.getMonth()] ?? ''}${
+                when.getFullYear() === today.getFullYear() ? '' : ` ${String(when.getFullYear())}`
+              }`;
+      group = { key, label, rows: [] };
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+  return groups;
+}
