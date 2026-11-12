@@ -20,6 +20,7 @@ import type { Theme } from '../../../theme/theme.ts';
 import { initials } from '../../../theme/initials.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
+import { ScrollRegion } from './ScrollRegion.tsx';
 import {
   SORT_LABELS,
   expiryLabel,
@@ -90,7 +91,10 @@ type Pending =
   | { readonly kind: 'role'; readonly person: OrgUser; readonly role: OrgRole }
   | { readonly kind: 'bulk-role'; readonly ids: readonly string[]; readonly role: OrgRole }
   | { readonly kind: 'bulk-off'; readonly ids: readonly string[] }
+  | { readonly kind: 'reactivate'; readonly person: OrgUser }
   | { readonly kind: 'revoke'; readonly invite: PendingInvite };
+
+const many = (n: number): string => `${String(n)} ${n === 1 ? 'person' : 'people'}`;
 
 /**
  * The People tab as the owner's "Laika App v3" design draws it (LAI-893): a
@@ -147,6 +151,14 @@ export function PeopleTab({
     if (undoToast.current !== undefined) toast.dismiss(undoToast.current);
     undoToast.current = undefined;
   };
+  /**
+   * What the last consequential action did, once the server answered
+   * (LAI-1194), said in the app's one toast (LAI-1129).
+   */
+  const say = (text: string, tone: 'success' | 'info' = 'success'): void => {
+    retireUndo();
+    toast.show({ text, tone, mark: 'people-result' });
+  };
   /** Who is being deactivated, through LAI-988's offboarding dialog. */
   const [offboarding, setOffboarding] = useState<OrgUser | undefined>(undefined);
   /** A re-issued link, shown once (LAI-984). */
@@ -194,13 +206,25 @@ export function PeopleTab({
     label: string,
     ids: readonly string[],
     patch: { org_role?: string; is_active?: boolean; open_tasks?: OpenTasksChoice },
+    done: (changed: number) => string,
   ) => {
     setBulk(label);
+    retireUndo();
+    let changed = 0;
     try {
-      for (const id of ids) await onChange(id, patch);
+      for (const id of ids) if (await onChange(id, patch)) changed += 1;
     } finally {
       setBulk(undefined);
       setSelected(new Set());
+    }
+    // Counted from the server's answers, never assumed: a refusal for one
+    // person is said under the table, and this line says how many took.
+    if (changed === ids.length) say(done(changed));
+    else {
+      say(
+        `${done(changed)} ${String(ids.length - changed)} could not be changed — the reason is under the table.`,
+        'info',
+      );
     }
   };
 
@@ -218,6 +242,7 @@ export function PeopleTab({
       void onChange(person.id, { org_role: role })
         .then((ok) => {
           if (!ok) return;
+          retireUndo();
           const from = person.org_role;
           undoToast.current = toast.show({
             text: `${person.name} is now ${article(role)} ${orgRoleLabel(role).toLowerCase()}.`,
@@ -241,7 +266,13 @@ export function PeopleTab({
     if (pending.kind === 'bulk-role') {
       const { ids, role } = pending;
       closeConfirm();
-      void runBulk(role === 'admin' ? 'Making admins' : 'Making members', ids, { org_role: role });
+      void runBulk(
+        role === 'admin' ? 'Making admins' : 'Making members',
+        ids,
+        { org_role: role },
+        (n) =>
+          `${many(n)} ${n === 1 ? 'is' : 'are'} now ${orgRoleLabel(role).toLowerCase()}${n === 1 ? '' : 's'}.`,
+      );
       return;
     }
     if (pending.kind === 'bulk-off') {
@@ -249,7 +280,27 @@ export function PeopleTab({
       closeConfirm();
       // Their open tasks are unassigned — D-104 item 5's pre-selected answer;
       // a reassignment is chosen one person at a time, from their row.
-      void runBulk('Deactivating', ids, { is_active: false, open_tasks: 'unassign' });
+      void runBulk(
+        'Deactivating',
+        ids,
+        { is_active: false, open_tasks: 'unassign' },
+        (n) => `Deactivated ${many(n)}; their open tasks are unassigned.`,
+      );
+      return;
+    }
+    if (pending.kind === 'reactivate') {
+      const { person } = pending;
+      setConfirming(true);
+      retireUndo();
+      void onChange(person.id, { is_active: true })
+        .then((ok) => {
+          if (ok)
+            say(`${person.name} can sign in again. Their old sessions and tokens stay ended.`);
+        })
+        .finally(() => {
+          setConfirming(false);
+          closeConfirm();
+        });
       return;
     }
     const { invite } = pending;
@@ -258,6 +309,9 @@ export function PeopleTab({
     revokeInvite(invite.id)
       .then(() => {
         closeConfirm();
+        say(
+          `The invite for ${invite.email ?? 'anyone with the link'} is revoked; its link no longer works.`,
+        );
         onReload();
       })
       .catch((cause: unknown) => {
@@ -478,7 +532,24 @@ export function PeopleTab({
             </div>
           )}
           {invites.length === 0 && invitesError === null ? (
-            <p className="org-pending-empty">No pending invites.</p>
+            <div className="org-people-empty org-pending-empty" data-pending-empty>
+              <p className="org-people-empty-title">No pending invites</p>
+              <p className="org-people-empty-body">
+                Everyone invited has joined, or their invites were revoked. An invite you send shows
+                here until it is accepted.
+              </p>
+              {canInvite && (
+                <button
+                  type="button"
+                  className="org-people-empty-invite"
+                  onClick={() => {
+                    onInvite('');
+                  }}
+                >
+                  Invite people
+                </button>
+              )}
+            </div>
           ) : (
             <ul className="org-invites">
               {invites.map((invite) => {
@@ -536,7 +607,7 @@ export function PeopleTab({
         </div>
       ) : (
         <>
-          <div className="org-people-scroll">
+          <ScrollRegion label="People table" className="org-people-scroll">
             <div className="org-people-table" role="table" aria-label="People">
               <div className="org-people-row org-people-header" role="row">
                 <span role="columnheader" className="org-people-tick">
@@ -737,7 +808,8 @@ export function PeopleTab({
                           className="org-reactivate"
                           disabled={busy}
                           onClick={() => {
-                            void onChange(person.id, { is_active: true });
+                            setConfirmError(undefined);
+                            setPending({ kind: 'reactivate', person });
                           }}
                         >
                           Reactivate
@@ -755,9 +827,25 @@ export function PeopleTab({
                   </p>
                   <p className="org-people-empty-body">
                     {query.trim() === ''
-                      ? 'Nobody has this role.'
+                      ? space === ''
+                        ? 'Nobody has this role.'
+                        : 'Nobody with this role is in that space.'
                       : 'Check the spelling, or invite them to the organisation.'}
                   </p>
+                  {(filter !== 'all' || space !== '' || query.trim() !== '') && (
+                    <button
+                      type="button"
+                      className="org-people-empty-clear"
+                      data-people-clear
+                      onClick={() => {
+                        setFilter('all');
+                        setSpace('');
+                        setQuery('');
+                      }}
+                    >
+                      Show everyone
+                    </button>
+                  )}
                   {canInvite && (
                     <button
                       type="button"
@@ -772,7 +860,7 @@ export function PeopleTab({
                 </div>
               )}
             </div>
-          </div>
+          </ScrollRegion>
 
           {roleError !== undefined && (
             /* **The server's refusal, verbatim.** The last-owner invariant lives
@@ -790,8 +878,8 @@ export function PeopleTab({
             </span>
             <span className="org-people-foot-note">
               {canManagePeople
-                ? 'Your own row has no controls — changing your own role or locking yourself out is not something this screen offers. Project roles are managed on each project’s members screen.'
-                : 'Roles are shown here and changed by an admin. Project roles are managed on each project’s members screen.'}
+                ? 'Your own row has no controls — you cannot change your own role or lock yourself out here. Space roles are set in each space’s settings.'
+                : 'Roles are shown here and changed by the owner. Space roles are set in each space’s settings.'}
             </span>
           </footer>
         </>
@@ -840,7 +928,7 @@ export function PeopleTab({
           }}
           onDone={() => {
             setOffboarding(undefined);
-            retireUndo();
+            say(`${offboarding.name} is deactivated and can no longer sign in.`);
             onReload();
           }}
           onClose={() => {
@@ -859,7 +947,6 @@ function confirmCopy(pending: Pending): {
   danger?: boolean;
   children: ReactNode;
 } {
-  const many = (n: number): string => `${String(n)} ${n === 1 ? 'person' : 'people'}`;
   switch (pending.kind) {
     case 'role':
       return {
@@ -895,6 +982,17 @@ function confirmCopy(pending: Pending): {
               from their own row.
             </p>
           </>
+        ),
+      };
+    case 'reactivate':
+      return {
+        title: `Reactivate ${pending.person.name}?`,
+        confirmLabel: 'Reactivate',
+        children: (
+          <p>
+            They can sign in again with their old password. Their earlier sessions and tokens stay
+            ended, and they rejoin no space on their own — add them back where they belong.
+          </p>
         ),
       };
     case 'revoke':

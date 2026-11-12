@@ -442,8 +442,13 @@ void describe('deactivation', () => {
         .locator('.org-reactivate');
       assert.match(await inactive.innerText(), /^Reactivate$/i, 'wrong verb for an inactive one');
 
-      // Reactivation asks nothing — it takes nobody's access away.
+      // Reactivation asks first since LAI-1194 — every consequential action
+      // confirms and then reports — but it is not a danger action.
       await inactive.click();
+      const asked = h.page.locator('[data-confirm-dialog]');
+      await asked.waitFor({ timeout: 10_000 });
+      assert.match(await asked.innerText(), /Reactivate Sam Okafor\?/);
+      await asked.locator('[data-confirm-ok] button').click();
       await until(() => h.calls.some((c: StubCall) => c.method === 'PATCH'));
       const patch = h.calls.find((c: StubCall) => c.method === 'PATCH');
       assert.ok(patch, 'reactivating sent no PATCH');
