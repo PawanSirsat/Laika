@@ -171,6 +171,7 @@ export function ResetPasswordScreen({
             form.blur('password', password);
           }}
           autoComplete="new-password"
+          autoFocus
           help={PASSWORD_RULE}
           showStrength
           required

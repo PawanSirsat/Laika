@@ -250,6 +250,7 @@ export function InviteScreen({
             form.blur('name', name);
           }}
           autoComplete="name"
+          autoFocus
           required
           disabled={submitting}
           error={form.shown('name', nameCheck) ?? fieldErrors.name}

@@ -152,6 +152,7 @@ export function LoginScreen({
               form.blur('email', email);
             }}
             autoComplete="username"
+            autoFocus
             required
             disabled={submitting}
             error={form.shown('email', emailCheck)}

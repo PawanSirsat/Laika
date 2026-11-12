@@ -240,6 +240,7 @@ export function FirstBootScreen({
                     form.blur('owner_name', ownerName);
                   }}
                   autoComplete="name"
+                  autoFocus
                   required
                   disabled={submitting}
                   error={form.shown('owner_name', nameCheck) ?? fieldErrors.owner_name}

@@ -1,6 +1,7 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { Field } from './Field.tsx';
 import { PasswordStrength } from './PasswordStrength.tsx';
+import { useFirstFocus } from './use-first-focus.ts';
 import './forms.css';
 
 export interface PasswordInputProps {
@@ -16,6 +17,11 @@ export interface PasswordInputProps {
   readonly autoComplete?: 'current-password' | 'new-password';
   /** Show the strength meter. Only useful where a password is being chosen. */
   readonly showStrength?: boolean;
+  /**
+   * Focused when it mounts: the first field of a page that is nothing but its
+   * form — sign in, first boot, an invite, a reset (LAI-1191).
+   */
+  readonly autoFocus?: boolean;
   /** Where a form validates on blur (LAI-1203). */
   readonly onBlur?: (() => void) | undefined;
 }
@@ -46,8 +52,11 @@ export function PasswordInput({
   showStrength = false,
   invalid = false,
   onBlur,
+  autoFocus = false,
 }: PasswordInputProps) {
   const [revealed, setRevealed] = useState(false);
+  const input = useRef<HTMLInputElement | null>(null);
+  useFirstFocus(input, autoFocus, disabled);
   const [capsLock, setCapsLock] = useState(false);
 
   const readCapsLock = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -84,6 +93,7 @@ export function PasswordInput({
                 aria-required={required || undefined}
                 disabled={disabled}
                 autoComplete={autoComplete}
+                ref={input}
               />
               <button
                 type="button"

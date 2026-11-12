@@ -392,6 +392,7 @@ function InsightsRoute() {
   const {
     route: { params, navigate },
     me,
+    tokenAlerts,
     orgName,
   } = useShell();
   const { permissions, settled } = usePermissions(me !== undefined);
@@ -409,7 +410,12 @@ function InsightsRoute() {
     );
   }
   return (
-    <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
+    <InsightsScreen
+      tabs={visibleTabs(INSIGHTS_TABS, holds)}
+      current={tab}
+      onNavigate={navigate}
+      alerts={tokenAlerts?.length}
+    >
       {tab === 'time' ? (
         <TimeTab
           view={
