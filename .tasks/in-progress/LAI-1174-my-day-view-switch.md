@@ -2,10 +2,11 @@
 id: LAI-1174
 title: 'My day: the View — Day, Week, Month and Year, with the zoom between them'
 area: shell
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1173]
-status: backlog
+status: in-progress
+started: 2026-11-12T11:40:00Z
 ---
 
 ## Goal
