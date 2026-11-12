@@ -248,6 +248,14 @@
   color: var(--text-primary);
 }
 
+/*
+ * The ⋯ button and its menu, as one box for outside-click (LAI-1190). Draws
+ * nothing itself, so the menu still hangs from the header's action row.
+ */
+.panel-overflow-anchor {
+  display: contents;
+}
+
 .panel-overflow {
   position: absolute;
   top: calc(100% + 4px);

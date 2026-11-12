@@ -64,6 +64,8 @@ import { HandoffSection } from '../../../components/agent/HandoffSection.tsx';
 import type { HandoffOffer } from '../../../api/handoffs.ts';
 import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
 import '../../../components/markers.css';
@@ -72,6 +74,11 @@ import './task-detail.css';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
+  /**
+   * The id the drawer is labelled by (LAI-1190, B3): the title carries it,
+   * and the key carries it with `-key`. Absent, the panel names nothing.
+   */
+  readonly headingId?: string | undefined;
   /**
    * The newest live frame that changes this task's execution (LAI-543), by
    * `seq`. When it moves the panel re-reads its activity quietly.
@@ -202,6 +209,7 @@ const LAST_SEEN_TICK_MS = 30_000;
  */
 export function TaskDetailPanel({
   slug,
+  headingId,
   agentsAllowed,
   task,
   byId,
@@ -365,6 +373,40 @@ export function TaskDetailPanel({
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowButton = useRef<HTMLButtonElement>(null);
+  /*
+   * **The overflow menu is a layer of its own** (LAI-1190, B22). Escape and a
+   * press outside close the menu and nothing else — the hook marks the Escape
+   * spent, so the drawer behind does not close with it. Escape hands focus
+   * back to ⋯, where the reader was.
+   */
+  const overflowBox = useDismiss(overflowOpen, (reason) => {
+    setOverflowOpen(false);
+    if (reason === 'escape') overflowButton.current?.focus();
+  });
+  const confirm = useConfirm();
+  /** Why the last detach was refused (B4): it used to fail in silence. */
+  const [detachError, setDetachError] = useState<string | undefined>(undefined);
+  const detach = async (): Promise<void> => {
+    setOverflowOpen(false);
+    const yes = await confirm({
+      title: 'Detach from parent?',
+      body: `${task.key} stops being a subtask of ${parent?.key ?? 'its parent'}. Nothing else about it changes.`,
+      confirmLabel: 'Detach',
+    });
+    if (!yes) return;
+    setDetachError(undefined);
+    try {
+      await updateTask(task.id, { parent_task_id: null });
+      onTaskEdited();
+    } catch (cause) {
+      setDetachError(
+        cause instanceof ApiError && cause.message !== ''
+          ? cause.message
+          : 'The task could not be detached.',
+      );
+    }
+  };
   const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
   const now = Date.now();
@@ -637,14 +679,7 @@ export function TaskDetailPanel({
    */
 
   return (
-    <div
-      className="panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${task.key} — ${task.title}`}
-      tabIndex={-1}
-      ref={panelRef}
-    >
+    <div className="panel" tabIndex={-1} ref={panelRef}>
       <header className="panel-head">
         {/*
           **A breadcrumb and plain icons** (D-066), as the owner's screenshot
@@ -674,7 +709,11 @@ export function TaskDetailPanel({
               </span>
             </>
           )}
-          <span className="panel-key" aria-current="page">
+          <span
+            className="panel-key"
+            aria-current="page"
+            {...(headingId === undefined ? {} : { id: `${headingId}-key` })}
+          >
             {task.key}
           </span>
           {/* The card's id elsewhere, beside its key (LAI-780, D-129). */}
@@ -748,57 +787,59 @@ export function TaskDetailPanel({
             {copied}
           </span>
 
-          <button
-            type="button"
-            className="panel-head-action"
-            aria-expanded={overflowOpen}
-            aria-label="More actions"
-            onClick={() => {
-              setOverflowOpen((open) => !open);
-            }}
-          >
-            <span aria-hidden="true">⋯</span>
-          </button>
+          <div className="panel-overflow-anchor" ref={overflowBox}>
+            <button
+              type="button"
+              className="panel-head-action"
+              aria-expanded={overflowOpen}
+              aria-label="More actions"
+              ref={overflowButton}
+              onClick={() => {
+                setOverflowOpen((open) => !open);
+              }}
+            >
+              <span aria-hidden="true">⋯</span>
+            </button>
 
-          {overflowOpen && (
-            <ul className="panel-overflow">
-              <li>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    void copyText(task.key, event.currentTarget);
-                    setOverflowOpen(false);
-                  }}
-                >
-                  Copy task key
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    void copyText(window.location.href, event.currentTarget);
-                    setOverflowOpen(false);
-                  }}
-                >
-                  Copy link to this task
-                </button>
-              </li>
-              {mayEdit === true && task.parent_task_id !== null && (
+            {overflowOpen && (
+              <ul className="panel-overflow">
                 <li>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(event) => {
+                      void copyText(task.key, event.currentTarget);
                       setOverflowOpen(false);
-                      void updateTask(task.id, { parent_task_id: null }).then(onTaskEdited);
                     }}
                   >
-                    Detach from parent
+                    Copy task key
                   </button>
                 </li>
-              )}
-            </ul>
-          )}
+                <li>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      void copyText(window.location.href, event.currentTarget);
+                      setOverflowOpen(false);
+                    }}
+                  >
+                    Copy link to this task
+                  </button>
+                </li>
+                {mayEdit === true && task.parent_task_id !== null && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void detach();
+                      }}
+                    >
+                      Detach from parent
+                    </button>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
 
           <button type="button" className="panel-close" onClick={onClose}>
             <span className="visually-hidden">Close</span>
@@ -813,7 +854,7 @@ export function TaskDetailPanel({
             The title as a heading, click to edit — the design writes it as text
             you type into rather than a field.
           */}
-          <h2 className="panel-title">
+          <h2 className="panel-title" {...(headingId === undefined ? {} : { id: headingId })}>
             <InlineEdit
               value={task.title}
               placeholder="Untitled task"
@@ -837,6 +878,11 @@ export function TaskDetailPanel({
           {moveError !== undefined && (
             <p className="panel-alert" role="alert">
               {moveError}
+            </p>
+          )}
+          {detachError !== undefined && (
+            <p className="panel-alert" role="alert">
+              {detachError}
             </p>
           )}
 

@@ -27,7 +27,7 @@ import { initials } from '../../../theme/initials.ts';
 import { cluster } from '../../../components/space/top-bar-derive.ts';
 import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
-import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { useDismiss } from '../../../components/use-dismiss.ts';
 import { PRIORITY_NAMES, PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { tagColor } from './tag-colors.ts';
@@ -171,36 +171,6 @@ const PRIORITIES: readonly TaskPriority[] = ['p1', 'p2', 'p3'];
  * reference and less crowded. The controls are the same and write the same URL
  * parameters; only where you reach them changed.
  */
-function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void) {
-  const box = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onDown = (event: MouseEvent): void => {
-      /*
-       * **A dropdown's panel is not outside** (LAI-726). It is portalled to
-       * `<body>`, so it is never inside `box` — without this, choosing an
-       * option in the Filter popover would close the popover.
-       */
-      if (isInDropdownPanel(event.target)) return;
-      if (box.current !== null && !box.current.contains(event.target as Node)) close('outside');
-    };
-    const onKey = (event: KeyboardEvent): void => {
-      // An Escape a dropdown already used to close itself is not this one's.
-      if (event.key === 'Escape' && !event.defaultPrevented) close('escape');
-    };
-
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
-
-  return box;
-}
 
 /**
  * One field in the Filter popover's grid (LAI-717, LAI-726).

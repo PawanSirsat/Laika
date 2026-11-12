@@ -1,11 +1,12 @@
 import { everyPage } from '../../api/every-page.ts';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
 import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
-import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
+import { TaskDrawerHost } from '../drawer/TaskDrawerHost.tsx';
+import { TaskSourceProvider, type TaskSource } from '../drawer/TaskSourceProvider.tsx';
 import { CreateTaskProvider } from '../create-task/CreateTaskProvider.tsx';
 import { useCreateTask } from '../create-task/use-create-task.ts';
 import { SpaceLive } from './SpaceLive.tsx';
@@ -111,6 +112,8 @@ function SpaceFrame({
    */
   const [pendingReviews, setPendingReviews] = useState<number | undefined>(undefined);
   const [tags, setTags] = useState<readonly ProjectTag[]>([]);
+  /** The view's live task set, when it offers one — Board and List (LAI-1190). */
+  const [taskSource, setTaskSource] = useState<TaskSource | undefined>(undefined);
 
   useEffect(() => {
     if (slug === undefined) {
@@ -169,39 +172,62 @@ function SpaceFrame({
   }, [slug]);
 
   /** One writer for the URL, so every control agrees about what clearing means. */
-  const setParam = (key: string, value: string | undefined): void => {
+  const setParam = (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ): void => {
     const next = new URLSearchParams(params);
     if (value === undefined || value === '') next.delete(key);
     else next.set(key, value);
-    setParams(next);
+    setParams(next, options);
   };
+
+  /*
+   * A key rewritten as its id, in place: the link was the history entry, so
+   * this must not be a second one Back would have to step over. Read through
+   * `location` rather than `params`, so the callback is stable and the host's
+   * effect does not re-run on every render.
+   */
+  const resolveTask = useCallback(
+    (taskId: string) => {
+      const next = new URLSearchParams(window.location.search);
+      next.set('task', taskId);
+      setParams(next);
+    },
+    [setParams],
+  );
 
   const mayCreate = spaceId !== undefined && gates.project(spaceId, 'task.create');
 
   return (
-    <CreateTaskProvider
-      slug={slug}
-      spaceId={spaceId}
-      mayCreate={mayCreate}
-      settled={gates.settled}
-      members={members}
-      tags={tags}
-    >
-      <SpaceFrameBody
-        path={path}
+    <TaskSourceProvider onSource={setTaskSource}>
+      <CreateTaskProvider
         slug={slug}
-        params={params}
-        navigate={navigate}
-        setParam={setParam}
+        spaceId={spaceId}
+        mayCreate={mayCreate}
+        settled={gates.settled}
         members={members}
         tags={tags}
-        pendingReviews={pendingReviews}
-        mayCreate={mayCreate}
-        holds={permissionHolder(permissions?.me.actions)}
       >
-        {view}
-      </SpaceFrameBody>
-    </CreateTaskProvider>
+        <SpaceFrameBody
+          path={path}
+          slug={slug}
+          params={params}
+          navigate={navigate}
+          setParam={setParam}
+          members={members}
+          tags={tags}
+          pendingReviews={pendingReviews}
+          mayCreate={mayCreate}
+          holds={permissionHolder(permissions?.me.actions)}
+          taskSource={taskSource}
+          onResolveTask={resolveTask}
+        >
+          {view}
+        </SpaceFrameBody>
+      </CreateTaskProvider>
+    </TaskSourceProvider>
   );
 }
 
@@ -210,12 +236,18 @@ interface SpaceFrameBodyProps {
   readonly slug: string | undefined;
   readonly params: URLSearchParams;
   readonly navigate: (to: string) => void;
-  readonly setParam: (key: string, value: string | undefined) => void;
+  readonly setParam: (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ) => void;
   readonly members: readonly Member[];
   readonly tags: readonly ProjectTag[];
   readonly pendingReviews: number | undefined;
   readonly mayCreate: boolean;
   readonly holds: ReturnType<typeof permissionHolder>;
+  readonly taskSource: TaskSource | undefined;
+  readonly onResolveTask: (taskId: string) => void;
   readonly children: ReactNode;
 }
 
@@ -236,6 +268,8 @@ function SpaceFrameBody({
   pendingReviews,
   mayCreate,
   holds,
+  taskSource,
+  onResolveTask,
   children,
 }: SpaceFrameBodyProps) {
   const createTask = useCreateTask();
@@ -322,16 +356,28 @@ function SpaceFrameBody({
         the screen underneath keeps its scroll and its data — a drawer that
         replaced the view would have to rebuild the board on every close.
       */}
-        {params.get('task') !== null && (
-          <TaskDrawer
-            taskId={params.get('task') ?? ''}
-            onClose={() => {
-              // `push`ed open, so Back closes it; closing is a replace, or Back
-              // from here would step through the open state again.
-              setParam('task', undefined);
-            }}
-          />
-        )}
+        {/*
+          **The host renders the content too** (LAI-1190, B1): every view of
+          the space gets the full panel, not only the board.
+        */}
+        <TaskDrawerHost
+          slug={slug}
+          taskRef={params.get('task') ?? undefined}
+          // The board and the list offer their store; until it arrives the
+          // host waits rather than reading the same set a second time.
+          source={taskSource}
+          awaitSource={path === '/board' || path === '/list'}
+          members={members}
+          onOpen={(taskId) => {
+            setParam('task', taskId, { push: true });
+          }}
+          onResolved={onResolveTask}
+          onClose={() => {
+            // `push`ed open, so Back closes it; closing is a replace, or Back
+            // from here would step through the open state again.
+            setParam('task', undefined);
+          }}
+        />
       </div>
     </SpaceFilterClaim>
   );

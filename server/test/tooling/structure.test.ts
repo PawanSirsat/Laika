@@ -94,6 +94,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
+    'components/use-dismiss.ts',
+    'a React hook on document listeners — no renderer in this package (CONVENTIONS §4); task-drawer-host.test.ts and filter-popover.test.ts drive it in a browser',
+  ],
+  [
     'components/create-task/use-create-task.ts',
     'a React context and its hook — no renderer in this package (CONVENTIONS §4); its rules are create-task-form.ts, tested, and test/browser/create-task-dialog.test.ts drives the three ways in (LAI-1167)',
   ],

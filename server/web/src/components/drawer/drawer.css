@@ -91,6 +91,19 @@
   overscroll-behavior: contain;
 }
 
+/*
+ * What the host draws before the panel can (LAI-1190): the task's loading
+ * state and a task that is not there.
+ */
+.drawer-state {
+  padding: var(--space-5);
+}
+
+.drawer-state-missing {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
 @keyframes drawer-slidein {
   /*
    * The 12px rise as a transform again (round 2), but one that **ends at
