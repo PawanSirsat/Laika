@@ -680,12 +680,14 @@ void describe('the prototype geometry (LAI-249)', () => {
         undefined,
         { timeout: 5000 },
       );
-      // …and on keyboard focus: the toggle, then Tab, is My day.
+      // …and on keyboard focus: the toggle, then Tab, is the first entry —
+      // Search, the command palette's trigger, since LAI-1192 — and its name
+      // shows as a tooltip the same way.
       await h.page.mouse.move(900, 500);
       await toggle.focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.match(focused, /My day/, 'Tab from the toggle does not reach the first entry');
+      assert.match(focused, /^Search/, 'Tab from the toggle does not reach the first entry');
       await h.page.waitForFunction(
         () => {
           const tip = document.activeElement?.querySelector('.sidebar-tip');
