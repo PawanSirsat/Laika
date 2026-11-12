@@ -27,6 +27,7 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
+import { boardAction } from './board-menu.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -389,7 +390,7 @@ void describe('hiding a column and showing it again', () => {
       assert.deepEqual(sent(h, 'PATCH', '/statuses/s-qa')[0]?.body, { hidden: true });
       assert.ok(!(await titles(h)).includes('QA'), 'the hidden column is still drawn');
 
-      await h.page.getByRole('button', { name: 'More actions' }).click();
+      await h.page.getByRole('button', { name: /^More board actions/ }).click();
       // Cancelled was hidden already: two.
       await h.page.getByRole('menuitem', { name: 'Hidden columns (2)' }).click();
       const dialog = h.page.getByRole('dialog', { name: /Hidden columns/ });
@@ -634,13 +635,22 @@ void describe('focus in the column dialogs (review round 1)', () => {
     }
   });
 
-  void test('Hidden columns is on the toolbar, opens on its first Show, and gives focus back', async () => {
+  /*
+   * **Counted on the toolbar, opened from the ⋯** (LAI-1198). Review round 1
+   * wanted a hidden column seen, not only listed; the icon it got was one of
+   * the toolbar's five unlabelled buttons, so it became the ⋯'s dot and the
+   * number in its name, and the entry is a labelled menu item.
+   */
+  void test('Hidden columns is counted on the toolbar, opens on its first Show, and gives focus back', async () => {
     const h = await open('/board?project=laika-core', world().stub);
     try {
       await board(h);
-      // Visible on the toolbar, not only in the ⋯ menu: Cancelled starts hidden.
-      const entry = h.page.getByRole('button', { name: 'Hidden columns (1)' });
-      await entry.click();
+      // Seen on the toolbar: Cancelled starts hidden, and the ⋯ says so.
+      const more = h.page.getByRole('button', { name: 'More board actions — 1 hidden column' });
+      await more.waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.locator('.board-bar .bt-more-dot').count(), 1, 'no dot on the ⋯');
+      await more.click();
+      await h.page.getByRole('menuitem', { name: 'Hidden columns (1)' }).click();
       await h.page.getByRole('dialog', { name: /Hidden columns/ }).waitFor();
       await until(async () => (await focused(h)).name === 'Show Cancelled');
       assert.equal((await focused(h)).name, 'Show Cancelled');
@@ -652,8 +662,10 @@ void describe('focus in the column dialogs (review round 1)', () => {
 
       await h.page.keyboard.press('Escape');
       await h.page.getByRole('dialog').waitFor({ state: 'detached' });
-      await until(async () => (await focused(h)).name === 'Hidden columns (1)');
-      assert.equal((await focused(h)).name, 'Hidden columns (1)');
+      // The menu item is gone with the menu; focus goes back to the ⋯ it came from.
+      const back = 'More board actions — 1 hidden column';
+      await until(async () => (await focused(h)).name === back);
+      assert.equal((await focused(h)).name, back);
     } finally {
       await h.close();
     }
@@ -695,7 +707,7 @@ void describe('hiding and deleting, said plainly (review round 1)', () => {
       await board(h);
       await columnMenu(h, 'QA', 'Hide column');
       await h.page.waitForTimeout(200);
-      await h.page.getByRole('button', { name: 'Hidden columns (2)' }).click();
+      await boardAction(h.page, 'Hidden columns (2)');
       const dialog = h.page.getByRole('dialog', { name: /Hidden columns/ });
       await dialog.waitFor();
       const hints = dialog.locator('.cd-hidden-row .cd-kind-hint');

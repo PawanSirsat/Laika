@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown } from './Dropdown.tsx';
 import { Spinner } from '../components/Spinner.tsx';
+import { Button } from './forms/Button.tsx';
+import { IconButton } from './forms/IconButton.tsx';
 import { useDialogFocus } from './use-dialog-focus.ts';
 import {
   heldSummary,
@@ -176,15 +178,14 @@ export function OffboardingDialog({
           <h2 className="offb-title" id="offb-title">
             {title}
           </h2>
-          <button
-            type="button"
-            className="offb-close"
+          <IconButton
+            icon="close"
+            label="Close"
+            shortcut="Escape"
+            size="sm"
             onClick={close}
             disabled={busy}
-            aria-label="Close"
-          >
-            ✕
-          </button>
+          />
         </header>
         <div className="offb-about" id="offb-about">
           {consequences}
@@ -265,18 +266,21 @@ export function OffboardingDialog({
         )}
 
         <footer className="offb-actions">
-          <button type="button" className="offb-cancel" onClick={close} disabled={busy}>
+          <Button variant="secondary" onClick={close} disabled={busy}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="offb-confirm"
+            variant="danger"
             data-action="offboard-confirm"
-            disabled={busy || !ready}
+            disabled={!ready}
+            disabledReason={
+              ready || busy ? undefined : 'Choose who takes their tasks, or unassign them'
+            }
+            busy={busy}
           >
-            {busy && <Spinner size="sm" />}
             {confirmLabel}
-          </button>
+          </Button>
         </footer>
       </form>
     </>,

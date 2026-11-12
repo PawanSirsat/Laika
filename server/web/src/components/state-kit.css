@@ -1,0 +1,336 @@
+/*
+ * The state kit (LAI-1207): EmptyPanel, ErrorPanel, StaleBanner, Skeleton and
+ * InlineBusy. Tokens only — every colour, size and radius below is a theme or
+ * type token, so both themes come from one set of rules.
+ *
+ * Its own file, beside LAI-020's `states.css` rather than inside it, so the
+ * open pull requests that edit `states.css` merge without a conflict; the
+ * skeleton bars reuse `states.css`'s `.skeleton` pulse rather than forking it.
+ */
+
+/* ------------------------------------------------------------ shared */
+
+.empty-panel,
+.error-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  font-family: var(--font-ui);
+  color: var(--text-secondary);
+}
+
+.empty-panel[data-size='compact'],
+.error-panel[data-size='compact'] {
+  padding: var(--space-4) var(--space-3);
+}
+
+/* The glyph sits on a quiet tile, not a coloured disc: a tile reads as an
+   object in a place, a disc reads as a status light. */
+.empty-panel-icon,
+.error-panel-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  color: var(--text-muted);
+}
+
+.empty-panel-icon svg,
+.error-panel-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.empty-panel[data-size='compact'] .empty-panel-icon,
+.error-panel[data-size='compact'] .error-panel-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.empty-panel-title,
+.error-panel-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.empty-panel[data-size='compact'] .empty-panel-title,
+.error-panel[data-size='compact'] .error-panel-title {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+/* `--text-secondary`, never `--text-muted`: muted is below AA for body text
+   (LAI-018). One line is the brief; the measure keeps a long one readable. */
+.empty-panel-why,
+.error-panel-why {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.empty-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* ------------------------------------------------------------ empty */
+
+/* Neutral by construction: the only colour an empty state gets is on the
+   glyph of the two good outcomes, and neither is the error palette. */
+.empty-panel[data-variant='first-use'] .empty-panel-icon {
+  color: var(--accent);
+}
+
+.empty-panel[data-variant='caught-up'] .empty-panel-icon {
+  color: var(--chip-green);
+}
+
+/* ------------------------------------------------------------ error */
+
+/* The warning lives on the glyph alone. The words stay in the text colours:
+   a red headline makes a timeout read like data loss. */
+.error-panel-icon {
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+  box-shadow: none;
+}
+
+.error-panel[data-kind='offline'] .error-panel-icon {
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.error-panel-detail {
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  /* A request id is for copying into a support thread. */
+  user-select: all;
+}
+
+/* ------------------------------------------------------------ actions */
+
+/* `.button` from forms.css draws the primary; this only adds press feedback
+   and a touch-sized target. */
+.kit-btn {
+  min-height: 2.25rem;
+  /* --transition's colour fade on the token, so the whole button holds still
+     under reduced motion, as the kit asked before motion.css (LAI-1207). */
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-base) var(--ease-enter);
+}
+
+.kit-btn:active:not([aria-disabled='true']) {
+  transform: scale(0.97);
+}
+
+.kit-btn[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.kit-btn-sm {
+  min-height: 1.875rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+}
+
+@media (pointer: coarse) {
+  .kit-btn,
+  .kit-btn-sm {
+    min-height: 2.75rem;
+  }
+}
+
+/* The secondary step: a text button, so the primary stays the one action. */
+.kit-link {
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-1);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color var(--duration-fast) var(--ease-standard);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kit-link:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+.kit-link:focus-visible,
+.kit-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------ stale */
+
+/* A line above the rows, not a page in their place (LAI-1128's shape). */
+.stale-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  border-radius: var(--radius-card);
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.stale-banner-text {
+  margin: 0;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.stale-banner-title {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.stale-banner-age {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ loading */
+
+/* Laid out from the first frame so the page holds its shape; drawn only once
+   the delay passes. `visibility`, not `display`, is what keeps the space. */
+.skeleton-region-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-region[data-shown='false'] .skeleton-region-body {
+  visibility: hidden;
+}
+
+.skeleton-region[data-shown='true'] .skeleton-region-body {
+  animation: kit-skeleton-in var(--duration-base) var(--ease-enter);
+}
+
+@keyframes kit-skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.skeleton-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+/* Each bar's height is its text's cap height, centred in the line box, so a
+   line of skeleton is exactly as tall as the line of text that replaces it. */
+.skeleton-text-line {
+  display: block;
+  height: 0.625rem;
+  margin-block: calc((var(--leading-body) - 0.625rem) / 2);
+}
+
+.skeleton-text[data-size='small'] .skeleton-text-line {
+  height: 0.5rem;
+  margin-block: calc((var(--leading-small) - 0.5rem) / 2);
+}
+
+.skeleton-text[data-size='title'] .skeleton-text-line {
+  height: 0.875rem;
+  margin-block: calc((var(--leading-heading-sm) - 0.875rem) / 2);
+}
+
+.skeleton-avatar-kit {
+  display: inline-block;
+  flex: none;
+  border-radius: var(--radius-pill);
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.skeleton-avatar-kit[data-size='sm'] {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.skeleton-avatar-kit[data-size='lg'] {
+  width: 2rem;
+  height: 2rem;
+}
+
+.skeleton-card-kit {
+  display: flex;
+}
+
+.skeleton-table-row-kit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.skeleton-table-row-kit:last-child {
+  border-bottom: 0;
+}
+
+.skeleton-table-cell {
+  flex-grow: 0;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.inline-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}

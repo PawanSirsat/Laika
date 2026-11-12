@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, DEFAULT_STATUSES, open, until, type ApiStub } from './harness.ts';
 import { offered, pick, valueOf } from './dropdown.ts';
+import { boardAction } from './board-menu.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -269,8 +270,16 @@ void describe('subtasks and due dates on the cards', () => {
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       // Three children in the project, one done.
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
-      assert.equal(await text(byKey(h, 'LC-3').locator('.card-parent')), '↳ LC-1');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '1/3');
+      assert.equal(await text(byKey(h, 'LC-3').locator('.card-parent')), 'LC-1');
+      // The design's ↳ is the registry's drawn mark now, not a typed glyph (LAI-1213).
+      for (const marker of ['.card-subtasks', '.card-parent']) {
+        assert.equal(
+          await h.page.locator(`article.card ${marker} svg[data-icon="parent"]`).first().count(),
+          1,
+          `${marker} lost its mark`,
+        );
+      }
       assert.equal(await byKey(h, 'LC-4').locator('.card-parent').count(), 0);
 
       const due = byKey(h, 'LC-1').locator('.card-due');
@@ -295,7 +304,7 @@ void describe('subtasks and due dates on the cards', () => {
       assert.equal(await byKey(h, 'LC-3').count(), 0);
       await until(async () => (await byKey(h, 'LC-1').count()) === 1);
       assert.equal(await byKey(h, 'LC-1').count(), 1);
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '1/3');
     } finally {
       await h.close();
     }
@@ -314,7 +323,7 @@ void describe('subtasks and due dates on the cards', () => {
       assert.equal(await byKey(h, 'LC-2').count(), 0, 'positive control: the filter hides LC-2');
       await until(async () => (await byKey(h, 'LC-5').count()) === 1);
       assert.equal(await byKey(h, 'LC-5').count(), 1, 'positive control: LC-5 is shown');
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '1/3');
     } finally {
       await h.close();
     }
@@ -330,7 +339,7 @@ void describe('subtasks and due dates on the cards', () => {
       await until(async () => (await h.page.locator('.card-due').count()) === 1);
       assert.equal(await h.page.locator('.card-due').count(), 1, 'nothing to hide');
 
-      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await boardAction(h.page, 'View settings');
       await h.page.locator('.vs-remove[data-field="subtasks"]').click();
       await h.page.locator('.vs-remove[data-field="due"]').click();
       await until(

@@ -200,7 +200,7 @@
   white-space: nowrap;
 }
 
-.list-bulk-action:hover:not(:disabled),
+.list-bulk-action:hover:not(:disabled, [aria-disabled='true']),
 .list-bulk-all:hover:not(:disabled),
 .list-bulk-action[aria-expanded='true'] {
   background: var(--bg-column);
@@ -215,6 +215,7 @@
 }
 
 .list-bulk-action:disabled,
+.list-bulk-action[aria-disabled='true'],
 .list-bulk-all:disabled,
 .list-bulk-clear:disabled {
   opacity: 0.45;

@@ -36,6 +36,8 @@ import { TaskMarkdown } from './TaskMarkdown.tsx';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { revealFinish } from './reveal-finish.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './hero.css';
 
 export interface StateHeroProps {
@@ -124,9 +126,9 @@ function RoundLists({ round, limit }: { readonly round: Round; readonly limit: b
           <ul className="hero-list-items">
             {round.commits.map((commit) => (
               <li key={commit.id} className="hero-commit">
-                <code className="hero-sha" title={commit.sha}>
-                  {shortSha(commit.sha)}
-                </code>
+                <Tooltip content={commit.sha} lazy>
+                  <code className="hero-sha">{shortSha(commit.sha)}</code>
+                </Tooltip>
                 <span className="hero-commit-text">{commit.message ?? 'No message given'}</span>
               </li>
             ))}
@@ -151,7 +153,7 @@ function RoundLists({ round, limit }: { readonly round: Round; readonly limit: b
                   }
                   aria-label={run.exit_code === 0 ? 'Passed' : 'Failed'}
                 >
-                  {run.exit_code === 0 ? '✓' : '✗'}
+                  <Icon name={run.exit_code === 0 ? 'check' : 'close'} size="tiny" />
                 </span>
                 <code className="hero-run-command">{run.command}</code>
                 <span className="hero-run-exit">exit {run.exit_code}</span>
@@ -297,9 +299,11 @@ export function StateHero({
                   {agent}
                 </span>
               )}
-              <time dateTime={when.iso} title={when.full} className="hero-when">
-                {when.text}
-              </time>
+              <Tooltip content={when.full} lazy>
+                <time dateTime={when.iso} className="hero-when">
+                  {when.text}
+                </time>
+              </Tooltip>
             </span>
           )}
           {mayDecide && (
@@ -352,7 +356,7 @@ export function StateHero({
                   revealFinishSummary(latest.number);
                 }}
               >
-                Full summary in activity ↓
+                Full summary in activity <Icon name="arrow-down" size="tiny" />
               </a>
             </p>
             {facts !== undefined && (
@@ -406,9 +410,9 @@ export function StateHero({
           </span>
           {done !== undefined && (
             <span className="hero-byline">
-              <time dateTime={done.iso} title={done.full}>
-                {done.text}
-              </time>
+              <Tooltip content={done.full} lazy>
+                <time dateTime={done.iso}>{done.text}</time>
+              </Tooltip>
               {latest !== undefined &&
                 ` · ${String(rounds?.rounds.length ?? 0)} round${rounds?.rounds.length === 1 ? '' : 's'}`}
             </span>
@@ -487,9 +491,11 @@ export function StateHero({
           <span className="hero-byline">
             {prior !== undefined && `after round ${String(prior.number)} `}by{' '}
             <strong className="hero-strong">{nameOf(sendBack.decided_by)}</strong>{' '}
-            <time dateTime={sent.iso} title={sent.full} className="hero-when">
-              {sent.text}
-            </time>
+            <Tooltip content={sent.full} lazy>
+              <time dateTime={sent.iso} className="hero-when">
+                {sent.text}
+              </time>
+            </Tooltip>
           </span>
         </div>
         <div className="hero-reason">

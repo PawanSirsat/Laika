@@ -713,7 +713,10 @@ void describe('a viewer who may not write tasks (LAI-473, LAI-082)', () => {
           .count(),
         0,
       );
-      assert.equal(await viewer.page.locator('[aria-keyshortcuts]').count(), 0);
+      // No *move* shortcut on a card. The page may still announce others —
+      // Search's `/` since LAI-1213 is a reader's as much as an editor's.
+      assert.equal(await viewer.page.locator('article.card [aria-keyshortcuts]').count(), 0);
+      assert.equal(await viewer.page.locator('[aria-keyshortcuts*="Alt+Arrow"]').count(), 0);
     } finally {
       await viewer.close();
     }

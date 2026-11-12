@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { agentClientName } from '../../../api/agent-clients.ts';
 import {
   COST_LABEL,
@@ -16,6 +16,7 @@ import { InfoTip } from '../profile/InfoTip.tsx';
 import { BarRows } from './BarRows.tsx';
 import { BySpaceRows } from './BySpaceRows.tsx';
 import { breakdownTab, breakdownTabs, type BreakdownTab } from './usage-derive.ts';
+import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 
 const TAB_LABELS: Record<BreakdownTab, string> = {
   space: 'Space',
@@ -61,32 +62,9 @@ export function BreakdownCard({
   readonly offered: ReadonlySet<string> | null;
 }) {
   const [picked, setPicked] = useState<BreakdownTab | undefined>(undefined);
-  const buttons = useRef<Partial<Record<BreakdownTab, HTMLButtonElement | null>>>({});
   const hasSpaces = usage.by_project !== null && outsideAnySpace(usage) !== null;
   const tabs = breakdownTabs(hasSpaces);
   const current = breakdownTab(picked, tabs, usage.by_developer !== null);
-
-  const choose = (tab: BreakdownTab): void => {
-    setPicked(tab);
-    buttons.current[tab]?.focus();
-  };
-  const move = (event: KeyboardEvent<HTMLDivElement>): void => {
-    const at = tabs.indexOf(current);
-    const last = tabs.length - 1;
-    const next =
-      event.key === 'ArrowLeft'
-        ? tabs[at === 0 ? last : at - 1]
-        : event.key === 'ArrowRight'
-          ? tabs[at === last ? 0 : at + 1]
-          : event.key === 'Home'
-            ? tabs[0]
-            : event.key === 'End'
-              ? tabs[last]
-              : undefined;
-    if (next === undefined) return;
-    event.preventDefault();
-    choose(next);
-  };
 
   const panels: Record<BreakdownTab, ReactNode> = {
     space: hasSpaces ? <BySpaceRows usage={usage} link={link} offered={offered} /> : null,
@@ -113,33 +91,16 @@ export function BreakdownCard({
             admins see them; members see totals only. Context, never a ranking or a rating (D-084).
           </p>
         </InfoTip>
-        <div
+        <Tabs
+          label="Break down by"
           className="usage-segmented prof-card-actions"
-          role="tablist"
-          aria-label="Break down by"
-          onKeyDown={move}
-        >
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              ref={(el) => {
-                buttons.current[tab] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`usage-breakdown-tab-${tab}`}
-              aria-controls={`usage-breakdown-panel-${tab}`}
-              aria-selected={current === tab}
-              tabIndex={current === tab ? 0 : -1}
-              className="usage-segment"
-              onClick={() => {
-                choose(tab);
-              }}
-            >
-              {TAB_LABELS[tab]}
-            </button>
-          ))}
-        </div>
+          tabClassName="usage-segment"
+          idBase="usage-breakdown-tab"
+          panelId={(tab) => `usage-breakdown-panel-${tab}`}
+          selected={current}
+          onSelect={setPicked}
+          items={tabs.map((tab) => ({ id: tab, label: TAB_LABELS[tab] }))}
+        />
       </header>
       {tabs.map((tab) => (
         <div
@@ -147,7 +108,7 @@ export function BreakdownCard({
           className="usage-panel"
           role="tabpanel"
           id={`usage-breakdown-panel-${tab}`}
-          aria-labelledby={`usage-breakdown-tab-${tab}`}
+          aria-labelledby={tabId('usage-breakdown-tab', tab)}
           data-section={SECTIONS[tab]}
           hidden={current !== tab}
         >

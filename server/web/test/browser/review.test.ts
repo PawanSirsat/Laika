@@ -26,6 +26,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -217,7 +218,7 @@ function server(
     seen.push(call);
     const row = rows.find((r) => r.task.id === id);
     rows = rows.filter((r) => r.task.id !== id);
-    return { ...(row?.task ?? {}), status: 'done' };
+    return { ...(row?.task ?? {}), status: 'done', status_name: 'Done' };
   };
   const stub: ApiStub = {
     '/api/v1/me': ME,
@@ -837,7 +838,7 @@ void describe('the task panel and the card (D-082)', () => {
       await card.waitFor({ timeout: 20_000 });
       const marker = card.locator('.marker-sent-back');
       assert.match(await marker.innerText(), /sent back/);
-      assert.equal(await marker.getAttribute('title'), 'Sent back: The lint run exits 1.');
+      assert.equal(await tipText(marker), 'Sent back: The lint run exits 1.');
 
       await card.click();
       const panel = h.page.locator('.drawer');

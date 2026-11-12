@@ -1,6 +1,7 @@
 import type { TaskSummary } from '../../../api/tasks.ts';
 import { ForecastSection } from './ForecastSection.tsx';
 import { TokensSection } from './TokensSection.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './forecast.css';
 
 export interface EstimateCardProps {
@@ -41,7 +42,10 @@ export function EstimateCard({
 }: EstimateCardProps) {
   return (
     <section className="meta-card est-card" aria-label="Estimate">
-      <h3 className="meta-card-title">Estimate</h3>
+      <h3 className="meta-card-title">
+        <Icon name="estimate" size="small" className="section-mark" />
+        Estimate
+      </h3>
       <ForecastSection
         compact
         slug={slug}

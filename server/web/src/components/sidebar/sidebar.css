@@ -14,12 +14,16 @@
   width: 13.25rem; /* 212px */
   flex: none;
   box-sizing: border-box;
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-subtle);
+  /* Level-1 glass (LAI-1132): transparent, the pane is `glass.css`'s ::before
+     — never a blur on the sidebar itself, which would trap its fixed popover. */
+  background: transparent;
+  isolation: isolate;
+  border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 0.16s ease;
+  /* Collapse is instant: a `width` transition relaid the whole board out every
+     frame for 160ms (LAI-1208). */
   /*
    * Holds the viewport rather than growing with the page — without this the
    * footer sits at the bottom of the *document*, below the fold on a full
@@ -43,21 +47,15 @@
   box-sizing: border-box;
 }
 
-/* The mark: 28px, radius 9, ground --text-primary, glyph --bg-card. */
+/* The brand mark (LAI-1126), 28px: the glass L on the sidebar's own ground —
+   it replaced the prototype's inverted tile with a glyph in it. */
 .sidebar-logo {
   width: 1.75rem;
   height: 1.75rem;
   flex: none;
-  border-radius: 0.5625rem;
-  background: var(--text-primary);
-  color: var(--bg-card);
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.sidebar-logo svg {
-  stroke: currentColor;
 }
 
 .sidebar-identity {
@@ -233,26 +231,13 @@
   color: var(--text-muted);
 }
 
-.sidebar-count {
-  flex: none;
-  min-width: 1.375rem;
-  padding: 0 0.3125rem;
-  box-sizing: border-box;
-  border-radius: var(--radius-pill);
-  background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1.25rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
+/* The count is the shared `Chip` count badge (LAI-1206): its box, face and
+   neutral tone live in `components/chip/chip.css`. The rail only decides the
+   active row's accent and, below, the collapsed rail's corner badge. */
 .sidebar-link-active .sidebar-count {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  color: var(--accent);
+  --chip-ink: var(--accent);
+  --chip-fill: var(--accent-bg);
+  --chip-edge: var(--accent-border);
 }
 
 /* ---------------------------------------------------------------- spaces */
@@ -428,7 +413,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: spaces-pop 0.14s ease;
+  transform-origin: top left;
+  animation: spaces-pop var(--duration-base) var(--ease-enter);
 }
 
 @keyframes spaces-pop {
@@ -882,12 +868,12 @@
     top: 0.125rem;
     right: 0.125rem;
     min-width: 1rem;
+    height: 0.875rem;
     padding: 0 0.1875rem;
     font-size: var(--text-tiny);
-    line-height: 0.875rem;
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
+    --chip-ink: var(--on-accent);
+    --chip-fill: var(--accent);
+    --chip-edge: var(--accent);
   }
 
   /*
@@ -917,7 +903,7 @@
     pointer-events: none;
     opacity: 0;
     z-index: 31;
-    transition: opacity 0.1s ease;
+    transition: opacity var(--duration-instant) var(--ease-standard);
   }
 
   .sidebar-collapsed .sidebar-user-text.sidebar-tip {
@@ -986,22 +972,11 @@
     inset: 0 auto 0 0;
     z-index: 5;
     transform: translateX(-100%);
-    transition: transform 160ms ease;
+    transition: transform var(--duration-slow) var(--ease-drawer);
   }
 
   .sidebar-open {
     transform: translateX(0);
     box-shadow: var(--shadow-card);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar,
-  .sidebar-tip {
-    transition: none;
-  }
-
-  .spaces-pop {
-    animation: none;
   }
 }

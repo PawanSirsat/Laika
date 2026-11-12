@@ -17,6 +17,8 @@ import { InfoTip } from '../profile/InfoTip.tsx';
 import { decisionVerb, proofFolded, proofFoldLabel } from './evidence-derive.ts';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import '../profile/profile.css';
 import './evidence.css';
 
@@ -66,21 +68,20 @@ const STATE_HINT: Record<EvidenceState, string> = {
 /** One item's state, as a small badge (D-082): `claimed` until something checks it. */
 export function StateBadge({ state }: { readonly state: EvidenceState }) {
   return (
-    <span className={`ev-state ev-state-${state}`} title={STATE_HINT[state]}>
-      {state}
-    </span>
+    <Tooltip content={STATE_HINT[state]} lazy>
+      <span className={`ev-state ev-state-${state}`}>{state}</span>
+    </Tooltip>
   );
 }
 
 /** A test run's exit code: green for 0, red for anything else. */
 export function ExitCode({ code }: { readonly code: number }) {
   return (
-    <span
-      className={code === 0 ? 'ev-exit ev-exit-pass' : 'ev-exit ev-exit-fail'}
-      title={code === 0 ? 'Exited 0: passed' : `Exited ${String(code)}: failed`}
-    >
-      <span aria-hidden="true">{code === 0 ? '✓' : '✗'}</span> exit {code}
-    </span>
+    <Tooltip content={code === 0 ? 'Exited 0: passed' : `Exited ${String(code)}: failed`} lazy>
+      <span className={code === 0 ? 'ev-exit ev-exit-pass' : 'ev-exit ev-exit-fail'}>
+        <Icon name={code === 0 ? 'check' : 'close'} size="tiny" /> exit {code}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -147,9 +148,11 @@ export function RoundProof({
           Finished by <strong className="ev-agent">{agent ?? nameOf(round.finished_by)}</strong>
           {agent !== null && <> for {nameOf(round.finished_by)}</>}
         </span>
-        <time className="ev-when" dateTime={when.iso} title={when.full}>
-          {when.text}
-        </time>
+        <Tooltip content={when.full} lazy>
+          <time className="ev-when" dateTime={when.iso}>
+            {when.text}
+          </time>
+        </Tooltip>
       </p>
 
       <RoundDecisionLine
@@ -174,9 +177,9 @@ export function RoundProof({
                 <ul className="ev-items">
                   {round.commits.map((commit) => (
                     <li key={commit.id} className="ev-item">
-                      <code className="ev-sha" title={commit.sha}>
-                        {shortSha(commit.sha)}
-                      </code>
+                      <Tooltip content={commit.sha} lazy>
+                        <code className="ev-sha">{shortSha(commit.sha)}</code>
+                      </Tooltip>
                       {commit.message !== null && <span className="ev-text">{commit.message}</span>}
                       <StateBadge state={commit.state} />
                     </li>
@@ -278,15 +281,17 @@ export function RoundDecisionLine({
     <div className={`ev-decision ev-decision-${decision.kind}`} data-decision={decision.kind}>
       <p className="ev-decision-head">
         <span className="ev-decision-mark" aria-hidden="true">
-          {decision.kind === 'accepted' ? '✓' : '↩'}
+          <Icon name={decision.kind === 'accepted' ? 'check' : 'reply'} size="tiny" />
         </span>
         <span>
           {decisionVerb(decision.kind)}{' '}
           <strong className="ev-agent">{nameOf(decision.decided_by)}</strong>
         </span>
-        <time className="ev-when" dateTime={when.iso} title={when.full}>
-          {when.text}
-        </time>
+        <Tooltip content={when.full} lazy>
+          <time className="ev-when" dateTime={when.iso}>
+            {when.text}
+          </time>
+        </Tooltip>
       </p>
       {hideReason !== true && reason.trim() !== '' && (
         <div className="ev-decision-reason">
@@ -304,9 +309,9 @@ export function CiLine({ round }: { readonly round: Round }) {
   return (
     <p className={`ev-ci ev-ci-${verdict}`} data-ci={verdict}>
       <span className="ev-ci-line">{ciLine(round.ci)}</span>
-      <code className="ev-ci-sha" title={round.ci.head_sha}>
-        on {shortSha(round.ci.head_sha)}
-      </code>
+      <Tooltip content={round.ci.head_sha} lazy>
+        <code className="ev-ci-sha">on {shortSha(round.ci.head_sha)}</code>
+      </Tooltip>
     </p>
   );
 }
@@ -330,12 +335,14 @@ export function SendBackNote({
     <div className="ev-sendback" role="note" aria-label="Sent back">
       <p className="ev-sendback-head">
         <span className="ev-sendback-label">
-          <span aria-hidden="true">↩</span> Sent back
+          <Icon name="reply" size="tiny" /> Sent back
         </span>
         <span>by {nameOf(sendBack.decided_by)}</span>
-        <time className="ev-when" dateTime={when.iso} title={when.full}>
-          {when.text}
-        </time>
+        <Tooltip content={when.full} lazy>
+          <time className="ev-when" dateTime={when.iso}>
+            {when.text}
+          </time>
+        </Tooltip>
       </p>
       <div className="ev-sendback-body">
         <TaskMarkdown source={sendBack.reason_md} people={people} meId={meId} />
@@ -464,6 +471,7 @@ export function EvidenceSection({
   return (
     <section className="panel-section ev" aria-label="Proof" data-section="proof">
       <h3 className="panel-section-title ev-title">
+        <Icon name="proof" size="small" className="section-mark" />
         Proof
         {latest !== undefined && <span className="panel-count">round {latest.number}</span>}
         <ProofInfo />
