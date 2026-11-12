@@ -772,7 +772,7 @@ void describe('the layout', () => {
           );
           const overflow = await h.page
             .locator('.appearance-card, .appearance-font, .appearance-fact')
-            .evaluateAll((els) =>
+            .evaluateAll((els: Element[]): string[] =>
               els.filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.className),
             );
           assert.deepEqual(overflow, [], `${name}: a card's content overflows it`);
