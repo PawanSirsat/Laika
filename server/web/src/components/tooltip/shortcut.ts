@@ -9,7 +9,7 @@
  *
  * The keys are written `+`-separated, modifiers first, in this vocabulary:
  * `Mod` (⌘ on a Mac, Ctrl elsewhere), `Shift`, `Alt`, then one key — a letter,
- * a digit, `Escape`, `Enter`.
+ * a digit, `Escape`, `Enter`, `ArrowLeft` and the other arrows.
  */
 
 const MAC_GLYPH: Readonly<Record<string, string>> = {
@@ -25,9 +25,18 @@ const WORD: Readonly<Record<string, string>> = {
 };
 
 /** What a key is called on its keycap. */
+const ARROW: Readonly<Record<string, string>> = {
+  ArrowLeft: '←',
+  ArrowRight: '→',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+};
+
 function keyName(key: string): string {
   if (key === 'Escape') return 'Esc';
   if (key === 'Enter') return '↵';
+  // My day's Timeline steps with ← and → (LAI-1214): drawn as the keycap is.
+  if (ARROW[key] !== undefined) return ARROW[key];
   return key.length === 1 ? key.toUpperCase() : key;
 }
 

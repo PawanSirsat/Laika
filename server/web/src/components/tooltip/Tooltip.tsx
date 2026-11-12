@@ -25,6 +25,13 @@ const HIDE_AFTER_MS = 120;
 export const LONG_PRESS_MS = 500;
 /** A finger that travels further than this is scrolling, not asking. */
 const PRESS_SLOP_PX = 10;
+/**
+ * Focus that lands this soon after the control mounted is a surface putting
+ * its first focus there as it opens — a side panel on its Close — not the
+ * reader resting on it (LAI-1214): it shows no tooltip, so the first Escape
+ * closes the panel instead of a tooltip nobody asked for.
+ */
+export const ARRIVAL_MS = 300;
 
 const MAC = onMac();
 
@@ -36,7 +43,11 @@ interface TriggerProps {
 }
 
 export interface TooltipProps {
-  /** Short words. Never the control's only name — the control carries `aria-label`. */
+  /**
+   * Short words. Never the control's only name — the control carries `aria-label`.
+   * `''` is nothing to say (LAI-1214): it never opens and describes nothing —
+   * a worded button whose tooltip is only its reason while it is off.
+   */
   readonly content: string;
   /**
    * The control's keyboard shortcut, as `Mod+B` (`shortcut.ts`): drawn as a
@@ -87,7 +98,8 @@ function boxOf(el: Element): Box {
  * theme cannot style.
  *
  * - Shows after {@link TOOLTIP_DELAY_MS} of hover **or keyboard focus**; a
- *   mouse click that focuses the control does not count as resting on it.
+ *   mouse click that focuses the control does not count as resting on it,
+ *   nor does a surface's first focus as it opens ({@link ARRIVAL_MS}).
  * - **Escape dismisses it, and only it** (LAI-1209): the key is spent before
  *   any dialog or menu underneath sees it, so the first Escape closes the
  *   tooltip and the second the dialog — **unless focus is in a field being
@@ -135,8 +147,11 @@ export function Tooltip({
     if (timer.current !== undefined) clearTimeout(timer.current);
     timer.current = undefined;
   };
+  const silent = content === '';
+  const silentRef = useRef(silent);
+  silentRef.current = silent;
   const showSoon = useCallback((): void => {
-    if (dismissed.current) return;
+    if (dismissed.current || silentRef.current) return;
     clear();
     timer.current = window.setTimeout(() => {
       setOpen(true);
@@ -162,6 +177,7 @@ export function Tooltip({
   useEffect(() => {
     const el = trigger.current;
     if (el === null) return;
+    const born = performance.now();
     let press: { x: number; y: number; timer: number } | undefined;
     const cancelPress = (): void => {
       if (press !== undefined) clearTimeout(press.timer);
@@ -178,7 +194,7 @@ export function Tooltip({
     };
     const onDown = (event: PointerEvent): void => {
       pressed.current = true;
-      if (toggleRef.current) return;
+      if (toggleRef.current || silentRef.current) return;
       hideSoon(0);
       if (event.pointerType !== 'touch') return;
       cancelPress();
@@ -209,7 +225,7 @@ export function Tooltip({
         event.stopPropagation();
         return;
       }
-      if (!toggleRef.current) return;
+      if (!toggleRef.current || silentRef.current) return;
       if (pinned.current) {
         close();
         return;
@@ -225,6 +241,7 @@ export function Tooltip({
     };
     const onFocusIn = (): void => {
       if (pressed.current) return;
+      if (performance.now() - born < ARRIVAL_MS) return;
       showSoon();
     };
     const onFocusOut = (event: FocusEvent): void => {
@@ -326,7 +343,8 @@ export function Tooltip({
   }, [open, side, content]);
 
   const own = children.props;
-  const describedBy = [own['aria-describedby'], tipId].filter(Boolean).join(' ');
+  const describedBy =
+    [own['aria-describedby'], silent ? undefined : tipId].filter(Boolean).join(' ') || undefined;
   const keycap = shortcut === undefined ? undefined : formatShortcut(shortcut, MAC);
 
   return (
@@ -339,31 +357,32 @@ export function Tooltip({
         'aria-describedby': describedBy,
         ...(shortcut === undefined ? {} : { 'aria-keyshortcuts': ariaShortcut(shortcut, MAC) }),
       })}
-      {createPortal(
-        <div
-          ref={tip}
-          id={tipId}
-          role="tooltip"
-          className={`tip tip-${placed} tip-${tone}${open ? ' tip-open' : ''}`}
-          hidden={!open}
-          data-tooltip=""
-          onPointerEnter={clear}
-          onPointerLeave={() => {
-            hideSoon(HIDE_AFTER_MS);
-          }}
-        >
-          {keycap === undefined ? (
-            content
-          ) : (
-            <>
-              <span className="tip-words">{content}</span>
-              {/* Read as part of the description: "Bold, Command B". */}
-              <kbd className="tip-kbd">{keycap}</kbd>
-            </>
-          )}
-        </div>,
-        document.body,
-      )}
+      {!silent &&
+        createPortal(
+          <div
+            ref={tip}
+            id={tipId}
+            role="tooltip"
+            className={`tip tip-${placed} tip-${tone}${open ? ' tip-open' : ''}`}
+            hidden={!open}
+            data-tooltip=""
+            onPointerEnter={clear}
+            onPointerLeave={() => {
+              hideSoon(HIDE_AFTER_MS);
+            }}
+          >
+            {keycap === undefined ? (
+              content
+            ) : (
+              <>
+                <span className="tip-words">{content}</span>
+                {/* Read as part of the description: "Bold, Command B". */}
+                <kbd className="tip-kbd">{keycap}</kbd>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
