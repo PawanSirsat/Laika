@@ -1,5 +1,6 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Dialog } from '../../../components/overlay/Dialog.tsx';
+import '../../../components/forms/button.css';
 import { useRef, useState } from 'react';
 import { CATEGORY_COPY, STATUS_CATEGORIES, type StatusCategory } from '../../../api/statuses.ts';
 import './column-editor.css';
@@ -52,12 +53,19 @@ export function NewColumnDialog({ busy, error, onCreate, onClose }: NewColumnDia
           <button type="button" className="cd-cancel" onClick={onClose}>
             Cancel
           </button>
+          {/* Why Add is off, said beside it (LAI-1209). */}
+          {trimmed === '' && !busy && (
+            <span className="button-reason cd-reason" id="cd-new-reason">
+              Name the column to add it
+            </span>
+          )}
           <button
             type="submit"
             className="cd-submit"
             // Disabled until it can succeed: the name is required, and a
             // submit that answers 422 is a worse way to say so.
             disabled={trimmed === '' || busy}
+            aria-describedby={trimmed === '' && !busy ? 'cd-new-reason' : undefined}
           >
             {busy && <Spinner size="sm" />}
             Add column

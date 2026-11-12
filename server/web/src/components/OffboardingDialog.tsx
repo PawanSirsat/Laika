@@ -178,7 +178,14 @@ export function OffboardingDialog({
           <h2 className="offb-title" id="offb-title">
             {title}
           </h2>
-          <IconButton icon="close" label="Close" size="sm" onClick={close} disabled={busy} />
+          <IconButton
+            icon="close"
+            label="Close"
+            shortcut="Escape"
+            size="sm"
+            onClick={close}
+            disabled={busy}
+          />
         </header>
         <div className="offb-about" id="offb-about">
           {consequences}
@@ -267,6 +274,9 @@ export function OffboardingDialog({
             variant="danger"
             data-action="offboard-confirm"
             disabled={!ready}
+            disabledReason={
+              ready || busy ? undefined : 'Choose who takes their tasks, or unassign them'
+            }
             busy={busy}
           >
             {confirmLabel}
