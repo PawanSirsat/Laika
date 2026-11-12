@@ -41,6 +41,7 @@ import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
 import { WorkroomScreen } from '../../routes/screens/workroom/WorkroomScreen.tsx';
+import { AppearanceScreen } from '../../routes/screens/appearance/AppearanceScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
 import { slugOfKey, taskHref, withTaskOpen } from '../../routes/task-href.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
@@ -628,6 +629,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/spaces/:slug/settings': { Component: SpaceSettingsRoute, layout: 'plain' },
   '/task/:key': { Component: WorkroomRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },
+  '/settings/appearance': { Component: AppearanceScreen, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },
   '/reset-password': { Component: ResetPasswordRoute, layout: 'plain' },

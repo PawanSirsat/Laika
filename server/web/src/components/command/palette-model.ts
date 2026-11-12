@@ -1,5 +1,5 @@
 import type { TaskSummary } from '../../api/tasks.ts';
-import { navRoutes, spaceTabs, SPACE_TAB_PATHS } from '../../routes/route-table.ts';
+import { navRoutes, paletteRoutes, spaceTabs, SPACE_TAB_PATHS } from '../../routes/route-table.ts';
 import { navHref } from '../../routes/nav-url.ts';
 
 /**
@@ -66,6 +66,12 @@ export function goToItems(
     label: route.label,
     href: navHref(route.path, projectSlug),
   }));
+  const extra = paletteRoutes(ask).map((route): PaletteItem => ({
+    id: `go:${route.path}`,
+    label: route.label,
+    keywords: route.palette,
+    href: route.path,
+  }));
   const tabs = spaceTabs(ask).map((route): PaletteItem => ({
     id: `go:${route.path}`,
     label: route.label,
@@ -73,7 +79,7 @@ export function goToItems(
     keywords: ['space', 'view'],
     href: navHref(route.path, projectSlug),
   }));
-  return [...nav, ...tabs];
+  return [...nav, ...extra, ...tabs];
 }
 
 /** The space a palette row switches to. */

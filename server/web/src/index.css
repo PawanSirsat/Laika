@@ -15,7 +15,7 @@
  * heavy (800 resolves to its 700), the three single-weight faces in their one,
  * and Commissioner's variable axis. An @font-face costs nothing until text is
  * set in it, so a reader who never picks one never downloads it — the browser
- * test `appearance-font.test.ts` holds that.
+ * test `appearance-page.test.ts` holds that.
  */
 @import '@fontsource/poppins/latin-400.css';
 @import '@fontsource/poppins/latin-500.css';

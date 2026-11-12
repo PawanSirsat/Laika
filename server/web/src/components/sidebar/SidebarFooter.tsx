@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGates } from '../../api/permissions.ts';
-import { AppearancePanel } from '../AppearancePanel.tsx';
+import { APPEARANCE_PATH } from '../../routes/route-table.ts';
+import { toggledTheme } from '../../theme/theme.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -25,8 +26,9 @@ export interface SidebarFooterProps {
  * and **Sign out**. The theme row and the sign-out button that sat here
  * (LAI-064, LAI-249) moved into it, so the rail ends in one control.
  *
- * *Appearance…* opens the side panel with the theme and the interface font
- * (LAI-1125); the quick theme row stays, as one click is still what most
+ * *Appearance* opens the Appearance page — every theme, System's dark
+ * variant and the interface font (LAI-1212; a side panel until then,
+ * LAI-1125). The quick theme row stays, as one click is still what most
  * readers want.
  *
  * *My profile* is drawn for a reader who may open their own profile —
@@ -49,11 +51,11 @@ export function SidebarFooter({
   onNavigate,
   onClose,
 }: SidebarFooterProps) {
-  const { theme, setPreference } = useTheme();
+  const { theme, setPreference, darkVariant } = useTheme();
   const colour = avatarColor(user.id, theme);
-  const next = theme === 'dark' ? 'light' : 'dark';
+  // From any dark theme to light; from light to the reader's dark variant (LAI-1212).
+  const next = toggledTheme(theme, darkVariant);
   const [open, setOpen] = useState(false);
-  const [appearance, setAppearance] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -127,14 +129,6 @@ export function SidebarFooter({
 
   return (
     <div className="sidebar-footer" ref={rootRef}>
-      {appearance && (
-        <AppearancePanel
-          onClose={() => {
-            setAppearance(false);
-          }}
-          restore={() => triggerRef.current}
-        />
-      )}
       {open && (
         <div
           ref={menuRef}
@@ -165,21 +159,17 @@ export function SidebarFooter({
             Switch to {next}
             {/* Drawn, not typed (LAI-1204): ☾ and ☀ came out at a different
                 weight in every font, and as emoji on some phones. */}
-            <Icon name={next === 'dark' ? 'moon' : 'sun'} className="user-menu-glyph" />
+            <Icon name={next === 'light' ? 'sun' : 'moon'} className="user-menu-glyph" />
             <span className="visually-hidden"> theme — currently {theme}</span>
           </button>
-          <button
-            type="button"
+          <a
             role="menuitem"
             className="user-menu-item user-menu-appearance"
-            aria-haspopup="dialog"
-            onClick={() => {
-              setOpen(false);
-              setAppearance(true);
-            }}
+            href={APPEARANCE_PATH}
+            onClick={follow(APPEARANCE_PATH)}
           >
-            Appearance…
-          </button>
+            Appearance
+          </a>
           <a
             role="menuitem"
             className="user-menu-item"

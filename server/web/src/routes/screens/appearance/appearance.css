@@ -1,0 +1,547 @@
+/*
+ * The Appearance page (LAI-1212). Theme tokens only — the previews draw in
+ * other themes by carrying `data-theme-preview`, which re-declares that
+ * theme's block from `styles/theme.css` on the preview element.
+ */
+
+.appearance {
+  box-sizing: border-box;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.appearance-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.appearance-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.appearance-heading {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.appearance-subheading {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.appearance-intro,
+.appearance-hint {
+  margin: 0;
+  max-width: 44rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- the save status and Reset, in the header's actions ---- */
+
+.appearance-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.25rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-medium);
+  color: var(--chip-green);
+}
+
+/* ---- theme cards ---- */
+
+.appearance-themes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.appearance-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    var(--transition),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.appearance-card:hover {
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
+
+.appearance-card[aria-checked='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.appearance-card:focus-visible,
+.appearance-font:focus-visible,
+.appearance-segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.appearance-card-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-1);
+}
+
+/* The radio's mark: an empty ring, a filled accent disc with a tick when chosen. */
+.appearance-card-check {
+  flex: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.0625rem;
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-pill);
+}
+
+/* Hidden, not transparent: forced colours repaint a transparent tick. */
+.appearance-card[aria-checked='false'] .appearance-card-check > * {
+  visibility: hidden;
+}
+
+.appearance-card[aria-checked='true'] .appearance-card-check {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.appearance-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.appearance-card-label {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-semibold);
+}
+
+.appearance-card-line {
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- the miniature app ---- */
+
+.appearance-preview {
+  display: flex;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 7rem;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-canvas);
+}
+
+.appearance-preview-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 7rem;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+}
+
+.appearance-preview-split .appearance-preview {
+  height: 100%;
+  border-radius: 0;
+}
+
+.appearance-preview-split .appearance-preview:first-child {
+  border-right: 0;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
+}
+
+.appearance-preview-split .appearance-preview:last-child {
+  border-left: 0;
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+}
+
+.appearance-preview-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 18%;
+  max-width: 2.25rem;
+  padding: 4px 3px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--sidebar-tint);
+}
+
+.appearance-preview-mark {
+  width: 8px;
+  height: 8px;
+  margin-bottom: 2px;
+  border-radius: 3px;
+  background: var(--brand-mark-2);
+}
+
+.appearance-preview-nav {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-default);
+}
+
+.appearance-preview-nav-on {
+  background: var(--accent);
+}
+
+.appearance-preview-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.appearance-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  height: 12px;
+}
+
+.appearance-preview-title {
+  width: 40%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text-primary);
+}
+
+.appearance-preview-button {
+  width: 18%;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.appearance-preview-lanes {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  min-height: 0;
+}
+
+.appearance-preview-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 5px;
+  background: var(--bg-column);
+}
+
+.appearance-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--border-card);
+  border-radius: 4px;
+  background: var(--bg-card);
+}
+
+.appearance-preview-line {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--text-secondary);
+}
+
+.appearance-preview-line-short {
+  width: 60%;
+}
+
+.appearance-preview-chip {
+  width: 45%;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.appearance-preview-chip-blue {
+  background: var(--chip-blue);
+}
+
+.appearance-preview-chip-green {
+  background: var(--chip-green);
+}
+
+/* ---- System's dark variant ---- */
+
+.appearance-variant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-column);
+}
+
+.appearance-variant-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.appearance-segments {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+}
+
+.appearance-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: calc(var(--radius-control) - 3px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.appearance-segment:hover {
+  color: var(--text-primary);
+}
+
+.appearance-segment[aria-checked='true'] {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+/* Each option's own canvas, drawn from its theme block. */
+.appearance-swatch {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-canvas);
+}
+
+/* ---- font cards ---- */
+
+.appearance-fonts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.appearance-font {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.appearance-font:hover {
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
+
+.appearance-font[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.appearance-font-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Regular weight on purpose: the single-weight faces have no bold, and a
+   preview should show the face as it is, not a fake bold of it. */
+.appearance-font-name {
+  min-width: 0;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-normal);
+  overflow-wrap: anywhere;
+}
+
+.appearance-badge {
+  flex: none;
+  padding: var(--chip-padding);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-chip);
+  color: var(--accent);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-semibold);
+}
+
+.appearance-font-sample {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.appearance-font-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+/* ---- motion and transparency ---- */
+
+.appearance-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.appearance-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-column);
+}
+
+.appearance-fact dt {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.appearance-fact dd {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- narrower screens ---- */
+
+@media (max-width: 960px) {
+  .appearance-themes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .appearance-fonts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* A phone: one card per row, the preview beside its name rather than above. */
+@media (max-width: 560px) {
+  .appearance {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+    gap: var(--space-5);
+  }
+
+  .appearance-themes,
+  .appearance-fonts,
+  .appearance-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .appearance-card {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .appearance-card > .appearance-preview,
+  .appearance-card > .appearance-preview-split {
+    flex: none;
+    width: 8.5rem;
+    height: 5.5rem;
+  }
+
+  .appearance-card-foot {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .appearance-variant {
+    padding: var(--space-3);
+  }
+}
+
+/* Windows High Contrast: the chosen card is told by its border, not a fill. */
+@media (forced-colors: active) {
+  .appearance-card[aria-checked='true'],
+  .appearance-font[aria-checked='true'],
+  .appearance-segment[aria-checked='true'] {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+}

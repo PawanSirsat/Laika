@@ -129,7 +129,16 @@ export interface Route {
    * Connect wizard is reached from Developer access and lights it.
    */
   readonly section?: string;
+  /**
+   * Offered in the ⌘K palette's *Go to* although it has no sidebar entry
+   * (LAI-1212), with the extra words a query may match. Still subject to
+   * `status` and `requires`, exactly as a sidebar entry is.
+   */
+  readonly palette?: readonly string[];
 }
+
+/** The Appearance page (LAI-1212): the person menu and the palette link here. */
+export const APPEARANCE_PATH = '/settings/appearance';
 
 export const ROUTES: readonly Route[] = [
   // WORK
@@ -331,6 +340,22 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase C',
   },
+  /*
+   * **Appearance** (LAI-1212): the theme — Light, Dark, Black or System — and
+   * the interface font, both of this device. It was a side panel off the
+   * person menu (LAI-1125); the owner asked for a page. Open to anyone signed
+   * in, with no permission: it reads and writes nothing on the server. Not in
+   * the sidebar — the person menu and the palette reach it.
+   */
+  {
+    orgLevel: true,
+    path: APPEARANCE_PATH,
+    label: 'Appearance',
+    group: null,
+    status: 'ready',
+    phase: 'Phase C',
+    palette: ['theme', 'font', 'dark', 'light', 'black', 'system', 'settings', 'appearance'],
+  },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   // D-104 item 4 (LAI-988): an admin-issued link sets a new password here.
@@ -495,6 +520,11 @@ export function routesInGroup(
   holds?: (permission: string) => boolean,
 ): readonly Route[] {
   return ROUTES.filter((r) => r.group === group && isShipped(r) && permitted(r, holds));
+}
+
+/** Routes the palette offers beyond the nav (LAI-1212): shipped, permitted, marked `palette`. */
+export function paletteRoutes(holds?: (permission: string) => boolean): readonly Route[] {
+  return ROUTES.filter((r) => r.palette !== undefined && isShipped(r) && permitted(r, holds));
 }
 
 /** Every route offered in the nav, in table order. */

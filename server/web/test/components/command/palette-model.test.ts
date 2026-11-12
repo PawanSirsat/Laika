@@ -23,7 +23,7 @@ import {
   taskHref,
   type PaletteKey,
 } from '../../../src/components/command/palette-model.ts';
-import { navRoutes, ROUTES, spaceTabs } from '../../../src/routes/route-table.ts';
+import { navRoutes, paletteRoutes, ROUTES, spaceTabs } from '../../../src/routes/route-table.ts';
 import { dialogCommand } from '../../../src/routes/screens/review/review-derive.ts';
 import { SHORTCUT_GROUPS, shortcutFor } from '../../../src/routes/screens/my-day/shortcuts.ts';
 
@@ -118,10 +118,12 @@ void describe('Go to', () => {
   const everything = (): boolean => true;
   const nothing = (): boolean => false;
 
-  void test('is exactly the sidebar’s entries, then the space tabs, for the same reader', () => {
+  void test('is exactly the sidebar’s entries, the palette-only pages, then the space tabs, for the same reader', () => {
     for (const holds of [everything, nothing]) {
       const ids = goToItems(holds, undefined, undefined).map((i) => i.href);
-      const expected = [...navRoutes(holds), ...spaceTabs(holds)].map((r) => r.path);
+      const expected = [...navRoutes(holds), ...paletteRoutes(holds), ...spaceTabs(holds)].map(
+        (r) => r.path,
+      );
       assert.deepEqual(ids, expected);
     }
   });

@@ -6,6 +6,7 @@ import { everyPage } from '../../api/every-page.ts';
 import { listAllTasks, type TaskSummary } from '../../api/tasks.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
+import { toggledTheme } from '../../theme/theme.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useShell } from '../shell/shell-context.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
@@ -139,7 +140,7 @@ export function CommandPalette() {
   const { permissions } = usePermissions(true);
   const gates = useGates(true);
   const { all: spaces } = useSpaces(true, projectSlug);
-  const { theme, setPreference } = useTheme();
+  const { theme, setPreference, darkVariant } = useTheme();
 
   const box = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
@@ -190,11 +191,11 @@ export function CommandPalette() {
         },
       });
     }
-    const next = theme === 'dark' ? 'light' : 'dark';
+    const next = toggledTheme(theme, darkVariant);
     rows.push({
       id: 'action:theme',
       label: `Switch to ${next} theme`,
-      keywords: ['theme', 'dark', 'light', 'appearance', 'mode'],
+      keywords: ['theme', 'dark', 'light', 'black', 'mode'],
       run: () => {
         setPreference(next);
       },
@@ -214,6 +215,7 @@ export function CommandPalette() {
     spaceName,
     gates,
     theme,
+    darkVariant,
     setPreference,
     signOut,
     signingOut,
