@@ -478,7 +478,8 @@ screen's.
 
 **"View a member's day, time and shared activity" is `people.analytics.read`**
 (D-102 rules 1–4, LAI-957), behind §6.4's `GET /people/:id/time`, `GET
-/people/:id/time/summary` and `GET /people/:id/local-activity`. It is *See everyone's analytics* (§3's grants),
+/people/:id/time/summary`, `GET /people/:id/time/days` (LAI-1173) and `GET
+/people/:id/local-activity`. It is *See everyone's analytics* (§3's grants),
 with the profile, the heatmap and the per-person tokens: the cells above are
 the defaults. **It amends the time rows' *"no admin row for drafts"*** — an
 owner, and whoever the owner grants it, reads a person's My day, drafts
@@ -4128,6 +4129,7 @@ POST   /api/v1/me/time-drafts/:id/confirm    body { kind?, title?, description? 
 PUT    /api/v1/me/time/days/:day/note        body { note } — the person's note on the day, null removes it → { day_note }   (session only; §4.62, LAI-501)
 GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week, the timer, the day's note   (session only)
 GET    /api/v1/me/time/summary               ?from=&to= — Overview over a stretch of ≤ 92 days: totals, by day, by project, by task, by kind   (session only; LAI-526)
+GET    /api/v1/me/time/days                  ?from=&to=&tz= — My day's Week, Month and Year: one row per day over ≤ 92 days, its state, minutes and largest tasks   (session only; LAI-1173)
 POST   /api/v1/me/time/timer                 body { tz, task?, kind?, title? } — start the person's one timer → 201   POST .../pause   POST .../resume   POST .../stop → 201 { entry, crossed_midnight }   DELETE → 204   (session only; §4.61, LAI-500)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
@@ -4169,6 +4171,7 @@ POST   /api/v1/users/:id/ratings             body { score, note } → 201   (own
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /me/time/summary answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-526)
+GET    /api/v1/people/:id/time/days          ?from=&to=&tz= — that person's GET /me/time/days answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-1173)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/me/developer-setup/activity   → { now, data: [{ at, kind: 'paired'|'tool_added'|'tool_revoked'|'device_unpaired'|'token_revoked'|'project_check_failed', subject, by: { id, name } | null }] } — your own last 30 days, newest first, the items /people/:id/developer-setup lists in activity; no look written (developer_setup.read_own, session only; D-139, LAI-1151; not paginated)
 GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summary, devices, tools, pending_pairing, repositories, tokens: { personal, tool_credentials }, activity } — the member's whole setup; no pairing code or token secret; a space the reader cannot open counted, never named; logged as kind developer_setup; yourself is 422 use_developer_access   (owner, admin by default; session only; D-132, LAI-1137)
@@ -5392,6 +5395,19 @@ parameter names anybody else.
   meeting kind; `manual_minutes` confirmed time typed or run on a timer. Under
   `GET /me/time`'s actions; `GET /people/:id/time/summary` is the same answer
   for a reader holding `people.analytics.read`, logged as a look with no day.
+- **Days over a stretch (LAI-1173).** `GET /me/time/days?from=&to=&tz=`
+  answers `{ from, to, tz, today, days }` — one row per day `from` to `to`,
+  bounded as the summary is (92 days, `range_too_long`, `range_backwards`), so
+  a year is four reads. A row is `{ day, state, confirmed_minutes,
+  drafted_minutes, untied_minutes, top_tasks }`: `state` is `GET /me/time`'s
+  own (`confirmed`, `drafted`, `no_signal`, `future` after `today` in `tz`), so
+  a day with nothing is *no signal*, never zero hours; `untied_minutes` is the
+  part of the drafted time on nothing yet; `top_tasks` the day's three largest
+  `{ task, project, untied, confirmed_minutes, drafted_minutes }`, as the
+  summary's task rows. **Read day by day with `GET /me/time`'s own readers**,
+  under its actions; without `tz`, the zone of the person's drafts. `GET
+  /people/:id/time/days` is the same answer for a reader holding
+  `people.analytics.read`, logged as a look with no day.
 - **The Time report (D-130, LAI-1135).** `GET /time/report?from=&to=` over at
   most 92 days (`422 range_too_long`, `range_backwards`, as the summary),
   narrowed by `spaces` (comma slugs; one the caller cannot open is `404`),
