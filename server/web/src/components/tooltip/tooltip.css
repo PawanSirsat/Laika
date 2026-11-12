@@ -1,0 +1,79 @@
+/*
+ * The one tooltip (LAI-1193). Tokens only, both themes: the card surface with
+ * the default border, so it reads on the canvas and on a card alike.
+ *
+ * Positioned with two custom properties the component writes through the
+ * CSSOM after measuring (`tooltip-place.ts`) — never a style attribute.
+ */
+
+.tip {
+  --tip-x: 0px;
+  --tip-y: 0px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* Above the dialog it describes (LAI-1209): the top of theme.css's one
+     layer ladder, mirrored in `overlay-tokens.ts`. */
+  z-index: var(--layer-tooltip, 95);
+  max-width: min(18rem, calc(100vw - 1rem));
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  white-space: normal;
+  pointer-events: auto;
+  transform: translate(var(--tip-x), var(--tip-y));
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-enter);
+}
+
+/* A control's name: a few words, on one line where they fit. */
+.tip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* An info button's explanation: a sentence or two, in the reading weight. */
+.tip-hint {
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.5rem 0.625rem;
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* The shortcut, as a keycap: quieter than the name, in the mono face. */
+.tip-kbd {
+  flex: none;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-column);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip-open {
+  opacity: 1;
+}
+
+@starting-style {
+  .tip-open {
+    opacity: 0;
+  }
+}

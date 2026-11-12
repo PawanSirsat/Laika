@@ -129,7 +129,16 @@ export interface Route {
    * Connect wizard is reached from Developer access and lights it.
    */
   readonly section?: string;
+  /**
+   * Offered in the ⌘K palette's *Go to* although it has no sidebar entry
+   * (LAI-1212), with the extra words a query may match. Still subject to
+   * `status` and `requires`, exactly as a sidebar entry is.
+   */
+  readonly palette?: readonly string[];
 }
+
+/** The Appearance page (LAI-1212): the person menu and the palette link here. */
+export const APPEARANCE_PATH = '/settings/appearance';
 
 export const ROUTES: readonly Route[] = [
   // WORK
@@ -317,6 +326,37 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 2',
   },
+  /*
+   * **A task's own page, the Workroom** (LAI-1199). The drawer stays the quick
+   * look over a view; this is the same task as a page, by key, reached from
+   * the drawer's *Expand* or a pasted link. Org-level for the nav: its key
+   * names its space already.
+   */
+  {
+    orgLevel: true,
+    path: '/task/:key',
+    label: 'Task',
+    group: null,
+    status: 'ready',
+    phase: 'Phase C',
+  },
+  /*
+   * **Appearance** (LAI-1212): the theme — Light, Dark, Black or System — and
+   * the interface font, both of this device. It was a side panel off the
+   * person menu (LAI-1125); the owner asked for a page. Open to anyone signed
+   * in, with no permission: it reads and writes nothing on the server. Not in
+   * the sidebar — the person menu and the palette reach it.
+   */
+  {
+    orgLevel: true,
+    path: APPEARANCE_PATH,
+    label: 'Appearance',
+    group: null,
+    status: 'ready',
+    phase: 'Phase C',
+    // Not 'theme', 'dark' or 'light': those find *Switch theme*, the one-step action.
+    palette: ['font', 'black', 'system', 'oled', 'settings', 'colour', 'color'],
+  },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   // D-104 item 4 (LAI-988): an admin-issued link sets a new password here.
@@ -334,6 +374,8 @@ export const ROUTES: readonly Route[] = [
   // required them — but out of the product nav, since they are not product.
   { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
   { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
+  // LAI-1131: the deliverable design trial. Illustrative fixtures, lazily loaded.
+  { public: true, path: '/design/documents', label: 'Documents', group: null, phase: 'reference' },
 ];
 
 /**
@@ -479,6 +521,11 @@ export function routesInGroup(
   holds?: (permission: string) => boolean,
 ): readonly Route[] {
   return ROUTES.filter((r) => r.group === group && isShipped(r) && permitted(r, holds));
+}
+
+/** Routes the palette offers beyond the nav (LAI-1212): shipped, permitted, marked `palette`. */
+export function paletteRoutes(holds?: (permission: string) => boolean): readonly Route[] {
+  return ROUTES.filter((r) => r.palette !== undefined && isShipped(r) && permitted(r, holds));
 }
 
 /** Every route offered in the nav, in table order. */

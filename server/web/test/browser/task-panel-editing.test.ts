@@ -574,6 +574,19 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
       await description(h).locator('.md p').waitFor({ timeout: 20_000 });
       const editor = await openEditor(h);
       const toolbar = editor.getByRole('toolbar', { name: 'Formatting' });
+      const more = toolbar.getByRole('button', { name: 'More formatting', exact: true });
+      let underMore: string[] = [];
+      if (await more.isVisible()) {
+        await more.click();
+        const menu = toolbar.getByRole('menu', { name: 'More formatting' });
+        await menu.waitFor({ timeout: 2_000 });
+        underMore = (
+          await menu.locator('[role^="menuitem"]:visible .rte-menu-label').allInnerTexts()
+        ).map((t) => t.trim());
+        assert.ok(underMore.length > 0, 'More formatting opened an empty menu');
+        await h.page.keyboard.press('Escape');
+        await menu.waitFor({ state: 'detached', timeout: 2_000 });
+      }
       for (const name of [
         'Text style',
         'Bold',
@@ -591,15 +604,14 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
         'Link a card',
         'Undo',
         'Redo',
-        'Markdown',
+        'Markdown source',
       ]) {
-        assert.equal(
-          await toolbar
-            .getByRole(name === 'Text style' ? 'combobox' : 'button', { name, exact: true })
-            .count(),
-          1,
-          `the toolbar has no ${name}`,
-        );
+        // On the bar, or — where the editor is too narrow for all of them —
+        // under *More formatting*, never both (LAI-1209).
+        const onBar = await toolbar
+          .getByRole(name === 'Text style' ? 'combobox' : 'button', { name, exact: true })
+          .count();
+        assert.equal(onBar + (underMore.includes(name) ? 1 : 0), 1, `the toolbar has no ${name}`);
       }
       // No image upload and no colour: Laika has no uploads, markdown no colour.
       assert.equal(await toolbar.getByRole('button', { name: /image|colou?r/i }).count(), 0);
@@ -683,12 +695,12 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     const h = await panel(server);
     try {
       const editor = await openEditor(h);
-      await editor.getByRole('button', { name: 'Markdown' }).click();
+      await editor.getByRole('button', { name: 'Markdown source' }).click();
       const source = editor.locator('textarea.rich-editor-source');
       await source.waitFor({ timeout: 5_000 });
       assert.equal(await source.inputValue(), DESCRIPTION);
       assert.equal(
-        await editor.getByRole('button', { name: 'Markdown' }).getAttribute('aria-pressed'),
+        await editor.getByRole('button', { name: 'Markdown source' }).getAttribute('aria-pressed'),
         'true',
       );
     } finally {
@@ -985,7 +997,7 @@ void describe('a list written right under a paragraph opens rich (LAI-849)', () 
     try {
       await description(h).locator('.md ul').waitFor({ timeout: 20_000 });
       const editor = await openEditor(h);
-      const toggle = editor.getByRole('button', { name: 'Markdown' });
+      const toggle = editor.getByRole('button', { name: 'Markdown source' });
       await toggle.click();
       const source = editor.locator('textarea.rich-editor-source');
       await source.waitFor({ timeout: 5_000 });
@@ -1308,7 +1320,7 @@ void describe('the comment composer is the same editor', () => {
       const editor = h.page.locator('.panel-composer .rich-editor');
       await editor.waitFor({ timeout: 10_000 });
       const toolbar = editor.getByRole('toolbar', { name: 'Formatting' });
-      const buttons = ['Bold', 'Mention someone', 'Link a card', 'Markdown'];
+      const buttons = ['Bold', 'Mention someone', 'Link a card', 'Markdown source'];
       await until(async () => {
         for (const name of buttons) {
           if ((await toolbar.getByRole('button', { name, exact: true }).count()) !== 1) {

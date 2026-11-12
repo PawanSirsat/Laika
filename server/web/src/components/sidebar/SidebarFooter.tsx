@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGates } from '../../api/permissions.ts';
+import { APPEARANCE_PATH } from '../../routes/route-table.ts';
+import { toggledTheme } from '../../theme/theme.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
-import { NavIcon } from './NavIcon.tsx';
+import { Icon } from '../icon/Icon.tsx';
+import { Spinner } from '../Spinner.tsx';
 import { menuStep } from './menu-keys.ts';
 import type { MeProfile } from '../../api/me.ts';
 
@@ -22,6 +25,11 @@ export interface SidebarFooterProps {
  * reference): **My profile**, **Switch to dark / light**, **Developer access**
  * and **Sign out**. The theme row and the sign-out button that sat here
  * (LAI-064, LAI-249) moved into it, so the rail ends in one control.
+ *
+ * *Appearance* opens the Appearance page — every theme, System's dark
+ * variant and the interface font (LAI-1212; a side panel until then,
+ * LAI-1125). The quick theme row stays, as one click is still what most
+ * readers want.
  *
  * *My profile* is drawn for a reader who may open their own profile —
  * `profile.read_own`, every role since D-139 (LAI-1150), or `profile.read` —
@@ -43,9 +51,10 @@ export function SidebarFooter({
   onNavigate,
   onClose,
 }: SidebarFooterProps) {
-  const { theme, setPreference } = useTheme();
+  const { theme, setPreference, darkVariant } = useTheme();
   const colour = avatarColor(user.id, theme);
-  const next = theme === 'dark' ? 'light' : 'dark';
+  // From any dark theme to light; from light to the reader's dark variant (LAI-1212).
+  const next = toggledTheme(theme, darkVariant);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -148,11 +157,19 @@ export function SidebarFooter({
             }}
           >
             Switch to {next}
-            <span className="user-menu-glyph" aria-hidden="true">
-              {next === 'dark' ? '☾' : '☀'}
-            </span>
+            {/* Drawn, not typed (LAI-1204): ☾ and ☀ came out at a different
+                weight in every font, and as emoji on some phones. */}
+            <Icon name={next === 'light' ? 'sun' : 'moon'} className="user-menu-glyph" />
             <span className="visually-hidden"> theme — currently {theme}</span>
           </button>
+          <a
+            role="menuitem"
+            className="user-menu-item user-menu-appearance"
+            href={APPEARANCE_PATH}
+            onClick={follow(APPEARANCE_PATH)}
+          >
+            Appearance
+          </a>
           <a
             role="menuitem"
             className="user-menu-item"
@@ -167,12 +184,18 @@ export function SidebarFooter({
             role="menuitem"
             className="user-menu-item user-menu-signout"
             disabled={signingOut}
+            aria-busy={signingOut || undefined}
             onClick={() => {
               setOpen(false);
               onSignOut();
             }}
           >
-            {signingOut ? 'Signing out…' : 'Sign out'}
+            {/* The busy rule (LAI-293): the word you pressed stays, a spinner
+                says it is working. It read "Signing out…" until LAI-1204 —
+                the one label swap the sweep's regex could not see, because
+                it has a space in it. */}
+            {signingOut && <Spinner size="sm" />}
+            Sign out
           </button>
         </div>
       )}
@@ -205,7 +228,7 @@ export function SidebarFooter({
           <span className="sidebar-user-name">{user.name}</span>
           <span className="sidebar-user-role">{user.org_role}</span>
         </span>
-        {!collapsed && <NavIcon name="chevron" size={12} className="user-menu-caret" />}
+        {!collapsed && <Icon name="chevron" size="tiny" className="user-menu-caret" />}
       </button>
     </div>
   );

@@ -24,6 +24,13 @@ export type OrganisationState =
        * directory is still the screen.
        */
       readonly capacity: CapacityView | null;
+      /**
+       * Set when a **re-read** failed (LAI-1194). The last good answer stays on
+       * screen beside a Retry, rather than the page being swapped for an error:
+       * a dropped connection after a role change should not take the directory
+       * away. `null` once a read succeeds.
+       */
+      readonly refreshError: unknown;
     };
 
 export interface UseOrganisation {
@@ -91,11 +98,16 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
           truncated: directory.truncated,
           invitesError: invited.error,
           capacity: seen,
+          refreshError: null,
         });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setState({ status: 'error', error });
+        setState((current) =>
+          current.status === 'ready'
+            ? { ...current, refreshError: error }
+            : { status: 'error', error },
+        );
       });
 
     return () => {

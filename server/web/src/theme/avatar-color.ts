@@ -20,6 +20,8 @@
  * lands on muddy yellow-greens that look broken next to the design's palette.
  */
 
+import { isDarkTheme, type Theme } from './theme.ts';
+
 /**
  * FNV-1a. Chosen because it is stable across runtimes and versions — a colour
  * that changes when the bundler does is a colour nobody can rely on. It is a
@@ -75,7 +77,7 @@ const MAX_LIGHT: Readonly<Record<number, number>> = {
   186: 33,
 };
 
-export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): AvatarColor {
+export function avatarColor(userId: string, theme: Theme = 'light'): AvatarColor {
   /*
    * Solid, in both themes, with white initials (LAI-606) — the prototype's
    * avatars are saturated per-person fills, not pastels. Dark uses the
@@ -85,7 +87,7 @@ export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): 
    */
   const hue = HUES[hash(userId) % AVATAR_COLOR_COUNT] ?? 212;
   const ceiling = MAX_LIGHT[hue] ?? 40;
-  const lightness = theme === 'dark' ? ceiling : Math.min(ceiling, ceiling - 4);
+  const lightness = isDarkTheme(theme) ? ceiling : Math.min(ceiling, ceiling - 4);
 
   return {
     background: `hsl(${String(hue)} 62% ${String(lightness)}%)`,
@@ -111,9 +113,9 @@ export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): 
  * clears 4.5:1 for every hue in the ramp, and an avatar nobody can read the
  * initials on is a coloured dot.
  */
-export function avatarColorSolid(userId: string, theme: 'light' | 'dark' = 'light'): AvatarColor {
+export function avatarColorSolid(userId: string, theme: Theme = 'light'): AvatarColor {
   const hue = HUES[hash(userId) % HUES.length] ?? HUES[0];
-  const lightness = theme === 'dark' ? 44 : 38;
+  const lightness = isDarkTheme(theme) ? 44 : 38;
 
   return {
     background: `hsl(${String(hue)} 44% ${String(lightness)}%)`,

@@ -582,7 +582,9 @@ void describe('the new chrome fits', () => {
         await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
         const state = await h.page.evaluate(() => ({
           attr: document.documentElement.getAttribute('data-theme'),
-          canvas: getComputedStyle(document.body).backgroundColor,
+          // `html`, not `body`: the body is transparent since LAI-1132 so
+          // the ambient layer shows, and the canvas colour moved up a level.
+          canvas: getComputedStyle(document.documentElement).backgroundColor,
         }));
         assert.equal(
           state.attr,
@@ -660,6 +662,14 @@ void describe('the prototype geometry (LAI-249)', () => {
       const inbox = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
       assert.ok(await inbox.locator('.nav-icon').isVisible(), 'the icon went with the label');
       const opacity = (el: Element) => getComputedStyle(el).opacity;
+      // The collapse is instant now (LAI-1208), so the tip's own short fade can
+      // still be running: wait it out, asserted, before reading.
+      const tipStill = () =>
+        inbox
+          .locator('.sidebar-tip')
+          .evaluate((el) => el.getAnimations().every((a) => a.playState !== 'running'));
+      await until(tipStill);
+      assert.equal(await tipStill(), true, 'the tip never stopped fading');
       assert.equal(await inbox.locator('.sidebar-tip').evaluate(opacity), '0');
       assert.match(await inbox.locator('.sidebar-count').innerText(), /^2/);
       assert.equal(await h.page.locator('.space-row .space-badge').first().innerText(), 'L');
@@ -678,12 +688,14 @@ void describe('the prototype geometry (LAI-249)', () => {
         undefined,
         { timeout: 5000 },
       );
-      // …and on keyboard focus: the toggle, then Tab, is My day.
+      // …and on keyboard focus: the toggle, then Tab, is the first entry —
+      // Search, the command palette's trigger, since LAI-1192 — and its name
+      // shows as a tooltip the same way.
       await h.page.mouse.move(900, 500);
       await toggle.focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.match(focused, /My day/, 'Tab from the toggle does not reach the first entry');
+      assert.match(focused, /^Search/, 'Tab from the toggle does not reach the first entry');
       await h.page.waitForFunction(
         () => {
           const tip = document.activeElement?.querySelector('.sidebar-tip');
@@ -846,7 +858,7 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('the user menu: profile, theme, Developer access, sign out — and its keys', async () => {
+  void test('the user menu: profile, theme, Appearance (LAI-1125, a page since LAI-1212), Developer access, sign out — and its keys', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/auth/sign-out': {},
@@ -867,11 +879,12 @@ void describe('the prototype geometry (LAI-249)', () => {
       const firstLines = async () =>
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|');
       await until(
-        async () => (await firstLines()) === 'My profile|Switch to dark|Developer access|Sign out',
+        async () =>
+          (await firstLines()) === 'My profile|Switch to dark|Appearance|Developer access|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Appearance', 'Developer access', 'Sign out'],
       );
       assert.equal(
         await menu.locator('a', { hasText: 'My profile' }).getAttribute('href'),
@@ -955,11 +968,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await until(
         async () =>
           (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
-          'My profile|Switch to dark|Developer access|Sign out',
+          'My profile|Switch to dark|Appearance|Developer access|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Appearance', 'Developer access', 'Sign out'],
       );
     } finally {
       await h.close();

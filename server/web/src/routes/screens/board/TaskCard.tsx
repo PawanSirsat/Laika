@@ -1,7 +1,13 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { tagColor } from './tag-colors.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { sprintGlyphLabel } from '../../../components/chip/chip-model.ts';
+import {
+  cardAttribution,
+  createdThroughAgentTitle,
+  stateLineNamesAgent,
+} from './card-attribution.ts';
 import { blockedState, blockers } from '../../../api/board-derive.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import type { CardFields } from './card-fields.ts';
@@ -13,6 +19,7 @@ import { SizeChip } from '../../../components/SizeChip.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import {
   agentDevice,
+  agentLabel,
   selectedAgentOf,
   selectedHarness,
   twinsOnTasks,
@@ -51,6 +58,11 @@ export interface TaskCardProps {
    * beside it. Absent for a reader who may not move cards.
    */
   readonly onKeyMove?: ((taskId: string, direction: KeyMove) => void) | undefined;
+  /**
+   * The card whose task is open in the drawer (LAI-1206): it wears the
+   * selected state, so the reader can see which card the panel belongs to.
+   */
+  readonly selected?: boolean | undefined;
   /** `S1`-style label per sprint id, and which one is active. Real data. */
   readonly sprintLabels?:
     ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
@@ -85,13 +97,17 @@ export function TaskCard({
   onOpen,
   onKeyMove,
   sprintLabels,
+  selected = false,
 }: TaskCardProps) {
+  // Held only while the pointer drags this card, for its own look (LAI-1206);
+  // the board's drop logic keeps its own state.
+  const [dragging, setDragging] = useState(false);
   const blocked = blockedState(task, byId);
   // `?? null`: a view served before LAI-758 — a tab open across the deploy —
   // has no `send_back` at all, and absent is not sent back.
   const sentBack = task.send_back ?? null;
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
-  const colour = assignee === undefined ? undefined : avatarColor(assignee.user_id, theme);
+  const creator = members.get(task.created_by)?.name;
   // Real: `created_via` ships on every task and `mcp` is the agent path.
   const byAgent = task.created_via === 'mcp';
   // Real since LAI-079. This was `demoTags(task.id)` until the tags table
@@ -112,8 +128,21 @@ export function TaskCard({
   // moment its heartbeat goes stale (LAI-597).
   const now = useClaimClock(fields.agent ? task.claim : null);
   const execution = fields.agent ? cardExecutionState(task, now) : null;
+  // Who the work is for, beside which agent (LAI-1206): the agent named once.
+  // While its claim is live, the device is the one the holding session
+  // reported — what the state line named before LAI-1206 — not the one the
+  // agent registered with.
+  const claimDevice = task.claim?.device_label?.trim() ?? '';
+  const shownAgent =
+    agent !== null && task.claim?.agent_id === agent.id && claimDevice !== ''
+      ? { ...agent, device_label: claimDevice }
+      : agent;
+  const attribution =
+    shownAgent === null ? null : cardAttribution(task, agentLabel(shownAgent), assignee?.name);
   const executionDetail =
-    execution === 'working' || execution === 'connection_lost' ? liveClaimDetail(task) : undefined;
+    (execution === 'working' || execution === 'connection_lost') && stateLineNamesAgent(attribution)
+      ? liveClaimDetail(task)
+      : undefined;
   // The server's own state for the task's saves (LAI-1005, LAI-1006), the
   // drawer's rule too. It never coincides with a live claim — the server lets
   // that speak first — and outranks *Waiting for agent*, as the drawer does.
@@ -144,15 +173,29 @@ export function TaskCard({
       // Addressable by id (LAI-473): the keyboard path refocuses the card after
       // it moves, and a motion layer can follow it across lanes.
       data-task-id={task.id}
-      className={moving ? 'card card-moving' : 'card'}
+      className={[
+        'card',
+        moving ? 'card-moving' : '',
+        dragging ? 'card-dragging' : '',
+        selected ? 'card-selected' : '',
+        blocked === true ? 'card-is-blocked' : '',
+        due === 'overdue' ? 'card-is-overdue' : '',
+      ]
+        .filter((part) => part !== '')
+        .join(' ')}
+      data-selected={selected || undefined}
       draggable={mayDrag && !moving}
       aria-busy={moving || undefined}
       onDragStart={(event) => {
         event.dataTransfer.setData('text/plain', task.id);
         event.dataTransfer.effectAllowed = 'move';
+        setDragging(true);
         onDragStart(task.id);
       }}
-      onDragEnd={onDragEnd}
+      onDragEnd={() => {
+        setDragging(false);
+        onDragEnd();
+      }}
     >
       {/*
         Title first, then the exception, then the footer — the order the
@@ -169,9 +212,14 @@ export function TaskCard({
               are answered rather than dropped. The colour is derived, never
               stored, and resolves to a per-theme token. */}
           {tags.map((tag) => (
-            <span key={tag} className={`card-tag card-tag-${tagColor(tag)} t-label`}>
+            <Chip
+              key={tag}
+              variant="tag"
+              tone={tagColor(tag)}
+              className={`card-tag card-tag-${tagColor(tag)}`}
+            >
               {tag}
-            </span>
+            </Chip>
           ))}
         </div>
       )}
@@ -243,6 +291,37 @@ export function TaskCard({
         <NoRecentSaveLine windowMs={noRecentSave.window_ms} id={noRecentSaveId} />
       )}
 
+      {/*
+        **Whose work, and which agent** (LAI-1206), on one line: the agent's
+        D-120 label once, then its relation to the person accountable — `for
+        Ada` while it holds the work, `requested for Ada` while it is only
+        selected. The four lanes stay apart: the avatar below is the
+        accountable person, never the agent, and nothing says *assigned*.
+      */}
+      {shownAgent !== null && attribution !== null && (
+        <p
+          className="card-attribution card-above"
+          data-lane={attribution.lane}
+          title={attribution.spoken}
+        >
+          <span className="card-agent">
+            <AgentChip
+              client={selectedHarness(shownAgent)}
+              device={agentDevice(shownAgent)}
+              // Told apart from another on this board that shares both (LAI-583).
+              twin={twinsOnTasks(byId).get(shownAgent.id)}
+              owner={shownAgent.owner.name}
+            />
+          </span>
+          {attribution.relation !== '' && (
+            <span className="card-attribution-relation" aria-hidden="true">
+              {attribution.relation}
+            </span>
+          )}
+          <span className="visually-hidden">{attribution.spoken}</span>
+        </p>
+      )}
+
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a
             down chevron. It replaced a coloured dot whose only difference
@@ -278,22 +357,31 @@ export function TaskCard({
             a dot when a person set it, the rest in the hover. */}
         {size !== null && <SizeChip size={size} className="card-size card-above" />}
 
+        {/* The sprint (LAI-1206): a round pill with the iteration mark, in
+            the UI face — never the square mono tab the effort wears, which is
+            how `S2` read as the size `S` beside it. The mark is named aloud. */}
         {fields.sprint && sprint !== undefined && (
-          <span
+          <Chip
+            variant="sprint"
+            tone={sprint.active ? 'accent' : 'neutral'}
+            glyphLabel={sprintGlyphLabel(sprint.active)}
             className={
-              sprint.active ? 'card-sprint card-sprint-on t-code-sm' : 'card-sprint t-code-sm'
+              sprint.active ? 'card-sprint card-sprint-on card-above' : 'card-sprint card-above'
             }
+            title={`Sprint ${sprint.label}${sprint.active ? ' (active)' : ''}`}
           >
             {sprint.label}
-          </span>
+          </Chip>
         )}
         {fields.ready && task.ready && (
-          <span
-            className="marker marker-ready card-above t-label"
+          <Chip
+            variant="status"
+            tone="green"
+            className="marker-ready card-above"
             title="Unassigned, unblocked, ready to pick up"
           >
             ready
-          </span>
+          </Chip>
         )}
         {/*
           A person sent it back from review (D-082): the reason is the tooltip,
@@ -301,20 +389,25 @@ export function TaskCard({
           the review gate speaking, like the stale marker.
         */}
         {sentBack !== null && (
-          <span
-            className="marker marker-sent-back card-above t-label"
+          <Chip
+            variant="status"
+            tone="orange"
+            mark="back"
+            className="marker-sent-back card-above"
             title={`Sent back: ${sentBack.reason_md}`}
           >
-            ↩ sent back
-          </span>
+            sent back
+          </Chip>
         )}
         {blocked === undefined && (
-          <span
-            className="marker marker-unknown card-above"
+          <Chip
+            variant="status"
+            tone="orange"
+            className="marker-unknown card-above"
             title="A dependency is outside the tasks loaded here, so this cannot be judged"
           >
             deps ?
-          </span>
+          </Chip>
         )}
         {fields.deps && task.blocked_by.length > 0 && (
           <span className="card-deps card-above t-meta" title="Dependencies">
@@ -358,38 +451,31 @@ export function TaskCard({
           hover either way.
         */}
         {due !== undefined && task.due_on !== null && (
-          <span
+          <Chip
+            variant="status"
+            tone={due === 'overdue' ? 'danger' : 'orange'}
+            // A warning triangle for late, a clock for today: a different
+            // drawing each, never the colour alone (LAI-1206).
+            mark={due === 'overdue' ? 'alert' : 'clock'}
+            glyphLabel={due === 'overdue' ? 'Overdue' : undefined}
             className={
               due === 'overdue'
-                ? 'card-due card-due-overdue card-above t-meta'
-                : 'card-due card-due-today card-above t-meta'
+                ? 'card-due card-due-overdue card-above'
+                : 'card-due card-due-today card-above'
             }
             title={`${due === 'overdue' ? 'Overdue — was due' : 'Due today,'} ${dateLabel(task.due_on)}`}
-            data-due={task.due_on}
+            data={{ 'data-due': String(task.due_on) }}
           >
-            {due === 'overdue' && <span aria-hidden="true">⚠</span>}
             <time dateTime={new Date(task.due_on).toISOString()}>
               {due === 'overdue' ? dateLabelShort(task.due_on) : 'Due today'}
             </time>
-          </span>
+          </Chip>
         )}
 
         <span className="card-spacer" />
 
-        {/* The agent the work is meant for (LAI-538), beside the person and
-            never instead of them. Neutral: the agent colour is the owner's
-            decision (D-020). */}
-        {agent !== null && (
-          <span className="card-agent card-above">
-            <AgentChip
-              client={selectedHarness(agent)}
-              device={agentDevice(agent)}
-              // Told apart from another on this board that shares both (LAI-583).
-              twin={twinsOnTasks(byId).get(agent.id)}
-              owner={agent.owner.name}
-            />
-          </span>
-        )}
+        {/* The agent the work is meant for (LAI-538) moved to its own line
+            above (LAI-1206), where it says whose work it is. */}
 
         {/* The dashed "+" that stood here for an unassigned card is gone
             (LAI-606): it was display-only — claiming lives in the task
@@ -397,25 +483,21 @@ export function TaskCard({
             avatar. Unassigned simply shows no avatar. */}
         {!fields.assignee || assignee === undefined ? null : (
           <span className="card-who card-above">
-            <span
-              className="card-avatar t-avatar"
-              style={
-                colour === undefined
-                  ? undefined
-                  : {
-                      background: colour.background,
-                      color: colour.foreground,
-                      borderColor: colour.border,
-                    }
-              }
-              title={assignee.name}
-            >
-              {initials(assignee.name)}
-            </span>
-            {/* The badge sits on the avatar's corner, not beside it — the work
-                belongs to the person; their agent only did the writing. */}
+            {/* The accountable person (LAI-1206): the shared avatar, named in
+                full with its lane for a screen reader. */}
+            <Avatar
+              name={assignee.name}
+              userId={assignee.user_id}
+              theme={theme}
+              size={24}
+              label={`Accountable: ${assignee.name}`}
+              className="card-avatar"
+            />
+            {/* The badge sits on the avatar's corner: the task was *created
+                through* an agent. Who created it is `created_by`, which is
+                not always the person accountable. */}
             {byAgent && (
-              <span className="card-bot" title={`Written by ${assignee.name}'s agent`}>
+              <span className="card-bot" title={createdThroughAgentTitle(creator)}>
                 <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
                   <rect x="4" y="8" width="16" height="12" rx="3" />
                   <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />

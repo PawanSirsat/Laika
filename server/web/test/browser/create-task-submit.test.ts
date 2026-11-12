@@ -308,7 +308,7 @@ void describe('Create another', () => {
       const d = box(h);
       await d.locator('.ct-title-input').fill('First');
       // Enter on the Create another box toggles nothing and sends nothing (review).
-      await d.getByLabel('Create another').focus();
+      await d.getByLabel('Create another', { exact: true }).focus();
       await h.page.keyboard.press('Enter');
       await new Promise((r) => setTimeout(r, 300));
       assert.equal(
@@ -316,7 +316,7 @@ void describe('Create another', () => {
         0,
         'Enter on the checkbox submitted',
       );
-      assert.equal(await d.getByLabel('Create another').isChecked(), false);
+      assert.equal(await d.getByLabel('Create another', { exact: true }).isChecked(), false);
       await pick(d.getByLabel('Priority', { exact: true }), 'p1');
       await pick(d.getByLabel('Status', { exact: true }), 'st-in_progress');
       await pick(d.getByLabel('Assignee', { exact: true }), 'u2');
@@ -324,7 +324,7 @@ void describe('Create another', () => {
       await d.getByLabel('Due date', { exact: true }).fill('2026-11-20');
       await d.locator('.ct-more-summary').click();
       await d.getByLabel('Outside id', { exact: true }).fill('JIRA-1');
-      await d.getByLabel('Create another').check();
+      await d.getByLabel('Create another', { exact: true }).check();
       await d.getByRole('button', { name: 'Create', exact: true }).click();
 
       await until(() => posts(h, '/projects/laika-core/tasks').length === 1);

@@ -485,7 +485,7 @@ void describe('a builder’s profile', () => {
         async () => (await h.page.locator('[data-section="tokens"] [data-empty]').count()) === 1,
       );
       const text = await h.page.locator('.prof').innerText();
-      assert.match(text, /No projects yet/);
+      assert.match(text, /Not in any space yet/);
       assert.match(text, /Nothing here right now/);
       assert.match(text, /Nothing accepted yet/);
       assert.match(text, /Nia hasn’t set up an agent yet/);

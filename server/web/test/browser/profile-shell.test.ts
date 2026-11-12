@@ -406,9 +406,12 @@ void describe('someone else’s profile (frame A)', () => {
       assert.ok(notice.y >= crumbs.y + crumbs.height - 1, 'the notice is beside the breadcrumb');
       const avatar = await h.page.locator('.prof-avatar').boundingBox();
       assert.equal(Math.round(avatar?.width ?? 0), 48, 'the avatar is 3rem on a phone');
-      // The tabs scroll inside their own row rather than the page.
+      // The tabs scroll inside their own row rather than the page — the shared
+      // tab strip inside the nav since LAI-1193.
       assert.equal(
-        await h.page.locator('nav.prof-tabs').evaluate((el) => getComputedStyle(el).overflowX),
+        await h.page
+          .locator('nav.prof-tabs [data-tab-strip]')
+          .evaluate((el) => getComputedStyle(el).overflowX),
         'auto',
       );
       await assertFits(h.page, '390');

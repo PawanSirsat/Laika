@@ -27,8 +27,10 @@ import { navHref } from '../../src/routes/nav-url.ts';
 const REACHED_FROM: Readonly<Record<string, string>> = {
   '/members': 'the Projects screen — every project card has a Members button',
   '/spaces/:slug/settings': "a space's ⋯ menu (Space settings) and the gear on its card (LAI-977)",
+  '/task/:key': "the task drawer's Expand button, on every view of a space (LAI-1199)",
   '/design/tokens': 'the token reference, linked from `/design/states`',
   '/design/states': 'a development reference, reached by typing the path',
+  '/design/documents': 'the deliverable design trial (LAI-1131), reached by typing the path',
   // The SPACES section is built from the project list rather than from
   // `ROUTES`, so these two are reachable without being in any group.
   '/board': 'the SPACES section — every space row opens its board',
@@ -40,6 +42,9 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   // admins, the only readers it is drawn for.
   '/people':
     'a person — their name on Organisation, a Contributors row or a Capacity card (owners and admins)',
+  // LAI-1212: a personal setting of this device, not a destination.
+  '/settings/appearance':
+    "the person menu's *Appearance* at the foot of the rail, and the ⌘K palette's Go to",
   // A person's own day (LAI-787, D-088): about whoever is signed in, so it
   // sits under their name at the foot of the rail rather than in a group.
 };

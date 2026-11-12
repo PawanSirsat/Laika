@@ -82,6 +82,9 @@ export interface DeviceDetailsProps {
  * **Disconnect device…** stays at the foot: every tool on it, behind a
  * confirmation naming each.
  */
+/** The id of the line saying why *Disconnect device* is unavailable. */
+const DISCONNECT_WHY = 'dv3-disconnect-why';
+
 export function DeviceDetails({
   device,
   now,
@@ -192,17 +195,26 @@ export function DeviceDetails({
       panel="device"
       footer={
         canManage && live ? (
-          <button
-            type="button"
-            className="dx-btn dx-btn-sm dv3-danger"
-            aria-disabled={device.active_count === 0 || disconnecting || undefined}
-            onClick={() => {
-              if (device.active_count === 0 || disconnecting) return;
-              onDisconnect();
-            }}
-          >
-            Disconnect device…
-          </button>
+          <>
+            <button
+              type="button"
+              className="dx-btn dx-btn-sm dv3-danger"
+              aria-disabled={device.active_count === 0 || disconnecting || undefined}
+              aria-describedby={device.active_count === 0 ? DISCONNECT_WHY : undefined}
+              onClick={() => {
+                if (device.active_count === 0 || disconnecting) return;
+                onDisconnect();
+              }}
+            >
+              Disconnect device…
+            </button>
+            {/* Never a button that does nothing without saying why (LAI-1191, the audit's B10). */}
+            {device.active_count === 0 && (
+              <p className="dv3-note" id={DISCONNECT_WHY} data-disconnect-why>
+                No tool on this device is active, so there is nothing to disconnect.
+              </p>
+            )}
+          </>
         ) : undefined
       }
     >

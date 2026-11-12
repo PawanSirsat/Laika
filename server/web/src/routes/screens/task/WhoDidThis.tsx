@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 import './feed.css';
 
 export interface WhoDidThisProps {
@@ -63,10 +64,13 @@ export function WhoDidThis({
     setShift(over > 0 ? -Math.min(over, Math.max(room, 0)) : 0);
   }, [open]);
 
+  // On the overlay stack while open (LAI-1205): a dialog above it keeps Escape.
+  const { isTop } = useLayer('popover', open);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || !isTop()) return;
       event.preventDefault();
       setOpen(false);
       button.current?.focus();

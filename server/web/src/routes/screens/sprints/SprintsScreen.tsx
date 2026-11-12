@@ -1,6 +1,6 @@
 import { everyPage } from '../../../api/every-page.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -14,7 +14,7 @@ import { useRoute } from '../../use-route.ts';
 import { AssignTasksPanel } from './AssignTasksPanel.tsx';
 import { SprintCard } from './SprintCard.tsx';
 import { SprintForm } from './SprintForm.tsx';
-import { sprintFigures } from './sprint-derive.ts';
+import { formatRange, sprintFigures } from './sprint-derive.ts';
 import { useSprints } from './use-sprints.ts';
 import './sprints.css';
 import { pickProject } from '../../../api/pick-project.ts';
@@ -63,6 +63,38 @@ export function SprintsScreen() {
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [assigning, setAssigning] = useState<Sprint | undefined>(undefined);
   const [confirmingDelete, setConfirmingDelete] = useState<Sprint | undefined>(undefined);
+  /**
+   * What the last action did, said once (LAI-1195): a sprint created, saved,
+   * started or deleted. The list changing is not enough — a new sprint can
+   * land below the fold, and a delete leaves nothing to look at.
+   */
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const confirmRef = useRef<HTMLDivElement>(null);
+  /** The Delete button that opened the confirm, so focus goes back to it. */
+  const deleteOrigin = useRef<string | undefined>(undefined);
+
+  /*
+   * **The confirm takes focus** (B12's class, LAI-1195): an alertdialog that
+   * appears without moving focus is not announced, and the keyboard is left
+   * on a button that no longer means anything. The safe choice, Keep it,
+   * takes it; Escape keeps the sprint too.
+   */
+  useEffect(() => {
+    if (confirmingDelete === undefined) return;
+    confirmRef.current?.querySelector<HTMLButtonElement>('[data-keep]')?.focus();
+  }, [confirmingDelete?.id]);
+
+  const closeConfirm = (): void => {
+    const origin = deleteOrigin.current;
+    setConfirmingDelete(undefined);
+    deleteOrigin.current = undefined;
+    // Back to where the keyboard was, if that sprint is still there.
+    requestAnimationFrame(() => {
+      if (origin === undefined) return;
+      const back = document.querySelector<HTMLElement>(`[data-delete-for="${origin}"]`);
+      (back ?? document.querySelector<HTMLElement>('.sprints .sprint-button'))?.focus();
+    });
+  };
 
   // The project id is needed for the permission check, and the slug for the API.
   // Resolved together so a screen opened without `?project=` still works.
@@ -133,7 +165,9 @@ export function SprintsScreen() {
   const headerContext =
     slug === undefined || sprints.state.status !== 'ready'
       ? undefined
-      : `${slug} · ${String(sprints.state.rows.length)}${sprints.state.truncated ? '+' : ''} ${
+      : // The count alone (LAI-1195): the slug is a URL word, and the space
+        // header above already names the space.
+        `${String(sprints.state.rows.length)}${sprints.state.truncated ? '+' : ''} ${
           sprints.state.rows.length === 1 && !sprints.state.truncated ? 'sprint' : 'sprints'
         }`;
 
@@ -149,6 +183,7 @@ export function SprintsScreen() {
             className="sprint-button sprint-button-primary"
             onClick={() => {
               setEditing(undefined);
+              setNotice(undefined);
               setFormOpen(true);
             }}
           >
@@ -169,16 +204,42 @@ export function SprintsScreen() {
         </p>
       )}
 
+      {notice !== undefined && (
+        <p className="sprint-notice" role="status">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+            <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="2.4" />
+          </svg>
+          <span>{notice}</span>
+          <button
+            type="button"
+            className="sprint-alert-close"
+            onClick={() => {
+              setNotice(undefined);
+            }}
+          >
+            Dismiss
+          </button>
+        </p>
+      )}
+
       {formOpen && (
         <SprintForm
+          key={editing?.id ?? 'new'}
           {...(editing === undefined ? {} : { sprint: editing })}
           busy={sprints.busy}
           onSubmit={async (input) => {
+            setNotice(undefined);
             const ok =
               editing === undefined
                 ? await sprints.create(input)
                 : await sprints.update(editing.id, input);
             if (ok) {
+              setNotice(
+                `${editing === undefined ? 'Created' : 'Saved'} ${input.name} · ${formatRange(
+                  input.starts_on,
+                  input.ends_on,
+                )}.`,
+              );
               setFormOpen(false);
               setEditing(undefined);
             }
@@ -192,14 +253,27 @@ export function SprintsScreen() {
       )}
 
       {confirmingDelete !== undefined && (
-        <div className="sprint-confirm" role="alertdialog" aria-label="Delete sprint">
-          <p className="sprint-confirm-body">
+        <div
+          ref={confirmRef}
+          className="sprint-confirm"
+          role="alertdialog"
+          aria-labelledby="sprint-confirm-title"
+          aria-describedby="sprint-confirm-note"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && !sprints.busy) {
+              event.stopPropagation();
+              closeConfirm();
+            }
+          }}
+        >
+          <p className="sprint-confirm-body" id="sprint-confirm-title">
             Delete <strong>{confirmingDelete.name}</strong>?
           </p>
           {/* §4.15: deleting a sprint releases its tasks rather than destroying
               them. Said before the click, not after — this is the only moment
               the reassurance is worth anything. */}
-          <p className="sprint-confirm-note">
+          <p className="sprint-confirm-note" id="sprint-confirm-note">
+            {confirmingDelete.status === 'active' ? 'This is the running sprint. ' : ''}
             Its tasks are not deleted. They return to no sprint and stay on the board.
           </p>
           <div className="sprint-form-actions">
@@ -208,8 +282,11 @@ export function SprintsScreen() {
               className="sprint-button sprint-button-danger"
               disabled={sprints.busy}
               onClick={() => {
-                void sprints.remove(confirmingDelete.id).then((ok) => {
-                  if (ok) setConfirmingDelete(undefined);
+                const gone = confirmingDelete;
+                void sprints.remove(gone.id).then((ok) => {
+                  if (!ok) return;
+                  setNotice(`Deleted ${gone.name}. Its tasks are back in no sprint.`);
+                  closeConfirm();
                 });
               }}
             >
@@ -219,10 +296,9 @@ export function SprintsScreen() {
             <button
               type="button"
               className="sprint-button"
+              data-keep=""
               disabled={sprints.busy}
-              onClick={() => {
-                setConfirmingDelete(undefined);
-              }}
+              onClick={closeConfirm}
             >
               Keep it
             </button>
@@ -302,13 +378,20 @@ export function SprintsScreen() {
                       setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);
                     }}
                     onEdit={() => {
+                      setNotice(undefined);
                       setEditing(row.sprint);
                       setFormOpen(true);
                     }}
                     onActivate={() => {
-                      void sprints.activate(row.sprint.id);
+                      setNotice(undefined);
+                      void sprints.activate(row.sprint.id).then((ok) => {
+                        if (ok)
+                          setNotice(`Started ${row.sprint.name}. It is now the active sprint.`);
+                      });
                     }}
                     onDelete={() => {
+                      setNotice(undefined);
+                      deleteOrigin.current = row.sprint.id;
                       setConfirmingDelete(row.sprint);
                     }}
                     onAssign={() => {

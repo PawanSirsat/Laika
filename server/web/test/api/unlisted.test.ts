@@ -12,6 +12,7 @@ import { describe, test } from 'node:test';
 import {
   firstLine,
   mayPromote,
+  promoteBlocker,
   newestFirst,
   openUnlistedCount,
   unlistedState,
@@ -94,5 +95,28 @@ void describe('the compact queue (LAI-754)', () => {
     assert.equal(firstLine('\n  \n  The runner warns.\nSecond line'), 'The runner warns.');
     assert.equal(firstLine('one line'), 'one line');
     assert.equal(firstLine('   '), '');
+  });
+});
+
+void describe('promoteBlocker: a greyed Create task says why (LAI-1128, B15)', () => {
+  const spaces = [{ slug: 'laika' }, { slug: 'onroute' }];
+
+  void test('each reason, in the order a reader meets them', () => {
+    assert.equal(promoteBlocker(undefined, '', 'T'), 'Loading the spaces you can add tasks to.');
+    assert.equal(promoteBlocker(null, '', 'T'), 'Could not load your spaces.');
+    assert.equal(
+      promoteBlocker([], '', 'T'),
+      'You cannot create tasks in any space. A space lead can give you access.',
+    );
+    assert.equal(promoteBlocker(spaces, '', 'T'), 'Choose a space.');
+    assert.equal(promoteBlocker(spaces, 'laika', '   '), 'Give the task a title.');
+  });
+
+  void test('a slug that is not one of the offered spaces is not a choice', () => {
+    assert.equal(promoteBlocker(spaces, 'laika-core', 'T'), 'Choose a space.');
+  });
+
+  void test('a chosen space and a title: nothing blocks', () => {
+    assert.equal(promoteBlocker(spaces, 'onroute', 'Fix the script'), undefined);
   });
 });

@@ -21,8 +21,19 @@
 :root.board-motion::view-transition-group(*),
 :root.board-motion::view-transition-old(*),
 :root.board-motion::view-transition-new(*) {
-  animation-duration: 200ms;
+  /* 200ms, `ease` — D-071 fixes both; `--duration-glide` is that 200ms. */
+  animation-duration: var(--duration-glide);
   animation-timing-function: ease;
+}
+
+/*
+ * **The lift** (LAI-1208): the card being dragged sinks to its faded
+ * placeholder (`.lane-item-dragging .card` in `board.css`) and comes back on
+ * drop over a short fade rather than a snap. A transition, so a drag
+ * abandoned mid-fade turns round from where it is.
+ */
+.lane-item > .card {
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 /* Held, then let go: long enough to find, gone before it is noise. */
@@ -51,30 +62,27 @@
 }
 
 .card[data-flash] {
-  animation: card-flash 3.6s ease-out;
+  animation: card-flash var(--duration-flash) ease-out;
 }
 
 .list-row[data-flash] > td {
-  animation: row-flash 3.6s ease-out;
+  animation: row-flash var(--duration-flash) ease-out;
 }
 
 /*
  * **Less motion keeps the information.** Nothing moves and nothing fades: the
  * change lands at once, and the mark is a plain ring that is there for the
- * same 3.6s and then is not.
+ * same 3.6s and then is not. The glide needs nothing here — `--duration-glide`
+ * is 0ms under the global rule in `styles/motion.css`, and `board-motion.ts`
+ * does not start one. This block is the guard's one named exemption: it holds
+ * a state rather than removing motion (LAI-1208).
  */
 @media (prefers-reduced-motion: reduce) {
-  :root.board-motion::view-transition-group(*),
-  :root.board-motion::view-transition-old(*),
-  :root.board-motion::view-transition-new(*) {
-    animation: none;
-  }
-
   .card[data-flash] {
-    animation: card-flash 3.6s steps(1, end);
+    animation: card-flash var(--duration-flash) steps(1, end);
   }
 
   .list-row[data-flash] > td {
-    animation: row-flash 3.6s steps(1, end);
+    animation: row-flash var(--duration-flash) steps(1, end);
   }
 }
