@@ -160,6 +160,24 @@ const stub = (tasks: readonly ReturnType<typeof task>[]): ApiStub => ({
  * switch, and a chip mid-transition reads as neither theme's colour. The
  * screen honours `prefers-reduced-motion`, so this is also that path.
  */
+/**
+ * Two frames, so a theme switch's colours have landed before they are read.
+ * A global reduced-motion rule that gives every property a 0.01ms transition
+ * (LAI-1132's, until motion.css replaced it) leaves the old colour in
+ * getComputedStyle for the frame the switch happens in (merge train).
+ */
+const settle = (page: Page): Promise<void> =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      }),
+  );
+
 const pinned = async (page: Page): Promise<void> => {
   await page.clock.setFixedTime(NOW);
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -213,6 +231,7 @@ void describe('red means overdue, and nothing else (visual audit #12)', () => {
       try {
         await h.page.locator(cell(13)).waitFor({ timeout: 20_000 });
         await setTheme(h.page, theme);
+        await settle(h.page);
         // The sprint has arrived: its band is drawn on an ordinary weekday.
         await h.page.locator(`${cell(13)} .cal-band-now`).waitFor({ timeout: 10_000 });
 
@@ -465,6 +484,7 @@ void describe('at phone width the period is an agenda', () => {
         const agenda = h.page.locator('.cal-agenda');
         await agenda.waitFor({ timeout: 20_000 });
         await setTheme(h.page, theme);
+        await settle(h.page);
         assert.equal(await h.page.locator('[role="grid"]').count(), 0, 'the grid is still drawn');
 
         // Today, then every day with work, in order: 9th, 11th (today), 18th.
