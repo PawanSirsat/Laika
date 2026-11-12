@@ -418,7 +418,10 @@
 .tlx-bar-past {
   background: var(--chip-green-bg);
   border-color: var(--chip-green-border);
-  opacity: 0.65;
+  /* Dimmed, as LAI-721 asks, but less (LAI-1195): at 0.65 the ended
+     sprint's name fell under readable contrast in light. */
+  color: var(--text-secondary);
+  opacity: 0.85;
 }
 
 .tlx-bar:hover {
@@ -669,6 +672,18 @@
   }
 }
 
+/* A phone gives the track most of the width (LAI-1195): at 13rem the sprint
+   column left a 140px window on the dates. */
+@media (max-width: 30rem) {
+  .tlx {
+    --tlx-side: 9.5rem;
+  }
+
+  .tlx-keys {
+    display: none;
+  }
+}
+
 /* -------------------------------------------------------------- tasks & tray */
 
 .timeline-tasks {
@@ -793,4 +808,111 @@
 .tlx-toolbar,
 .tlx-legend {
   flex: none;
+}
+
+/* ---------------------------------------------------------- LAI-1195 round */
+
+.tlx-pan {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.tlx-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  padding: 0;
+}
+
+.tlx-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tlx-tool:disabled:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+
+.tlx-zoom-label {
+  margin-left: 0.25rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.tlx-keys {
+  flex: none;
+  margin-top: 0;
+  margin-bottom: 0.375rem;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.tlx-keys kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-secondary);
+}
+
+/* The chart's frame: the scroller plus its edge fades. */
+.tlx-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.tlx-frame::before,
+.tlx-frame::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  /* Clear of the chart's own bottom margin. */
+  bottom: calc(0.75rem + 1px);
+  z-index: 4;
+  width: 2.5rem;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.tlx-frame::before {
+  left: calc(var(--tlx-side-cue, 22rem) + 1px);
+  background: linear-gradient(to right, var(--bg-card), transparent);
+}
+
+.tlx-frame::after {
+  right: 1px;
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  background: linear-gradient(to left, var(--bg-card), transparent);
+}
+
+.tlx-frame[data-more-left]::before,
+.tlx-frame[data-more-right]::after {
+  opacity: 1;
+}
+
+@media (max-width: 47.5rem) {
+  .tlx-frame {
+    --tlx-side-cue: 13rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  .tlx-frame {
+    --tlx-side-cue: 9.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tlx-chevron svg,
+  .timeline-tray-toggle svg {
+    transition: none;
+  }
 }
