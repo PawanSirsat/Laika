@@ -5,8 +5,9 @@ area: shell
 assignee: shell
 priority: p2
 depends-on: [LAI-1173]
-status: in-progress
+status: review
 started: 2026-11-12T11:40:00Z
+finished: 2026-11-12T12:10:00Z
 ---
 
 ## Goal
@@ -24,30 +25,30 @@ switch My day between Day, Week, Month and Year, with its zoom animation.
 
 ## Acceptance criteria
 
-- [ ] A *Day · Week · Month · Year* radio group, with − / +, on My day. The
+- [x] A *Day · Week · Month · Year* radio group, with − / +, on My day. The
       view is `?span=` in the address beside `?day=`, Day when absent.
       Back and forward walk the views.
-- [ ] Day is unchanged; the existing My day browser tests pass untouched.
-- [ ] Week: seven columns over the hours its blocks fill, with no fixed-window
+- [x] Day is unchanged; the existing My day browser tests pass untouched.
+- [x] Week: seven columns over the hours its blocks fill, with no fixed-window
       clamp. Two blocks at once sit side by side. A block opens its day with
       the block in the editor.
-- [ ] Month: Monday-first weeks. Each day shows its total, its top two tasks
+- [x] Month: Monday-first weeks. Each day shows its total, its top two tasks
       and a bar; a week number opens the week; a day nothing reached shows `—`.
-- [ ] Year: twelve months, heat by quartile of the year's own working days,
+- [x] Year: twelve months, heat by quartile of the year's own working days,
       today ringed. A month opens Month and a day opens Day.
-- [ ] No target: every bar is a share of the period's busiest day.
-- [ ] Keys: D W M Y, − / +, Esc a step out, ← → a period. The shortcut sheet
+- [x] No target: every bar is a share of the period's busiest day.
+- [x] Keys: D W M Y, − / +, Esc a step out, ← → a period. The shortcut sheet
       lists them.
-- [ ] The zoom from and to the opened part: 520 ms on the design's curve,
+- [x] The zoom from and to the opened part: 520 ms on the design's curve,
       one scale for both axes. Reduced motion means no movement.
-- [ ] Wider views edit nothing: Add time, Fill gaps, Confirm day, the lists
+- [x] Wider views edit nothing: Add time, Fill gaps, Confirm day, the lists
       and the drawer are Day's.
-- [ ] `?user=` reads the same views through `/people/:id`.
-- [ ] Phone (390 px): a compact switch, Week as a list, no sideways scroll,
+- [x] `?user=` reads the same views through `/people/:id`.
+- [x] Phone (390 px): a compact switch, Week as a list, no sideways scroll,
       both themes.
-- [ ] Tests: `span`, `span-derive` and `span-motion` unit tests;
+- [x] Tests: `span`, `span-derive` and `span-motion` unit tests;
       `browser/my-day-span.test.ts`.
-- [ ] Named cross-area edit (D-033): SPEC §11.4.2's My day row and the
+- [x] Named cross-area edit (D-033): SPEC §11.4.2's My day row and the
       §11.4.2.1 My day bullet name the View.
 
 ## Notes / context
