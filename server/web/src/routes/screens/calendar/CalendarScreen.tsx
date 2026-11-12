@@ -1,10 +1,10 @@
 import { everyPage } from '../../../api/every-page.ts';
-import { useEffect, useMemo, useState } from 'react';
-import type { TaskSummary } from '../../../api/tasks.ts';
-import { useProjectTasks } from '../../../api/use-project-tasks.ts';
+import { useEffect, useState } from 'react';
+import { useTaskSummaries } from '../../../api/use-task-summaries.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { useProjectStatuses } from '../../../api/use-statuses.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
+import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
@@ -34,20 +34,12 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
   /*
    * The project's one task set (LAI-724) — shared with every other tab and
    * live through the store, where this screen used to walk it on every visit.
-   * A failure is an empty calendar, as it was.
+   * **A failure is a failure** (LAI-1128): it was an empty calendar, which
+   * says "nothing is due" about a space nobody could read.
    */
-  const set = useProjectTasks(slug);
+  const read = useTaskSummaries(slug);
   /** So a chip can say which column the task is in (LAI-739). */
   const statuses = useProjectStatuses(slug);
-  const tasks = useMemo(
-    (): readonly TaskSummary[] | undefined =>
-      set?.status === 'ready'
-        ? set.tasks.filter((t): t is TaskSummary => !('deleted' in t))
-        : set?.status === 'error'
-          ? []
-          : undefined,
-    [set?.status, set?.tasks],
-  );
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   const now = Date.now();
 
@@ -76,13 +68,23 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
     return <EmptyState headline="No space chosen" body="Pick a space to see its calendar." />;
   }
 
-  if (tasks === undefined) {
+  if (read.status === 'error') {
+    return (
+      <div className="cal">
+        <ApiErrorState error={read.error} resource="this space’s tasks" onRetry={read.retry} />
+      </div>
+    );
+  }
+
+  if (read.status === 'loading') {
     return (
       <div className="cal">
         <LoadingState shape="card" count={2} label="Loading the calendar" />
       </div>
     );
   }
+
+  const { tasks } = read;
 
   const weeks = monthWeeks(now);
   const due = placeByDue(
