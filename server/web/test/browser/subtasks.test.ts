@@ -270,8 +270,16 @@ void describe('subtasks and due dates on the cards', () => {
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       // Three children in the project, one done.
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
-      assert.equal(await text(byKey(h, 'LC-3').locator('.card-parent')), '↳ LC-1');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '1/3');
+      assert.equal(await text(byKey(h, 'LC-3').locator('.card-parent')), 'LC-1');
+      // The design's ↳ is the registry's drawn mark now, not a typed glyph (LAI-1213).
+      for (const marker of ['.card-subtasks', '.card-parent']) {
+        assert.equal(
+          await h.page.locator(`article.card ${marker} svg[data-icon="parent"]`).first().count(),
+          1,
+          `${marker} lost its mark`,
+        );
+      }
       assert.equal(await byKey(h, 'LC-4').locator('.card-parent').count(), 0);
 
       const due = byKey(h, 'LC-1').locator('.card-due');
@@ -296,7 +304,7 @@ void describe('subtasks and due dates on the cards', () => {
       assert.equal(await byKey(h, 'LC-3').count(), 0);
       await until(async () => (await byKey(h, 'LC-1').count()) === 1);
       assert.equal(await byKey(h, 'LC-1').count(), 1);
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '1/3');
     } finally {
       await h.close();
     }
@@ -315,7 +323,7 @@ void describe('subtasks and due dates on the cards', () => {
       assert.equal(await byKey(h, 'LC-2').count(), 0, 'positive control: the filter hides LC-2');
       await until(async () => (await byKey(h, 'LC-5').count()) === 1);
       assert.equal(await byKey(h, 'LC-5').count(), 1, 'positive control: LC-5 is shown');
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '1/3');
     } finally {
       await h.close();
     }

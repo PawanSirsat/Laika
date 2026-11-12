@@ -419,7 +419,10 @@ export function ListView({
                       {(row.labels !== '' || row.blockedBy !== '' || row.parentKey !== '') && (
                         <span className="list-sub">
                           {row.parentKey !== '' && (
-                            <Tooltip content={`Subtask of ${row.parentKey}`} lazy>
+                            <Tooltip
+                              content={`Subtask of ${row.parentKey.replace(/^↳\s*/, '')}`}
+                              lazy
+                            >
                               <span className="list-parent">{row.parentKey}</span>
                             </Tooltip>
                           )}
