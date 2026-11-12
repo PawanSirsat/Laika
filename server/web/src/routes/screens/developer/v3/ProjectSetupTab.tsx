@@ -1159,6 +1159,10 @@ function Authorization({ tool, project, access, announce, go, onSaved }: Authori
               resource={`${tool.label}’s access`}
               scope="project"
               verb="change"
+              // The choice is kept, so trying again saves the same one (LAI-1197).
+              onRetry={() => {
+                if (!saving) void save();
+              }}
             />
           )}
           <div className="dx-actions">

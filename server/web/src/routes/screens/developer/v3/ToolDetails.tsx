@@ -341,7 +341,7 @@ function ToolPanel({
           .then((next) => {
             retire();
             onChanged(next);
-            announce(`${label} disconnected.`);
+            announce(`${label} disconnected. Its credential no longer works.`);
             onDisconnected();
           })
           .catch((cause: unknown) => {
@@ -431,7 +431,12 @@ function ToolPanel({
                 created={rotated}
                 label={label}
                 title="New credential — copy it now, it is not shown again"
-                onDone={forget}
+                // Dismissed by saying so (LAI-1197); after it, it cannot come back.
+                doneLabel="I’ve saved it"
+                onDone={() => {
+                  forget();
+                  announce(`${label}’s new credential is hidden now and cannot be shown again.`);
+                }}
               />
             </div>
           )}

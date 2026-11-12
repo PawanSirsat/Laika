@@ -850,7 +850,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
       const rotate = h.calls.find((c) => c.path === '/api/v1/agents/a1/rotate-token');
       assert.deepEqual(rotate?.body, { token_id: 't-a1' });
       assert.equal(await body.locator('[data-credential]').innerText(), 'lai_newx…');
-      await h.page.getByRole('button', { name: 'Done' }).click();
+      await h.page.getByRole('button', { name: 'I’ve saved it' }).click();
       await h.page.getByTestId('agent-secret').waitFor({ state: 'detached' });
       assert.doesNotMatch(await h.page.content(), /SECRET_ONCE/);
       // Copied and done: the panel closes without asking (LAI-1081).
