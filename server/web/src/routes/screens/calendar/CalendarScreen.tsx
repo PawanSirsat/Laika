@@ -648,9 +648,26 @@ function DayList({ at, anchor, tasks, overdue, renderChip, onClose, onPick }: Da
   }, [anchor]);
 
   // Once placed: it is `visibility: hidden` until then, which refuses focus.
+  // Tried until it takes, a few frames at most: a global reduced-motion rule
+  // that transitions every property (LAI-1132's) keeps `visibility` hidden
+  // for a frame or two, and a refused focus() fails silently (merge train).
   const placed = place !== undefined;
   useEffect(() => {
-    if (placed) ref.current?.querySelector<HTMLElement>('.cal-task')?.focus();
+    if (!placed) return;
+    let frame = 0;
+    const attempt = (left: number): void => {
+      const first = ref.current?.querySelector<HTMLElement>('.cal-task');
+      first?.focus();
+      if (first !== null && first !== undefined && document.activeElement !== first && left > 0) {
+        frame = requestAnimationFrame(() => {
+          attempt(left - 1);
+        });
+      }
+    };
+    attempt(10);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
   }, [placed]);
 
   useEffect(() => {
