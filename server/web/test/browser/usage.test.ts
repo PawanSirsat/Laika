@@ -1128,8 +1128,9 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       assert.match(await text(h.page, '.usage-alerts-foot'), /Soft alerts · nothing is blocked/);
       // Two alerts fit: nothing is folded away.
       assert.equal(await card.getByRole('button', { name: /^Show all/ }).count(), 0);
-      // Usage is Insights' tab since LAI-796; the badge rides on Insights.
-      const badge = h.page.locator('a[href="/insights"] .sidebar-count');
+      // Usage is Insights' tab since LAI-796; the badge rides on Insights, and
+      // while it shows the link opens Usage, where the alerts are (LAI-1191).
+      const badge = h.page.locator('a[href="/insights?tab=usage"] .sidebar-count');
       // The figure, then the visually hidden name the rail adds for a reader.
       const count = async (): Promise<string> => (await badge.innerText()).split('\n')[0] ?? '';
       await until(async () => (await badge.count()) > 0);
@@ -1379,6 +1380,104 @@ void describe('both themes, laptop and phone', () => {
           );
         }
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the period, the figures and the chart (LAI-1201)', () => {
+  const bars = (page: Page) => page.locator('.usage-trend .usage-bar').count();
+  const range = (page: Page) => new URL(page.url()).searchParams.get('range');
+
+  void test('?range= is the period: 7 days survives a reload, a By space link keeps it, 30 days is the clean address', async () => {
+    const h = await open('/insights?tab=usage', ownerStub());
+    try {
+      await ready(h.page);
+      assert.equal(range(h.page), null);
+      await h.page.getByRole('button', { name: '7 days' }).click();
+      await until(async () => (await bars(h.page)) === 7 && range(h.page) === '7');
+      assert.equal(range(h.page), '7');
+
+      await h.page.reload();
+      await ready(h.page);
+      await until(async () => (await bars(h.page)) === 7);
+      assert.equal(await bars(h.page), 7, 'the reload forgot the period');
+      assert.equal(
+        await h.page.getByRole('button', { name: '7 days' }).getAttribute('aria-pressed'),
+        'true',
+      );
+      // Opening a space keeps the period read.
+      const laika = h.page.locator('[data-section="spaces"] a', { hasText: 'Laika' });
+      assert.equal(await laika.getAttribute('href'), '/insights?tab=usage&project=laika&range=7');
+
+      await h.page.getByRole('button', { name: '30 days' }).click();
+      await until(async () => (await bars(h.page)) === 30);
+      assert.equal(range(h.page), null, '30 days should leave no ?range=');
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every headline figure opens the card that breaks it down — by click and by keyboard', async () => {
+    const h = await open('/insights?tab=usage', ownerStub());
+    try {
+      await ready(h.page);
+      const expected: Record<string, string> = {
+        tokens: 'trend',
+        'cache-reads': 'cache',
+        unattributed: 'tasks',
+        'per-day': 'trend',
+        cost: 'breakdown',
+        cache: 'cache',
+      };
+      const focused = () =>
+        h.page.evaluate(() => document.activeElement?.getAttribute('data-section') ?? null);
+      for (const [figure, section] of Object.entries(expected)) {
+        const a = h.page.locator(`.usage-tiles [data-stat="${figure}"] a.usage-figure`);
+        assert.equal(await a.count(), 1, `${figure}: not a link`);
+        assert.equal(await a.getAttribute('href'), `#usage-${section}`);
+        assert.match((await a.getAttribute('aria-label')) ?? '', /, see /);
+        await a.click();
+        await until(async () => (await focused()) === section);
+        assert.equal(await focused(), section, `${figure} did not open ${section}`);
+      }
+      // The keyboard reaches the same place.
+      const cost = h.page.locator('.usage-tiles [data-stat="cost"] a.usage-figure');
+      await cost.focus();
+      await h.page.keyboard.press('Enter');
+      await until(async () => (await focused()) === 'breakdown');
+      assert.equal(await focused(), 'breakdown');
+      // The figure still reads as the figure.
+      assert.equal(await stat(h.page, 'tokens'), '255M');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the trend is one tab stop that arrow keys walk, and every day is a row in its table', async () => {
+    const h = await open('/insights?tab=usage', ownerStub());
+    try {
+      await ready(h.page);
+      const chart = h.page.locator('.usage-trend');
+      assert.equal(await chart.getAttribute('tabindex'), '0');
+      assert.equal(await chart.getAttribute('role'), 'group');
+      await chart.focus();
+      await h.page.keyboard.press('Home');
+      const tip = h.page.locator('.usage-trend .usage-tip');
+      await until(async () => (await tip.innerText()).includes('tokens'));
+      const first = await tip.innerText();
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await tip.innerText()) !== first);
+      assert.notEqual(await tip.innerText(), first, 'ArrowRight did not move');
+
+      const table = h.page.locator('.usage-trend-table');
+      await table.locator('summary').click();
+      const rowsShown = table.locator('tbody tr');
+      await until(async () => (await rowsShown.count()) === 30);
+      assert.equal(await rowsShown.count(), 30);
+      assert.match(await rowsShown.first().innerText(), /\d/);
     } finally {
       await h.close();
     }

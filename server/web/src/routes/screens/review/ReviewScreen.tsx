@@ -17,6 +17,7 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { HandoffsTab } from '../inbox/HandoffsTab.tsx';
 import { SCREEN_COPY } from '../screen-copy.ts';
@@ -118,6 +119,7 @@ export function ReviewScreen({
   const opener = useRef<HTMLElement | null>(null);
   /** The key of the last task the dialog drew — where focus goes when it closes. */
   const openedKey = useRef<string | null>(null);
+  const toast = useToast();
 
   const view = reviewView(params);
   const decidable = view === 'mine';
@@ -294,12 +296,25 @@ export function ReviewScreen({
     onChanged?.();
   };
 
+  /**
+   * Accept posts at once — the dialog's button, its `a` key and the bulk bar
+   * are a decision queue (D-146, LAI-1169), so no yes-or-no stands in front
+   * of it. The app's toast then says it was recorded (LAI-1129), **with no
+   * Undo**: the server has no reversal of an accept — moving the task back
+   * with `/status` would leave its `accepted` decision on the record — so an
+   * Undo here would not really undo. Bulk Accept reports in its own bar.
+   */
   const accept = (item: ReviewQueueItem): void => {
     const before = order;
     begin(item.task.id);
     setFailure(null);
     acceptReview(item.task.id)
-      .then(() => {
+      .then((task) => {
+        toast.show({
+          text: `Accepted ${item.task.key} — it is in ${task.status_name} now.`,
+          tone: 'success',
+          mark: 'review-accepted',
+        });
         decided(item.task.id, before);
       })
       .catch((cause: unknown) => {

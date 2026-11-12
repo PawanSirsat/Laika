@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { BrandSpinner } from './brand/BrandSpinner.tsx';
 import { ConnectionBanner } from './ConnectionBanner.tsx';
 import { EmptyState } from './EmptyState.tsx';
 import { ErrorState } from './ErrorState.tsx';
@@ -15,6 +16,9 @@ const AgentStateGallery = lazy(() => import('./agent-states/AgentStateGallery.ts
 
 /** Developer access V3's shared parts (LAI-1044), in their own chunk for the same reason. */
 const WizardGallery = lazy(() => import('./wizard/WizardGallery.tsx'));
+
+/** The LAI-1207 state kit's specimens, in their own chunk for the same reason. */
+const StateKitGallery = lazy(() => import('./StateKitGallery.tsx'));
 
 /** Button, fields and Icon in every state (LAI-1204), in their own chunk too. */
 const ControlsGallery = lazy(() => import('./forms/ControlsGallery.tsx'));
@@ -79,6 +83,17 @@ const SPECIMENS: readonly Specimen[] = [
     title: 'Loading — rows',
     note: 'Shaped like a table row: avatar, key, title.',
     render: () => <LoadingState shape="row" count={4} label="Loading activity" />,
+  },
+  {
+    title: 'Loading — whole panel',
+    note: 'The brand loader (LAI-1126), for a panel with no shape to stand in for. Stills under reduced motion.',
+    render: () => (
+      <div className="gallery-brand-spinners">
+        <BrandSpinner size="sm" label="Loading, small" />
+        <BrandSpinner size="md" label="Loading, medium" />
+        <BrandSpinner size="lg" label="Loading, large" />
+      </div>
+    ),
   },
   {
     title: 'Error — retryable',
@@ -172,6 +187,10 @@ export function StateGallery() {
         fallback={<LoadingState shape="card" count={1} label="Loading Developer access parts" />}
       >
         <WizardGallery />
+      </Suspense>
+
+      <Suspense fallback={<LoadingState shape="card" count={2} label="Loading the state kit" />}>
+        <StateKitGallery />
       </Suspense>
 
       <Suspense fallback={<LoadingState shape="card" count={1} label="Loading controls" />}>

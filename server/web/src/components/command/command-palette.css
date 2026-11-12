@@ -1,0 +1,341 @@
+/*
+ * The command palette (LAI-1192) and its triggers. Theme tokens only, so dark
+ * and light follow `data-theme`. Above the drawer and the sheet (60–61),
+ * below a confirmation (80), which may be asked from an action here.
+ * cmdk ships no styles; its `[cmdk-*]` attributes are ours to dress.
+ */
+
+/* ── Triggers ─────────────────────────────────────────────────────────── */
+
+.cmdk-trigger-sidebar {
+  color: var(--text-secondary);
+}
+
+.cmdk-trigger-sidebar:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.cmdk-trigger-icon {
+  flex: none;
+}
+
+.cmdk-trigger-sidebar .cmdk-kbd {
+  margin-left: auto;
+}
+
+/* The rail is icons only: the hint would not fit, and the tooltip names it. */
+.sidebar-collapsed .cmdk-trigger-sidebar .cmdk-kbd {
+  display: none;
+}
+
+.cmdk-trigger-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cmdk-trigger-header:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.cmdk-trigger:focus-visible,
+.cmdk-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cmdk-kbd {
+  display: inline-flex;
+  align-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-pill);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1;
+  justify-content: center;
+}
+
+/* ── The layer ────────────────────────────────────────────────────────── */
+
+.cmdk-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 1rem 1rem;
+}
+
+.cmdk-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  animation: cmdk-fade var(--duration-fast) var(--ease-enter);
+}
+
+.cmdk-panel {
+  position: relative;
+  width: min(40rem, 100%);
+  max-height: min(34rem, 76vh);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  animation: cmdk-in var(--duration-base) var(--ease-enter);
+}
+
+.cmdk-panel-loading {
+  margin: 0;
+  padding: 1rem 1.25rem;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+}
+
+.cmdk-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.cmdk-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0 0.75rem 0 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cmdk-input-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.cmdk-input {
+  flex: 1;
+  min-width: 0;
+  height: 3.25rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-reading);
+}
+
+.cmdk-input::placeholder {
+  color: var(--text-muted);
+}
+
+.cmdk-close {
+  flex: none;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-pill);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.cmdk-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.375rem;
+}
+
+.cmdk-group [cmdk-group-heading] {
+  padding: 0.625rem 0.625rem 0.25rem;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.5rem;
+  padding: 0 0.625rem;
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cmdk-item[data-selected='true'] {
+  background: var(--accent-bg);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.cmdk-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmdk-item-hint {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.cmdk-space-key,
+.cmdk-task-key {
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.cmdk-space-key {
+  min-width: 2rem;
+}
+
+.cmdk-status {
+  flex: none;
+  padding: 0.125rem 0.4375rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-chip);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.cmdk-status-todo {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+}
+
+.cmdk-status-in_progress {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}
+
+.cmdk-status-review {
+  border-color: var(--chip-purple-border);
+  background: var(--chip-purple-bg);
+  color: var(--chip-purple);
+}
+
+.cmdk-status-done {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.cmdk-note {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.cmdk-note-error {
+  color: var(--overdue);
+}
+
+.cmdk-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.cmdk-empty-title {
+  margin: 0 0 0.375rem;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.cmdk-empty-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+}
+
+.cmdk-foot {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.cmdk-foot .cmdk-kbd {
+  margin-right: 0.125rem;
+}
+
+/* ── Phone: a full-screen sheet ───────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .cmdk-layer {
+    padding: 0;
+  }
+
+  .cmdk-panel {
+    width: 100%;
+    max-height: none;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+
+  .cmdk-item {
+    min-height: 2.75rem;
+  }
+
+  /* No keyboard to hint at on a touch screen. */
+  .cmdk-foot {
+    display: none;
+  }
+}
+
+@keyframes cmdk-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cmdk-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.375rem) scale(0.99);
+  }
+}

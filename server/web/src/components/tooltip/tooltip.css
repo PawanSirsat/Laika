@@ -12,8 +12,8 @@
   position: fixed;
   top: 0;
   left: 0;
-  /* Above the dialog it describes (`overlay-tokens.ts`, LAI-1209). The
-     fallback is for a page that never loaded overlay.css. */
+  /* Above the dialog it describes (LAI-1209): the top of theme.css's one
+     layer ladder, mirrored in `overlay-tokens.ts`. */
   z-index: var(--layer-tooltip, 95);
   max-width: min(18rem, calc(100vw - 1rem));
   padding: 0.3125rem 0.5rem;
@@ -30,7 +30,7 @@
   pointer-events: auto;
   transform: translate(var(--tip-x), var(--tip-y));
   opacity: 0;
-  transition: opacity 120ms ease-out;
+  transition: opacity var(--duration-fast) var(--ease-enter);
 }
 
 /* A control's name: a few words, on one line where they fit. */
@@ -75,11 +75,5 @@
 @starting-style {
   .tip-open {
     opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tip {
-    transition: none;
   }
 }

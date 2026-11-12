@@ -9,7 +9,8 @@
   position: fixed;
   inset: 0;
   z-index: var(--layer-panel-scrim);
-  background: var(--scrim);
+  /* Darker, and frosted by `glass.css` (LAI-1132). */
+  background: var(--glass-scrim);
   transition: opacity var(--overlay-scrim-in) var(--overlay-ease-out);
 }
 
@@ -22,9 +23,11 @@
   display: flex;
   flex-direction: column;
   width: min(28rem, 100vw);
-  background: var(--bg-card);
-  border-left: 1px solid var(--border-card);
-  box-shadow: var(--shadow-modal);
+  /* Level-3 glass over the frosted scrim (LAI-1132): no blur of its own, so a
+     Dropdown portalled into it is still real glass. */
+  background: var(--glass-sheen), var(--glass-3);
+  border-left: 1px solid var(--glass-border-strong);
+  box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
   /*
    * The panel itself only fades and never transforms, so a Dropdown portaled
@@ -129,7 +132,7 @@
   gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border-subtle);
-  background: var(--bg-canvas);
+  background: var(--glass-hover);
 }
 
 @media (max-width: 900px) {
@@ -165,13 +168,5 @@
     .side-panel > :not([data-dropdown-panel]) {
       transform: translateY(var(--overlay-sheet-rise));
     }
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .side-panel-scrim,
-  .side-panel,
-  .side-panel > :not([data-dropdown-panel]) {
-    transition: none;
   }
 }

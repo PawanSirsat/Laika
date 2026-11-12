@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Project } from '../../../api/projects.ts';
 import { updateSpace } from '../../../api/space-settings.ts';
 import { Button } from '../../../components/forms/Button.tsx';
+import { InlineConfirm } from '../../../components/InlineConfirm.tsx';
+import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 
 export interface DangerTabProps {
   readonly project: Project;
@@ -13,27 +15,36 @@ export interface DangerTabProps {
 /**
  * Archive, or restore (D-103 item 10). **No delete** — that is LAI-979, owner
  * only with a typed key, and it is not drawn until it exists. Archiving asks
- * first; restoring does not, since it takes nothing away.
+ * first, in the one `InlineConfirm` (LAI-1129, B12); restoring does not,
+ * since it takes nothing away. Each says *Saving… / Saved / Couldn't save —
+ * Retry* beside it (`SaveStatus`), and *Saved* only on the server's answer.
  */
 export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const status = useSaveStatus();
+  const busy = status.state.kind === 'saving';
+  const archiveButton = useRef<HTMLButtonElement | null>(null);
   const archived = project.archived_at !== null;
 
+  // The whole save — its answer handled too — is what Retry runs again.
   const set = (next: boolean): void => {
-    setBusy(true);
-    setFailure(undefined);
-    updateSpace(project.slug, { archived: next })
-      .then((updated) => {
-        setConfirming(false);
-        onSaved(updated);
+    status
+      .run(() => {
+        setFailure(undefined);
+        return updateSpace(project.slug, { archived: next }).then(
+          (updated) => {
+            setConfirming(false);
+            onSaved(updated);
+          },
+          (cause: unknown) => {
+            setFailure(cause instanceof Error ? cause.message : 'Nothing changed');
+            throw cause;
+          },
+        );
       })
-      .catch((cause: unknown) => {
-        setFailure(cause instanceof Error ? cause.message : 'Nothing changed');
-      })
-      .finally(() => {
-        setBusy(false);
+      .catch(() => {
+        // Said beside the control, by the status and the message above.
       });
   };
 
@@ -73,36 +84,25 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
                 Restore
               </Button>
             ) : confirming ? (
-              <div
+              <InlineConfirm
                 className="ss-confirm"
-                role="alertdialog"
-                aria-label={`Archive ${project.name}?`}
-              >
-                <p>Archive {project.name}? Its board becomes read-only until it is restored.</p>
-                <div className="ss-confirm-actions">
-                  <Button
-                    variant="danger"
-                    data-action="confirm-archive"
-                    busy={busy}
-                    onClick={() => {
-                      set(true);
-                    }}
-                  >
-                    Archive space
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      setConfirming(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
+                question={`Archive ${project.name}? Its board becomes read-only until it is restored.`}
+                confirmLabel="Archive space"
+                confirmClassName="button button-danger button-md"
+                cancelClassName="button button-secondary button-md"
+                confirmAction="confirm-archive"
+                busy={busy}
+                onConfirm={() => {
+                  set(true);
+                }}
+                onCancel={() => {
+                  setConfirming(false);
+                }}
+                returnFocus={() => archiveButton.current}
+              />
             ) : (
               <Button
+                ref={archiveButton}
                 variant="danger"
                 data-action="archive"
                 onClick={() => {
@@ -112,6 +112,7 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
                 Archive
               </Button>
             )}
+            {mayArchive && <SaveStatus state={status.state} onRetry={status.retry} />}
             {failure !== undefined && (
               <p className="ss-field-error" role="alert">
                 {failure}

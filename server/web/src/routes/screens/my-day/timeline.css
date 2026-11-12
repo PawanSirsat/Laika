@@ -1139,7 +1139,7 @@
   border-radius: var(--radius-card);
   box-sizing: border-box;
   container: dayline-block / size;
-  transition: opacity 0.12s;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 /*
@@ -1486,7 +1486,7 @@
   font-weight: var(--weight-heavy);
   color: var(--chip-blue);
   white-space: nowrap;
-  transition: opacity 0.12s;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .dayline-agent-off-card {

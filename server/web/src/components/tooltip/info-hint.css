@@ -19,7 +19,7 @@
   color: var(--text-muted);
   vertical-align: middle;
   cursor: help;
-  transition: color 120ms ease-out;
+  transition: color var(--duration-fast) var(--ease-enter);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -42,11 +42,5 @@
     height: 44px;
     content: '';
     transform: translate(-50%, -50%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .info-hint {
-    transition: none;
   }
 }

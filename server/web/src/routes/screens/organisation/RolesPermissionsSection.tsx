@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { refreshPermissions, type Permissions } from '../../../api/permissions.ts';
 import { projectRoleLabel } from '../../../api/members.ts';
 import type { Project } from '../../../api/projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { GrantsCard } from './GrantsCard.tsx';
+import { ScrollRegion } from './ScrollRegion.tsx';
 import {
   actionName,
   cellFor,
@@ -17,7 +18,82 @@ import {
 type PermissionsState =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly error: unknown }
-  | { readonly status: 'ready'; readonly view: Permissions };
+  | {
+      readonly status: 'ready';
+      readonly view: Permissions;
+      /** A re-read failed; the last good view stays, with a Retry (LAI-1194). */
+      readonly refreshError: unknown;
+    };
+
+/** `12 actions`. */
+const actions = (n: number): string => `${String(n)} ${n === 1 ? 'action' : 'actions'}`;
+
+/**
+ * One group of held actions, folded to a line by default (LAI-1194, visual
+ * audit V8): its name, its role and how many actions it holds. Opening it
+ * shows the list.
+ *
+ * The list is **hidden, not unmounted**, so what the reader holds is always in
+ * the document — a find, a screen reader's search, and a test reading the
+ * names all see the same list whether or not it is open.
+ */
+function HeldGroup({
+  title,
+  chip,
+  names,
+  query,
+  held,
+  className,
+  dataProject,
+}: {
+  readonly title: ReactNode;
+  readonly chip?: string | undefined;
+  readonly names: readonly string[];
+  readonly query: string;
+  readonly held?: string;
+  readonly className: string;
+  readonly dataProject?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const needle = query.trim().toLowerCase();
+  const shown = needle === '' ? names : names.filter((n) => n.toLowerCase().includes(needle));
+  // A find opens every group with a match and hides every group without one.
+  if (needle !== '' && shown.length === 0) return null;
+  const expanded = open || needle !== '';
+  return (
+    <li className={className} data-project={dataProject} data-held-group>
+      <button
+        type="button"
+        className="perm-group-toggle"
+        aria-expanded={expanded}
+        aria-controls={id}
+        disabled={needle !== ''}
+        onClick={() => {
+          setOpen((now) => !now);
+        }}
+      >
+        <span className="perm-group-chevron" aria-hidden="true">
+          {expanded ? '▾' : '▸'}
+        </span>
+        <span className="perm-project-head">
+          <span className="perm-project-name">{title}</span>
+          {chip !== undefined && <span className="org-chip perm-role">{chip}</span>}
+        </span>
+        <span className="perm-group-count" data-held-count>
+          {needle === ''
+            ? actions(names.length)
+            : `${String(shown.length)} of ${actions(names.length)}`}
+        </span>
+      </button>
+      <ul className="perm-held" id={id} data-held={held} hidden={!expanded}>
+        {shown.map((name) => (
+          <li key={name}>{name}</li>
+        ))}
+      </ul>
+    </li>
+  );
+}
 
 export interface RolesPermissionsSectionProps {
   /** The owner — the one reader who may change an org role on People (D-102 rule 5). */
@@ -76,60 +152,62 @@ function Matrix({
         <h2 id={id}>{title}</h2>
         {action}
       </header>
-      <table className="perm-table" data-scope={scope}>
-        <thead>
-          <tr>
-            <th scope="col">Action</th>
-            {roles.map((role) => (
-              <th key={role} scope="col" className="perm-role">
-                {scope === 'project' ? projectRoleLabel(role) : role}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rowsFor(view, scope).map((row) => (
-            <tr key={row.action} data-action={row.action}>
-              <th scope="row" className="perm-action">
-                <span className="perm-action-name">{actionName(row)}</span>
-                {(row.session_only || row.read_only) && (
-                  <span className="perm-marks">
-                    {row.session_only && (
-                      <span
-                        className="org-chip perm-mark"
-                        data-mark="session-only"
-                        title="No token may do this, only a signed-in session"
-                      >
-                        Session only
-                      </span>
-                    )}
-                    {row.read_only && (
-                      <span
-                        className="org-chip perm-mark"
-                        data-mark="read-only"
-                        title="A read-only token may do this too"
-                      >
-                        Read
-                      </span>
-                    )}
-                  </span>
-                )}
-              </th>
-              {roles.map((role) => {
-                const cell = cellFor(row, role);
-                return (
-                  <td key={role} className="perm-cell" data-role={role} data-holding={cell.kind}>
-                    <span className="perm-cell-role" aria-hidden="true">
-                      {scope === 'project' ? projectRoleLabel(role) : role}
-                    </span>
-                    <span className="perm-cell-value">{cell.text}</span>
-                  </td>
-                );
-              })}
+      <ScrollRegion label={`${title} table`}>
+        <table className="perm-table" data-scope={scope}>
+          <thead>
+            <tr>
+              <th scope="col">Action</th>
+              {roles.map((role) => (
+                <th key={role} scope="col" className="perm-role">
+                  {scope === 'project' ? projectRoleLabel(role) : role}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rowsFor(view, scope).map((row) => (
+              <tr key={row.action} data-action={row.action}>
+                <th scope="row" className="perm-action">
+                  <span className="perm-action-name">{actionName(row)}</span>
+                  {(row.session_only || row.read_only) && (
+                    <span className="perm-marks">
+                      {row.session_only && (
+                        <span
+                          className="org-chip perm-mark"
+                          data-mark="session-only"
+                          title="No token may do this, only a signed-in session"
+                        >
+                          Session only
+                        </span>
+                      )}
+                      {row.read_only && (
+                        <span
+                          className="org-chip perm-mark"
+                          data-mark="read-only"
+                          title="A read-only token may do this too"
+                        >
+                          Read
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </th>
+                {roles.map((role) => {
+                  const cell = cellFor(row, role);
+                  return (
+                    <td key={role} className="perm-cell" data-role={role} data-holding={cell.kind}>
+                      <span className="perm-cell-role" aria-hidden="true">
+                        {scope === 'project' ? projectRoleLabel(role) : role}
+                      </span>
+                      <span className="perm-cell-value">{cell.text}</span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </ScrollRegion>
       {footer}
     </section>
   );
@@ -152,6 +230,8 @@ export function RolesPermissionsSection({
   onNavigate,
 }: RolesPermissionsSectionProps) {
   const [state, setState] = useState<PermissionsState>({ status: 'loading' });
+  /** The find box over what the reader holds. */
+  const [query, setQuery] = useState('');
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => {
     setAttempt((n) => n + 1);
@@ -165,11 +245,15 @@ export function RolesPermissionsSection({
     refreshPermissions(controller.signal)
       .then((view) => {
         if (controller.signal.aborted) return;
-        setState({ status: 'ready', view });
+        setState({ status: 'ready', view, refreshError: null });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setState({ status: 'error', error });
+        setState((current) =>
+          current.status === 'ready'
+            ? { ...current, refreshError: error }
+            : { status: 'error', error },
+        );
       });
     return () => {
       controller.abort();
@@ -193,6 +277,14 @@ export function RolesPermissionsSection({
 
   const { view } = state;
   const { me } = view;
+  const orgNames = heldNames(view, me.actions);
+  const needle = query.trim().toLowerCase();
+  const matches = (names: readonly string[]): number =>
+    names.filter((n) => n.toLowerCase().includes(needle)).length;
+  const anyMatch =
+    needle === '' ||
+    matches(orgNames) > 0 ||
+    me.projects.some((grant) => matches(heldNames(view, grant.actions)) > 0);
   /**
    * Whose Members a project role is changed on: the reader's own projects, or —
    * for an Owner or Admin, who leads every project in reach without being a
@@ -213,6 +305,14 @@ export function RolesPermissionsSection({
 
   return (
     <>
+      {state.refreshError !== null && (
+        <div className="org-refresh-error" role="alert" data-refresh-error>
+          <span>Couldn’t refresh roles and permissions — what you see may be out of date.</span>
+          <button type="button" className="bar-control" onClick={reload}>
+            Retry
+          </button>
+        </div>
+      )}
       <section className="org-card perm-card" aria-labelledby="perm-me">
         <header className="org-card-head">
           <h2 id="perm-me">What you can do</h2>
@@ -227,7 +327,7 @@ export function RolesPermissionsSection({
             <dd>{me.credential}</dd>
           </div>
           <div className="perm-me-fact" data-fact="project-scope">
-            <dt>Projects this credential reaches</dt>
+            <dt>Spaces this credential reaches</dt>
             <dd>
               {me.project_scope === 'all'
                 ? 'all'
@@ -236,46 +336,95 @@ export function RolesPermissionsSection({
           </div>
           {me.implicit_project_role !== null && (
             <div className="perm-me-fact" data-fact="implicit-project-role">
-              <dt>On every project in reach</dt>
+              <dt>Role in every space it reaches</dt>
               <dd className="perm-role">{me.implicit_project_role}</dd>
             </div>
           )}
         </dl>
 
+        {/* A summary first, the inventory on request (LAI-1194, V8). */}
+        <p className="perm-summary" data-perm-summary>
+          You can take {actions(orgNames.length)} across the organisation
+          {me.projects.length > 0
+            ? `, and hold a role in ${String(me.projects.length)} ${me.projects.length === 1 ? 'space' : 'spaces'}`
+            : ''}
+          {me.implicit_project_role !== null
+            ? `; every space this credential reaches treats you as ${projectRoleLabel(me.implicit_project_role).toLowerCase()}`
+            : ''}
+          . Open a group to see each action.
+        </p>
+
+        {(orgNames.length > 0 || me.projects.length > 0) && (
+          <div className="perm-find">
+            <label className="org-people-search">
+              <span className="org-people-search-glyph" aria-hidden="true">
+                ⌕
+              </span>
+              <input
+                type="search"
+                className="org-people-search-input"
+                data-perm-find
+                placeholder="Find an action, e.g. invite"
+                aria-label="Find an action you can take"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
+            </label>
+          </div>
+        )}
+
         <h3 className="perm-subhead">In the organisation</h3>
         {me.actions.length === 0 ? (
           <p className="org-note">Nothing on this credential.</p>
         ) : (
-          <ul className="perm-held" data-held="org">
-            {heldNames(view, me.actions).map((name) => (
-              <li key={name}>{name}</li>
-            ))}
+          <ul className="perm-groups">
+            <HeldGroup
+              className="perm-project perm-org-group"
+              title="Organisation-wide"
+              names={orgNames}
+              query={query}
+              held="org"
+            />
           </ul>
         )}
 
         {me.projects.length > 0 && (
           <>
-            <h3 className="perm-subhead">In your projects</h3>
-            <ul className="perm-projects">
+            <h3 className="perm-subhead">In your spaces</h3>
+            <ul className="perm-projects perm-groups">
               {me.projects.map((grant) => (
-                <li key={grant.project_id} className="perm-project" data-project={grant.project_id}>
-                  <div className="perm-project-head">
-                    <span className="perm-project-name">
-                      {projectLabel(projects, grant.project_id)}
-                    </span>
-                    {grant.role !== null && (
-                      <span className="org-chip perm-role">{projectRoleLabel(grant.role)}</span>
-                    )}
-                  </div>
-                  <ul className="perm-held">
-                    {heldNames(view, grant.actions).map((name) => (
-                      <li key={name}>{name}</li>
-                    ))}
-                  </ul>
-                </li>
+                <HeldGroup
+                  key={grant.project_id}
+                  className="perm-project"
+                  dataProject={grant.project_id}
+                  title={projectLabel(projects, grant.project_id)}
+                  chip={grant.role === null ? undefined : projectRoleLabel(grant.role)}
+                  names={heldNames(view, grant.actions)}
+                  query={query}
+                />
               ))}
             </ul>
           </>
+        )}
+
+        {!anyMatch && (
+          <div className="org-people-empty" data-perm-no-match>
+            <p className="org-people-empty-title">No action matches “{query.trim()}”</p>
+            <p className="org-people-empty-body">
+              Nothing you hold is called that. The tables below list what every role may do.
+            </p>
+            <button
+              type="button"
+              className="org-people-empty-clear"
+              onClick={() => {
+                setQuery('');
+              }}
+            >
+              Clear the search
+            </button>
+          </div>
         )}
       </section>
 
@@ -298,14 +447,14 @@ export function RolesPermissionsSection({
 
       <Matrix
         id="perm-project"
-        title="Project roles"
+        title="Space roles"
         roles={view.project_roles}
         view={view}
         scope="project"
         footer={
           memberLinks.length > 0 && (
             <p className="org-note perm-members">
-              Project roles are set on each project&rsquo;s Members:{' '}
+              Space roles are set on each space&rsquo;s members:{' '}
               {memberLinks.map((link, i) => (
                 <span key={link.id}>
                   {i > 0 && ', '}

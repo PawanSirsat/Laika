@@ -9,22 +9,26 @@
  *
  * ## The order, bottom to top
  *
- * The numbers are the ones the app already used (22 literals at the audit),
- * named rather than renumbered, so nothing that is not migrated moves:
+ * **One ladder** (merge train, with LAI-1132): `sticky`, `header`, `panel`,
+ * `popover`, `dialog` and `toast` are `theme.css`'s and declared there; the
+ * rest are this module's and declared in `overlay.css`, placed on that ladder.
  *
- * - `sticky` 10, `header` 20 — page chrome and the task drawer's frame.
- * - `catcher` 30, `popover` 31 — a popover over the page and the
- *   click-away layer under it.
+ * - `sticky` 5, `header` 10 — page chrome and the task drawer's frame.
  * - `sheet` 40, `sheetContent` 41 — off-canvas sidebar, My day's drawer.
- * - `panelScrim` 60, `panel` 61 — the details side panel and its scrim.
+ * - `panelScrim` 59, `panel` 60 — the details side panel and its scrim.
  * - `nestedScrim` 62, `nested` 63 — a question asked from inside a panel.
- * - `dropdown` 70 — a picker opened from any of the above. **A popover always
- *   outranks whatever it opened from** — that is B16 — and a Dropdown inside a
- *   modal is portaled into the modal, so it rides the modal's own layer.
+ * - `catcher` 64, `popover` 65 — a popover and the click-away layer under it.
+ *   (The board's own popovers keep their local 30/31, as `theme.css` says.)
+ * - `dropdown` 70 — a picker opened from any of the above (`--layer-menu`).
+ *   **A popover always outranks whatever it opened from** — that is B16 — and
+ *   a Dropdown inside a modal is portaled into the modal, so it rides the
+ *   modal's own layer.
  * - `dialog` 80 — every modal Dialog and the confirmation. A modal opened
  *   over another modal sits `2 × depth` above it (`overlay.css`), so a
  *   confirmation asked from a dialog is always on top of it.
- * - `toast` 90 — above everything, never blocking it.
+ * - `toast` 90 — above every surface, never blocking it.
+ * - `tooltip` 95 — above the dialog and the toast (LAI-1209): a tooltip on a
+ *   dialog's control drew under the dialog at 75.
  * - `tooltip` 95 — a control's name and shortcut (LAI-1209). Above the dialog
  *   whose controls it describes, however deep that dialog is stacked: a
  *   tooltip under its own dialog is a tooltip nobody sees.
@@ -41,20 +45,23 @@
  * onto them and this list shrinks to the overlay-specific distances.
  */
 export const LAYER = {
-  sticky: 10,
-  header: 20,
-  catcher: 30,
-  popover: 31,
+  // theme.css's ladder (LAI-1132): declared there, mirrored here.
+  sticky: 5,
+  header: 10,
+  panel: 60,
+  popover: 65,
+  dialog: 80,
+  toast: 90,
+  // Above the dialog (LAI-1209): a tooltip on a dialog's control must draw over it.
+  tooltip: 95,
+  // The overlays' own (LAI-1205), declared in overlay.css, placed on that ladder.
+  catcher: 64,
   sheet: 40,
   sheetContent: 41,
-  panelScrim: 60,
-  panel: 61,
+  panelScrim: 59,
   nestedScrim: 62,
   nested: 63,
   dropdown: 70,
-  dialog: 80,
-  toast: 90,
-  tooltip: 95,
 } as const;
 
 export type LayerName = keyof typeof LAYER;
@@ -71,24 +78,15 @@ export function layerVar(name: LayerName): string {
  * entrance starts fast, so the surface answers the click at once.
  */
 export const MOTION = {
-  /** A modal dialog's card: fade and rise. */
-  'overlay-in': '200ms',
-  /** The scrim under a modal: fade only, a beat quicker than the card. */
-  'overlay-scrim-in': '160ms',
-  /** A menu or popover: fade and a small scale from where it opened. */
-  'overlay-menu-in': '140ms',
-  /** A bottom sheet or the side panel: slide in from its edge. */
-  'overlay-sheet-in': '240ms',
-  'overlay-ease-out': 'cubic-bezier(0.23, 1, 0.32, 1)',
-  /** The iOS-like drawer curve, for surfaces that travel from an edge. */
-  'overlay-ease-sheet': 'cubic-bezier(0.32, 0.72, 0, 1)',
-  /** How far a dialog's card rises as it fades in. */
+  'overlay-in': 'var(--duration-base)',
+  'overlay-scrim-in': 'var(--duration-base)',
+  'overlay-menu-in': 'var(--duration-fast)',
+  'overlay-sheet-in': 'var(--duration-slow)',
+  'overlay-ease-out': 'var(--ease-enter)',
+  'overlay-ease-sheet': 'var(--ease-drawer)',
   'overlay-rise': '0.5rem',
-  /** Never from nothing: a dialog starts at 98%, a menu at 97%. */
   'overlay-scale': '0.98',
   'overlay-menu-scale': '0.97',
-  /** How far the side panel's contents travel in on a desktop. */
   'overlay-slide': '1.5rem',
-  /** How far a sheet's contents rise on a phone. */
   'overlay-sheet-rise': '2rem',
 } as const;

@@ -341,7 +341,7 @@ void describe('the dropdown as a form field (LAI-726)', () => {
       assert.match(await visibility.innerText(), /Public/);
 
       await h.page.getByRole('textbox', { name: 'Name', exact: true }).fill('Routing');
-      await h.page.getByRole('button', { name: 'Create project' }).click();
+      await h.page.getByRole('button', { name: 'Create space' }).click();
       await h.page
         .waitForFunction(() => document.querySelector('[aria-busy="true"]') === null)
         .catch(() => undefined);

@@ -18,6 +18,7 @@ import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { StatusesById, useProjectStatuses, useStatusesById } from '../../../api/use-statuses.ts';
 import { formatRange, progressFor } from '../sprints/sprint-derive.ts';
+import { SprintKey } from '../sprints/SprintKey.tsx';
 import type { Sprint } from '../../../api/sprints.ts';
 import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -101,7 +102,7 @@ function blockedText(tally: { readonly blocked: number; readonly unknown: number
  * tray's when it is. Live: the space's stream refetches what is open.
  */
 export function TimelineScreen() {
-  const { params, setParams } = useRoute();
+  const { params, setParams, navigate } = useRoute();
   /*
    * **The bar's task filters do nothing here** (LAI-725), as on the dashboard
    * (LAI-711). Search, Priority, Tag, Assignee and Ready-only narrow a list of
@@ -183,6 +184,12 @@ export function TimelineScreen() {
     if (next === 'months') changed.delete('zoom');
     else changed.set('zoom', next);
     setParams(changed);
+  };
+  /** One step along Weeks · Months · Quarters; `-1` is closer in. */
+  const stepZoom = (by: -1 | 1): void => {
+    const at = ZOOMS.indexOf(zoom) + by;
+    const next = ZOOMS[at];
+    if (next !== undefined) setZoom(next);
   };
 
   /** Which sprints are open. Collapsed by default — the owner asked for sprints. */
@@ -368,6 +375,14 @@ export function TimelineScreen() {
         <EmptyState
           headline="Nothing scheduled yet"
           body="The timeline is drawn from sprints. Plan one and it will appear here."
+          action={{
+            label: 'Plan a sprint',
+            onClick: () => {
+              navigate(
+                `/sprints${slug === undefined ? '' : `?project=${encodeURIComponent(slug)}`}`,
+              );
+            },
+          }}
         />
         <UnscheduledTray open={trayOpen} onToggle={toggleTray} load={timeline.tasks('none')} />
       </div>
@@ -408,10 +423,35 @@ export function TimelineScreen() {
    * (not on a chevron inside it) left and right move a week, Home and End go
    * to the ends.
    */
+  /** A week, or 80px when a week is narrower than that. */
+  const panStep = Math.max(80, dayWidth * 7);
+  const panBy = (by: number): void => {
+    const el = scroller.current;
+    if (el === null) return;
+    el.scrollLeft += by;
+  };
+  /** Is there more chart off either edge? Drives the scroll cue (LAI-1195). */
+  const moreLeft = scrollX > 2;
+  const moreRight = scrollX + viewW < width - 2;
+
   const onChartKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget) return;
     const el = event.currentTarget;
-    const step = Math.max(80, dayWidth * 7);
+    /*
+     * **Plus and minus zoom** (LAI-1195), as a map does: in towards Weeks,
+     * out towards Quarters. The view stays centred on the same day.
+     */
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault();
+      stepZoom(-1);
+      return;
+    }
+    if (event.key === '-' || event.key === '_') {
+      event.preventDefault();
+      stepZoom(1);
+      return;
+    }
+    const step = panStep;
     const moves: Record<string, number> = {
       ArrowRight: step,
       ArrowLeft: -step,
@@ -442,16 +482,50 @@ export function TimelineScreen() {
         />
 
         <div className="tlx-toolbar">
-          <button
-            type="button"
-            className="tlx-tool"
-            onClick={() => {
-              scrollToDay(todayIndex, 1 / 3);
-            }}
-          >
-            Today
-          </button>
-          <div className="tlx-zoom" role="group" aria-label="Zoom">
+          <div className="tlx-pan" role="group" aria-label="Scroll the timeline">
+            <button
+              type="button"
+              className="tlx-tool tlx-tool-icon"
+              aria-label={`Earlier — back ${zoom === 'weeks' ? 'a week' : 'a few weeks'}`}
+              title="Earlier (←)"
+              disabled={!moreLeft}
+              onClick={() => {
+                panBy(-panStep * 2);
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2.2" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="tlx-tool"
+              title="Scroll to today"
+              onClick={() => {
+                scrollToDay(todayIndex, 1 / 3);
+              }}
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              className="tlx-tool tlx-tool-icon"
+              aria-label={`Later — on ${zoom === 'weeks' ? 'a week' : 'a few weeks'}`}
+              title="Later (→)"
+              disabled={!moreRight}
+              onClick={() => {
+                panBy(panStep * 2);
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
+                <path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.2" />
+              </svg>
+            </button>
+          </div>
+          <span className="tlx-zoom-label" id="tlx-zoom-label">
+            Zoom
+          </span>
+          <div className="tlx-zoom" role="group" aria-labelledby="tlx-zoom-label">
             {ZOOMS.map((z) => (
               <button
                 key={z}
@@ -480,135 +554,151 @@ export function TimelineScreen() {
 
         {notices}
 
+        <p className="tlx-keys" id="tlx-keys">
+          With the chart focused: <kbd>←</kbd> <kbd>→</kbd> scroll, <kbd>+</kbd> <kbd>−</kbd> zoom
+        </p>
+
+        {/*
+          **A cue that the chart scrolls sideways** (LAI-1195): at 390px the
+          track shows a fortnight and nothing said there was more. A fade on
+          the edge with more beyond it, drawn over the chart, never on it.
+        */}
         <div
-          ref={scroller}
-          className="tlx"
-          style={chartStyle}
-          data-window-from={range.from}
-          data-day-width={dayWidth}
-          // The scroll the header was last drawn for. It follows the scroll a
-          // frame later, so a reader waits for this to equal `scrollLeft`.
-          data-scroll-x={scrollX}
-          tabIndex={0}
-          role="region"
-          aria-label="Sprint timeline — the arrow keys scroll it"
-          onKeyDown={onChartKey}
-          onScroll={(event) => {
-            const el = event.currentTarget;
-            centreDay.current = (el.scrollLeft + viewWidth(el) / 2) / dayWidth;
-            if (frame.current !== undefined) return;
-            frame.current = requestAnimationFrame(() => {
-              frame.current = undefined;
-              setScrollX(el.scrollLeft);
-              setViewW(viewWidth(el));
-            });
-          }}
+          className="tlx-frame"
+          data-more-left={moreLeft ? '' : undefined}
+          data-more-right={moreRight ? '' : undefined}
         >
-          <div className="tlx-inner">
-            {/* The header: sticky to the top, its corner sticky both ways. */}
-            <div className="tlx-row tlx-head">
-              <div className="tlx-side tlx-corner">Sprint</div>
-              <div className="tlx-track tlx-scale" aria-hidden="true">
-                <div className="tlx-scale-row">
-                  {top.map((band) => {
-                    if (!inDraw(band.start * dayWidth, (band.start + band.days) * dayWidth)) {
-                      return null;
-                    }
-                    /*
-                     * **The month you are in stays named, and never half-named.**
-                     * The label rides at the left of the view while its band is
-                     * under it, and stops at the band's end; once less than the
-                     * label's width of the band is left, it is not drawn at all,
-                     * rather than a clipped tail ("326") beside the next month.
-                     */
-                    const from = band.start * dayWidth;
-                    const to = (band.start + band.days) * dayWidth;
-                    const labelWidth = charWidth(band.label, 10) + 20;
-                    const x = Math.min(Math.max(from, scrollX), to - labelWidth);
-                    // Whole, inside its band, and inside the view — not under the sprint column.
-                    const fits = x >= from && x >= scrollX && x + labelWidth <= to;
-                    return (
-                      <span
-                        key={band.key}
-                        className="tlx-scale-band"
-                        style={{ left: from, width: to - from }}
-                      >
-                        {fits && (
-                          <span className="tlx-scale-label" style={{ left: x - from }}>
-                            {band.label}
-                          </span>
-                        )}
-                      </span>
-                    );
-                  })}
+          <div
+            ref={scroller}
+            className="tlx"
+            style={chartStyle}
+            data-window-from={range.from}
+            data-day-width={dayWidth}
+            // The scroll the header was last drawn for. It follows the scroll a
+            // frame later, so a reader waits for this to equal `scrollLeft`.
+            data-scroll-x={scrollX}
+            tabIndex={0}
+            role="region"
+            aria-label="Sprint timeline"
+            aria-describedby="tlx-keys"
+            onKeyDown={onChartKey}
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              centreDay.current = (el.scrollLeft + viewWidth(el) / 2) / dayWidth;
+              if (frame.current !== undefined) return;
+              frame.current = requestAnimationFrame(() => {
+                frame.current = undefined;
+                setScrollX(el.scrollLeft);
+                setViewW(viewWidth(el));
+              });
+            }}
+          >
+            <div className="tlx-inner">
+              {/* The header: sticky to the top, its corner sticky both ways. */}
+              <div className="tlx-row tlx-head">
+                <div className="tlx-side tlx-corner">Sprint</div>
+                <div className="tlx-track tlx-scale" aria-hidden="true">
+                  <div className="tlx-scale-row">
+                    {top.map((band) => {
+                      if (!inDraw(band.start * dayWidth, (band.start + band.days) * dayWidth)) {
+                        return null;
+                      }
+                      /*
+                       * **The month you are in stays named, and never half-named.**
+                       * The label rides at the left of the view while its band is
+                       * under it, and stops at the band's end; once less than the
+                       * label's width of the band is left, it is not drawn at all,
+                       * rather than a clipped tail ("326") beside the next month.
+                       */
+                      const from = band.start * dayWidth;
+                      const to = (band.start + band.days) * dayWidth;
+                      const labelWidth = charWidth(band.label, 10) + 20;
+                      const x = Math.min(Math.max(from, scrollX), to - labelWidth);
+                      // Whole, inside its band, and inside the view — not under the sprint column.
+                      const fits = x >= from && x >= scrollX && x + labelWidth <= to;
+                      return (
+                        <span
+                          key={band.key}
+                          className="tlx-scale-band"
+                          style={{ left: from, width: to - from }}
+                        >
+                          {fits && (
+                            <span className="tlx-scale-label" style={{ left: x - from }}>
+                              {band.label}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="tlx-scale-row tlx-scale-lower">
+                    {lower === undefined
+                      ? ticks.map((tick) => {
+                          const x = tick.index * dayWidth;
+                          if (!inDraw(x, x)) return null;
+                          const show =
+                            (zoom === 'weeks' || dayWidth * 7 >= 28) && clearOfPill(x, tick.label);
+                          return (
+                            <span key={tick.index} className="tlx-scale-tick" style={{ left: x }}>
+                              {show ? tick.label : ''}
+                            </span>
+                          );
+                        })
+                      : lower.map((band) => {
+                          const x = band.start * dayWidth;
+                          if (!inDraw(x, (band.start + band.days) * dayWidth)) return null;
+                          return (
+                            <span key={band.key} className="tlx-scale-tick" style={{ left: x }}>
+                              {clearOfPill(x, band.label) ? band.label : ''}
+                            </span>
+                          );
+                        })}
+                  </div>
+                  <span className="tlx-today-pill" style={{ left: todayX }}>
+                    {pillText}
+                  </span>
                 </div>
-                <div className="tlx-scale-row tlx-scale-lower">
-                  {lower === undefined
-                    ? ticks.map((tick) => {
-                        const x = tick.index * dayWidth;
-                        if (!inDraw(x, x)) return null;
-                        const show =
-                          (zoom === 'weeks' || dayWidth * 7 >= 28) && clearOfPill(x, tick.label);
-                        return (
-                          <span key={tick.index} className="tlx-scale-tick" style={{ left: x }}>
-                            {show ? tick.label : ''}
-                          </span>
-                        );
-                      })
-                    : lower.map((band) => {
-                        const x = band.start * dayWidth;
-                        if (!inDraw(x, (band.start + band.days) * dayWidth)) return null;
-                        return (
-                          <span key={band.key} className="tlx-scale-tick" style={{ left: x }}>
-                            {clearOfPill(x, band.label) ? band.label : ''}
-                          </span>
-                        );
-                      })}
-                </div>
-                <span className="tlx-today-pill" style={{ left: todayX }}>
-                  {pillText}
-                </span>
               </div>
-            </div>
 
-            {/* One line for today, under the header and the sprint column. */}
-            <div
-              className="tlx-today"
-              style={{ left: `calc(var(--tlx-side) + ${String(todayX)}px)` }}
-            />
-
-            {rows.map((sprint, index) => (
-              <SprintGroup
-                key={sprint.id}
-                sprint={sprint}
-                index={index}
-                now={now}
-                span={sprintSpan(range, sprint)}
-                dayWidth={dayWidth}
-                isOpen={open.has(sprint.id)}
-                load={timeline.tasks(sprint.id)}
-                members={members}
-                theme={theme}
-                onToggle={() => {
-                  toggle(sprint.id);
-                }}
-                onOpenTask={openTask}
+              {/* One line for today, under the header and the sprint column. */}
+              <div
+                className="tlx-today"
+                style={{ left: `calc(var(--tlx-side) + ${String(todayX)}px)` }}
               />
-            ))}
 
-            {/*
+              {rows.map((sprint, index) => (
+                <SprintGroup
+                  key={sprint.id}
+                  sprint={sprint}
+                  index={index}
+                  now={now}
+                  span={sprintSpan(range, sprint)}
+                  dayWidth={dayWidth}
+                  isOpen={open.has(sprint.id)}
+                  load={timeline.tasks(sprint.id)}
+                  members={members}
+                  theme={theme}
+                  onToggle={() => {
+                    toggle(sprint.id);
+                  }}
+                  onOpenTask={openTask}
+                />
+              ))}
+
+              {/*
             **The tray is the chart's last group, not a box below it** (LAI-721
             review): a second scroller under the chart squeezed it to ~225px
             when opened. Its tasks are rows like a sprint's, with no bars.
           */}
-            <UnscheduledGroup
-              open={trayOpen}
-              onToggle={toggleTray}
-              load={timeline.tasks('none')}
-              members={members}
-              theme={theme}
-              onOpenTask={openTask}
-            />
+              <UnscheduledGroup
+                open={trayOpen}
+                onToggle={toggleTray}
+                load={timeline.tasks('none')}
+                members={members}
+                theme={theme}
+                onOpenTask={openTask}
+              />
+            </div>
           </div>
         </div>
 
@@ -715,7 +805,7 @@ function SprintGroup({
               {isOpen ? 'Hide' : 'Show'} the tasks in {sprint.name}
             </span>
           </button>
-          <span className="tlx-sprint-key">{key}</span>
+          <SprintKey index={index + 1} className="tlx-sprint-key" />
           <span className="tlx-sprint-text">
             <span className="tlx-sprint-name" title={sprint.goal ?? sprint.name}>
               {sprint.name}

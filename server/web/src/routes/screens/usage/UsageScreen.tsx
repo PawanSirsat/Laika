@@ -35,6 +35,7 @@ import { Columns, dayPoints } from './Columns.tsx';
 import {
   axisDays,
   dayLabel,
+  DEFAULT_RANGE,
   offeredSpaces,
   scopeFor,
   scopeOptions,
@@ -44,6 +45,7 @@ import {
 import { useGates } from '../../../api/permissions.ts';
 import '../profile/profile.css';
 import './usage.css';
+import { prefersReducedMotion } from '../../../theme/motion.ts';
 
 export interface UsageScreenProps {
   readonly me: MeProfile | undefined;
@@ -60,6 +62,10 @@ export interface UsageScreenProps {
   readonly project?: string | undefined;
   /** A space was picked, or `''` for all of them: the shell writes it into the address. */
   readonly onProject: (slug: string) => void;
+  /** The period `?range=` names (LAI-1201); absent is 30 days. */
+  readonly range?: UsageRange | undefined;
+  /** A period was picked: the shell writes it into the address, so a reload keeps it. */
+  readonly onRange?: ((range: UsageRange) => void) | undefined;
 }
 
 type Load =
@@ -94,9 +100,18 @@ export function UsageScreen({
   onAlertsChanged = () => undefined,
   project,
   onProject,
+  range: addressed,
+  onRange,
 }: UsageScreenProps) {
   const [projects, setProjects] = useState<readonly ScopeProject[] | null | undefined>(undefined);
-  const [range, setRange] = useState<UsageRange>(30);
+  // The address holds the period when the shell gives one (LAI-1201); a
+  // screen mounted without it keeps its own.
+  const [own, setOwn] = useState<UsageRange>(DEFAULT_RANGE);
+  const range = addressed ?? own;
+  const setRange = (next: UsageRange): void => {
+    if (onRange === undefined) setOwn(next);
+    else onRange(next);
+  };
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   // A budget a lead set moves the figures: read the page again, in place.
   const [asked, setAsked] = useState(0);
@@ -338,6 +353,9 @@ function UsageBody({
   const space = usage.project;
   const org = usage.org_totals;
   const nothing = totals.tokens + totals.cache_read === 0;
+  // Each figure opens the card that breaks it down (LAI-1201) — only while
+  // that card is on the page: an empty space draws none of them.
+  const linked = !(nothing && space !== null);
   const link = (to: string) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -354,7 +372,13 @@ function UsageBody({
           title={`At least · ${exactTokens(totals.tokens)} tokens`}
         >
           <dt className="usage-stat-label">Tokens</dt>
-          <dd className="usage-stat-value">{compactTokens(totals.tokens)}</dd>
+          <dd className="usage-stat-value">
+            <Figure
+              to={linked ? 'trend' : undefined}
+              what="Tokens per day"
+              value={compactTokens(totals.tokens)}
+            />
+          </dd>
           <dd className="usage-stat-sub">
             {space === null
               ? 'at least · input, output, cache writes'
@@ -367,14 +391,24 @@ function UsageBody({
           title={`${exactTokens(totals.cache_read)} cache reads`}
         >
           <dt className="usage-stat-label">Cache reads</dt>
-          <dd className="usage-stat-value">{compactTokens(totals.cache_read)}</dd>
+          <dd className="usage-stat-value">
+            <Figure
+              to={linked ? 'cache' : undefined}
+              what="Cache"
+              value={compactTokens(totals.cache_read)}
+            />
+          </dd>
           <dd className="usage-stat-sub">not in tokens</dd>
         </div>
         {space === null ? (
           <div className="usage-stat" data-stat="unattributed">
             <dt className="usage-stat-label">Unattributed</dt>
             <dd className="usage-stat-value">
-              {shareOf(totals.tokens - totals.attributed_tokens, totals.tokens)}
+              <Figure
+                to={linked ? 'tasks' : undefined}
+                what="Top tasks"
+                value={shareOf(totals.tokens - totals.attributed_tokens, totals.tokens)}
+              />
             </dd>
             <dd className="usage-stat-sub">
               {shareOf(totals.attributed_tokens, totals.tokens)} tied to a task
@@ -396,14 +430,24 @@ function UsageBody({
         <div className="usage-stat" data-stat="per-day">
           <dt className="usage-stat-label">Per day</dt>
           <dd className="usage-stat-value">
-            {compactTokens(usage.days > 0 ? totals.tokens / usage.days : 0)}
+            <Figure
+              to={linked ? 'trend' : undefined}
+              what="Tokens per day"
+              value={compactTokens(usage.days > 0 ? totals.tokens / usage.days : 0)}
+            />
           </dd>
           <dd className="usage-stat-sub">average</dd>
         </div>
         {/* LAI-773: what the same tokens would cost on the API — never the bill. */}
         <div className="usage-stat" data-stat="cost" title={costCaveats(totals.cost).join(' · ')}>
           <dt className="usage-stat-label">Cost</dt>
-          <dd className="usage-stat-value">{costText(totals.cost)}</dd>
+          <dd className="usage-stat-value">
+            <Figure
+              to={linked ? 'breakdown' : undefined}
+              what="Breakdown"
+              value={costText(totals.cost)}
+            />
+          </dd>
           <dd className="usage-stat-sub">{COST_LABEL}</dd>
           {costCaveats(totals.cost).map((line) => (
             <dd key={line} className="usage-stat-sub usage-cost-caveat">
@@ -413,7 +457,13 @@ function UsageBody({
         </div>
         <div className="usage-stat" data-stat="cache" title="Of input-side tokens">
           <dt className="usage-stat-label">From cache</dt>
-          <dd className="usage-stat-value">{percent(usage.cache.share)}</dd>
+          <dd className="usage-stat-value">
+            <Figure
+              to={linked ? 'cache' : undefined}
+              what="Cache"
+              value={percent(usage.cache.share)}
+            />
+          </dd>
           <dd className="usage-stat-sub">
             {usage.cache.saving_usd === null
               ? 'of input-side tokens'
@@ -486,6 +536,11 @@ function UsageDetail({
   const { totals } = usage;
   const nothing = totals.tokens + totals.cache_read === 0;
   const days = usage.trend.map((d) => d.day);
+  // A figure's link opened in a new tab arrives with its card in the hash.
+  useEffect(() => {
+    const section = sectionOfHash(window.location.hash);
+    if (section !== undefined) openSection(section);
+  }, []);
   return (
     <>
       {nothing && (
@@ -515,6 +570,28 @@ function UsageDetail({
           points={dayPoints(usage.trend)}
           axis={axisDays(days).map(dayLabel)}
         />
+        {/* The chart's text alternative (LAI-1201): every day as a row, on request. */}
+        <details className="usage-trend-table">
+          <summary>Show these days as a table</summary>
+          <table className="usage-table" aria-label="Tokens per day, without cache reads">
+            <thead>
+              <tr>
+                <th scope="col">Day</th>
+                <th scope="col">Tokens</th>
+                <th scope="col">Cache reads</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage.trend.map((d) => (
+                <tr key={d.day}>
+                  <th scope="row">{dayLabel(d.day)}</th>
+                  <td>{exactTokens(d.tokens)}</td>
+                  <td>{exactTokens(d.cache_read)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
       </section>
 
       <div className="usage-pair">
@@ -568,6 +645,59 @@ function UsageDetail({
       <AcceptedCostCard usage={usage} />
       <BudgetsCard budgets={usage.budgets} space={usage.project} onChanged={onChanged} />
     </>
+  );
+}
+
+/** The cards a headline figure opens, by their `data-section`. */
+type FigureSection = 'trend' | 'cache' | 'tasks' | 'breakdown';
+const FIGURE_SECTIONS: readonly FigureSection[] = ['trend', 'cache', 'tasks', 'breakdown'];
+
+function sectionOfHash(hash: string): FigureSection | undefined {
+  return FIGURE_SECTIONS.find((s) => hash === `#usage-${s}`);
+}
+
+/**
+ * Bring a card into view and put focus on it, so a keyboard or screen-reader
+ * reader lands where the eye does. Motion is skipped for a reader who asked
+ * for less.
+ */
+function openSection(section: FigureSection): void {
+  const target = document.querySelector<HTMLElement>(`.usage [data-section="${section}"]`);
+  if (target === null) return;
+  if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+  const still = prefersReducedMotion();
+  target.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+  target.focus({ preventScroll: true });
+}
+
+/**
+ * A headline figure (LAI-1201): a link to the card that explains it, named
+ * for a screen reader by where it goes. With no card to open, plain text.
+ */
+function Figure({
+  to,
+  what,
+  value,
+}: {
+  readonly to: FigureSection | undefined;
+  readonly what: string;
+  readonly value: string;
+}) {
+  if (to === undefined) return <>{value}</>;
+  return (
+    <a
+      className="usage-figure"
+      href={`#usage-${to}`}
+      data-figure-to={to}
+      aria-label={`${value}, see ${what}`}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        openSection(to);
+      }}
+    >
+      {value}
+    </a>
   );
 }
 
