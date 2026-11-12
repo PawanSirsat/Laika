@@ -214,6 +214,8 @@ void describe('the Create task dialog (LAI-1209)', () => {
       const box = h.page.locator(DIALOG);
       const close = box.getByRole('button', { name: 'Close', exact: true });
       const tip = await tooltipOf(close);
+      // Past the Tooltip's arrival window (LAI-1214), as for Add column below.
+      await h.page.waitForTimeout(400);
       await close.focus();
       await tip.waitFor({ state: 'visible', timeout: 2_000 });
 
