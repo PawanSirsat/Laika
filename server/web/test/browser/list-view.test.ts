@@ -1152,7 +1152,7 @@ const vsLabels = async (h: Harness): Promise<string[]> => {
 };
 
 const moreItems = async (h: Harness): Promise<string[]> => {
-  await h.page.locator('button[title="More"]').click();
+  await h.page.locator('button[data-board-more]').click();
   await h.page.locator('.bt-menu').waitFor({ timeout: 5_000 });
   const items = (await h.page.locator('.bt-menu .bt-menu-item').allInnerTexts()).map((t) =>
     t.trim(),

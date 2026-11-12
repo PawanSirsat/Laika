@@ -20,6 +20,7 @@ import {
   useSprints,
 } from '../../../components/drawer/use-space-reads.ts';
 import { Button } from '../../../components/forms/Button.tsx';
+import { Tabs } from '../../../components/tabs/Tabs.tsx';
 import { useShell } from '../../../components/shell/shell-context.ts';
 import { typingIn } from '../../../components/typing-in.ts';
 import { useDismiss } from '../../../components/use-dismiss.ts';
@@ -841,35 +842,17 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       </header>
 
       {mode === 'one' && (
-        <div className="wr-switcher" role="tablist" aria-label="Sections">
-          {AREAS.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              role="tab"
-              id={`wr-tab-${a.id}`}
-              aria-selected={area === a.id}
-              aria-controls="wr-tabpanel"
-              tabIndex={area === a.id ? 0 : -1}
-              className="wr-tab"
-              onClick={() => {
-                goTo(a.id);
-              }}
-              onKeyDown={(event) => {
-                const at = AREAS.findIndex((x) => x.id === a.id);
-                const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-                if (step === 0) return;
-                event.preventDefault();
-                const next = AREAS[(at + step + AREAS.length) % AREAS.length];
-                if (next === undefined) return;
-                goTo(next.id);
-                document.getElementById(`wr-tab-${next.id}`)?.focus();
-              }}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+        // The shared tab strip (LAI-1193): roving focus, arrow keys, edge fade.
+        <Tabs
+          label="Sections"
+          items={AREAS}
+          selected={area}
+          onSelect={goTo}
+          idBase="wr-tab"
+          panelId="wr-tabpanel"
+          className="wr-switcher"
+          tabClassName="wr-tab"
+        />
       )}
 
       <div className="wr-grid" style={{ gridTemplateColumns: columns }}>
