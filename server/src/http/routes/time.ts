@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { getMyDay } from '../../services/my-day.ts';
+import { getMyDays } from '../../services/time-days.ts';
 import { getMySummary } from '../../services/time-summary.ts';
 import { addBreak, removeBreak } from '../../services/time-breaks.ts';
 import {
@@ -271,6 +272,9 @@ export const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional(
 /** A stretch of days for `GET /me/time/summary` (LAI-526); its bounds are the service's. */
 export const SummaryQuery = strictObject({ from: day, to: day });
 
+/** A stretch of days for `GET /me/time/days` (LAI-1173); its bounds are the summary's. */
+export const DaysQuery = strictObject({ from: day, to: day, tz: zone.optional() });
+
 // The Solidtime bridge (LAI-788). **No field can hold a description**: an
 // entry carries the key the CLI read from it, or none, and a digest.
 const solidtimeId = z.string().trim().min(1).max(64);
@@ -447,6 +451,12 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.get('/time/summary', (c) => {
     const actor = requireActor(c);
     return c.json(getMySummary(db, actor, parseQuery(SummaryQuery, c.req.query())));
+  });
+
+  // My day's Week, Month and Year views: one row per day (LAI-1173).
+  app.get('/time/days', (c) => {
+    const actor = requireActor(c);
+    return c.json(getMyDays(db, actor, parseQuery(DaysQuery, c.req.query())));
   });
 
   // The timer (§4.61, LAI-500): one per person, kept here so it survives a reload.
