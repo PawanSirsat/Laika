@@ -27,7 +27,9 @@ import {
   SORTS,
   summarize,
   teamLoad,
+  CAPACITY_DEFAULTS,
   type CapacityFilter,
+  type CapacityParams,
   type CapacitySort,
 } from './capacity-derive.ts';
 import '../../../components/markers.css';
@@ -50,6 +52,14 @@ export interface CapacityScreenProps {
   readonly reviewCapped?: boolean | undefined;
   /** Follow a tile's link without reloading the page. */
   readonly onNavigate: (to: string) => void;
+  /**
+   * The search, chip, space and sort the address names (LAI-1201), so a
+   * reload or a pasted link opens the same view. Absent: the screen keeps its
+   * own, starting from the defaults.
+   */
+  readonly params?: CapacityParams | undefined;
+  /** A filter changed: the shell writes it into the address. */
+  readonly onParams?: ((next: Partial<CapacityParams>) => void) | undefined;
 }
 
 /** How often to re-read. §11.4.2's screen is worthless if it silently ages. */
@@ -139,6 +149,8 @@ export function CapacityScreen({
   reviewWaiting,
   reviewCapped,
   onNavigate,
+  params,
+  onParams,
 }: CapacityScreenProps) {
   const { theme } = useTheme();
   /*
@@ -151,10 +163,24 @@ export function CapacityScreen({
   const presence = polled.data?.presence;
   const now = polled.readAt ?? 0;
 
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<CapacityFilter>('all');
-  const [space, setSpace] = useState<string | null>(null);
-  const [sort, setSort] = useState<CapacitySort>('online');
+  const [own, setOwn] = useState<CapacityParams>(CAPACITY_DEFAULTS);
+  const { query, filter, space, sort } = params ?? own;
+  const update = (next: Partial<CapacityParams>): void => {
+    if (onParams === undefined) setOwn((was) => ({ ...was, ...next }));
+    else onParams(next);
+  };
+  const setQuery = (next: string): void => {
+    update({ query: next });
+  };
+  const setFilter = (next: CapacityFilter): void => {
+    update({ filter: next });
+  };
+  const setSpace = (next: string | null): void => {
+    update({ space: next });
+  };
+  const setSort = (next: CapacitySort): void => {
+    update({ sort: next });
+  };
   const [showNever, setShowNever] = useState(false);
   const [view, setView] = useState<CapacityViewMode>(rememberedView);
   const chooseView = (next: CapacityViewMode): void => {
@@ -461,7 +487,13 @@ export function CapacityScreen({
           {`${String(cards.length + never.length)} ${cards.length + never.length === 1 ? 'person' : 'people'} shown`}
         </p>
 
-        {shown.length === 0 ? (
+        {everyone.length === 0 ? (
+          /* Nobody to show is not "nobody matches": no filter would help. */
+          <EmptyState
+            headline="No one to show yet"
+            body="Capacity lists the people in the spaces you can see. Once someone is in one of your spaces, their workload and presence appear here."
+          />
+        ) : shown.length === 0 ? (
           <EmptyState
             headline="Nobody matches"
             body={
@@ -472,9 +504,7 @@ export function CapacityScreen({
             action={{
               label: 'Clear search and filters',
               onClick: () => {
-                setQuery('');
-                setFilter('all');
-                setSpace(null);
+                update({ query: '', filter: 'all', space: null });
               },
             }}
           />
