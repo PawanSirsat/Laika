@@ -1,116 +1,41 @@
-import { useEffect, useRef } from 'react';
-import { avatarColor } from '../../theme/avatar-color.ts';
-import { initials } from '../../theme/initials.ts';
-import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
-import { agentCount, agentsLive, cluster } from './top-bar-derive.ts';
+import { agentCount, agentsLive } from './top-bar-derive.ts';
 import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
-import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
-import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 import { useShell } from '../shell/shell-context.ts';
-import { Dropdown } from '../Dropdown.tsx';
 import { SpaceMenu } from './SpaceMenu.tsx';
 
 export interface SpaceTopBarProps {
-  readonly members: readonly Member[];
-  /** Live filter state, read from and written back to the URL. */
-  readonly query: string;
-  readonly priority: TaskPriority | undefined;
+  /** Whether only agent-authored work is shown — the Agents chip's state. */
   readonly agentOnly: boolean;
-  /** The project's own tag vocabulary, for the tag filter. */
-  readonly tags: readonly { readonly name: string; readonly task_count: number }[];
-  readonly tag: string | undefined;
-  readonly assignee: string | undefined;
-  readonly ready: boolean;
-  readonly onTag: (value: string | undefined) => void;
-  readonly onAssignee: (value: string | undefined) => void;
-  readonly onReady: (value: boolean) => void;
-  readonly onQuery: (value: string) => void;
-  readonly onPriority: (value: TaskPriority | undefined) => void;
   readonly onAgentOnly: (value: boolean) => void;
-  /**
-   * Opens the board's create form. Absent unless the server says the reader
-   * may create a task in this space — `task.create`, which a space set to
-   * *Space admins only* withholds from members (LAI-178) — so Create is not
-   * drawn rather than drawn to answer `403`.
-   */
-  readonly onCreate?: (() => void) | undefined;
 }
 
 /**
- * Row one of a space (prototype line 118): who and what, then the controls.
+ * Row one of a space: **who and what, and nothing else** (LAI-1198).
  *
- * Every control writes to the URL, so a filtered space is a link someone can
- * paste — the rule `use-route.ts` states and the reason filters are query
- * params rather than component state.
+ * Until LAI-1198 this row also carried Search, Priority, Tag, Assignee and
+ * Ready-only on every view that did not claim them, which pushed Agents and
+ * Create onto a second line on the Calendar, Sprints, Activity and Meeting
+ * review — the tabs dropped ~35px and Create moved from tab to tab (visual
+ * audit, findings 3 and 4). Those controls now live in `SpaceToolbar`, the row
+ * under the tabs, and Create with them, so this row is the same on every tab:
+ * the space's name and key, the live indicator, the Agents presence chip and
+ * the space menu.
  *
- * The prototype's `⋯` is `SpaceMenu`, now that Space settings is a page to
- * put behind it (LAI-977). Until then it was not rendered: a control that
- * does nothing is what §5.1 forbids.
+ * The Agents chip stays here although it can filter: it is the space's live
+ * presence — the same on every tab — not a control belonging to one view.
  */
-export function SpaceTopBar({
-  members,
-  query,
-  priority,
-  agentOnly,
-  tags,
-  tag,
-  assignee,
-  ready,
-  onQuery,
-  onPriority,
-  onAgentOnly,
-  onTag,
-  onAssignee,
-  onReady,
-  onCreate,
-}: SpaceTopBarProps) {
+export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
   /*
    * From the shell, not a prop: the rail reads the same value and one project
    * name should be one request (LAI-299). `slug` is the fallback while the
    * by-slug response is in flight — a URL is a poor name but a true one.
    */
-  const { spaceName, route } = useShell();
+  const { spaceName, spaceKey, route } = useShell();
   const slug = route.params.get('project') ?? undefined;
 
-  const { theme } = useTheme();
   const { stream, presence } = useLive();
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  /**
-   * `/` focuses search — but never while someone is typing.
-   *
-   * Without the guard this steals the key from every text field on the screen,
-   * including the new-task title, and a shortcut that eats your input is worse
-   * than no shortcut. Moved here from `BoardScreen` with the input itself
-   * (LAI-251).
-   */
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
-          return;
-        }
-        // A `Dropdown` is a select too (LAI-726): a key typed there is its own.
-        if (target.getAttribute('role') === 'combobox') return;
-      }
-
-      event.preventDefault();
-      searchRef.current?.focus();
-      searchRef.current?.select();
-    };
-
-    addEventListener('keydown', onKey);
-    return () => {
-      removeEventListener('keydown', onKey);
-    };
-  }, []);
-  const { shown, overflow } = cluster(members);
   /*
    * `undefined` while presence is in flight, **not `0`** (LAI-295).
    * `agentCount(presence?.present)` returned 0 for "not asked yet" and 0 for
@@ -121,39 +46,15 @@ export function SpaceTopBar({
   /** Which coding agents those are (LAI-737) — marks on the chip, names in its title. */
   const live = agentsLive(presence?.present);
 
-  /*
-   * **Four of these move out when a view supplies its own filtering** (LAI-290).
-   * The board collapses Priority, Tag, Assignee and Ready-only behind its
-   * `Filter` button, and both copies wrote the same URL params — so on the
-   * board they were two controls for one piece of state.
-   *
-   * Hidden rather than deleted: a view of a space with no toolbar (the
-   * Calendar) draws these controls nowhere else. A view that reads none of
-   * them claims too — the dashboard (LAI-711) and the Timeline (LAI-725). The
-   * `Agents` chip stays either way — it carries a live presence count the
-   * Filter panel does not, so it is not the same control.
-   */
-  const ownFilters = !useSpaceFiltersClaimed();
-
   return (
     <>
       <div className="space-bar-row">
         <div className="space-identity">
           {/*
-          **The project name, shown only when the rail cannot** (LAI-299).
-
-          LAI-293 moved it to the sidebar's wordmark because the bar and the
-          rail were naming the same thing two inches apart. That was right
-          while the rail is there — and the rail is **not** always there: it
-          collapses to icons (`.shell-rail-mini`), and below 900px it slides
-          off-canvas entirely. In both states the project had no name anywhere
-          on screen, which is how the owner found it.
-
-          So it is rendered always and **hidden by CSS whenever the rail is
-          showing it**, in `space.css`. The two rules there mirror the two
-          states exactly, which is what stops this becoming the duplication it
-          replaced.
-        */}
+            **The project name is the bar's** (owner, 2026-09-21; LAI-299): the
+            rail names the product, and below 900px it is off-canvas entirely,
+            so this headline is the only place the space is named.
+          */}
           <span className="space-icon" aria-hidden="true">
             <svg
               width="15"
@@ -167,65 +68,22 @@ export function SpaceTopBar({
             </svg>
           </span>
           <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>
-
-          {/* Real members, never the design's four fixtures. Absent rather than
-            a placeholder while the list is still loading.
-
-            **Behind `ownFilters` as of LAI-293**, now that the row that receives
-            them exists. LAI-292 deliberately left them here because hiding them
-            before `.board-bar` rendered them would have left the board unable to
-            filter by assignee at all — the ordering was the requirement, and
-            this is the other half of it, landing in the same commit. */}
-          {ownFilters && members.length > 0 && (
-            <div
-              className="space-members"
-              title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
-            >
-              {/*
-              **Buttons, not decoration** (LAI-290). These were `<span>` with
-              `aria-hidden="true"` — a row of faces that looked filterable and
-              was not, while the only way to filter by assignee was a separate
-              dropdown. Clicking one writes `?assignee=`, which the board
-              already reads; clicking it again clears it.
-            */}
-              {shown.map((member) => {
-                const colour = avatarColor(member.user_id, theme);
-                const on = assignee === member.user_id;
-                return (
-                  <button
-                    key={member.user_id}
-                    type="button"
-                    className={
-                      on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'
-                    }
-                    style={{ background: colour.background, color: colour.foreground }}
-                    aria-pressed={on}
-                    title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                    onClick={() => {
-                      onAssignee(on ? undefined : member.user_id);
-                    }}
-                  >
-                    {initials(member.name)}
-                    <span className="visually-hidden">
-                      {on
-                        ? ` — showing only their work, click to clear`
-                        : ` — show only their work`}
-                    </span>
-                  </button>
-                );
-              })}
-              {overflow > 0 && <span className="space-member-more">+{overflow}</span>}
-            </div>
+          {/* The key every task in it carries (`LC` for `LC-42`), from the same read. */}
+          {spaceKey !== undefined && (
+            <span className="space-key" title={`Tasks in this space are keyed ${spaceKey}-…`}>
+              <span className="visually-hidden">Key </span>
+              {spaceKey}
+            </span>
           )}
         </div>
 
-        <div className="space-controls">
-          {/*
+        {/*
           The LIVE pill. Four states, because the stream has four and a pill
           that only ever says LIVE is decoration (§11.5).
         */}
-          <span className={`space-live space-live-${stream}`}>
-            <span className="space-live-dot" aria-hidden="true" />
+        <span className={`space-live space-live-${stream}`}>
+          <span className="space-live-dot" aria-hidden="true" />
+          <span className="space-live-word">
             {stream === 'live'
               ? 'LIVE'
               : stream === 'catching-up'
@@ -234,146 +92,10 @@ export function SpaceTopBar({
                   ? 'OFFLINE'
                   : 'CONNECTING'}
           </span>
-
-          {/* Same claim as the members: search is a filter, and a view that owns
-            its filtering owns this too (LAI-293). Non-board views keep it —
-            the bar is the only search they have. */}
-          {ownFilters && (
-            <label className="space-search lk-sub">
-              <span className="visually-hidden">Search tasks in this space</span>
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                aria-hidden="true"
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <input
-                ref={searchRef}
-                type="search"
-                placeholder="Search"
-                value={query}
-                onChange={(event) => {
-                  onQuery(event.target.value);
-                }}
-              />
-            </label>
-          )}
-          {ownFilters && (
-            <>
-              {/*
-            **A dropdown, not a cycler** (LAI-270). The reference reads
-            `Priority: all` and opens; a button you press repeatedly to reach p3
-            hides its own options.
-          */}
-              <label
-                className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}
-              >
-                <span className="visually-hidden">Priority</span>
-                <Dropdown
-                  variant="bare"
-                  noun="priorities"
-                  value={priority ?? ''}
-                  onChange={(value) => {
-                    onPriority(value === '' ? undefined : value);
-                  }}
-                  options={[
-                    { value: '', label: 'Priority: all', pinned: true },
-                    ...PRIORITIES.map((p) => ({ value: p, label: `Priority: ${p.toUpperCase()}` })),
-                  ]}
-                />
-              </label>
-
-              {tags.length > 0 && (
-                <label
-                  className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}
-                >
-                  <span className="visually-hidden">Tag</span>
-                  <Dropdown
-                    variant="bare"
-                    noun="tags"
-                    value={tag ?? ''}
-                    onChange={(value) => {
-                      onTag(value === '' ? undefined : value);
-                    }}
-                    options={[
-                      { value: '', label: 'Any tag', pinned: true },
-                      ...tags.map((t) => ({
-                        value: t.name,
-                        label: `${t.name} (${String(t.task_count)})`,
-                      })),
-                    ]}
-                  />
-                </label>
-              )}
-
-              <label
-                className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}
-              >
-                <span className="visually-hidden">Assignee</span>
-                <Dropdown
-                  variant="bare"
-                  noun="people"
-                  value={assignee ?? ''}
-                  onChange={(value) => {
-                    onAssignee(value === '' ? undefined : value);
-                  }}
-                  options={[
-                    { value: '', label: 'Anyone', pinned: true },
-                    { value: 'none', label: 'Unassigned', pinned: true },
-                    ...members.map((m) => ({ value: m.user_id, label: m.name })),
-                  ]}
-                />
-              </label>
-
-              <button
-                type="button"
-                className={ready ? 'space-chip space-chip-on' : 'space-chip'}
-                aria-pressed={ready}
-                onClick={() => {
-                  onReady(!ready);
-                }}
-              >
-                Ready only
-              </button>
-            </>
-          )}
-
-          {/*
-          Where a *view* hangs its own controls — the board's View settings
-          today (LAI-266). **In the bar, not in the slot below it**: the slot
-          collapses when empty and the reference has no band under the tabs, so
-          a permanent button there would add a row the design does not have.
-          `sprint-strip.test.ts` guards exactly that.
-        */}
-          <div id="space-bar-actions" className="space-bar-actions" />
-        </div>
+        </span>
       </div>
 
       <div className="space-bar-right">
-        {/*
-          **Agents and Create moved to the far right of the bar** (LAI-293, the
-          owner's reference). They sat between the project name and the view
-          tabs, which reads as crammed rather than as a pair of actions.
-
-          They are a **sibling of the tabs**, not a child of the identity row —
-          `margin-inline-start: auto` inside that row only reaches the row's own
-          right edge, which is immediately left of the tabs. Measured: it put
-          Create at x=608 in a 1600 bar. The tabs' `flex: 1 1 auto` is what
-          carries this group to the end; `order` puts it after them without
-          moving the DOM out of reading order.
-        */}
-        {/*
-          **Agents and Create sit to the right**, per the owner's reference.
-          `.space-agents-start` carries `margin-inline-start: auto`, so it and
-          everything after it are pushed across — one rule rather than a spacer
-          element, which would be a node with no meaning.
-        */}
         <button
           type="button"
           className={
@@ -400,19 +122,16 @@ export function SpaceTopBar({
             <path d="M12 4v4M9 14h.01M15 14h.01" />
           </svg>
           {/*
-            **Nothing until presence lands** (LAI-606). This showed a spinner so
-            the chip would not claim "Agents 0" before the count existed — but
-            it then spun for ~3.2s *after* the board was usable, and a spinner
-            for something nobody is waiting on is noise. The word stays, the
+            **Nothing until presence lands** (LAI-606): the word stays, the
             number arrives when it arrives.
           */}
-          Agents {agents}
+          <span className="space-agents-label">
+            <span className="space-agents-word">Agents</span> {agents}
+          </span>
           {/*
-            **The number counts people, the marks count agents** (review round
-            1) — "Agents 2" beside three marks read as a contradiction. The
-            visible label stays the design's; what the number means, and which
-            agents the marks are, is said in words for a screen reader and in
-            the title for a pointer.
+            **The number counts people, the marks count agents** — what the
+            number means, and which agents the marks are, is said in words for
+            a screen reader and in the title for a pointer.
           */}
           {agents !== undefined && (
             <span className="visually-hidden">{agentSummary(agents, live)}</span>
@@ -423,25 +142,7 @@ export function SpaceTopBar({
           ))}
         </button>
 
-        {/* Before Create, so Create stays flush with the bar's end (LAI-293). */}
         {slug !== undefined && <SpaceMenu slug={slug} />}
-
-        {onCreate !== undefined && (
-          <button type="button" className="space-create" onClick={onCreate}>
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.6"
-              aria-hidden="true"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Create
-          </button>
-        )}
       </div>
     </>
   );

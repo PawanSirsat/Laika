@@ -12,7 +12,8 @@ import { useCreateTask } from '../create-task/use-create-task.ts';
 import { SpaceLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
 import { SpaceFilterClaim } from './SpaceSlot.tsx';
-import { BAND_SLOT_ID, SLOT_ID } from './SpaceSlot.tsx';
+import { BAND_SLOT_ID } from './SpaceSlot.tsx';
+import { SpaceToolbar } from './SpaceToolbar.tsx';
 import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
@@ -279,46 +280,19 @@ function SpaceFrameBody({
       <div className="space">
         <div className="space-bar">
           {/*
-            **Identity and tabs on one line** (LAI-292). The owner asked for the
-            project name to move up so the row it had can be used for something
-            else — and with the board's own controls moving below the bar,
-            what is left of the bar is narrow enough to sit beside the tabs.
+            **One header, three rows, the same on every tab** (LAI-1198): who
+            and what (`SpaceTopBar`), the views (`ViewTabs`), then the one
+            toolbar (`SpaceToolbar`) — search and filters, the view's own
+            controls, and + Create always last. Before this the filters rode in
+            the title row on four of the eight tabs and pushed Create onto a
+            line of its own there.
           */}
           <div className="space-bar-top">
             <SpaceTopBar
-              members={members}
-              query={params.get('q') ?? ''}
-              priority={validPriority(params.get('priority'))}
               agentOnly={params.get('agent') === 'true'}
-              tags={tags}
-              tag={validTag(params.get('tag'))}
-              assignee={params.get('assignee') ?? undefined}
-              ready={params.get('ready') === 'true'}
-              onQuery={(value) => {
-                setParam('q', value);
-              }}
-              onPriority={(value) => {
-                setParam('priority', value);
-              }}
               onAgentOnly={(value) => {
                 setParam('agent', value ? 'true' : undefined);
               }}
-              onTag={(value) => {
-                setParam('tag', value);
-              }}
-              onAssignee={(value) => {
-                setParam('assignee', value);
-              }}
-              onReady={(value) => {
-                setParam('ready', value ? 'true' : undefined);
-              }}
-              {...(mayCreate
-                ? {
-                    onCreate: () => {
-                      createTask.open();
-                    },
-                  }
-                : {})}
             />
 
             <ViewTabs
@@ -331,8 +305,37 @@ function SpaceFrameBody({
             />
           </div>
 
-          {/* Where each view puts its own context line and controls. */}
-          <div id={SLOT_ID} className="space-slot" />
+          <SpaceToolbar
+            members={members}
+            query={params.get('q') ?? ''}
+            priority={validPriority(params.get('priority'))}
+            tags={tags}
+            tag={validTag(params.get('tag'))}
+            assignee={params.get('assignee') ?? undefined}
+            ready={params.get('ready') === 'true'}
+            onQuery={(value) => {
+              setParam('q', value);
+            }}
+            onPriority={(value) => {
+              setParam('priority', value);
+            }}
+            onTag={(value) => {
+              setParam('tag', value);
+            }}
+            onAssignee={(value) => {
+              setParam('assignee', value);
+            }}
+            onReady={(value) => {
+              setParam('ready', value ? 'true' : undefined);
+            }}
+            {...(mayCreate
+              ? {
+                  onCreate: () => {
+                    createTask.open();
+                  },
+                }
+              : {})}
+          />
         </div>
 
         {/*
