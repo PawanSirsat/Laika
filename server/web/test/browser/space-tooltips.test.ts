@@ -200,6 +200,52 @@ void describe('the board and the space header (LAI-1213)', () => {
     }
   });
 
+  void test('Insights keeps its footnotes behind info hints: focus shows, a click pins', async () => {
+    const h = await at(
+      `/board?${Q}`,
+      spaceStub({
+        [`/api/v1/projects/${PROJECT.slug}/metrics`]: {
+          since: 1,
+          throughput: [
+            { day: '2026-11-10', completed: 2 },
+            { day: '2026-11-11', completed: 0 },
+            { day: '2026-11-12', completed: 1 },
+          ],
+          cycle_time: {
+            measured: 3,
+            unmeasured: 0,
+            p50_ms: 3_600_000,
+            p75_ms: 7_200_000,
+            p90_ms: 9_000_000,
+          },
+        },
+      }),
+    );
+    try {
+      const more = h.page.locator('[data-board-more]');
+      await more.waitFor({ timeout: 20_000 });
+      await more.click();
+      await h.page.getByRole('menuitem', { name: 'Insights' }).click();
+      const hint = h.page.getByRole('button', { name: 'About throughput' });
+      await hint.waitFor({ timeout: 10_000 });
+      // The essential figure stays on screen; the why moved behind the (i).
+      assert.match(await h.page.locator('.bi').innerText(), /3 days\./);
+      await hint.focus();
+      const tip = await tooltipOf(hint);
+      await until(() => shown(tip), 2_000);
+      assert.equal(await shown(tip), true, 'focus did not show the hint');
+      assert.match((await tip.textContent()) ?? '', /nothing\s+finished as zero/);
+      // A click pins it: it stays after the pointer leaves.
+      await hint.click();
+      await h.page.mouse.move(1, 1);
+      await h.page.waitForTimeout(400);
+      assert.equal(await shown(tip), true, 'a click did not keep the hint open');
+      assert.deepEqual(await cspViolations(h.page), []);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a locked field in View settings says why, and Tab reaches it', async () => {
     const h = await at(`/board?${Q}`, space());
     try {

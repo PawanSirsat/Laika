@@ -80,7 +80,8 @@ on Search); bare `title=` 95 → 0 (Chip, Avatar, PersonLink, AgentChip,
 DashLink, the agent panel's times included); typed glyphs 41 + 23 in
 constants → 3 exempt keycaps/sentence arrows; input- and state-dependent
 disabled controls explain why (focusable `aria-disabled` + tooltip, or the
-visible line linked); section marks on the drawer, the task rail's labels,
+visible line linked); Insights' throughput and cycle-time footnotes behind
+InfoHints, the day count kept on screen; section marks on the drawer, the task rail's labels,
 the Workroom and the sprint dates. Census:
 `.polly/specs/tooltips-census-space-task.md`.
 
@@ -94,7 +95,8 @@ match. LAI-1209's scanner moved to `test/helpers/jsx-buttons.ts`, shared.
 the drawer and the Workroom: named + tooltip with words for every icon-ish
 control, no bare `title`, CSP 0; hover-after-delay and focus; lazy markers;
 Escape closes the tooltip before the drawer; held-back Link and locked View
-settings field focusable with their reason, sending nothing; screenshots
+settings field focusable with their reason, sending nothing; Insights'
+info hints shown on focus and pinned by a click; screenshots
 behind `LAIKA_SHOTS`. Tests that read a bare `title` now read the tooltip
 (`tooltip-probe.ts`'s `tipText`): task-rail, task-size, board-sprint-stats,
 sprint-strip, sprint-card-numbers, list-view, card-footer, cards-chips,
@@ -105,7 +107,8 @@ copy-insecure follow the drawn icons.
 
 **Mutations**, all red: guard M1–M5 (no Tooltip, unnamed, bare title, typed
 ⋯, stale exemption); browser B1 lazy never arms, B2 natively disabled Link,
-B3 Escape not spent, B4 Close without its keycap, B5 lazy armed at once.
+B3 Escape not spent, B4 Close without its keycap, B5 lazy armed at once,
+B6 an info hint that a click does not pin.
 
 **Left for their owners** (listed for polly to file): Dropdown's native
 trigger `title`; the profile's InfoTip typed `i`; `agent-states`'
