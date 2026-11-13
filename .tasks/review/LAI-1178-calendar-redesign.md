@@ -5,8 +5,9 @@ area: shell
 assignee: shell
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-13T05:00:00Z
+finished: 2026-11-13T06:10:00Z
 ---
 
 ## Goal
@@ -26,29 +27,29 @@ reschedule, and wanted the toolbar filters applied. No server change:
 
 ## Acceptance criteria
 
-- [ ] **Months:** ‹ Today › and ← → page the months. The month is in
+- [x] **Months:** ‹ Today › and ← → page the months. The month is in
       `?month=YYYY-MM` (absent means this month), and back/forward walk them.
-- [ ] **Overdue:** open tasks due before today sit in an *Overdue* lane above
+- [x] **Overdue:** open tasks due before today sit in an *Overdue* lane above
       the grid, oldest first, each with its date. The lane folds, and its
       count stays visible.
-- [ ] **Day cells:** every day is one height. Three chips, or two plus
+- [x] **Day cells:** every day is one height. Three chips, or two plus
       "+N more", most urgent first; the date or "+N more" opens the whole day.
-- [ ] **Chips:** a priority stripe, the key and the status name (in its kind's
+- [x] **Chips:** a priority stripe, the key and the status name (in its kind's
       colour, LAI-739) on line one, and the title on line two. The legend
       names P1 and P2.
-- [ ] **Sprints:** one band per sprint per week with its real name, the
+- [x] **Sprints:** one band per sprint per week with its real name, the
       running one accented. No per-cell `S9`, no full-cell tint.
-- [ ] **Filters:** the toolbar's priority, tag, assignee, ready and search
+- [x] **Filters:** the toolbar's priority, tag, assignee, ready and search
       apply, and the subtitle says *filtered*.
-- [ ] **Drag:** dragging a chip, or an overdue one, to a day sends
+- [x] **Drag:** dragging a chip, or an overdue one, to a day sends
       `PATCH /tasks/:id {due_on}` optimistically, with an Undo toast. The day's
       *Move to…* does the same from the keyboard. Both only with `task.write`.
-- [ ] **Phone:** an agenda of the month's days that hold work, with nothing
+- [x] **Phone:** an agenda of the month's days that hold work, with nothing
       scrolling sideways. Both themes.
-- [ ] **Tests:** `calendar-redesign` unit and browser tests and a
+- [x] **Tests:** `calendar-redesign` unit and browser tests and a
       `calendar-drag` mirror test; the existing calendar tests updated to the
       new wording and markup.
-- [ ] **Named edit (D-033):** SPEC §11.4.2's Calendar row, stale since D-059
+- [x] **Named edit (D-033):** SPEC §11.4.2's Calendar row, stale since D-059
       (it said *none defined, no decision*).
 
 ## Notes / context
