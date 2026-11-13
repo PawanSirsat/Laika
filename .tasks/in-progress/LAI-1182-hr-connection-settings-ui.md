@@ -19,13 +19,13 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
 
 ## Acceptance criteria
 
-- [ ] `src/api/hr.ts` mirrors LAI-1181's `HrSourceView` and holiday shapes
+- [x] `src/api/hr.ts` mirrors LAI-1181's `HrSourceView` and holiday shapes
       (doc header "Mirrors `services/hr-sync.ts` / `routes/hr.ts`"), every
       path written out whole (`/org/hr`, `/org/hr/connect`,
       `/org/hr/connect/verify`, `/org/hr/sync`, `/org/hr/people`,
       `/org/holidays`); `view-type-drift` PAIRS for each view and nested shape
       (name nested shapes on both sides).
-- [ ] **HR system card** (shown to `org.hr.configure` holders only, via
+- [x] **HR system card** (shown to `org.hr.configure` holders only, via
       `useGates`), modelled on `GithubWebhookSection.tsx`:
   - off: one line on what it does ("Holidays and leave from Clan, every 30
     minutes. Laika keeps the sign-in token, never the password.") and
@@ -42,15 +42,15 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
   - People: matched count, then the unmatched and owner-mapped people with a
     member picker per row and "Not on Laika"; saving sends `PUT
     /org/hr/people`.
-- [ ] **Holidays** list for every member: this year and next, by day, label,
+- [x] **Holidays** list for every member: this year and next, by day, label,
       a "Clan" tag on synced rows and "Some people" when not everyone's;
       owners/admins (`org.time.set`) add (day + label) and remove manual
       rows; Clan rows have no remove.
-- [ ] Both themes, 1440 and 390 with no sideways scroll, tokens only, every
+- [x] Both themes, 1440 and 390 with no sideways scroll, tokens only, every
       size a `--text-*` step ≥ 12 px; the `tokens`, `states`, `type-floor`,
       `loading-sweep`, `endpoint-coverage`, `view-type-drift`,
       `screen-header` guards green.
-- [ ] Browser tests (stubbed `/org/hr*`, `/org/holidays`): off → connect →
+- [x] Browser tests (stubbed `/org/hr*`, `/org/holidays`): off → connect →
       connected; 2FA path; each error worded; Sync now posts once and shows
       the new counts; people mapping sends the right body; member sees the
       Holidays list read-only and no HR card; both themes × 1440/390.
@@ -59,3 +59,19 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
 
 - Copy is plain and owner-facing. No Clan colours; tokens only.
 - Built on LAI-1181's contract; merge its branch before the drift guards.
+
+## Build notes (LAI-1182 builder, 2026-11-13)
+
+- Built on `LAI-1181-clan-hr-sync` at `f27fe431`, merged into this branch;
+  the eight HR views are paired in `view-type-drift.test.ts`.
+- **One assertion is red on this branch by design (CLAUDE.md §4.4), and it is
+  CORE's file.** `server/test/tooling/response-type-coverage.test.ts` →
+  *names nothing that is already paired or no longer served*:
+  `HrSourceView`, `HrSyncErrorView`, `HrSyncResultView`, `HrTwoFactorView`,
+  `HrPersonView`, `HrPersonUserView`, `HolidayView`, `HolidayListView` each
+  "is paired now — remove it from UNPAIRED"; and with it *reports how much of
+  the surface is actually guarded*: `expected 190 to be 182`. Both go green
+  when LAI-1181 drops the eight `UNPAIRED` lines it added, which it can only do
+  once these pairs exist.
+- The two parts sit as facts inside the Workspace settings card (beside Time
+  and Breaks), not as a separate card.
