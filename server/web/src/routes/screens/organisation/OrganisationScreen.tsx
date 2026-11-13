@@ -28,6 +28,8 @@ import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
+import { HolidaysFact } from './HolidaysFact.tsx';
+import { HrSourceFact } from './HrSourceFact.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
@@ -138,6 +140,8 @@ export function OrganisationScreen({
   const canDeactivate = gates.org('user.deactivate');
   const canSetInsights = gates.org('org.developer_insights.set');
   const canSetTime = gates.org('org.time.set');
+  /** D-149 (LAI-1182): connecting Clan is its own §3.1 row, owners and admins by default. */
+  const canConfigureHr = gates.org('org.hr.configure');
   const canListTokens = gates.org('token.list_any');
   /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
   const canRevokeTokens = gates.org('token.revoke_any');
@@ -494,6 +498,14 @@ export function OrganisationScreen({
                       person's My day. Editable by whoever sets Time; read by
                       everyone else, and absent when there are none. */}
                   <BreakScheduleFact canManage={canSetTime} />
+
+                  {/* D-149 (LAI-1182): the HR system holidays and leave come
+                      from — its holder's alone — and the holidays everyone
+                      reads, added to by whoever sets Time. */}
+                  {canConfigureHr && (
+                    <HrSourceFact members={state.people.filter((p) => p.is_active)} />
+                  )}
+                  <HolidaysFact canManage={canSetTime} />
                 </dl>
               </section>
             )}
