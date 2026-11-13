@@ -4,8 +4,13 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { dayIn, isTimeZone } from './calendar-days.ts';
 import { stateOf, type DayState } from './my-day.ts';
-import { draftsOn, draftZone } from './time-drafts.ts';
-import { entriesOn, type ProjectRef, type TaskRef } from './time-entries.ts';
+import { draftsBetween, draftZone, type TimeDraftView } from './time-drafts.ts';
+import {
+  entriesBetween,
+  type ProjectRef,
+  type TaskRef,
+  type TimeEntryView,
+} from './time-entries.ts';
 import { stretch } from './time-summary.ts';
 
 /**
@@ -85,6 +90,23 @@ export function daysOf(
   }
   const today = dayIn(tz, now);
 
+  // Two reads for the whole stretch, bucketed by day (LAI-1179): a year of
+  // days was 730 queries when each day read its own entries and drafts.
+  const from = days[0] ?? '';
+  const to = days.at(-1) ?? '';
+  const entriesByDay = new Map<string, TimeEntryView[]>();
+  for (const e of entriesBetween(db, userId, from, to)) {
+    const list = entriesByDay.get(e.day) ?? [];
+    list.push(e);
+    entriesByDay.set(e.day, list);
+  }
+  const draftsByDay = new Map<string, TimeDraftView[]>();
+  for (const d of draftsBetween(db, userId, from, to)) {
+    const list = draftsByDay.get(d.day) ?? [];
+    list.push(d);
+    draftsByDay.set(d.day, list);
+  }
+
   const rows: DaysDayView[] = days.map((day) => {
     const tasks = new Map<string, DaysTaskView>();
     const add = (
@@ -110,11 +132,11 @@ export function daysOf(
     let confirmed = 0;
     let drafted = 0;
     let untied = 0;
-    for (const e of entriesOn(db, userId, day)) {
+    for (const e of entriesByDay.get(day) ?? []) {
       confirmed += e.minutes;
       add(e.task, e.project, e.minutes, true);
     }
-    for (const d of draftsOn(db, userId, day)) {
+    for (const d of draftsByDay.get(day) ?? []) {
       drafted += d.minutes;
       const loose = d.task === null && !d.general;
       if (loose) untied += d.minutes;

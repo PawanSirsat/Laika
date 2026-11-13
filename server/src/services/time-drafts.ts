@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, between, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -729,6 +729,28 @@ export function draftsOn(db: Db, userId: string, day: string): TimeDraftView[] {
       and(eq(timeDrafts.userId, userId), eq(timeDrafts.day, day), eq(timeDrafts.state, 'pending')),
     )
     .orderBy(
+      asc(sql`coalesce(${timeDrafts.startedAt}, ${timeDrafts.createdAt})`),
+      asc(timeDrafts.id),
+    )
+    .all()
+    .map(draftView);
+}
+
+/**
+ * The person's pending drafts over a stretch of days, `from`..`to` inclusive,
+ * oldest day first (LAI-1179) — the range twin of {@link draftsOn}.
+ */
+export function draftsBetween(db: Db, userId: string, from: string, to: string): TimeDraftView[] {
+  return draftQuery(db)
+    .where(
+      and(
+        eq(timeDrafts.userId, userId),
+        between(timeDrafts.day, from, to),
+        eq(timeDrafts.state, 'pending'),
+      ),
+    )
+    .orderBy(
+      asc(timeDrafts.day),
       asc(sql`coalesce(${timeDrafts.startedAt}, ${timeDrafts.createdAt})`),
       asc(timeDrafts.id),
     )
