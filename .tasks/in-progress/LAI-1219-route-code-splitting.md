@@ -2,10 +2,11 @@
 id: LAI-1219
 title: 'Route-level code splitting for the web app'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-13T07:33:26Z
 ---
 
 ## Goal
