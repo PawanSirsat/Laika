@@ -3284,3 +3284,30 @@ p.inspector-length {
   border-radius: var(--radius-control);
   color: var(--text-primary);
 }
+
+/* ------------------------------------------------ the day header (LAI-1215) */
+
+/*
+ * The day's tools — settings, who looked, beside, shortcuts — sit together at
+ * the toolbar's end and wrap as one group, never one icon orphaned on a row of
+ * its own (the before shot at 1440 with a timer running).
+ */
+.myday-head-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+  flex: none;
+}
+
+/*
+ * With a timer running the toolbar carries its widest control, and under 80rem
+ * the row cannot hold everything: Fill gaps' count goes (the Timeline legend
+ * carries the gaps too) and the button keeps its word. Without a timer the
+ * count stays, as LAI-513 drew it.
+ */
+@container myday (max-width: 80rem) {
+  .screen-page-actions:has([data-timer]) .myday-fill-gaps-sub {
+    display: none;
+  }
+}

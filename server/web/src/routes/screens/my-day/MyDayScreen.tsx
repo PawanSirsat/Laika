@@ -1899,75 +1899,78 @@ export function MyDayScreen({
                 </button>
               </Tooltip>
             )}
-            {!notOwn && !orgOff && (
-              <DaySettings
-                settings={settings}
-                held={view.drafts_held}
-                tz={view.tz}
-                pending={pending}
-                run={(key, writeIt, said) =>
-                  run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-                }
-              />
-            )}
-            {!notOwn && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
-            <Tooltip content={notOwn ? 'Agent time' : 'Agent time and On your plate'}>
-              <button
-                type="button"
-                className="myday-chip myday-head-icon"
-                ref={besideButton}
-                aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
-                aria-expanded={drawerMode === 'cards'}
-                data-beside-button
-                onClick={() => {
-                  if (selection !== undefined) {
-                    setSelection(undefined);
-                    setBeside(true);
-                  } else {
-                    setBeside((open) => !open);
+            {/* The day's tools, one group at the row's end that wraps as a unit (LAI-1215). */}
+            <span className="myday-head-tools" data-head-tools>
+              {!notOwn && !orgOff && (
+                <DaySettings
+                  settings={settings}
+                  held={view.drafts_held}
+                  tz={view.tz}
+                  pending={pending}
+                  run={(key, writeIt, said) =>
+                    run(key, [], () => writeIt(), said).then((r) => r !== undefined)
                   }
-                }}
-              >
-                <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-                  <rect
-                    x="1.5"
-                    y="2"
-                    width="13"
-                    height="5"
-                    rx="1.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                  />
-                  <rect
-                    x="1.5"
-                    y="9.5"
-                    width="13"
-                    height="4.5"
-                    rx="1.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                  />
-                </svg>
-              </button>
-            </Tooltip>
-            {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1191). */}
-            {!orgOff && (
-              <Tooltip content="Keyboard shortcuts" shortcut="?">
+                />
+              )}
+              {!notOwn && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
+              <Tooltip content={notOwn ? 'Agent time' : 'Agent time and On your plate'}>
                 <button
                   type="button"
                   className="myday-chip myday-head-icon"
-                  aria-label="Keyboard shortcuts"
-                  data-shortcuts-button
+                  ref={besideButton}
+                  aria-label={notOwn ? `Beside ${subjectName}’s day` : 'Beside your day'}
+                  aria-expanded={drawerMode === 'cards'}
+                  data-beside-button
                   onClick={() => {
-                    setSheet(true);
+                    if (selection !== undefined) {
+                      setSelection(undefined);
+                      setBeside(true);
+                    } else {
+                      setBeside((open) => !open);
+                    }
                   }}
                 >
-                  <Icon name="question" size="small" />
+                  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                    <rect
+                      x="1.5"
+                      y="2"
+                      width="13"
+                      height="5"
+                      rx="1.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                    />
+                    <rect
+                      x="1.5"
+                      y="9.5"
+                      width="13"
+                      height="4.5"
+                      rx="1.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                    />
+                  </svg>
                 </button>
               </Tooltip>
-            )}
+              {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1191). */}
+              {!orgOff && (
+                <Tooltip content="Keyboard shortcuts" shortcut="?">
+                  <button
+                    type="button"
+                    className="myday-chip myday-head-icon"
+                    aria-label="Keyboard shortcuts"
+                    data-shortcuts-button
+                    onClick={() => {
+                      setSheet(true);
+                    }}
+                  >
+                    <Icon name="question" size="small" />
+                  </button>
+                </Tooltip>
+              )}
+            </span>
           </ScreenHeader>
         ) : embedded === undefined ? null : (
           <div className="myday-embed-head">
