@@ -5,8 +5,9 @@ area: shell
 assignee: shell
 priority: p2
 depends-on: [LAI-1191, LAI-1214]
-status: in-progress
+status: review
 started: 2026-11-12T20:00:00Z
+finished: 2026-11-13T10:30:00Z
 ---
 
 ## Goal
@@ -33,22 +34,22 @@ Built on `origin/LAI-1214-tooltips-home-org` @d3efaf7d (the UI merge train +
 
 ## Acceptance criteria
 
-- [ ] Before screenshots (pinned clock, dark/light, 1440/768/390, tracking on
+- [x] Before screenshots (pinned clock, dark/light, 1440/768/390, tracking on
       with drafts/confirmed/breaks/running timer, and tracking off) and a
       critique + plan in `.polly/specs/myday-ui-critique.md`.
-- [ ] The day header leads with the drafts-to-confirm call to action when
+- [x] The day header leads with the drafts-to-confirm call to action when
       there are drafts, and the day total against target.
-- [ ] Draft, confirmed, break and agent time are visually distinct on the
+- [x] Draft, confirmed, break and agent time are visually distinct on the
       timeline (outline vs solid vs hatched vs labelled, never counted).
-- [ ] Every existing keyboard shortcut and behaviour still works; LAI-954's
+- [x] Every existing keyboard shortcut and behaviour still works; LAI-954's
       pinned-clock tests stay green.
-- [ ] Tracking-off and empty states lead somewhere.
-- [ ] Worst-case data (very long titles, 30 entries, overlapping drafts,
+- [x] Tracking-off and empty states lead somewhere.
+- [x] Worst-case data (very long titles, 30 entries, overlapping drafts,
       midnight-spanning entries) does not overflow at 1440 or 390.
-- [ ] Playwright (pinned clock): draft vs confirmed distinction, primary CTA,
+- [x] Playwright (pinned clock): draft vs confirmed distinction, primary CTA,
       entry actions by keyboard, tracking-off state, 390 layout, worst-case
       data, CSP violations 0; each key behaviour mutated once and seen red.
-- [ ] Gate: `pnpm lint`, `pnpm format`, web typecheck, web tests (4 shards),
+- [x] Gate: `pnpm lint`, `pnpm format`, web typecheck, web tests (4 shards),
       server structure + task-file-state tests each exit 0; PR into
       `integration-ui-transformation` with CI green; after screenshots in
       `.polly/screenshots/myday-ui/after/`.
@@ -58,3 +59,14 @@ Built on `origin/LAI-1214-tooltips-home-org` @d3efaf7d (the UI merge train +
 Design skills consulted (advice only; repo rules win — strict CSP, no remote
 assets, theme tokens only, no new dependency): `impeccable` (critique),
 `emil-design-eng`, `break-ui`, `animate` / `review-animations`.
+
+## Delivered (SHELL, 2026-11-13)
+
+Critique and plan: `.polly/specs/myday-ui-critique.md`; shots before/after in
+`.polly/screenshots/myday-ui/`. The toolbar keeps to one row with a timer
+running (the day's tools grouped at its end); drafts are outlined in the
+accent, confirmed entries solid, gaps empty and dotted, on desktop and phone;
+every block's name leads with its state; the phone bar fits at 390. Tests in
+`server/web/test/browser/my-day-ui-pass.test.ts`, each behaviour mutated once
+and seen red. Not done, with reasons in the critique: new motion, a summary
+side panel, a day target (the API has none).
