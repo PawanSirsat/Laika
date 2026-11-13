@@ -19,6 +19,7 @@ import {
   periodOf,
   stepPeriod,
 } from '../../src/routes/screens/my-day/span.ts';
+import { dayLong } from '../../src/routes/screens/my-day/week-derive.ts';
 
 /**
  * My day's View (LAI-1174, the owner's *My Day Calendar Zoom*): Day, Week,
@@ -63,14 +64,25 @@ function rows(from: string, to: string, data: Map<string, DayData>) {
   return { from, to, tz: 'UTC', today: TODAY, days: out };
 }
 
-/** Every range Month and Year ask for around today, a month either side. */
+/**
+ * Every range Month and Year ask for around today — two months either side
+ * and the year before and after, since the stage reads the periods beside
+ * the one shown ahead of time (LAI-1179).
+ */
 function daysRoutes(data: Map<string, DayData>): ApiStub {
+  const shift = (span: 'month' | 'year', n: number): string => {
+    let day = TODAY;
+    for (let i = 0; i < Math.abs(n); i += 1) day = stepPeriod(span, day, n < 0 ? -1 : 1);
+    return day;
+  };
   const ranges: { from: string; to: string }[] = [];
-  for (const anchor of [stepPeriod('month', TODAY, -1), TODAY, stepPeriod('month', TODAY, 1)]) {
-    ranges.push(periodOf('month', anchor));
+  for (const by of [-2, -1, 0, 1, 2]) {
+    ranges.push(periodOf('month', shift('month', by)));
   }
-  const year = periodOf('year', TODAY);
-  ranges.push(...chunks(year.from, year.to));
+  for (const by of [-1, 0, 1]) {
+    const year = periodOf('year', shift('year', by));
+    ranges.push(...chunks(year.from, year.to));
+  }
   return Object.fromEntries(
     ranges.map((r) => [
       `/api/v1/me/time/days?from=${r.from}&to=${r.to}`,
@@ -156,9 +168,13 @@ void describe('My day — the View (LAI-1174)', () => {
         'true',
       );
       assert.equal(spanOf(h.page), null);
-      // The day's own nav and week strip are still there.
+      // The day's own nav and week strip are still there. The stage is up
+      // under the page (LAI-1179: Day is a layer, so a zoom can leave it in
+      // view), idle: one layer, Day's, nothing leaving.
       assert.equal(await h.page.locator('[data-day-nav]').count(), 1);
-      assert.equal(await h.page.locator('[data-stage]').count(), 0);
+      assert.equal(await h.page.locator('[data-stage]').getAttribute('data-span'), 'day');
+      assert.equal(await h.page.locator('[data-stage] .span-layer').count(), 1);
+      assert.equal(await h.page.locator('[data-layer-role="leaving"]').count(), 0);
     } finally {
       await close();
     }
@@ -364,4 +380,421 @@ void describe('My day — the View (LAI-1174)', () => {
       }
     });
   }
+});
+
+/**
+ * The zoom as the design plays it (LAI-1179): it starts on the click, before
+ * any data; the view left is the same element it was; the arriving view is on
+ * top going in and the leaving one going out; quick switches queue and land
+ * on the last; Day is a layer like the others; ‹ › slide; and the periods
+ * around the one shown are read ahead.
+ */
+
+/** A route held back until the test lets it answer. */
+function held(answer: () => unknown): { route: () => Promise<unknown>; release: () => void } {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { route: () => gate.then(answer), release };
+}
+
+const monthRange = periodOf('month', TODAY);
+const monthPath = `/api/v1/me/time/days?from=${monthRange.from}&to=${monthRange.to}`;
+
+/**
+ * Watch the stage from the page: every frame for `ms`, the stage's height,
+ * whether both layers were animating, and the gap since the last frame.
+ */
+async function trace(page: Page, ms: number): Promise<void> {
+  await page.evaluate((duration) => {
+    const w = window as unknown as {
+      __trace: { frames: number; maxGap: number; minHeight: number; bothMoving: number };
+    };
+    const stage = document.querySelector<HTMLElement>('[data-stage]');
+    const t = { frames: 0, maxGap: 0, minHeight: Number.POSITIVE_INFINITY, bothMoving: 0 };
+    w.__trace = t;
+    const start = performance.now();
+    let last = start;
+    const tick = (now: number): void => {
+      t.frames += 1;
+      t.maxGap = Math.max(t.maxGap, now - last);
+      last = now;
+      // Height and movement are read while the zoom runs: at its end the
+      // stage is let go to the height of the view that stays.
+      if (stage?.dataset.zooming !== undefined) {
+        t.minHeight = Math.min(t.minHeight, stage.offsetHeight);
+        const layers = [...document.querySelectorAll<HTMLElement>('[data-stage] .span-layer')];
+        if (layers.length === 2 && layers.every((el) => el.getAnimations().length > 0)) {
+          t.bothMoving += 1;
+        }
+      }
+      if (now - start < duration) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, ms);
+}
+
+async function traced(
+  page: Page,
+): Promise<{ frames: number; maxGap: number; minHeight: number; bothMoving: number }> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __trace: { frames: number; maxGap: number; minHeight: number; bothMoving: number };
+        }
+      ).__trace,
+  );
+}
+
+/** Two frames from now, so what the click set in motion has had a chance to be seen. */
+const twoFrames = (page: Page): Promise<void> =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      }),
+  );
+
+const animating = (page: Page, selector: string): Promise<boolean> =>
+  page.evaluate(
+    (sel) => (document.querySelector<HTMLElement>(sel)?.getAnimations().length ?? 0) > 0,
+    selector,
+  );
+
+const zIndexOf = (page: Page, selector: string): Promise<number> =>
+  page.evaluate((sel) => {
+    const el = document.querySelector<HTMLElement>(sel);
+    return el === null ? Number.NaN : Number(getComputedStyle(el).zIndex);
+  }, selector);
+
+void describe('My day — the zoom as the design plays it (LAI-1179)', () => {
+  after(async () => {
+    await closeBrowser();
+  });
+
+  let h: Harness | undefined;
+  const close = async () => {
+    await h?.close();
+    h = undefined;
+  };
+  const page = (): Page => {
+    assert.ok(h !== undefined);
+    return h.page;
+  };
+  // Anything thrown, and anything React or the stage says on the console. Not
+  // a 404 from the shell's own reads this fixture does not stub (`/org`,
+  // `/users`, `/health`), which every My day fixture has always had.
+  const errors: string[] = [];
+  const watchErrors = (p: Page): void => {
+    p.on('pageerror', (e) => errors.push(e.message));
+    p.on('console', (m) => {
+      if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) {
+        errors.push(m.text());
+      }
+    });
+  };
+
+  void test('Year → Month starts on the click with the month still unread, holds the stage’s height, and fills the same layer in', async () => {
+    const month = held(() => rows(monthRange.from, monthRange.to, weekData()));
+    h = await open(`/my-day?span=year&day=${TODAY}`, { ...stub(), [monthPath]: month.route });
+    try {
+      watchErrors(h.page);
+      await settled(h.page, 'year');
+      const yearHeight = await h.page.evaluate(
+        () => document.querySelector<HTMLElement>('[data-layer="year"]')?.offsetHeight ?? 0,
+      );
+      assert.ok(yearHeight > 300, `the year is drawn (${String(yearHeight)} px)`);
+      await trace(h.page, 700);
+      await h.page.locator(`[data-zk="m:${TODAY.slice(0, 7)}"] .span-year-title`).click();
+      await twoFrames(h.page);
+      // Both layers move, two frames after the click, with the month unread.
+      assert.equal(
+        await animating(h.page, '[data-layer="month"][data-layer-role="current"]'),
+        true,
+      );
+      assert.equal(await animating(h.page, '[data-layer="year"][data-layer-role="leaving"]'), true);
+      const monthLayer = await h.page.$('[data-layer="month"]');
+      assert.ok(monthLayer !== null);
+      assert.equal(await h.page.locator('[data-layer="month"] .span-card[aria-busy]').count(), 1);
+      // At its shape already: the grid's cells carry their keys, so the next zoom has its anchor.
+      assert.equal(
+        await h.page.locator('[data-layer="month"] .span-month-cell[data-zk]').count(),
+        monthWeeks(TODAY).length * 7,
+      );
+      assert.equal(await h.page.locator('[data-stage] .skeleton').count(), 0, 'no loading card');
+      await h.page.waitForTimeout(750);
+      const t = await traced(h.page);
+      assert.ok(
+        t.minHeight >= yearHeight - 1,
+        `the stage never dropped below the year (${String(t.minHeight)} < ${String(yearHeight)})`,
+      );
+      // A weak but honest smoothness check: frames kept coming through the zoom.
+      assert.ok(t.frames >= 24, `${String(t.frames)} frames in 700 ms`);
+      assert.ok(t.maxGap <= 50, `longest gap between frames ${String(Math.round(t.maxGap))} ms`);
+      assert.ok(t.bothMoving >= 12, `${String(t.bothMoving)} frames saw both layers moving`);
+      // Still unread, still the same element, still busy.
+      assert.equal(await h.page.locator('[data-layer="month"] .span-card[aria-busy]').count(), 1);
+      month.release();
+      await h.page.locator('[data-layer="month"] .span-card:not([aria-busy])').waitFor();
+      assert.equal(
+        await monthLayer.evaluate((el) =>
+          el.isSameNode(document.querySelector('[data-layer="month"]')),
+        ),
+        true,
+        'the data filled the layer that was mounted on the click',
+      );
+      assert.match(
+        (await h.page.locator('[data-layer="month"] [data-span-figure]').textContent()) ?? '',
+        /Confirmed/,
+      );
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+
+  void test('the view left is the same element it was, with its role changed — not rebuilt', async () => {
+    h = await open(`/my-day?span=year&day=${TODAY}`, stub());
+    try {
+      await settled(h.page, 'year');
+      const year = await h.page.$('[data-layer="year"]');
+      assert.ok(year !== null);
+      const period = await year.getAttribute('data-period');
+      await h.page.locator(`[data-zk="m:${TODAY.slice(0, 7)}"] .span-year-title`).click();
+      await twoFrames(h.page);
+      assert.equal(await year.evaluate((el) => el.isConnected), true);
+      assert.equal(await year.getAttribute('data-layer-role'), 'leaving');
+      assert.equal(await year.getAttribute('data-period'), period);
+      assert.equal(
+        await year.evaluate((el) =>
+          el.isSameNode(document.querySelector('[data-layer-role="leaving"]')),
+        ),
+        true,
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  void test('zooming in the arriving view is on top; zooming out the leaving one is', async () => {
+    h = await open(`/my-day?span=year&day=${TODAY}`, stub());
+    try {
+      await settled(h.page, 'year');
+      await h.page.locator(`[data-zk="m:${TODAY.slice(0, 7)}"] .span-year-title`).click();
+      await twoFrames(h.page);
+      assert.equal(await h.page.locator('[data-stage]').getAttribute('data-zooming'), 'in');
+      const inCurrent = await zIndexOf(h.page, '[data-layer-role="current"]');
+      const inLeaving = await zIndexOf(h.page, '[data-layer-role="leaving"]');
+      assert.ok(
+        inCurrent > inLeaving,
+        `in: current ${String(inCurrent)} over leaving ${String(inLeaving)}`,
+      );
+      await settled(h.page, 'month');
+      await pick(h.page, 'Year');
+      await twoFrames(h.page);
+      assert.equal(await h.page.locator('[data-stage]').getAttribute('data-zooming'), 'out');
+      const outCurrent = await zIndexOf(h.page, '[data-layer-role="current"]');
+      const outLeaving = await zIndexOf(h.page, '[data-layer-role="leaving"]');
+      assert.ok(
+        outLeaving > outCurrent,
+        `out: leaving ${String(outLeaving)} over current ${String(outCurrent)}`,
+      );
+      await settled(h.page, 'year');
+      assert.equal(await h.page.locator('[data-stage]').getAttribute('data-zooming'), null);
+    } finally {
+      await close();
+    }
+  });
+
+  void test('Week → Month → Year in quick succession lands on Year with nothing left behind', async () => {
+    h = await open(`/my-day?span=week&day=${TODAY}`, stub());
+    try {
+      watchErrors(h.page);
+      await settled(h.page, 'week');
+      const group = h.page.getByRole('radiogroup', { name: 'View' });
+      await group.getByRole('radio', { name: 'Month' }).click();
+      await group.getByRole('radio', { name: 'Year' }).click();
+      // The switch said Year at once; the stage is still playing Week → Month
+      // — the Week layer leaving, Month arriving — and takes Year up after.
+      assert.equal(spanOf(h.page), 'year');
+      assert.equal(
+        await h.page.locator('[data-layer-role="current"]').getAttribute('data-layer'),
+        'month',
+        'the first zoom plays out before the second begins',
+      );
+      assert.equal(
+        await h.page.locator('[data-layer="week"][data-layer-role="leaving"]').count(),
+        1,
+      );
+      await settled(h.page, 'year');
+      await until(async () => (await h?.page.locator('[data-stage] .span-layer').count()) === 1);
+      assert.equal(await h.page.locator('[data-stage] .span-layer').count(), 1);
+      assert.equal(
+        await h.page.locator('[data-layer-role="current"]').getAttribute('data-layer'),
+        'year',
+      );
+      assert.equal(await h.page.locator('[data-stage]').getAttribute('data-zooming'), null);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+
+  void test('Day is a layer: zooming out leaves the Day page in view, and zooming in lands on the right day', async () => {
+    h = await open('/my-day', stub());
+    try {
+      watchErrors(h.page);
+      await h.page.locator('[data-myday-ready]').waitFor();
+      await h.page.keyboard.press('w');
+      // The Day page is the layer leaving — the Timeline still drawn, moving.
+      let dayLeft = false;
+      await until(async () => {
+        dayLeft = await page().evaluate(() => {
+          const el = document.querySelector<HTMLElement>(
+            '[data-layer="day"][data-layer-role="leaving"]',
+          );
+          return (
+            el !== null &&
+            el.getAnimations().length > 0 &&
+            el.querySelector('[data-dayline]') !== null
+          );
+        });
+        return dayLeft;
+      });
+      assert.equal(dayLeft, true, 'the Day page zooms out as the leaving layer');
+      await settled(h.page, 'week');
+      assert.equal(await h.page.locator('[data-layer="day"]').count(), 0);
+
+      // A day's column in Week: Day arrives zooming in from its cell, and is that day.
+      await h.page.locator(`.span-week-day[data-zk="d:${YESTERDAY}"]`).click();
+      let dayIn = false;
+      await until(async () => {
+        dayIn = await animating(page(), '[data-layer="day"][data-layer-role="current"]');
+        return dayIn;
+      });
+      assert.equal(dayIn, true, 'the Day layer zooms in');
+      await h.page.locator('[data-myday-ready]').waitFor();
+      assert.equal(new URL(h.page.url()).searchParams.get('day'), YESTERDAY);
+      assert.equal(
+        ((await h.page.locator('[data-view-label]').textContent()) ?? '').startsWith(
+          dayLong(YESTERDAY),
+        ),
+        true,
+        'the page shown is yesterday’s, never today’s under its address',
+      );
+      await until(async () => (await h?.page.locator('[data-layer-role="leaving"]').count()) === 0);
+
+      // And by the key, from Week, onto the same day.
+      await h.page.keyboard.press('w');
+      await settled(h.page, 'week');
+      await h.page.keyboard.press('d');
+      let byKey = false;
+      await until(async () => {
+        byKey = await animating(page(), '[data-layer="day"][data-layer-role="current"]');
+        return byKey;
+      });
+      assert.equal(byKey, true, 'D from Week zooms in too');
+      await h.page.locator('[data-myday-ready]').waitFor();
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+
+  void test('‹ › slide: out on the key, the next period at its shape, in — never a loading card', async () => {
+    h = await open(`/my-day?span=month&day=${TODAY}`, stub());
+    try {
+      await settled(h.page, 'month');
+      const before = stepPeriod('month', TODAY, -1);
+      await h.page.keyboard.press('ArrowLeft');
+      // The slide out is 130 ms: the layer shown is moving straight after the key.
+      let sliding = false;
+      await until(async () => {
+        sliding = await animating(page(), '[data-layer-role="current"]');
+        return sliding;
+      }, 400);
+      assert.equal(sliding, true, 'the month slides out on the key');
+      await h.page.locator(`[data-period="month:${before.slice(0, 7)}"]`).waitFor();
+      // Mounted at its shape, whether or not its rows are here.
+      assert.equal(
+        await h.page
+          .locator(`[data-period="month:${before.slice(0, 7)}"] .span-month-cell`)
+          .count(),
+        monthWeeks(before).length * 7,
+      );
+      assert.equal(await h.page.locator('[data-stage] .skeleton').count(), 0);
+      await settled(h.page, 'month');
+      assert.equal(
+        await h.page.locator('[data-layer-role="current"]').getAttribute('data-period'),
+        `month:${before.slice(0, 7)}`,
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  void test('with the day on screen its week, month and year are read behind it, and the switch asks for nothing new', async () => {
+    h = await open('/my-day', stub());
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor();
+      const year = periodOf('year', TODAY);
+      const yearPaths = chunks(year.from, year.to).map(
+        (c) => `/api/v1/me/time/days?from=${c.from}&to=${c.to}`,
+      );
+      const week = periodOf('week', TODAY);
+      const weekPaths = Array.from(
+        { length: 7 },
+        (_, i) => `/api/v1/me/time?day=${addDays(week.from, i)}`,
+      );
+      const asked = (): string[] =>
+        (h?.calls ?? []).filter((c) => c.method === 'GET').map((c) => c.path);
+      // Paths are recorded without their query; the stub's keys carry it, so
+      // what was served is in the harness's own accounting of matched calls.
+      const served = (): Set<string> => new Set(asked());
+      await until(
+        () =>
+          served().has('/api/v1/me/time/days') &&
+          asked().filter((p) => p === '/api/v1/me/time/days').length >= 1 + yearPaths.length &&
+          asked().filter((p) => p === '/api/v1/me/time').length >= weekPaths.length,
+        10_000,
+      );
+      const daysReads = asked().filter((p) => p === '/api/v1/me/time/days').length;
+      assert.ok(
+        daysReads >= 1 + yearPaths.length,
+        `the month and the year's four stretches were read ahead (${String(daysReads)} reads)`,
+      );
+      assert.ok(
+        asked().filter((p) => p === '/api/v1/me/time').length >= weekPaths.length,
+        'the week’s seven days were read ahead',
+      );
+      // Now Month, then Year: both already here, so no further read of either.
+      const was = asked().length;
+      await pick(h.page, 'Month');
+      await settled(h.page, 'month');
+      await pick(h.page, 'Year');
+      await settled(h.page, 'year');
+      assert.equal(
+        (await h.page.locator('[data-layer="year"] .span-year-day[data-kind="time"]').count()) > 0,
+        true,
+        'the year is drawn from the cache, with its heat',
+      );
+      const sinceLength = asked().length - was;
+      assert.equal(h.unmatched.length, 0, `unstubbed: ${h.unmatched.join(', ')}`);
+      // What a switch may add is the reads **beside** the view shown (its
+      // neighbours), never the view itself: the two months beside this one
+      // and the two years beside this one, at most.
+      assert.ok(
+        sinceLength <= 2 + 2 * yearPaths.length,
+        `${String(sinceLength)} reads after switching`,
+      );
+    } finally {
+      await close();
+    }
+  });
 });

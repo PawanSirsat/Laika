@@ -746,22 +746,27 @@ function serve(
         }
 
         const { route } = chosen;
-        const answer =
+        // A route function may answer with a promise, and the response waits
+        // for it (LAI-1179): a test holds a read back to see what the page
+        // does before the data lands, and releases it when it has looked.
+        const produced =
           typeof route === 'function' ? (route as (c: StubCall) => unknown)(call) : route;
-        const { status, body, headers } = isReply(answer)
-          ? answer
-          : { status: 200, body: answer, headers: undefined };
-        const slim =
-          req.method === 'GET' &&
-          status === 200 &&
-          TASK_LIST_PATH.test(path) &&
-          url.searchParams.get('fields') === 'slim';
-        // Whose answer `/permissions` defaults to: the user `/me` last named.
-        if (path === ME_PATH && req.method === 'GET') {
-          lastMe = status === 200 && typeof body === 'object' && body !== null ? body : undefined;
-        }
-        res.writeHead(status, { 'content-type': 'application/json', ...headers });
-        res.end(JSON.stringify(slim ? slimPage(body, listed) : body));
+        void Promise.resolve(produced).then((answer) => {
+          const { status, body, headers } = isReply(answer)
+            ? answer
+            : { status: 200, body: answer, headers: undefined };
+          const slim =
+            req.method === 'GET' &&
+            status === 200 &&
+            TASK_LIST_PATH.test(path) &&
+            url.searchParams.get('fields') === 'slim';
+          // Whose answer `/permissions` defaults to: the user `/me` last named.
+          if (path === ME_PATH && req.method === 'GET') {
+            lastMe = status === 200 && typeof body === 'object' && body !== null ? body : undefined;
+          }
+          res.writeHead(status, { 'content-type': 'application/json', ...headers });
+          res.end(JSON.stringify(slim ? slimPage(body, listed) : body));
+        });
       });
       return;
     }
