@@ -7445,15 +7445,16 @@ them; it never writes to it.
 
 1. **A fourth outbound call.** §13.4 lists the only calls Laika makes; the organisation's
    **configured HR source** joins them — **read-only `GET`s** and nothing else. Off until an
-   owner or admin connects it (`org.hr.configure`, session only). **Connecting is pasting a
-   token** (owner, 2026-11-13: *"I don't want to ask anyone for a password"*): the HR
-   system's address and a token made for a dedicated HR account — e.g. a *Forge* user in
-   Clan — by whoever administers it. **No password and no two-factor code ever reach
-   Laika.** Laika checks the token on paste (who it is, whether it sees everyone's leave and
-   people's departments, and says so), keeps it encrypted as D-009's provider key is
-   (purpose `clan_api_token`), never returns or logs it, shows its last four and the expiry
-   when one is given, and says *connect again* when the HR system refuses it. Clan is the
-   only provider today; the shape is a provider, not a product.
+   owner or admin connects it (`org.hr.configure`, session only), with **a dedicated HR
+   account** — a *Forge* user in Clan, read-only, seeing leave, holidays and the employee
+   list — **never a person's own login** (owner, 2026-11-13). Two ways, one result: **sign
+   in** with that account's email, password and, when asked, its two-factor code, which
+   Laika uses once and never stores; or **paste a token** someone made for it. Either way
+   Laika checks the token (whose it is, whether it sees everyone's leave and people's
+   departments, and says so), keeps it encrypted as D-009's provider key is (purpose
+   `clan_api_token`), never returns or logs it, shows its last four and its expiry when
+   known, and says *connect again* when the HR system refuses it. Clan is the only
+   provider today; the shape is a provider, not a product.
 2. **What Laika keeps:** each holiday's day, name and scope (the departments or
    designations it covers); each leave day's person, date, part (whole day,
    morning, afternoon), type name and state (approved or pending). **Never** the reason,
