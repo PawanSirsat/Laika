@@ -167,9 +167,17 @@ function CalendarRoute() {
   return (
     <CalendarScreen
       slug={params.get('project') ?? undefined}
+      params={params}
       onOpenTask={(taskId) => {
         const next = new URLSearchParams(params);
         next.set('task', taskId);
+        setParams(next, { push: true });
+      }}
+      onMonth={(month) => {
+        // `?month=` only off this month, so today's calendar stays a plain link (LAI-1178).
+        const next = new URLSearchParams(params);
+        if (month === undefined) next.delete('month');
+        else next.set('month', month);
         setParams(next, { push: true });
       }}
     />

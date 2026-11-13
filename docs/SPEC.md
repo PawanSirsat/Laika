@@ -6867,7 +6867,7 @@ call MCP; agents do.
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
-| **Calendar** | ? | *none defined* | — | ⛔ **no decision — §14, q10** |
+| **Calendar** *(a space's tab, `/calendar?project=&month=YYYY-MM`)* | 6 | `GET /projects/:slug/tasks` (the space's one task set — open tasks on their `due_on`, those due before today in an *Overdue* lane, the toolbar's `priority`, `tag`, `assignee`, `ready` and search applied), `GET /projects/:slug/sprints` (one band per sprint per week), `GET /projects/:slug/statuses`; dragging a task to a day, or the day's *Move to…*: `PATCH /tasks/:id` `{ due_on }`, for a reader holding `task.write`, with Undo (LAI-1178) | — | ✅ D-059 (§14 q10), D-066, LAI-819, LAI-1178 |
 
 **Thirteen surfaces, not ten.** The prototype has thirteen render branches. Two
 were never in any plan: **Task detail** (a slide-over reached from the Board, so
