@@ -106,6 +106,8 @@ import { WhoLooked } from './WhoLooked.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
 import { SpanStage, type BlockPick } from './SpanStage.tsx';
 import { periodLabel, startsAfter, stepPeriod, zoomSpan, type Span as ViewSpan } from './span.ts';
+import { spanCache } from './span-cache.ts';
+import { warm, warmPlan } from './span-prefetch.ts';
 import { ViewSwitch } from './ViewSwitch.tsx';
 import { dayLong } from './week-derive.ts';
 import './my-day.css';
@@ -335,24 +337,19 @@ export function MyDayScreen({
   const viewSpan: ViewSpan =
     embedded === undefined && onSpan !== undefined ? (spanProp ?? 'day') : 'day';
   const wide = viewSpan !== 'day';
-  /** Day a moment ago: the wider view arrives by zooming out of it. */
-  const lastSpan = useRef<ViewSpan>(viewSpan);
-  const fromDay = lastSpan.current === 'day';
-  useEffect(() => {
-    lastSpan.current = viewSpan;
-  }, [viewSpan]);
   /** A block opened from Week, put in the editor once its day has loaded. */
   const pendingPick = useRef<{ readonly day: string; readonly pick: BlockPick } | undefined>(
     undefined,
   );
-  const goSpan = useCallback(
-    (next: ViewSpan, nextDay?: string, pick?: BlockPick): void => {
-      pendingPick.current =
-        pick === undefined || nextDay === undefined ? undefined : { day: nextDay, pick };
-      onSpan?.(next, nextDay);
-    },
-    [onSpan],
-  );
+  // `onSpan` is a fresh closure from the outlet on every render; the stage is
+  // handed one that never changes, so a render here is not a render there (LAI-1179).
+  const onSpanRef = useRef(onSpan);
+  onSpanRef.current = onSpan;
+  const goSpan = useCallback((next: ViewSpan, nextDay?: string, pick?: BlockPick): void => {
+    pendingPick.current =
+      pick === undefined || nextDay === undefined ? undefined : { day: nextDay, pick };
+    onSpanRef.current?.(next, nextDay);
+  }, []);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [pending, setPending] = useState<string | undefined>(undefined);
   const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
@@ -410,6 +407,8 @@ export function MyDayScreen({
   const batching = pending !== undefined && BATCHES.has(pending);
 
   const reload = useCallback(() => {
+    // Whatever changed the day changed the periods that hold it (LAI-1179).
+    spanCache.invalidate();
     setTick((n) => n + 1);
   }, []);
 
@@ -517,6 +516,22 @@ export function MyDayScreen({
 
   const view = load.kind === 'ready' ? load.view : undefined;
   const line = useMemo(() => (view === undefined ? undefined : dayLine(view, now)), [view, now]);
+  /**
+   * The day in the address has landed. Until it has, the stage shows the
+   * Day's skeleton where the page goes, never the day before (LAI-1179) —
+   * the header above keeps the last day's words, as it always did.
+   */
+  const dayReady = view?.day === selectedDay;
+
+  // With the day on screen, its week, month and year are read behind it, so
+  // the first zoom out lands on content (LAI-1179). Not after a re-read of the
+  // same day: a change on Day empties the cache, and reading twelve months
+  // again after every edit would be the cost the cache exists to avoid.
+  useEffect(() => {
+    if (!dayReady || wide || embedded !== undefined || onSpan === undefined) return undefined;
+    return warm(subjectId, warmPlan('day', selectedDay), tz);
+    // `onSpan` changes identity every render and is read only for its presence.
+  }, [dayReady, wide, embedded, subjectId, selectedDay, tz]);
 
   // What the drawer holds, if anything (LAI-511). A day not yet begun has no
   // Timeline to pick from, so nothing to edit.
@@ -1648,6 +1663,128 @@ export function MyDayScreen({
       />
     ) : undefined;
 
+  // The Day's body: the stage draws it in its `day` layer, so a zoom in lands
+  // on the page itself and a zoom out leaves it in view (LAI-1179); off the
+  // page — embedded in a profile — it stands on its own, as it always did.
+  const dayBody = (
+    <>
+      {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
+      {orgOff ? (
+        <DayOff
+          onOpenSettings={() => {
+            onNavigate('/organisation');
+          }}
+        />
+      ) : emptyKind !== undefined ? (
+        <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />
+      ) : phone ? (
+        <TimelineMobile
+          view={view}
+          line={line}
+          selection={selection}
+          onSelect={(next) => {
+            if (next.kind === 'gap') pickGap(next);
+            else setSelection(next);
+          }}
+          onAgent={() => {
+            // An agent's bar opens Agent time in the sheet, as the header's button does.
+            setSelection(undefined);
+            setBeside(true);
+          }}
+          readOnly={notOwn}
+        />
+      ) : (
+        <Timeline
+          view={view}
+          line={line}
+          nowMs={now}
+          zoom={zoom}
+          onZoom={setZoom}
+          selection={selection}
+          onSelect={(next) => {
+            if (next.kind === 'gap') pickGap(next);
+            else setSelection(next);
+          }}
+          onEdge={onEdge}
+          onDropEntry={onDropEntry}
+          onTimerClick={() => {
+            // The running timer's controls are the header's pill: a click
+            // on its block hands the keyboard to them.
+            document.querySelector<HTMLElement>('[data-timer] button')?.focus();
+          }}
+          busy={busy}
+          readOnly={!canEdit}
+          lockDrafts={notOwn}
+        />
+      )}
+      <div className="myday-main">
+        {showLists && (
+          <UntimedTray
+            drafts={view.drafts}
+            entries={view.entries}
+            selected={selectedId}
+            readOnly={notOwn}
+            draggable={!notOwn && addable && !busy}
+            onPick={(item) => {
+              setSelection(item);
+            }}
+          />
+        )}
+        {showLists && (
+          <DayTabs
+            current={shownTab}
+            counts={{ review: view.drafts.length, confirmed: view.entries.length }}
+            onPick={pickTab}
+          />
+        )}
+        {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
+        {showLists && inTab('overview') && !notOwn && <ForYouCard onNavigate={onNavigate} />}
+        {showLists && inTab('overview') && (
+          <OverviewTab view={view} meId={me?.id} subjectId={subjectId} subjectName={subjectName} />
+        )}
+        {showLists && inTab('review') && (
+          <DraftList
+            // A new day starts with nothing ticked.
+            key={`drafts-${view.day}`}
+            drafts={view.drafts}
+            pending={pending}
+            batch={batch.kind === 'running' && batch.day === view.day ? batch : { kind: 'idle' }}
+            selected={selectedId}
+            onSelect={(draft) => {
+              setSelection({ kind: 'draft', id: draft.id });
+            }}
+            onNavigate={onNavigate}
+            readOnly={notOwn}
+            draftOff={draftOff}
+            assignOptions={assignOptions}
+            onBulk={(kind, chosen, card) =>
+              runBatch(
+                'bulk',
+                kind === 'assign' && card !== undefined ? `Putting on ${card}` : RUNNING[kind],
+                view.day,
+                chosen.map((d) => d.id),
+                (api, progress) => runBulk(kind, chosen, api, progress, card),
+              )
+            }
+          />
+        )}
+        {showLists && inTab('confirmed') && (
+          <EntryList
+            key={`entries-${view.day}`}
+            entries={view.entries}
+            selected={selectedId}
+            readOnly={notOwn}
+            subjectName={subjectName}
+            onSelect={(entry) => {
+              setSelection({ kind: 'entry', id: entry.id });
+            }}
+            onNavigate={onNavigate}
+          />
+        )}
+      </div>
+    </>
+  );
+
   return (
     <div
       className={embedded === undefined ? 'myday-page' : 'myday-page myday-embedded'}
@@ -2087,144 +2224,20 @@ export function MyDayScreen({
           </p>
         )}
 
-        {wide ? (
-          <div className="myday" data-myday-span={viewSpan}>
-            <SpanStage
-              span={viewSpan}
-              day={selectedDay}
-              today={view.today}
-              tz={tz}
-              subjectId={subjectId}
-              nowMs={now}
-              fromDay={fromDay}
-              onOpen={goSpan}
-            />
-          </div>
+        {onSpan !== undefined && embedded === undefined ? (
+          <SpanStage
+            span={viewSpan}
+            day={selectedDay}
+            today={view.today}
+            tz={tz}
+            subjectId={subjectId}
+            dayBody={dayReady ? dayBody : undefined}
+            dayLoadingLabel={notOwn ? `Reading ${subjectName}’s day` : 'Loading your day'}
+            onOpen={goSpan}
+          />
         ) : (
           <div className="myday" data-myday-ready>
-            {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
-            {orgOff ? (
-              <DayOff
-                onOpenSettings={() => {
-                  onNavigate('/organisation');
-                }}
-              />
-            ) : emptyKind !== undefined ? (
-              <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />
-            ) : phone ? (
-              <TimelineMobile
-                view={view}
-                line={line}
-                selection={selection}
-                onSelect={(next) => {
-                  if (next.kind === 'gap') pickGap(next);
-                  else setSelection(next);
-                }}
-                onAgent={() => {
-                  // An agent's bar opens Agent time in the sheet, as the header's button does.
-                  setSelection(undefined);
-                  setBeside(true);
-                }}
-                readOnly={notOwn}
-              />
-            ) : (
-              <Timeline
-                view={view}
-                line={line}
-                nowMs={now}
-                zoom={zoom}
-                onZoom={setZoom}
-                selection={selection}
-                onSelect={(next) => {
-                  if (next.kind === 'gap') pickGap(next);
-                  else setSelection(next);
-                }}
-                onEdge={onEdge}
-                onDropEntry={onDropEntry}
-                onTimerClick={() => {
-                  // The running timer's controls are the header's pill: a click
-                  // on its block hands the keyboard to them.
-                  document.querySelector<HTMLElement>('[data-timer] button')?.focus();
-                }}
-                busy={busy}
-                readOnly={!canEdit}
-                lockDrafts={notOwn}
-              />
-            )}
-            <div className="myday-main">
-              {showLists && (
-                <UntimedTray
-                  drafts={view.drafts}
-                  entries={view.entries}
-                  selected={selectedId}
-                  readOnly={notOwn}
-                  draggable={!notOwn && addable && !busy}
-                  onPick={(item) => {
-                    setSelection(item);
-                  }}
-                />
-              )}
-              {showLists && (
-                <DayTabs
-                  current={shownTab}
-                  counts={{ review: view.drafts.length, confirmed: view.entries.length }}
-                  onPick={pickTab}
-                />
-              )}
-              {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
-              {showLists && inTab('overview') && !notOwn && <ForYouCard onNavigate={onNavigate} />}
-              {showLists && inTab('overview') && (
-                <OverviewTab
-                  view={view}
-                  meId={me?.id}
-                  subjectId={subjectId}
-                  subjectName={subjectName}
-                />
-              )}
-              {showLists && inTab('review') && (
-                <DraftList
-                  // A new day starts with nothing ticked.
-                  key={`drafts-${view.day}`}
-                  drafts={view.drafts}
-                  pending={pending}
-                  batch={
-                    batch.kind === 'running' && batch.day === view.day ? batch : { kind: 'idle' }
-                  }
-                  selected={selectedId}
-                  onSelect={(draft) => {
-                    setSelection({ kind: 'draft', id: draft.id });
-                  }}
-                  onNavigate={onNavigate}
-                  readOnly={notOwn}
-                  draftOff={draftOff}
-                  assignOptions={assignOptions}
-                  onBulk={(kind, chosen, card) =>
-                    runBatch(
-                      'bulk',
-                      kind === 'assign' && card !== undefined
-                        ? `Putting on ${card}`
-                        : RUNNING[kind],
-                      view.day,
-                      chosen.map((d) => d.id),
-                      (api, progress) => runBulk(kind, chosen, api, progress, card),
-                    )
-                  }
-                />
-              )}
-              {showLists && inTab('confirmed') && (
-                <EntryList
-                  key={`entries-${view.day}`}
-                  entries={view.entries}
-                  selected={selectedId}
-                  readOnly={notOwn}
-                  subjectName={subjectName}
-                  onSelect={(entry) => {
-                    setSelection({ kind: 'entry', id: entry.id });
-                  }}
-                  onNavigate={onNavigate}
-                />
-              )}
-            </div>
+            {dayBody}
           </div>
         )}
 

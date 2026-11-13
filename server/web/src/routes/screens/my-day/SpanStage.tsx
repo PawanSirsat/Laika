@@ -1,30 +1,36 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { getPersonDay, getPersonDays } from '../../../api/people-analytics.ts';
-import { getMyDay, getMyDays, type DaysDay, type MyDay } from '../../../api/time.ts';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
-import { LoadingState } from '../../../components/LoadingState.tsx';
+import { DaySkeleton } from './DaySkeleton.tsx';
 import { duration } from './format.ts';
 import { addDays, dayTotals } from './my-day-derive.ts';
 import { MonthView } from './MonthView.tsx';
 import {
   anchorIn,
-  chunks,
   mondayOf,
   monthBounds,
   monthKey,
   periodLabel,
-  periodOf,
   SPANS,
-  yearOf,
   zoomSpan,
   type Span,
 } from './span.ts';
+import { periodKey, spanCache, type Got, type WideSpan } from './span-cache.ts';
 import { periodFigure } from './span-derive.ts';
-import { boxOf, slideIn, zoomLayers, type Direction } from './span-motion.ts';
+import { boxOf, slideIn, slideOut, zoomLayers, type Direction } from './span-motion.ts';
+import { warm, warmPlan } from './span-prefetch.ts';
 import { WeekView } from './WeekView.tsx';
 import { YearView } from './YearView.tsx';
 
-export type WideSpan = Exclude<Span, 'day'>;
+export type { WideSpan } from './span-cache.ts';
 
 /** A block the Week opened, for the day's editor. */
 export interface BlockPick {
@@ -33,36 +39,47 @@ export interface BlockPick {
 }
 
 export interface SpanStageProps {
-  readonly span: WideSpan;
+  readonly span: Span;
   readonly day: string;
   readonly today: string;
   readonly tz: string;
   /** Somebody else's time (`?user=`), read through `/people/:id` — undefined is the reader's own. */
   readonly subjectId: string | undefined;
-  readonly nowMs: number;
-  /** The page was on Day a moment ago: the view arrives by zooming out of that day. */
-  readonly fromDay: boolean;
+  /**
+   * The Day page's body for `day`, once its read has landed; `undefined`
+   * until then, and the stage draws the Day's skeleton at its place.
+   */
+  readonly dayBody: ReactNode | undefined;
+  /** What the Day's skeleton says it is doing. */
+  readonly dayLoadingLabel: string;
   /** Go to a view and a day; a block opened from Week rides along for the editor. */
   readonly onOpen: (span: Span, day: string, pick?: BlockPick) => void;
 }
 
-type Got =
-  | { readonly kind: 'week'; readonly days: readonly MyDay[] }
-  | { readonly kind: 'days'; readonly days: readonly DaysDay[] }
-  | { readonly kind: 'error'; readonly error: unknown };
-
 interface Layer {
-  readonly span: WideSpan;
+  readonly span: Span;
   readonly day: string;
 }
 
-/** One read per period: a week, a month's rows, a year. */
-const keyOf = (l: Layer): string =>
-  l.span === 'week'
-    ? `week:${mondayOf(l.day)}`
-    : l.span === 'month'
-      ? `month:${monthKey(l.day)}`
-      : `year:${String(yearOf(l.day))}`;
+/**
+ * A layer is a period — a week, a month, a year — or the Day, whatever day
+ * it is on: Day's own ‹ › change its content, not its layer (LAI-1174: Day
+ * is the page as it always was).
+ */
+const keyOf = (l: Layer): string => (l.span === 'day' ? 'day' : periodKey(l.span, l.day));
+
+type Motion =
+  | { readonly kind: 'zoom'; readonly dir: Direction; readonly key: string }
+  | { readonly kind: 'slide-in'; readonly by: 1 | -1 };
+
+/** What the stage draws: the view shown, the one it is leaving, and the movement between them. */
+interface Shown {
+  readonly current: Layer;
+  readonly leaving?: Layer;
+  /** Counts every change; a movement finishing checks it is still the one it started. */
+  readonly seq: number;
+  readonly motion?: Motion;
+}
 
 /**
  * Where a zoom between two views starts or ends, in the coarser one: the
@@ -95,163 +112,223 @@ function target(
 /** Ctrl/⌘ + wheel, or a trackpad pinch, needs this much travel before it zooms. */
 const WHEEL_STEP = 24;
 
+const subscribeCache = (fn: () => void): (() => void) => spanCache.subscribe(fn);
+const cacheVersion = (): number => spanCache.version();
+
+/** The slide in is 300 ms; its end is a timer, as the design's. */
+const SLIDE_IN_MS = 320;
+
 /**
- * My day's Week, Month and Year (LAI-1174): the stage the wider views draw
- * on, the reads behind them, and the zoom between them.
+ * My day's stage (LAI-1174, reworked by LAI-1179 to the design's
+ * choreography): Day, Week, Month and Year are **layers**, and the view in
+ * the address is a *request* the stage answers with a movement.
  *
- * ## Two layers during a zoom
+ * ## The click is the first frame
  *
- * When the view changes, the one left stays drawn on top of the new one
- * until the movement is over (`span-motion.ts`), then goes. A period read
- * once is kept for as long as the stage is up, so going back out is
- * instant; it is read again the next time the stage opens, so time changed
- * on Day is never stale here.
+ * A change of view mounts the new layer **at once**, at its final shape — its
+ * period's content if the cache holds it, else the same grid drawn from the
+ * calendar alone with a shimmer where the figures go — and the zoom starts
+ * in that commit's layout effect, before anything is painted. The data fills
+ * the layer in when it lands, inside the same element, under the animation
+ * that is already running on it. Nothing waits for the network.
  *
- * ## Day is not on the stage
+ * ## One layer per period, never rebuilt
  *
- * Day is My day's page as it always was. Zooming into a day plays the
- * coarse half here and then hands over; arriving from Day plays the other
- * half here once the period has loaded.
+ * Layers are keyed by their period, so the view being left is the **same
+ * element** it was a frame ago, with its role changed — a year of 365 day
+ * buttons is not built twice. While a zoom runs, the stage holds its height
+ * at the taller layer and both sit over each other; zooming in, the arriving
+ * layer is on top, zooming out, the one leaving is.
+ *
+ * ## Busy, queued, and nothing re-rendered
+ *
+ * While a movement runs the stage is busy: a further request is **kept, the
+ * latest only**, and played at `finish`. Busy is a ref and a `data-zooming`
+ * attribute, never state, so the 520 ms see no React work of the stage's own;
+ * the period cache (`span-cache.ts`) is an external store and the views are
+ * memoised, so a Day read or the clock does not reach them either.
+ *
+ * ## Day is a layer too
+ *
+ * The Day page comes in as `dayBody` and is drawn in the `day` layer, so a
+ * zoom into a day lands on the real page and a zoom out of one leaves it in
+ * view, shrinking into its cell. Until its read lands, the layer shows the
+ * Day's skeleton; the page replaces it in place.
  */
-export function SpanStage({
+export const SpanStage = memo(function SpanStage({
   span,
   day,
   today,
   tz,
   subjectId,
-  nowMs,
-  fromDay,
+  dayBody,
+  dayLoadingLabel,
   onOpen,
 }: SpanStageProps) {
-  const [cache, setCache] = useState<ReadonlyMap<string, Got>>(() => new Map());
-  const [leaving, setLeaving] = useState<Layer | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
   const stage = useRef<HTMLDivElement | null>(null);
-  const shown = useRef<Layer>({ span, day });
-  const zoom = useRef<{ dir: Direction; key: string } | null>(
-    fromDay ? { dir: 'out', key: `d:${day}` } : null,
-  );
-  const slide = useRef<1 | -1 | null>(null);
-
-  const current: Layer = { span, day };
-  const currentKey = keyOf(current);
-
-  // A change of view keeps the old layer for the zoom; a step along the same view slides.
+  const [shown, setShown] = useState<Shown>(() => ({ current: { span, day }, seq: 0 }));
+  const shownRef = useRef(shown);
+  const busy = useRef(false);
+  const latest = useRef<Layer>({ span, day });
+  const todayRef = useRef(today);
+  const subjectRef = useRef(subjectId);
+  const onOpenRef = useRef(onOpen);
+  /** The Day page as it last was, for a Day layer on its way out. */
+  const lastDayBody = useRef<ReactNode>(undefined);
+  if (dayBody !== undefined) lastDayBody.current = dayBody;
   useLayoutEffect(() => {
-    const was = shown.current;
-    shown.current = { span, day };
-    if (was.span !== span) {
-      const dir: Direction = SPANS.indexOf(span) < SPANS.indexOf(was.span) ? 'in' : 'out';
-      const coarse = dir === 'in' ? was : { span, day };
-      const fine = dir === 'in' ? { span, day } : was;
-      zoom.current = { dir, key: zoomKey(coarse.span, fine.span, fine.day) };
-      setLeaving(was);
-    } else if (keyOf(was) !== keyOf({ span, day })) {
-      slide.current = day > was.day ? 1 : -1;
-    }
-  }, [span, day]);
+    shownRef.current = shown;
+    todayRef.current = today;
+    subjectRef.current = subjectId;
+    onOpenRef.current = onOpen;
+  });
 
-  // Read the period shown, once.
-  useEffect(() => {
-    if (cache.has(currentKey)) return;
-    const controller = new AbortController();
-    const { signal } = controller;
-    const one = (d: string): Promise<MyDay> =>
-      subjectId === undefined ? getMyDay(d, tz, signal) : getPersonDay(subjectId, d, tz, signal);
-    const range = (from: string, to: string): Promise<readonly DaysDay[]> =>
-      (subjectId === undefined
-        ? getMyDays(from, to, tz, signal)
-        : getPersonDays(subjectId, from, to, tz, signal)
-      ).then((r) => r.days);
-    const { from, to } = periodOf(span, day);
-    const read: Promise<Got> =
-      span === 'week'
-        ? Promise.all(Array.from({ length: 7 }, (_, i) => one(addDays(from, i)))).then((days) => ({
-            kind: 'week' as const,
-            days,
-          }))
-        : Promise.all(chunks(from, to).map((c) => range(c.from, c.to))).then((parts) => ({
-            kind: 'days' as const,
-            days: parts.flat(),
-          }));
-    void read
-      .catch((error: unknown): Got => ({ kind: 'error', error }))
-      .then((got) => {
-        if (signal.aborted) return;
-        setCache((c) => new Map(c).set(currentKey, got));
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [cache, currentKey, span, day, subjectId, tz]);
+  const version = useSyncExternalStore(subscribeCache, cacheVersion, cacheVersion);
 
-  const ready = (l: Layer | undefined): boolean => l === undefined || cache.has(keyOf(l));
+  const layerEl = (key: string): HTMLElement | null =>
+    stage.current?.querySelector<HTMLElement>(`[data-period="${key}"]`) ?? null;
 
-  // Play a pending zoom once the coarser layer — the one it is measured in — has drawn.
-  useEffect(() => {
-    const z = zoom.current;
-    if (z === null) {
-      if (slide.current !== null && ready(current)) {
-        slideIn(stage.current?.querySelector('[data-layer-role="current"]') ?? null, slide.current);
-        slide.current = null;
+  /** Answer a request: a zoom to another view, a slide along this one, or nothing. */
+  const apply = useCallback((want: Layer): void => {
+    const s = shownRef.current;
+    const cur = s.current;
+    if (keyOf(cur) === keyOf(want)) {
+      // The same layer — Day on another day, or no change: only the leaving layer goes.
+      if (s.leaving !== undefined || s.motion !== undefined) {
+        setShown({ current: want, seq: s.seq + 1 });
+      } else if (cur.day !== want.day) {
+        setShown({ ...s, current: want });
       }
       return;
     }
-    const coarse = z.dir === 'in' ? leaving : current;
-    if (!ready(coarse) || !ready(current)) return;
+    busy.current = true;
+    if (cur.span !== want.span) {
+      const dir: Direction = SPANS.indexOf(want.span) < SPANS.indexOf(cur.span) ? 'in' : 'out';
+      const coarse = dir === 'in' ? cur : want;
+      const fine = dir === 'in' ? want : cur;
+      setShown({
+        current: want,
+        leaving: cur,
+        seq: s.seq + 1,
+        motion: { kind: 'zoom', dir, key: zoomKey(coarse.span, fine.span, fine.day) },
+      });
+      return;
+    }
+    // Another period of the same view: out the way the reader went, swap, in from the other side.
+    const by: 1 | -1 = want.day > cur.day ? 1 : -1;
+    void slideOut(layerEl(keyOf(cur)), by).then(() => {
+      const w = latest.current;
+      if (w.span !== cur.span) {
+        busy.current = false;
+        apply(w);
+        return;
+      }
+      setShown({ current: w, seq: shownRef.current.seq + 1, motion: { kind: 'slide-in', by } });
+    });
+  }, []);
+
+  /** The movement is over: the stage is free, and the latest request is played. */
+  const finish = useCallback((): void => {
+    busy.current = false;
     const el = stage.current;
-    if (el === null) return;
-    zoom.current = null;
-    const leavingEl = el.querySelector<HTMLElement>('[data-layer-role="leaving"]');
-    const enteringEl = el.querySelector<HTMLElement>('[data-layer-role="current"]');
-    const coarseEl = z.dir === 'in' ? leavingEl : enteringEl;
-    const anchor = coarseEl?.querySelector(`[data-zk="${z.key}"]`) ?? null;
-    setBusy(true);
+    if (el !== null) {
+      el.style.minHeight = '';
+      delete el.dataset.zooming;
+    }
+    const s = shownRef.current;
+    layerEl(keyOf(s.current))
+      ?.getAnimations()
+      .forEach((a) => {
+        a.cancel();
+      });
+    apply(latest.current);
+  }, [apply]);
+
+  // The address is a request: answered now, or kept for when the stage is free.
+  useLayoutEffect(() => {
+    const want = { span, day };
+    latest.current = want;
+    if (busy.current) return;
+    apply(want);
+  }, [span, day, apply]);
+
+  // A movement starts in the commit that mounted its layers, before paint.
+  useLayoutEffect(() => {
+    const m = shown.motion;
+    const el = stage.current;
+    if (m === undefined || el === null) return;
+    const { seq } = shown;
+    const enteringEl = layerEl(keyOf(shown.current));
+    if (m.kind === 'slide-in') {
+      slideIn(enteringEl, m.by);
+      const timer = setTimeout(() => {
+        if (shownRef.current.seq === seq) finish();
+      }, SLIDE_IN_MS);
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+    const leavingEl = shown.leaving === undefined ? null : layerEl(keyOf(shown.leaving));
+    if (leavingEl === null || enteringEl === null) {
+      finish();
+      return;
+    }
+    // A layer that was leaving a moment ago still holds its last frame.
+    enteringEl.getAnimations().forEach((a) => {
+      a.cancel();
+    });
+    // Hold the stage at the taller layer, with both layers over each other,
+    // so nothing under the stage moves while the zoom runs.
+    el.style.minHeight = `${String(Math.max(leavingEl.scrollHeight, enteringEl.scrollHeight))}px`;
+    el.dataset.zooming = m.dir;
+    const coarseEl = m.dir === 'in' ? leavingEl : enteringEl;
+    const anchor = coarseEl.querySelector(`[data-zk="${m.key}"]`);
     void zoomLayers(
       leavingEl,
       enteringEl,
       boxOf(el),
       anchor === null ? undefined : boxOf(anchor),
-      z.dir,
+      m.dir,
     ).then(() => {
-      setLeaving(undefined);
-      setBusy(false);
+      if (shownRef.current.seq === seq) finish();
     });
-  });
+    return undefined;
+  }, [shown, finish]);
 
-  /** Into a day: the coarse half here, then Day takes over. */
-  const open = useCallback(
-    (next: Span, d: string, pick?: BlockPick): void => {
-      if (busy) return;
-      if (next !== 'day') {
-        onOpen(next, d);
-        return;
+  // Read what the layers show, once each; again after time changed on Day.
+  useEffect(() => {
+    for (const l of [shown.current, shown.leaving]) {
+      if (l === undefined || l.span === 'day') continue;
+      if (spanCache.peek(subjectId, l.span, l.day) === undefined) {
+        void spanCache.read(subjectId, l.span, l.day, tz);
       }
-      const el = stage.current;
-      const layerEl = el?.querySelector<HTMLElement>('[data-layer-role="current"]') ?? null;
-      const anchor = layerEl?.querySelector(`[data-zk="d:${d}"]`) ?? null;
-      if (el === null || layerEl === null) {
-        onOpen('day', d, pick);
-        return;
-      }
-      setBusy(true);
-      void zoomLayers(
-        layerEl,
-        null,
-        boxOf(el),
-        anchor === null ? undefined : boxOf(anchor),
-        'in',
-      ).then(() => {
-        onOpen('day', d, pick);
-      });
-    },
-    [busy, onOpen],
-  );
+    }
+  }, [shown, subjectId, tz, version]);
 
-  // Ctrl/⌘ + wheel and a trackpad pinch: in on what is under the pointer, out one step.
+  // Once a wider view has its period, the ones either side are read behind it.
+  const { current } = shown;
+  const currentHeld =
+    current.span === 'day' || spanCache.peek(subjectId, current.span, current.day) !== undefined;
+  const currentKey = keyOf(current);
+  useEffect(() => {
+    if (current.span === 'day' || !currentHeld) return undefined;
+    return warm(subjectId, warmPlan(current.span, current.day), tz);
+    // `current` is keyed by its period: another day of the same period is the same read.
+  }, [currentKey, currentHeld, subjectId, tz]);
+
+  const open = useCallback((next: Span, d: string, pick?: BlockPick): void => {
+    onOpenRef.current(next, d, pick);
+  }, []);
+
+  const retry = useCallback((s: WideSpan, d: string): void => {
+    spanCache.forget(subjectRef.current, s, d);
+  }, []);
+
+  // Ctrl/⌘ + wheel and a trackpad pinch: in on what is under the pointer, out
+  // one step. Listened for once; the handler reads the stage as it is now.
   useEffect(() => {
     const el = stage.current;
-    if (el === null) return;
+    if (el === null) return undefined;
     let travel = 0;
     const onWheel = (event: WheelEvent): void => {
       if (!event.ctrlKey && !event.metaKey) return;
@@ -260,176 +337,201 @@ export function SpanStage({
       if (Math.abs(travel) < WHEEL_STEP) return;
       const by = travel < 0 ? 'in' : 'out';
       travel = 0;
+      const here = latest.current;
       if (by === 'out') {
-        const coarser = zoomSpan(span, 'out');
-        if (coarser !== undefined) open(coarser, day);
+        const coarser = zoomSpan(here.span, 'out');
+        if (coarser !== undefined) open(coarser, here.day);
         return;
       }
       const under = (event.target as Element | null)?.closest('[data-zk]');
       const hit =
         under === null || under === undefined
           ? undefined
-          : target(under.getAttribute('data-zk') ?? '', day, today);
+          : target(under.getAttribute('data-zk') ?? '', here.day, todayRef.current);
       if (hit !== undefined) {
         open(hit.span, hit.day);
         return;
       }
-      const finer = zoomSpan(span, 'in');
-      if (finer !== undefined) open(finer, day);
+      const finer = zoomSpan(here.span, 'in');
+      if (finer !== undefined) open(finer, here.day);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       el.removeEventListener('wheel', onWheel);
     };
-  }, [span, day, today, open]);
+  }, [open]);
 
-  const layer = (l: Layer, role: 'current' | 'leaving') => (
-    <div
-      key={`${role}-${keyOf(l)}`}
-      className="span-layer"
-      data-layer={l.span}
-      data-layer-role={role}
-      aria-hidden={role === 'leaving' ? true : undefined}
-      inert={role === 'leaving' ? true : undefined}
-    >
-      <LayerBody
-        layer={l}
-        got={cache.get(keyOf(l))}
-        today={today}
-        nowMs={nowMs}
-        open={open}
-        onRetry={() => {
-          setCache((c) => {
-            const next = new Map(c);
-            next.delete(keyOf(l));
-            return next;
-          });
-        }}
-      />
-    </div>
-  );
+  const layer = (l: Layer, role: 'current' | 'leaving') => {
+    const key = keyOf(l);
+    const leaving = role === 'leaving';
+    return (
+      <div
+        key={key}
+        className="span-layer"
+        data-layer={l.span}
+        data-layer-role={role}
+        data-period={key}
+        data-zk={l.span === 'day' ? `d:${l.day}` : undefined}
+        aria-hidden={leaving ? true : undefined}
+        inert={leaving ? true : undefined}
+      >
+        {l.span === 'day' ? (
+          <div
+            className="myday"
+            data-myday-ready={!leaving && dayBody !== undefined ? '' : undefined}
+            data-myday-pending={dayBody === undefined && !leaving ? '' : undefined}
+          >
+            {(leaving ? lastDayBody.current : dayBody) ?? <DaySkeleton label={dayLoadingLabel} />}
+          </div>
+        ) : (
+          <div className="myday" data-myday-span={l.span}>
+            <LayerBody
+              span={l.span}
+              day={l.day}
+              got={spanCache.peek(subjectId, l.span, l.day)}
+              today={today}
+              open={open}
+              onRetry={retry}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div
-      className="span-stage"
-      ref={stage}
-      data-stage
-      data-span={span}
-      data-zooming={leaving === undefined && !busy ? undefined : ''}
-    >
-      {layer(current, 'current')}
-      {leaving !== undefined && keyOf(leaving) !== currentKey && layer(leaving, 'leaving')}
+    <div className="span-stage" ref={stage} data-stage data-span={shown.current.span}>
+      {layer(shown.current, 'current')}
+      {shown.leaving !== undefined && layer(shown.leaving, 'leaving')}
     </div>
   );
-}
+});
 
-function LayerBody({
-  layer,
+const LayerBody = memo(function LayerBody({
+  span,
+  day,
   got,
   today,
-  nowMs,
   open,
   onRetry,
 }: {
-  readonly layer: Layer;
+  readonly span: WideSpan;
+  readonly day: string;
   readonly got: Got | undefined;
   readonly today: string;
-  readonly nowMs: number;
   readonly open: (span: Span, day: string, pick?: BlockPick) => void;
-  readonly onRetry: () => void;
+  readonly onRetry: (span: WideSpan, day: string) => void;
 }) {
-  const label = periodLabel(layer.span, layer.day);
-  const resource = `your ${layer.span}`;
-  if (got === undefined) {
-    return (
-      <section className="span-card" aria-busy="true">
-        <SpanHead label={label} />
-        <LoadingState shape="card" count={1} label={`Loading ${label}`} />
-      </section>
-    );
-  }
-  if (got.kind === 'error') {
+  const label = periodLabel(span, day);
+  const openDay = useCallback(
+    (d: string) => {
+      open('day', d);
+    },
+    [open],
+  );
+  const openBlock = useCallback(
+    (d: string, pick: BlockPick) => {
+      open('day', d, pick);
+    },
+    [open],
+  );
+  const openWeek = useCallback(
+    (monday: string) => {
+      open('week', anchorIn(monday, addDays(monday, 6), day, today));
+    },
+    [open, day, today],
+  );
+  const openMonth = useCallback(
+    (first: string) => {
+      const { last } = monthBounds(first);
+      open('month', anchorIn(first, last, day, today));
+    },
+    [open, day, today],
+  );
+  if (got?.kind === 'error') {
     return (
       <section className="span-card">
         <SpanHead label={label} />
-        <ApiErrorState error={got.error} resource={resource} onRetry={onRetry} />
+        <ApiErrorState
+          error={got.error}
+          resource={`your ${span}`}
+          onRetry={() => {
+            onRetry(span, day);
+          }}
+        />
       </section>
     );
   }
-  if (got.kind === 'week') {
-    const rows = got.days.map((d) => {
+  // Not here yet: the card at its shape, busy, its figures to come.
+  const pending = got === undefined;
+  if (span === 'week') {
+    const days = got?.kind === 'week' ? got.days : undefined;
+    const rows = days?.map((d) => {
       const t = dayTotals(d);
       return { state: d.state, confirmed_minutes: t.confirmed, drafted_minutes: t.drafted };
     });
     return (
-      <section className="span-card">
-        <SpanHead label={label} figure={periodFigure(rows)} hint="Open a day, or a block" />
+      <section className="span-card" aria-busy={pending ? 'true' : undefined}>
+        <SpanHead
+          label={label}
+          figure={rows === undefined ? undefined : periodFigure(rows)}
+          pending={pending}
+          hint="Open a day, or a block"
+        />
         <WeekView
-          days={got.days}
+          monday={mondayOf(day)}
+          days={days}
           today={today}
-          nowMs={nowMs}
-          onOpenDay={(d) => {
-            open('day', d);
-          }}
-          onOpenBlock={(d, pick) => {
-            open('day', d, pick);
-          }}
+          onOpenDay={openDay}
+          onOpenBlock={openBlock}
         />
       </section>
     );
   }
-  if (layer.span === 'month') {
-    const month = monthKey(layer.day);
-    const inMonth = got.days.filter((d) => monthKey(d.day) === month);
+  const days = got?.kind === 'days' ? got.days : undefined;
+  if (span === 'month') {
+    const month = monthKey(day);
     return (
-      <section className="span-card">
+      <section className="span-card" aria-busy={pending ? 'true' : undefined}>
         <SpanHead
           label={label}
-          figure={periodFigure(inMonth)}
+          figure={
+            days === undefined
+              ? undefined
+              : periodFigure(days.filter((d) => monthKey(d.day) === month))
+          }
+          pending={pending}
           hint="Open a day, or a week number"
         />
-        <MonthView
-          days={got.days}
-          day={layer.day}
-          today={today}
-          onOpenDay={(d) => {
-            open('day', d);
-          }}
-          onOpenWeek={(monday) => {
-            open('week', anchorIn(monday, addDays(monday, 6), layer.day, today));
-          }}
-        />
+        <MonthView days={days} day={day} today={today} onOpenDay={openDay} onOpenWeek={openWeek} />
       </section>
     );
   }
   return (
-    <section className="span-card">
-      <SpanHead label={label} figure={periodFigure(got.days)} hint="Open a month, or a day" heat />
-      <YearView
-        days={got.days}
-        day={layer.day}
-        today={today}
-        onOpenMonth={(first) => {
-          const { last } = monthBounds(first);
-          open('month', anchorIn(first, last, layer.day, today));
-        }}
-        onOpenDay={(d) => {
-          open('day', d);
-        }}
+    <section className="span-card" aria-busy={pending ? 'true' : undefined}>
+      <SpanHead
+        label={label}
+        figure={days === undefined ? undefined : periodFigure(days)}
+        pending={pending}
+        hint="Open a month, or a day"
+        heat
       />
+      <YearView days={days} day={day} today={today} onOpenMonth={openMonth} onOpenDay={openDay} />
     </section>
   );
-}
+});
 
 /** The card's head: the period, its figure, and how to go further in. */
 function SpanHead({
   label,
   figure,
+  pending = false,
   hint,
   heat = false,
 }: {
   readonly label: string;
-  readonly figure?: ReturnType<typeof periodFigure>;
+  readonly figure?: ReturnType<typeof periodFigure> | undefined;
+  readonly pending?: boolean;
   readonly hint?: string;
   readonly heat?: boolean;
 }) {
@@ -438,6 +540,11 @@ function SpanHead({
       <h2 className="span-title" data-span-title>
         {label}
       </h2>
+      {pending && (
+        <p className="span-figure" data-span-figure aria-hidden="true">
+          <span className="span-pending-bone span-pending-figure" />
+        </p>
+      )}
       {figure !== undefined && (
         <p className="span-figure" data-span-figure>
           {figure.kind === 'future' ? (
