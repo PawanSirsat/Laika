@@ -62,3 +62,6 @@ mutations.
   `test/browser/my-day-v2.test.ts` ("no mockup data (2)") and
   `test/browser/board-sprint-stats.test.ts` (its `**/presence*` hold matched
   `assets/presence-*.js`). No waits changed.
+- A space view's chunk fallback is the neutral `card` skeleton: a
+  board-shaped one flashed up before the board's own held skeleton
+  (`board-refresh.test.ts`'s hold test, under load).

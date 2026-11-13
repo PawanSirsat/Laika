@@ -719,13 +719,17 @@ export function ScreenOutlet() {
   // Two boundaries for a space view: the frame's, and the tab's inside it, so
   // moving between tabs waits — or fails — inside the frame and leaves the
   // space bar and its tabs where they are.
+  //
+  // `card`, never `board`: the board draws its own first-load skeleton, with
+  // its real column count, and holds it; a board-shaped one here would be a
+  // second board skeleton that flashes up and is swapped for the first.
   return (
     <>
       <PermissionsRetry />
       {layout === 'space' ? (
-        <ScreenBoundary key="space-frame" label="the space" shape="board">
+        <ScreenBoundary key="space-frame" label="the space" shape="card">
           <SpaceLayout>
-            <ScreenBoundary key={route.path} label={route.label} shape="board">
+            <ScreenBoundary key={route.path} label={route.label} shape="card">
               <Component />
             </ScreenBoundary>
           </SpaceLayout>

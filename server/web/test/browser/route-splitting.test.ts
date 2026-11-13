@@ -176,6 +176,31 @@ void describe('screens load on demand (LAI-1219)', () => {
     }
   });
 
+  void test('a slow space tab waits on a neutral skeleton, never a second board skeleton', async () => {
+    // The board draws its own first-load skeleton with its real columns and
+    // holds it (LAI-707); a board-shaped fallback before it flashed up and was
+    // swapped for that one — board-refresh.test.ts's hold test, under load.
+    const h = await open('/board?project=laika', stub(), {
+      before: async (page) => {
+        await page.route(/\/assets\/BoardScreen-[^/?]+\.js/, async (route) => {
+          await new Promise((done) => setTimeout(done, 1_200));
+          await route.continue();
+        });
+      },
+    });
+    try {
+      const shown = h.page.locator('[data-screen-loading="shown"]');
+      await shown.waitFor({ timeout: 10_000 });
+      assert.ok((await shown.locator('.skeleton').count()) > 0, 'no skeleton in the loading state');
+      assert.equal(await shown.locator('.skeleton-board').count(), 0, 'a board skeleton');
+      // The space bar is already there: the frame did not wait for the tab.
+      assert.ok((await h.page.locator('.view-tabs').count()) > 0, 'the frame waited for the tab');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
   void test('a chunk already warmed shows no loading state at all', async () => {
     const { h, scripts } = await onInsights();
     try {
