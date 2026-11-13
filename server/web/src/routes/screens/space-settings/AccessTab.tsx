@@ -6,6 +6,8 @@ import type { Project } from '../../../api/projects.ts';
 import { updateSpace, type SpaceSettingsPatch } from '../../../api/space-settings.ts';
 import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
 import { projectSetupLink } from '../../page-tabs.ts';
+import { visibilityEffect } from './space-settings-model.ts';
+import { onRadioGroupKeyDown, radioTabIndex } from './radio-keys.ts';
 
 export interface AccessTabProps {
   readonly project: Project;
@@ -14,6 +16,8 @@ export interface AccessTabProps {
   readonly onSaved: (project: Project) => void;
   /** In-app navigation for the Developer access link; absent, it is a plain link. */
   readonly onNavigate?: ((to: string) => void) | undefined;
+  /** How many people the member list returned, for *Right now: only its 3 members…*. */
+  readonly memberCount?: number | undefined;
 }
 
 /** Which control a save, or its refusal, belongs to. */
@@ -29,8 +33,20 @@ type Setting = 'visibility' | 'task_create_min_role' | 'agents_allowed';
  * *Saved* only on the server's answer. *Person sign-off for Done* is not a
  * setting (item 8): it is drawn on and locked, with the reason. *Join without
  * approval* is not drawn at all until LAI-980.
+ *
+ * LAI-1211: the visibility cards are a real radio group — a dot that shows
+ * which is chosen, one Tab stop, arrows between them — and the line under
+ * them says what the stored value means for this space right now, so a change
+ * shows its effect the moment the server confirms it.
  */
-export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: AccessTabProps) {
+export function AccessTab({
+  project,
+  orgName,
+  mayEdit,
+  onSaved,
+  onNavigate,
+  memberCount,
+}: AccessTabProps) {
   // The tab the link names, and whether per-tool grants live there (LAI-1058).
   const setup = projectSetupLink(useDeveloperAccessMode());
   const [pending, setPending] = useState<Setting | undefined>(undefined);
@@ -98,16 +114,23 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
               className="ss-choice-cards"
               role="radiogroup"
               aria-labelledby="ss-visibility-label"
+              aria-describedby="ss-visibility-effect"
+              onKeyDown={mayEdit ? onRadioGroupKeyDown : undefined}
             >
               {(
                 [
-                  ['private', 'Private', 'Only members can see the board.'],
-                  ['public', 'Public', `Anyone in ${org} can find it and join.`],
+                  ['private', 'Private', 'Only people added to it can find it and open its board.'],
+                  [
+                    'public',
+                    'Public',
+                    `Anyone in ${org} can find it, read its board and join it themselves.`,
+                  ],
                 ] as const
               ).map(([value, title, body]) => {
                 const on = project.visibility === value;
                 const card = (
                   <>
+                    <span className="ss-choice-dot" aria-hidden="true" />
                     <span className="ss-choice-title">{title}</span>
                     <span className="ss-choice-body">{body}</span>
                   </>
@@ -125,6 +148,7 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
                     type="button"
                     role="radio"
                     aria-checked={on}
+                    tabIndex={radioTabIndex(on, value === 'private' ? 0 : 1, true)}
                     data-visibility={value}
                     disabled={pending !== undefined}
                     className={on ? 'ss-choice ss-choice-on' : 'ss-choice'}
@@ -171,6 +195,14 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
                 returnFocus={() => publicCard.current}
               />
             )}
+            <p className="ss-effect" id="ss-visibility-effect" data-visibility-effect>
+              {visibilityEffect({
+                visibility: project.visibility,
+                spaceName: project.name,
+                orgName: org,
+                memberCount,
+              })}
+            </p>
             {errorFor('visibility')}
           </div>
         </div>
@@ -180,22 +212,32 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
             <span className="ss-label" id="ss-create-label">
               Who can create tasks
             </span>
-            <p className="ss-help">Viewers can never create tasks.</p>
+            <p className="ss-help">
+              {project.task_create_min_role === 'lead'
+                ? 'Right now only space admins can create tasks here. Viewers never can.'
+                : 'Right now members and space admins can create tasks here. Viewers never can.'}
+            </p>
           </div>
           <div className="ss-row-field ss-row-field-end">
             {mayEdit ? (
-              <div className="ss-segmented" role="radiogroup" aria-labelledby="ss-create-label">
+              <div
+                className="ss-segmented"
+                role="radiogroup"
+                aria-labelledby="ss-create-label"
+                onKeyDown={onRadioGroupKeyDown}
+              >
                 {(
                   [
                     ['member', 'Members'],
                     ['lead', 'Space admins only'],
                   ] as const
-                ).map(([value, label]) => (
+                ).map(([value, label], index) => (
                   <button
                     key={value}
                     type="button"
                     role="radio"
                     aria-checked={project.task_create_min_role === value}
+                    tabIndex={radioTabIndex(project.task_create_min_role === value, index, true)}
                     data-create={value}
                     disabled={pending !== undefined}
                     onClick={() => {

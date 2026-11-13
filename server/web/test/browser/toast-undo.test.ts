@@ -371,25 +371,21 @@ void describe('Space settings: unsaved General changes are guarded (B11)', () =>
 });
 
 void describe('InlineConfirm (B12)', () => {
-  void test('Archive: focus moves in to Cancel, the question names the group, Escape cancels and returns focus to Archive', async () => {
+  // Archive asks for the space's key since LAI-1211, in a named group rather
+  // than an InlineConfirm; B12's three properties hold for it as they did.
+  void test('Archive: focus moves in to the key, the group is named, Escape cancels and returns focus to Archive', async () => {
     const h = await open(`${SETTINGS}?tab=danger`, settingsStub());
     try {
       await settled(h);
       await h.page.locator('[data-action="archive"]').click();
-      const box = h.page.locator('[data-inline-confirm]');
+      const box = h.page.locator('[data-typed-confirm]');
       await box.waitFor({ timeout: 5_000 });
       assert.equal(await box.getAttribute('role'), 'group');
-      const name = await box.evaluate((el) => {
-        const id = el.getAttribute('aria-labelledby') ?? '';
-        return document.getElementById(id)?.textContent ?? '';
-      });
-      assert.match(name, /Archive Laika\? Its board becomes read-only/);
-      await until(() =>
-        h.page.evaluate(() => document.activeElement?.hasAttribute('data-inline-cancel') === true),
-      );
+      assert.equal(await box.getAttribute('aria-label'), 'Archive Laika');
+      await until(() => h.page.evaluate(() => document.activeElement?.id === 'ss-archive-key'));
       assert.equal(
-        await h.page.evaluate(() => document.activeElement?.textContent),
-        'Cancel',
+        await h.page.evaluate(() => document.activeElement?.id),
+        'ss-archive-key',
         'focus did not move into the question',
       );
 

@@ -9,6 +9,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { HandoffPolicyForm } from '../../../components/agent/HandoffPolicyForm.tsx';
 import type { HandoffPolicy } from '../../../components/agent/agent-states.ts';
+import { handoffSummary } from './space-settings-model.ts';
 
 export interface HandoffPolicySectionProps {
   readonly slug: string;
@@ -109,6 +110,9 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
         )}
         {read.kind === 'ready' && (
           <>
+            <p className="ss-handoff-summary" aria-live="polite" data-handoff-summary>
+              {handoffSummary(read.policy)}
+            </p>
             <HandoffPolicyForm
               policy={toForm(read.policy)}
               onChange={save}
