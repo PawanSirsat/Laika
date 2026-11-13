@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { SizeLevel } from '../../api/estimates.ts';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { PriorityIcon } from '../PriorityIcon.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import {
   CHIP_ANATOMY,
   SIZE_BAR_COUNT,
@@ -29,7 +30,11 @@ export interface ChipProps {
   readonly level?: SizeLevel | undefined;
   /** For `status`: which drawing stands in for the dot. */
   readonly mark?: StatusMark | undefined;
-  /** A hover hint. Never the only place a fact lives: the text and `glyphLabel` carry it. */
+  /**
+   * A hint, shown by the shared Tooltip on hover, focus or a long press
+   * (LAI-1213; it was a bare `title`). Never the only place a fact lives: the
+   * text and `glyphLabel` carry it.
+   */
   readonly title?: string | undefined;
   /** Hooks the caller's tests and layout read (`card-tag`, `card-sprint`). */
   readonly className?: string | undefined;
@@ -49,8 +54,8 @@ export interface ChipProps {
  * with colour only repeating it (WCAG 1.4.1).
  *
  * Long text truncates with an ellipsis inside a capped width; the whole text
- * stays in the DOM for assistive technology and in `title` when the caller
- * gives one, and every chip's full value is also on the task view.
+ * stays in the DOM for assistive technology and in a tooltip when the caller
+ * gives a `title`, and every chip's full value is also on the task view.
  */
 export function Chip({
   variant,
@@ -76,8 +81,8 @@ export function Chip({
   ]
     .filter((part): part is string => part !== undefined && part !== '')
     .join(' ');
-  return (
-    <span className={classes} title={title} data-chip={variant} {...data}>
+  const chip = (
+    <span className={classes} data-chip={variant} {...data}>
       <ChipGlyph
         variant={variant}
         label={glyphLabel}
@@ -88,6 +93,14 @@ export function Chip({
       <span className="chip-text">{children}</span>
       {trailing}
     </span>
+  );
+  // Lazy: a board draws a chip per field per card, and most are never hovered.
+  return title === undefined || title === '' ? (
+    chip
+  ) : (
+    <Tooltip content={title} lazy>
+      {chip}
+    </Tooltip>
   );
 }
 

@@ -26,6 +26,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -837,7 +838,7 @@ void describe('the task panel and the card (D-082)', () => {
       await card.waitFor({ timeout: 20_000 });
       const marker = card.locator('.marker-sent-back');
       assert.match(await marker.innerText(), /sent back/);
-      assert.equal(await marker.getAttribute('title'), 'Sent back: The lint run exits 1.');
+      assert.equal(await tipText(marker), 'Sent back: The lint run exits 1.');
 
       await card.click();
       const panel = h.page.locator('.drawer');

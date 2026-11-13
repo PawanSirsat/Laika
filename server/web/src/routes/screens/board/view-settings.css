@@ -322,12 +322,13 @@
   border-radius: var(--radius-chip);
 }
 
-.vs-remove:hover:not(:disabled) {
+.vs-remove:hover:not(:disabled, [aria-disabled='true']) {
   color: var(--overdue);
   background: var(--blocked-bg);
 }
 
-.vs-remove:disabled {
+.vs-remove:disabled,
+.vs-remove[aria-disabled='true'] {
   opacity: 0.35;
   cursor: not-allowed;
 }

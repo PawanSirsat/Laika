@@ -90,7 +90,8 @@
   cursor: pointer;
 }
 
-.tagp-apply:disabled {
+.tagp-apply:disabled,
+.tagp-apply[aria-disabled='true'] {
   opacity: 0.5;
   cursor: default;
 }

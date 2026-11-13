@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /** One choice in a {@link ListMenu}. */
 export interface MenuItem {
@@ -120,16 +121,26 @@ export function ListMenu({ label, anchor, items, onPick, onClose, above = false 
               .join(' ')}
             aria-current={item.current === true ? 'true' : undefined}
             disabled={item.disabled === true}
+            // The note is why it is off (LAI-1213): linked, not only beside it.
+            aria-describedby={
+              item.disabled === true && item.note !== undefined
+                ? `list-menu-note-${item.value}`
+                : undefined
+            }
             onClick={() => {
               onPick(item.value);
             }}
           >
             <span className="list-menu-tick" aria-hidden="true">
-              {item.current === true ? '✓' : ''}
+              {item.current === true && <Icon name="check" size="tiny" />}
             </span>
             {item.icon}
             {item.label}
-            {item.note !== undefined && <span className="list-menu-note">{item.note}</span>}
+            {item.note !== undefined && (
+              <span className="list-menu-note" id={`list-menu-note-${item.value}`}>
+                {item.note}
+              </span>
+            )}
           </button>
         ))}
       </div>

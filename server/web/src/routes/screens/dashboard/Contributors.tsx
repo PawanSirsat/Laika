@@ -9,6 +9,7 @@ import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 import type { Contributors as ContributorList } from './contributors-derive.ts';
 import { DashLink, boardHref, listHref } from './DashLink.tsx';
 import type { PersonLoad, Workload } from './summary-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * Slice colours **by rank**, not by person.
@@ -148,9 +149,9 @@ export function Contributors({
           ]}
         />
         <span className="dash-card-tools">
-          <span className="dash-card-meta" title={meta}>
-            {meta}
-          </span>
+          <Tooltip content={meta} lazy>
+            <span className="dash-card-meta">{meta}</span>
+          </Tooltip>
           {filter}
         </span>
       </header>
@@ -227,20 +228,16 @@ function Delivered({
             <th scope="col" className="dash-contrib-who">
               <span className="visually-hidden">Person</span>
             </th>
-            <th
-              scope="col"
-              className="dash-contrib-n"
-              title="Moved into review, or straight into done"
-            >
-              Delivered
-            </th>
-            <th
-              scope="col"
-              className="dash-contrib-n"
-              title="Moved out of review on someone else’s work"
-            >
-              Reviewed
-            </th>
+            <Tooltip content="Moved into review, or straight into done" lazy>
+              <th scope="col" className="dash-contrib-n">
+                Delivered
+              </th>
+            </Tooltip>
+            <Tooltip content="Moved out of review on someone else’s work" lazy>
+              <th scope="col" className="dash-contrib-n">
+                Reviewed
+              </th>
+            </Tooltip>
           </tr>
         </thead>
         <tbody>

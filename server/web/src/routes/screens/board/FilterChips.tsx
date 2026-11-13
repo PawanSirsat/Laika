@@ -1,6 +1,8 @@
 import type { ReactNode, RefObject } from 'react';
 import type { FilterKey } from './filter-keys.ts';
 import type { FilterChip } from './filter-chips.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 export interface FilterChipsProps {
   readonly chips: readonly FilterChip[];
@@ -50,37 +52,37 @@ export function FilterChips({
         Filtered by
       </span>
       {chips.map((chip) => (
-        <button
-          key={chip.key}
-          type="button"
-          className="bt-chip"
-          title={`Remove ${chip.label}`}
-          onClick={(event) => {
-            /*
-             * **Focus does not fall to `<body>`** (LAI-717 review). The chip
-             * is about to go with its filter: the next chip takes focus, else
-             * the one before, else — the last one gone — the Filter button.
-             * The other chips are keyed, so the ones found here are the same
-             * elements after the re-render.
-             */
-            const here = event.currentTarget;
-            const next = (
-              here.nextElementSibling?.classList.contains('bt-chip') === true
-                ? here.nextElementSibling
-                : here.previousElementSibling?.classList.contains('bt-chip') === true
-                  ? here.previousElementSibling
-                  : null
-            ) as HTMLElement | null;
-            onRemove(chip.key);
-            (next ?? filterButtonRef.current)?.focus();
-          }}
-        >
-          <span className="bt-chip-text">{chip.label}</span>
-          <span className="bt-chip-x" aria-hidden="true">
-            ×
-          </span>
-          <span className="visually-hidden"> — remove this filter</span>
-        </button>
+        <Tooltip key={chip.key} content={`Remove ${chip.label}`}>
+          <button
+            type="button"
+            className="bt-chip"
+            onClick={(event) => {
+              /*
+               * **Focus does not fall to `<body>`** (LAI-717 review). The chip
+               * is about to go with its filter: the next chip takes focus, else
+               * the one before, else — the last one gone — the Filter button.
+               * The other chips are keyed, so the ones found here are the same
+               * elements after the re-render.
+               */
+              const here = event.currentTarget;
+              const next = (
+                here.nextElementSibling?.classList.contains('bt-chip') === true
+                  ? here.nextElementSibling
+                  : here.previousElementSibling?.classList.contains('bt-chip') === true
+                    ? here.previousElementSibling
+                    : null
+              ) as HTMLElement | null;
+              onRemove(chip.key);
+              (next ?? filterButtonRef.current)?.focus();
+            }}
+          >
+            <span className="bt-chip-text">{chip.label}</span>
+            <span className="bt-chip-x" aria-hidden="true">
+              <Icon name="close" size="tiny" />
+            </span>
+            <span className="visually-hidden"> — remove this filter</span>
+          </button>
+        </Tooltip>
       ))}
       <button
         type="button"

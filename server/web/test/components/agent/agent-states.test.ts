@@ -184,7 +184,8 @@ void describe('the gallery stays the gallery', () => {
     assert.match(card, /const byAgent = task\.created_via === 'mcp';/);
     // LAI-1206: *created through* an agent, by its creator — it said the
     // assignee's agent, which named the wrong person when the two differ.
-    assert.match(card, /title=\{createdThroughAgentTitle\(creator\)\}/);
+    // Its words are the shared tooltip's since LAI-1213 (a bare title before).
+    assert.match(card, /content=\{createdThroughAgentTitle\(creator\)\}/);
     assert.match(card, /const creator = members\.get\(task\.created_by\)\?\.name;/);
   });
 });

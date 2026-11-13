@@ -167,6 +167,7 @@ export function SpaceToolbar({
               ref={searchRef}
               type="search"
               placeholder="Search"
+              aria-keyshortcuts="/"
               value={query}
               onChange={(event) => {
                 onQuery(event.target.value);
@@ -300,7 +301,8 @@ function FilterControls({
       {members.length > 0 && (
         <div
           className="space-members"
-          title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
+          role="group"
+          aria-label={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
         >
           {shown.map((member) => {
             const colour = avatarColor(member.user_id, theme);
@@ -325,7 +327,11 @@ function FilterControls({
               </Tooltip>
             );
           })}
-          {overflow > 0 && <span className="space-member-more">+{overflow}</span>}
+          {overflow > 0 && (
+            <Tooltip content={`${String(overflow)} more — pick them from Assignee`} lazy>
+              <span className="space-member-more">+{overflow}</span>
+            </Tooltip>
+          )}
         </div>
       )}
 
@@ -384,16 +390,18 @@ function FilterControls({
         />
       </label>
 
-      <button
-        type="button"
-        className={ready ? 'space-chip space-chip-on' : 'space-chip'}
-        aria-pressed={ready}
-        onClick={() => {
-          onReady(!ready);
-        }}
-      >
-        Ready only
-      </button>
+      <Tooltip content="Unassigned, unblocked work — ready to pick up">
+        <button
+          type="button"
+          className={ready ? 'space-chip space-chip-on' : 'space-chip'}
+          aria-pressed={ready}
+          onClick={() => {
+            onReady(!ready);
+          }}
+        >
+          Ready only
+        </button>
+      </Tooltip>
     </>
   );
 }

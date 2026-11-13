@@ -1,3 +1,4 @@
+import type { IconName } from '../../../components/icon/icon-paths.ts';
 /**
  * Which parts of a card the board draws (LAI-266).
  *
@@ -118,21 +119,21 @@ export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];
  * A glyph per field, so the Selected-fields list reads as a list of *things*
  * rather than a column of checkboxes.
  *
- * Text glyphs rather than an icon set: this repo has no icon dependency and a
- * field list is not worth adding one for.
+ * Registry icons (LAI-1213) — they were typed characters (`◇ ↑ ◷ ⚭ …`), which
+ * draw at a different weight in every font and say nothing to a reader.
  */
-export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
-  tags: '\u25c7',
-  priority: '\u2191',
-  sprint: '\u25f7',
-  ready: '\u25cf',
-  deps: '\u26ad',
-  assignee: '\u25cb',
-  subtasks: '\u21b3',
-  due: '\u25a6',
-  size: '\u25a3',
-  agent: '\u25c8',
-  handoff: '\u21ba',
+export const FIELD_ICONS: Readonly<Record<keyof CardFields, IconName>> = {
+  tags: 'tag',
+  priority: 'flag',
+  sprint: 'sprint',
+  ready: 'check',
+  deps: 'link',
+  assignee: 'person',
+  subtasks: 'subtasks',
+  due: 'calendar',
+  size: 'estimate',
+  agent: 'agent',
+  handoff: 'swap',
 };
 
 /**
@@ -145,21 +146,21 @@ export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
 export const ALWAYS_ON: readonly {
   readonly key: string;
   readonly label: string;
-  readonly icon: string;
+  readonly icon: IconName;
   readonly why: string;
 }[] = [
-  { key: 'title', label: 'Summary', icon: '\u2261', why: 'A card without a title is not a card' },
-  { key: 'key', label: 'Work item key', icon: '#', why: 'The key is what opens the card' },
+  { key: 'title', label: 'Summary', icon: 'rows', why: 'A card without a title is not a card' },
+  { key: 'key', label: 'Work item key', icon: 'hash', why: 'The key is what opens the card' },
   {
     key: 'blocked',
     label: 'Blocked warning',
-    icon: '\u26a0',
+    icon: 'alert',
     why: 'Hiding it invites work that cannot proceed',
   },
   {
     key: 'deps-unknown',
     label: 'Unknown blockers',
-    icon: '?',
+    icon: 'question',
     why: 'Hiding it turns “cannot judge” into “fine”',
   },
 ];

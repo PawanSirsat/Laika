@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 /*
  * The wizard is Developer access's first tab since LAI-507: every `open` of
@@ -222,11 +223,9 @@ void describe('before a token exists', () => {
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
       const copy = h.page.locator('.conn-block').first().locator('.copy-button');
       assert.equal(await copy.isDisabled(), true, 'the prompt offers a copy with no token in it');
-      assert.match(
-        (await copy.getAttribute('title')) ?? '',
-        /mint/i,
-        'the disabled button does not say why',
-      );
+      // Its reason is the shared tooltip, reachable by focus (LAI-1213).
+      assert.equal(await copy.getAttribute('aria-disabled'), 'true');
+      assert.match(await tipText(copy), /mint/i, 'the disabled button does not say why');
     } finally {
       await h.close();
     }
@@ -868,7 +867,9 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       const done = h.page.getByRole('button', { name: 'Copied the setup prompt', exact: true });
       await done.waitFor({ timeout: 10_000 });
       assert.equal(await done.getAttribute('data-outcome'), 'copied');
-      assert.match(await done.innerText(), /Copied ✓/);
+      assert.match(await done.innerText(), /Copied/);
+      // The tick is the registry's, drawn, not a typed ✓ (LAI-1213).
+      assert.equal(await done.locator('svg[data-icon="check"]').count(), 1);
 
       const copied = await h.page.evaluate(
         () => (window as unknown as { __copied: string[] }).__copied,

@@ -1,6 +1,16 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type HTMLAttributes,
+  type ReactElement,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { StatCounts, StatsScope } from './sprint-stats.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './sprint-stats.css';
 
 /**
@@ -176,6 +186,19 @@ export function SprintStats({ scope, counts, partial }: SprintStatsProps) {
     }
   };
 
+  /**
+   * A figure's words in the shared tooltip (LAI-1213; a bare `title` until
+   * then) — except on the pill, whose own popover already says all three.
+   */
+  const hint = (said: string, figure: ReactElement<HTMLAttributes<HTMLElement>>): ReactElement =>
+    pill ? (
+      figure
+    ) : (
+      <Tooltip content={said} lazy>
+        {figure}
+      </Tooltip>
+    );
+
   const figures = (
     <div
       ref={group}
@@ -215,64 +238,72 @@ export function SprintStats({ scope, counts, partial }: SprintStatsProps) {
             },
           }
         : { role: 'group', 'aria-label': label })}
-      title={pill ? undefined : named}
     >
       <span className="bstats-scope" aria-hidden="true">
         {scope.label}
       </span>
 
-      <span className="bstats-stat bstats-done" title={pill ? undefined : doneSaid}>
-        <span aria-hidden="true">
-          <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.4">
-            <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="bstats-key">DONE</span> <b>{known ? counts.done : dash}</b>
-          {known && <span className="bstats-of">/{counts.total}</span>}
-          {known && partial && (
-            <span
-              className="bstats-partial"
-              title="Counted from the first tasks only — this project has more than the board reads at once"
-            >
-              +
-            </span>
-          )}
-        </span>
-        <span className="visually-hidden">{doneSaid}</span>
-      </span>
+      {hint(
+        doneSaid,
+        <span className="bstats-stat bstats-done">
+          <span aria-hidden="true">
+            <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.4">
+              <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="bstats-key">DONE</span> <b>{known ? counts.done : dash}</b>
+            {known && <span className="bstats-of">/{counts.total}</span>}
+            {known && partial && (
+              <Tooltip
+                content="Counted from the first tasks only — this project has more than the board reads at once"
+                lazy
+              >
+                <span className="bstats-partial">+</span>
+              </Tooltip>
+            )}
+          </span>
+          <span className="visually-hidden">{doneSaid}</span>
+        </span>,
+      )}
 
-      <span className="bstats-stat bstats-blocked" title={blockedSaid}>
-        <span aria-hidden="true">
-          <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.2">
-            <circle cx="12" cy="12" r="8.5" />
-            <path d="M6 6l12 12" strokeLinecap="round" />
-          </svg>
-          <span className="bstats-key">BLK</span> <b>{known ? counts.blocked : dash}</b>
-        </span>
-        <span className="visually-hidden">{blockedSaid}</span>
-      </span>
+      {hint(
+        blockedSaid,
+        <span className="bstats-stat bstats-blocked">
+          <span aria-hidden="true">
+            <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.2">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M6 6l12 12" strokeLinecap="round" />
+            </svg>
+            <span className="bstats-key">BLK</span> <b>{known ? counts.blocked : dash}</b>
+          </span>
+          <span className="visually-hidden">{blockedSaid}</span>
+        </span>,
+      )}
 
-      <span className="bstats-stat bstats-left" title={leftSaid}>
-        <span aria-hidden="true">
-          <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.2">
-            <circle cx="12" cy="12" r="8.5" />
-            <path d="M12 7.5V12l3 2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          {scope.startsIn === undefined ? (
-            <>
-              <span className="bstats-key">LEFT</span> <b>{scope.daysLeft ?? dash}</b>
-            </>
-          ) : (
-            <>
-              {/* `in` stays in the compact tier, where the word goes: a bare
+      {hint(
+        leftSaid,
+        <span className="bstats-stat bstats-left">
+          <span aria-hidden="true">
+            <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.2">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M12 7.5V12l3 2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {scope.startsIn === undefined ? (
+              <>
+                <span className="bstats-key">LEFT</span> <b>{scope.daysLeft ?? dash}</b>
+              </>
+            ) : (
+              <>
+                {/* `in` stays in the compact tier, where the word goes: a bare
                   number beside the clock would read as days left. */}
-              <span className="bstats-key">STARTS</span> <span className="bstats-in">in</span>{' '}
-              <b>{scope.startsIn}</b>
-              <span className="bstats-of">d</span>
-            </>
-          )}
-        </span>
-        <span className="visually-hidden">{leftSaid}</span>
-      </span>
+                <span className="bstats-key">STARTS</span> <span className="bstats-in">in</span>{' '}
+                <b>{scope.startsIn}</b>
+                <span className="bstats-of">d</span>
+              </>
+            )}
+          </span>
+          <span className="visually-hidden">{leftSaid}</span>
+        </span>,
+      )}
     </div>
   );
 

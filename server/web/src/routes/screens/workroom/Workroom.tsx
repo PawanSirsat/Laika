@@ -63,6 +63,8 @@ import {
   type PanelSide,
 } from './workroom-layout.ts';
 import { prefersReducedMotion } from '../../../theme/motion.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface WorkroomProps {
   readonly task: TaskSummary;
@@ -435,6 +437,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       data-area="overview"
     >
       <h2 id="wr-overview-h" className="wr-section-title">
+        <Icon name="rows" size="small" className="section-mark" />
         Overview
       </h2>
       {moves.moveError !== undefined && (
@@ -456,7 +459,10 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
           }}
         />
       )}
-      <h3 className="wr-subtitle">Description</h3>
+      <h3 className="wr-subtitle">
+        <Icon name="doc" size="small" className="section-mark" />
+        Description
+      </h3>
       {full !== undefined ? (
         <>
           <DocumentField
@@ -505,7 +511,10 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       )}
       {full !== undefined && (
         <>
-          <h3 className="wr-subtitle">Acceptance</h3>
+          <h3 className="wr-subtitle">
+            <Icon name="checklist" size="small" className="section-mark" />
+            Acceptance
+          </h3>
           {full.acceptance_md !== null && full.acceptance_md !== '' ? (
             <div
               className="panel-acceptance"
@@ -557,6 +566,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       data-area="execution"
     >
       <h2 id="wr-execution-h" className="wr-section-title">
+        <Icon name="activity" size="small" className="section-mark" />
         Execution
       </h2>
       <ExecutionTimeline
@@ -582,6 +592,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       data-area="evidence"
     >
       <h2 id="wr-evidence-h" className="wr-section-title">
+        <Icon name="proof" size="small" className="section-mark" />
         Evidence
       </h2>
       <LatestSave
@@ -611,6 +622,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
       data-area="discussion"
     >
       <h2 id="wr-discussion-h" className="wr-section-title">
+        <Icon name="doc" size="small" className="section-mark" />
         Discussion and activity
       </h2>
       <ActivityFeed
@@ -630,11 +642,15 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
 
   const agentsPanel = (
     <div className="wr-agents" id="wr-agents" tabIndex={-1} data-area="agents">
-      <h2 className="wr-section-title">Agents</h2>
+      <h2 className="wr-section-title">
+        <Icon name="agent" size="small" className="section-mark" />
+        Agents
+      </h2>
       <AgentLanes lanes={lanes} />
 
       <section className="wr-card" aria-labelledby="wr-review-h" data-card="review">
         <h3 id="wr-review-h" className="wr-card-title">
+          <Icon name="check" size="small" className="section-mark" />
           Review
         </h3>
         {task.status !== 'review' ? (
@@ -754,7 +770,7 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
             else navigate(back.href);
           }}
         >
-          <span aria-hidden="true">‹</span> Back to {back.label}
+          <Icon name="chevron-left" size="small" /> Back to {back.label}
         </a>
         <div className="wr-head-main">
           <p className="wr-key">
@@ -827,18 +843,22 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
               {prefs.rightCollapsed ? 'Show details' : 'Hide details'}
             </button>
           )}
-          <button
-            type="button"
-            className="wr-tool"
-            aria-pressed={focus}
-            aria-keyshortcuts="."
-            title="Focus mode (.)"
-            onClick={() => {
-              setFocus(!focus);
-            }}
+          <Tooltip
+            content={focus ? 'Leave focus mode' : 'Focus mode — hide everything but the task'}
+            shortcut="."
           >
-            {focus ? 'Leave focus' : 'Focus'}
-          </button>
+            <button
+              type="button"
+              className="wr-tool"
+              aria-pressed={focus}
+              onClick={() => {
+                setFocus(!focus);
+              }}
+            >
+              <Icon name="focus" size="small" className="section-mark" />
+              {focus ? 'Leave focus' : 'Focus'}
+            </button>
+          </Tooltip>
         </div>
       </header>
 

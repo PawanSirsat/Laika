@@ -13,6 +13,7 @@ import { after, describe, test } from 'node:test';
 import { asServed, closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 import { pick } from './dropdown.ts';
 import { boardAction } from './board-menu.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -752,10 +753,7 @@ void describe('timestamps read as moments (LAI-486)', () => {
     try {
       assert.equal((await cell(h, 'LC-1', 'updated').innerText()).trim(), 'just now');
       assert.equal((await cell(h, 'LC-2', 'updated').innerText()).trim(), '25 Sep, 3:30 PM');
-      assert.equal(
-        await cell(h, 'LC-2', 'created').getAttribute('title'),
-        'Fri 25 Sep 2026, 3:30:00 PM',
-      );
+      assert.equal(await tipText(cell(h, 'LC-2', 'created')), 'Fri 25 Sep 2026, 3:30:00 PM');
       assert.ok(
         (await cell(h, 'LC-1', 'created').getAttribute('datetime')) !== null,
         'no machine-readable moment',

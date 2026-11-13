@@ -10,6 +10,8 @@ import { ColumnComposer } from './ColumnComposer.tsx';
 import { statusOptions } from './status-options.ts';
 import type { CardFields } from './card-fields.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 export interface LaneRowProps {
   readonly lanes: readonly Lane[];
@@ -422,7 +424,6 @@ export function LaneRow({
                   : 'lane-head'
               }
               draggable={onReorder !== undefined && showColumnConfig && renaming?.id !== column.id}
-              title={onReorder !== undefined && showColumnConfig ? 'Drag to reorder' : undefined}
               onDragStart={(event) => {
                 if (onReorder === undefined || !showColumnConfig) return;
                 event.dataTransfer.setData(COLUMN_MIME, column.id);
@@ -489,19 +490,23 @@ export function LaneRow({
                     }}
                   />
                   <span className="lane-rename-actions">
-                    <button type="submit" className="lane-rename-ok" aria-label="Save name">
-                      ✓
-                    </button>
-                    <button
-                      type="button"
-                      className="lane-rename-cancel"
-                      aria-label="Cancel rename"
-                      onClick={() => {
-                        setRenaming(undefined);
-                      }}
-                    >
-                      ✕
-                    </button>
+                    <Tooltip content="Save name" shortcut="Enter">
+                      <button type="submit" className="lane-rename-ok" aria-label="Save name">
+                        <Icon name="check" size="small" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Cancel rename" shortcut="Escape">
+                      <button
+                        type="button"
+                        className="lane-rename-cancel"
+                        aria-label="Cancel rename"
+                        onClick={() => {
+                          setRenaming(undefined);
+                        }}
+                      >
+                        <Icon name="close" size="small" />
+                      </button>
+                    </Tooltip>
                   </span>
                 </form>
               ) : onRenameColumn !== undefined && showColumnConfig ? (
@@ -510,25 +515,35 @@ export function LaneRow({
                  * makes it look pressable on hover and opens an input in place;
                  * a rename buried in the `⋯` menu is a rename nobody finds.
                  */
-                <button
-                  type="button"
-                  className="lane-title lane-title-editable t-heading"
-                  id={`lane-${column.id}`}
-                  title="Rename"
-                  onClick={() => {
-                    setRenaming({ id: column.id, draft: column.name });
-                  }}
+                <Tooltip
+                  content={
+                    onReorder !== undefined ? 'Rename — or drag the header to reorder' : 'Rename'
+                  }
                 >
-                  {column.name}
-                </button>
+                  <button
+                    type="button"
+                    className="lane-title lane-title-editable t-heading"
+                    id={`lane-${column.id}`}
+                    onClick={() => {
+                      setRenaming({ id: column.id, draft: column.name });
+                    }}
+                  >
+                    {column.name}
+                  </button>
+                </Tooltip>
               ) : (
-                <h3
-                  className="lane-title t-heading"
-                  id={`lane-${column.id}`}
-                  title={CATEGORY_COPY[column.category].label}
+                <Tooltip
+                  content={`${CATEGORY_COPY[column.category].label}${
+                    onReorder !== undefined && showColumnConfig
+                      ? ' — drag the header to reorder'
+                      : ''
+                  }`}
+                  lazy
                 >
-                  {column.name}
-                </h3>
+                  <h3 className="lane-title t-heading" id={`lane-${column.id}`}>
+                    {column.name}
+                  </h3>
+                </Tooltip>
               )}
               <span className={`lane-count lane-count-${dot}`}>{tasks.length}</span>
 
@@ -536,19 +551,21 @@ export function LaneRow({
                   else. LAI-266's settings dialog, with its status ticks, is
                   gone with the multi-status column it configured. */}
               {(onHideColumn !== undefined || onDeleteColumn !== undefined) && showColumnConfig && (
-                <button
-                  type="button"
-                  className="lane-menu"
-                  aria-label={`Column menu for ${column.name}`}
-                  data-column-menu={column.id}
-                  aria-haspopup="menu"
-                  aria-expanded={menuFor?.id === column.id}
-                  onClick={(event) => {
-                    setMenuFor({ id: column.id, at: anchorOf(event.currentTarget) });
-                  }}
-                >
-                  <span aria-hidden="true">⋯</span>
-                </button>
+                <Tooltip content="Column menu — rename, hide, delete">
+                  <button
+                    type="button"
+                    className="lane-menu"
+                    aria-label={`Column menu for ${column.name}`}
+                    data-column-menu={column.id}
+                    aria-haspopup="menu"
+                    aria-expanded={menuFor?.id === column.id}
+                    onClick={(event) => {
+                      setMenuFor({ id: column.id, at: anchorOf(event.currentTarget) });
+                    }}
+                  >
+                    <Icon name="more" size="small" />
+                  </button>
+                </Tooltip>
               )}
 
               {/*
@@ -707,10 +724,16 @@ export function LaneRow({
         one.
       */}
       {onAddColumn !== undefined && (
-        <button type="button" className="lane-new" onClick={onAddColumn} title="Add a column">
-          <span aria-hidden="true">+</span>
-          <span className="visually-hidden">Add a column</span>
-        </button>
+        <Tooltip content="Add a column">
+          <button
+            type="button"
+            className="lane-new"
+            onClick={onAddColumn}
+            aria-label="Add a column"
+          >
+            <Icon name="plus" size="body" />
+          </button>
+        </Tooltip>
       )}
 
       {onPlace !== undefined && cardsDraggable && (

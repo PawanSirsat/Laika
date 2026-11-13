@@ -9,6 +9,7 @@ import {
   type AvatarSize,
   type Presence,
 } from './avatar-model.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import './avatar.css';
 
 export interface AvatarProps {
@@ -59,11 +60,10 @@ export function Avatar({
       ? undefined
       : `${label ?? name}${presence === undefined ? '' : `, ${PRESENCE_WORDS[presence]}`}`;
   const picture = src !== undefined && src !== '' && !broken;
-  return (
+  const face = (
     <span
       className={`avatar avatar-${String(size)}${className === undefined ? '' : ` ${className}`}`}
       {...(spoken === undefined ? { 'aria-hidden': true } : { role: 'img', 'aria-label': spoken })}
-      title={label === null ? undefined : (label ?? name)}
       data-presence={presence}
     >
       <span
@@ -97,6 +97,15 @@ export function Avatar({
         <span className={`avatar-presence avatar-presence-${presence}`} aria-hidden="true" />
       )}
     </span>
+  );
+  // Its name on hover, focus or a long press: the shared tooltip (LAI-1213),
+  // lazy because a board draws one per card. It was a bare `title`.
+  return label === null ? (
+    face
+  ) : (
+    <Tooltip content={label ?? name} lazy>
+      {face}
+    </Tooltip>
   );
 }
 
@@ -146,13 +155,11 @@ export function AvatarGroup({
         />
       ))}
       {extra > 0 && (
-        <span
-          className="avatar avatar-more t-avatar"
-          aria-hidden="true"
-          title={overflowWords(rest)}
-        >
-          <span className="avatar-disc">{`+${String(extra)}`}</span>
-        </span>
+        <Tooltip content={overflowWords(rest)} lazy>
+          <span className="avatar avatar-more t-avatar" aria-hidden="true">
+            <span className="avatar-disc">{`+${String(extra)}`}</span>
+          </span>
+        </Tooltip>
       )}
     </span>
   );

@@ -548,6 +548,7 @@ export function BoardToolbar({
             ref={searchRef}
             type="search"
             placeholder="Search board"
+            aria-keyshortcuts="/"
             value={query}
             onChange={(event) => {
               onQuery(event.target.value);
@@ -563,7 +564,8 @@ export function BoardToolbar({
         {members.length > 0 && (
           <div
             className="bt-members"
-            title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
+            role="group"
+            aria-label={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
           >
             {shown.map((member) => {
               const colour = avatarColor(member.user_id, theme);
@@ -595,21 +597,23 @@ export function BoardToolbar({
           */}
             {overflow > 0 && (
               <span className="bt-anchor">
-                <button
-                  ref={membersButton}
-                  type="button"
-                  className="bt-member-more"
-                  aria-label={`+${String(overflow)} more — show all ${String(members.length)} members`}
-                  aria-expanded={open === 'members'}
-                  aria-haspopup="dialog"
-                  aria-controls={open === 'members' ? membersPopId : undefined}
-                  onClick={() => {
-                    if (open === 'members') close(true);
-                    else setOpen('members');
-                  }}
-                >
-                  +{overflow}
-                </button>
+                <Tooltip content={`Show all ${String(members.length)} members`}>
+                  <button
+                    ref={membersButton}
+                    type="button"
+                    className="bt-member-more"
+                    aria-label={`+${String(overflow)} more — show all ${String(members.length)} members`}
+                    aria-expanded={open === 'members'}
+                    aria-haspopup="dialog"
+                    aria-controls={open === 'members' ? membersPopId : undefined}
+                    onClick={() => {
+                      if (open === 'members') close(true);
+                      else setOpen('members');
+                    }}
+                  >
+                    +{overflow}
+                  </button>
+                </Tooltip>
                 {open === 'members' && (
                   <MembersPopover
                     id={membersPopId}

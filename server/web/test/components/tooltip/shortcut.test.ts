@@ -26,6 +26,14 @@ void describe('formatShortcut', () => {
     assert.equal(formatShortcut('Mod+Enter', true), '⌘↵');
     assert.equal(formatShortcut('j', false), 'J');
   });
+
+  void test('an arrow is its arrow, and a symbol is itself (LAI-1213)', () => {
+    assert.equal(formatShortcut('ArrowLeft', true), '←');
+    assert.equal(formatShortcut('ArrowRight', false), '→');
+    assert.equal(formatShortcut('/', false), '/');
+    assert.equal(formatShortcut('.', true), '.');
+    assert.equal(ariaShortcut('ArrowLeft', true), 'ArrowLeft');
+  });
 });
 
 void describe('ariaShortcut', () => {
