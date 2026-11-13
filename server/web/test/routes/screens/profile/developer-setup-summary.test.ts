@@ -95,7 +95,7 @@ void describe('the one next step', () => {
     });
     const step = nextStep(view, attentionItems(view, undefined), true);
     assert.equal(step?.kind, 'jump');
-    assert.equal(step.kind === 'jump' ? step.target : '', PENDING_ANCHOR);
+    assert.equal(step?.kind === 'jump' ? step.target : '', PENDING_ANCHOR);
   });
 
   void test('your own, a device with no live tool: add a tool', () => {
@@ -108,14 +108,14 @@ void describe('the one next step', () => {
     const view = setup();
     const step = nextStep(view, attentionItems(view, undefined), true);
     assert.equal(step?.kind === 'link' ? step.href : undefined, DEVELOPER_HREF.tools);
-    assert.equal(step.label, 'Fix in Developer access');
+    assert.equal(step?.label, 'Fix in Developer access');
   });
 
   void test('someone else’s, a tool needs setup: a jump within the tab, never a link', () => {
     const view = setup();
     const step = nextStep(view, attentionItems(view, undefined), false);
     assert.equal(step?.kind, 'jump');
-    assert.equal(step.kind === 'jump' ? step.target : '', 'dev-tool-a2');
+    assert.equal(step?.kind === 'jump' ? step.target : '', 'dev-tool-a2');
   });
 
   void test('your own, all healthy but a token is flagged: review tokens', () => {
