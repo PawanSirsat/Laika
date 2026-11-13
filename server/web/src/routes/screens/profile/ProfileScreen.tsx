@@ -538,7 +538,7 @@ export function ProfileScreen({
 
       {shownTab === 'dev' &&
         (own ? (
-          <OwnDeveloperSetupTab setup={ownSetup} meId={me.id} />
+          <OwnDeveloperSetupTab setup={ownSetup} meId={me.id} onNavigate={onNavigate} />
         ) : (
           <DeveloperSetupTab
             key={user.id}
