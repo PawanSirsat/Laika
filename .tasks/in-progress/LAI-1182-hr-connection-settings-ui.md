@@ -93,11 +93,6 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
   once these pairs exist.
 - Placement after CHIEF's correction: the HR system is a card on
   Integrations; Holidays is a fact on Overview → Workspace settings.
-- **Also red on this branch, until LAI-1181 commits its next view:**
-  `view-type-drift` → *the client declares nothing the server does not send*:
-  `HrSource.account_name`, `HrSource.sees_everyone` and
-  `HrSource.sees_departments` "is declared and HrSourceView does not send it".
-  CHIEF asked for them. LAI-1181's `eb8341df` has them, but is the
-  token-only version (no `pending_2fa`, `account_email`, `two_factor`), from
-  before CHIEF's final contract offered both ways; this branch waits for the
-  head that matches it before merging again.
+- `view-type-drift` is green since LAI-1181's `0ef42dbf` (both ways to
+  connect, `account_name`, `sees_everyone`, `sees_departments`) was merged.
+  The `response-type-coverage` red above is the only one left.
