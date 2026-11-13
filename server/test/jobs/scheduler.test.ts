@@ -9,7 +9,9 @@ import {
   activity,
   handoffOffers,
   heartbeats,
+  leaveDays,
   localActivityDays,
+  orgHrSource,
   projects,
   taskClaims,
   users,
@@ -21,6 +23,16 @@ import { registerAgent } from '../../src/services/agents.ts';
 import { configureClaims, DEFAULT_CLAIM_TIMINGS } from '../../src/services/claims.ts';
 import { createTask, startWorking } from '../../src/services/tasks.ts';
 import { captureLog, type CapturedLog } from '../helpers/app.ts';
+import {
+  CLAN_BASE,
+  CLAN_EMAIL,
+  CLAN_TOKEN,
+  employee,
+  fakeClan,
+  type FakeClan,
+  leaveRow,
+} from '../helpers/fake-clan.ts';
+import { encryptSecret } from '../../src/secrets.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -92,6 +104,7 @@ describe('the jobs §11.6 names', () => {
       'db.vacuum',
       'estimate.refit',
       'heartbeat.retention',
+      'hr.sync',
       'idempotency.retention',
       'invite.expiry',
       'local_activity.retention',
@@ -128,6 +141,15 @@ describe('the jobs §11.6 names', () => {
   it('runs local-activity retention daily (LAI-751)', () => {
     const day = 24 * 60 * 60 * 1000;
     expect(buildJobs(deps()).find((j) => j.name === 'local_activity.retention')?.everyMs).toBe(day);
+  });
+
+  it('syncs the HR system every 30 minutes, at boot, and last (D-149, LAI-1181)', () => {
+    const jobs = buildJobs(deps());
+    const hr = jobs.find((j) => j.name === 'hr.sync');
+    expect(hr?.everyMs).toBe(30 * 60 * 1000);
+    expect(hr?.atStart).toBe(true);
+    // It waits on the network, and the boot runs `atStart` jobs in turn.
+    expect(jobs.at(-1)?.name).toBe('hr.sync');
   });
 
   it('runs the vacuum weekly and the snapshot daily', () => {
@@ -296,6 +318,99 @@ describe('a job marked atStart runs once as the scheduler starts (LAI-751)', () 
       job: 'local_activity.retention',
       changed: 1,
     });
+    scheduler.stop();
+  });
+});
+
+describe('hr.sync (D-149, LAI-1181)', () => {
+  const SECRET = 'test-secret-that-is-long-enough-to-pass-validation';
+
+  function connect(): void {
+    t.db
+      .insert(orgHrSource)
+      .values({
+        orgId: seeded.orgId,
+        provider: 'clan',
+        status: 'connected',
+        baseUrl: CLAN_BASE,
+        accountEmail: CLAN_EMAIL,
+        tokenEnc: encryptSecret(CLAN_TOKEN, SECRET, 'clan_api_token'),
+        tokenLast4: CLAN_TOKEN.slice(-4),
+        connectedBy: seeded.userId,
+        connectedAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+  }
+
+  function hrDeps(fake: FakeClan): Partial<SchedulerDeps> {
+    return {
+      ...fakeTimers(),
+      serverSecret: SECRET,
+      hr: { fetchImpl: fake.fetchImpl, sleep: () => Promise.resolve(), timeoutMs: 50 },
+    };
+  }
+
+  it('does nothing, and asks Clan nothing, with no connected source', async () => {
+    const fake = fakeClan({ employees: [employee(1, 'Owner', 'owner@example.test')] });
+    const scheduler = startScheduler(deps(hrDeps(fake)));
+    await scheduler.started;
+
+    expect(await scheduler.runOnce('hr.sync')).toEqual({ changed: 0 });
+    expect(fake.requests).toEqual([]);
+    scheduler.stop();
+  });
+
+  it('syncs at start with the scheduler’s clock, and says what it changed', async () => {
+    connect();
+    const fake = fakeClan({
+      employees: [employee(1, 'Owner', 'owner@example.test')],
+      leave: [leaveRow(100, 1, '2027-01-04')],
+    });
+    const scheduler = startScheduler(deps(hrDeps(fake)));
+    await scheduler.started;
+
+    expect(t.db.select().from(leaveDays).all()).toHaveLength(1);
+    expect(t.db.select().from(orgHrSource).get()?.lastSuccessAt).toBe(NOW);
+    expect(log.records.find((r) => r.job === 'hr.sync')).toMatchObject({
+      event: 'cron.job_ran',
+      changed: 1,
+    });
+    scheduler.stop();
+  });
+
+  it('logs a failed read by its code alone — no token, no Clan words', async () => {
+    connect();
+    const fake = fakeClan();
+    fake.token = 'not-the-stored-one';
+    const scheduler = startScheduler(deps(hrDeps(fake)));
+    await scheduler.started;
+
+    expect(log.records.find((r) => r.job === 'hr.sync')).toMatchObject({
+      event: 'cron.job_failed',
+      error: 'hr sync failed: token_rejected',
+    });
+    expect(JSON.stringify(log.records)).not.toContain(CLAN_TOKEN);
+    expect(JSON.stringify(log.records)).not.toContain('CLAN-SECRET-WORDS');
+    scheduler.stop();
+  });
+
+  it('joins a sync already running rather than reading Clan twice', async () => {
+    connect();
+    const fake = fakeClan({ employees: [employee(1, 'Owner', 'owner@example.test')] });
+    const release = fake.hold();
+    const scheduler = startScheduler(deps(hrDeps(fake)));
+    // A tick's run is reading Clan, held there…
+    const tick = scheduler.runOnce('hr.sync');
+    // …while the boot's own run comes round: every job before it is
+    // synchronous, so one turn of the loop brings it to the in-flight run.
+    await new Promise((done) => setTimeout(done, 0));
+    expect(fake.to('/employee')).toHaveLength(1);
+    release();
+    const [, ticked] = await Promise.all([scheduler.started, tick]);
+
+    expect(ticked).toEqual({ changed: 0 });
+    expect(fake.to('/employee')).toHaveLength(1);
     scheduler.stop();
   });
 });

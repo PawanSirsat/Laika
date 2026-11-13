@@ -47,6 +47,7 @@ import { projectStatusRoutes } from './http/routes/project-statuses.ts';
 import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
+import { hrRoutes } from './http/routes/hr.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -96,6 +97,7 @@ import { translateAuthResponse } from './http/auth-errors.ts';
 import { setEstimateLogger } from './services/estimates.ts';
 import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
+import { type HrSyncDeps } from './services/hr-sync.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -184,6 +186,12 @@ export interface CreateAppOptions {
    * `index.ts` sets it; tests and tools that build an app do not pay for it.
    */
   warmStaticCache?: boolean;
+  /**
+   * The HR sync's `fetch`, clock and waits (D-149, LAI-1181). Injected by the
+   * tests so **none of them calls Clan**; `index.ts` passes nothing and the
+   * real `fetch` is used.
+   */
+  hrSync?: HrSyncDeps;
 }
 
 /**
@@ -406,6 +414,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(
       `${API_BASE}/org`,
       orgRoutes({ db, serverSecret: options.serverSecret ?? '', publicUrl: options.publicUrl }),
+    );
+    // The HR connection and holidays (D-149, LAI-1181): `/hr*` and
+    // `/holidays*`, paths `orgRoutes` does not have.
+    app.route(
+      `${API_BASE}/org`,
+      hrRoutes({ db, serverSecret: options.serverSecret ?? '', hrSync: options.hrSync }),
     );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
