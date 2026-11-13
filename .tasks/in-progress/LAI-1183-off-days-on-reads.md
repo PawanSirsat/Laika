@@ -2,10 +2,11 @@
 id: LAI-1183
 title: 'Holidays and leave on the reads: an off fact on My day, the Time logging grid and availability (D-149)'
 area: server+docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-1181]
-status: backlog
+status: in-progress
+started: 2026-11-13T17:29:28Z
 ---
 
 ## Goal
