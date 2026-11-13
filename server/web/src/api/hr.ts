@@ -181,9 +181,15 @@ export const HR_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   hr_not_connected: 'Clan is not connected any more. Connect again.',
   holiday_exists: 'There is already a holiday on that day.',
   holiday_from_clan: 'That holiday comes from Clan. Change it there.',
+  clan_token_rejected: 'Clan refused the token — connect again.',
+  clan_bad_answer: 'Clan answered with something Laika could not read. Try again in a minute.',
+  base_url_not_https: 'Use the https:// address you sign in to Clan at.',
+  base_url_invalid: 'That is not a company address. Use the one you sign in to Clan at.',
   duplicate_user: 'One Laika member is picked for two Clan people. Pick each member once.',
+  user_mapped_elsewhere: 'That member is already picked for another Clan person.',
   duplicate_person: 'One Clan person is listed twice. Reload and try again.',
   unknown_person: 'Clan no longer lists one of those people. Reload and try again.',
+  unknown_user: 'One of those members is no longer active on Laika. Reload and try again.',
 };
 
 /** The words for a refused HR or holiday call: its reason's, else the server's message. */

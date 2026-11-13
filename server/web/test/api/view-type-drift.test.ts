@@ -983,6 +983,60 @@ const PAIRS: readonly Pair[] = [
     client: 'UnpairedDevice',
     clientFile: 'developer-setup.ts',
   },
+  // D-149 (LAI-1181's views, LAI-1182's mirror): the HR connection and the
+  // holidays. Every nested shape is named on both sides and paired here, since
+  // `fieldsOf` reads a multi-line inline object's fields as its parent's. All
+  // are `*View`s, so the server census counts each as served, and listing them
+  // literally is right; the eight `UNPAIRED` entries LAI-1181 added are stale
+  // from this commit (CLAUDE.md §4.4).
+  {
+    server: 'HrSourceView',
+    serverFile: 'services/hr-source.ts',
+    client: 'HrSource',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HrSyncErrorView',
+    serverFile: 'services/hr-source.ts',
+    client: 'HrSyncError',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HrTwoFactorView',
+    serverFile: 'services/hr-source.ts',
+    client: 'HrTwoFactor',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HrPersonView',
+    serverFile: 'services/hr-source.ts',
+    client: 'HrPerson',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HrPersonUserView',
+    serverFile: 'services/hr-source.ts',
+    client: 'HrPersonUser',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HrSyncResultView',
+    serverFile: 'services/hr-sync.ts',
+    client: 'HrSyncResult',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HolidayView',
+    serverFile: 'services/holidays.ts',
+    client: 'OrgHoliday',
+    clientFile: 'hr.ts',
+  },
+  {
+    server: 'HolidayListView',
+    serverFile: 'services/holidays.ts',
+    client: 'OrgHolidays',
+    clientFile: 'hr.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

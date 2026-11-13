@@ -165,27 +165,36 @@ export function mappingChanges(
   return out;
 }
 
+/** Who holds a Laika member, and whether picking them elsewhere is refused. */
+export interface Holder {
+  readonly name: string;
+  /**
+   * An owner's mapping, or a choice made in this form: the server refuses a
+   * second (`user_mapped_elsewhere`, `duplicate_user`). An email match is not
+   * locked — the owner's word moves it.
+   */
+  readonly locked: boolean;
+}
+
 /**
  * Each Laika member held by a Clan person other than `except`, counting this
- * form's unsaved choices, mapped to that person's name — so a row's picker can
- * grey a member out and say whose they are. The server allows each member once.
+ * form's unsaved choices, with that person's name — so a row's picker can say
+ * whose a member is, and grey out the ones it may not take.
  */
 export function heldBy(
   people: readonly HrPerson[],
   choices: Readonly<Record<string, string>>,
   except: string,
-): ReadonlyMap<string, string> {
-  const out = new Map<string, string>();
+): ReadonlyMap<string, Holder> {
+  const out = new Map<string, Holder>();
   for (const p of people) {
     if (p.external_id === except) continue;
     const chosen = choices[p.external_id];
-    const user =
-      chosen === undefined || chosen === ''
-        ? p.user?.id
-        : chosen === NOT_ON_LAIKA
-          ? undefined
-          : chosen;
-    if (user !== undefined) out.set(user, p.name);
+    if (chosen === undefined || chosen === '') {
+      if (p.user !== null) out.set(p.user.id, { name: p.name, locked: p.matched_by === 'owner' });
+    } else if (chosen !== NOT_ON_LAIKA) {
+      out.set(chosen, { name: p.name, locked: true });
+    }
   }
   return out;
 }

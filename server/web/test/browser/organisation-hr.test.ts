@@ -591,11 +591,15 @@ void describe('HR system: connected', () => {
         /Not on Laika/,
       );
       await grace.click();
-      // Held by another Clan person: offered, greyed, and says whose.
+      // Held by an owner's word: offered, greyed, and says whose.
+      const linus = h.page.getByRole('option', { name: /^Linus Torvalds/ });
+      await linus.waitFor();
+      assert.equal(await linus.getAttribute('aria-disabled'), 'true');
+      assert.match(await linus.innerText(), /matched to Linus Clan/);
+      // Held only by an email match: the owner's word moves it, so it can be taken.
       const ada = h.page.getByRole('option', { name: /^Ada Lovelace/ });
-      await ada.waitFor();
-      assert.equal(await ada.getAttribute('aria-disabled'), 'true');
-      assert.match(await ada.innerText(), /matched to Ada Clan/);
+      assert.equal(await ada.getAttribute('aria-disabled'), null);
+      assert.match(await ada.innerText(), /matched by email to Ada Clan/);
       await h.page.getByRole('option', { name: /^Grace Hopper/ }).click();
 
       await people.getByRole('combobox', { name: 'Laika member for Linus Clan' }).click();

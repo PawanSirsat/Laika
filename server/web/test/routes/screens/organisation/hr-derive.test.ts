@@ -214,23 +214,23 @@ void describe('the people an owner maps', () => {
     ]);
   });
 
-  void test('each held member names the Clan person who holds them, choices counted', () => {
-    // As the server holds it, seen from Grace's row.
+  void test('who holds each member: an owner’s word and this form’s choices lock, email does not', () => {
+    // As the server holds it, seen from Grace's row: Ada by email, Linus by an owner.
     assert.deepEqual(
       [...heldBy(people, {}, '2')],
       [
-        ['u1', 'Ada Clan'],
-        ['u3', 'Linus Clan'],
+        ['u1', { name: 'Ada Clan', locked: false }],
+        ['u3', { name: 'Linus Clan', locked: true }],
       ],
     );
     // A row never holds against itself.
-    assert.deepEqual([...heldBy(people, {}, '3')], [['u1', 'Ada Clan']]);
-    // Linus moved to Not on Laika frees u3; the Contractor chose u4 and holds it.
+    assert.deepEqual([...heldBy(people, {}, '3')], [['u1', { name: 'Ada Clan', locked: false }]]);
+    // Linus moved to Not on Laika frees u3; the Contractor chose u4 here and holds it.
     assert.deepEqual(
       [...heldBy(people, { '3': NOT_ON_LAIKA, '4': 'u4' }, '2')],
       [
-        ['u1', 'Ada Clan'],
-        ['u4', 'Contractor'],
+        ['u1', { name: 'Ada Clan', locked: false }],
+        ['u4', { name: 'Contractor', locked: true }],
       ],
     );
   });

@@ -110,6 +110,18 @@ void describe('a refusal, in words', () => {
       /Pick each member once/,
     );
     assert.match(hrRefusal(refused(422, 'unprocessable', 'unknown_person')), /no longer lists/);
+    assert.match(hrRefusal(refused(422, 'unprocessable', 'unknown_user')), /no longer active/);
+    assert.match(
+      hrRefusal(refused(409, 'conflict', 'user_mapped_elsewhere')),
+      /already picked for another Clan person/,
+    );
+    assert.match(hrRefusal(refused(422, 'unprocessable', 'base_url_not_https')), /https:\/\//);
+    assert.match(hrRefusal(refused(422, 'unprocessable', 'base_url_invalid')), /not a company/);
+    assert.match(
+      hrRefusal(refused(422, 'unprocessable', 'clan_token_rejected')),
+      /refused the token/,
+    );
+    assert.match(hrRefusal(refused(503, 'internal', 'clan_bad_answer')), /could not read/);
   });
 
   void test('a reason it does not know, or none, is the server’s message', () => {

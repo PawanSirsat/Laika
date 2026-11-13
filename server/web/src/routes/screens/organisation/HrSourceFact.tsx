@@ -495,8 +495,9 @@ interface PeopleMapProps {
 /**
  * Clan's people against Laika's: how many Clan's emails matched, then each
  * one they did not and each an owner already mapped, with a member picker and
- * *Not on Laika*. A member another Clan person holds is offered, greyed, with
- * whose they are — the server allows each member once.
+ * *Not on Laika*. A member another person holds by an owner's word is offered
+ * greyed, with whose they are — the server allows each member once; one held
+ * only by an email match can be taken, and the email match gives way.
  */
 function PeopleMap({
   view,
@@ -537,8 +538,13 @@ function PeopleMap({
                     value: m.id,
                     label: m.name,
                     keywords: m.email,
-                    disabled: by !== undefined,
-                    detail: by === undefined ? undefined : `matched to ${by}`,
+                    disabled: by?.locked === true,
+                    detail:
+                      by === undefined
+                        ? undefined
+                        : by.locked
+                          ? `matched to ${by.name}`
+                          : `matched by email to ${by.name}`,
                   };
                 }),
               ];
