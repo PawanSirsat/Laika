@@ -58,7 +58,7 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: 0.5rem var(--space-3);
+  padding: var(--space-2) var(--space-3);
   font: inherit;
   text-align: left;
   color: var(--text-primary);
@@ -295,7 +295,7 @@
  * shares the top line and the note's first line takes the one under it —
  * still one row per note, two short lines rather than one cut to nothing.
  */
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .unl-sub,
   .unl-error,
   .unl > .state-stale {
@@ -315,7 +315,7 @@
     grid-template-areas:
       'repo who when tag caret'
       'first first first first first';
-    row-gap: 0.25rem;
+    row-gap: var(--space-1);
     column-gap: var(--space-2);
   }
 

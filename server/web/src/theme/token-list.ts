@@ -250,21 +250,32 @@ export const WEIGHT_TOKENS = [
 ] as const;
 
 export const SPACE_TOKENS = [
+  '--space-0-5',
   '--space-1',
+  '--space-1-5',
   '--space-2',
+  '--space-2-5',
   '--space-3',
+  '--space-3-5',
   '--space-4',
+  '--space-4-5',
   '--space-5',
   '--space-6',
+  '--space-7',
+  '--space-8',
 ] as const;
 
 export const RADIUS_TOKENS = [
+  '--radius-hairline',
   '--radius-chip',
   '--radius-xs',
+  '--radius-sm',
   '--radius-card',
   '--radius-column',
   '--radius-control',
+  '--radius-sheet',
   '--radius-pill',
+  '--radius-round',
 ] as const;
 
 /**

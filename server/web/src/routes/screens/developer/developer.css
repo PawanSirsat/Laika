@@ -15,7 +15,7 @@
 }
 
 .dev-sharing .share-activity {
-  padding: var(--space-4) 1.25rem 1.25rem;
+  padding: var(--space-4) var(--space-4-5) var(--space-4-5);
 }
 
 /* The embedded Tokens screen draws its own rows; the card gives them a ground. */
@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) 1.25rem;
+  padding: var(--space-4) var(--space-4-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -64,7 +64,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) 1.25rem 1.25rem;
+  padding: var(--space-4) var(--space-4-5) var(--space-4-5);
 }
 
 .dev-projects-fields {
@@ -86,7 +86,7 @@
   white-space: nowrap;
 }
 
-@media (max-width: 56rem) {
+@media (max-width: 896px) {
   .dev-page-connect {
     height: auto;
   }

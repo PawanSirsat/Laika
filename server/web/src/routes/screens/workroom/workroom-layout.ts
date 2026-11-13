@@ -5,6 +5,8 @@
  * every rule here is tested without a renderer.
  */
 
+import { atOrAbove } from '../../../theme/breakpoints.ts';
+
 export type PanelSide = 'left' | 'right';
 
 export interface PanelLimits {
@@ -37,8 +39,8 @@ export const BIG_STEP = 64;
 export type LayoutMode = 'three' | 'two' | 'one';
 
 /** The window widths the spec names: ≥1280 three, ≥1024 two, below that one. */
-export const THREE_PANEL_QUERY = '(min-width: 1280px)';
-export const TWO_PANEL_QUERY = '(min-width: 1024px)';
+export const THREE_PANEL_QUERY = atOrAbove('desktop');
+export const TWO_PANEL_QUERY = atOrAbove('tabletLg');
 
 export function layoutMode(matches: {
   readonly three: boolean;

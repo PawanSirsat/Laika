@@ -20,11 +20,11 @@
 
 .usage {
   container: usage / inline-size;
-  padding: 0.875rem 1.125rem 1.5rem;
+  padding: var(--space-3-5) 1.125rem var(--space-5);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
 }
 
 /* --------------------------------------------------------------- toolbar */
@@ -32,7 +32,7 @@
 .usage-select {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -50,8 +50,8 @@
 .usage-segmented {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -59,7 +59,7 @@
 
 .usage-segment {
   margin: 0;
-  padding: 0.25rem 0.625rem;
+  padding: var(--space-1) var(--space-2-5);
   border: 0;
   border-radius: calc(var(--radius-control) - 2px);
   background: transparent;
@@ -112,7 +112,7 @@
 .usage-link-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 /* The scope, the range and the floor, in one line (LAI-1127). */
@@ -120,7 +120,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.25rem 0.625rem;
+  gap: var(--space-1) var(--space-2-5);
   margin: 0;
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -128,7 +128,7 @@
 
 .usage-chip {
   margin: 0;
-  padding: 0.3125rem 0.75rem;
+  padding: 0.3125rem var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -172,7 +172,7 @@
 .usage-space-note {
   margin: 0;
   max-width: 76ch;
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   background: var(--bg-card);
@@ -186,8 +186,8 @@
 }
 
 .usage-space-note .usage-chip {
-  margin-left: 0.25rem;
-  padding: 0.125rem 0.625rem;
+  margin-left: var(--space-1);
+  padding: var(--space-0-5) var(--space-2-5);
   font-size: var(--text-small);
 }
 
@@ -221,10 +221,10 @@
 .usage-stat {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
   margin: 0;
-  padding: 0.75rem 0.875rem;
+  padding: var(--space-3) var(--space-3-5);
   background: var(--bg-card);
 }
 
@@ -274,7 +274,7 @@
  * more tokens is neither good nor bad — so secondary ink, never red or green.
  */
 .usage-stat-change {
-  margin-top: 0.125rem;
+  margin-top: var(--space-0-5);
   font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
@@ -286,7 +286,7 @@
 .usage-pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.875rem;
+  gap: var(--space-3-5);
   align-items: stretch;
 }
 
@@ -298,7 +298,7 @@
 
 .usage-card,
 .usage-person {
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .usage-info {
@@ -313,7 +313,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
   border-radius: var(--radius-card);
 }
@@ -328,13 +328,13 @@
   font-size: var(--text-small);
   color: var(--text-muted);
   border-bottom: 1px dashed var(--border-subtle);
-  padding-bottom: 0.125rem;
+  padding-bottom: var(--space-0-5);
 }
 
 .usage-plot {
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: var(--space-0-5);
   height: 9rem;
   border-bottom: 1px solid var(--border-default);
 }
@@ -357,7 +357,7 @@
   width: 100%;
   max-width: 1.5rem;
   background: var(--accent);
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--radius-chip) var(--radius-chip) 0 0;
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
@@ -368,13 +368,13 @@
 
 .usage-col[data-active='true'] {
   background: color-mix(in srgb, var(--accent-bg) 70%, transparent);
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--radius-chip) var(--radius-chip) 0 0;
 }
 
 .usage-axis {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -398,7 +398,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .usage-row {
@@ -406,7 +406,7 @@
   grid-template-columns: minmax(0, 12rem) minmax(3rem, 1fr) auto;
   grid-template-areas: 'name track value';
   align-items: center;
-  gap: 0.375rem 0.75rem;
+  gap: var(--space-1-5) var(--space-3);
   min-width: 0;
 }
 
@@ -414,7 +414,7 @@
   grid-area: name;
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -443,7 +443,7 @@
   display: block;
   height: 100%;
   background: var(--accent);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
 }
 
 .usage-row-value {
@@ -465,7 +465,7 @@
 }
 
 .usage-no-data {
-  padding-top: 0.5rem;
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -517,7 +517,7 @@
 .usage-task:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 /* A space counted but not offered — archived — is named, not linked (LAI-814 review). */
@@ -553,7 +553,7 @@
 .usage-person-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
-  gap: 0.5rem 0.75rem;
+  gap: var(--space-2) var(--space-3);
   margin: 0;
 }
 
@@ -587,11 +587,11 @@
 .usage-person-lists {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-  gap: 0.75rem 1.25rem;
+  gap: var(--space-3) var(--space-4-5);
 }
 
 .usage-person-h {
-  margin: 0 0 0.375rem;
+  margin: 0 0 var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-muted);
@@ -603,13 +603,13 @@
 
 /* Nothing to show (LAI-1153): one sentence in a dashed box, as the profile's cards say it. */
 .usage-person-empty {
-  padding: 1rem;
+  padding: var(--space-4);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-card);
 }
 
 .usage-cost-note {
-  margin: -0.375rem 0 0;
+  margin: calc(var(--space-1-5) * -1) 0 0;
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -625,7 +625,7 @@
 .usage-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
 }
 
 .usage-stat-skeleton {
@@ -649,7 +649,7 @@
 
 .usage-rework-row {
   display: grid;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -680,15 +680,15 @@
   display: grid;
   grid-template-columns: 3.25rem minmax(0, 1fr) minmax(6rem, 9rem) 1.5rem;
   align-items: center;
-  gap: 0.25rem 0.625rem;
+  gap: var(--space-1) var(--space-2-5);
   min-width: 0;
-  padding: 0.375rem 0;
+  padding: var(--space-1-5) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .usage-alert-mark {
   justify-self: start;
-  padding: 0.0625rem 0.375rem;
+  padding: 0.0625rem var(--space-1-5);
   border-radius: var(--radius-xs);
   background: var(--chip-orange-bg);
   font-family: var(--font-mono);
@@ -720,13 +720,13 @@
 .usage-alert-line:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 .usage-alert-use {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -786,9 +786,9 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.25rem 0.75rem;
+  gap: var(--space-1) var(--space-3);
   margin-top: auto;
-  padding-top: 0.5rem;
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -833,7 +833,7 @@
 .usage-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-width: 0;
 }
 
@@ -847,7 +847,7 @@
     display: flex;
     align-items: baseline;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .usage-panel .usage-row-note {
@@ -867,7 +867,7 @@
 .usage-accepted-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1rem 1.5rem;
+  gap: var(--space-4) var(--space-5);
 }
 
 @container usage (min-width: 52rem) {
@@ -879,27 +879,27 @@
 .usage-accepted-main {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .usage-side {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
   min-width: 0;
 }
 
 .usage-side-item {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
 }
 
 .usage-side-title {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   font-size: var(--text-body);
   font-weight: var(--weight-bold);
@@ -922,14 +922,14 @@
 .usage-you {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
-  margin-top: 0.375rem;
+  gap: var(--space-3-5);
+  margin-top: var(--space-1-5);
 }
 
 .usage-you-divider {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   margin: 0;
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
@@ -978,7 +978,7 @@
 
 .usage-table th,
 .usage-table td {
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
   text-align: right;
   vertical-align: top;
@@ -1009,20 +1009,20 @@
 /* ------------------------------------------------------ LAI-773: budgets */
 
 .usage-budgets {
-  gap: 0.875rem;
+  gap: var(--space-3-5);
 }
 
 .usage-budget-group {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .usage-budget-add {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .usage-budget-note {
@@ -1033,7 +1033,7 @@
 
 .budget {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -1041,7 +1041,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -1084,7 +1084,7 @@
   display: block;
   height: 100%;
   background: var(--accent);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
 }
 
 .budget[data-state='warn'] .budget-bar {
@@ -1106,7 +1106,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .budget-input {
@@ -1123,7 +1123,7 @@
 .usage-plan-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .usage-plan-forecast {
@@ -1141,7 +1141,7 @@
 }
 
 .usage-plan-estimate {
-  padding: 0.0625rem 0.375rem;
+  padding: 0.0625rem var(--space-1-5);
   border-radius: var(--radius-pill);
   border: 1px solid var(--border-default);
   font-weight: var(--weight-bold);
@@ -1151,26 +1151,26 @@
 .usage-plan-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .usage-plan-form {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .usage-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .usage-field-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .usage-field-row .usage-field {
@@ -1199,7 +1199,7 @@
   .usage-plan-form {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 0.75rem;
+    column-gap: var(--space-3);
   }
 
   .usage-plan-form > * {
@@ -1219,7 +1219,7 @@
 .usage-figure {
   color: inherit;
   text-decoration: none;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 .usage-figure:hover {
@@ -1246,7 +1246,7 @@
 
 /* The trend's text alternative (LAI-1201): a disclosure under the chart. */
 .usage-trend-table {
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
   font-size: var(--text-small);
 }
 
@@ -1254,7 +1254,7 @@
   cursor: pointer;
   color: var(--text-muted);
   width: fit-content;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 .usage-trend-table summary:hover {
@@ -1267,7 +1267,7 @@
 }
 
 .usage-trend-table[open] summary {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
 }
 
 .usage-trend-table .usage-table {

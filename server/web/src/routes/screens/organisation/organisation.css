@@ -251,7 +251,7 @@
   display: flex;
   width: 1.75rem;
   height: 1.75rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   align-items: center;
   justify-content: center;
   font-size: var(--text-small);
@@ -263,7 +263,7 @@
 .org-invite-who {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   flex: 1;
   min-width: 0;
 }
@@ -298,7 +298,7 @@
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
-  padding: 0.0625rem 0.25rem;
+  padding: 0.0625rem var(--space-1);
 }
 
 .org-chip-you {
@@ -398,7 +398,7 @@
   color: var(--text-primary);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 .org-fact-note {
   font-size: var(--text-small);
@@ -433,15 +433,15 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-  margin-bottom: 2px;
+  margin-bottom: var(--space-0-5);
 }
 
 .org-mode {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
-  padding: 0.25rem 0.75rem;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -539,9 +539,9 @@
 .org-break-preset {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
-  padding: 0.25rem 0.625rem 0.25rem 0.5rem;
+  padding: var(--space-1) var(--space-2-5) var(--space-1) var(--space-2);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-chip);
   background: var(--bg-card);
@@ -613,7 +613,7 @@
 .org-break-clock {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .org-break-to {
@@ -627,7 +627,7 @@
 
 .org-break-remove {
   margin-left: auto;
-  padding: 0.25rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -652,8 +652,8 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.5rem;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-2);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-chip);
   background: var(--bg-card);
@@ -706,11 +706,11 @@
   color: var(--text-secondary);
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   /* One column rather than a squeezed label — the body must not scroll sideways. */
   .org-fact {
     grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 }
 
@@ -725,7 +725,7 @@
 .org-role-select {
   font: inherit;
   font-size: var(--text-body);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-chip);
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
@@ -745,7 +745,7 @@
 .org-reactivate {
   font: inherit;
   font-size: var(--text-body);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-chip);
   background: transparent;
   cursor: pointer;
@@ -789,7 +789,7 @@
 .org-tokens-toggle {
   font: inherit;
   font-size: var(--text-small);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-chip);
   border: 1px solid var(--border-subtle);
   background: transparent;
@@ -834,7 +834,7 @@
   margin: 0 0 var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
@@ -874,7 +874,7 @@
 /* A person's row is name-then-controls on a wide screen and stacked on a narrow
    one. Without this the controls keep `margin-left: auto` and compete with the
    name for a line that fits neither. */
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .org-person-who {
     min-width: 0;
     flex: 1 1 auto;
@@ -927,7 +927,7 @@
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-primary);
@@ -958,7 +958,7 @@
   padding-left: 1.1rem;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
-  gap: 2px var(--space-3);
+  gap: var(--space-0-5) var(--space-3);
 }
 
 .org-github-retry {
@@ -995,7 +995,7 @@
 
 .org-prices-table th,
 .org-prices-table td {
-  padding: 0.4375rem 0.5rem;
+  padding: 0.4375rem var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
   text-align: left;
   vertical-align: top;
@@ -1021,8 +1021,8 @@
 
 .org-price-status {
   display: inline-block;
-  margin-right: 0.375rem;
-  padding: 0 0.375rem;
+  margin-right: var(--space-1-5);
+  padding: 0 var(--space-1-5);
   border-radius: var(--radius-pill);
   border: 1px solid var(--chip-neutral-border);
   background: var(--chip-neutral-bg);
@@ -1051,7 +1051,7 @@
 .org-price-actions {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .org-price-input {
@@ -1063,7 +1063,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin-top: var(--space-3);
 }
 
@@ -1085,7 +1085,7 @@
 .org-context {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
 }
 
 .org-context-fact {
@@ -1104,7 +1104,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   margin: 0;
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
@@ -1131,7 +1131,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -1161,7 +1161,7 @@
   width: 100%;
   box-sizing: border-box;
   height: 2.125rem;
-  padding: 0 0.75rem 0 1.875rem;
+  padding: 0 var(--space-3) 0 1.875rem;
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-input);
@@ -1179,8 +1179,8 @@
 .org-segmented {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   border-radius: var(--radius-control);
   background: var(--bg-column);
 }
@@ -1188,9 +1188,9 @@
 .org-segment {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
-  padding: 0.3125rem 0.625rem;
+  padding: 0.3125rem var(--space-2-5);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -1229,10 +1229,10 @@
 .org-people-sort {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   height: 2.125rem;
   margin: 0;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -1261,15 +1261,15 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.5rem var(--space-5);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
   background: var(--text-primary);
   color: var(--bg-card);
   font-size: var(--text-body);
 }
 
 .org-bulk strong {
-  margin-right: 0.375rem;
+  margin-right: var(--space-1-5);
   font-weight: var(--weight-semibold);
 }
 
@@ -1277,7 +1277,7 @@
 .org-bulk-clear {
   height: 1.75rem;
   margin: 0;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid color-mix(in srgb, var(--bg-card) 25%, transparent);
   border-radius: var(--radius-xs);
   background: transparent;
@@ -1371,7 +1371,7 @@
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
-  padding: 0.125rem var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
 }
 
 .perm-projects {
@@ -1517,7 +1517,7 @@
 }
 
 /* On a phone each action is a block with its roles beneath, not a table. */
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .perm-table thead {
     display: none;
   }
@@ -1593,7 +1593,7 @@
 /* Drawn as the Dropdown's field beside it (`.dd-field`), so the row is one height. */
 .oh-date {
   height: 2rem;
-  padding: 0 0.375rem 0 0.5rem;
+  padding: 0 var(--space-1-5) 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-chip);
   background: var(--bg-column);
@@ -1624,7 +1624,7 @@
   display: grid;
   grid-template-columns: 1.25rem minmax(0, 2.6fr) minmax(0, 1.1fr) 0.7fr 0.7fr 1fr 1fr 9.5rem;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   padding: 0.5625rem var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -1637,8 +1637,8 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  padding-top: 0.625rem;
-  padding-bottom: 0.625rem;
+  padding-top: var(--space-2-5);
+  padding-bottom: var(--space-2-5);
   background: var(--bg-card);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
@@ -1675,7 +1675,7 @@
 .org-people-person {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -1691,7 +1691,7 @@
   bottom: -1px;
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   border: 2px solid var(--bg-card);
   background: var(--chip-green);
 }
@@ -1708,7 +1708,7 @@
 .org-people-num {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-primary);
@@ -1717,7 +1717,7 @@
 .org-agent-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--border-default);
 }
 
@@ -1745,13 +1745,13 @@
 .org-people-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .org-tokens-open {
   height: 1.75rem;
   margin: 0;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-xs);
   background: var(--bg-card);
@@ -1776,7 +1776,7 @@
 
 .org-people-actions .org-deactivate {
   height: 1.75rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -1791,7 +1791,7 @@
 
 .org-people-actions .org-reactivate {
   height: 1.75rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-xs);
   background: var(--bg-card);
@@ -1803,7 +1803,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   padding: 2.5rem var(--space-5);
   text-align: center;
 }
@@ -1824,7 +1824,7 @@
 .org-people-empty-invite {
   height: 2rem;
   margin: 0;
-  padding: 0 0.875rem;
+  padding: 0 var(--space-3-5);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-control);
   background: var(--accent-bg);
@@ -1843,8 +1843,8 @@
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 1rem;
-  padding: 0.625rem var(--space-5) 0.875rem;
+  gap: var(--space-4);
+  padding: var(--space-2-5) var(--space-5) var(--space-3-5);
   border-top: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   line-height: var(--leading-small);
@@ -1865,16 +1865,16 @@
 .org-pending {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-5) var(--space-4);
 }
 
 .org-pending .org-invites {
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .org-pending .org-invites li {
-  padding: 0.6875rem 0.875rem;
+  padding: 0.6875rem var(--space-3-5);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-card);
 }
@@ -1886,7 +1886,7 @@
   height: 1.875rem;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--bg-column);
   font-size: var(--text-body);
   color: var(--text-muted);
@@ -1896,7 +1896,7 @@
   flex: none;
   height: 1.75rem;
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -1947,8 +1947,8 @@
 .org-dialog-head {
   display: flex;
   align-items: flex-start;
-  gap: 0.625rem;
-  padding: 1.125rem 1.25rem 0.25rem;
+  gap: var(--space-2-5);
+  padding: 1.125rem var(--space-4-5) var(--space-1);
 }
 
 .org-dialog-titles {
@@ -1964,7 +1964,7 @@
 }
 
 .org-dialog-sub {
-  margin: 0.125rem 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -1996,14 +1996,14 @@
 .org-dialog-body {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
-  padding: 0.875rem 1.25rem 1.125rem;
+  gap: var(--space-3-5);
+  padding: var(--space-3-5) var(--space-4-5) 1.125rem;
 }
 
 .org-dialog-field {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .org-dialog-label {
@@ -2017,7 +2017,7 @@
 .org-invite-emails {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.625rem 0.75rem;
+  padding: var(--space-2-5) var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-input);
@@ -2037,7 +2037,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .org-dialog-note {
@@ -2050,8 +2050,8 @@
 .org-dialog-foot {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4-5);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-column);
 }
@@ -2062,13 +2062,13 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .org-issued-list li {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .org-issued-to {
@@ -2087,7 +2087,7 @@
 
 .org-dialog .org-issued-url {
   display: block;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   background: var(--bg-column);
@@ -2098,7 +2098,7 @@
   user-select: all;
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .org-people-row {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
@@ -2287,7 +2287,7 @@
   flex: none;
   height: 1.75rem;
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -2349,7 +2349,7 @@
   min-width: 0;
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .org-invites li {
     flex-wrap: wrap;
   }
@@ -2450,7 +2450,7 @@
 .org-people-empty-clear {
   height: 2rem;
   margin: 0;
-  padding: 0 0.875rem;
+  padding: 0 var(--space-3-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -2545,7 +2545,7 @@
 }
 
 .perm-groups .perm-held {
-  padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + 1rem + var(--space-2));
+  padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + var(--space-4) + var(--space-2));
 }
 
 .perm-groups .perm-held[hidden] {
@@ -2563,7 +2563,7 @@
   border-color: var(--border-default);
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .org-scroll-hint {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
@@ -2718,7 +2718,7 @@
 }
 
 .perm-group-size {
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
   font-family: var(--font-mono);
   font-weight: var(--weight-normal);
   letter-spacing: 0;
@@ -2760,10 +2760,10 @@
 .org-status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.125rem 0.5rem;
+  gap: var(--space-1-5);
+  padding: var(--space-0-5) var(--space-2);
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
@@ -2774,7 +2774,7 @@
   content: '';
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--text-muted);
 }
 
@@ -2788,7 +2788,7 @@
 
 .org-steps {
   margin: 0 0 var(--space-3);
-  padding-left: 1.25rem;
+  padding-left: var(--space-4-5);
   max-width: 75ch;
   font-size: var(--text-body);
   color: var(--text-primary);
@@ -2811,7 +2811,7 @@
 
 /* People: Pending is not a role, so it stands apart from the role filters. */
 .org-segment-pending {
-  margin-left: 0.375rem;
+  margin-left: var(--space-1-5);
   position: relative;
 }
 
@@ -2829,9 +2829,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
+  gap: var(--space-2) var(--space-3);
   margin: 0;
-  padding: 0.625rem var(--space-5);
+  padding: var(--space-2-5) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--accent-bg);
   font-size: var(--text-body);
@@ -2878,7 +2878,7 @@
     grid-template-areas:
       'tick person actions'
       '. role seen';
-    row-gap: 0.375rem;
+    row-gap: var(--space-1-5);
   }
 
   .org-person > .org-people-tick {

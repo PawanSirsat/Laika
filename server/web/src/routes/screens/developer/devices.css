@@ -12,7 +12,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) 1.25rem 0;
+  padding: var(--space-4) var(--space-4-5) 0;
 }
 
 .devices-title {
@@ -24,20 +24,20 @@
 }
 
 .devices-intro {
-  margin: var(--space-2) 1.25rem 0;
+  margin: var(--space-2) var(--space-4-5) 0;
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
 
 .devices > .state {
-  margin: var(--space-4) 1.25rem;
+  margin: var(--space-4) var(--space-4-5);
 }
 
 .devices-list {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin: var(--space-3) 1.25rem var(--space-4);
+  margin: var(--space-3) var(--space-4-5) var(--space-4);
   padding: 0;
   list-style: none;
 }
@@ -80,7 +80,7 @@
 /* A word, never only a colour (§5.1). */
 .devices-unrecognised {
   flex: none;
-  padding: 0.125rem var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--chip-orange);
@@ -221,7 +221,7 @@
 
 .devices-dialog-list {
   margin: 0;
-  padding-left: 1.25rem;
+  padding-left: var(--space-4-5);
 }
 
 .devices-dialog-pending {
@@ -308,7 +308,7 @@
 /* A word, never only a colour (§5.1). */
 .devices-duplicate {
   flex: none;
-  padding: 0.125rem var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--chip-orange);

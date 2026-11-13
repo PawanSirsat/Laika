@@ -42,8 +42,8 @@
   display: flex;
   flex: none;
   align-items: flex-start;
-  gap: 0.625rem;
-  padding: 1.125rem 1.25rem 0.75rem;
+  gap: var(--space-2-5);
+  padding: 1.125rem var(--space-4-5) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -60,7 +60,7 @@
 }
 
 .ct-sub {
-  margin: 0.125rem 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -76,7 +76,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1rem 1.25rem 0.5rem;
+  padding: var(--space-4) var(--space-4-5) var(--space-2);
   overscroll-behavior: contain;
 }
 
@@ -89,7 +89,7 @@
 .ct-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0 1rem;
+  gap: 0 var(--space-4);
 }
 
 .ct-row .dd-trigger,
@@ -125,8 +125,8 @@
 
 /* The *created, but…* that no field can carry, at the form's foot. */
 .ct-form-error {
-  margin: 0 0 0.75rem;
-  padding: 0.625rem 0.75rem;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2-5) var(--space-3);
   border: 1px solid var(--overdue-border);
   border-radius: var(--radius-card);
   background: var(--bg-column);
@@ -138,15 +138,15 @@
 /* ---------------------------------------------------------------- the fold */
 
 .ct-more {
-  margin: 0.25rem 0 0.75rem;
+  margin: var(--space-1) 0 var(--space-3);
   border-top: 1px solid var(--border-subtle);
 }
 
 .ct-more-summary {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.75rem 0;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
@@ -192,7 +192,7 @@
 .ct-more-body {
   display: flex;
   flex-direction: column;
-  padding-top: 0.25rem;
+  padding-top: var(--space-1);
 }
 
 /* ----------------------------------------------------- what this delivers */
@@ -207,9 +207,9 @@
 .ct-ships {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  margin: 0.375rem 0 0.75rem;
-  padding: 0.75rem;
+  gap: var(--space-1-5);
+  margin: var(--space-1-5) 0 var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: var(--bg-column);
@@ -227,7 +227,7 @@
 .ct-ships-list {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -236,7 +236,7 @@
 .ct-ships-row {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .ct-ships-title {
@@ -273,7 +273,7 @@
 .ct-ships-add {
   align-self: flex-start;
   margin: 0;
-  padding: 0.25rem 0;
+  padding: var(--space-1) 0;
   border: none;
   background: transparent;
   font: inherit;
@@ -293,13 +293,13 @@
 .ct-blockers {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .ct-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -308,8 +308,8 @@
 .ct-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.125rem;
-  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5) var(--space-1) var(--space-0-5) var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   background: var(--bg-column);
@@ -326,8 +326,8 @@
   flex: none;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1.25rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4-5);
   border-top: 1px solid var(--border-subtle);
   border-radius: 0 0 var(--radius-column) var(--radius-column);
   background: var(--bg-column);
@@ -342,7 +342,7 @@
 
 .ct-foot-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* ------------------------------------------------------------------ phone */
@@ -362,14 +362,14 @@
   .ct-head,
   .ct-body,
   .ct-foot {
-    padding-right: 1rem;
-    padding-left: 1rem;
+    padding-right: var(--space-4);
+    padding-left: var(--space-4);
   }
 
   .ct-foot {
     border-radius: 0;
     /* Clear of the home indicator. */
-    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
   }
 
   .ct-row {

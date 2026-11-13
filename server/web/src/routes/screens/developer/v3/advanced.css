@@ -21,7 +21,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-4) 1.25rem 0;
+  padding: var(--space-4) var(--space-4-5) 0;
 }
 
 .dev-adv-intro {
@@ -47,7 +47,7 @@
 
 /* The list's label, quieter than the card's title it sits under. */
 .dev-adv-list-title {
-  margin: var(--space-2) 1.25rem 0;
+  margin: var(--space-2) var(--space-4-5) 0;
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   letter-spacing: 0.07em;
@@ -71,7 +71,7 @@
 }
 
 .dev-adv-error {
-  margin: 0 1.25rem;
+  margin: 0 var(--space-4-5);
 }
 
 .dev-adv-expiry {
@@ -80,7 +80,7 @@
 
 /* One line, not a box: each legacy row already says how to move it. */
 .dev-adv-legacy-note {
-  margin: 0 1.25rem;
+  margin: 0 var(--space-4-5);
   font-size: var(--text-small);
   line-height: 1.5;
   color: var(--text-secondary);
@@ -106,7 +106,7 @@
    card the rows are divided instead — a card of cards was the complaint. */
 .dev-advanced .tok-list {
   gap: 0;
-  margin: 0 1.25rem;
+  margin: 0 var(--space-4-5);
 }
 
 .dev-advanced .tok-row {
@@ -120,7 +120,7 @@
 /* A phone: the name keeps the row's first line with its `⋯` beside it, and
    what the row says about itself wraps under both — the name no longer breaks
    at its hyphen to make room for a menu that then sat on a line of its own. */
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .dev-advanced .tok-row-main {
     flex: 1 1 0;
     flex-wrap: wrap;
@@ -139,7 +139,7 @@
    form is a well, not a second card. */
 .dev-advanced .tok-reveal,
 .dev-advanced .tok-form {
-  margin-inline: 1.25rem;
+  margin-inline: var(--space-4-5);
 }
 
 .dev-advanced .tok-form {
@@ -148,7 +148,7 @@
 }
 
 .dev-adv-fold {
-  margin: 0 1.25rem;
+  margin: 0 var(--space-4-5);
 }
 
 /* ------------------------------------------------- the activity card, compact */
@@ -182,7 +182,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 var(--space-3);
-  padding: var(--space-3) 0 var(--space-3) 1.25rem;
+  padding: var(--space-3) 0 var(--space-3) var(--space-4-5);
   list-style: none;
   cursor: pointer;
   border-radius: var(--radius-xs);
@@ -241,7 +241,7 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
-  padding: 0 0 var(--space-4) 1.25rem;
+  padding: 0 0 var(--space-4) var(--space-4-5);
 }
 
 .dev-fold-body > * {
