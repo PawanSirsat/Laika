@@ -45,7 +45,8 @@ Overdue lane, never flagged in its original cell.
       test seen red.
 - [x] UI only, no new dependency, no new EventSource, theme and motion tokens
       only, both themes, 390 and 1440, Tooltip and Icon on icon buttons.
-- [x] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+      **Not met as run:** lint 0, format 0, `pnpm test` 1 — see the log.
 
 ## Hand-off note (SHELL, 2026-11-13)
 
