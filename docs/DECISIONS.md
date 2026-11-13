@@ -7424,3 +7424,70 @@ and a Total of hours and *N / M days*.
 8. **Leave and holidays are deferred** to LAI-1176: the organisation has no dated
    holidays yet, and away periods are neither backdatable nor kept past 30 days. Until then a
    holiday or a day on leave reads as a working day with nothing on it.
+
+## D-149 — Leave and holidays come from the organisation's HR system
+
+**Date:** 2026-11-13 · **Decided by:** Pawan (owner), at Andrea's request; recorded by
+CHIEF (Belka). Tasks LAI-1180 – LAI-1185. Amends §13.4, D-131 item 1 for leave only, and
+D-148 items 5 and 8; supersedes LAI-1176.
+
+**Context.** Kvell keeps leave and public holidays in **Clan**, its HR system (a
+Worksuite build by Froiden), which has a REST API at `https://<company>.clan.biz/api/v1`
+— Sanctum bearer tokens from an email-and-password login, about a year long, no API keys,
+no OAuth, **no webhooks**. Laika has no holidays at all and only the away periods a person
+types (D-131), deleted 30 days after they end, so the Time logging grid (D-148) marks a
+public holiday or a week of leave as ✕, and My day calls the day *no signal*. LAI-1176
+planned owner-typed holidays and backdatable away periods; the leave is already recorded,
+approved, in Clan, and typing it twice is the problem, not the fix.
+
+**Decision.** Laika reads holidays and leave from the organisation's HR system and keeps
+them; it never writes to it.
+
+1. **A fourth outbound call.** §13.4 lists the only calls Laika makes; the organisation's
+   **configured HR source** joins them — **read-only `GET`s**, plus the one sign-in that
+   makes the token. Off until an owner or admin connects it (`org.hr.configure`, session
+   only). The person connecting gives the HR system's address and an account's email and
+   password once; Laika signs in, keeps **only the token**, encrypted as D-009's provider key
+   is (purpose `clan_api_token`), never returned, never logged, shown as its last four and
+   its expiry, and warns 30 days before it lapses. **The password is never stored.** A
+   two-factor code, when the account has one, is asked for in the same flow. Clan is the
+   only provider today; the shape is a provider, not a product.
+2. **What Laika keeps:** each holiday's day, name and scope (the departments or
+   designations it covers, or everyone); each leave day's person, date, part (whole day,
+   morning, afternoon), type name and state (approved or pending). **Never** the reason,
+   balances, approvers, attachments or anything about leave that was rejected or cancelled.
+   Laika never creates, approves or cancels leave; that stays in Clan.
+3. **Clan is the record for leave.** Away periods stay what D-131 made them — the person's
+   own declaration, kept as they are — and **LAI-1176's change to them is dropped**: no
+   13-month retention, no backdating. Imported leave is a separate record that says where it
+   came from.
+4. **People are matched by email**, exact and lowercased, at every sync; an owner or admin
+   can map a Clan person to a member, or mark them *not on Laika*, and that choice is never
+   overwritten by the email match (the `solidtime_people` precedent, D-088). Leave of a
+   person with no member is counted and never stored against anyone. Laika keeps the Clan
+   person's name and department, not their email.
+5. **Visibility.** Holidays are the organisation's and every member sees them. **Leave is
+   shown wherever the person's availability is** (D-137) — as *On leave* or *Leave
+   requested* — and its **type** (Annual, Sick, …) only to the person, owners, admins and
+   holders of *See everyone's analytics*. A co-worker or a space's lead never sees why.
+6. **Not due.** In the Time logging grid a holiday that covers the person, or approved
+   whole-day leave, owes nothing; **approved half-day leave owes half the threshold**
+   (`threshold_minutes / 2`); pending leave changes nothing. Time logged on such a day still
+   counts toward the month's hours and never toward days, as D-148 item 5 already says of a
+   day off. D-148 item 8 is closed by this.
+7. **Sync.** Every 30 minutes, once at boot, and on *Sync now*, over **1 January last year
+   to 31 December next year**. A sync changes Laika only when it read every page; a holiday
+   or leave day missing from a complete read, rejected or cancelled since, or whose person
+   is unmapped, is stamped `removed_at` and no longer read — **never hard-deleted**. A run
+   never overlaps another. Its time, counts and last error are on the connection for owners
+   and admins to see; a refused token reads *connect again*. Disconnecting removes the token
+   and keeps the last synced days.
+8. **Manual holidays stay.** Owners and admins may add and remove holidays of their own
+   under *Set the organisation's Time setting* (`org.time.set`); a manual holiday wins over
+   Clan's on the same day, and Clan's are not removable in Laika.
+
+**Consequences.** Laika depends on a Clan account the organisation provisions — one whose
+role sees everyone's leave (`view_leave = all`) — and on its token being renewed yearly; a
+lapsed token leaves the last synced days in place and says so. A holiday's scope is only as
+good as Clan's: when Clan sends none, every holiday is everyone's. The colours of leave types
+in Clan are not used; Laika draws holidays and leave in its own tokens.
