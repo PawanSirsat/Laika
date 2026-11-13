@@ -3824,13 +3824,15 @@ or added by an owner or admin.
 | `label` | 1–120 (CHECK) |
 | `source` | `manual` \| `clan` (CHECK) |
 | `source_ref` | nullable — the HR system's id; unique with `source` where present |
-| `scope_json` | nullable JSON — `{ "departments": [...], "designations": [...] }` of `hr_people` refs; null is everyone |
+| `scope_json` | nullable JSON — `{ "departments": [...], "designations": [...] }` of `hr_people` refs; null is everyone the HR system lists |
 | `created_by` | nullable, FK `users`, set null — the owner or admin who added a manual one; null for synced |
 | `created_at`, `updated_at` | |
 | `removed_at` | nullable — no longer in the HR system, or removed by an owner; such rows are never read |
 
-Index `(day)`. **A holiday covers a person** when its scope is null or names
-their `hr_people` department or designation. **A manual holiday wins** over a
+Index `(day)`. **A manual holiday covers every member. A synced one covers a
+person only when `hr_people` matches them**, and then when its scope is null or
+names their department or designation — the HR system's holidays are its own
+people's (D-149 item 2). **A manual holiday wins** over a
 synced one on the same day; at most one live manual holiday per day.
 
 ### 4.91 `leave_days`
@@ -4277,13 +4279,13 @@ POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confi
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/hr                        the HR connection → { status: off | pending_2fa | connected, provider, base_url, account_email, token_last4, token_expires_at, expiring_soon, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result, people: [{ external_id, name, user, matched_by }] }   (owner, admin; session only; D-149, LAI-1181)
-POST   /api/v1/org/hr/connect                body { base_url, email, password } — signs in once and keeps only the token → the connection, or status pending_2fa with two_factor.methods; 422 clan_login_failed, 502 clan_unreachable   (owner, admin; session only)
-POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes a two-factor sign-in → the connection; 409 two_factor_expired   (owner, admin; session only)
-POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
+POST   /api/v1/org/hr/connect                body { base_url, email, password } — signs in once and keeps only the token → the connection, or status pending_2fa with two_factor.methods; 422 unprocessable reason clan_login_failed, 503 unavailable reason clan_unreachable   (owner, admin; session only)
+POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes a two-factor sign-in → the connection; 409 conflict reason two_factor_expired   (owner, admin; session only)
+POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } — map a person, or null for not on Laika → the connection   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
-POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 holiday_exists   DELETE .../:id → 204; a synced one is 409 holiday_from_clan   (owner, admin; session only)
+POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
 GET    /api/v1/org/overview                  people seen this week and open / in review / blocked / overdue counts over the spaces the caller can read → { people, tasks }   (viewer+; LAI-986)
 GET    /api/v1/org/permissions               what each org role is granted → { roles, capabilities, grants, owner_locked, updated_at, updated_by }   (viewer+; LAI-958)

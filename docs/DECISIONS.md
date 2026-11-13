@@ -7453,10 +7453,15 @@ them; it never writes to it.
    two-factor code, when the account has one, is asked for in the same flow. Clan is the
    only provider today; the shape is a provider, not a product.
 2. **What Laika keeps:** each holiday's day, name and scope (the departments or
-   designations it covers, or everyone); each leave day's person, date, part (whole day,
+   designations it covers); each leave day's person, date, part (whole day,
    morning, afternoon), type name and state (approved or pending). **Never** the reason,
    balances, approvers, attachments or anything about leave that was rejected or cancelled.
-   Laika never creates, approves or cancels leave; that stays in Clan.
+   Laika never creates, approves or cancels leave; that stays in Clan. **A synced holiday
+   covers only the people the HR system lists** — members matched in it, narrowed further
+   by the holiday's departments or designations when it names any. Kvell's Clan is
+   *CodeSage India Private Limited* (`codesage.clan.biz`, zone `Asia/Kolkata`), so its
+   holidays are India's and never reach a member who is not in it; a holiday for everyone
+   is a manual one (item 8).
 3. **Clan is the record for leave.** Away periods stay what D-131 made them — the person's
    own declaration, kept as they are — and **LAI-1176's change to them is dropped**: no
    13-month retention, no backdating. Imported leave is a separate record that says where it
@@ -7484,10 +7489,12 @@ them; it never writes to it.
    and keeps the last synced days.
 8. **Manual holidays stay.** Owners and admins may add and remove holidays of their own
    under *Set the organisation's Time setting* (`org.time.set`); a manual holiday wins over
-   Clan's on the same day, and Clan's are not removable in Laika.
+   Clan's on the same day, and Clan's are not removable in Laika. **A manual holiday covers
+   every member.**
 
 **Consequences.** Laika depends on a Clan account the organisation provisions — one whose
 role sees everyone's leave (`view_leave = all`) — and on its token being renewed yearly; a
 lapsed token leaves the last synced days in place and says so. A holiday's scope is only as
-good as Clan's: when Clan sends none, every holiday is everyone's. The colours of leave types
+good as Clan's: when Clan sends none, a synced holiday is everyone's *in Clan*, never the
+rest of the organisation's. The colours of leave types
 in Clan are not used; Laika draws holidays and leave in its own tokens.
