@@ -137,7 +137,7 @@
 }
 
 .dayline-key-drafted {
-  border: 1.5px dashed var(--accent-border);
+  border: 1.5px dashed var(--accent);
   background: var(--accent-bg);
 }
 
@@ -152,7 +152,7 @@
 
 .dayline-key-gap {
   border: 1.5px dotted var(--text-muted);
-  background: var(--bg-card);
+  background: transparent;
 }
 
 .dayline-nav {
@@ -1089,7 +1089,11 @@
   background: var(--text-secondary);
 }
 
-/* A gap: dotted and empty, clickable to fill. A break: quiet green, never counted. */
+/*
+ * A gap: dotted and empty — the hour grid shows through it, so it reads as
+ * nothing recorded rather than as a pale draft (LAI-1215). Clickable to fill.
+ * A break: quiet green, never counted.
+ */
 .dayline-gap,
 .dayline-break {
   position: absolute;
@@ -1105,11 +1109,11 @@
   overflow: hidden;
   border: 1.5px dotted var(--text-muted);
   border-radius: var(--radius-card);
-  background: var(--bg-card);
+  background: transparent;
   font: inherit;
   font-size: var(--text-small);
   text-align: left;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   white-space: nowrap;
   cursor: pointer;
   transition: var(--transition);
@@ -1175,7 +1179,8 @@
   justify-content: center;
   gap: 2px;
   overflow: hidden;
-  border: 1.5px dashed var(--accent-border);
+  /* A draft: outlined in the accent itself, dashed — a proposal, not yet a record (LAI-1215). */
+  border: 1.5px dashed var(--accent);
   border-radius: inherit;
   background: var(--accent-bg);
   font: inherit;
