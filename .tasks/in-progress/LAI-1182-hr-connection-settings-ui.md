@@ -31,10 +31,17 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
       `GithubWebhookSection.tsx`:
   - off: one line on what it does ("Holidays and leave from Clan, every 30
     minutes. Laika keeps the sign-in token, never the password.") and
-    **Connect Clan** opening a form: company URL (placeholder
-    `https://codesage.clan.biz`, the bare origin accepted), email, password;
-    on `pending_2fa` a code field and the method; errors in words by
-    `details.reason` (`clan_login_failed`, `clan_unreachable`,
+    **Connect Clan** opening a form that offers both ways (CHIEF's final
+    contract, docs head `1f8c7f0f`), signing in first: **Sign in with the
+    account** — Clan address (placeholder `https://codesage.clan.biz`, the
+    bare origin accepted), email, password, then on `pending_2fa` a code
+    field and the method — or **Paste a token** — Clan address, Token
+    (password-type, never pre-filled or echoed), Expires on (optional); the
+    line "Use a dedicated, read-only Clan account (for example Forge) — never
+    your own login. Laika keeps only a sign-in key, never the password.";
+    `POST /org/hr/connect` with `{ base_url, email, password }` or
+    `{ base_url, token, expires_on? }`; errors in words by `details.reason`
+    (`clan_login_failed`, `clan_token_refused`, `clan_unreachable`,
     `two_factor_expired`, and every other reason the server names).
   - connected: "Connected as {account_name} ({account_email}) · token
     …{last4}", with "renews by {date}" only when the end is known and a
@@ -90,6 +97,7 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
   `view-type-drift` → *the client declares nothing the server does not send*:
   `HrSource.account_name`, `HrSource.sees_everyone` and
   `HrSource.sees_departments` "is declared and HrSourceView does not send it".
-  CHIEF asked for them; LAI-1181's working tree adds them. If the owner picks
-  the pasted token, `account_email`, `two_factor` and `pending_2fa` leave the
-  server, and this side follows (the connect form is held as it is until then).
+  CHIEF asked for them. LAI-1181's `eb8341df` has them, but is the
+  token-only version (no `pending_2fa`, `account_email`, `two_factor`), from
+  before CHIEF's final contract offered both ways; this branch waits for the
+  head that matches it before merging again.
