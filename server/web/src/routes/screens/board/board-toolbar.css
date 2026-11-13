@@ -9,7 +9,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -23,7 +23,7 @@
   align-items: center;
   gap: 0.3125rem;
   height: 40px;
-  padding: 0 14px;
+  padding: 0 var(--space-3-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: var(--bg-card);
@@ -59,7 +59,7 @@
   background: var(--accent);
   color: var(--on-accent);
   border-radius: var(--radius-pill);
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   min-width: 0.875rem;
   text-align: center;
 }
@@ -119,7 +119,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  padding: 0.625rem 0.75rem 0.75rem;
+  padding: var(--space-2-5) var(--space-3) var(--space-3);
 }
 
 .bt-pop-narrow {
@@ -145,8 +145,8 @@
   /* The width is the whole box, padding included, or it overhangs a phone. */
   box-sizing: border-box;
   width: min(30rem, calc(100vw - 1rem));
-  gap: 0.75rem;
-  padding: 0.75rem 0.875rem 0.875rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3-5) var(--space-3-5);
   max-height: calc(100vh - 9rem);
   overflow-y: auto;
 }
@@ -154,8 +154,8 @@
 .bt-pop-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 0.5rem;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -179,7 +179,7 @@
 .bt-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.625rem 0.75rem;
+  gap: var(--space-2-5) var(--space-3);
 }
 
 /* A field and, when it is set, its reset — which sits on the label's line. */
@@ -191,7 +191,7 @@
 .bt-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .bt-label {
@@ -225,7 +225,7 @@
   content: '';
   width: 0.375rem;
   height: 0.375rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent);
 }
 
@@ -280,7 +280,7 @@
 /* Quick filters: the five yes/no options as one group of pills. */
 .bt-quick {
   margin: 0;
-  padding: 0.625rem 0 0;
+  padding: var(--space-2-5) 0 0;
   border: 0;
   border-top: 1px solid var(--border-subtle);
   min-width: 0;
@@ -307,7 +307,7 @@
   clear: both;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 /*
@@ -372,7 +372,7 @@
 .bt-radio {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-body);
   color: var(--text-primary);
   cursor: pointer;
@@ -391,7 +391,7 @@
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-chip);
-  padding: 0.125rem 0.375rem;
+  padding: var(--space-0-5) var(--space-1-5);
   cursor: pointer;
 }
 
@@ -418,8 +418,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
-  padding-top: 0.5rem;
+  gap: var(--space-1-5);
+  padding-top: var(--space-2);
   min-width: 0;
 }
 
@@ -434,16 +434,16 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  margin-right: 0.125rem;
+  margin-right: var(--space-0-5);
 }
 
 .bt-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   height: 1.75rem;
   max-width: 100%;
-  padding: 0 0.375rem 0 0.625rem;
+  padding: 0 var(--space-1-5) 0 var(--space-2-5);
   font: inherit;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
@@ -469,7 +469,7 @@
   justify-content: center;
   width: 1.125rem;
   height: 1.125rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   font-size: var(--text-body);
   line-height: 1;
 }
@@ -492,7 +492,7 @@
   color: var(--text-secondary);
   background: none;
   border: 0;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -503,7 +503,7 @@
 }
 
 .bt-note {
-  margin: 0.25rem 0 0;
+  margin: var(--space-1) 0 0;
   font-size: var(--text-small);
   line-height: 1.45;
   color: var(--text-muted);
@@ -564,13 +564,13 @@
  * of an overflow that no amount of `overflow` fixes.
  *
  * **Keyed to the row, not the window** (LAI-730). It was `@media (max-width:
- * 47.5rem)`, which never applied with the sidebar open — the row is 212px
+ * 760px)`, which never applied with the sidebar open — the row is 212px
  * narrower than the window there — so at 920px the toolbar's own labels left
- * search 26px. `.board-bar` is the container (below); 50rem of row is where
+ * search 26px. `.board-bar` is the container (below); 800px of row is where
  * the labelled form, crowded (six faces, `Group: Assignee`, a sprint's
  * Filter badge and the stat pill), still leaves search 120px.
  */
-@container board-bar (max-width: 50rem) {
+@container board-bar (max-width: 800px) {
   /* A pixel off each gap and the face pile's own margin: on *All sprints*,
      whose scope is the widest, that is what takes search past 120px at 920. */
   .bt {
@@ -583,7 +583,7 @@
 
   .bt-button {
     gap: 0;
-    padding: 0 0.375rem;
+    padding: 0 var(--space-1-5);
   }
 
   /* The label goes; the icon, the badge and the accessible name stay. */
@@ -624,7 +624,7 @@
 }
 
 /* A phone: one column of selects. */
-@media (max-width: 30rem) {
+@media (max-width: 480px) {
   .bt-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -651,7 +651,7 @@
    * *add* to that margin and push the row out of line with the lanes, which is
    * the one thing it must not do.
    */
-  padding: 0.5rem 0;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border-subtle);
   min-width: 0;
   /* The narrow form above follows this row's width (LAI-730). */
@@ -675,9 +675,9 @@
 .bt-search {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   height: 40px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   /* Card surface — the owner tried the darker input step and reverted it. */
@@ -714,10 +714,10 @@
   display: inline-flex;
   align-items: center;
   height: 36px;
-  padding: 0 10px 0 4px;
+  padding: 0 var(--space-2-5) 0 var(--space-1);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
-  margin-inline: 2px 4px;
+  margin-inline: var(--space-0-5) var(--space-1);
 }
 
 .bt-member,
@@ -729,7 +729,7 @@
   height: 28px;
   /* The pill must never squeeze a circle into an oval. */
   flex: none;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   /* The gap ring between overlapping circles — the canvas, not a colour. */
   border: 2px solid var(--bg-canvas);
   cursor: pointer;
@@ -738,7 +738,7 @@
 
 /* Overlapped, as the reference has them — the first one keeps its full edge. */
 .bt-member + .bt-member {
-  margin-left: -8px;
+  margin-left: calc(var(--space-2) * -1);
 }
 
 /* "+1" is a figure, not another face: plain muted text, no circle. */
@@ -749,7 +749,7 @@
   color: var(--text-muted);
   font-weight: var(--weight-semibold);
   cursor: default;
-  padding-inline: 6px 0;
+  padding-inline: var(--space-1-5) 0;
 }
 
 /*
@@ -766,8 +766,8 @@
 /* Hidden columns (N): the icon and its count, side by side (LAI-739). */
 .bt-hidden-columns {
   width: auto;
-  gap: 0.25rem;
-  padding: 0 0.5rem;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
 }
 
 .bt-hidden-count {
@@ -783,7 +783,7 @@ button.bt-member-more {
   font-family: inherit;
   font-size: var(--text-small);
   border-radius: var(--radius-xs);
-  padding-inline: 6px 2px;
+  padding-inline: var(--space-1-5) var(--space-0-5);
 }
 
 button.bt-member-more:hover,
@@ -807,7 +807,7 @@ button.bt-member-more:focus-visible {
   box-sizing: border-box;
   width: min(20rem, calc(100vw - 1rem));
   max-height: min(26rem, calc(100dvh - 9rem));
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .bt-mp-total {
@@ -819,10 +819,10 @@ button.bt-member-more:focus-visible {
 .bt-mp-search {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex: none;
   height: 2rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-input);
@@ -848,7 +848,7 @@ button.bt-member-more:focus-visible {
 
 .bt-mp-empty {
   margin: 0;
-  padding: 0.75rem 0.25rem;
+  padding: var(--space-3) var(--space-1);
   font-size: var(--text-body);
   color: var(--text-muted);
 }
@@ -866,9 +866,9 @@ button.bt-member-more:focus-visible {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   height: 2.75rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
@@ -895,7 +895,7 @@ button.bt-member-more:focus-visible {
   flex: none;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -908,7 +908,7 @@ button.bt-member-more:focus-visible {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .bt-mp-name,
@@ -979,7 +979,7 @@ button.bt-member-more:focus-visible {
   right: 4px;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent);
 }
 
@@ -990,8 +990,8 @@ button.bt-member-more:focus-visible {
 .bt-menu-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4375rem 0.625rem;
+  gap: var(--space-2);
+  padding: 0.4375rem var(--space-2-5);
 }
 
 .bt-menu-item:focus-visible {
@@ -1009,9 +1009,9 @@ button.bt-member-more:focus-visible {
   flex: 1 1 0;
   min-width: 16rem;
   flex-wrap: nowrap;
-  gap: 0.5rem;
-  margin-inline-start: 0.25rem;
-  padding-inline-start: 0.625rem;
+  gap: var(--space-2);
+  margin-inline-start: var(--space-1);
+  padding-inline-start: var(--space-2-5);
   border-inline-start: 1px solid var(--border-subtle);
   min-width: 0;
   font-size: var(--text-small);
@@ -1022,7 +1022,7 @@ button.bt-member-more:focus-visible {
 .bt-scope-text {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0;
   overflow: hidden;
 }
@@ -1043,7 +1043,7 @@ button.bt-member-more:focus-visible {
 .bt-scope-all {
   border: 0;
   background: none;
-  padding: 0.125rem 0.25rem;
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--radius-chip);
   color: var(--accent);
   font: inherit;
@@ -1092,13 +1092,13 @@ button.bt-member-more:focus-visible {
  * with the header's own gutter rather than the toolbar it used to sit inside.
  */
 #space-band-slot > .bt-chips {
-  padding: 0.5rem 1.125rem;
+  padding: var(--space-2) 1.125rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 @media (max-width: 900px) {
   #space-band-slot > .bt-chips {
-    padding-inline: 16px;
+    padding-inline: var(--space-4);
   }
 }
 

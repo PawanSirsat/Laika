@@ -680,25 +680,41 @@
   --weight-bold: 700;
   --weight-heavy: 800;
 
-  /* 4px grid. */
+  /* 4px grid, with the half steps the UI actually uses (LAI-1220). The
+     half steps (`-0-5`, `-1-5` …) are 2px apart and exist because the census
+     found 6, 10 and 14px hundreds of times each; moving those onto the whole
+     steps would have shifted every layout. Guard: spacing-tokens.test.ts. */
+  --space-0-5: 0.125rem;
   --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
   --space-2: 0.5rem;
+  --space-2-5: 0.625rem;
   --space-3: 0.75rem;
+  --space-3-5: 0.875rem;
   --space-4: 1rem;
+  --space-4-5: 1.25rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
 
-  /* The prototype's radius ladder: chip 4 · count 5 · blocked 6 · card 9 ·
-     column 12 · pill. Controls (buttons, search) share the card's 9. */
+  /* The prototype's radius ladder: hairline 2 · chip 4 · count 5 · blocked 6 ·
+     card 9 · column 12 · sheet 16 · pill · round. Controls (buttons, search)
+     share the card's 9. Every `border-radius` in src/ is one of these, `0` or
+     `inherit` — radius-tokens.test.ts refuses anything else (LAI-1220). */
+  --radius-hairline: 2px;
   --radius-chip: 4px;
   --radius-xs: 5px;
+  --radius-sm: 6px;
   --chip-padding: 3px 5px;
   --chip-border: var(--chip-neutral-border);
   --chip-bg: var(--chip-neutral-bg);
   --radius-card: 9px;
   --radius-column: 12px;
   --radius-control: 9px;
+  --radius-sheet: 16px;
   --radius-pill: 999px;
+  --radius-round: 50%;
 
   /* Colour only — the transition every control shares. Cards gliding between
      lanes is the one movement, and lives in board-motion.css (D-071). */

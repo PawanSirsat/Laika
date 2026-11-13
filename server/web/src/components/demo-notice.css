@@ -21,5 +21,5 @@
   color: var(--chip-orange);
   border: 1px solid var(--chip-orange-border);
   border-radius: var(--radius-chip);
-  padding: 0.125rem 0.3125rem;
+  padding: var(--space-0-5) 0.3125rem;
 }

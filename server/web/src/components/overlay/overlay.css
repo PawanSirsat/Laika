@@ -195,7 +195,7 @@ html.overlay-scroll-locked.overlay-scroll-gutter {
  * buttons full width with the action on top — the confirmation's shape. A
  * large dialog takes the whole screen.
  */
-@media (max-width: 34rem) {
+@media (max-width: 544px) {
   .overlay-layer {
     align-items: flex-end;
     padding: 0;
@@ -254,7 +254,7 @@ html.overlay-scroll-locked.overlay-scroll-gutter {
 }
 
 /* The sheet rises further, from the edge it sits on. */
-@media (max-width: 34rem) {
+@media (max-width: 544px) {
   @starting-style {
     .overlay-dialog > :not([data-dropdown-panel]) {
       transform: translateY(var(--overlay-sheet-rise));

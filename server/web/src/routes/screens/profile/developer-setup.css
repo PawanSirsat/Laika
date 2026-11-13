@@ -7,7 +7,7 @@
 .ds {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -15,7 +15,7 @@
 .ds-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -27,9 +27,9 @@
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
-  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  padding: 0.1875rem var(--space-2-5) 0.1875rem var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
@@ -52,7 +52,7 @@
 .ds-done,
 .ds-error {
   margin: 0;
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   border-radius: var(--radius-control);
   font-size: var(--text-body);
   color: var(--text-primary);
@@ -77,7 +77,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem 1rem;
+  gap: var(--space-3) var(--space-4);
   border: 1px solid var(--overdue-border);
   background: var(--blocked-bg);
 }
@@ -98,7 +98,7 @@
 }
 
 .ds-retry {
-  padding: 0.3125rem 0.875rem;
+  padding: 0.3125rem var(--space-3-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -110,9 +110,9 @@
 .ds-card {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 1rem 1.125rem 1.125rem;
+  padding: var(--space-4) 1.125rem 1.125rem;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
@@ -124,7 +124,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.375rem 0.625rem;
+  gap: var(--space-1-5) var(--space-2-5);
   min-width: 0;
 }
 
@@ -191,7 +191,7 @@
 .ds-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -226,15 +226,15 @@
   margin: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .ds-tile {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
-  padding: 0.5625rem 0.6875rem 0.625rem;
+  padding: 0.5625rem 0.6875rem var(--space-2-5);
   background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
@@ -268,8 +268,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.625rem 1rem;
-  padding: 0.75rem 0.875rem;
+  gap: var(--space-2-5) var(--space-4);
+  padding: var(--space-3) var(--space-3-5);
   border-radius: var(--radius-control);
 }
 
@@ -286,7 +286,7 @@
 .ds-health {
   display: flex;
   align-items: flex-start;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-width: 0;
   flex: 1 1 18rem;
   font-size: var(--text-body);
@@ -298,7 +298,7 @@
   place-items: center;
   width: 1.75rem;
   height: 1.75rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--bg-card);
 }
 
@@ -315,7 +315,7 @@
 .ds-lead-text {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -331,7 +331,7 @@
 
 .ds-next-cta {
   flex: none;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   text-decoration: none;
 }
 
@@ -345,7 +345,7 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: var(--text-body);
 }
 
@@ -353,7 +353,7 @@
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
   color: var(--chip-orange);
 }
@@ -378,7 +378,7 @@
 .ds-manage {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin-left: auto;
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
@@ -417,7 +417,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1rem;
+  gap: var(--space-2) var(--space-4);
 }
 
 .ds-empty-actions .ds-manage {
@@ -429,7 +429,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
 }
 
 .ds-dev-tool {
@@ -443,7 +443,7 @@
 .ds-dev-tool-dot {
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--text-muted);
 }
 
@@ -458,19 +458,19 @@
 
 .ds-dev-tool-danger .ds-dev-tool-dot {
   background: var(--overdue);
-  border-radius: 1px;
+  border-radius: var(--radius-hairline);
 }
 
 .ds-dev-tool-warn .ds-dev-tool-dot {
   background: var(--chip-orange);
-  border-radius: 1px;
+  border-radius: var(--radius-hairline);
 }
 
 .ds-flags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.125rem;
+  gap: var(--space-1);
+  margin-top: var(--space-0-5);
 }
 
 .ds-row-flagged {
@@ -491,7 +491,7 @@
 .ds-chip {
   display: inline-flex;
   align-items: center;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-pill);
   font-size: var(--text-small);
@@ -545,10 +545,10 @@
 
 .ds-row {
   display: grid;
-  column-gap: 0.75rem;
-  row-gap: 0.375rem;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1-5);
   align-items: center;
-  padding: 0.5rem 0.375rem;
+  padding: var(--space-2) var(--space-1-5);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   color: var(--text-primary);
@@ -594,7 +594,7 @@
 }
 
 .ds-tok-table + .ds-tok-table {
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
 }
 
 .ds-cell-menu {
@@ -604,7 +604,7 @@
 .ds-fp {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .ds-lbl {
@@ -615,7 +615,7 @@
 .ds-expand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 100%;
   min-height: 2.5rem;
   padding: 0;
@@ -641,14 +641,14 @@
 }
 
 .ds-row-open {
-  padding: 0.5rem 0.375rem 0.75rem 2.25rem;
+  padding: var(--space-2) var(--space-1-5) var(--space-3) 2.25rem;
   border-bottom: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-column) 45%, transparent);
   font-size: var(--text-body);
 }
 
 .ds-hidden-row {
-  padding: 0.625rem 0.375rem;
+  padding: var(--space-2-5) var(--space-1-5);
   font-size: var(--text-body);
   font-style: italic;
   color: var(--text-muted);
@@ -658,8 +658,8 @@
   align-self: flex-start;
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0;
+  gap: var(--space-1-5);
+  padding: var(--space-1) 0;
   border: 0;
   background: none;
   font-size: var(--text-body);
@@ -671,11 +671,11 @@
 .ds-pending {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .ds-pending {
-  padding-top: 0.5rem;
+  padding-top: var(--space-2);
   border-top: 1px dashed var(--border-default);
 }
 
@@ -683,19 +683,19 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.625rem;
+  gap: var(--space-1) var(--space-2-5);
   font-size: var(--text-body);
 }
 
 /* Your own pending requests (LAI-1156): Approve and Decline, never a code. */
 .ds-pending-actions {
   display: inline-flex;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .ds-approve,
 .ds-decline {
-  padding: 0.25rem 0.75rem;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   font-family: inherit;
@@ -735,11 +735,11 @@
 
 .ds-revoked-list {
   margin: 0;
-  padding: 0 0 0 1.25rem;
+  padding: 0 0 0 var(--space-4-5);
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -756,21 +756,21 @@
 .ds-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .ds-tool-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .ds-tool {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-width: 0;
-  padding: 0.75rem 0.875rem;
+  padding: var(--space-3) var(--space-3-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -787,19 +787,19 @@
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.875rem;
+  gap: var(--space-1) var(--space-3-5);
   font-size: var(--text-small);
 }
 
 .ds-space {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-weight: var(--weight-semibold);
   background: var(--chip-neutral-bg);
   border: 1px solid var(--chip-neutral-border);
   border-radius: var(--radius-chip);
-  padding: 0.0625rem 0.375rem;
+  padding: 0.0625rem var(--space-1-5);
   white-space: nowrap;
 }
 
@@ -807,7 +807,7 @@
   margin: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.375rem 0.75rem;
+  gap: var(--space-1-5) var(--space-3);
 }
 
 .ds-facts dt {
@@ -827,8 +827,8 @@
 .ds-seg {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-column);
@@ -836,7 +836,7 @@
 
 .ds-seg button {
   height: 1.75rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -859,7 +859,7 @@
   display: flex;
   align-items: center;
   height: 2rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-input);
@@ -879,7 +879,7 @@
 
 .ds-activity {
   margin: 0;
-  padding: 0 0 0 0.375rem;
+  padding: 0 0 0 var(--space-1-5);
   list-style: none;
   display: flex;
   flex-direction: column;
@@ -891,8 +891,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.125rem 0.75rem;
-  padding: 0.375rem 0 0.375rem 1rem;
+  gap: var(--space-0-5) var(--space-3);
+  padding: var(--space-1-5) 0 var(--space-1-5) var(--space-4);
   font-size: var(--text-body);
 }
 
@@ -909,7 +909,7 @@
   top: 0.75rem;
   width: 0.5625rem;
   height: 0.5625rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--bg-card);
 }
@@ -929,7 +929,7 @@
 .ds-confirm {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .ds-confirm-head {
@@ -943,7 +943,7 @@
 .ds-confirm-stops {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   padding-left: 1.125rem;
   color: var(--text-primary);
 }
@@ -954,7 +954,7 @@
 }
 
 .ds-confirm-notify {
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-control);
   background: var(--chip-blue-bg);
   border: 1px solid var(--chip-blue-border);
@@ -963,7 +963,7 @@
 
 /* ---------------------------------------------------------------- phone (2r) */
 
-@media (max-width: 46rem) {
+@media (max-width: 736px) {
   .ds-dev-table .ds-row,
   .ds-repo-table .ds-row,
   .ds-tok-table .ds-row {
@@ -996,7 +996,7 @@
   }
 
   .ds-row-open {
-    padding-left: 1rem;
+    padding-left: var(--space-4);
   }
 
   /* The summary stacks: the state, then its step at full width. */

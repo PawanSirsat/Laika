@@ -16,10 +16,11 @@ import {
   writeSidebar,
   type SidebarPreference,
 } from './sidebar/sidebar-state.ts';
+import { atOrBelow, below } from '../theme/breakpoints.ts';
 import './app-shell.css';
 
 /** Below this the sidebar is off-canvas, and the rail has no meaning (app-shell.css). */
-const OFF_CANVAS_QUERY = '(max-width: 900px)';
+const OFF_CANVAS_QUERY = atOrBelow('tablet');
 
 /**
  * My day's drawer (LAI-511) is a 400px column beside the page. Under 1280px
@@ -29,7 +30,7 @@ const OFF_CANVAS_QUERY = '(max-width: 900px)';
  * thing both can see.
  */
 const DRAWER_ATTR = 'data-myday-drawer-open';
-const DRAWER_TIGHT_QUERY = '(max-width: 1279px)';
+const DRAWER_TIGHT_QUERY = below('desktop');
 
 /** Local storage, or nothing — reading the property itself can throw. */
 function storage(): Storage | undefined {
