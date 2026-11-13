@@ -6,7 +6,8 @@ assignee: unclaimed
 priority: p2
 depends-on: [LAI-1175]
 discovered-from: LAI-1175
-status: backlog
+status: done
+closed: 2026-11-13T12:30:00Z
 ---
 
 ## Goal
@@ -59,3 +60,15 @@ Two things stand in the way, both recorded in D-148:
 - Retention: 13 months covers "this month last year" with a month to spare;
   the §11.6 sweep that drops local-activity rows is the place for the
   deletion, with its own test.
+
+## Closed unbuilt — superseded, 2026-11-13
+
+Superseded by **LAI-1180 – LAI-1185 (D-149)**: holidays and leave now come from
+the organisation's HR system (Clan), synced and stored, instead of being typed
+in Laika. What carried over: manual holidays (item 1, now LAI-1181's
+`org_holidays` with `source: manual`, under `org.time.set`, and LAI-1182's
+list) and the grid's not-due cells (LAI-1183 / LAI-1185, with half-day leave
+owing half the threshold). **What was dropped:** keeping away periods 13 months
+and making them backdatable — D-149 item 3 keeps away periods as the person's
+own declaration, unchanged, because the leave itself is already recorded in
+Clan. None of the criteria above were built under this id.

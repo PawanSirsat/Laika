@@ -135,6 +135,13 @@ export const TIME_REPORT_PATH = '/api/v1/time/report';
 /** The Time logging grid (D-148, LAI-1175). */
 export const TIME_DAYS_PATH = '/api/v1/time/days';
 
+/** The calls to the HR system a person makes (D-149, LAI-1181): connect, the code, sync now. */
+export const HR_CALL_PATHS: ReadonlySet<string> = new Set([
+  '/api/v1/org/hr/connect',
+  '/api/v1/org/hr/connect/verify',
+  '/api/v1/org/hr/sync',
+]);
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -174,6 +181,12 @@ export function classify(
   // own, so stepping through months never starves the report, nor it the grid.
   if (path === TIME_DAYS_PATH && method === 'GET') {
     return { key: `time-days:${who}`, policy: LIMITS.timeReport };
+  }
+
+  // The HR system (LAI-1181): every one of these calls Clan, so they share a
+  // small bucket per person, and never spend the session's.
+  if (HR_CALL_PATHS.has(path) && method === 'POST') {
+    return { key: `hr:${who}`, policy: LIMITS.hr };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.

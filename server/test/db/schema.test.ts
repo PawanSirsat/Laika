@@ -114,13 +114,20 @@ describe('migrations', () => {
     // LAI-535: work requests, the §4.4 offer shape (LAI-546 widens it).
     'handoff_offers',
     'heartbeats',
+    // LAI-1181, D-149: the HR system's people and who each is on Laika.
+    'hr_people',
     'idempotency_keys',
     'invites',
+    // LAI-1181, D-149: leave days synced from the HR system.
+    'leave_days',
     'local_activity_days',
     'meeting_reviews',
     // LAI-1136, D-134: a member's own notices, kept 90 days.
     'member_notices',
     'member_ratings',
+    // LAI-1181, D-149: holidays, synced or typed, and the HR connection.
+    'org_holidays',
+    'org_hr_source',
     // LAI-773: an organisation's own API-equivalent prices.
     'org_model_prices',
     // LAI-958, D-102: what the owner granted each org role.
