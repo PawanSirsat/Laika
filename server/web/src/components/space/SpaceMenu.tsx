@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useShell } from '../shell/shell-context.ts';
 import { spaceSettingsHref } from '../../routes/space-settings-url.ts';
+import { Icon } from '../icon/Icon.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 /**
  * The space's `⋯` (D-103, LAI-977): the prototype's button, now that there is
@@ -37,25 +39,27 @@ export function SpaceMenu({ slug }: { readonly slug: string }) {
 
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className="space-chip space-menu-trigger"
-        aria-label="Space menu"
-        aria-haspopup="menu"
-        aria-expanded={at !== undefined}
-        onClick={() => {
-          if (at !== undefined) {
-            setAt(undefined);
-            return;
-          }
-          const box = trigger.current?.getBoundingClientRect();
-          if (box === undefined) return;
-          setAt({ top: box.bottom + 6, right: Math.max(8, window.innerWidth - box.right) });
-        }}
-      >
-        <span aria-hidden="true">⋯</span>
-      </button>
+      <Tooltip content="Space menu">
+        <button
+          ref={trigger}
+          type="button"
+          className="space-chip space-menu-trigger"
+          aria-label="Space menu"
+          aria-haspopup="menu"
+          aria-expanded={at !== undefined}
+          onClick={() => {
+            if (at !== undefined) {
+              setAt(undefined);
+              return;
+            }
+            const box = trigger.current?.getBoundingClientRect();
+            if (box === undefined) return;
+            setAt({ top: box.bottom + 6, right: Math.max(8, window.innerWidth - box.right) });
+          }}
+        >
+          <Icon name="more" size="small" />
+        </button>
+      </Tooltip>
       {at !== undefined &&
         createPortal(
           <>

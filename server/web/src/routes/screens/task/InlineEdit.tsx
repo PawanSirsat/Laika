@@ -1,6 +1,7 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './task-panel.css';
 
 export interface InlineEditProps {
@@ -121,15 +122,16 @@ export function InlineEdit({
       );
     }
     return (
-      <button
-        type="button"
-        className="inline-edit inline-edit-line inline-edit-can"
-        data-editable={name}
-        onClick={open}
-        title={`Edit ${label.toLowerCase()}`}
-      >
-        {empty ? <span className="inline-edit-placeholder">{placeholder}</span> : value}
-      </button>
+      <Tooltip content={`Edit ${label.toLowerCase()}`} lazy>
+        <button
+          type="button"
+          className="inline-edit inline-edit-line inline-edit-can"
+          data-editable={name}
+          onClick={open}
+        >
+          {empty ? <span className="inline-edit-placeholder">{placeholder}</span> : value}
+        </button>
+      </Tooltip>
     );
   }
 

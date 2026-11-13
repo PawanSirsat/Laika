@@ -11,6 +11,7 @@ import {
   type RepoTool,
 } from './repo-groups.ts';
 import './repo-rows.css';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 
 const SETUP_ICON: Readonly<Record<SetupChipKey, DxIconName>> = {
   checked: 'check',
@@ -53,12 +54,12 @@ export function RepoRows({ groups, projectName, toolAction }: RepoRowsProps) {
             <DxIcon name={SETUP_ICON[group.chip]} />
           </span>
           <div className="dx-record-main">
-            <strong className="dx-record-title" title={title}>
-              {title}
-            </strong>
-            <span className="dx-record-sub" title={meta}>
-              {meta}
-            </span>
+            <Tooltip content={title}>
+              <strong className="dx-record-title">{title}</strong>
+            </Tooltip>
+            <Tooltip content={meta}>
+              <span className="dx-record-sub">{meta}</span>
+            </Tooltip>
           </div>
           <div className="dx-record-end">
             <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
@@ -77,9 +78,9 @@ export function RepoRows({ groups, projectName, toolAction }: RepoRowsProps) {
               >
                 <span className="dx-repo-device-text">
                   <strong className="dx-repo-device-name">{device.device}</strong>
-                  <span className="dx-repo-device-line" title={line}>
-                    {line}
-                  </span>
+                  <Tooltip content={line}>
+                    <span className="dx-repo-device-line">{line}</span>
+                  </Tooltip>
                 </span>
                 <span className="dx-repo-device-end">
                   <DesignChip tone={own.tone}>{own.word}</DesignChip>

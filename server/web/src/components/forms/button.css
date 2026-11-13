@@ -1,0 +1,214 @@
+/* Button and IconButton (LAI-021, polished in LAI-1204). Tokens only — no literal colours. */
+
+@import './controls.css';
+
+.button {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  /* `.button-block`'s full-width label stays centred. */
+  justify-content: center;
+  gap: var(--control-gap);
+  /* `min-height`, not `height`: a long or translated label wraps rather than
+     spilling out of a box that cannot grow, and 200% zoom grows it too. */
+  min-height: var(--control-h-md);
+  padding: var(--space-1) var(--control-pad-md);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-body);
+  text-align: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  /* A held press selects the label on touch without this. */
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  /* On the motion tokens (LAI-1208), which motion.css zeroes under reduced motion. */
+  transition:
+    var(--transition),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-instant) var(--ease-enter);
+}
+
+.button-sm {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--control-pad-sm);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+/* A leading icon sits a step closer to the edge than bare text, so the
+   label — not the icon — looks centred. */
+.button-md:has(> .button-glyph, > .spinner) {
+  padding-left: var(--control-pad-sm);
+}
+
+.button-label {
+  min-width: 0;
+  /* An unbroken word (a URL, a German compound) breaks rather than overflows. */
+  overflow-wrap: anywhere;
+}
+
+/* The spinner is 14px and the glyph 16px: pad the spinner up to the glyph's box
+   so a button whose icon turns into a spinner does not shift by two pixels. */
+.button .spinner-sm {
+  margin: 1px;
+}
+
+/* Square, for the icon-only form. */
+.button-icon {
+  width: var(--control-h-md);
+  padding: 0;
+}
+
+.button-icon.button-sm {
+  width: var(--control-h-sm);
+}
+
+.button-block {
+  width: 100%;
+}
+
+/* ------------------------------------------------------------ variants */
+
+.button-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+.button-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.button-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.button-danger {
+  background: var(--blocked-bg);
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+}
+
+/**
+ * The invite flow's primary action (LAI-077).
+ *
+ * `--bg-card` for the label, not a literal white: `--chip-pink` is a mid violet in both
+ * themes, and the dark theme's card is near-black — hardcoding white would be
+ * right by accident in one theme and wrong in the other.
+ */
+.button-invite {
+  background: var(--chip-pink);
+  color: var(--bg-card);
+  border-color: var(--chip-pink);
+}
+
+/* --------------------------------------------------------------- hover */
+
+/*
+ * Pointer devices only: a tap fires `:hover` and leaves it stuck until the next
+ * tap elsewhere, so on a phone the button you just pressed would stay lit.
+ *
+ * Hover tints mix the variant's own colour with the theme's text colour or with
+ * nothing, so one rule lightens in dark and darkens in light without a second
+ * literal colour (theme-single-source.test.ts).
+ */
+@media (hover: hover) and (pointer: fine) {
+  .button-primary:not(:disabled, [aria-disabled='true']):hover {
+    background: color-mix(in srgb, var(--accent) 86%, var(--text-primary));
+    border-color: color-mix(in srgb, var(--accent) 86%, var(--text-primary));
+  }
+
+  .button-secondary:not(:disabled, [aria-disabled='true']):hover {
+    background: var(--bg-card-hover);
+    border-color: var(--text-muted);
+  }
+
+  .button-ghost:not(:disabled, [aria-disabled='true']):hover {
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    color: var(--text-primary);
+  }
+
+  .button-danger:not(:disabled, [aria-disabled='true']):hover {
+    background: color-mix(in srgb, var(--overdue) 20%, transparent);
+  }
+
+  .button-invite:not(:disabled, [aria-disabled='true']):hover {
+    background: color-mix(in srgb, var(--chip-pink) 86%, var(--text-primary));
+  }
+}
+
+/* ------------------------------------------------------------- pressed */
+
+/* Press feedback: the button heard you. Subtle — 2% — because it fires on
+   every click in a working day, and a big squash gets old by lunch. */
+.button:not(:disabled, [aria-disabled='true']):active {
+  transform: scale(0.98);
+}
+
+.button-ghost:not(:disabled, [aria-disabled='true']):active {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Colour still answers the press; nothing moves. The transition durations
+     are already zero (motion.css); this only holds the scale. */
+  .button:not(:disabled, [aria-disabled='true']):active {
+    transform: none;
+  }
+}
+
+/* --------------------------------------------------------------- focus */
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------- disabled and busy */
+
+/* Natively disabled, and disabled with a reason (`aria-disabled`, still focusable). */
+.button:disabled,
+.button[aria-disabled='true']:not([aria-busy='true']) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Busy is **not** dimmed: it is working, not refused, and a faded button reads
+   as "you can't" — the opposite of "wait". */
+.button[aria-busy='true'] {
+  cursor: progress;
+}
+
+/* The reason a button is disabled, beside it. Linked by `aria-describedby`. */
+.button-reason {
+  align-self: center;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ----------------------------------------------------------- hit area */
+
+/*
+ * At least 44×44 under a finger, without drawing a bigger button: an invisible
+ * `::after`, centred, at least the hit size in each axis. A toolbar keeps its
+ * 28px look on a phone and still takes the tap.
+ */
+@media (pointer: coarse) {
+  .button::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, var(--control-hit-coarse));
+    height: max(100%, var(--control-hit-coarse));
+    transform: translate(-50%, -50%);
+  }
+}

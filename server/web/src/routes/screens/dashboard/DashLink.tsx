@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useShell } from '../../../components/shell/shell-context.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * A link from the dashboard to the board, the List or a task (LAI-711).
@@ -7,6 +8,10 @@ import { useShell } from '../../../components/shell/shell-context.ts';
  * A real `<a href>`, so it can be opened in a new tab and read as a link; a
  * plain click moves through **the shell's** router — the one instance every
  * screen shares — rather than reloading the app.
+ *
+ * `title` is shown by the shared Tooltip (LAI-1213; a bare `title` until then),
+ * on hover and on keyboard focus — a link a keyboard reaches by Tab deserves
+ * the same words a pointer gets.
  */
 export function DashLink({
   href,
@@ -28,11 +33,10 @@ export function DashLink({
   readonly onBlur?: (() => void) | undefined;
 }) {
   const { route } = useShell();
-  return (
+  const link = (
     <a
       href={href}
       className={className}
-      title={title}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onFocus={onFocus}
@@ -46,6 +50,13 @@ export function DashLink({
     >
       {children}
     </a>
+  );
+  return title === undefined || title === '' ? (
+    link
+  ) : (
+    <Tooltip content={title} lazy>
+      {link}
+    </Tooltip>
   );
 }
 

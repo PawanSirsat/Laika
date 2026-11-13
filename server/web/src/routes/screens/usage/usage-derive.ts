@@ -5,6 +5,19 @@
  */
 
 import type { TokenAlert } from '../../../api/token-alerts.ts';
+import { USAGE_RANGES, type UsageRange } from '../../../api/usage.ts';
+
+/** The range a page opens on when the address names none. */
+export const DEFAULT_RANGE: UsageRange = 30;
+
+/**
+ * `?range=` (LAI-1201): the period the page shows, so a reload or a pasted
+ * link keeps it. Read leniently — anything but 7, 30 or 90 is the default.
+ */
+export function usageRange(value: string | null | undefined): UsageRange {
+  const found = USAGE_RANGES.find((r) => String(r.days) === value);
+  return found === undefined ? DEFAULT_RANGE : found.days;
+}
 
 export interface ScopeProject {
   readonly id: string;
@@ -96,8 +109,10 @@ export function spaceRow(
 }
 
 /** One space's own Usage view: Insights → Usage & cost, `?project=` (LAI-814). */
-export function spaceUsageHref(slug: string): string {
-  return `/insights?tab=usage&project=${encodeURIComponent(slug)}`;
+export function spaceUsageHref(slug: string, range: number = DEFAULT_RANGE): string {
+  // The period travels with the space (LAI-1201): opening a row keeps the range read.
+  const period = range === DEFAULT_RANGE ? '' : `&range=${String(range)}`;
+  return `/insights?tab=usage&project=${encodeURIComponent(slug)}${period}`;
 }
 
 /**
@@ -172,4 +187,66 @@ export function breakdownTab(
   if (picked !== undefined && tabs.includes(picked)) return picked;
   if (tabs.includes('space')) return 'space';
   return readsPeople ? 'developer' : 'agent';
+}
+
+/**
+ * The longest range whose previous period one read can still carry (LAI-1216):
+ * the server answers 1–92 days, so a comparison asks for twice the range and
+ * reads the first half — 7 and 30 days can, 90 cannot.
+ */
+export const COMPARE_MAX_DAYS = 46;
+
+/** How many days to ask for to compare `range` with the one before it; none past the limit. */
+export function compareDays(range: number): number | undefined {
+  return range > 0 && range <= COMPARE_MAX_DAYS ? range * 2 : undefined;
+}
+
+/**
+ * The tokens of the period before this one: the first `range` days of a read
+ * that asked for twice as many. A read that came back shorter has no whole
+ * previous period, so nothing.
+ */
+export function previousTokens(
+  trend: readonly { readonly tokens: number }[],
+  range: number,
+): number | undefined {
+  if (trend.length < range * 2) return undefined;
+  return trend.slice(0, trend.length - range).reduce((n, d) => n + d.tokens, 0);
+}
+
+/** A change on the previous period, as the Tokens figure says it. */
+export interface PeriodChange {
+  readonly direction: 'up' | 'down' | 'same' | 'new';
+  /** What is shown: `▲ 18% vs previous 30 days`. */
+  readonly text: string;
+  /** What is read aloud, without the arrow. */
+  readonly spoken: string;
+}
+
+/**
+ * `current` against `previous` over `range` days (LAI-1216). Tokens rising is
+ * neither good nor bad, so this names a direction, never a verdict. Nothing
+ * in either period is no comparison at all.
+ */
+export function periodChange(
+  current: number,
+  previous: number | undefined,
+  range: number,
+): PeriodChange | undefined {
+  if (previous === undefined || (previous === 0 && current === 0)) return undefined;
+  const span = `previous ${String(range)} days`;
+  if (previous === 0) {
+    return { direction: 'new', text: `none in the ${span}`, spoken: `none in the ${span}` };
+  }
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0)
+    return { direction: 'same', text: `no change vs ${span}`, spoken: `no change on the ${span}` };
+  const amount = `${Math.abs(pct).toLocaleString('en')}%`;
+  return pct > 0
+    ? { direction: 'up', text: `▲ ${amount} vs ${span}`, spoken: `${amount} more than the ${span}` }
+    : {
+        direction: 'down',
+        text: `▼ ${amount} vs ${span}`,
+        spoken: `${amount} less than the ${span}`,
+      };
 }

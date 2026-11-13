@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import { listAllTasks, type TaskSummary } from '../../../api/tasks.ts';
 import { matchTasks } from './task-match.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /** The tasks the person may read, fetched once per page load and shared by every editor. */
 let cache: Promise<readonly TaskSummary[]> | undefined;
@@ -151,7 +152,10 @@ export function TaskSearch({ busy, onPick, onCustom }: TaskSearchProps) {
                   setQ('');
                 }}
               >
-                <span className="editor-result-key">+ New</span>
+                <span className="editor-result-key">
+                  <Icon name="plus" size="tiny" />
+                  New
+                </span>
                 <span className="editor-result-title">Use “{typed}” as the title, on no task</span>
               </button>
             </li>

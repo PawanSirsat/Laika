@@ -96,10 +96,8 @@
   color: var(--overdue);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .act-pill-open .act-pill-dot {
-    animation: pulse 1.8s ease-in-out infinite;
-  }
+.act-pill-open .act-pill-dot {
+  animation: pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 @media (max-width: 1100px) {

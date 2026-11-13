@@ -67,6 +67,7 @@ import { DevicesSection } from './DevicesSection.tsx';
 import { goToAgent } from './go-to-agent.ts';
 import '../tokens/tokens.css';
 import './agents.css';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 
 export interface AgentsTabProps {
   readonly me: MeProfile | undefined;
@@ -827,6 +828,21 @@ function RegisterWizard({
     }
   })();
 
+  /**
+   * Why Continue is off (LAI-1214): it stays focusable and its tooltip says
+   * what to do, rather than a greyed button that says nothing.
+   */
+  const continueReason = canForward
+    ? undefined
+    : step === 1
+      ? (deviceError ??
+        'An agent is already registered for this harness on this device — use the one below')
+      : step === 2
+        ? 'Your projects are still loading'
+        : step === 3
+          ? 'Register the agent first'
+          : 'Finish this step first';
+
   const go = (to: AgentStep): void => {
     if (!agentStepOpen(to, registered)) return;
     setStep(to);
@@ -1057,16 +1073,19 @@ function RegisterWizard({
             </button>
           )}
           {step < 5 ? (
-            <button
-              type="button"
-              className="bar-control bar-control-primary"
-              disabled={!canForward}
-              onClick={() => {
-                go((step + 1) as AgentStep);
-              }}
-            >
-              Continue
-            </button>
+            <DisabledReason reason={continueReason}>
+              <button
+                type="button"
+                className="bar-control bar-control-primary"
+                data-agents-continue
+                aria-disabled={!canForward || undefined}
+                onClick={() => {
+                  if (canForward) go((step + 1) as AgentStep);
+                }}
+              >
+                Continue
+              </button>
+            </DisabledReason>
           ) : (
             <button
               type="button"
@@ -1684,14 +1703,23 @@ export function RenameForm({
         <button type="button" className="bar-control" onClick={onCancel}>
           Cancel
         </button>
-        <button
-          type="submit"
-          className="bar-control bar-control-primary"
-          disabled={pending || problem !== undefined || name.trim() === agent.display_name}
+        <DisabledReason
+          reason={
+            problem ??
+            (name.trim() === agent.display_name ? 'Change the name to save it' : undefined)
+          }
         >
-          {pending && <Spinner size="sm" />}
-          Save name
-        </button>
+          <button
+            type="submit"
+            className="bar-control bar-control-primary"
+            data-agents-save-name
+            disabled={pending}
+            aria-disabled={problem !== undefined || name.trim() === agent.display_name || undefined}
+          >
+            {pending && <Spinner size="sm" />}
+            Save name
+          </button>
+        </DisabledReason>
       </div>
     </form>
   );
@@ -1778,15 +1806,21 @@ export function AccessForm({
         <button type="button" className="bar-control" onClick={onCancel}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="bar-control bar-control-primary"
-          disabled={pending || unchanged}
-          onClick={save}
-        >
-          {pending && <Spinner size="sm" />}
-          Save access
-        </button>
+        <DisabledReason reason={unchanged ? 'Change an access level to save' : undefined}>
+          <button
+            type="button"
+            className="bar-control bar-control-primary"
+            data-agents-save-access
+            disabled={pending}
+            aria-disabled={unchanged || undefined}
+            onClick={() => {
+              if (!unchanged) save();
+            }}
+          >
+            {pending && <Spinner size="sm" />}
+            Save access
+          </button>
+        </DisabledReason>
       </div>
     </div>
   );

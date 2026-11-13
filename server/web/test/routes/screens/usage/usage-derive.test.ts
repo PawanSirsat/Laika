@@ -17,6 +17,10 @@ import {
   scopeOptions,
   spaceRow,
   spaceUsageHref,
+  usageRange,
+  compareDays,
+  periodChange,
+  previousTokens,
 } from '../../../../src/routes/screens/usage/usage-derive.ts';
 
 const PROJECTS = [
@@ -172,5 +176,48 @@ void describe('LAI-1127: the Budget alerts card and the Breakdown tabs', () => {
     assert.equal(breakdownTab('model', breakdownTabs(false), false), 'model');
     // Space picked on the organisation, then a space chosen: Space is gone.
     assert.equal(breakdownTab('space', breakdownTabs(false), true), 'developer');
+  });
+});
+
+void describe('the period is ?range= (LAI-1201)', () => {
+  void test('7, 30 and 90 are read; anything else is 30 days', () => {
+    assert.equal(usageRange('7'), 7);
+    assert.equal(usageRange('90'), 90);
+    assert.equal(usageRange('30'), 30);
+    assert.equal(usageRange(null), 30);
+    assert.equal(usageRange('14'), 30);
+    assert.equal(usageRange('7d'), 30);
+  });
+
+  void test('a space’s link carries a period other than the default', () => {
+    assert.equal(spaceUsageHref('laika', 7), '/insights?tab=usage&project=laika&range=7');
+    assert.equal(spaceUsageHref('laika', 30), '/insights?tab=usage&project=laika');
+  });
+});
+
+void describe('the Tokens figure against the period before (LAI-1216)', () => {
+  void test('7 and 30 days ask for twice as many; 90 cannot, inside the server’s 92', () => {
+    assert.equal(compareDays(7), 14);
+    assert.equal(compareDays(30), 60);
+    assert.equal(compareDays(90), undefined);
+  });
+
+  void test('the previous period is the first half of the doubled read, and a short read has none', () => {
+    const trend = [1, 2, 3, 10, 20, 30].map((tokens) => ({ tokens }));
+    assert.equal(previousTokens(trend, 3), 6);
+    assert.equal(previousTokens(trend.slice(1), 3), undefined);
+  });
+
+  void test('says a direction and an amount, never a verdict', () => {
+    assert.deepEqual(periodChange(118, 100, 30), {
+      direction: 'up',
+      text: '▲ 18% vs previous 30 days',
+      spoken: '18% more than the previous 30 days',
+    });
+    assert.equal(periodChange(50, 100, 7)?.text, '▼ 50% vs previous 7 days');
+    assert.equal(periodChange(100, 100, 7)?.direction, 'same');
+    assert.equal(periodChange(5, 0, 7)?.text, 'none in the previous 7 days');
+    assert.equal(periodChange(0, 0, 7), undefined, 'nothing either side is no comparison');
+    assert.equal(periodChange(10, undefined, 90), undefined);
   });
 });

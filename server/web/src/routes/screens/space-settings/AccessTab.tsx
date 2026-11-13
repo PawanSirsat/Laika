@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { InlineConfirm } from '../../../components/InlineConfirm.tsx';
+import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 import { Switch } from '../../../components/Switch.tsx';
 import type { Project } from '../../../api/projects.ts';
 import { updateSpace, type SpaceSettingsPatch } from '../../../api/space-settings.ts';
@@ -22,7 +24,9 @@ type Setting = 'visibility' | 'task_create_min_role' | 'agents_allowed';
  *
  * **Each change saves on its own, at once** — the design says so at the top
  * — and a refusal is said beside the control that was refused, which then
- * shows what the server still holds. *Person sign-off for Done* is not a
+ * shows what the server still holds; the head says *Saving… / Saved /
+ * Couldn't save — Retry* for the last change (`SaveStatus`, LAI-1129), and
+ * *Saved* only on the server's answer. *Person sign-off for Done* is not a
  * setting (item 8): it is drawn on and locked, with the reason. *Join without
  * approval* is not drawn at all until LAI-980.
  */
@@ -32,20 +36,29 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
   const [pending, setPending] = useState<Setting | undefined>(undefined);
   const [failed, setFailed] = useState<{ readonly setting: Setting; readonly message: string }>();
   const [confirmingPublic, setConfirmingPublic] = useState(false);
+  const status = useSaveStatus();
+  const publicCard = useRef<HTMLButtonElement | null>(null);
 
+  // The whole save — its answer handled too — is what Retry runs again.
   const save = (setting: Setting, patch: SpaceSettingsPatch): void => {
-    setPending(setting);
-    setFailed(undefined);
-    updateSpace(project.slug, patch)
-      .then(onSaved)
-      .catch((cause: unknown) => {
-        setFailed({
-          setting,
-          message: cause instanceof Error ? cause.message : 'The change was not saved',
-        });
+    status
+      .run(() => {
+        setPending(setting);
+        setFailed(undefined);
+        return updateSpace(project.slug, patch)
+          .then(onSaved, (cause: unknown) => {
+            setFailed({
+              setting,
+              message: cause instanceof Error ? cause.message : 'The change was not saved',
+            });
+            throw cause;
+          })
+          .finally(() => {
+            setPending(undefined);
+          });
       })
-      .finally(() => {
-        setPending(undefined);
+      .catch(() => {
+        // Said beside the control that was refused, and by the status.
       });
   };
 
@@ -65,7 +78,12 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
           <h2 id="ss-access-title">Access &amp; rules</h2>
           <p>Who can see this space and how work moves through it.</p>
         </div>
-        {mayEdit && <p className="ss-immediate">Changes save immediately</p>}
+        {mayEdit && (
+          <div className="ss-immediate-wrap">
+            <p className="ss-immediate">Changes save immediately</p>
+            <SaveStatus state={status.state} onRetry={status.retry} />
+          </div>
+        )}
       </header>
 
       <div className="ss-rows">
@@ -97,6 +115,13 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
                 return mayEdit ? (
                   <button
                     key={value}
+                    ref={
+                      value === 'public'
+                        ? (el) => {
+                            publicCard.current = el;
+                          }
+                        : undefined
+                    }
                     type="button"
                     role="radio"
                     aria-checked={on}
@@ -129,30 +154,22 @@ export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: Ac
               })}
             </div>
             {confirmingPublic && project.visibility !== 'public' && (
-              <div className="ss-confirm" role="alertdialog" aria-label="Make this space public?">
-                <p>Everyone in {org} will see this space and its work, and can join it.</p>
-                <div className="ss-confirm-actions">
-                  <button
-                    type="button"
-                    className="ss-btn ss-btn-primary"
-                    onClick={() => {
-                      setConfirmingPublic(false);
-                      save('visibility', { visibility: 'public' });
-                    }}
-                  >
-                    Make public
-                  </button>
-                  <button
-                    type="button"
-                    className="ss-btn"
-                    onClick={() => {
-                      setConfirmingPublic(false);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <InlineConfirm
+                className="ss-confirm"
+                question={`Make this space public? Everyone in ${org} will see this space and its work, and can join it.`}
+                confirmLabel="Make public"
+                confirmClassName="button button-primary button-md"
+                cancelClassName="button button-secondary button-md"
+                confirmAction="confirm-public"
+                onConfirm={() => {
+                  setConfirmingPublic(false);
+                  save('visibility', { visibility: 'public' });
+                }}
+                onCancel={() => {
+                  setConfirmingPublic(false);
+                }}
+                returnFocus={() => publicCard.current}
+              />
             )}
             {errorFor('visibility')}
           </div>

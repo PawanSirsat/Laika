@@ -23,7 +23,8 @@ import { avatarColorSolid } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { SpaceBadge } from '../SpaceBadge.tsx';
-import { Spinner } from '../Spinner.tsx';
+import { Button } from '../forms/Button.tsx';
+import { IconButton } from '../forms/IconButton.tsx';
 import {
   agentTail,
   barKey,
@@ -72,6 +73,8 @@ import {
   type ReportScope,
 } from './time-report-derive.ts';
 import './time-report.css';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
+import type { ReportAddress } from './report-address.ts';
 
 /** A space as the Space filter offers it. */
 export interface ReportSpace {
@@ -108,6 +111,18 @@ export interface TimeReportProps {
   readonly version?: string | undefined;
   /** The heading, when the place it is drawn names it otherwise — the profile's *Time report* tab on your own (LAI-1152). */
   readonly title?: string | undefined;
+  /**
+   * The period and filters to open on (LAI-1189): Insights → Time reads them
+   * from its address. Absent fields, and values this report cannot use, are
+   * its defaults. My day and the profile pass none.
+   */
+  readonly address?: ReportAddress | undefined;
+  /**
+   * Called with the report's period and filters after each change, defaults
+   * left out — so an untouched report hands back `{}`, and the caller's
+   * address stays clean.
+   */
+  readonly onAddress?: ((address: ReportAddress) => void) | undefined;
 }
 
 type Load =
@@ -187,19 +202,80 @@ export function TimeReport({
   orgName,
   version,
   title: named,
+  address,
+  onAddress,
 }: TimeReportProps) {
   const ids = useId();
   const weekly = ledSpaces !== undefined;
-  const [range, setRange] = useState<ReportRange>(
-    initialRange ?? (weekly ? 'month' : scope === 'org' ? 'range' : 'week'),
-  );
-  const [anchor, setAnchor] = useState(openOn ?? today);
-  const [picked, setPicked] = useState<DayRange>(() => presetRange('last30', today));
-  // Only the reader's own drafts are read unasked (D-088 items 2–3).
+  // What the report opens on untouched; an address only ever says how it differs.
+  const fallbackRange: ReportRange =
+    initialRange ?? (weekly ? 'month' : scope === 'org' ? 'range' : 'week');
+  const fallbackAnchor = openOn ?? today;
+  const fallbackPicked = presetRange('last30', today);
   const own = scope === 'me';
-  const [drafts, setDrafts] = useState(own && !weekly);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
-  const [space, setSpace] = useState<string | undefined>(ledSpaces?.[0]?.slug);
+  const fallbackDrafts = own && !weekly;
+  const fallbackSpace = ledSpaces?.[0]?.slug;
+  const [range, setRange] = useState<ReportRange>(() =>
+    address?.range === undefined || (weekly && address.range === 'day')
+      ? fallbackRange
+      : address.range,
+  );
+  const [anchor, setAnchor] = useState(() =>
+    address?.anchor !== undefined && address.anchor <= today ? address.anchor : fallbackAnchor,
+  );
+  const [picked, setPicked] = useState<DayRange>(() => ({
+    from: address?.from ?? fallbackPicked.from,
+    to: address?.to ?? fallbackPicked.to,
+  }));
+  // Only the reader's own drafts are read unasked (D-088 items 2–3).
+  const [drafts, setDrafts] = useState(() =>
+    weekly ? false : address?.drafts === true ? true : fallbackDrafts,
+  );
+  const [filters, setFilters] = useState<Filters>(() =>
+    address === undefined || weekly
+      ? NO_FILTERS
+      : {
+          spaces: address.spaces ?? [],
+          members: address.members ?? [],
+          kinds: address.kinds ?? [],
+          link: address.link,
+        },
+  );
+  const [space, setSpace] = useState<string | undefined>(() => {
+    const asked = address?.spaces?.[0];
+    return asked !== undefined && (ledSpaces ?? []).some((s) => s.slug === asked)
+      ? asked
+      : fallbackSpace;
+  });
+
+  // The report as an address, defaults left out (LAI-1189): written by the
+  // caller after the first paint and after every change.
+  const told = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (onAddress === undefined) return;
+    const next: ReportAddress = {
+      range: range === fallbackRange ? undefined : range,
+      anchor: range === 'range' || anchor === fallbackAnchor ? undefined : anchor,
+      from: range !== 'range' || picked.from === fallbackPicked.from ? undefined : picked.from,
+      to: range !== 'range' || picked.to === fallbackPicked.to ? undefined : picked.to,
+      spaces: weekly
+        ? space === undefined || space === fallbackSpace
+          ? undefined
+          : [space]
+        : filters.spaces.length === 0
+          ? undefined
+          : filters.spaces,
+      members: weekly || filters.members.length === 0 ? undefined : filters.members,
+      kinds: weekly || filters.kinds.length === 0 ? undefined : filters.kinds,
+      link: weekly ? undefined : filters.link,
+      drafts: weekly || drafts === fallbackDrafts ? undefined : drafts,
+    };
+    const said = JSON.stringify(next);
+    if (said === told.current) return;
+    told.current = said;
+    onAddress(next);
+    // The address is a function of these; the callback's identity is not.
+  }, [range, anchor, picked.from, picked.to, drafts, filters, space]);
   const [pop, setPop] = useState<string | undefined>();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -371,28 +447,26 @@ export function TimeReport({
 
       <div className="trep-bar" role="toolbar" aria-label="Report controls">
         <div className="trep-stepper">
-          <button
-            type="button"
-            className="trep-step"
-            aria-label={`Previous ${unit}`}
+          <IconButton
+            icon="chevron-left"
+            label={`Previous ${unit}`}
+            variant="secondary"
+            size="sm"
             data-tr-prev
             onClick={() => {
               const s = stepped(range, anchor, picked, -1);
               setAnchor(s.anchor);
               setPicked(s.picked);
             }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m15 6-6 6 6 6" />
-            </svg>
-          </button>
+          />
           <span className="trep-range-label" aria-live="polite" data-tr-label>
             {label}
           </span>
-          <button
-            type="button"
-            className="trep-step"
-            aria-label={`Next ${unit}`}
+          <IconButton
+            icon="chevron"
+            label={`Next ${unit}`}
+            variant="secondary"
+            size="sm"
             disabled={nextDisabled}
             data-tr-next
             onClick={() => {
@@ -400,11 +474,7 @@ export function TimeReport({
               setAnchor(s.anchor);
               setPicked(s.picked);
             }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </button>
+          />
         </div>
         <span className="trep-divider" aria-hidden="true" />
         {weekly ? (
@@ -536,23 +606,17 @@ export function TimeReport({
               ))}
             </div>
           )}
-          <button
-            type="button"
-            className="trep-export"
-            disabled={!ready || nothing || csv.busy}
-            aria-busy={csv.busy}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="download"
+            disabled={!ready || nothing}
+            busy={csv.busy}
             data-tr-export
             onClick={exportCsv}
           >
-            {csv.busy ? (
-              <Spinner size="sm" />
-            ) : (
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
-              </svg>
-            )}
             Export CSV
-          </button>
+          </Button>
         </div>
       </div>
       {csv.error !== undefined && (
@@ -1095,42 +1159,42 @@ function Chart({
             onKeyDown={onKey}
           >
             {bars.map((b, i) => (
-              <button
-                key={b.day}
-                type="button"
-                className={
-                  hover === i || (focusAt === i && hover === undefined)
-                    ? 'trep-col trep-col-on'
-                    : 'trep-col'
-                }
-                tabIndex={i === at ? 0 : -1}
-                aria-label={b.aria}
-                title={b.aria}
-                data-tr-day={b.day}
-                onMouseEnter={() => {
-                  setHover(i);
-                }}
-                onMouseLeave={() => {
-                  setHover(undefined);
-                }}
-                onFocus={() => {
-                  setFocusAt(i);
-                }}
-              >
-                <span
-                  className={b.future ? 'trep-stack trep-stack-future' : 'trep-stack'}
-                  style={{ height: `${String(b.height)}%` }}
+              <Tooltip key={b.day} content={b.aria}>
+                <button
+                  type="button"
+                  className={
+                    hover === i || (focusAt === i && hover === undefined)
+                      ? 'trep-col trep-col-on'
+                      : 'trep-col'
+                  }
+                  tabIndex={i === at ? 0 : -1}
+                  aria-label={b.aria}
+                  data-tr-day={b.day}
+                  onMouseEnter={() => {
+                    setHover(i);
+                  }}
+                  onMouseLeave={() => {
+                    setHover(undefined);
+                  }}
+                  onFocus={() => {
+                    setFocusAt(i);
+                  }}
                 >
                   <span
-                    className="trep-fill-confirmed"
-                    style={{ flexBasis: `${String(b.confirmedPct)}%` }}
-                  />
-                  <span
-                    className="trep-fill-drafted"
-                    style={{ flexBasis: `${String(b.draftedPct)}%` }}
-                  />
-                </span>
-              </button>
+                    className={b.future ? 'trep-stack trep-stack-future' : 'trep-stack'}
+                    style={{ height: `${String(b.height)}%` }}
+                  >
+                    <span
+                      className="trep-fill-confirmed"
+                      style={{ flexBasis: `${String(b.confirmedPct)}%` }}
+                    />
+                    <span
+                      className="trep-fill-drafted"
+                      style={{ flexBasis: `${String(b.draftedPct)}%` }}
+                    />
+                  </span>
+                </button>
+              </Tooltip>
             ))}
           </div>
           {tip !== undefined && hover !== undefined && (

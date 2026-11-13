@@ -26,6 +26,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -217,7 +218,7 @@ function server(
     seen.push(call);
     const row = rows.find((r) => r.task.id === id);
     rows = rows.filter((r) => r.task.id !== id);
-    return { ...(row?.task ?? {}), status: 'done' };
+    return { ...(row?.task ?? {}), status: 'done', status_name: 'Done' };
   };
   const stub: ApiStub = {
     '/api/v1/me': ME,
@@ -267,7 +268,7 @@ void describe('the Review page', () => {
       assert.equal(await chip.count(), 1);
       assert.equal(await chip.innerText(), 'check this one');
       assert.match(
-        (await chip.getAttribute('title')) ?? '',
+        await tipText(chip),
         /Finished in 1 min against a forecast of 2 h, and CI has not confirmed it/,
       );
       assert.equal(await h.page.locator('[data-stat="check"] .prof-stat-value').innerText(), '1');
@@ -297,8 +298,11 @@ void describe('the Review page', () => {
       const worked = rows.nth(1);
       assert.match(await worked.innerText(), /1 commit/);
       assert.match(await worked.innerText(), /PR/);
-      assert.match(await worked.innerText(), /✓ 1 passed/);
-      assert.match(await worked.innerText(), /✗ 1 failed/);
+      assert.match(await worked.innerText(), /1 passed/);
+      // Drawn, not typed (LAI-1214): the tick and the cross are registry icons.
+      assert.equal(await worked.locator('.rev-chip-pass [data-icon="check"]').count(), 1);
+      assert.match(await worked.innerText(), /1 failed/);
+      assert.equal(await worked.locator('.rev-chip-fail [data-icon="close"]').count(), 1);
       // The agent as harness and device (D-120), never the client's own word.
       assert.match(await worked.innerText(), /Omnigent · Belka/);
       assert.doesNotMatch(await worked.innerText(), /omnigent on Belka/);
@@ -837,7 +841,7 @@ void describe('the task panel and the card (D-082)', () => {
       await card.waitFor({ timeout: 20_000 });
       const marker = card.locator('.marker-sent-back');
       assert.match(await marker.innerText(), /sent back/);
-      assert.equal(await marker.getAttribute('title'), 'Sent back: The lint run exits 1.');
+      assert.equal(await tipText(marker), 'Sent back: The lint run exits 1.');
 
       await card.click();
       const panel = h.page.locator('.drawer');

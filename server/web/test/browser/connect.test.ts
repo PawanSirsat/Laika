@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 /*
  * The wizard is Developer access's first tab since LAI-507: every `open` of
@@ -222,11 +223,9 @@ void describe('before a token exists', () => {
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
       const copy = h.page.locator('.conn-block').first().locator('.copy-button');
       assert.equal(await copy.isDisabled(), true, 'the prompt offers a copy with no token in it');
-      assert.match(
-        (await copy.getAttribute('title')) ?? '',
-        /mint/i,
-        'the disabled button does not say why',
-      );
+      // Its reason is the shared tooltip, reachable by focus (LAI-1213).
+      assert.equal(await copy.getAttribute('aria-disabled'), 'true');
+      assert.match(await tipText(copy), /mint/i, 'the disabled button does not say why');
     } finally {
       await h.close();
     }
@@ -799,7 +798,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /^2$/);
 
       await mint(h);
-      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /✓/);
+      assert.equal(await steps.nth(1).locator('.conn-step-n [data-icon="check"]').count(), 1);
       assert.equal(await steps.nth(1).locator('button').getAttribute('aria-current'), 'step');
       assert.match(await steps.nth(1).locator('.conn-rail-sub').innerText(), /claude-code/);
       // Step 3 happens on the reader's machine; minting does not tick it.
@@ -807,7 +806,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
 
       await h.page.locator('.conn-hide').click();
       await h.page.locator('.conn-forgotten').waitFor({ timeout: 10_000 });
-      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /✓/);
+      assert.equal(await steps.nth(1).locator('.conn-step-n [data-icon="check"]').count(), 1);
       assert.equal(await steps.nth(2).locator('button').isDisabled(), false);
     } finally {
       await h.close();
@@ -864,11 +863,15 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       await mint(h);
       await goTo(h, 3);
       const copy = h.page.getByRole('button', { name: 'Copy the setup prompt', exact: true });
+      // Enabled, its tooltip has nothing to say: no empty bubble, no description (LAI-1214).
+      assert.equal(await copy.getAttribute('aria-describedby'), null);
       await copy.click();
       const done = h.page.getByRole('button', { name: 'Copied the setup prompt', exact: true });
       await done.waitFor({ timeout: 10_000 });
       assert.equal(await done.getAttribute('data-outcome'), 'copied');
-      assert.match(await done.innerText(), /Copied ✓/);
+      assert.match(await done.innerText(), /Copied/);
+      // The tick is the registry's, drawn, not a typed ✓ (LAI-1213).
+      assert.equal(await done.locator('svg[data-icon="check"]').count(), 1);
 
       const copied = await h.page.evaluate(
         () => (window as unknown as { __copied: string[] }).__copied,
@@ -920,6 +923,8 @@ void describe('the wizard (LAI-740)', () => {
         true,
         true,
       ]);
+      // Locked with its reason, still reached by Tab (LAI-1214).
+      assert.equal(await tipText(rail.nth(2)), 'Mint a token first');
 
       await goTo(h, 2);
       const next = h.page.locator('.conn-continue');
@@ -1005,7 +1010,14 @@ void describe('the wizard (LAI-740)', () => {
         { timeout: 10_000 },
       );
       assert.equal(await sub.innerText(), 'Command copied');
-      assert.match(await h.page.locator('.conn-steps .conn-step-n').nth(2).innerText(), /✓/);
+      assert.equal(
+        await h.page
+          .locator('.conn-steps .conn-step-n')
+          .nth(2)
+          .locator('[data-icon="check"]')
+          .count(),
+        1,
+      );
     } finally {
       await h.close();
     }
@@ -1039,7 +1051,10 @@ void describe('the wizard (LAI-740)', () => {
       // `forget()` drops the blanked token a tick after blanking it, so the
       // lock returns on the next render — wait for it rather than sample it.
       await h.page.waitForFunction(
-        () => document.querySelectorAll<HTMLButtonElement>('.conn-rail-step')[2]?.disabled === true,
+        () =>
+          document
+            .querySelectorAll<HTMLButtonElement>('.conn-rail-step')[2]
+            ?.getAttribute('aria-disabled') === 'true',
         undefined,
         { timeout: 10_000 },
       );

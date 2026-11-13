@@ -459,7 +459,7 @@
 .ov-chevron {
   flex: none;
   display: inline-block;
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .ov-chevron[data-open='true'] {

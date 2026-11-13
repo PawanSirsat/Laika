@@ -5,6 +5,10 @@ import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
 import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
 import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
+import {
+  capacityParams,
+  withCapacityParams,
+} from '../../routes/screens/capacity/capacity-derive.ts';
 import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
@@ -25,6 +29,10 @@ import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
 import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
 import { TimeTab } from '../../routes/screens/insights/TimeTab.tsx';
 import {
+  readReportAddress,
+  writeReportAddress,
+} from '../../components/time-report/report-address.ts';
+import {
   insightsHolder,
   ledProjectIds,
   timeSubview,
@@ -32,10 +40,14 @@ import {
 } from '../../routes/screens/insights/time-tab.ts';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
+import { DEFAULT_RANGE, usageRange } from '../../routes/screens/usage/usage-derive.ts';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
+import { WorkroomScreen } from '../../routes/screens/workroom/WorkroomScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
+import { slugOfKey, taskHref, withTaskOpen } from '../../routes/task-href.ts';
+import { useSpaces } from '../../routes/use-spaces.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   currentTab,
@@ -50,7 +62,9 @@ import {
   visibleTabs,
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
+import { DocumentsTrialRoute } from '../documents/DocumentsTrialRoute.tsx';
 import { LoadingState } from '../LoadingState.tsx';
+import { BrandSpinner } from '../brand/BrandSpinner.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 import { usePermissions } from '../../api/permissions.ts';
 import { useDeveloperAccessMode } from '../../api/developer-compat.ts';
@@ -123,38 +137,55 @@ function ProjectsRoute() {
   );
 }
 
-/** The board opens a task by id in `?task=` (LAI-424); a key goes through search. */
-function openTaskByKey(navigate: (to: string) => void) {
-  return (taskKey: string) => {
-    navigate(`/board?q=${encodeURIComponent(taskKey)}`);
+/**
+ * Open a task **in its own space's drawer** (LAI-1190, B2 and B18) — by id
+ * when the link has one, else by key, which the drawer host resolves. Through
+ * `taskHref`, the one place that decides what a task link is: `/board?q=KEY`
+ * only when no space can be named. Work's rows use it (LAI-952; the
+ * Organisation tab since LAI-1170).
+ */
+function openTaskInItsSpace(navigate: (to: string) => void) {
+  return ({ id, key, projectSlug }: WorkTaskLink) => {
+    navigate(taskHref({ id, key }, projectSlug));
   };
 }
 
 /**
- * Open a task **in its own space**, by id (LAI-755). Without `?project=` the
- * board falls back to the space last opened, which on a page across every
- * space is usually another one. A key search remains the fallback when the
- * space is not known. Work's rows use it (LAI-952; the Organisation tab since
- * LAI-1170).
+ * A task link on a page across every space, which knows only the key: the
+ * space comes from the key's prefix among the spaces the reader can read.
  */
-function openTaskInItsSpace(navigate: (to: string) => void) {
-  return ({ id, key, projectSlug }: WorkTaskLink) => {
-    if (projectSlug === undefined) {
-      openTaskByKey(navigate)(key);
-      return;
-    }
-    navigate(`/board?project=${encodeURIComponent(projectSlug)}&task=${encodeURIComponent(id)}`);
+function useOpenTaskByKey(): (taskKey: string) => void {
+  const {
+    route: { navigate },
+    me,
+  } = useShell();
+  const { all } = useSpaces(me !== undefined);
+  return (taskKey) => {
+    const slug = slugOfKey(
+      taskKey,
+      all.map((space) => ({ prefix: space.key, slug: space.slug })),
+    );
+    navigate(taskHref({ key: taskKey }, slug));
   };
 }
 
 function MeetingReviewRoute() {
   const {
-    route: { params, navigate },
+    route: { params, setParams, navigate },
   } = useShell();
+  const slug = params.get('project') ?? undefined;
   return (
     <MeetingReviewScreen
-      slug={params.get('project') ?? undefined}
-      onOpenTask={openTaskByKey(navigate)}
+      slug={slug}
+      onOpenTask={(taskKey) => {
+        // Over the review itself, in this space (B2): the reader came to
+        // check a proposal, and closing the task should leave them on it.
+        if (slug === undefined) {
+          navigate(taskHref({ key: taskKey }, undefined));
+          return;
+        }
+        setParams(withTaskOpen(params, { key: taskKey }, slug), { push: true });
+      }}
     />
   );
 }
@@ -210,17 +241,19 @@ function CapacityRoute() {
       reviewWaiting={reviewWaiting}
       reviewCapped={reviewCapped}
       onNavigate={navigate}
+      params={capacityParams(params)}
+      onParams={(next) => {
+        setParams(withCapacityParams(params, next));
+      }}
     />
   );
 }
 
 function UnlistedRoute() {
-  const {
-    route: { navigate },
-    refreshUnlisted,
-  } = useShell();
+  const { refreshUnlisted } = useShell();
+  const openTask = useOpenTaskByKey();
   // A promote or a dismiss changes the sidebar's count; it re-reads (LAI-754).
-  return <UnlistedScreen onOpenTask={openTaskByKey(navigate)} onChanged={refreshUnlisted} />;
+  return <UnlistedScreen onOpenTask={openTask} onChanged={refreshUnlisted} />;
 }
 
 /**
@@ -246,6 +279,14 @@ function UsageRoute() {
         const next = new URLSearchParams(params);
         if (slug === '') next.delete('project');
         else next.set('project', slug);
+        setParams(next);
+      }}
+      range={usageRange(params.get('range'))}
+      onRange={(range) => {
+        // A period is a filter (LAI-1201): it replaces, and 30 days is the clean address.
+        const next = new URLSearchParams(params);
+        if (range === DEFAULT_RANGE) next.delete('range');
+        else next.set('range', String(range));
         setParams(next);
       }}
     />
@@ -371,8 +412,9 @@ function InboxRoute() {
  */
 function InsightsRoute() {
   const {
-    route: { params, navigate },
+    route: { params, navigate, setParams },
     me,
+    tokenAlerts,
     orgName,
   } = useShell();
   const { permissions, settled } = usePermissions(me !== undefined);
@@ -390,7 +432,12 @@ function InsightsRoute() {
     );
   }
   return (
-    <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
+    <InsightsScreen
+      tabs={visibleTabs(INSIGHTS_TABS, holds)}
+      current={tab}
+      onNavigate={navigate}
+      alerts={tokenAlerts?.length}
+    >
       {tab === 'time' ? (
         <TimeTab
           view={
@@ -402,6 +449,14 @@ function InsightsRoute() {
           orgName={orgName}
           subview={timeSubview(params.get('view'))}
           onNavigate={navigate}
+          // The report's period and filters live in the address (LAI-1189):
+          // read once as it opens, written — replacing — after each change.
+          address={readReportAddress(params)}
+          onAddress={(address) => {
+            const now = new URLSearchParams(window.location.search);
+            const next = writeReportAddress(now, address);
+            if (next.toString() !== now.toString()) setParams(next);
+          }}
         />
       ) : tab === 'usage' ? (
         <UsageRoute />
@@ -434,7 +489,13 @@ function DeveloperRoute() {
     if (moved !== undefined) setParams(new URLSearchParams(moved));
   }, [moved, setParams]);
   if (mode === undefined || moved !== undefined) {
-    return <LoadingState shape="card" count={1} label="Loading Developer access" />;
+    // Which page is coming — classic or V3 — is the thing being decided, so
+    // there is no shape for a skeleton to promise: the brand loader (LAI-1126).
+    return (
+      <div className="brand-panel-wait">
+        <BrandSpinner size="lg" label="Loading Developer access" />
+      </div>
+    );
   }
   const tabs = developerTabs(mode);
   const tab = currentTab(tabs, params);
@@ -512,6 +573,17 @@ function SpaceSettingsRoute() {
   );
 }
 
+/** A task's own page, by key (LAI-1199). */
+function WorkroomRoute() {
+  const {
+    route: { path, route, navigate },
+    me,
+  } = useShell();
+  const key = route === undefined ? undefined : routeParams(route.path, path)?.key;
+  if (key === undefined || me === undefined) return null;
+  return <WorkroomScreen taskKey={key} navigate={navigate} />;
+}
+
 function ProfileRoute() {
   const {
     route: { params, setParams, navigate },
@@ -566,6 +638,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/developer': { Component: DeveloperRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
   '/spaces/:slug/settings': { Component: SpaceSettingsRoute, layout: 'plain' },
+  '/task/:key': { Component: WorkroomRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },
@@ -573,6 +646,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/setup': { Component: SetupRoute, layout: 'own-chrome' },
   '/design/tokens': { Component: TokenReference, layout: 'plain' },
   '/design/states': { Component: StateGallery, layout: 'plain' },
+  '/design/documents': { Component: DocumentsTrialRoute, layout: 'plain' },
 };
 
 /**

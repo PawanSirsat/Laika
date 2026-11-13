@@ -27,7 +27,7 @@
   background-repeat: no-repeat;
   background-size: 40vw 100%;
   background-attachment: fixed;
-  animation: dsk-sheen 1.8s ease-in-out infinite;
+  animation: dsk-sheen var(--duration-shimmer) var(--ease-standard) infinite;
 }
 
 /* A hint of the accent where the day's colour will be. */
@@ -46,8 +46,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Stood still by `styles/motion.css`; a still sheen is a stripe, so drop it. */
   .dsk-bone {
-    animation: none;
     background-image: none;
   }
 }

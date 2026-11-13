@@ -24,10 +24,11 @@ import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { cluster } from '../../../components/space/top-bar-derive.ts';
-import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
+import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { SpaceBand, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
-import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { useDismiss } from '../../../components/use-dismiss.ts';
 import { PRIORITY_NAMES, PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { tagColor } from './tag-colors.ts';
@@ -121,13 +122,20 @@ export interface BoardToolbarProps {
    */
   readonly filterButtonRef: RefObject<HTMLButtonElement | null>;
   /** The four right-hand actions. Each does something real or is not drawn. */
-  readonly onInsights: () => void;
-  readonly onViewSettings: (anchor: { top: number; right: number }) => void;
-  readonly onRefresh: () => void;
+  /**
+   * Opens the `⋯` menu, anchored under it (LAI-1198). View settings,
+   * Insights, Refresh and Hidden columns live there now, each with its word.
+   */
   readonly onOverflow: (anchor: { top: number; right: number }) => void;
-  /** Hidden columns on this board; the entry is drawn only when there are any (LAI-739). */
+  /** Whether that menu is open, for the `⋯`'s `aria-expanded`. */
+  readonly overflowOpen?: boolean | undefined;
+  /**
+   * Hidden columns, counted on the `⋯` (review round 1 asked for them to be
+   * seen, not only listed): a dot on it and the number in its name.
+   */
   readonly hiddenColumns?: number | undefined;
-  readonly onHiddenColumns?: (() => void) | undefined;
+  /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
+  readonly scope?: ReactNode;
 }
 
 /**
@@ -171,36 +179,6 @@ const PRIORITIES: readonly TaskPriority[] = ['p1', 'p2', 'p3'];
  * reference and less crowded. The controls are the same and write the same URL
  * parameters; only where you reach them changed.
  */
-function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void) {
-  const box = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onDown = (event: MouseEvent): void => {
-      /*
-       * **A dropdown's panel is not outside** (LAI-726). It is portalled to
-       * `<body>`, so it is never inside `box` — without this, choosing an
-       * option in the Filter popover would close the popover.
-       */
-      if (isInDropdownPanel(event.target)) return;
-      if (box.current !== null && !box.current.contains(event.target as Node)) close('outside');
-    };
-    const onKey = (event: KeyboardEvent): void => {
-      // An Escape a dropdown already used to close itself is not this one's.
-      if (event.key === 'Escape' && !event.defaultPrevented) close('escape');
-    };
-
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
-
-  return box;
-}
 
 /**
  * One field in the Filter popover's grid (LAI-717, LAI-726).
@@ -237,22 +215,23 @@ function FilterField({
         {children(labelId)}
       </label>
       {set && (
-        <button
-          type="button"
-          className="bt-reset"
-          title={`Reset ${label}`}
-          onClick={() => {
-            onReset();
-            // The reset is about to disappear with the value it reset; the
-            // field it belonged to is where the reader's attention is.
-            cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
-          </svg>
-          <span className="visually-hidden">Reset {label}</span>
-        </button>
+        <Tooltip content={`Reset ${label}`}>
+          <button
+            type="button"
+            className="bt-reset"
+            aria-label={`Reset ${label}`}
+            onClick={() => {
+              onReset();
+              // The reset is about to disappear with the value it reset; the
+              // field it belonged to is where the reader's attention is.
+              cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -301,12 +280,10 @@ export function BoardToolbar({
   chips,
   onRemoveFilter,
   filterButtonRef,
-  onInsights,
-  onViewSettings,
-  onRefresh,
   onOverflow,
-  hiddenColumns,
-  onHiddenColumns,
+  overflowOpen = false,
+  hiddenColumns = 0,
+  scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
   const filterButton = filterButtonRef;
@@ -369,8 +346,19 @@ export function BoardToolbar({
       if (shift > 0) pop.style.translate = `-${String(shift)}px 0`;
     };
     place();
+    /*
+     * Again once the row has re-laid out (LAI-1198): in the header's one-line
+     * toolbar a narrower window shrinks search and steps the figures down a
+     * tier *after* the resize event, which moves the button the pop hangs
+     * from. The row's own size changes are when that settles.
+     */
+    const row = pop.closest('.bt');
+    const observer =
+      row !== null && typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
+    if (row !== null) observer?.observe(row);
     window.addEventListener('resize', place);
     return () => {
+      observer?.disconnect();
       window.removeEventListener('resize', place);
     };
   }, [open]);
@@ -560,6 +548,7 @@ export function BoardToolbar({
             ref={searchRef}
             type="search"
             placeholder="Search board"
+            aria-keyshortcuts="/"
             value={query}
             onChange={(event) => {
               onQuery(event.target.value);
@@ -575,28 +564,30 @@ export function BoardToolbar({
         {members.length > 0 && (
           <div
             className="bt-members"
-            title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
+            role="group"
+            aria-label={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
           >
             {shown.map((member) => {
               const colour = avatarColor(member.user_id, theme);
               const on = assignee === member.user_id;
               return (
-                <button
+                <Tooltip
                   key={member.user_id}
-                  type="button"
-                  className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
-                  style={{ background: colour.background, color: colour.foreground }}
-                  aria-pressed={on}
-                  title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                  onClick={() => {
-                    onAssignee(on ? undefined : member.user_id);
-                  }}
+                  content={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
                 >
-                  {initials(member.name)}
-                  <span className="visually-hidden">
-                    {on ? ' — showing only their work, click to clear' : ' — show only their work'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
+                    style={{ background: colour.background, color: colour.foreground }}
+                    aria-pressed={on}
+                    aria-label={memberFilterLabel(member.name, on)}
+                    onClick={() => {
+                      onAssignee(on ? undefined : member.user_id);
+                    }}
+                  >
+                    {initials(member.name)}
+                  </button>
+                </Tooltip>
               );
             })}
             {/*
@@ -606,21 +597,23 @@ export function BoardToolbar({
           */}
             {overflow > 0 && (
               <span className="bt-anchor">
-                <button
-                  ref={membersButton}
-                  type="button"
-                  className="bt-member-more"
-                  aria-label={`+${String(overflow)} more — show all ${String(members.length)} members`}
-                  aria-expanded={open === 'members'}
-                  aria-haspopup="dialog"
-                  aria-controls={open === 'members' ? membersPopId : undefined}
-                  onClick={() => {
-                    if (open === 'members') close(true);
-                    else setOpen('members');
-                  }}
-                >
-                  +{overflow}
-                </button>
+                <Tooltip content={`Show all ${String(members.length)} members`}>
+                  <button
+                    ref={membersButton}
+                    type="button"
+                    className="bt-member-more"
+                    aria-label={`+${String(overflow)} more — show all ${String(members.length)} members`}
+                    aria-expanded={open === 'members'}
+                    aria-haspopup="dialog"
+                    aria-controls={open === 'members' ? membersPopId : undefined}
+                    onClick={() => {
+                      if (open === 'members') close(true);
+                      else setOpen('members');
+                    }}
+                  >
+                    +{overflow}
+                  </button>
+                </Tooltip>
                 {open === 'members' && (
                   <MembersPopover
                     id={membersPopId}
@@ -961,94 +954,43 @@ export function BoardToolbar({
           </span>
         )}
 
-        {/* **Hidden columns (N)**, where it can be seen (review round 1) —
-            not only in the ⋯ menu. An icon and the count: Cancelled starts
-            hidden, so this is on most boards and must cost little width. */}
-        {hiddenColumns !== undefined && hiddenColumns > 0 && onHiddenColumns !== undefined && (
-          <button
-            type="button"
-            className="bt-icon bt-hidden-columns"
-            data-hidden-columns=""
-            aria-label={`Hidden columns (${String(hiddenColumns)})`}
-            title={`Hidden columns (${String(hiddenColumns)})`}
-            onClick={onHiddenColumns}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
-            </svg>
-            <span className="bt-hidden-count" aria-hidden="true">
-              {hiddenColumns}
-            </span>
-          </button>
-        )}
-
         <span className="bt-spacer" />
         <span id="board-stats-slot" className="bt-stats-slot" />
 
-        <button type="button" className="bt-icon" title="Insights" onClick={onInsights}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M3 17l5-5 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M15 8h5v5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="visually-hidden">Insights</span>
-        </button>
-
-        <button
-          type="button"
-          className="bt-icon"
-          title="View settings"
-          aria-haspopup="dialog"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            onViewSettings({
-              top: rect.bottom + 6,
-              right: Math.max(8, window.innerWidth - rect.right),
-            });
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-            <circle cx="9" cy="6" r="2" />
-            <circle cx="15" cy="12" r="2" />
-            <circle cx="8" cy="18" r="2" />
-          </svg>
-          <span className="visually-hidden">View settings</span>
-        </button>
-
-        <button type="button" className="bt-icon" title="Refresh the board" onClick={onRefresh}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
-            <path d="M20 5v6h-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="visually-hidden">Refresh</span>
-        </button>
-
-        <button
-          type="button"
-          className="bt-icon"
-          title="More"
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            onOverflow({
-              top: rect.bottom + 6,
-              right: Math.max(8, window.innerWidth - rect.right),
-            });
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="5" cy="12" r="1.7" />
-            <circle cx="12" cy="12" r="1.7" />
-            <circle cx="19" cy="12" r="1.7" />
-          </svg>
-          <span className="visually-hidden">More actions</span>
-        </button>
+        {/*
+          **One labelled overflow, not four bare icons** (LAI-1198). View
+          settings, Insights, Refresh and Hidden columns are in the menu this
+          opens, each with its word; a hidden column still shows here as a dot,
+          and in the button's name.
+        */}
+        <Tooltip content="More board actions">
+          <button
+            type="button"
+            className="bt-icon"
+            data-board-more=""
+            aria-label={
+              hiddenColumns > 0
+                ? `More board actions — ${String(hiddenColumns)} hidden ${hiddenColumns === 1 ? 'column' : 'columns'}`
+                : 'More board actions'
+            }
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              onOverflow({
+                top: rect.bottom + 6,
+                right: Math.max(8, window.innerWidth - rect.right),
+              });
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.7" />
+              <circle cx="12" cy="12" r="1.7" />
+              <circle cx="19" cy="12" r="1.7" />
+            </svg>
+            {hiddenColumns > 0 && <span className="bt-more-dot" aria-hidden="true" />}
+          </button>
+        </Tooltip>
       </div>
 
       {/*
@@ -1056,13 +998,21 @@ export function BoardToolbar({
       own under the controls. Covered rather than removed while the popover is
       open, so nothing under it moves.
     */}
-      <FilterChips
-        chips={chips}
-        covered={open === 'filter'}
-        onRemove={onRemoveFilter}
-        onClearAll={onClearFilters}
-        filterButtonRef={filterButton}
-      />
+      {/*
+        **Under the header, not inside it** (LAI-1198): the toolbar is one line
+        on every tab, so what the filters are doing gets the band below it —
+        the row content starts from, with the sprint scope at its end.
+      */}
+      <SpaceBand>
+        <FilterChips
+          chips={chips}
+          covered={open === 'filter'}
+          onRemove={onRemoveFilter}
+          onClearAll={onClearFilters}
+          filterButtonRef={filterButton}
+          trailing={scope}
+        />
+      </SpaceBand>
     </>
   );
 }

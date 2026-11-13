@@ -23,6 +23,9 @@ import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { createdViaLine, priorityWords, pullRequestLine } from './rail-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 import './task-panel.css';
 
 export interface TaskMetaProps {
@@ -269,7 +272,7 @@ export function TaskMeta({
             }}
           />
           <span className="meta-status-caret" aria-hidden="true">
-            ▾
+            <Icon name="chevron-down" size="tiny" />
           </span>
         </label>
         {/* The design's line beside the pill: where the task stands, in words (LAI-1117). */}
@@ -330,7 +333,10 @@ export function TaskMeta({
         {detailsOpen && (
           <div className="meta-rows">
             <div className="meta-row">
-              <p className="meta-label">Assignee</p>
+              <p className="meta-label">
+                <Icon name="person" size="small" className="section-mark" />
+                Assignee
+              </p>
               <div
                 className="meta-value meta-person"
                 data-editable={mayAssign ? 'assignee' : undefined}
@@ -385,7 +391,10 @@ export function TaskMeta({
             />
 
             <div className="meta-row">
-              <p className="meta-label">Priority</p>
+              <p className="meta-label">
+                <Icon name="flag" size="small" className="section-mark" />
+                Priority
+              </p>
               <div
                 className="meta-value meta-value-prio"
                 data-editable={mayEdit ? 'priority' : undefined}
@@ -444,7 +453,10 @@ export function TaskMeta({
             </div>
 
             <div className="meta-row">
-              <p className="meta-label">Sprint</p>
+              <p className="meta-label">
+                <Icon name="sprint" size="small" className="section-mark" />
+                Sprint
+              </p>
               <div className="meta-value" data-editable={maySetSprint ? 'sprint' : undefined}>
                 <label className="meta-select">
                   <span className="visually-hidden" id={sprintId}>
@@ -484,7 +496,10 @@ export function TaskMeta({
             </div>
 
             <div className="meta-row">
-              <p className="meta-label">Reporter</p>
+              <p className="meta-label">
+                <Icon name="person" size="small" className="section-mark" />
+                Reporter
+              </p>
               <div className="meta-value meta-person">
                 <span
                   className="meta-avatar"
@@ -516,7 +531,10 @@ export function TaskMeta({
             />
 
             <div className="meta-row">
-              <p className="meta-label">Watchers</p>
+              <p className="meta-label">
+                <Icon name="eye" size="small" className="section-mark" />
+                Watchers
+              </p>
               {watchers === undefined ? (
                 <p className="meta-value meta-plain meta-quiet">Could not read who is watching.</p>
               ) : watchers.length === 0 ? (
@@ -619,9 +637,11 @@ export function TaskMeta({
                     }
                   >
                     {pullIsUrl ? (
-                      <a href={pullUrl} target="_blank" rel="noreferrer" title={pullUrl}>
-                        {pullText}
-                      </a>
+                      <Tooltip content={pullUrl}>
+                        <a href={pullUrl} target="_blank" rel="noreferrer">
+                          {pullText}
+                        </a>
+                      </Tooltip>
                     ) : (
                       pullText
                     )}
@@ -647,21 +667,19 @@ export function TaskMeta({
         <p className="panel-foot-times">
           <span className="panel-foot-line">
             Created via {createdViaLine(task)} ·{' '}
-            <time
-              dateTime={timeLabel(task.created_at, now).iso}
-              title={timeLabel(task.created_at, now).full}
-            >
-              {dateTime(task.created_at, now)}
-            </time>
+            <Tooltip content={timeLabel(task.created_at, now).full}>
+              <time dateTime={timeLabel(task.created_at, now).iso}>
+                {dateTime(task.created_at, now)}
+              </time>
+            </Tooltip>
           </span>{' '}
           <span className="panel-foot-line">
             Updated{' '}
-            <time
-              dateTime={timeLabel(task.updated_at, now).iso}
-              title={timeLabel(task.updated_at, now).full}
-            >
-              {dateTime(task.updated_at, now)}
-            </time>
+            <Tooltip content={timeLabel(task.updated_at, now).full}>
+              <time dateTime={timeLabel(task.updated_at, now).iso}>
+                {dateTime(task.updated_at, now)}
+              </time>
+            </Tooltip>
           </span>
         </p>
         {named.length > 0 && <p className="panel-foot-watching">Watching: {named.join(', ')}</p>}
@@ -724,16 +742,22 @@ function OutsideIdRow({ value, mayEdit, onChange }: OutsideIdRowProps) {
               setDraft(event.target.value);
             }}
           />
-          <button
-            type="button"
-            className="dep-confirm"
-            disabled={busy || !isOutsideId(draft)}
-            onClick={() => {
-              void run(draft.trim());
-            }}
+          <DisabledReason
+            reason={!busy && !isOutsideId(draft) ? 'An outside id looks like LAI-123' : undefined}
           >
-            Save
-          </button>
+            <button
+              type="button"
+              className="dep-confirm"
+              disabled={busy}
+              aria-disabled={!isOutsideId(draft) ? true : undefined}
+              onClick={() => {
+                if (!isOutsideId(draft)) return;
+                void run(draft.trim());
+              }}
+            >
+              Save
+            </button>
+          </DisabledReason>
           <button
             type="button"
             className="dep-cancel"
@@ -776,17 +800,19 @@ function OutsideIdRow({ value, mayEdit, onChange }: OutsideIdRowProps) {
           >
             {value}
           </button>
-          <button
-            type="button"
-            className="dep-remove"
-            disabled={busy}
-            aria-label="Clear outside id"
-            onClick={() => {
-              void run(null);
-            }}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content="Clear outside id">
+            <button
+              type="button"
+              className="dep-remove"
+              disabled={busy}
+              aria-label="Clear outside id"
+              onClick={() => {
+                void run(null);
+              }}
+            >
+              <Icon name="close" size="tiny" />
+            </button>
+          </Tooltip>
         </div>
       ) : (
         <p className="meta-value meta-plain meta-mono">{value}</p>

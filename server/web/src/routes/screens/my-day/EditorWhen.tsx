@@ -17,6 +17,7 @@ import {
   WHEEL_MINUTES,
   WHEEL_PERIODS,
 } from './wheel-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** Time already logged, drawn grey on the bar. */
 export interface BusySpan extends WhenSpan {
@@ -417,17 +418,20 @@ export function EditorWhen({
             {bar.busy
               .filter((b) => b.end > BAR_START && b.start < BAR_START + BAR_SPAN)
               .map((b) => (
-                <span
+                <Tooltip
                   key={`${String(b.start)}-${String(b.end)}`}
-                  className={
-                    b.confirmed ? 'editor-bar-busy editor-bar-busy-confirmed' : 'editor-bar-busy'
-                  }
-                  title={`${b.label} · ${range(b)}`}
-                  style={{
-                    left: `${String(pct(b.start))}%`,
-                    width: `${String(Math.max(0.6, pct(b.end) - pct(b.start)))}%`,
-                  }}
-                />
+                  content={`${b.label} · ${range(b)}`}
+                >
+                  <span
+                    className={
+                      b.confirmed ? 'editor-bar-busy editor-bar-busy-confirmed' : 'editor-bar-busy'
+                    }
+                    style={{
+                      left: `${String(pct(b.start))}%`,
+                      width: `${String(Math.max(0.6, pct(b.end) - pct(b.start)))}%`,
+                    }}
+                  />
+                </Tooltip>
               ))}
             {now !== undefined && (
               <span className="editor-bar-now" style={{ left: `${String(pct(now))}%` }} />

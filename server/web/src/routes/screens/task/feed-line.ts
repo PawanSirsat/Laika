@@ -12,6 +12,7 @@ import {
   WITHHELD_SELECTION,
   type AgentNaming,
 } from '../../../api/selected-agent.ts';
+import type { IconName } from '../../../components/icon/icon-paths.ts';
 
 /**
  * **One activity row as the task feed words it** (D-129, LAI-1122): a short
@@ -32,16 +33,19 @@ import {
 export type FeedIcon =
   'created' | 'request' | 'moved' | 'started' | 'sent_back' | 'finished' | 'edited' | 'other';
 
-/** The glyph each kind draws: decoration, the sentence beside it says the same. */
-export const FEED_GLYPHS: Readonly<Record<FeedIcon, string>> = {
-  created: '+',
-  request: '⇄',
-  moved: '→',
-  started: '▶',
-  sent_back: '↩',
-  finished: '✓',
-  edited: '✎',
-  other: '•',
+/**
+ * The registry icon each kind draws (LAI-1213; typed characters until then):
+ * decoration, the sentence beside it says the same.
+ */
+export const FEED_ICONS: Readonly<Record<FeedIcon, IconName>> = {
+  created: 'plus',
+  request: 'swap',
+  moved: 'arrow-right',
+  started: 'play',
+  sent_back: 'reply',
+  finished: 'check',
+  edited: 'pencil',
+  other: 'dot',
 };
 
 export interface FeedLine {

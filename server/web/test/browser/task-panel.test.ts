@@ -631,6 +631,11 @@ void describe('the Jira-shaped task view (D-066)', () => {
       await openById(h);
       await h.page.locator('.panel-head-action[aria-label="More actions"]').click();
       await h.page.locator('.panel-overflow button', { hasText: 'Detach from parent' }).click();
+      // It asks first since LAI-1190 (B4); the yes is what sends it.
+      await h.page
+        .getByRole('alertdialog', { name: 'Detach from parent?' })
+        .getByRole('button', { name: 'Detach' })
+        .click();
       await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t4'));
 
       const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t4');
@@ -690,7 +695,10 @@ void describe('the Jira-shaped task view (D-066)', () => {
         await openById(h);
         const chip = h.page.locator('.meta-row-due .meta-date-chip');
         assert.ok(await chip.evaluate((el) => el.classList.contains('meta-date-overdue')));
-        assert.match(await chip.innerText(), /⚠/);
+        assert.equal(
+          await chip.locator('.meta-date-warn [data-icon="alert"]').getAttribute('aria-label'),
+          'Overdue',
+        );
         const colour = await chip.evaluate((el) => getComputedStyle(el).borderColor);
         assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the chip lost its border`);
         colours.push(colour);

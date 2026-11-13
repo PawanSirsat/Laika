@@ -37,6 +37,7 @@ import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import '../../connect/connect.css';
 import './add-wizards.css';
+import { Icon } from '../../../../components/icon/Icon.tsx';
 
 export interface AddDeviceWizardProps {
   /** The reader's devices, for *pair one you already have*; `undefined` while loading. */
@@ -521,7 +522,7 @@ export function AddDeviceWizard({
         aria-busy={busy || undefined}
         onClick={create}
       >
-        Get a pairing code <span aria-hidden="true">→</span>
+        Get a pairing code <Icon name="arrow-right" size="tiny" />
       </button>
     );
   } else if (step === 2 && pairing !== undefined) {
@@ -708,7 +709,7 @@ export function AddDeviceWizard({
             if (pairing.device_id !== null) onAddTool(pairing.device_id);
           }}
         >
-          Add a tool to {pairing.display_name} <span aria-hidden="true">→</span>
+          Add a tool to {pairing.display_name} <Icon name="arrow-right" size="tiny" />
         </button>
       );
   }

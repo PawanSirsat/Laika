@@ -6,6 +6,7 @@ import {
   percent,
   type Usage,
 } from '../../../api/usage.ts';
+import { spaceSeries } from '../../../theme/avatar-color.ts';
 import { BarRows, type BarRow } from './BarRows.tsx';
 import { spaceRow, spaceUsageHref } from './usage-derive.ts';
 
@@ -34,7 +35,7 @@ export function BySpaceRows({
   const whole = usage.totals.tokens;
 
   const rows: BarRow[] = spaces.map((p) => {
-    const to = spaceUsageHref(p.project.slug);
+    const to = spaceUsageHref(p.project.slug, usage.days);
     const kind = spaceRow(p.project.slug, offered);
     return {
       key: p.project.slug,
@@ -52,6 +53,8 @@ export function BySpaceRows({
       tokens: p.tokens,
       cacheRead: p.cache_read,
       note: `${percent(p.share)} · ${costText(p.cost)}`,
+      // The space's own hue, as its badge and the Time report paint it (LAI-1216).
+      color: spaceSeries(p.project.slug),
     };
   });
   if (outside.tokens > 0 || outside.cache_read > 0) {
@@ -62,6 +65,8 @@ export function BySpaceRows({
       tokens: outside.tokens,
       cacheRead: outside.cache_read,
       note: `${percent(whole === 0 ? null : outside.tokens / whole)} · tied to no task`,
+      // No space, no hue: grey, as the Time report draws time on nothing.
+      color: 'var(--chip-neutral)',
     });
   }
 

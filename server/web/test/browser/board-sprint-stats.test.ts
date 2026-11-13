@@ -27,6 +27,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -775,7 +776,7 @@ void describe('All sprints is always named (LAI-727 review)', () => {
     try {
       await reads(h, `All sprints ${summary(undefined)}`);
       const left = h.page.locator('.bstats-left');
-      assert.equal(await left.getAttribute('title'), 'No sprint end date');
+      assert.equal(await tipText(left), 'No sprint end date');
       assert.equal(await left.locator('.visually-hidden').textContent(), 'No sprint end date');
     } finally {
       await h.close();
@@ -822,14 +823,18 @@ void describe('the group is in the toolbar row in every tier (LAI-727 review)', 
 void describe('the pill (LAI-727 review)', () => {
   for (const theme of ['Light', 'Dark']) {
     void test(`${theme}: one figure in the row; BLK and LEFT on hover, focus and click`, async () => {
+      // **670, not 920** (LAI-1198): the board's row lost four icons to the
+      // labelled ⋯ menu, so at 920 the group now has room to stay full. 670
+      // is inside the pill's band with this fixture (the boundary test below
+      // finds the band rather than assuming it). Theme is set at 1440, where
+      // the rail and its theme control are on-canvas.
       const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS, {
-        before: async (page) => page.setViewportSize({ width: 920, height: 768 }),
+        before: async (page) => page.setViewportSize({ width: 1440, height: 768 }),
       });
       try {
         await reads(h, `S2 ${summary('s2')}`);
         await setTheme(h.page, theme);
-        // The icon rail, as 920px draws it since LAI-796: the sidebar is not
-        // opened (LAI-804). The boundary itself has its own test below.
+        await h.page.setViewportSize({ width: 670, height: 768 });
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
         await settled(h);
 
@@ -837,7 +842,7 @@ void describe('the pill (LAI-727 review)', () => {
         assert.match(
           (await pill.getAttribute('class')) ?? '',
           /bstats-pill/,
-          'not the pill at 920px',
+          'not the pill at 670px',
         );
         assert.equal(await pill.getAttribute('role'), 'button');
         assert.equal(await pill.getAttribute('tabindex'), '0');
@@ -870,7 +875,7 @@ void describe('the pill (LAI-727 review)', () => {
         assert.equal(opened.sideways, false, 'the tooltip pushes the page sideways');
         const tipBox = await tip.boundingBox();
         assert.ok(
-          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 920,
+          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 670,
           'the tooltip runs off the screen',
         );
 
@@ -940,7 +945,10 @@ void describe('the pill on its boundary with compact (LAI-804)', () => {
       );
       while ((await tierAt(width)) !== 'pill') {
         width -= 8;
-        assert.ok(width > 820, 'the pill was never reached on the way down');
+        // 600, not 820 (LAI-1198): with four icons moved into the ⋯ menu the
+        // row has room for longer, and the pill band now starts below the
+        // rail's 900px — still with the rail closed, as asserted below.
+        assert.ok(width > 600, 'the pill was never reached on the way down');
       }
       const firstPill = width;
       while ((await tierAt(width)) === 'pill') {
@@ -1277,7 +1285,7 @@ void describe('a board too long to read says its figures are partial (LAI-727)',
     });
     try {
       await h.page.locator('.bstats-partial').waitFor({ timeout: 20_000 });
-      assert.match((await h.page.locator('.bstats-partial').getAttribute('title')) ?? '', /first/i);
+      assert.match(await tipText(h.page.locator('.bstats-partial')), /first/i);
     } finally {
       await h.close();
     }
