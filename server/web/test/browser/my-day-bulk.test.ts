@@ -59,11 +59,11 @@ const posts = (h: Harness, end: string) =>
  * them — the page's own answer is what the week takes.
  */
 const dayReads = (h: Harness) =>
-  h.calls.filter(
-    (c) =>
-      c.method === 'GET' &&
-      c.path === '/api/v1/me/time' &&
-      new URLSearchParams(c.query).get('day') === TODAY,
+  h.requests.filter(
+    (r) =>
+      r.method === 'GET' &&
+      r.url.startsWith('/api/v1/me/time?') &&
+      new URL(r.url, 'http://stub').searchParams.get('day') === TODAY,
   ).length;
 
 void describe('the column beside the day', () => {

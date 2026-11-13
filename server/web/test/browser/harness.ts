@@ -403,10 +403,19 @@ export function applyStatusWrite(
 export interface StubCall {
   readonly method: string;
   readonly path: string;
-  /** The query as sent, `?` included, or `''` — `path` is the path alone (LAI-1179). */
-  readonly query: string;
   /** The parsed JSON body, or `undefined` for a request that sent none. */
   readonly body: unknown;
+}
+
+/**
+ * A request as its line was sent: method and `path?query` (LAI-1179). Beside
+ * {@link StubCall}, not in it — `calls` is `deepEqual`ed against
+ * `{ method, path, body }` literals across the suite, and a field added there
+ * reddens every one of them. A test that needs the query reads this list.
+ */
+export interface StubRequest {
+  readonly method: string;
+  readonly url: string;
 }
 
 const REPLY = Symbol('laika.stub.reply');
@@ -502,6 +511,8 @@ export interface Harness {
   readonly origin: string;
   /** Every `/api/` call the page made, in order. Live — read it after acting. */
   readonly calls: readonly StubCall[];
+  /** The same calls with their query strings, for a test that tells `?day=` apart. */
+  readonly requests: readonly StubRequest[];
   /**
    * Requests refused because a query-keyed stub existed for the path and none
    * matched, each as the **full URL that was actually requested** — the thing
@@ -601,6 +612,7 @@ function serve(
   built: string,
   stub: ApiStub,
   calls: StubCall[],
+  requests: StubRequest[],
   unmatched: string[],
 ): Promise<{ server: Server; origin: string }> {
   /** Every task a list has served, in full, by id — see {@link ONE_TASK_PATH}. */
@@ -626,8 +638,9 @@ function serve(
           // a request the stub cannot parse is itself worth being able to see.
           sent = raw;
         }
-        const call: StubCall = { method: req.method ?? 'GET', path, query: url.search, body: sent };
+        const call: StubCall = { method: req.method ?? 'GET', path, body: sent };
         calls.push(call);
+        requests.push({ method: call.method, url: `${path}${url.search}` });
 
         // Path alone by default — the stub is keyed by route, and a query
         // string is usually the client's business rather than the fixture's.
@@ -948,8 +961,9 @@ export async function open(
   options: OpenOptions = {},
 ): Promise<Harness> {
   const calls: StubCall[] = [];
+  const requests: StubRequest[] = [];
   const unmatched: string[] = [];
-  const served = await serve(ensureBuilt(), stub, calls, unmatched);
+  const served = await serve(ensureBuilt(), stub, calls, requests, unmatched);
   const { server } = served;
   const origin =
     options.insecure === true ? served.origin.replace('127.0.0.1', INSECURE_HOST) : served.origin;
@@ -961,6 +975,7 @@ export async function open(
     page,
     origin,
     calls,
+    requests,
     unmatched,
     close: async () => {
       await page.close();

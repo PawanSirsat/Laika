@@ -786,8 +786,10 @@ void describe('My day — the zoom as the design plays it (LAI-1179)', () => {
       assert.equal(await h.page.locator('.span-week-block').count(), blocks);
       // The day on screen was not asked for by the week: the page's own answer stands for it.
       assert.equal(
-        (h?.calls ?? []).filter(
-          (c) => c.path === '/api/v1/me/time' && new URLSearchParams(c.query).get('day') === TODAY,
+        (h?.requests ?? []).filter(
+          (r) =>
+            r.url.startsWith('/api/v1/me/time?') &&
+            new URL(r.url, 'http://stub').searchParams.get('day') === TODAY,
         ).length,
         2,
         'today: once per visit, by the page',
