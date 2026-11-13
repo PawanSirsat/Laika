@@ -32,15 +32,16 @@ export function startOfDay(at: number): number {
  * **Six, always** — a month spans five or six depending on where it starts,
  * and a grid that changes height as you page moves everything under it.
  */
-export function monthGrid(now: number, weeks = 6): readonly CalendarDay[] {
+export function monthGrid(month: number, weeks = 6, now = month): readonly CalendarDay[] {
+  // The month shown and today are apart since the grid pages (LAI-1178).
   const today = startOfDay(now);
-  const first = new Date(today);
+  const first = new Date(startOfDay(month));
   first.setDate(1);
 
   // `getDay()` is 0 for Sunday; the week starts Monday, as the design draws it.
   const weekday = (first.getDay() + 6) % 7;
   const start = startOfDay(first.getTime() - weekday * DAY);
-  const month = first.getMonth();
+  const shownMonth = first.getMonth();
 
   return Array.from({ length: weeks * 7 }, (_, i) => {
     const at = startOfDay(start + i * DAY);
@@ -49,7 +50,7 @@ export function monthGrid(now: number, weeks = 6): readonly CalendarDay[] {
     return {
       at,
       dayOfMonth: d.getDate(),
-      inMonth: d.getMonth() === month,
+      inMonth: d.getMonth() === shownMonth,
       isToday: at === today,
       isWeekend: dow === 0 || dow === 6,
     };
@@ -84,12 +85,12 @@ export interface CalendarWeek {
  * week label in its own gutter cell, so the rows cannot drift out of step with
  * their labels the way two parallel lists would.
  */
-export function monthWeeks(now: number, weeks = 6): readonly CalendarWeek[] {
-  const days = monthGrid(now, weeks);
+export function monthWeeks(month: number, weeks = 6, now = month): readonly CalendarWeek[] {
+  const days = monthGrid(month, weeks, now);
   return Array.from({ length: weeks }, (_, w) => {
     const slice = days.slice(w * 7, w * 7 + 7);
     return {
-      label: `W${String(isoWeek(slice[0]?.at ?? now))}`,
+      label: `W${String(isoWeek(slice[0]?.at ?? month))}`,
       days: slice,
     };
   });
@@ -161,4 +162,133 @@ export function placeByDue<T extends Pick<TaskSummary, 'due_on' | 'status'>>(
   const visible = new Map([...due].filter(([at]) => shown.has(at)));
   const placed = [...visible.values()].reduce((n, list) => n + list.length, 0);
   return { byDay: visible, placed, outside: open.length - placed, dated: open.length };
+}
+
+// ---------------------------------------------------------------- LAI-1178
+
+/**
+ * The month a `?month=YYYY-MM` names, as the local midnight of its first day;
+ * anything else is the month holding `now`. The address carries the month so
+ * a paged calendar is a link, and back and forward walk the months.
+ */
+export function monthOf(param: string | null | undefined, now: number): number {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(param ?? '');
+  if (m === null) {
+    const d = new Date(now);
+    return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  }
+  return new Date(Number(m[1]), Number(m[2]) - 1, 1).getTime();
+}
+
+/** The first of the month `by` months on or back. */
+export function stepMonth(month: number, by: number): number {
+  const d = new Date(month);
+  return new Date(d.getFullYear(), d.getMonth() + by, 1).getTime();
+}
+
+/** `2026-11`, as the address writes a month. */
+export function monthParam(month: number): string {
+  const d = new Date(month);
+  return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Whether two instants fall in the same local month. */
+export function sameMonth(a: number, b: number): boolean {
+  const x = new Date(a);
+  const y = new Date(b);
+  return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth();
+}
+
+/**
+ * The local day a reader dropped on, as the date-only value `due_on` stores:
+ * the UTC midnight of the same calendar date (D-066) — `localDay` read back.
+ */
+export function dateOnlyOf(localMidnight: number): number {
+  const d = new Date(localMidnight);
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * Open tasks due **before today**, apart from the rest (LAI-1178): they are
+ * late, not scheduled, and left on their old days they piled one cell into a
+ * column of fifteen. Oldest first, then by priority.
+ */
+export function splitOverdue<
+  T extends Pick<TaskSummary, 'due_on' | 'status' | 'priority' | 'number'>,
+>(
+  tasks: readonly T[],
+  now: number,
+): { readonly overdue: readonly T[]; readonly rest: readonly T[] } {
+  const today = startOfDay(now);
+  const overdue: T[] = [];
+  const rest: T[] = [];
+  for (const t of tasks) {
+    const open = t.status !== 'done' && t.status !== 'cancelled';
+    if (open && t.due_on !== null && localDay(t.due_on) < today) overdue.push(t);
+    else rest.push(t);
+  }
+  overdue.sort(
+    (a, b) =>
+      (a.due_on ?? 0) - (b.due_on ?? 0) ||
+      a.priority.localeCompare(b.priority) ||
+      a.number - b.number,
+  );
+  return { overdue, rest };
+}
+
+/** The chips a day shows, most urgent first, and how many wait behind "+N more". */
+export function dayOverflow<T extends Pick<TaskSummary, 'priority' | 'number'>>(
+  list: readonly T[],
+  max: number,
+): { readonly all: readonly T[]; readonly shown: readonly T[]; readonly more: number } {
+  const all = [...list].sort((a, b) => a.priority.localeCompare(b.priority) || a.number - b.number);
+  // Never "+1 more": a last chip fits where its button would go.
+  const cut = all.length > max ? max - 1 : all.length;
+  return { all, shown: all.slice(0, cut), more: all.length - cut };
+}
+
+export interface SprintSegment {
+  readonly id: string;
+  readonly name: string;
+  readonly running: boolean;
+  /** Columns 0–6 of the week the band covers, both ends kept. */
+  readonly from: number;
+  readonly to: number;
+  /** The band begins this week (its name is drawn) rather than carrying over. */
+  readonly starts: boolean;
+}
+
+/**
+ * One band per sprint per week row (LAI-1178), replacing an `S9` in every
+ * cell: where it starts and ends in the week, by the sprint's own dates read
+ * as the local days they name (LAI-819).
+ */
+export function sprintSegments(
+  days: readonly Pick<CalendarDay, 'at'>[],
+  sprints: readonly {
+    id: string;
+    name: string;
+    status: string;
+    starts_on: number;
+    ends_on: number;
+  }[],
+): readonly SprintSegment[] {
+  const out: SprintSegment[] = [];
+  for (const s of sprints) {
+    const start = localDay(s.starts_on);
+    const end = localDay(s.ends_on);
+    const cols = days.map((d, i) => (d.at >= start && d.at <= end ? i : -1)).filter((i) => i >= 0);
+    const from = cols[0];
+    const to = cols.at(-1);
+    if (from === undefined || to === undefined) continue;
+    out.push({
+      id: s.id,
+      name: s.name,
+      running: s.status === 'active',
+      from,
+      to,
+      starts: days[from]?.at === start,
+    });
+  }
+  return out.sort((a, b) => a.from - b.from);
 }
