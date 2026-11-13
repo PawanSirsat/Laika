@@ -45,7 +45,14 @@
 
 /* ===================================================================
  * Obsidian dark — the default. Values: the prototype's `.dk` block.
+ *
+ * Each theme block also answers to `[data-theme-preview='<name>']`
+ * (LAI-1212): the Appearance page's preview cards draw a miniature of the
+ * app in a theme other than the one on screen, from these same values —
+ * never a second copy of them. `:root…` stays last in each selector list,
+ * which is where the token guards look for it.
  * =================================================================== */
+[data-theme-preview='dark'],
 :root {
   /* ---- surfaces: canvas → column → card, and the steps are the design ---- */
   /* Brand scale (LAI-1126): Ink canvas, a half step to the column, Slate card. */
@@ -277,6 +284,7 @@
  * Obsidian light. The prototype's `:root` block, accent swapped to the
  * owner's light purple. Same token list, different values — nothing else.
  * =================================================================== */
+[data-theme-preview='light'],
 :root[data-theme='light'] {
   /* Brand scale (LAI-1126): a Paper canvas, a Fog-tinted column, white cards,
      Ink text. */
@@ -446,6 +454,183 @@
   --shadow-panel: 0 18px 48px rgba(30, 41, 66, 0.18);
   --shadow-popover: 0 12px 32px rgba(30, 41, 66, 0.16);
   --shadow-toast: 0 10px 28px rgba(30, 41, 66, 0.2);
+}
+
+/* ===================================================================
+ * Black (LAI-1212) — true black for OLED screens. Owner: "keep the dark
+ * theme into the black color itself".
+ *
+ * The canvas is #000000, so an OLED panel switches those pixels off. Every
+ * step above it is a **neutral** near-black (#0a0a0a, #141414, #1c1c1c) —
+ * no navy — because on a true-black ground any tint reads as a haze. Lines
+ * are white at low alpha, text is a cool off-white so it does not glare,
+ * and glass is a translucent near-black with a barely-there rim: on black
+ * there is nothing behind a pane to frost, so the material is carried by
+ * its edge, not its blur. Hues (chips, kinds, heat, spaces) are dark's —
+ * they were tuned for a dark ground and hold on a darker one.
+ * =================================================================== */
+[data-theme-preview='black'],
+:root[data-theme='black'] {
+  --bg-canvas: #000000;
+  --bg-column: #0a0a0a;
+  --bg-card: #141414;
+  --bg-card-hover: #1c1c1c;
+  --bg-pill: #141414;
+  --bg-input: #000000;
+  --sidebar-tint: #0a0a0a;
+
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-default: rgba(255, 255, 255, 0.2);
+  --border-card: rgba(255, 255, 255, 0.08);
+  --border-column: transparent;
+
+  --text-primary: #f2f2f5;
+  --text-secondary: #b8b8c0;
+  --text-muted: #8e8e98;
+
+  --accent: var(--accent-source);
+  --accent-bg: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 44%, transparent);
+  --on-accent: #0b1020;
+
+  --overdue: #f4636d;
+  --overdue-border: rgba(244, 99, 109, 0.4);
+  --blocked-bg: rgba(244, 99, 109, 0.14);
+
+  --chip-orange: #f0ac47;
+  --chip-orange-bg: rgba(240, 172, 71, 0.14);
+  --chip-orange-border: rgba(240, 172, 71, 0.36);
+  --chip-green: #2fd08a;
+  --chip-green-bg: rgba(47, 208, 138, 0.14);
+  --chip-green-border: rgba(47, 208, 138, 0.34);
+  --chip-blue: #38bdf8;
+  --chip-blue-bg: rgba(56, 189, 248, 0.14);
+  --chip-blue-border: rgba(56, 189, 248, 0.4);
+  --chip-pink: #f4636d;
+  --chip-pink-bg: rgba(244, 99, 109, 0.14);
+  --chip-pink-border: rgba(244, 99, 109, 0.38);
+  --chip-purple: #a78bfa;
+  --chip-purple-bg: rgba(167, 139, 250, 0.15);
+  --chip-purple-border: rgba(167, 139, 250, 0.42);
+  --chip-neutral: #b8b8c0;
+  --chip-neutral-bg: #0a0a0a;
+  --chip-neutral-border: rgba(255, 255, 255, 0.1);
+
+  --logo-tile: #eef0f6;
+  --logo-tile-border: rgba(255, 255, 255, 0.2);
+  --logo-ink: #171a21;
+
+  --priority-high: #f4636d;
+  --priority-medium: #f0ac47;
+  --priority-low: #9a9aa4;
+
+  --heat-empty: #1c1c1f;
+  --heat-gh-1: #4b3b78;
+  --heat-gh-2: #6e53b6;
+  --heat-gh-3: #9577ec;
+  --heat-gh-4: #c0b0fe;
+  --heat-lo-1: #66451f;
+  --heat-lo-2: #9d651c;
+  --heat-lo-3: #c97f14;
+  --heat-lo-4: #febb71;
+  --heat-all-1: #3f3f48;
+  --heat-all-2: #6a6a77;
+  --heat-all-3: #9494a1;
+  --heat-all-4: #c2c3d1;
+
+  --sky-day: rgba(251, 191, 36, 0.08);
+  --sky-night: rgba(129, 140, 248, 0.14);
+  --sky-night-body: rgba(129, 140, 248, 0.05);
+  --sun: #fbbf24;
+  --moon: #a5b4fc;
+
+  --kind-work: #a78bfa;
+  --kind-work-bg: #1e1830;
+  --kind-work-border: #4c3d7a;
+  --kind-meeting: #7fa6ff;
+  --kind-meeting-bg: #121829;
+  --kind-meeting-border: #2c3a5e;
+  --kind-thinking: #4ccf98;
+  --kind-thinking-bg: #0d1f17;
+  --kind-thinking-border: #1f4a35;
+  --kind-research: #f0b45a;
+  --kind-research-bg: #22190c;
+  --kind-research-border: #5c4419;
+  --kind-pairing: #c4b5fd;
+  --kind-pairing-bg: #211b35;
+  --kind-pairing-border: #5a4a8f;
+  --kind-review: #ff6b73;
+  --kind-review-bg: #251012;
+  --kind-review-border: #5e262b;
+  --kind-support: #9fb6ff;
+  --kind-support-bg: #151c33;
+  --kind-support-border: #35466f;
+  --kind-admin: #9d9daa;
+  --kind-admin-bg: #1a1a1f;
+  --kind-admin-border: #34343d;
+
+  --space-black: #3f3f46;
+  --space-violet: #7c3aed;
+  --space-teal: #0f766e;
+  --space-blue: #2158e0;
+  --space-amber: #8f5a08;
+  --space-magenta: #a21caf;
+  --space-red: #c42630;
+  --space-green: #0a6f4c;
+  --on-space: #ffffff;
+
+  --scrim: rgba(0, 0, 0, 0.7);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.8);
+
+  --brand-ink: #0b0f1a;
+  --brand-slate: #1c2332;
+  --brand-steel: #2e3a4f;
+  --brand-mist: #4b6282;
+  --brand-glacier: #8fa7c6;
+  --brand-fog: #b9c2d6;
+  --brand-paper: #f4f7fb;
+  --brand-periwinkle: #8da4f2;
+  --brand-legacy-purple: #a78bfa;
+  --brand-mark-1: #a9c6ee;
+  --brand-mark-2: #8fa7c6;
+  --brand-mark-3: #a7a4e6;
+  --brand-mark-rim: rgba(244, 247, 251, 0.55);
+  --brand-glow: rgba(111, 143, 232, 0.35);
+  --brand-dot: #6f8fe8;
+  --brand-track: rgba(60, 60, 66, 0.9);
+  --brand-active: #8fa7c6;
+  /* The splash on black is black: no navy lift for the panel to sit in. */
+  --brand-splash-from: #000000;
+  --brand-splash-to: #0a0a0a;
+  --brand-splash-arc: rgba(255, 255, 255, 0.04);
+  --brand-panel: rgba(20, 20, 20, 0.6);
+
+  /* ---- glass: translucent near-black, a neutral rim, no blue haze ---- */
+  --glass-1: rgba(10, 10, 10, 0.6);
+  --glass-2: rgba(16, 16, 16, 0.7);
+  --glass-3: rgba(22, 22, 22, 0.8);
+  --glass-1-solid: #0a0a0a;
+  --glass-2-solid: #141414;
+  --glass-3-solid: #1c1c1c;
+  --glass-solid: #141414;
+  --glass-hover: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-strong: rgba(255, 255, 255, 0.24);
+  --glass-highlight:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 55%);
+  --glass-glow: 0 0 0 1px rgba(141, 164, 242, 0.55), 0 0 12px rgba(111, 143, 232, 0.18);
+  --glass-scrim: rgba(0, 0, 0, 0.62);
+  --focus-ring: 0 0 0 2px #000000, 0 0 0 4px #b8c8ff, 0 0 10px rgba(141, 164, 242, 0.3);
+
+  /* ---- the ambient layer: black, with the faintest lift at the top ---- */
+  --ambient-base: linear-gradient(180deg, #060606 0%, #000000 60%);
+  --ambient-peak: #060606;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-panel: 0 18px 48px rgba(0, 0, 0, 0.7);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.7);
+  --shadow-toast: 0 10px 28px rgba(0, 0, 0, 0.75);
 }
 
 /* ===================================================================

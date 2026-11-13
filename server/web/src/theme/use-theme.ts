@@ -1,11 +1,14 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import {
   applyTheme,
+  readDarkVariant,
   readPreference,
   resolveTheme,
   systemTheme,
   watchSystemTheme,
+  writeDarkVariant,
   writePreference,
+  type DarkVariant,
   type Theme,
   type ThemePreference,
 } from './theme.ts';
@@ -16,6 +19,9 @@ export interface UseTheme {
   /** What the user asked for — `system` until they choose. */
   readonly preference: ThemePreference;
   readonly setPreference: (preference: ThemePreference) => void;
+  /** Which dark theme System uses when the OS asks for dark (LAI-1212). */
+  readonly darkVariant: DarkVariant;
+  readonly setDarkVariant: (variant: DarkVariant) => void;
 }
 
 /**
@@ -34,7 +40,8 @@ export interface UseTheme {
  * at once and keeps the hook's signature, so no call site changes.
  */
 let currentPreference: ThemePreference = readPreference();
-let currentTheme: Theme = resolveTheme(currentPreference);
+let currentVariant: DarkVariant = readDarkVariant();
+let currentTheme: Theme = resolveTheme(currentPreference, systemTheme(), currentVariant);
 
 const listeners = new Set<() => void>();
 let watching = false;
@@ -43,10 +50,17 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-function set(preference: ThemePreference, theme: Theme): void {
-  if (preference === currentPreference && theme === currentTheme) return;
+function set(
+  preference: ThemePreference,
+  theme: Theme,
+  variant: DarkVariant = currentVariant,
+): void {
+  if (preference === currentPreference && theme === currentTheme && variant === currentVariant) {
+    return;
+  }
   currentPreference = preference;
   currentTheme = theme;
+  currentVariant = variant;
   applyTheme(theme);
   emit();
 }
@@ -69,7 +83,8 @@ function startWatching(): void {
   // A second tab switching theme should not leave this one stale.
   addEventListener('storage', () => {
     const stored = readPreference();
-    set(stored, resolveTheme(stored, systemTheme()));
+    const variant = readDarkVariant();
+    set(stored, resolveTheme(stored, systemTheme(), variant), variant);
   });
 }
 
@@ -83,6 +98,19 @@ function subscribe(listener: () => void): () => void {
 
 const getTheme = (): Theme => currentTheme;
 const getPreference = (): ThemePreference => currentPreference;
+const getVariant = (): DarkVariant => currentVariant;
+
+/** Choose a theme from outside React (the palette's action): persist and apply. */
+export function choosePreference(next: ThemePreference): void {
+  writePreference(next);
+  set(next, resolveTheme(next, systemTheme(), currentVariant));
+}
+
+/** Choose System's dark variant: persist, and re-resolve if System is in force. */
+export function chooseDarkVariant(variant: DarkVariant): void {
+  writeDarkVariant(variant);
+  set(currentPreference, resolveTheme(currentPreference, systemTheme(), variant), variant);
+}
 
 /**
  * Read and set the theme.
@@ -94,11 +122,11 @@ const getPreference = (): ThemePreference => currentPreference;
 export function useTheme(): UseTheme {
   const theme = useSyncExternalStore(subscribe, getTheme);
   const preference = useSyncExternalStore(subscribe, getPreference);
+  const darkVariant = useSyncExternalStore(subscribe, getVariant);
 
   const setPreference = useCallback((next: ThemePreference): void => {
-    writePreference(next);
-    set(next, resolveTheme(next));
+    choosePreference(next);
   }, []);
 
-  return { theme, preference, setPreference };
+  return { theme, preference, setPreference, darkVariant, setDarkVariant: chooseDarkVariant };
 }

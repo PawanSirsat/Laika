@@ -112,6 +112,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No projects yet',
     body: 'Create the first one and point it at a repo.',
   },
+  '/settings/appearance': {
+    headline: 'Appearance',
+    body: 'Theme and interface font for this device — Light, Dark, Black or System.',
+  },
   '/people': {
     headline: 'No person chosen',
     body: 'A profile opens from a person’s name — on Organisation, a Capacity card or the Dashboard’s Contributors.',

@@ -54,7 +54,9 @@ function blockVars(css: string, selector: string): Map<string, string> {
     cursor = at + selector.length;
 
     // Only a selector when the very next thing is its block. This skips the
-    // mentions of `:root` and `.dk` inside the file's own comments.
+    // mentions of `:root` and `.dk` inside the file's own comments. A theme
+    // block's selector list ends in its `:root…` (LAI-1212 puts the preview
+    // scope first), so "next is `{`" still finds it.
     const opens = /^\s*\{/.exec(css.slice(cursor));
     if (!opens) continue;
 
@@ -81,6 +83,7 @@ function blockVars(css: string, selector: string): Map<string, string> {
 
 let light: Map<string, string>;
 let dark: Map<string, string>;
+let black: Map<string, string>;
 
 void before(async () => {
   const css = await readFile(TOKENS_CSS, 'utf8');
@@ -97,14 +100,20 @@ void before(async () => {
    */
   dark = blockVars(css, ':root');
   light = blockVars(css, ":root[data-theme='light']");
-  assert.ok(light.size > 10 && dark.size > 10, 'token blocks look empty — the parser is wrong');
+  black = blockVars(css, ":root[data-theme='black']");
+  assert.ok(
+    light.size > 10 && dark.size > 10 && black.size > 10,
+    'token blocks look empty — the parser is wrong',
+  );
 });
 
 void describe('every themed token exists in both themes', () => {
   void test('colour tokens', () => {
     const missingDark = ALL_COLOR_TOKENS.filter((t) => !dark.has(t));
     const missingLight = ALL_COLOR_TOKENS.filter((t) => !light.has(t));
+    const missingBlack = ALL_COLOR_TOKENS.filter((t) => !black.has(t));
     assert.deepEqual(missingDark, [], 'listed but missing from the dark block');
+    assert.deepEqual(missingBlack, [], 'listed but missing from the black block');
     assert.deepEqual(
       missingLight,
       [],
@@ -116,11 +125,13 @@ void describe('every themed token exists in both themes', () => {
     for (const t of ELEVATION_TOKENS) {
       assert.ok(dark.has(t), `${t} missing from the dark block`);
       assert.ok(light.has(t), `${t} missing from the light block`);
+      assert.ok(black.has(t), `${t} missing from the black block`);
     }
   });
 
   void test('the two themes declare exactly the same names', () => {
     assert.deepEqual([...light.keys()].sort(), [...dark.keys()].filter((k) => light.has(k)).sort());
+    assert.deepEqual([...black.keys()].sort(), [...light.keys()].sort(), 'black ≠ light names');
     const onlyDark = [...dark.keys()].filter((k) => !light.has(k));
     // Type, spacing, radius, families and the shared misc tokens are
     // theme-independent and live in the second bare-:root block, so they
@@ -144,7 +155,7 @@ void describe('every themed token exists in both themes', () => {
 
 void describe('token-list.ts matches tokens.css', () => {
   void test('every listed token is declared', () => {
-    const declared = new Set([...light.keys(), ...dark.keys()]);
+    const declared = new Set([...light.keys(), ...dark.keys(), ...black.keys()]);
     const listed = [
       ...ALL_COLOR_TOKENS,
       ...ELEVATION_TOKENS,
@@ -175,7 +186,9 @@ void describe('token-list.ts matches tokens.css', () => {
       ...GLASS_SHARED_TOKENS,
       ...LAYER_TOKENS,
     ]);
-    const unlisted = [...new Set([...light.keys(), ...dark.keys()])].filter((t) => !listed.has(t));
+    const unlisted = [...new Set([...light.keys(), ...dark.keys(), ...black.keys()])].filter(
+      (t) => !listed.has(t),
+    );
     assert.deepEqual(
       unlisted,
       [],
@@ -192,7 +205,7 @@ void describe('no per-person avatar colours shipped', () => {
     // README.md). There is no `avatar_color` column to read — §4.1 has not had
     // one since LAI-148, and this comment cited it until LAI-153.
     const fixtures = ['--mk', '--ta', '--sv', '--jd', '--rb'];
-    const present = fixtures.filter((t) => light.has(t) || dark.has(t));
+    const present = fixtures.filter((t) => light.has(t) || dark.has(t) || black.has(t));
     assert.deepEqual(present, [], 'per-person colour fixtures must not ship');
   });
 });
@@ -217,6 +230,7 @@ void describe('WCAG AA — body and secondary text on their own surfaces', () =>
   for (const [name, vars] of [
     ['light', () => light],
     ['dark', () => dark],
+    ['black', () => black],
   ] as const) {
     for (const pair of CONTRAST_PAIRS) {
       void test(`${name}: ${pair.text} on ${pair.background}`, () => {
@@ -275,6 +289,7 @@ void describe('glass (LAI-1132)', () => {
   for (const [name, vars] of [
     ['light', () => light],
     ['dark', () => dark],
+    ['black', () => black],
   ] as const) {
     for (const pair of GLASS_CONTRAST_PAIRS) {
       void test(`${name}: ${pair.text} on ${pair.glass} over ${pair.backdrop} clears AA`, () => {
@@ -305,6 +320,7 @@ void describe('glass (LAI-1132)', () => {
     // dark, the darkest in light.
     for (const [name, vars, worse] of [
       ['dark', () => dark, (a: number, b: number) => a > b],
+      ['black', () => black, (a: number, b: number) => a > b],
       ['light', () => light, (a: number, b: number) => a < b],
     ] as const) {
       const v = vars();
@@ -464,5 +480,53 @@ void describe('the theme is one shared value, not one per component', () => {
       if (text.includes('readPreference(')) backdoors.push(file.slice(src.length));
     }
     assert.deepEqual(backdoors, [], 'read the theme through the hook, not from storage');
+  });
+});
+
+void describe('Black is true black (LAI-1212)', () => {
+  void test('the canvas is #000000, and every surface above it is a neutral near-black', () => {
+    assert.equal(black.get('--bg-canvas'), '#000000');
+    assert.equal(black.get('--bg-input'), '#000000');
+    for (const t of [
+      '--bg-column',
+      '--bg-card',
+      '--bg-card-hover',
+      '--sidebar-tint',
+      '--glass-1-solid',
+      '--glass-2-solid',
+      '--glass-3-solid',
+    ]) {
+      const v = black.get(t) ?? '';
+      const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(v);
+      assert.ok(m, `${t} in black is not opaque hex: ${v}`);
+      const [r, g, b] = [m[1], m[2], m[3]].map((c) => parseInt(c ?? '', 16));
+      // Neutral: no channel apart from another — a navy step would read as a
+      // blue haze on true black.
+      assert.ok(r === g && g === b, `${t} in black is tinted: ${v}`);
+      // Near-black: elevated, but dark enough to keep the OLED saving.
+      assert.ok((r ?? 255) > 0 && (r ?? 255) <= 0x24, `${t} in black is not near-black: ${v}`);
+    }
+  });
+
+  void test('glass on black is a translucent neutral, never a blue haze', () => {
+    for (const t of ['--glass-1', '--glass-2', '--glass-3', '--glass-hover', '--glass-border']) {
+      const v = black.get(t) ?? '';
+      const m = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/.exec(v);
+      assert.ok(m, `${t} in black is not rgba(): ${v}`);
+      assert.ok(m[1] === m[2] && m[2] === m[3], `${t} in black is tinted: ${v}`);
+      assert.ok(Number(m[4]) < 1, `${t} in black is opaque`);
+    }
+  });
+
+  void test('surfaces step up from the canvas in order', () => {
+    const lum = (hex: string): number => parseInt(hex.slice(1, 3), 16);
+    const steps = ['--bg-canvas', '--bg-column', '--bg-card', '--bg-card-hover'].map((t) =>
+      lum(black.get(t) ?? '#ffffff'),
+    );
+    assert.deepEqual(
+      [...steps].sort((a, b) => a - b),
+      steps,
+    );
+    assert.equal(new Set(steps).size, steps.length, 'two surfaces share a step');
   });
 });

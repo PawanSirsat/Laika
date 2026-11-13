@@ -1,3 +1,4 @@
+import { toggledTheme } from '../theme/theme.ts';
 import { useTheme } from '../theme/use-theme.ts';
 import './theme-switch.css';
 
@@ -23,9 +24,10 @@ export interface ThemeSwitchProps {
  * transition needs no `prefers-reduced-motion` branch.
  */
 export function ThemeSwitch({ compact = false }: ThemeSwitchProps = {}) {
-  const { theme, setPreference } = useTheme();
-  const next = theme === 'dark' ? 'light' : 'dark';
-  const glyph = theme === 'dark' ? '☀' : '☾';
+  const { theme, setPreference, darkVariant } = useTheme();
+  // From any dark theme to light; from light to the reader's dark variant (LAI-1212).
+  const next = toggledTheme(theme, darkVariant);
+  const glyph = next === 'light' ? '☀' : '☾';
 
   return (
     <button
