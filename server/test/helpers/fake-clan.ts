@@ -2,12 +2,16 @@
  * A fake Clan (D-149, LAI-1181), served through an injected `fetch` — **no
  * test makes a real call** to an HR system.
  *
- * It answers the calls `services/clan-client.ts` makes: `GET /auth/me`, and
- * `GET /employee`, `/holiday` and `/leave` as `{data, meta: {paging:
- * {total}}}`, paged by `limit` (at most 1000) and `offset`. A request
- * without the token is `401`; a path in `forbidden` is `403`, as for a role
- * that may not read it. `total` can be made to lie, as a live Clan's did
- * (LAI-1180's log: `total: 2` for 25 rows).
+ * It answers the calls `services/clan-client.ts` makes: `POST /auth/login`
+ * and `/auth/two-factor`, `GET /auth/me`, and `GET /employee`, `/holiday`
+ * and `/leave` as `{data, meta: {paging: {total}}}`, paged by `limit` (at
+ * most 1000) and `offset`. A request without the token is `401`; a path in
+ * `forbidden` is `403`, as for a role that may not read it. `total` can be
+ * made to lie, as a live Clan's did (LAI-1180's log: `total: 2` for 25 rows).
+ *
+ * With a second factor on, the login answers a **restricted** token that
+ * every read refuses `403` until the code is given, and the code's answer
+ * carries the token to keep — what LAI-1180's live login measured.
  *
  * `intercept` answers a request before the fake does — a `429`, a `500` on
  * the second page, a hang until the client gives up — and `hold` keeps every
@@ -16,8 +20,13 @@
  */
 
 export const CLAN_BASE = 'https://kvell.clan.biz/api/v1';
-/** The HR account the fixture token belongs to. */
+/** The HR account the fixture token belongs to, and its sign-in. */
 export const CLAN_ACCOUNT = 'Forge';
+export const CLAN_EMAIL = 'forge@kvelld.example';
+/** A fixture string, never a real credential. */
+export const CLAN_PASSWORD = 'fixture-password-Zq7-never-real';
+/** What a login answers when a second factor is still owed. */
+export const CLAN_RESTRICTED_TOKEN = '41|fixtureRestrictedUntilTheCode0000RSTR';
 /** A fixture string, never a real credential: Sanctum's `{id}|{plain}`. */
 export const CLAN_TOKEN = '42|fixtureTokenPlainPart0123456789abcdWXYZ';
 
@@ -38,6 +47,11 @@ export interface FakeClanOptions {
   leave?: Record<string, unknown>[];
   /** What `/auth/me` answers as `data`. */
   me?: Record<string, unknown>;
+  /** Two-factor methods; set, and the login answers a restricted token and asks for a code. */
+  twoFactorMethods?: string[];
+  twoFactorCode?: string;
+  /** `data.expires` of a login or a code. */
+  expires?: string;
 }
 
 export interface FakeClan {
@@ -141,6 +155,32 @@ export function fakeClan(options: FakeClanOptions = {}): FakeClan {
       if (early === 'hang') return hang(init?.signal);
       if (early !== undefined) return early;
 
+      if (req.method === 'POST' && req.path === '/auth/login') {
+        const sent = JSON.parse(req.body) as { email?: string; password?: string };
+        if (sent.email !== CLAN_EMAIL || sent.password !== CLAN_PASSWORD) {
+          return json(401, { error: { code: 401, message: 'CLAN-SECRET-WORDS bad credentials' } });
+        }
+        const owed = options.twoFactorMethods !== undefined;
+        return json(200, {
+          data: {
+            token: owed ? CLAN_RESTRICTED_TOKEN : fake.token,
+            expires: options.expires ?? '2027-11-13T12:00:00.000000Z',
+            two_factor_auth: { enabled: owed, methods: options.twoFactorMethods ?? [] },
+          },
+        });
+      }
+      if (req.authorization === `Bearer ${CLAN_RESTRICTED_TOKEN}`) {
+        if (req.method === 'POST' && req.path === '/auth/two-factor') {
+          const sent = JSON.parse(req.body) as { method?: string; code?: string };
+          if (sent.code !== options.twoFactorCode) {
+            return json(422, { error: { code: 422, message: 'CLAN-SECRET-WORDS wrong code' } });
+          }
+          return json(200, {
+            data: { token: fake.token, expires: options.expires ?? '2027-11-13T12:00:00.000000Z' },
+          });
+        }
+        return json(403, { error: { code: 403, innererror: { code: 'TWO_FACTOR_REQUIRED' } } });
+      }
       if (req.authorization !== `Bearer ${fake.token}`) {
         // Clan's own words, which Laika must never pass on.
         return json(401, { error: { code: 401, message: 'CLAN-SECRET-WORDS unauthenticated' } });

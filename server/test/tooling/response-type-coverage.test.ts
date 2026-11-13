@@ -239,6 +239,7 @@ const UNPAIRED = new Map<string, string>([
   ['HrSourceView', 'no client type exists'],
   ['HrSyncErrorView', 'no client type exists'],
   ['HrSyncResultView', 'no client type exists'],
+  ['HrTwoFactorView', 'no client type exists'],
   ['HrPersonView', 'no client type exists'],
   ['HrPersonUserView', 'no client type exists'],
   ['HolidayView', 'no client type exists'],

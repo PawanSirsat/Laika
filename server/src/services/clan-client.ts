@@ -11,10 +11,13 @@ import { ApiError } from '../errors.ts';
  * own response text never echoed — it is a third party's words on their way
  * to a Laika user (§13.1).
  *
- * **`GET`s only, with a token somebody pasted** (D-149 item 1): Laika never
- * signs in, so no password or second-factor code ever reaches it, and it
- * never writes to Clan. It **never calls `/auth/refresh`**, which answers a
- * token good for an hour and revokes the year-long one it was given.
+ * **`GET`s, plus the one sign-in that makes a token** (D-149 item 1): a
+ * dedicated HR account is either signed in with once — `POST /auth/login`
+ * and, when Clan asks, `POST /auth/two-factor`, the password and code used
+ * for those calls and nothing else — or a token made for it is pasted.
+ * Laika never writes to Clan, and **never calls `/auth/refresh`**, which
+ * answers a token good for an hour and revokes the year-long one it was
+ * given.
  *
  * **Lists are paged until a short page**, never by `meta.paging.total`:
  * measured against a live Clan, `/employee` answered `total: 2` with 25 rows
@@ -88,6 +91,14 @@ export class ClanAuthError extends ApiError {
   }
 }
 
+/** Clan did not accept the email, password or two-factor code. Its words are not passed on. */
+export class ClanLoginError extends ApiError {
+  constructor() {
+    super('unprocessable', 'Clan did not accept that sign-in', { reason: 'clan_login_failed' });
+    this.name = 'ClanLoginError';
+  }
+}
+
 /** Clan answered, with something Laika cannot read as the documented shape. */
 export class ClanAnswerError extends ApiError {
   constructor(why: string) {
@@ -103,7 +114,8 @@ export class ClanAnswerError extends ApiError {
  * `https://<company>.clan.biz` in any of the ways a person pastes it → the
  * API root, `https://<company>.clan.biz/api/v1`, with no trailing slash.
  *
- * **`https:` only**: the token travels in a header on every request. No
+ * **`https:` only**: the token travels in a header on every request, and a
+ * sign-in's password in the first. No
  * credentials, query or fragment in the URL either — each is somewhere a
  * secret could hide, or a request Laika did not mean.
  */
@@ -134,8 +146,28 @@ export function normaliseClanBaseUrl(input: string): string {
   return `${url.origin}${root}`;
 }
 
+/** What `POST /auth/login` answers. */
+export interface ClanLogin {
+  /**
+   * The token. With a second factor on, it is a **restricted** one — Clan
+   * answers every read `403` until the code is given — and the code's answer
+   * carries the token to keep (LAI-1180's live login).
+   */
+  token: string;
+  /** Unix ms, or null when Clan did not say. */
+  expiresAt: number | null;
+  /** Null when the account has no second factor; else the methods Clan offers. */
+  twoFactor: { methods: string[] } | null;
+}
+
+/** What `POST /auth/two-factor` answers: the token to keep, when Clan sends one. */
+export interface ClanTwoFactor {
+  token: string | null;
+  expiresAt: number | null;
+}
+
 /**
- * What a token can read, checked when it is pasted (D-149 item 1): whose it
+ * What a token can read, checked when it is connected (D-149 item 1): whose it
  * is, and whether it sees everyone's leave and people's departments.
  */
 export interface ClanTokenCheck {
@@ -186,6 +218,8 @@ export interface ClanLeaveDay {
 }
 
 export interface ClanClient {
+  login(email: string, password: string): Promise<ClanLogin>;
+  twoFactor(token: string, method: string, code: string): Promise<ClanTwoFactor>;
   /** Whose the token is and what it reads, from `/auth/me` and a page each of leave and people. */
   check(token: string, from: string, to: string): Promise<ClanTokenCheck>;
   employees(token: string): Promise<ClanEmployee[]>;
@@ -338,7 +372,58 @@ export function clanClient(options: ClanClientOptions): ClanClient {
     }
   }
 
+  /** A sign-in call: `2xx` is `data`, a refusal `ClanLoginError`, never Clan's words. */
+  async function signIn(
+    path: string,
+    body: unknown,
+    token: string | null,
+  ): Promise<Record<string, unknown> | undefined> {
+    const answer = await send(path, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(body),
+    });
+    if (answer.status >= 500 || answer.status === 429) {
+      throw new ClanUnavailableError(`answered ${String(answer.status)}`, true);
+    }
+    // Wrong password, unknown email, a wrong code, a company address Clan
+    // does not know: all refusals, and none of Clan's wording goes further.
+    if (answer.status >= 400) throw new ClanLoginError();
+    if (answer.status < 200 || answer.status >= 300) {
+      throw new ClanAnswerError(`answered ${String(answer.status)}`);
+    }
+    return (answer.body as { data?: Record<string, unknown> } | undefined)?.data;
+  }
+
   return {
+    async login(email, password) {
+      const data = await signIn('/auth/login', { email, password }, null);
+      const token = data?.token;
+      if (typeof token !== 'string' || token === '') {
+        throw new ClanAnswerError('login: no token');
+      }
+      const factor = data?.two_factor_auth as { enabled?: unknown; methods?: unknown } | undefined;
+      const enabled = factor?.enabled === true || factor?.enabled === 1;
+      return {
+        token,
+        expiresAt: instantOf(data?.expires),
+        twoFactor: enabled ? { methods: methodsOf(factor?.methods) } : null,
+      };
+    },
+
+    async twoFactor(token, method, code) {
+      const data = await signIn('/auth/two-factor', { method, code }, token);
+      const next = data?.token;
+      return {
+        token: typeof next === 'string' && next !== '' ? next : null,
+        expiresAt: instantOf(data?.expires),
+      };
+    },
+
     async check(token, from, to) {
       // Whose it is. A `401` here is the token refused — the caller's answer.
       const me = await read('/auth/me', token);
@@ -428,6 +513,25 @@ function textOf(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed.slice(0, max);
+}
+
+function instantOf(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : at;
+}
+
+/** The second-factor methods Clan offers: names, or objects that carry one. */
+function methodsOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown[]).flatMap((m) => {
+    const named: unknown =
+      typeof m === 'object' && m !== null
+        ? ((m as { method?: unknown }).method ?? (m as { name?: unknown }).name)
+        : m;
+    const name = textOf(named, 40);
+    return name === null ? [] : [name];
+  });
 }
 
 /** A scope field Clan may send as one id, a list, a JSON list or a comma list. */

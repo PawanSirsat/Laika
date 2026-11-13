@@ -5,12 +5,16 @@ import {
   ClanAnswerError,
   ClanAuthError,
   clanClient,
+  ClanLoginError,
   ClanUnavailableError,
   normaliseClanBaseUrl,
 } from '../../src/services/clan-client.ts';
 import {
   CLAN_ACCOUNT,
   CLAN_BASE,
+  CLAN_EMAIL,
+  CLAN_PASSWORD,
+  CLAN_RESTRICTED_TOKEN,
   CLAN_TOKEN,
   employee,
   fakeClan,
@@ -158,7 +162,7 @@ describe('checking a pasted token', () => {
     expect(JSON.stringify(err.toBody())).not.toContain('CLAN-SECRET-WORDS');
   });
 
-  it('never signs in, never refreshes, and never writes', async () => {
+  it('reads with GETs only, and never refreshes the token', async () => {
     const fake = fakeClan({ employees: [employee(1, 'Ada', 'ada@example.test')] });
     const c = client(fake);
     await c.check(CLAN_TOKEN, ...WINDOW);
@@ -175,6 +179,61 @@ describe('checking a pasted token', () => {
       '/holiday',
       '/leave',
     ]);
+  });
+});
+
+describe('signing in with the dedicated account', () => {
+  it('sends the email and password once, and answers the token, its expiry and no second factor', async () => {
+    const fake = fakeClan();
+    const login = await client(fake).login(CLAN_EMAIL, CLAN_PASSWORD);
+
+    expect(login).toEqual({
+      token: CLAN_TOKEN,
+      expiresAt: Date.parse('2027-11-13T12:00:00.000Z'),
+      twoFactor: null,
+    });
+    const [req] = fake.to('/auth/login');
+    expect(req?.method).toBe('POST');
+    expect(JSON.parse(req?.body ?? '{}')).toEqual({ email: CLAN_EMAIL, password: CLAN_PASSWORD });
+    expect(req?.authorization).toBeNull();
+    expect(fake.requests).toHaveLength(1);
+  });
+
+  it('answers a restricted token and the methods when a second factor is owed', async () => {
+    const fake = fakeClan({ twoFactorMethods: ['google_authenticator'] });
+    const login = await client(fake).login(CLAN_EMAIL, CLAN_PASSWORD);
+    expect(login).toMatchObject({
+      token: CLAN_RESTRICTED_TOKEN,
+      twoFactor: { methods: ['google_authenticator'] },
+    });
+  });
+
+  it('refuses a wrong password as clan_login_failed, without Clan’s words', async () => {
+    const err = await caught(client(fakeClan()).login(CLAN_EMAIL, 'wrong'));
+
+    expect(err).toBeInstanceOf(ClanLoginError);
+    expect(err.status).toBe(422);
+    expect(reasonOf(err)).toBe('clan_login_failed');
+    expect(JSON.stringify(err.toBody())).not.toContain('CLAN-SECRET-WORDS');
+  });
+
+  it('gives the code with the restricted token, and answers the token to keep', async () => {
+    const fake = fakeClan({ twoFactorMethods: ['google_authenticator'], twoFactorCode: '123456' });
+    const c = client(fake);
+
+    const wrong = await caught(c.twoFactor(CLAN_RESTRICTED_TOKEN, 'google_authenticator', '0'));
+    expect(reasonOf(wrong)).toBe('clan_login_failed');
+
+    expect(await c.twoFactor(CLAN_RESTRICTED_TOKEN, 'google_authenticator', '123456')).toEqual({
+      token: CLAN_TOKEN,
+      expiresAt: Date.parse('2027-11-13T12:00:00.000Z'),
+    });
+    const last = fake.to('/auth/two-factor').at(-1);
+    expect(last?.authorization).toBe(`Bearer ${CLAN_RESTRICTED_TOKEN}`);
+    expect(JSON.parse(last?.body ?? '{}')).toEqual({
+      method: 'google_authenticator',
+      code: '123456',
+    });
   });
 });
 

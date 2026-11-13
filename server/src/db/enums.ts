@@ -675,6 +675,13 @@ export const HR_PROVIDERS = ['clan'] as const;
 export type HrProvider = (typeof HR_PROVIDERS)[number];
 
 /**
+ * `org_hr_source`'s `status` (§4.88, D-149 item 1, LAI-1181): a sign-in
+ * waiting ten minutes for its two-factor code, or connected. **No row is off.**
+ */
+export const HR_SOURCE_STATUSES = ['pending_2fa', 'connected'] as const;
+export type HrSourceStatus = (typeof HR_SOURCE_STATUSES)[number];
+
+/**
  * `org_hr_source`'s `last_error_code` (D-149, LAI-1181): why the last sync
  * changed nothing. The HR system refused the token (or the stored token could
  * not be read — connecting again is the remedy either way), could not be

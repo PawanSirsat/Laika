@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5230a945-3342-461a-9ed4-1e431393b909",
+  "id": "28ba5429-33c1-4f34-9d19-3f88bca165b8",
   "prevId": "ee447db1-2fc6-485c-a69b-01c2fd403c94",
   "tables": {
     "accounts": {
@@ -4194,6 +4194,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "base_url": {
           "name": "base_url",
           "type": "text",
@@ -4206,6 +4213,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "account_email": {
+          "name": "account_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "token_enc": {
@@ -4224,6 +4238,13 @@
         },
         "token_expires_at": {
           "name": "token_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pending_expires_at": {
+          "name": "pending_expires_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -4333,6 +4354,14 @@
         "org_hr_source_provider_check": {
           "name": "org_hr_source_provider_check",
           "value": "provider IN ('clan')"
+        },
+        "org_hr_source_status_check": {
+          "name": "org_hr_source_status_check",
+          "value": "status IN ('pending_2fa', 'connected')"
+        },
+        "org_hr_source_pending_check": {
+          "name": "org_hr_source_pending_check",
+          "value": "(status = 'pending_2fa') = (pending_expires_at IS NOT NULL)"
         },
         "org_hr_source_last_error_code_check": {
           "name": "org_hr_source_last_error_code_check",

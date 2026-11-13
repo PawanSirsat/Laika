@@ -49,6 +49,7 @@ import {
   HOLIDAY_SOURCES,
   HR_MATCHED_BY,
   HR_PROVIDERS,
+  HR_SOURCE_STATUSES,
   HR_SYNC_ERROR_CODES,
   LEAVE_PARTS,
   LEAVE_STATUSES,
@@ -1476,9 +1477,12 @@ export const memberNotices = sqliteTable(
 
 /**
  * The organisation's HR system (§4.88, D-149 items 1 and 7, LAI-1181): Clan,
- * connected by an owner or admin who **pastes a token** made for a dedicated
- * HR account. **No row is off.** Laika never signs in to the HR system: no
- * password and no second-factor code ever reach it.
+ * connected by an owner or admin **through a dedicated HR account, never a
+ * person's own** — signed in with once, or a token made for it, pasted. **No
+ * row is off.** A sign-in's password and two-factor code are used for those
+ * calls and never stored; while Clan waits for the code the row is
+ * `pending_2fa` until `pending_expires_at`, ten minutes on, and the sync
+ * reads a `connected` row only.
  *
  * The token is §12's ciphertext under its own purpose (`clan_api_token`),
  * with its last four characters to show. `sees_everyone` and
@@ -1495,15 +1499,20 @@ export const orgHrSource = sqliteTable(
       .primaryKey()
       .references(() => orgs.id, { onDelete: 'cascade' }),
     provider: text('provider', { enum: HR_PROVIDERS }).notNull(),
+    status: text('status', { enum: HR_SOURCE_STATUSES }).notNull(),
     /** `https://<company>.clan.biz/api/v1`, normalised, no trailing slash. */
     baseUrl: text('base_url').notNull(),
     /** The HR account the token belongs to, as the HR system names it. */
     accountName: text('account_name').notNull(),
+    /** The account's email when Laika signed in with it; null for a pasted token. */
+    accountEmail: text('account_email'),
     /** §12 ciphertext. Never logged, never served, never in `activity`. */
     tokenEnc: text('token_enc').notNull(),
     tokenLast4: text('token_last4').notNull(),
-    /** When the token lapses, unix ms, if the person pasting it gave the date. */
+    /** When the token lapses, unix ms: Clan's answer to a sign-in, or the date given with a pasted one. */
     tokenExpiresAt: integer('token_expires_at'),
+    /** While `pending_2fa`: when the half-done sign-in is given up. */
+    pendingExpiresAt: integer('pending_expires_at'),
     /** The last check found the token reads more than one person's leave. */
     seesEveryone: integer('sees_everyone').notNull(),
     /** The last check found people's departments filled in. */
@@ -1522,6 +1531,12 @@ export const orgHrSource = sqliteTable(
   (t) => [
     index('org_hr_source_connected_by_idx').on(t.connectedBy),
     check('org_hr_source_provider_check', oneOf('provider', HR_PROVIDERS)),
+    check('org_hr_source_status_check', oneOf('status', HR_SOURCE_STATUSES)),
+    // Pending has a deadline; a connected token has none to give up on.
+    check(
+      'org_hr_source_pending_check',
+      sql.raw("(status = 'pending_2fa') = (pending_expires_at IS NOT NULL)"),
+    ),
     check(
       'org_hr_source_last_error_code_check',
       oneOfOrNull('last_error_code', HR_SYNC_ERROR_CODES),

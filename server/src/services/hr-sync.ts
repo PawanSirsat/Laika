@@ -158,7 +158,8 @@ export async function syncHr(
   const clock = deps.now ?? Date.now;
 
   const source = db.select().from(orgHrSource).get();
-  if (source === undefined || serverSecret === '') return { kind: 'skipped' };
+  // A sign-in still waiting for its code holds a token Clan restricts.
+  if (source?.status !== 'connected' || serverSecret === '') return { kind: 'skipped' };
 
   const started = clock();
   let token: string;
@@ -296,7 +297,7 @@ function reconcile(
       // The connection the read was made with, still standing — or nothing is
       // written: an owner who disconnected meanwhile asked for exactly that.
       const still = tx.select().from(orgHrSource).get();
-      if (still?.tokenEnc !== source.tokenEnc) return false;
+      if (still?.status !== 'connected' || still.tokenEnc !== source.tokenEnc) return false;
 
       // ------------------------------------------------------------ people
       const people = byId(read.people);

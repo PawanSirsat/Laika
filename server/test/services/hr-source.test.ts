@@ -10,14 +10,19 @@ import {
   connectHr,
   disconnectHr,
   getHrSource,
+  HR_PENDING_MS,
   setHrPeople,
   syncHrNow,
+  verifyHr,
 } from '../../src/services/hr-source.ts';
 import { hrSyncInFlight, type HrSyncDeps } from '../../src/services/hr-sync.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 import {
   CLAN_ACCOUNT,
   CLAN_BASE,
+  CLAN_EMAIL,
+  CLAN_PASSWORD,
+  CLAN_RESTRICTED_TOKEN,
   CLAN_TOKEN,
   employee,
   fakeClan,
@@ -26,9 +31,10 @@ import {
 } from '../helpers/fake-clan.ts';
 
 /**
- * The HR connection (§4.88, D-149 items 1 and 4, LAI-1181): paste a token —
- * never a password — have it checked, keep it only as ciphertext, sync now,
- * disconnect, and the people map.
+ * The HR connection (§4.88, D-149 items 1 and 4, LAI-1181): a dedicated
+ * account signed in with once — the password and code never kept — or a token
+ * made for it pasted; either way checked and kept only as ciphertext. Then
+ * sync now, disconnect, and the people map.
  */
 
 const SECRET = 'test-secret-that-is-long-enough-to-pass-validation';
@@ -72,6 +78,7 @@ function deps(fake: FakeClan, now = NOW): HrSyncDeps {
 }
 
 const PASTE = { base_url: 'https://kvell.clan.biz/', token: CLAN_TOKEN };
+const SIGN_IN = { base_url: 'https://kvell.clan.biz', email: CLAN_EMAIL, password: CLAN_PASSWORD };
 
 async function caught(promise: Promise<unknown> | (() => unknown)): Promise<ApiError> {
   try {
@@ -121,6 +128,8 @@ describe('who may', () => {
     for (const call of [
       () => getHrSource(t.db, member, NOW),
       () => connectHr(t.db, member, SECRET, PASTE, deps(fake)),
+      () => connectHr(t.db, member, SECRET, SIGN_IN, deps(fake)),
+      () => verifyHr(t.db, member, SECRET, { method: 'email', code: '1' }, deps(fake)),
       () => disconnectHr(t.db, member),
       () => syncHrNow(t.db, member, SECRET, deps(fake)),
       () => setHrPeople(t.db, member, { people: [] }, NOW),
@@ -143,6 +152,8 @@ describe('off', () => {
       provider: null,
       base_url: null,
       account_name: null,
+      account_email: null,
+      two_factor: null,
       token_last4: null,
       token_expires_at: null,
       expiring_soon: false,
@@ -289,6 +300,7 @@ describe('connecting by pasting a token', () => {
       .values({
         orgId: s.orgId,
         provider: 'clan',
+        status: 'connected',
         baseUrl: CLAN_BASE,
         accountName: 'Old',
         tokenEnc: 'v1.old',
@@ -309,6 +321,130 @@ describe('connecting by pasting a token', () => {
       last_error: null,
     });
     expect(t.db.select().from(orgHrSource).all()).toHaveLength(1);
+  });
+});
+
+describe('signing in with the dedicated account', () => {
+  it('signs in once, checks the token, keeps the email but never the password', async () => {
+    const fake = fakeClan({ employees: [employee(1, 'Ada Lovelace', 'ada@example.test')] });
+    const view = await connected(fake, SIGN_IN);
+
+    expect(view).toMatchObject({
+      status: 'connected',
+      account_name: CLAN_ACCOUNT,
+      account_email: CLAN_EMAIL,
+      token_last4: CLAN_TOKEN.slice(-4),
+      token_expires_at: Date.parse('2027-11-13T12:00:00Z'),
+      two_factor: null,
+    });
+    expect(fake.requests.slice(0, 4).map((r) => r.path)).toEqual([
+      '/auth/login',
+      '/auth/me',
+      '/leave',
+      '/employee',
+    ]);
+    const row = t.db.select().from(orgHrSource).get();
+    expect(decryptSecret(row?.tokenEnc ?? '', SECRET, 'clan_api_token')).toBe(CLAN_TOKEN);
+
+    t.sqlite.pragma('wal_checkpoint(PASSIVE)');
+    const files = [t.path, `${t.path}-wal`].filter((f) => existsSync(f));
+    const bytes = Buffer.concat(files.map((f) => readFileSync(f)));
+    // A positive control: the email, kept on purpose, is there to be found.
+    expect(bytes.includes(Buffer.from(CLAN_EMAIL))).toBe(true);
+    expect(bytes.includes(Buffer.from(CLAN_PASSWORD))).toBe(false);
+    expect(bytes.includes(Buffer.from(CLAN_TOKEN))).toBe(false);
+  });
+
+  it('refuses a wrong password as 422 clan_login_failed and keeps nothing', async () => {
+    const err = await caught(
+      connectHr(t.db, owner, SECRET, { ...SIGN_IN, password: 'wrong' }, deps(fakeClan())),
+    );
+    expect(err.status).toBe(422);
+    expect(reasonOf(err)).toBe('clan_login_failed');
+    expect(t.db.select().from(orgHrSource).all()).toEqual([]);
+  });
+
+  it('waits for the code with the restricted token, checks nothing and syncs nothing until it comes', async () => {
+    const fake = fakeClan({ twoFactorMethods: ['google_authenticator'], twoFactorCode: '123456' });
+    const view = await connectHr(t.db, owner, SECRET, SIGN_IN, deps(fake));
+
+    expect(view).toMatchObject({
+      status: 'pending_2fa',
+      two_factor: { methods: ['google_authenticator'] },
+      account_email: CLAN_EMAIL,
+      sees_everyone: false,
+    });
+    expect(t.db.select().from(orgHrSource).get()).toMatchObject({
+      status: 'pending_2fa',
+      pendingExpiresAt: NOW + HR_PENDING_MS,
+    });
+    expect(
+      decryptSecret(
+        t.db.select().from(orgHrSource).get()?.tokenEnc ?? '',
+        SECRET,
+        'clan_api_token',
+      ),
+    ).toBe(CLAN_RESTRICTED_TOKEN);
+    expect(fake.requests.map((r) => r.path)).toEqual(['/auth/login']);
+    // A read of a waiting sign-in: the methods were said once.
+    expect(getHrSource(t.db, owner, NOW).two_factor).toEqual({ methods: [] });
+    expect(reasonOf(await caught(syncHrNow(t.db, owner, SECRET, deps(fake))))).toBe(
+      'hr_not_connected',
+    );
+
+    const wrong = await caught(
+      verifyHr(t.db, owner, SECRET, { method: 'google_authenticator', code: '0' }, deps(fake)),
+    );
+    expect(reasonOf(wrong)).toBe('clan_login_failed');
+    expect(t.db.select().from(orgHrSource).get()?.status).toBe('pending_2fa');
+
+    const done = await verifyHr(
+      t.db,
+      owner,
+      SECRET,
+      { method: 'google_authenticator', code: '123456' },
+      deps(fake),
+    );
+    await settle();
+    expect(done).toMatchObject({
+      status: 'connected',
+      two_factor: null,
+      account_name: CLAN_ACCOUNT,
+      account_email: CLAN_EMAIL,
+      token_last4: CLAN_TOKEN.slice(-4),
+    });
+    // The token kept is the one the code answered, not the restricted one.
+    const row = t.db.select().from(orgHrSource).get();
+    expect(decryptSecret(row?.tokenEnc ?? '', SECRET, 'clan_api_token')).toBe(CLAN_TOKEN);
+    expect(row?.pendingExpiresAt).toBeNull();
+    expect(fake.to('/holiday')).toHaveLength(1);
+  });
+
+  it('gives up after ten minutes: 409 two_factor_expired, and the sign-in is gone', async () => {
+    const fake = fakeClan({ twoFactorMethods: ['google_authenticator'], twoFactorCode: '123456' });
+    await connectHr(t.db, owner, SECRET, SIGN_IN, deps(fake));
+
+    expect(getHrSource(t.db, owner, NOW + HR_PENDING_MS).status).toBe('off');
+    const err = await caught(
+      verifyHr(
+        t.db,
+        owner,
+        SECRET,
+        { method: 'google_authenticator', code: '123456' },
+        deps(fake, NOW + HR_PENDING_MS),
+      ),
+    );
+    expect(err.status).toBe(409);
+    expect(reasonOf(err)).toBe('two_factor_expired');
+    expect(t.db.select().from(orgHrSource).all()).toEqual([]);
+    expect(fake.to('/auth/two-factor')).toEqual([]);
+  });
+
+  it('answers 409 two_factor_expired when nothing is waiting', async () => {
+    const err = await caught(
+      verifyHr(t.db, owner, SECRET, { method: 'email', code: '1' }, deps(fakeClan())),
+    );
+    expect(reasonOf(err)).toBe('two_factor_expired');
   });
 });
 

@@ -331,6 +331,7 @@ describe('hr.sync (D-149, LAI-1181)', () => {
       .values({
         orgId: seeded.orgId,
         provider: 'clan',
+        status: 'connected',
         baseUrl: CLAN_BASE,
         accountName: CLAN_ACCOUNT,
         tokenEnc: encryptSecret(CLAN_TOKEN, SECRET, 'clan_api_token'),

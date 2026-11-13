@@ -778,6 +778,7 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/org/time/solidtime/projects': 'session only (time_sync.map)',
   // D-149 (LAI-1181): the HR connection, session only; holidays are days, not tasks.
   'POST /api/v1/org/hr/connect': 'session only (org.hr.configure)',
+  'POST /api/v1/org/hr/connect/verify': 'session only (org.hr.configure)',
   'POST /api/v1/org/hr/sync': 'session only (org.hr.configure)',
   'PUT /api/v1/org/hr/people': 'session only (org.hr.configure)',
   'DELETE /api/v1/org/hr': 'session only (org.hr.configure)',

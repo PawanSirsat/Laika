@@ -59,6 +59,7 @@ function connect(token = CLAN_TOKEN): void {
     .values({
       orgId: s.orgId,
       provider: 'clan',
+      status: 'connected',
       baseUrl: CLAN_BASE,
       accountName: CLAN_ACCOUNT,
       tokenEnc: encryptSecret(token, SECRET, 'clan_api_token'),
@@ -133,6 +134,17 @@ describe('the window', () => {
 
 describe('nothing to sync', () => {
   it('reads nothing and writes nothing with no connected source', async () => {
+    const fake = fakeClan({ employees: staff() });
+    expect(await sync(fake)).toEqual({ kind: 'skipped' });
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('does not sync a sign-in still waiting for its two-factor code', async () => {
+    connect();
+    t.db
+      .update(orgHrSource)
+      .set({ status: 'pending_2fa', pendingExpiresAt: NOW + 60_000 })
+      .run();
     const fake = fakeClan({ employees: staff() });
     expect(await sync(fake)).toEqual({ kind: 'skipped' });
     expect(fake.requests).toEqual([]);

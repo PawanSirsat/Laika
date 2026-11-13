@@ -3,12 +3,12 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type HrMatchedBy, type HrProvider, type HrSyncErrorCode } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { hrPeople, leaveDays, orgHrSource, users } from '../db/schema.ts';
+import { hrPeople, leaveDays, orgHrSource, type OrgHrSource, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
-import { encryptSecret } from '../secrets.ts';
+import { decryptSecret, encryptSecret } from '../secrets.ts';
 import { isCalendarDay } from './calendar-days.ts';
-import { clanClient, normaliseClanBaseUrl } from './clan-client.ts';
+import { type ClanClient, clanClient, normaliseClanBaseUrl } from './clan-client.ts';
 import {
   HR_SYNC_EVERY_MINUTES,
   hrSyncInFlight,
@@ -20,28 +20,31 @@ import {
 
 /**
  * The organisation's connection to its HR system (§4.88, D-149 items 1 and 4,
- * LAI-1181): connect by pasting a token, see how the last sync went, sync
- * now, disconnect, and say who each HR person is.
+ * LAI-1181): connect, finish a two-factor sign-in, see how the last sync
+ * went, sync now, disconnect, and say who each HR person is.
  *
  * **Every call is `org.hr.configure`** — owners and admins holding *Change
  * organisation settings, Time and breaks*, signed in (§3.1). The token reads
  * everyone's leave, so no token of Laika's, an agent's included, reaches any
  * of it.
  *
- * ## Laika never signs in
+ * ## Always a dedicated HR account, connected one of two ways
  *
- * An owner or admin pastes a token made for a dedicated HR account by
- * whoever administers Clan (D-149 item 1, owner: *"I don't want to ask anyone
- * for a password"*). **No password and no second-factor code reach Laika.**
- * The token is checked as it is pasted — whose it is, and whether it sees
- * everyone's leave and people's departments — kept as §12's ciphertext under
- * `clan_api_token`, and only its last four characters are ever served. It is
- * in one request body and no store: no route here is on the idempotency
- * store's allow-list.
+ * **Signing in with it once** — its email and password, and the two-factor
+ * code when Clan asks, each used for its one call and **never stored, logged
+ * or returned** — or **pasting a token** made for it by whoever administers
+ * Clan. Either way Laika checks the token — whose it is, and whether it sees
+ * everyone's leave and people's departments — and keeps only that token, as
+ * §12's ciphertext under `clan_api_token`; only its last four characters are
+ * ever served. None of these requests is on the idempotency store's
+ * allow-list, so no body of theirs is kept there either.
  *
  * No `activity` row for any of it: §4.8 has no verb, as for the GitHub
  * webhook secret.
  */
+
+/** How long a sign-in waits for its two-factor code. */
+export const HR_PENDING_MS = 10 * 60 * 1000;
 
 /** A token this close to its end is flagged, so somebody connects again in time. */
 export const HR_EXPIRING_SOON_MS = 30 * 24 * 60 * 60 * 1000;
@@ -52,6 +55,11 @@ export const HR_PEOPLE_SHOWN = 500;
 export interface HrSyncErrorView {
   code: HrSyncErrorCode;
   message: string;
+}
+
+/** The two-factor methods Clan offered a waiting sign-in. */
+export interface HrTwoFactorView {
+  methods: string[];
 }
 
 export interface HrPersonUserView {
@@ -70,11 +78,19 @@ export interface HrPersonView {
 
 /** `GET /api/v1/org/hr`, and the answer of every write here (§6.4). */
 export interface HrSourceView {
-  status: 'off' | 'connected';
+  status: 'off' | 'pending_2fa' | 'connected';
   provider: HrProvider | null;
   base_url: string | null;
   /** The HR account the token belongs to, as the HR system names it. */
   account_name: string | null;
+  /** The account's email when Laika signed in with it; null for a pasted token. */
+  account_email: string | null;
+  /**
+   * While `pending_2fa`: the methods Clan offered. **Only the answer to
+   * `POST /org/hr/connect` carries them** — they are not stored — so a read
+   * of a waiting sign-in answers an empty list.
+   */
+  two_factor: HrTwoFactorView | null;
   token_last4: string | null;
   token_expires_at: number | null;
   /** The token ends within 30 days. False when nobody said when it ends. */
@@ -92,15 +108,38 @@ export interface HrSourceView {
   people: HrPersonView[];
 }
 
-export interface ConnectHrInput {
+/** Sign in with the dedicated account once. */
+export interface SignInHrInput {
+  base_url: string;
+  email: string;
+  password: string;
+}
+
+/** Paste a token made for the dedicated account. */
+export interface PasteHrInput {
   base_url: string;
   token: string;
   /** `YYYY-MM-DD`, when whoever made the token said when it ends. */
   expires_on?: string | undefined;
 }
 
+export type ConnectHrInput = SignInHrInput | PasteHrInput;
+
+export interface VerifyHrInput {
+  method: string;
+  code: string;
+}
+
 export interface HrPeopleInput {
   people: { external_id: string; user_id: string | null }[];
+}
+
+/** The row, when it is a connection: a sign-in left waiting past its ten minutes is none. */
+function liveSource(db: Db, now: number): OrgHrSource | undefined {
+  const row = db.select().from(orgHrSource).get();
+  if (row === undefined) return undefined;
+  if (row.status === 'pending_2fa' && (row.pendingExpiresAt ?? 0) <= now) return undefined;
+  return row;
 }
 
 function peopleView(db: Db): HrPersonView[] {
@@ -134,8 +173,8 @@ function resultOf(json: string | null): HrSyncResultView | null {
   }
 }
 
-function viewOf(db: Db, now: number): HrSourceView {
-  const row = db.select().from(orgHrSource).get();
+function viewOf(db: Db, now: number, methods: string[] | null = null): HrSourceView {
+  const row = liveSource(db, now);
   const people = peopleView(db);
   if (row === undefined) {
     return {
@@ -143,6 +182,8 @@ function viewOf(db: Db, now: number): HrSourceView {
       provider: null,
       base_url: null,
       account_name: null,
+      account_email: null,
+      two_factor: null,
       token_last4: null,
       token_expires_at: null,
       expiring_soon: false,
@@ -157,10 +198,12 @@ function viewOf(db: Db, now: number): HrSourceView {
     };
   }
   return {
-    status: 'connected',
+    status: row.status,
     provider: row.provider,
     base_url: row.baseUrl,
     account_name: row.accountName,
+    account_email: row.accountEmail,
+    two_factor: row.status === 'pending_2fa' ? { methods: methods ?? [] } : null,
     token_last4: row.tokenLast4,
     token_expires_at: row.tokenExpiresAt,
     expiring_soon: row.tokenExpiresAt !== null && row.tokenExpiresAt - now <= HR_EXPIRING_SOON_MS,
@@ -187,6 +230,20 @@ function lastFour(token: string): string {
   return token.slice(-4);
 }
 
+function requireSecret(serverSecret: string): void {
+  // §12's guard, `rotateGithubWebhookSecret`'s: never encrypt under an empty key.
+  if (serverSecret === '') throw new ApiError('internal', 'This server cannot store secrets');
+}
+
+function clientFor(baseUrl: string, deps: HrSyncDeps): ClanClient {
+  return clanClient({
+    baseUrl,
+    fetchImpl: deps.fetchImpl,
+    sleep: deps.sleep,
+    timeoutMs: deps.timeoutMs,
+  });
+}
+
 /**
  * Start a sync once whatever is running has finished — a run under the token
  * this connection replaced would otherwise be joined, find its token gone and
@@ -207,57 +264,37 @@ function syncSoon(db: Db, serverSecret: string, deps: HrSyncDeps): void {
 }
 
 /**
- * `POST /api/v1/org/hr/connect`: check a pasted token against Clan, keep it,
- * and start the first sync in the background.
- *
- * The check asks Clan whose the token is (`/auth/me`) and reads a page each
- * of leave and people to say whether it **sees everyone** and **sees
- * departments** — the screen says so, rather than the first sync quietly
- * finding one person's leave. A token Clan refuses is `422
- * clan_token_refused`; a Clan that does not answer is `503 clan_unreachable`.
- *
- * **Connecting replaces whatever connection there was**, and the last sync's
- * record with it. The people map, holidays and leave stay.
+ * Check a usable token and keep it as the connection: whose it is and what it
+ * reads, then the row, then the first sync in the background. Replaces
+ * whatever connection there was, and the last sync's record with it; the
+ * people map, holidays and leave stay.
  */
-export async function connectHr(
+async function keepConnection(
   db: Db,
   actor: ResolvedActor,
   serverSecret: string,
-  input: ConnectHrInput,
-  deps: HrSyncDeps = {},
+  baseUrl: string,
+  token: string,
+  facts: { accountEmail: string | null; expiresAt: number | null },
+  deps: HrSyncDeps,
 ): Promise<HrSourceView> {
-  assertCan(actor, 'org.hr.configure');
-  // §12's guard, `rotateGithubWebhookSecret`'s: never encrypt under an empty key.
-  if (serverSecret === '') throw new ApiError('internal', 'This server cannot store secrets');
-  const baseUrl = normaliseClanBaseUrl(input.base_url);
-  const token = input.token.trim();
-  if (input.expires_on !== undefined && !isCalendarDay(input.expires_on)) {
-    throw new ApiError('unprocessable', 'expires_on must be a date, YYYY-MM-DD', {
-      field: 'expires_on',
-    });
-  }
   const clock = deps.now ?? Date.now;
-
   const window = syncWindow(clock());
   // `ClanAuthError` (422 `clan_token_refused`), `ClanUnavailableError` and
   // `ClanAnswerError` (503) reach the caller as they are.
-  const check = await clanClient({
-    baseUrl,
-    fetchImpl: deps.fetchImpl,
-    sleep: deps.sleep,
-    timeoutMs: deps.timeoutMs,
-  }).check(token, window.from, window.to);
+  const check = await clientFor(baseUrl, deps).check(token, window.from, window.to);
 
   const now = clock();
   const values = {
     provider: 'clan' as const,
+    status: 'connected' as const,
     baseUrl,
     accountName: check.accountName,
+    accountEmail: facts.accountEmail,
     tokenEnc: encryptSecret(token, serverSecret, 'clan_api_token'),
     tokenLast4: lastFour(token),
-    // The day it ends, as its UTC midnight: what the screen shows back.
-    tokenExpiresAt:
-      input.expires_on === undefined ? null : Date.parse(`${input.expires_on}T00:00:00Z`),
+    tokenExpiresAt: facts.expiresAt,
+    pendingExpiresAt: null,
     seesEveryone: check.seesEveryone ? 1 : 0,
     seesDepartments: check.seesDepartments ? 1 : 0,
     connectedBy: actor.userId,
@@ -279,6 +316,148 @@ export async function connectHr(
 }
 
 /**
+ * `POST /api/v1/org/hr/connect`: sign in with the dedicated account once, or
+ * keep a pasted token (§6.4, D-149 item 1).
+ *
+ * **Signing in**: the password goes to Clan in that one call and no further.
+ * With no second factor the token is checked and kept at once; with one, the
+ * restricted token Clan answers waits ten minutes, encrypted, as
+ * `pending_2fa`, for {@link verifyHr}. A refused sign-in is `422
+ * clan_login_failed`.
+ *
+ * **Pasting**: the token is checked and kept; one Clan refuses is `422
+ * clan_token_refused`. `expires_on`, when given, is kept as that day's UTC
+ * midnight, which is what the screen shows back.
+ *
+ * Either way an unreachable Clan is `503 clan_unreachable`, and nothing is
+ * kept unless the call succeeds.
+ */
+export async function connectHr(
+  db: Db,
+  actor: ResolvedActor,
+  serverSecret: string,
+  input: ConnectHrInput,
+  deps: HrSyncDeps = {},
+): Promise<HrSourceView> {
+  assertCan(actor, 'org.hr.configure');
+  requireSecret(serverSecret);
+  const baseUrl = normaliseClanBaseUrl(input.base_url);
+
+  if ('token' in input) {
+    if (input.expires_on !== undefined && !isCalendarDay(input.expires_on)) {
+      throw new ApiError('unprocessable', 'expires_on must be a date, YYYY-MM-DD', {
+        field: 'expires_on',
+      });
+    }
+    const expiresAt =
+      input.expires_on === undefined ? null : Date.parse(`${input.expires_on}T00:00:00Z`);
+    return keepConnection(
+      db,
+      actor,
+      serverSecret,
+      baseUrl,
+      input.token.trim(),
+      { accountEmail: null, expiresAt },
+      deps,
+    );
+  }
+
+  const email = input.email.trim().toLowerCase();
+  // `ClanLoginError` (422 `clan_login_failed`) and the rest reach the caller.
+  const login = await clientFor(baseUrl, deps).login(email, input.password);
+  if (login.twoFactor === null) {
+    return keepConnection(
+      db,
+      actor,
+      serverSecret,
+      baseUrl,
+      login.token,
+      { accountEmail: email, expiresAt: login.expiresAt },
+      deps,
+    );
+  }
+
+  // Waiting for the code. Nothing is checked yet: Clan answers every read of
+  // a restricted token `403`, so the account is named by its email until then.
+  const now = (deps.now ?? Date.now)();
+  const values = {
+    provider: 'clan' as const,
+    status: 'pending_2fa' as const,
+    baseUrl,
+    accountName: email,
+    accountEmail: email,
+    tokenEnc: encryptSecret(login.token, serverSecret, 'clan_api_token'),
+    tokenLast4: lastFour(login.token),
+    tokenExpiresAt: login.expiresAt,
+    pendingExpiresAt: now + HR_PENDING_MS,
+    seesEveryone: 0,
+    seesDepartments: 0,
+    connectedBy: actor.userId,
+    connectedAt: now,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastErrorCode: null,
+    lastError: null,
+    lastResultJson: null,
+    updatedAt: now,
+  };
+  db.insert(orgHrSource)
+    .values({ orgId: requireOrgId(db), ...values })
+    .onConflictDoUpdate({ target: orgHrSource.orgId, set: values })
+    .run();
+  return viewOf(db, now, login.twoFactor.methods);
+}
+
+/**
+ * `POST /api/v1/org/hr/connect/verify`: the two-factor code for a sign-in
+ * that is waiting. Clan answers it with the token to keep, which is then
+ * checked and kept as a pasted one is. A sign-in that waited past ten
+ * minutes, or none at all, is `409 two_factor_expired` — start again.
+ */
+export async function verifyHr(
+  db: Db,
+  actor: ResolvedActor,
+  serverSecret: string,
+  input: VerifyHrInput,
+  deps: HrSyncDeps = {},
+): Promise<HrSourceView> {
+  assertCan(actor, 'org.hr.configure');
+  requireSecret(serverSecret);
+  const clock = deps.now ?? Date.now;
+  const row = db.select().from(orgHrSource).get();
+  if (row?.status !== 'pending_2fa') {
+    throw new ApiError('conflict', 'No sign-in is waiting for a code; connect again', {
+      reason: 'two_factor_expired',
+    });
+  }
+  if ((row.pendingExpiresAt ?? 0) <= clock()) {
+    db.delete(orgHrSource).where(eq(orgHrSource.orgId, row.orgId)).run();
+    throw new ApiError('conflict', 'The sign-in waited too long for its code; connect again', {
+      reason: 'two_factor_expired',
+    });
+  }
+
+  const restricted = decryptSecret(row.tokenEnc, serverSecret, 'clan_api_token');
+  const answer = await clientFor(row.baseUrl, deps).twoFactor(restricted, input.method, input.code);
+  // The sign-in this code was for, and not one started since.
+  const still = db.select({ tokenEnc: orgHrSource.tokenEnc }).from(orgHrSource).get();
+  if (still?.tokenEnc !== row.tokenEnc) {
+    throw new ApiError('conflict', 'Another sign-in replaced this one; connect again', {
+      reason: 'two_factor_expired',
+    });
+  }
+  return keepConnection(
+    db,
+    actor,
+    serverSecret,
+    row.baseUrl,
+    answer.token ?? restricted,
+    { accountEmail: row.accountEmail, expiresAt: answer.expiresAt ?? row.tokenExpiresAt },
+    deps,
+  );
+}
+
+/**
  * `DELETE /api/v1/org/hr`: forget the token and stop syncing. Holidays and
  * leave already synced stay as they were last known (D-149 item 7), and so
  * does the people map.
@@ -290,7 +469,8 @@ export function disconnectHr(db: Db, actor: ResolvedActor): void {
 
 /**
  * `POST /api/v1/org/hr/sync`: sync now, or wait for the sync already running,
- * and answer how it went.
+ * and answer how it went. A sign-in still waiting for its code is not
+ * connected.
  */
 export async function syncHrNow(
   db: Db,
@@ -300,7 +480,7 @@ export async function syncHrNow(
 ): Promise<HrSourceView> {
   assertCan(actor, 'org.hr.configure');
   const clock = deps.now ?? Date.now;
-  if (db.select({ orgId: orgHrSource.orgId }).from(orgHrSource).get() === undefined) {
+  if (liveSource(db, clock())?.status !== 'connected') {
     throw new ApiError('conflict', 'The HR system is not connected', {
       reason: 'hr_not_connected',
     });
