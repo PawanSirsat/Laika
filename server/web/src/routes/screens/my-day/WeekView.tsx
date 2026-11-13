@@ -1,19 +1,52 @@
+import { memo, useMemo, useSyncExternalStore } from 'react';
 import type { MyDay } from '../../../api/time.ts';
 import { compact, duration, hourName } from './format.ts';
-import { dayTotals } from './my-day-derive.ts';
+import { addDays, dayTotals } from './my-day-derive.ts';
 import { barOf, boxDetail, busiest, pct, weekBoxes, weekHours } from './span-derive.ts';
 import { dayLine, type LaneBlock } from './timeline-derive.ts';
 import { dayLong, shortDay } from './week-derive.ts';
 
 export interface WeekViewProps {
-  /** Monday to Sunday, each as `GET /me/time` answers it. */
-  readonly days: readonly MyDay[];
+  /** The week's Monday. */
+  readonly monday: string;
+  /**
+   * Monday to Sunday, each as `GET /me/time` answers it — or nothing yet
+   * (LAI-1179): the week is then drawn at its shape, days named and dated,
+   * its figures a shimmer, so the zoom onto it starts on the click.
+   */
+  readonly days: readonly MyDay[] | undefined;
   readonly today: string;
-  readonly nowMs: number;
   readonly onOpenDay: (day: string) => void;
   /** A block opens its day with the block in the editor, as the design's. */
   readonly onOpenBlock: (day: string, pick: { kind: 'draft' | 'entry'; id: string }) => void;
 }
+
+/**
+ * The minute, for the week's now line: one interval for every subscriber,
+ * read through `useSyncExternalStore`, so the stage is not re-rendered by a
+ * clock it does not need (LAI-1179) and the line still moves.
+ */
+const minuteListeners = new Set<() => void>();
+let minuteTimer: ReturnType<typeof setInterval> | undefined;
+function subscribeMinute(fn: () => void): () => void {
+  minuteListeners.add(fn);
+  minuteTimer ??= setInterval(() => {
+    minuteListeners.forEach((l) => {
+      l();
+    });
+  }, 60_000);
+  return () => {
+    minuteListeners.delete(fn);
+    if (minuteListeners.size === 0 && minuteTimer !== undefined) {
+      clearInterval(minuteTimer);
+      minuteTimer = undefined;
+    }
+  };
+}
+const minuteNow = (): number => Math.floor(Date.now() / 60_000) * 60_000;
+const useMinute = (): number => useSyncExternalStore(subscribeMinute, minuteNow, minuteNow);
+
+const WEEKDAYS = Array.from({ length: 7 }, (_, i) => i);
 
 /**
  * My day → Week (LAI-1174): seven columns of the hours the week's blocks
@@ -21,41 +54,67 @@ export interface WeekViewProps {
  * block where it happened, two at once side by side. A column's head is its
  * day, its total and a bar that is a share of the week's busiest day.
  */
-export function WeekView({ days, today, nowMs, onOpenDay, onOpenBlock }: WeekViewProps) {
-  const lines = days.map((d) => ({ view: d, line: dayLine(d, nowMs) }));
-  const hours = weekHours(lines.flatMap((l) => l.line.blocks));
+export const WeekView = memo(function WeekView({
+  monday,
+  days,
+  today,
+  onOpenDay,
+  onOpenBlock,
+}: WeekViewProps) {
+  const nowMs = useMinute();
+  const lines = useMemo(
+    () => (days ?? []).map((d) => ({ view: d, line: dayLine(d, nowMs) })),
+    [days, nowMs],
+  );
+  const hours = useMemo(() => weekHours(lines.flatMap((l) => l.line.blocks)), [lines]);
+  const totals = useMemo(
+    () =>
+      (days ?? []).map((d) => {
+        const t = dayTotals(d);
+        return { confirmed_minutes: t.confirmed, drafted_minutes: t.drafted };
+      }),
+    [days],
+  );
   const rows = hours.to - hours.from;
-  const totals = days.map((d) => {
-    const t = dayTotals(d);
-    return { confirmed_minutes: t.confirmed, drafted_minutes: t.drafted };
-  });
   const top = busiest(totals);
+  const pending = days === undefined;
 
   return (
-    <div className="span-week" data-span-week style={{ ['--span-hours' as string]: String(rows) }}>
+    <div
+      className="span-week"
+      data-span-week
+      data-pending={pending ? '' : undefined}
+      style={{ ['--span-hours' as string]: String(rows) }}
+    >
       <div className="span-week-head" role="row">
         <span className="span-week-corner" aria-hidden="true" />
-        {days.map((d, i) => {
-          const t = totals[i] ?? { confirmed_minutes: 0, drafted_minutes: 0 };
-          const all = t.confirmed_minutes + t.drafted_minutes;
-          const bar = barOf(t, top);
+        {WEEKDAYS.map((i) => {
+          const day = days?.[i]?.day ?? addDays(monday, i);
+          const state = days?.[i]?.state ?? (day > today ? 'future' : undefined);
+          const t = totals[i];
+          const all = t === undefined ? 0 : t.confirmed_minutes + t.drafted_minutes;
+          const bar = t === undefined ? { confirmed: 0, drafted: 0 } : barOf(t, top);
           return (
             <button
-              key={d.day}
+              key={day}
               type="button"
               className="span-week-day"
-              data-zk={`d:${d.day}`}
-              data-state={d.state}
-              data-today={d.day === today ? '' : undefined}
-              aria-label={`Open ${dayLong(d.day)}`}
+              data-zk={`d:${day}`}
+              data-state={state}
+              data-today={day === today ? '' : undefined}
+              aria-label={`Open ${dayLong(day)}`}
               onClick={() => {
-                onOpenDay(d.day);
+                onOpenDay(day);
               }}
             >
-              <span className="span-week-name">{shortDay(d.day)}</span>
-              <span className="span-week-total" title={all > 0 ? duration(all) : undefined}>
-                {d.state === 'future' ? '' : all > 0 ? compact(all) : '—'}
-              </span>
+              <span className="span-week-name">{shortDay(day)}</span>
+              {t === undefined ? (
+                <span className="span-week-total span-pending-bone" aria-hidden="true" />
+              ) : (
+                <span className="span-week-total" title={all > 0 ? duration(all) : undefined}>
+                  {state === 'future' ? '' : all > 0 ? compact(all) : '—'}
+                </span>
+              )}
               <span className="span-bar" aria-hidden="true">
                 <span className="span-bar-c" style={{ width: pct(bar.confirmed) }} />
                 <span className="span-bar-d" style={{ width: pct(bar.drafted) }} />
@@ -72,22 +131,34 @@ export function WeekView({ days, today, nowMs, onOpenDay, onOpenBlock }: WeekVie
             </span>
           ))}
         </div>
-        {lines.map(({ view, line }) => (
-          <WeekColumn
-            key={view.day}
-            view={view}
-            blocks={line.blocks}
-            hours={hours}
-            today={today}
-            nowMinute={line.now === undefined ? undefined : line.now - hours.from * 60}
-            onOpenDay={onOpenDay}
-            onOpenBlock={onOpenBlock}
-          />
-        ))}
+        {pending
+          ? WEEKDAYS.map((i) => {
+              const day = addDays(monday, i);
+              return (
+                <div
+                  key={day}
+                  className="span-week-col"
+                  data-label={shortDay(day)}
+                  data-today={day === today ? '' : undefined}
+                />
+              );
+            })
+          : lines.map(({ view, line }) => (
+              <WeekColumn
+                key={view.day}
+                view={view}
+                blocks={line.blocks}
+                hours={hours}
+                today={today}
+                nowMinute={line.now === undefined ? undefined : line.now - hours.from * 60}
+                onOpenDay={onOpenDay}
+                onOpenBlock={onOpenBlock}
+              />
+            ))}
       </div>
     </div>
   );
-}
+});
 
 function WeekColumn({
   view,

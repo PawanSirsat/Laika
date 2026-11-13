@@ -160,18 +160,34 @@
 
 /* ------------------------------------------------------------------- the stage */
 
+/*
+ * The stage holds one layer per view in play (LAI-1179). The one shown is in
+ * flow and sizes the stage; the one leaving sits over it, positioned. While
+ * a zoom runs the stage is held at the taller layer (`min-height`, set by
+ * the stage itself) and **both** layers are positioned at its top, so the
+ * two transforms are measured from the same box and nothing under the stage
+ * moves. Each layer is opaque in the page's own colour, so the cross-fade
+ * never shows one view through the other.
+ */
 .span-stage {
   position: relative;
   min-width: 0;
-  overflow: hidden;
+  /*
+   * `clip`, not `hidden`: both cut a layer off at the stage's edge while it
+   * grows or slides, but `hidden` makes the stage a scroll container, and
+   * `position: sticky` binds to the nearest one — the Day page's Confirm bar
+   * (`.myday-bulk-dock`, sticky in `.shell-main`) would then rest at the foot
+   * of the stage, under the list, instead of the window's.
+   */
+  overflow: clip;
 }
 
 .span-layer {
   transform-origin: 0 0;
   min-width: 0;
+  background: var(--bg-canvas);
 }
 
-/* The layer being left sits over the new one until the movement is done. */
 .span-layer[data-layer-role='leaving'] {
   position: absolute;
   inset: 0;
@@ -179,8 +195,61 @@
   pointer-events: none;
 }
 
-.span-stage[data-zooming] .span-layer[data-layer-role='current'] {
+.span-stage[data-zooming] .span-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/* Zooming in, the arriving view is on top; zooming out, the one leaving is (the design). */
+.span-stage[data-zooming='in'] .span-layer[data-layer-role='current'],
+.span-stage[data-zooming='out'] .span-layer[data-layer-role='leaving'] {
   z-index: 2;
+}
+
+.span-stage[data-zooming='in'] .span-layer[data-layer-role='leaving'],
+.span-stage[data-zooming='out'] .span-layer[data-layer-role='current'] {
+  z-index: 1;
+}
+
+/*
+ * A figure not here yet: a bone where the number goes, shimmering, so a view
+ * mounted on the click is at its shape before its read lands. Still for a
+ * reader who asked for less motion.
+ */
+.span-pending-bone {
+  display: inline-block;
+  width: 2.25em;
+  height: 0.75em;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-column) 0%,
+    var(--bg-card-hover) 50%,
+    var(--bg-column) 100%
+  );
+  background-size: 200% 100%;
+  animation: span-shimmer 1.4s linear infinite;
+}
+
+.span-pending-figure {
+  width: 11em;
+  height: 0.875em;
+}
+
+@keyframes span-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .span-pending-bone {
+    animation: none;
+  }
 }
 
 .span-card {
@@ -653,7 +722,8 @@
   cursor: pointer;
 }
 
-.span-year-day[data-kind='future'] {
+.span-year-day[data-kind='future'],
+.span-year-day[data-kind='pending'] {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--border-subtle);
 }

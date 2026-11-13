@@ -52,8 +52,19 @@ async function busy(writes?: (call: StubCall) => unknown): Promise<Harness> {
 
 const posts = (h: Harness, end: string) =>
   h.calls.filter((c) => c.method === 'POST' && c.path.endsWith(end)).map((c) => c.path);
+/**
+ * Reads of **this** day. The View reads the week's other six days ahead once
+ * the day is on screen (LAI-1179), on the same path with another `?day=`;
+ * those are not the day being read again, and the day itself is never among
+ * them — the page's own answer is what the week takes.
+ */
 const dayReads = (h: Harness) =>
-  h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/me/time').length;
+  h.requests.filter(
+    (r) =>
+      r.method === 'GET' &&
+      r.url.startsWith('/api/v1/me/time?') &&
+      new URL(r.url, 'http://stub').searchParams.get('day') === TODAY,
+  ).length;
 
 void describe('the column beside the day', () => {
   void test('Agent minutes, then On your plate — bounded, scrolling on its own; the switch in the header', async () => {

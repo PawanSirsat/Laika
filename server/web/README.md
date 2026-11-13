@@ -13,6 +13,14 @@ pnpm --filter @laika/web test    # CSP regression guard
 `pnpm dev` from the repo root starts this and the server together. Run the
 server too (`pnpm --filter @laika/server dev`) or the proxied routes 502.
 
+To run the local frontend against another instance's API — production's real
+latency, say — point the proxy at it (LAI-1179); `Origin` and `Referer` are
+rewritten so better-auth accepts the sign-in:
+
+```bash
+LAIKA_API_ORIGIN=http://52.72.203.206 pnpm --filter @laika/web dev
+```
+
 ## Build output
 
 `vite build` writes to `../public` — `server/public/`, which the server serves
@@ -26,10 +34,10 @@ The server sends a strict CSP on every response
 (`server/src/http/middleware/security-headers.ts`). Two directives constrain
 what may be written here:
 
-| Directive | What it forbids in this package |
-| --- | --- |
+| Directive           | What it forbids in this package                              |
+| ------------------- | ------------------------------------------------------------ |
 | `script-src 'self'` | inline `<script>`, `on*=` attributes, `eval`, `new Function` |
-| `font-src 'self'` | loading fonts from any other origin |
+| `font-src 'self'`   | loading fonts from any other origin                          |
 
 `test/csp-compatibility.test.ts` enforces both. It builds its own output into a
 temp directory rather than reading `server/public/`, so its result never depends

@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import type { DaysDay } from '../../../api/time.ts';
 import { compact, duration } from './format.ts';
 import { isoWeek, monthKey, monthWeeks } from './span.ts';
@@ -5,8 +6,12 @@ import { barOf, busiest, cellKind, pct, totalOf } from './span-derive.ts';
 import { dayLong } from './week-derive.ts';
 
 export interface MonthViewProps {
-  /** Every day the month's rows show, spill-over included, from `GET /me/time/days`. */
-  readonly days: readonly DaysDay[];
+  /**
+   * Every day the month's rows show, spill-over included, from
+   * `GET /me/time/days` — or nothing yet (LAI-1179): the grid is then drawn
+   * at its shape, every day numbered, its figures a shimmer.
+   */
+  readonly days: readonly DaysDay[] | undefined;
   /** Any day of the month shown. */
   readonly day: string;
   readonly today: string;
@@ -23,14 +28,24 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
  * tasks, and a bar that is a share of the month's busiest day. A day nothing
  * reached says `—`; days outside the month are drawn faint.
  */
-export function MonthView({ days, day, today, onOpenDay, onOpenWeek }: MonthViewProps) {
-  const byDay = new Map(days.map((d) => [d.day, d]));
+export const MonthView = memo(function MonthView({
+  days,
+  day,
+  today,
+  onOpenDay,
+  onOpenWeek,
+}: MonthViewProps) {
   const month = monthKey(day);
-  const top = busiest(days.filter((d) => monthKey(d.day) === month));
-  const weeks = monthWeeks(day);
+  const byDay = useMemo(() => new Map((days ?? []).map((d) => [d.day, d])), [days]);
+  const top = useMemo(
+    () => busiest((days ?? []).filter((d) => monthKey(d.day) === month)),
+    [days, month],
+  );
+  const weeks = useMemo(() => monthWeeks(day), [day]);
+  const pending = days === undefined;
 
   return (
-    <div className="span-month" data-span-month>
+    <div className="span-month" data-span-month data-pending={pending ? '' : undefined}>
       <div className="span-month-head" aria-hidden="true">
         <span />
         {WEEKDAYS.map((w) => (
@@ -51,30 +66,29 @@ export function MonthView({ days, day, today, onOpenDay, onOpenWeek }: MonthView
             >
               W{isoWeek(monday)}
             </button>
-            {week.map((d) => {
-              const row = byDay.get(d);
-              return (
-                <MonthCell
-                  key={d}
-                  day={d}
-                  row={row}
-                  inMonth={monthKey(d) === month}
-                  today={today}
-                  top={top}
-                  onOpen={onOpenDay}
-                />
-              );
-            })}
+            {week.map((d) => (
+              <MonthCell
+                key={d}
+                day={d}
+                row={byDay.get(d)}
+                pending={pending}
+                inMonth={monthKey(d) === month}
+                today={today}
+                top={top}
+                onOpen={onOpenDay}
+              />
+            ))}
           </div>
         );
       })}
     </div>
   );
-}
+});
 
 function MonthCell({
   day,
   row,
+  pending,
   inMonth,
   today,
   top,
@@ -82,15 +96,21 @@ function MonthCell({
 }: {
   readonly day: string;
   readonly row: DaysDay | undefined;
+  readonly pending: boolean;
   readonly inMonth: boolean;
   readonly today: string;
   readonly top: number;
   readonly onOpen: (day: string) => void;
 }) {
-  const kind = row === undefined ? 'future' : cellKind(row);
+  const kind = pending ? 'pending' : row === undefined ? 'future' : cellKind(row);
   const all = row === undefined ? 0 : totalOf(row);
   const bar = row === undefined ? { confirmed: 0, drafted: 0 } : barOf(row, top);
-  const said = kind === 'future' ? '' : kind === 'no_signal' ? 'no signal' : duration(all);
+  const said =
+    kind === 'future' || kind === 'pending'
+      ? ''
+      : kind === 'no_signal'
+        ? 'no signal'
+        : duration(all);
   return (
     <button
       type="button"
@@ -106,9 +126,13 @@ function MonthCell({
     >
       <span className="span-month-top">
         <span className="span-month-date">{Number(day.slice(8))}</span>
-        <span className="span-month-total">
-          {kind === 'time' ? compact(all) : kind === 'no_signal' ? '—' : ''}
-        </span>
+        {kind === 'pending' ? (
+          <span className="span-month-total span-pending-bone" aria-hidden="true" />
+        ) : (
+          <span className="span-month-total">
+            {kind === 'time' ? compact(all) : kind === 'no_signal' ? '—' : ''}
+          </span>
+        )}
       </span>
       {row?.top_tasks.slice(0, 2).map((t, i) => (
         <span
