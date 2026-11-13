@@ -46,6 +46,13 @@ import {
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
   GRANTABLE_ROLES,
+  HOLIDAY_SOURCES,
+  HR_MATCHED_BY,
+  HR_PROVIDERS,
+  HR_SOURCE_STATUSES,
+  HR_SYNC_ERROR_CODES,
+  LEAVE_PARTS,
+  LEAVE_STATUSES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   MEMBER_NOTICE_KINDS,
@@ -1463,6 +1470,193 @@ export const memberNotices = sqliteTable(
     check('member_notices_kind_check', oneOf('kind', MEMBER_NOTICE_KINDS)),
     check('member_notices_subject_check', sql.raw('subject IS NULL OR length(subject) <= 120')),
     check('member_notices_message_check', sql.raw('message IS NULL OR length(message) <= 500')),
+  ],
+);
+
+// ------------------------------------------------------------ org_hr_source
+
+/**
+ * The organisation's HR system (D-149 items 1 and 7, LAI-1181): Clan, connected
+ * once by an owner or admin who signs in from Laika. **No row is off.**
+ *
+ * Laika keeps the **token** Clan answers with, as §12's ciphertext under its
+ * own purpose (`clan_api_token`), and its last four characters to show. The
+ * password is used for that one sign-in call and never stored. While Clan asks
+ * for a second factor the row is `pending_2fa` until `pending_expires_at`, ten
+ * minutes on; the sync reads a `connected` row only.
+ *
+ * Its own table rather than columns on `orgs`, the `org_time_settings`
+ * precedent: additive, and a CHECK on `orgs` is a rebuild of `orgs`.
+ */
+export const orgHrSource = sqliteTable(
+  'org_hr_source',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    provider: text('provider', { enum: HR_PROVIDERS }).notNull(),
+    status: text('status', { enum: HR_SOURCE_STATUSES }).notNull(),
+    /** `https://<company>.clan.biz/api/v1`, normalised, no trailing slash. */
+    baseUrl: text('base_url').notNull(),
+    /** The Clan account Laika signed in as — shown, never used to sign in again. */
+    accountEmail: text('account_email').notNull(),
+    /** §12 ciphertext. Never logged, never served, never in `activity`. */
+    tokenEnc: text('token_enc').notNull(),
+    tokenLast4: text('token_last4').notNull(),
+    /** When Clan says the token stops working, unix ms; null when it did not say. */
+    tokenExpiresAt: integer('token_expires_at'),
+    /** While `pending_2fa`: when the half-done sign-in is given up. */
+    pendingExpiresAt: integer('pending_expires_at'),
+    connectedBy: text('connected_by')
+      .notNull()
+      .references(() => users.id),
+    connectedAt: integer('connected_at').notNull(),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastSuccessAt: integer('last_success_at'),
+    lastErrorCode: text('last_error_code', { enum: HR_SYNC_ERROR_CODES }),
+    /** Laika's own words for the failure — never Clan's response text. */
+    lastError: text('last_error'),
+    /** The last successful sync's counts, as `HrSyncResultView`. */
+    lastResultJson: text('last_result_json'),
+    updatedAt,
+  },
+  (t) => [
+    index('org_hr_source_connected_by_idx').on(t.connectedBy),
+    check('org_hr_source_provider_check', oneOf('provider', HR_PROVIDERS)),
+    check('org_hr_source_status_check', oneOf('status', HR_SOURCE_STATUSES)),
+    check(
+      'org_hr_source_last_error_code_check',
+      oneOfOrNull('last_error_code', HR_SYNC_ERROR_CODES),
+    ),
+    // Pending has a deadline; a connected token has none to give up on.
+    check(
+      'org_hr_source_pending_check',
+      sql.raw("(status = 'pending_2fa') = (pending_expires_at IS NOT NULL)"),
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------- hr_people
+
+/**
+ * A person in the HR system (D-149 item 4, LAI-1181), by Clan's id, and the
+ * Laika person they are. Matched at each sync by exact lowercased email to an
+ * active person (`email`), or mapped by an owner or admin (`owner`) — to a
+ * person, or to *not on Laika* with `user_id` null — which a later email match
+ * never overwrites. **No email is stored**, either side's.
+ */
+export const hrPeople = sqliteTable(
+  'hr_people',
+  {
+    externalId: text('external_id').primaryKey(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    departmentRef: text('department_ref'),
+    designationRef: text('designation_ref'),
+    matchedBy: text('matched_by', { enum: HR_MATCHED_BY }).notNull(),
+    /** The last sync whose employee list carried them. */
+    seenAt: integer('seen_at').notNull(),
+    updatedAt,
+  },
+  (t) => [
+    // One HR person per Laika person: two would put two people's leave on one.
+    uniqueIndex('hr_people_user_id_unique')
+      .on(t.userId)
+      .where(sql`${t.userId} IS NOT NULL`),
+    check('hr_people_matched_by_check', oneOf('matched_by', HR_MATCHED_BY)),
+    check('hr_people_name_check', sql.raw('length(name) BETWEEN 1 AND 200')),
+  ],
+);
+
+// ------------------------------------------------------------- org_holidays
+
+/**
+ * A holiday (D-149 items 2 and 8, LAI-1181): typed by an owner or admin
+ * (`manual`), or read from Clan (`clan`, by Clan's id in `source_ref`). Clan's
+ * may be scoped to departments or designations (`scope_json`); null is
+ * everyone. **Never deleted**: a holiday Clan stops sending, or one an owner
+ * removes, is stamped `removed_at`, and one that comes back is cleared.
+ */
+export const orgHolidays = sqliteTable(
+  'org_holidays',
+  {
+    id: text('id').primaryKey(),
+    /** `YYYY-MM-DD`. */
+    day: text('day').notNull(),
+    label: text('label').notNull(),
+    source: text('source', { enum: HOLIDAY_SOURCES }).notNull(),
+    sourceRef: text('source_ref'),
+    /** `{"departments":[…],"designations":[…]}`, or null — everyone. */
+    scopeJson: text('scope_json'),
+    /** Who typed a manual holiday; null for Clan's. */
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt,
+    updatedAt,
+    removedAt: integer('removed_at'),
+  },
+  (t) => [
+    uniqueIndex('org_holidays_source_ref_unique')
+      .on(t.source, t.sourceRef)
+      .where(sql`${t.sourceRef} IS NOT NULL`),
+    // One live manual holiday a day: a second is a typo, not a second holiday.
+    uniqueIndex('org_holidays_manual_day_unique')
+      .on(t.day)
+      .where(sql`${t.source} = 'manual' AND ${t.removedAt} IS NULL`),
+    index('org_holidays_day_idx').on(t.day),
+    index('org_holidays_created_by_idx').on(t.createdBy),
+    check('org_holidays_source_check', oneOf('source', HOLIDAY_SOURCES)),
+    check('org_holidays_label_check', sql.raw('length(label) BETWEEN 1 AND 120')),
+    // Clan's rows carry Clan's id and nobody's name; a manual one is the reverse.
+    check(
+      'org_holidays_origin_check',
+      sql.raw(
+        "(source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL)",
+      ),
+    ),
+  ],
+);
+
+// --------------------------------------------------------------- leave_days
+
+/**
+ * A day of leave from Clan (D-149 items 2 and 7, LAI-1181), one row per day as
+ * Clan keeps it, for a Laika person. Only `approved` and `pending` are kept;
+ * **never** the reason, the balance, the approver or an attachment. A day
+ * Clan stops sending, one that is rejected or cancelled, or one whose person
+ * is unmapped is stamped `removed_at` — never deleted. `hash` is a digest of
+ * the fields kept, so an equal hash is an unchanged day.
+ */
+export const leaveDays = sqliteTable(
+  'leave_days',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The Clan person the day is theirs as, `hr_people.external_id`. */
+    personRef: text('person_ref')
+      .notNull()
+      .references(() => hrPeople.externalId),
+    /** `YYYY-MM-DD`. */
+    day: text('day').notNull(),
+    part: text('part', { enum: LEAVE_PARTS }).notNull(),
+    typeName: text('type_name'),
+    status: text('status', { enum: LEAVE_STATUSES }).notNull(),
+    /** Clan's id for the day. */
+    sourceRef: text('source_ref').notNull(),
+    /** Clan's id for the application the day belongs to, when it sent one. */
+    applicationRef: text('application_ref'),
+    hash: text('hash').notNull(),
+    syncedAt: integer('synced_at').notNull(),
+    removedAt: integer('removed_at'),
+  },
+  (t) => [
+    uniqueIndex('leave_days_source_ref_unique').on(t.sourceRef),
+    index('leave_days_user_day_idx').on(t.userId, t.day),
+    index('leave_days_person_ref_idx').on(t.personRef),
+    check('leave_days_part_check', oneOf('part', LEAVE_PARTS)),
+    check('leave_days_status_check', oneOf('status', LEAVE_STATUSES)),
+    check('leave_days_type_name_check', sql.raw('type_name IS NULL OR length(type_name) <= 80')),
   ],
 );
 
@@ -4154,3 +4348,7 @@ export type CapacityPing = typeof capacityPings.$inferSelect;
 export type UserAvailability = typeof userAvailability.$inferSelect;
 export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;
+export type OrgHrSource = typeof orgHrSource.$inferSelect;
+export type HrPerson = typeof hrPeople.$inferSelect;
+export type OrgHoliday = typeof orgHolidays.$inferSelect;
+export type LeaveDay = typeof leaveDays.$inferSelect;

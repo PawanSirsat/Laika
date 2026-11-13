@@ -233,6 +233,17 @@ const UNPAIRED = new Map<string, string>([
   // LAI-1151 (D-139): your own setup's activity, served ahead of the own
   // Developer access tab, LAI-1156, which mirrors it.
   ['OwnSetupActivityView', 'no client type exists'],
+  // LAI-1181 (D-149): the HR connection and holidays, served ahead of the
+  // web half, LAI-1182, which builds their screens and mirrors them — each
+  // leaves this group when its client type exists.
+  ['HrSourceView', 'no client type exists'],
+  ['HrSyncErrorView', 'no client type exists'],
+  ['HrSyncResultView', 'no client type exists'],
+  ['HrTwoFactorView', 'no client type exists'],
+  ['HrPersonView', 'no client type exists'],
+  ['HrPersonUserView', 'no client type exists'],
+  ['HolidayView', 'no client type exists'],
+  ['HolidayListView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],

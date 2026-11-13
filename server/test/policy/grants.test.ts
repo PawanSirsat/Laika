@@ -76,7 +76,12 @@ describe('the mapping', () => {
         'agent.revoke_any',
         'device.revoke_any',
       ],
-      change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
+      change_org_settings: [
+        'org.settings.edit',
+        'org.time.set',
+        'org.developer_insights.set',
+        'org.hr.configure',
+      ],
     });
     expect(CAPABILITIES).not.toContain('manage_people');
   });

@@ -74,6 +74,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0078_developer_setup_reads',
     '0079_analytics_views_profile',
     '0080_member_notices_time_changed',
+    '0081_hr_source',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -88,11 +89,13 @@ function folderBefore0070(): { dir: string; restore: () => void } {
       // reads name — as production, which runs it only after every migration —
       // and it changes no row the check reads (`agentRows` names its columns).
       // LAI-1165's 0080 rebuilds 0077's table, so it stays out with it.
+      // LAI-1181's 0081 adds four tables, which the check would count too.
       const later = new Set([
         '0075_task_deliverables',
         '0076_user_availability',
         '0077_member_notices',
         '0080_member_notices_time_changed',
+        '0081_hr_source',
       ]);
       journal.entries.push(...dropped.filter((e) => !later.has(e.tag)));
       writeFileSync(journalPath, JSON.stringify(journal));

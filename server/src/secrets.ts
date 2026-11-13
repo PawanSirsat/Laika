@@ -73,7 +73,12 @@ const SALT = Buffer.from('laika/secrets/v1');
  * with no clue why. This makes that a compile error.
  */
 export type SecretPurpose =
-  'ai_api_key' | 'smtp_json' | 'github_webhook_secret' | 'transcript_webhook_secret';
+  | 'ai_api_key'
+  | 'smtp_json'
+  | 'github_webhook_secret'
+  | 'transcript_webhook_secret'
+  // D-149 (LAI-1181): the HR system's API token, in `org_hr_source.token_enc`.
+  | 'clan_api_token';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.
