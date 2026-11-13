@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+// Three stylesheets first, before the palette's: where the single stylesheet
+// had them before screens were split, so its cascade is unchanged (LAI-1219 —
+// see `shell/screen-styles.ts`).
+import './tooltip/tooltip.css';
+import './icon/icon.css';
+import './states.css';
 import { CommandPaletteHost } from './command/CommandPaletteHost.tsx';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
@@ -8,6 +14,8 @@ import { SessionGate } from './shell/SessionGate.tsx';
 import { ShellProvider } from './shell/ShellProvider.tsx';
 import { useShell } from './shell/shell-context.ts';
 import { showsAppNav } from './shell-chrome.ts';
+import { DEFAULT_PATH } from '../routes/route-table.ts';
+import { preloadPath } from '../routes/screen-chunks.ts';
 import {
   NARROW_QUERY,
   railCollapsed,
@@ -171,6 +179,24 @@ function AppFrame() {
    * session fails safe in both directions.
    */
   const signedIn = showsAppNav(session);
+
+  // The default screen — a space's board, where a nav link to a space lands —
+  // is fetched once the first page has painted (LAI-1219), so the most likely
+  // next page is already here. Signed in only: nothing is warmed for a
+  // visitor on the sign-in page. Already loading if that is where we are.
+  useEffect(() => {
+    if (!signedIn) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => {
+      timer = setTimeout(() => {
+        preloadPath(DEFAULT_PATH);
+      }, 0);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [signedIn]);
   // A full-page screen that draws its own brand and theme control gets no
   // header on top of it (LAI-075).
   const ownsChrome = path === '/setup';

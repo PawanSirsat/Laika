@@ -6,6 +6,7 @@ import { SpaceBadge } from '../SpaceBadge.tsx';
 import { NavIcon } from './NavIcon.tsx';
 import { PinButton } from './PinButton.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { preloadOn } from '../../routes/screen-chunks.ts';
 
 export interface SpacesSectionProps {
   /** The rail's rows: the pinned, then the three most recent (LAI-248, LAI-989). */
@@ -95,6 +96,7 @@ export function SpacesSection({
             <a
               className="spaces-create"
               href="/projects"
+              {...preloadOn('/projects')}
               onClick={(event) => {
                 if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
@@ -128,6 +130,7 @@ export function SpacesSection({
               href={CREATE_SPACE_HREF}
               className="sidebar-link"
               data-create-first-space
+              {...preloadOn(CREATE_SPACE_HREF)}
               onClick={(event) => {
                 if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
@@ -163,6 +166,8 @@ export function SpacesSection({
                     active ? 'sidebar-link space-row sidebar-link-active' : 'sidebar-link space-row'
                   }
                   aria-current={active ? 'page' : undefined}
+                  // A space opens on its board: warm it and the space frame (LAI-1219).
+                  {...preloadOn(href)}
                   onClick={(event) => {
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                     event.preventDefault();

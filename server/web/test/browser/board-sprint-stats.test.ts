@@ -1151,7 +1151,9 @@ const rowGeometry = (h: Harness) =>
 void describe('the board does not move after it is drawn (LAI-727 review)', () => {
   const LATE = ['/members', '/sprints', '/presence'];
   const late = async (page: Page, held: Promise<void>): Promise<void> => {
-    for (const glob of ['**/members*', '**/sprints*', '**/presence*']) {
+    // API paths only (LAI-1219): screens load as chunks now, and `**/presence*`
+    // also matched `assets/presence-*.js`, holding the board's own code.
+    for (const glob of ['**/api/v1/**/members*', '**/api/v1/**/sprints*', '**/api/v1/presence*']) {
       await page.route(glob, async (route) => {
         await held;
         await route.continue();

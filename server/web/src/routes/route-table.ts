@@ -532,3 +532,95 @@ export function paletteRoutes(holds?: (permission: string) => boolean): readonly
 export function navRoutes(holds?: (permission: string) => boolean): readonly Route[] {
   return ROUTES.filter((r) => r.group !== null && isShipped(r) && permitted(r, holds));
 }
+
+/**
+ * **Which chunk each route's screen ships in** (LAI-1219).
+ *
+ * Every screen loads on demand: the entry chunk carries the shell, the
+ * sidebar, the session gate, the theme, the API client, the stores and the
+ * SSE hub, and nothing a single page needs alone. This table is the one place
+ * a screen's chunk is chosen; `screen-chunks.ts` holds the `import()` for each
+ * name, and `screen-chunks.test.ts` checks the two agree with `ROUTES`.
+ *
+ * **A chunk is one screen unless splitting it would only add a waterfall:**
+ *
+ * - `board` — `/board` and `/list` are the same `BoardScreen` in two modes.
+ * - `inbox` — Inbox, Review and Unlisted work: the two queues are Inbox's
+ *   tabs, rendered as its children, so apart they would load one after the
+ *   other on every visit.
+ * - `insights` — Insights with Capacity, Usage & cost and Time, its tabs, for
+ *   the same reason.
+ * - `auth` — sign in, accept invite, reset password and first boot: small,
+ *   pre-auth, and reached from one another.
+ * - `reference` — the three design reference pages, which are not product.
+ *
+ * The space tabs each have their own chunk and share `space-frame` — the space
+ * bar, the task drawer and the create-task dialog — which loads **beside**
+ * the tab's chunk, never after it (`chunksFor`).
+ */
+export const SCREEN_CHUNKS = [
+  'space-frame',
+  'board',
+  'timeline',
+  'calendar',
+  'sprints',
+  'dashboard',
+  'activity',
+  'meeting-review',
+  'projects',
+  'my-day',
+  'inbox',
+  'insights',
+  'organisation',
+  'developer',
+  'members',
+  'space-settings',
+  'workroom',
+  'profile',
+  'appearance',
+  'auth',
+  'reference',
+] as const;
+export type ScreenChunk = (typeof SCREEN_CHUNKS)[number];
+
+export const ROUTE_CHUNKS: Readonly<Record<string, Exclude<ScreenChunk, 'space-frame'>>> = {
+  '/board': 'board',
+  '/list': 'board',
+  '/timeline': 'timeline',
+  '/calendar': 'calendar',
+  '/sprints': 'sprints',
+  '/dashboard': 'dashboard',
+  '/activity': 'activity',
+  '/meeting-review': 'meeting-review',
+  '/projects': 'projects',
+  '/my-day': 'my-day',
+  '/inbox': 'inbox',
+  '/insights': 'insights',
+  '/organisation': 'organisation',
+  '/developer': 'developer',
+  '/members': 'members',
+  '/spaces/:slug/settings': 'space-settings',
+  '/task/:key': 'workroom',
+  '/people': 'profile',
+  [APPEARANCE_PATH]: 'appearance',
+  '/login': 'auth',
+  '/invite': 'auth',
+  '/reset-password': 'auth',
+  '/setup': 'auth',
+  '/design/tokens': 'reference',
+  '/design/states': 'reference',
+  '/design/documents': 'reference',
+};
+
+/**
+ * Every chunk a route's screen needs, the frame first: a space tab needs the
+ * space frame too, and asking for both at once is what keeps them parallel.
+ * Empty for a path no route matches.
+ */
+export function chunksFor(path: string): readonly ScreenChunk[] {
+  const route = matchRoute(path);
+  if (route === undefined) return [];
+  const own = ROUTE_CHUNKS[route.path];
+  if (own === undefined) return [];
+  return SPACE_TAB_PATHS.includes(route.path) ? ['space-frame', own] : [own];
+}

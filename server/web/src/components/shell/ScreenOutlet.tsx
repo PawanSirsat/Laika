@@ -1,33 +1,13 @@
+// First, where the screens were imported: their CSS, in their order (LAI-1219).
+import './screen-styles.ts';
 import { handoffsWaiting } from '../agent/person-handoffs.ts';
 import { useEffect, type ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
-import { SpaceLayout } from '../space/SpaceLayout.tsx';
-import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
-import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
-import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
 import {
   capacityParams,
   withCapacityParams,
 } from '../../routes/screens/capacity/capacity-derive.ts';
-import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx';
-import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
-import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
-import { InviteRoute } from '../../routes/screens/InviteRoute.tsx';
-import { ResetPasswordRoute } from '../../routes/screens/ResetPasswordRoute.tsx';
-import { LoginRoute } from '../../routes/screens/LoginRoute.tsx';
-import { MeetingReviewScreen } from '../../routes/screens/meeting-review/MeetingReviewScreen.tsx';
-import { MembersScreen } from '../../routes/screens/MembersScreen.tsx';
 import { NotFound } from '../../routes/screens/NotFound.tsx';
-import { OrganisationScreen } from '../../routes/screens/organisation/OrganisationScreen.tsx';
-import { ProjectsScreen } from '../../routes/screens/ProjectsScreen.tsx';
-import { ProfileScreen } from '../../routes/screens/profile/ProfileScreen.tsx';
-import { ReviewScreen } from '../../routes/screens/review/ReviewScreen.tsx';
-import { SprintsScreen } from '../../routes/screens/sprints/SprintsScreen.tsx';
-import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx';
-import { DeveloperScreen } from '../../routes/screens/developer/DeveloperScreen.tsx';
-import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
-import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
-import { TimeTab } from '../../routes/screens/insights/TimeTab.tsx';
 import {
   readReportAddress,
   writeReportAddress,
@@ -38,16 +18,12 @@ import {
   timeSubview,
   timeView,
 } from '../../routes/screens/insights/time-tab.ts';
-import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
-import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { DEFAULT_RANGE, usageRange } from '../../routes/screens/usage/usage-derive.ts';
-import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import { parseSpan } from '../../routes/screens/my-day/span.ts';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
-import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
-import { WorkroomScreen } from '../../routes/screens/workroom/WorkroomScreen.tsx';
-import { AppearanceScreen } from '../../routes/screens/appearance/AppearanceScreen.tsx';
 import { routeParams } from '../../routes/route-table.ts';
+import { preloadPath } from '../../routes/screen-chunks.ts';
+import { lazyScreen, ScreenBoundary } from './ScreenBoundary.tsx';
 import { slugOfKey, taskHref, withTaskOpen } from '../../routes/task-href.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
@@ -63,15 +39,51 @@ import {
   refusedTab,
   visibleTabs,
 } from '../../routes/page-tabs.ts';
-import { StateGallery } from '../StateGallery.tsx';
-import { DocumentsTrialRoute } from '../documents/DocumentsTrialRoute.tsx';
 import { LoadingState } from '../LoadingState.tsx';
 import { BrandSpinner } from '../brand/BrandSpinner.tsx';
-import { TokenReference } from '../../theme/TokenReference.tsx';
 import { usePermissions } from '../../api/permissions.ts';
 import { useDeveloperAccessMode } from '../../api/developer-compat.ts';
 import { Button } from '../forms/Button.tsx';
 import '../states.css';
+
+/*
+ * **Every screen loads on demand** (LAI-1219). Each name below is the screen
+ * component, fetched from its chunk the first time it renders; which chunk is
+ * `ROUTE_CHUNKS`' decision in `route-table.ts`. The wrappers further down are
+ * unchanged — they hand a screen its props, and the screen is simply not in
+ * the entry chunk any more.
+ */
+const SpaceLayout = lazyScreen('space-frame', (m) => m.SpaceLayout);
+const BoardScreen = lazyScreen('board', (m) => m.BoardScreen);
+const TimelineScreen = lazyScreen('timeline', (m) => m.TimelineScreen);
+const CalendarScreen = lazyScreen('calendar', (m) => m.CalendarScreen);
+const SprintsScreen = lazyScreen('sprints', (m) => m.SprintsScreen);
+const DashboardScreen = lazyScreen('dashboard', (m) => m.DashboardScreen);
+const ActivityScreen = lazyScreen('activity', (m) => m.ActivityScreen);
+const MeetingReviewScreen = lazyScreen('meeting-review', (m) => m.MeetingReviewScreen);
+const ProjectsScreen = lazyScreen('projects', (m) => m.ProjectsScreen);
+const MyDayScreen = lazyScreen('my-day', (m) => m.MyDayScreen);
+const InboxScreen = lazyScreen('inbox', (m) => m.InboxScreen);
+const ReviewScreen = lazyScreen('inbox', (m) => m.ReviewScreen);
+const UnlistedScreen = lazyScreen('inbox', (m) => m.UnlistedScreen);
+const InsightsScreen = lazyScreen('insights', (m) => m.InsightsScreen);
+const CapacityScreen = lazyScreen('insights', (m) => m.CapacityScreen);
+const UsageScreen = lazyScreen('insights', (m) => m.UsageScreen);
+const TimeTab = lazyScreen('insights', (m) => m.TimeTab);
+const OrganisationScreen = lazyScreen('organisation', (m) => m.OrganisationScreen);
+const DeveloperScreen = lazyScreen('developer', (m) => m.DeveloperScreen);
+const MembersScreen = lazyScreen('members', (m) => m.MembersScreen);
+const SpaceSettingsScreen = lazyScreen('space-settings', (m) => m.SpaceSettingsScreen);
+const WorkroomScreen = lazyScreen('workroom', (m) => m.WorkroomScreen);
+const ProfileScreen = lazyScreen('profile', (m) => m.ProfileScreen);
+const AppearanceScreen = lazyScreen('appearance', (m) => m.AppearanceScreen);
+const LoginRoute = lazyScreen('auth', (m) => m.LoginRoute);
+const InviteRoute = lazyScreen('auth', (m) => m.InviteRoute);
+const ResetPasswordRoute = lazyScreen('auth', (m) => m.ResetPasswordRoute);
+const SetupRoute = lazyScreen('auth', (m) => m.SetupRoute);
+const TokenReference = lazyScreen('reference', (m) => m.TokenReference);
+const StateGallery = lazyScreen('reference', (m) => m.StateGallery);
+const DocumentsTrialRoute = lazyScreen('reference', (m) => m.DocumentsTrialRoute);
 
 /**
  * Which frame a screen mounts into.
@@ -695,18 +707,37 @@ export function ScreenOutlet() {
   if (entry === undefined) return <NotFoundRoute />;
 
   const { Component, layout } = entry;
+  // Ask for every chunk this page needs at once — for a space view, the frame
+  // and the tab together — so the tab's never waits behind the frame's
+  // (LAI-1219). Idempotent: a chunk already loaded or on its way is not
+  // fetched twice.
+  preloadPath(route.path);
   // The space frame belongs to the views of a project, and nothing else gets
   // it — `layout` is the registry's answer, checked against `SPACE_TAB_PATHS`
   // in screen-registry.test.ts.
+  //
+  // Two boundaries for a space view: the frame's, and the tab's inside it, so
+  // moving between tabs waits — or fails — inside the frame and leaves the
+  // space bar and its tabs where they are.
+  //
+  // `card`, never `board`: the board draws its own first-load skeleton, with
+  // its real column count, and holds it; a board-shaped one here would be a
+  // second board skeleton that flashes up and is swapped for the first.
   return (
     <>
       <PermissionsRetry />
       {layout === 'space' ? (
-        <SpaceLayout>
-          <Component />
-        </SpaceLayout>
+        <ScreenBoundary key="space-frame" label="the space" shape="card">
+          <SpaceLayout>
+            <ScreenBoundary key={route.path} label={route.label} shape="card">
+              <Component />
+            </ScreenBoundary>
+          </SpaceLayout>
+        </ScreenBoundary>
       ) : (
-        <Component />
+        <ScreenBoundary key={route.path} label={route.label} shape="card">
+          <Component />
+        </ScreenBoundary>
       )}
     </>
   );

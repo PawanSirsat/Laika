@@ -1,6 +1,7 @@
 import { viewTabHref } from '../../routes/nav-url.ts';
 import { spaceTabGroups } from '../../routes/route-table.ts';
 import { TAB_ACTIVE, TAB_ITEM, TabStrip, rovingTabIndex } from '../tabs/TabStrip.tsx';
+import { preloadOn } from '../../routes/screen-chunks.ts';
 
 export interface ViewTabsProps {
   readonly currentPath: string;
@@ -76,6 +77,8 @@ export function ViewTabs({
                   tabIndex={rovingTabIndex(active, position, anyActive)}
                   {...{ [TAB_ITEM]: '' }}
                   {...(active ? { [TAB_ACTIVE]: '' } : {})}
+                  // Warm the tab's chunk before the click lands (LAI-1219).
+                  {...preloadOn(href)}
                   onClick={(event) => {
                     // Modified clicks stay the browser's — new tab, new window.
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
