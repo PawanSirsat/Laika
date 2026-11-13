@@ -132,6 +132,9 @@ export const TIME_DRAFTS_PATH = '/api/v1/me/time-drafts';
 /** The Time report (LAI-1135), JSON and CSV alike. */
 export const TIME_REPORT_PATH = '/api/v1/time/report';
 
+/** The Time logging grid (D-148, LAI-1175). */
+export const TIME_DAYS_PATH = '/api/v1/time/days';
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -165,6 +168,12 @@ export function classify(
   // filter clicks never spends the session's budget, nor the session's its.
   if (path === TIME_REPORT_PATH && method === 'GET') {
     return { key: `time-report:${who}`, policy: LIMITS.timeReport };
+  }
+
+  // The Time logging grid (LAI-1175): the report's budget on a bucket of its
+  // own, so stepping through months never starves the report, nor it the grid.
+  if (path === TIME_DAYS_PATH && method === 'GET') {
+    return { key: `time-days:${who}`, policy: LIMITS.timeReport };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.

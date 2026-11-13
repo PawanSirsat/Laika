@@ -765,6 +765,25 @@ const PAIRS: readonly Pair[] = [
     client: 'SummaryKind',
     clientFile: 'time.ts',
   },
+  // My day's Week, Month and Year: one row per day (LAI-1173).
+  {
+    server: 'TimeDaysView',
+    serverFile: 'services/time-days.ts',
+    client: 'TimeDays',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'DaysDayView',
+    serverFile: 'services/time-days.ts',
+    client: 'DaysDay',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'DaysTaskView',
+    serverFile: 'services/time-days.ts',
+    client: 'DaysTask',
+    clientFile: 'time.ts',
+  },
   // The Time report (LAI-1135, D-130), paired by LAI-1138 with the component
   // that reads it. `TimeReportAnswer` is their union and stays named in the
   // server's census; `TimeReportPerson` is reached only through the row.
@@ -791,6 +810,25 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/time-report.ts',
     client: 'SpaceWeek',
     clientFile: 'time.ts',
+  },
+  // The Time logging grid (D-148, LAI-1175): everyone's days beside my days.
+  {
+    server: 'TimeLoggingView',
+    serverFile: 'services/time-logging.ts',
+    client: 'TimeLogging',
+    clientFile: 'time-logging.ts',
+  },
+  {
+    server: 'TimeLoggingPersonView',
+    serverFile: 'services/time-logging.ts',
+    client: 'TimeLoggingPerson',
+    clientFile: 'time-logging.ts',
+  },
+  {
+    server: 'TimeLoggingDayView',
+    serverFile: 'services/time-logging.ts',
+    client: 'TimeLoggingDay',
+    clientFile: 'time-logging.ts',
   },
   // The day's note (LAI-501), served in the day and by `PUT /me/time/days/:day/note`.
   {

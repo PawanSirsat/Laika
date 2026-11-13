@@ -239,3 +239,23 @@ export function withoutFilters(params: URLSearchParams): URLSearchParams {
   for (const key of FILTER_KEYS) next.delete(key);
   return next;
 }
+
+/**
+ * The space toolbar's own four — *Priority*, *Any tag*, *Anyone*, *Ready
+ * only* — as a `TaskFilter`, for a view that does not build its own (LAI-1178:
+ * the Calendar showed every task under a toolbar that said otherwise). Read
+ * through the same validators as the board: a value the server would refuse
+ * is ignored, never matched against.
+ */
+export function toolbarFilter(params: URLSearchParams): TaskFilter {
+  const priority = params.get('priority') ?? undefined;
+  const tag = params.get('tag') ?? undefined;
+  const assignee = params.get('assignee') ?? undefined;
+  const ready = params.get('ready');
+  return {
+    ...(priority !== undefined && isPriority(priority) ? { priority } : {}),
+    ...(tag !== undefined && isTagName(tag) ? { tag } : {}),
+    ...(assignee === undefined || assignee === '' ? {} : { assignee }),
+    ...(ready === null ? {} : { ready: ready === 'true' }),
+  };
+}

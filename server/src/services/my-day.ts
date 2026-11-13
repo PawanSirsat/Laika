@@ -94,7 +94,8 @@ export interface MyDayView {
   day_note: DayNoteView | null;
 }
 
-function stateOf(day: string, today: string, confirmed: number, drafted: number): DayState {
+/** A day's state from its minutes — shared with `GET /me/time/days` (LAI-1173). */
+export function stateOf(day: string, today: string, confirmed: number, drafted: number): DayState {
   if (drafted > 0) return 'drafted';
   if (confirmed > 0) return 'confirmed';
   return day > today ? 'future' : 'no_signal';

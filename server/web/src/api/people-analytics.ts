@@ -1,7 +1,7 @@
 import { request } from './client.ts';
 import type { OwnLocalActivity } from './local-activity.ts';
 import type { Page } from './tasks.ts';
-import type { MyDay, TimeSummary } from './time.ts';
+import type { MyDay, TimeDays, TimeSummary } from './time.ts';
 
 /**
  * A person's day, hours and shared local activity, read by somebody else
@@ -70,6 +70,21 @@ export function getPersonSummary(
   const query = new URLSearchParams({ from, to }).toString();
   return request<TimeSummary>(
     `/people/${encodeURIComponent(userId)}/time/summary?${query}`,
+    opts(signal),
+  );
+}
+
+/** `GET /people/:id/time/days?from=&to=&tz=` — `GET /me/time/days`, for that person (LAI-1173). */
+export function getPersonDays(
+  userId: string,
+  from: string,
+  to: string,
+  tz: string,
+  signal?: AbortSignal,
+): Promise<TimeDays> {
+  const query = new URLSearchParams({ from, to, tz }).toString();
+  return request<TimeDays>(
+    `/people/${encodeURIComponent(userId)}/time/days?${query}`,
     opts(signal),
   );
 }

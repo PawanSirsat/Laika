@@ -935,6 +935,18 @@ function canProjectAction(
     case 'time.report.read_project':
       return isLead;
 
+    // | View logged days of the people in the space | ✓ (session only) | — | — |
+    //
+    // D-148 (LAI-1175): the Time logging grid — each person's hours a day
+    // against a flat eight — for the people of the spaces this reader leads.
+    // The one per-person read a space admin has. The service asks this only
+    // for spaces the reader holds a **lead membership row** in: the implicit
+    // lead an org grant confers over every space is not "the spaces they
+    // lead" (D-148 item 4), so an admin whose role lost *See everyone's
+    // analytics* does not read everybody's days by this door.
+    case 'time.days.read_project':
+      return isLead;
+
     default:
       return assertNever(action);
   }

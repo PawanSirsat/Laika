@@ -11,6 +11,9 @@ import {
 import {
   insightsHolder,
   ledProjectIds,
+  TIME_SUBVIEWS,
+  timeSubview,
+  timeSubviewHref,
   timeView,
 } from '../../../../src/routes/screens/insights/time-tab.ts';
 
@@ -76,5 +79,19 @@ void describe('Insights → Time is for owners, analytics readers and space admi
     assert.equal(timeView(permissionHolder(owner.me.actions), ledProjectIds(owner)), 'org');
     assert.equal(timeView(permissionHolder(lead.me.actions), ledProjectIds(lead)), 'space');
     assert.equal(timeView(permissionHolder(member.me.actions), ledProjectIds(member)), 'none');
+  });
+
+  void test('three views: the report, Availability and Time logging (D-148), each at its own address', () => {
+    assert.deepEqual(
+      TIME_SUBVIEWS.map(([id, label]) => `${id}=${label}`),
+      ['report=Time report', 'availability=Availability', 'days=Time logging'],
+    );
+    assert.equal(timeSubview('days'), 'days');
+    assert.equal(timeSubview('availability'), 'availability');
+    assert.equal(timeSubview('weeks'), 'report', 'an unknown view is the report');
+    assert.equal(timeSubview(null), 'report');
+    assert.equal(timeSubviewHref('days'), '/insights?tab=time&view=days');
+    assert.equal(timeSubviewHref('availability'), '/insights?tab=time&view=availability');
+    assert.equal(timeSubviewHref('report'), '/insights?tab=time');
   });
 });

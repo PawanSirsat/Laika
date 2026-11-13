@@ -42,6 +42,7 @@ import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { DEFAULT_RANGE, usageRange } from '../../routes/screens/usage/usage-derive.ts';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
+import { parseSpan } from '../../routes/screens/my-day/span.ts';
 import type { WorkTaskLink } from '../../routes/screens/organisation/WorkTab.tsx';
 import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
 import { WorkroomScreen } from '../../routes/screens/workroom/WorkroomScreen.tsx';
@@ -198,9 +199,17 @@ function CalendarRoute() {
   return (
     <CalendarScreen
       slug={params.get('project') ?? undefined}
+      params={params}
       onOpenTask={(taskId) => {
         const next = new URLSearchParams(params);
         next.set('task', taskId);
+        setParams(next, { push: true });
+      }}
+      onMonth={(month) => {
+        // `?month=` only off this month, so today's calendar stays a plain link (LAI-1178).
+        const next = new URLSearchParams(params);
+        if (month === undefined) next.delete('month');
+        else next.set('month', month);
         setParams(next, { push: true });
       }}
     />
@@ -298,6 +307,7 @@ function UsageRoute() {
  * The reader's own day (LAI-787). `?day=` names which; absent is today. A
  * day picked is a URL, so back and forward walk the days as they were seen.
  * `?user=` is somebody else's day, read only (LAI-959), picked the same way.
+ * `?span=` is the View — week, month or year around the day (LAI-1174).
  */
 function MyDayRoute() {
   const {
@@ -316,6 +326,15 @@ function MyDayRoute() {
       onDay={(day) => {
         const next = new URLSearchParams(params);
         next.set('day', day);
+        setParams(next, { push: true });
+      }}
+      span={parseSpan(params.get('span'))}
+      onSpan={(span, day) => {
+        // Day is the page as it always was: no `span=` in its address.
+        const next = new URLSearchParams(params);
+        if (span === 'day') next.delete('span');
+        else next.set('span', span);
+        if (day !== undefined) next.set('day', day);
         setParams(next, { push: true });
       }}
       user={params.get('user') ?? undefined}
@@ -449,6 +468,7 @@ function InsightsRoute() {
           leads={leads}
           orgName={orgName}
           subview={timeSubview(params.get('view'))}
+          month={params.get('month') ?? undefined}
           onNavigate={navigate}
           // The report's period and filters live in the address (LAI-1189):
           // read once as it opens, written — replacing — after each change.

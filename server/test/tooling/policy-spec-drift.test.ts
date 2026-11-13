@@ -174,6 +174,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Leave a project', ['project.leave']],
   // D-130 item 3 (LAI-1135).
   ["View the space's time totals", ['time.report.read_project']],
+  // D-148 (LAI-1175).
+  ['View logged days of the people in the space', ['time.days.read_project']],
 ]);
 
 /**

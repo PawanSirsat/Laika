@@ -7,6 +7,7 @@ import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
 import type { ReportAddress } from '../../../components/time-report/report-address.ts';
 import { dayIn } from '../my-day/my-day-derive.ts';
 import { AvailabilityView } from './AvailabilityView.tsx';
+import { TimeLoggingView } from './TimeLoggingView.tsx';
 import { TimeViews } from './TimeViews.tsx';
 import './time-tab.css';
 import type { TimeSubview } from './time-tab.ts';
@@ -17,8 +18,10 @@ export interface TimeTabProps {
   /** The spaces the reader leads, by id (§3.2 `time.report.read_project`). */
   readonly leads: readonly string[];
   readonly orgName?: string | undefined;
-  /** `&view=` (LAI-1139): the Time report, or who has room for more work. */
+  /** `&view=` (LAI-1139, D-148): the Time report, who has room for more work, or the Time logging grid. */
   readonly subview?: TimeSubview;
+  /** `&month=YYYY-MM` for the Time logging grid (D-148); its current month when absent. */
+  readonly month?: string | undefined;
   readonly onNavigate?: (to: string) => void;
   /** The report's period and filters, from the address (LAI-1189). */
   readonly address?: ReportAddress | undefined;
@@ -36,6 +39,7 @@ export function TimeTab({
   leads,
   orgName,
   subview = 'report',
+  month,
   onNavigate = () => undefined,
   address,
   onAddress,
@@ -43,12 +47,14 @@ export function TimeTab({
   if (view === 'none') {
     return <PermissionDenied resource="the Time report" requiredRole="lead" scope="project" />;
   }
-  // Two views under one tab (frames 1g and 2g): the same readers, the same gate.
+  // Three views under one tab (frames 1g and 2g; D-148): the same readers, the same gate.
   return (
     <div className="time-tab">
       <TimeViews current={subview} onNavigate={onNavigate} />
       {subview === 'availability' ? (
         <AvailabilityView />
+      ) : subview === 'days' ? (
+        <TimeLoggingView month={month} orgName={orgName} onNavigate={onNavigate} />
       ) : (
         <TimeReportView
           view={view}

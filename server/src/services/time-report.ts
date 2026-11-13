@@ -361,10 +361,83 @@ interface Raw {
   manual: boolean;
 }
 
+/**
+ * The live entries of `userIds` (everyone's when null) filed on a day of the
+ * stretch: `deleted_at IS NULL`, `day BETWEEN from AND to` — the stretch is
+ * what `time_entries_user_day_idx` is ranged on. The report's extra filters
+ * are pushed on by its caller.
+ */
+function liveEntriesWhere(userIds: readonly string[] | null, from: string, to: string): SQL[] {
+  const where: SQL[] = [isNull(timeEntries.deletedAt), between(timeEntries.day, from, to)];
+  if (userIds !== null) where.push(inArray(timeEntries.userId, [...userIds]));
+  return where;
+}
+
+/** The pending drafts of `userIds` on a day of the stretch — `summaryOf`'s drafts. */
+function pendingDraftsWhere(userIds: readonly string[] | null, from: string, to: string): SQL[] {
+  const where: SQL[] = [eq(timeDrafts.state, 'pending'), between(timeDrafts.day, from, to)];
+  if (userIds !== null) where.push(inArray(timeDrafts.userId, [...userIds]));
+  return where;
+}
+
+/** One person's minutes on one day: live entries and pending drafts apart. */
+export interface UserDayMinutes {
+  userId: string;
+  day: string;
+  confirmed_minutes: number;
+  drafted_minutes: number;
+}
+
+/**
+ * Confirmed and drafted minutes per `(user, day)` over the stretch, for
+ * `userIds` or for everyone (`null`) — the Time logging grid's cells (D-148,
+ * LAI-1175), read with the report's two WHEREs and nothing narrower: live
+ * entries and pending drafts, each summed in SQL. Rows in no particular
+ * order; a day with no time has no row.
+ */
+export function minutesByUserDay(
+  db: Db,
+  query: { userIds: readonly string[] | null; from: string; to: string },
+): UserDayMinutes[] {
+  const { userIds, from, to } = query;
+  if (userIds !== null && userIds.length === 0) return [];
+  const out = new Map<string, UserDayMinutes>();
+  const at = (userId: string, day: string): UserDayMinutes => {
+    const key = `${userId}|${day}`;
+    const row = out.get(key) ?? { userId, day, confirmed_minutes: 0, drafted_minutes: 0 };
+    out.set(key, row);
+    return row;
+  };
+  for (const r of db
+    .select({
+      userId: timeEntries.userId,
+      day: timeEntries.day,
+      minutes: sql<number>`sum(${timeEntries.minutes})`,
+    })
+    .from(timeEntries)
+    .where(and(...liveEntriesWhere(userIds, from, to)))
+    .groupBy(timeEntries.userId, timeEntries.day)
+    .all()) {
+    at(r.userId, r.day).confirmed_minutes += Number(r.minutes);
+  }
+  for (const r of db
+    .select({
+      userId: timeDrafts.userId,
+      day: timeDrafts.day,
+      minutes: sql<number>`sum(${timeDrafts.minutes})`,
+    })
+    .from(timeDrafts)
+    .where(and(...pendingDraftsWhere(userIds, from, to)))
+    .groupBy(timeDrafts.userId, timeDrafts.day)
+    .all()) {
+    at(r.userId, r.day).drafted_minutes += Number(r.minutes);
+  }
+  return [...out.values()];
+}
+
 function readRaw(db: Db, p: Plan, from: string, to: string): Raw[] {
   if (p.projectIds !== null && p.projectIds.length === 0) return [];
-  const entryWhere: SQL[] = [isNull(timeEntries.deletedAt), between(timeEntries.day, from, to)];
-  if (p.userIds !== null) entryWhere.push(inArray(timeEntries.userId, p.userIds));
+  const entryWhere = liveEntriesWhere(p.userIds, from, to);
   if (p.projectIds !== null) entryWhere.push(inArray(timeEntries.projectId, p.projectIds));
   if (p.kinds !== null) entryWhere.push(inArray(timeEntries.kind, p.kinds));
   // A confirmed entry is never *not on a task yet*: on one, or general.
@@ -409,8 +482,7 @@ function readRaw(db: Db, p: Plan, from: string, to: string): Raw[] {
 
   // A draft has no kind, so a report narrowed to kinds holds none.
   if (!p.includeDrafts || p.kinds !== null) return out;
-  const draftWhere: SQL[] = [eq(timeDrafts.state, 'pending'), between(timeDrafts.day, from, to)];
-  if (p.userIds !== null) draftWhere.push(inArray(timeDrafts.userId, p.userIds));
+  const draftWhere = pendingDraftsWhere(p.userIds, from, to);
   if (p.projectIds !== null) draftWhere.push(inArray(timeDrafts.projectId, p.projectIds));
   if (p.link === 'task') draftWhere.push(isNotNull(timeDrafts.taskId));
   if (p.link === 'general') draftWhere.push(isNull(timeDrafts.taskId), eq(timeDrafts.general, 1));

@@ -204,6 +204,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'budget.set': 'YNN',
   'project.leave': 'YYY',
   'time.report.read_project': 'YNN',
+  'time.days.read_project': 'YNN',
 };
 
 const LETTER = { yes: 'Y', no: 'N', conditional: 'C' } as const;

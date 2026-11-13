@@ -133,11 +133,13 @@ void describe('the Calendar reads due_on (LAI-819)', () => {
       assert.equal(await h.page.locator('.cal-task').count(), 1);
       assert.match(
         (await h.page.locator('.space-context').textContent()) ?? '',
-        /^1 open task placed · /,
+        // LC-1 is due in two days: this month, unless today is one of its last two.
+        SOON.getMonth() === today.getMonth() ? /^1 due in / : /^0 due in /,
       );
+      const elsewhere = SOON.getMonth() === today.getMonth() ? 1 : 2;
       assert.equal(
         await h.page.locator('.cal-note').textContent(),
-        '1 more open task is due outside these six weeks.',
+        `${String(elsewhere)} more open ${elsewhere === 1 ? 'task is' : 'tasks are'} due in other months.`,
       );
       // Nothing on this screen is a sample any more.
       assert.equal(await h.page.locator('.demo-notice').count(), 0, 'the SAMPLE notice is back');
@@ -159,10 +161,7 @@ void describe('the Calendar reads due_on (LAI-819)', () => {
         'No open task in this space has a due date. Set one in a task’s details and it appears on its day.',
       );
       assert.equal(await h.page.locator('.cal-task').count(), 0);
-      assert.match(
-        (await h.page.locator('.space-context').textContent()) ?? '',
-        /^0 open tasks placed · /,
-      );
+      assert.match((await h.page.locator('.space-context').textContent()) ?? '', /^0 due in /);
     } finally {
       await h.close();
     }

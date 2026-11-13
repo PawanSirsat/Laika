@@ -150,6 +150,11 @@ export const PROJECT_ACTIONS = [
   // space's confirmed minutes a week, a week of fewer than three people
   // other than the reader withheld — no per-person split, nothing else.
   'time.report.read_project',
+  // D-148 (LAI-1175): a space admin reads the logged days of the people in
+  // the spaces they lead — the Time logging grid, per person, the one
+  // per-person read a space admin has. Not `time.report.read_project`, whose
+  // row promises no per-person split.
+  'time.days.read_project',
 ] as const;
 
 /**
@@ -366,6 +371,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // included.
   'time.report.read',
   'time.report.read_project',
+  // **The Time logging grid is hours per person** (D-148, LAI-1175): the
+  // same rule, so a space admin's token never reads their people's days.
+  'time.days.read_project',
   // **Availability is the person's own declaration** (D-131, LAI-1130): set
   // signed in, as their time settings are — an agent must not say its person
   // is open to more work — and read on the web app's screens, never by a token.

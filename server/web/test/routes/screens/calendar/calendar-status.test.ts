@@ -19,10 +19,12 @@ const read = (rel: string) =>
 
 void describe('a calendar chip names its status', () => {
   void test('the name, as the project calls it now, in an element carrying its kind', async () => {
-    const screen = await read('CalendarScreen.tsx');
+    // The chip moved into its own component with the redesign (LAI-1178).
+    const chip = await read('CalendarDay.tsx');
+    assert.match(chip, /const status = statusNameOf\(task, byId\);/);
     assert.match(
-      screen,
-      /<span className=\{`cal-task-status cal-status-\$\{task\.status\}`\}>\s*\{statusNameOf\(task, statuses\.byId\)\}\s*<\/span>/,
+      chip,
+      /<span className=\{`cal-task-status cal-status-\$\{task\.status\}`\}>\{status\}<\/span>/,
     );
   });
 
