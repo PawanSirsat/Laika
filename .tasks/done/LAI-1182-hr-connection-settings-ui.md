@@ -5,8 +5,9 @@ area: web
 assignee: chief
 priority: p1
 depends-on: [LAI-1181]
-status: review
+status: done
 finished: 2026-11-13T17:00:50Z
+accepted: 2026-11-13T17:35:00Z
 started: 2026-11-13T12:01:12Z
 ---
 
