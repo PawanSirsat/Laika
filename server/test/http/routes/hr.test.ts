@@ -14,9 +14,8 @@ import {
   signUp,
 } from '../../helpers/auth.ts';
 import {
+  CLAN_ACCOUNT,
   CLAN_BASE,
-  CLAN_EMAIL,
-  CLAN_PASSWORD,
   CLAN_TOKEN,
   employee,
   fakeClan,
@@ -113,10 +112,10 @@ async function errorOf(res: Response): Promise<ErrorBody['error']> {
   return ((await res.json()) as ErrorBody).error;
 }
 
-const LOGIN = { base_url: 'https://kvell.clan.biz', email: CLAN_EMAIL, password: CLAN_PASSWORD };
+const PASTE = { base_url: 'https://kvell.clan.biz', token: CLAN_TOKEN };
 
 async function connect(): Promise<Response> {
-  const res = await call('POST', '/hr/connect', LOGIN);
+  const res = await call('POST', '/hr/connect', PASTE);
   expect(res.status, await res.clone().text()).toBe(200);
   await settle();
   return res;
@@ -137,8 +136,7 @@ describe('who may', () => {
     const member = await join('member@example.test', 'member');
     for (const [method, path, body] of [
       ['GET', '/hr', undefined],
-      ['POST', '/hr/connect', LOGIN],
-      ['POST', '/hr/connect/verify', { method: 'email', code: '1' }],
+      ['POST', '/hr/connect', PASTE],
       ['DELETE', '/hr', undefined],
       ['POST', '/hr/sync', undefined],
       ['PUT', '/hr/people', { people: [{ external_id: '1', user_id: null }] }],
@@ -158,7 +156,7 @@ describe('who may', () => {
     expect(minted.status, await minted.clone().text()).toBe(201);
     const { secret } = (await minted.json()) as { secret: string };
 
-    const res = await call('POST', '/hr/connect', LOGIN, { Authorization: `Bearer ${secret}` });
+    const res = await call('POST', '/hr/connect', PASTE, { Authorization: `Bearer ${secret}` });
     expect(res.status).toBe(403);
     expect((await errorOf(res)).details).toEqual({
       action: 'org.hr.configure',
@@ -169,19 +167,20 @@ describe('who may', () => {
 });
 
 describe('connecting', () => {
-  it('connects, syncs, and never answers or logs the password or the token', async () => {
+  it('connects, syncs, and never answers or logs the token', async () => {
     const res = await connect();
     const text = await res.text();
 
     // A positive control: what is meant to be shown, is.
     expect(text).toContain(CLAN_TOKEN.slice(-4));
+    expect(text).toContain(CLAN_ACCOUNT);
     expect(text).toContain(CLAN_BASE);
     expect(text).not.toContain(CLAN_TOKEN);
-    expect(text).not.toContain(CLAN_PASSWORD);
 
     const read = await (await call('GET', '/hr')).text();
     expect(JSON.parse(read)).toMatchObject({
       status: 'connected',
+      account_name: CLAN_ACCOUNT,
       token_last4: CLAN_TOKEN.slice(-4),
       last_result: { people: 1, matched: 1, leave_days: 1, holidays: 1 },
     });
@@ -190,57 +189,45 @@ describe('connecting', () => {
     const log = JSON.stringify(h.log.records);
     expect(log).toContain('/api/v1/org/hr/connect');
     expect(log).not.toContain(CLAN_TOKEN);
-    expect(log).not.toContain(CLAN_PASSWORD);
   });
 
-  it('answers a wrong password 422 clan_login_failed, without Clan’s words', async () => {
-    const res = await call('POST', '/hr/connect', { ...LOGIN, password: 'wrong' });
+  it('answers a refused token 422 clan_token_refused, without Clan’s words', async () => {
+    const res = await call('POST', '/hr/connect', { ...PASTE, token: 'not-the-token-at-all' });
     expect(res.status).toBe(422);
     const text = await res.text();
     expect(JSON.parse(text)).toMatchObject({
-      error: { code: 'unprocessable', details: { reason: 'clan_login_failed' } },
+      error: { code: 'unprocessable', details: { reason: 'clan_token_refused' } },
     });
     expect(text).not.toContain('CLAN-SECRET-WORDS');
   });
 
   it('answers an unreachable Clan as unavailable, clan_unreachable', async () => {
     fake.intercept = () => 'hang';
-    const res = await call('POST', '/hr/connect', LOGIN);
+    const res = await call('POST', '/hr/connect', PASTE);
     expect(res.status).toBe(503);
     expect((await errorOf(res)).details).toMatchObject({ reason: 'clan_unreachable' });
   });
 
-  it('answers a non-https address 422, and a field it does not know 422', async () => {
-    const http = await call('POST', '/hr/connect', { ...LOGIN, base_url: 'http://kvell.clan.biz' });
+  it('answers a non-https address, a bad date, and a field it does not know 422', async () => {
+    const http = await call('POST', '/hr/connect', { ...PASTE, base_url: 'http://kvell.clan.biz' });
     expect(http.status).toBe(422);
     expect((await errorOf(http)).details).toEqual({
       field: 'base_url',
       reason: 'base_url_not_https',
     });
 
-    const extra = await call('POST', '/hr/connect', { ...LOGIN, remember: true });
-    expect(extra.status).toBe(422);
+    const date = await call('POST', '/hr/connect', { ...PASTE, expires_on: 'next year' });
+    expect(date.status).toBe(422);
+
+    // A password is not a field Laika takes (D-149 item 1).
+    const password = await call('POST', '/hr/connect', { ...PASTE, password: 'hunter2' });
+    expect(password.status).toBe(422);
     expect(fake.requests).toEqual([]);
   });
 
-  it('waits for a second factor, then connects', async () => {
-    fake = fakeClan({ twoFactorMethods: ['email'], twoFactorCode: '123456' });
-    const pending = await call('POST', '/hr/connect', LOGIN);
-    expect(pending.status).toBe(200);
-    expect(await pending.json()).toMatchObject({
-      status: 'pending_2fa',
-      two_factor: { methods: ['email'] },
-    });
-
-    const done = await call('POST', '/hr/connect/verify', { method: 'email', code: '123456' });
-    expect(done.status, await done.clone().text()).toBe(200);
-    expect(await done.json()).toMatchObject({ status: 'connected', two_factor: null });
-  });
-
-  it('answers 409 two_factor_expired with nothing waiting', async () => {
+  it('takes no second factor: there is no verify route', async () => {
     const res = await call('POST', '/hr/connect/verify', { method: 'email', code: '1' });
-    expect(res.status).toBe(409);
-    expect((await errorOf(res)).details).toEqual({ reason: 'two_factor_expired' });
+    expect(res.status).toBe(404);
   });
 
   it('disconnects with 204, and the read says off', async () => {
@@ -293,9 +280,9 @@ describe('sync now and the people map', () => {
       key: 'hr:u1',
       policy: LIMITS.hr,
     });
-    expect(
-      classify('/api/v1/org/hr/connect/verify', { userId: 'u1', tokenId: null }, 'POST').key,
-    ).toBe('hr:u1');
+    expect(classify('/api/v1/org/hr/connect', { userId: 'u1', tokenId: null }, 'POST').key).toBe(
+      'hr:u1',
+    );
     // Reading the connection is an ordinary read.
     expect(classify('/api/v1/org/hr', { userId: 'u1', tokenId: null }, 'GET').key).toBe(
       'session:u1',

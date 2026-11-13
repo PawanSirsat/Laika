@@ -15,7 +15,6 @@ import {
   type HrSourceView,
   setHrPeople,
   syncHrNow,
-  verifyHr,
 } from '../../services/hr-source.ts';
 import { type HrSyncDeps } from '../../services/hr-sync.ts';
 import { type AppEnv } from '../context.ts';
@@ -27,25 +26,19 @@ import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
  *
  * Transport only (CONVENTIONS §2): who may, and every rule, is the services'.
  * `/hr*` is `org.hr.configure`, signed in; reading holidays is any member's
- * (`org.read`), typing or removing one is `org.time.set`. `/hr/connect*` and
+ * (`org.read`), typing or removing one is `org.time.set`. `/hr/connect` and
  * `/hr/sync` spend their own rate-limit bucket (`hr:<who>`, 6 a minute) —
- * each is a call to Clan, and a person retrying a password must not be able
- * to make Laika hammer it.
+ * each calls Clan, and a loop must not have Laika hammer it.
  *
- * **The password is in one request body and nowhere else**: the body is
- * validated, handed to the service, and not logged — the request logger
- * records the path and the status only.
+ * **The token is in one request body and nowhere else**: validated, handed
+ * to the service, and not logged — the request logger records the path and
+ * the status only. Laika never takes a password (D-149 item 1).
  */
 
 const ConnectBody = strictObject({
   base_url: z.string().trim().min(1).max(500),
-  email: z.string().trim().min(3).max(320),
-  password: z.string().min(1).max(500),
-});
-
-const VerifyBody = strictObject({
-  method: z.string().trim().min(1).max(40),
-  code: z.string().trim().min(1).max(40),
+  token: z.string().trim().min(8).max(2000),
+  expires_on: z.string().min(1).max(10).optional(),
 });
 
 const PeopleBody = strictObject({
@@ -101,15 +94,6 @@ export function hrRoutes(options: HrRouteOptions): Hono<AppEnv> {
     const body = parseBody(ConnectBody, await c.req.json().catch(() => null));
     return c.json<HrSourceView>(
       await connectHr(db, actor, serverSecret, body, depsFor(c.get('log'))),
-    );
-  });
-
-  app.post('/hr/connect/verify', async (c) => {
-    const actor = c.get('actor');
-    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
-    const body = parseBody(VerifyBody, await c.req.json().catch(() => null));
-    return c.json<HrSourceView>(
-      await verifyHr(db, actor, serverSecret, body, depsFor(c.get('log'))),
     );
   });
 

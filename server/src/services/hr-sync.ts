@@ -106,7 +106,7 @@ export interface HrSyncDeps {
 
 /** What each failure code records as the connection's `last_error` — Laika's words. */
 const ERROR_TEXT: Readonly<Record<HrSyncErrorCode, string>> = {
-  token_rejected: 'Clan refused the stored token. Connect again to renew it.',
+  token_rejected: 'Clan refused the stored token. Connect again with a new one.',
   unreachable: 'Clan could not be reached. The next sync will try again.',
   bad_answer: 'Clan answered something Laika could not read. Nothing was changed.',
 };
@@ -158,7 +158,7 @@ export async function syncHr(
   const clock = deps.now ?? Date.now;
 
   const source = db.select().from(orgHrSource).get();
-  if (source?.status !== 'connected' || serverSecret === '') return { kind: 'skipped' };
+  if (source === undefined || serverSecret === '') return { kind: 'skipped' };
 
   const started = clock();
   let token: string;
@@ -255,10 +255,16 @@ function leaveHash(userId: string, day: ClanLeaveDay): string {
     .digest('hex');
 }
 
-/** `{"departments":[…],"designations":[…]}`, or null for everyone. */
+/**
+ * `{"departments":[…],"designations":[…],"employment_types":[…]}` with only
+ * the lists Clan named (§4.90), or null — everyone Clan lists.
+ */
 function scopeJson(h: ClanHoliday): string | null {
-  if (h.departments.length === 0 && h.designations.length === 0) return null;
-  return JSON.stringify({ departments: h.departments, designations: h.designations });
+  const scope: Record<string, string[]> = {};
+  if (h.departments.length > 0) scope.departments = h.departments;
+  if (h.designations.length > 0) scope.designations = h.designations;
+  if (h.employmentTypes.length > 0) scope.employment_types = h.employmentTypes;
+  return Object.keys(scope).length === 0 ? null : JSON.stringify(scope);
 }
 
 /** Keep the last of each id: a list that shifted between pages may repeat a row. */
@@ -290,7 +296,7 @@ function reconcile(
       // The connection the read was made with, still standing — or nothing is
       // written: an owner who disconnected meanwhile asked for exactly that.
       const still = tx.select().from(orgHrSource).get();
-      if (still?.status !== 'connected' || still.tokenEnc !== source.tokenEnc) return false;
+      if (still?.tokenEnc !== source.tokenEnc) return false;
 
       // ------------------------------------------------------------ people
       const people = byId(read.people);
@@ -347,6 +353,7 @@ function reconcile(
           name: p.name,
           departmentRef: p.departmentRef,
           designationRef: p.designationRef,
+          employmentType: p.employmentType,
           matchedBy: t.matchedBy,
           seenAt: now,
           updatedAt: now,
@@ -501,6 +508,9 @@ function reconcile(
           lastErrorCode: null,
           lastError: null,
           lastResultJson: JSON.stringify(result),
+          // What the token reads, as this complete read found it (§4.88).
+          seesEveryone: new Set(read.leave.map((l) => l.personRef)).size > 1 ? 1 : 0,
+          seesDepartments: read.people.some((p) => p.departmentRef !== null) ? 1 : 0,
           updatedAt: now,
         })
         .where(eq(orgHrSource.orgId, source.orgId))

@@ -5,14 +5,12 @@ import {
   ClanAnswerError,
   ClanAuthError,
   clanClient,
-  ClanLoginError,
   ClanUnavailableError,
   normaliseClanBaseUrl,
 } from '../../src/services/clan-client.ts';
 import {
+  CLAN_ACCOUNT,
   CLAN_BASE,
-  CLAN_EMAIL,
-  CLAN_PASSWORD,
   CLAN_TOKEN,
   employee,
   fakeClan,
@@ -95,65 +93,84 @@ describe('the base URL', () => {
   });
 });
 
-describe('signing in', () => {
-  it('sends the email and password once, and answers the token, its expiry and no second factor', async () => {
-    const fake = fakeClan();
-    const login = await client(fake).login(CLAN_EMAIL, CLAN_PASSWORD);
+describe('checking a pasted token', () => {
+  const WINDOW = ['2025-01-01', '2027-12-31'] as const;
 
-    expect(login).toEqual({
-      token: CLAN_TOKEN,
-      expiresAt: Date.parse('2027-11-13T12:00:00.000Z'),
-      twoFactor: null,
+  it('says whose it is and that it sees everyone and their departments', async () => {
+    const fake = fakeClan({
+      employees: [employee(1, 'Ada', 'ada@example.test')],
+      leave: [leaveRow(100, 1, '2026-03-02'), leaveRow(101, 2, '2026-03-03')],
     });
-    const [req] = fake.to('/auth/login');
-    expect(req?.method).toBe('POST');
-    expect(JSON.parse(req?.body ?? '{}')).toEqual({ email: CLAN_EMAIL, password: CLAN_PASSWORD });
-    expect(req?.authorization).toBeNull();
-    expect(fake.requests).toHaveLength(1);
+    expect(await client(fake).check(CLAN_TOKEN, ...WINDOW)).toEqual({
+      accountName: CLAN_ACCOUNT,
+      seesEveryone: true,
+      seesDepartments: true,
+    });
+    // GETs only, with the token, and one page of each list.
+    expect(fake.requests.map((r) => [r.method, r.path, r.authorization])).toEqual([
+      ['GET', '/auth/me', `Bearer ${CLAN_TOKEN}`],
+      ['GET', '/leave', `Bearer ${CLAN_TOKEN}`],
+      ['GET', '/employee', `Bearer ${CLAN_TOKEN}`],
+    ]);
+    expect(fake.to('/leave')[0]?.query.get('offset')).toBe('0');
   });
 
-  it('answers the methods when the account has a second factor', async () => {
-    const fake = fakeClan({ twoFactorMethods: ['email', 'google_authenticator'] });
-    const login = await client(fake).login(CLAN_EMAIL, CLAN_PASSWORD);
-    expect(login.twoFactor).toEqual({ methods: ['email', 'google_authenticator'] });
+  it('says an employee-role token sees one person and no departments', async () => {
+    // LAI-1180's live measurement: an `employee` role reads its own leave and
+    // nobody's department.
+    const fake = fakeClan({
+      employees: [employee(1, 'Ada', 'ada@example.test', { department_id: null })],
+      leave: [leaveRow(100, 1, '2026-03-02'), leaveRow(101, 1, '2026-03-03')],
+    });
+    expect(await client(fake).check(CLAN_TOKEN, ...WINDOW)).toMatchObject({
+      seesEveryone: false,
+      seesDepartments: false,
+    });
   });
 
-  it('refuses a wrong password as clan_login_failed, without Clan’s words', async () => {
-    const fake = fakeClan();
-    const err = await caught(client(fake).login(CLAN_EMAIL, 'wrong'));
+  it('reads a 403 on a list as “sees none of it”, not as a refusal', async () => {
+    const fake = fakeClan({ employees: [employee(1, 'Ada', 'ada@example.test')] });
+    fake.forbidden.add('/leave');
+    fake.forbidden.add('/employee');
+    expect(await client(fake).check(CLAN_TOKEN, ...WINDOW)).toEqual({
+      accountName: CLAN_ACCOUNT,
+      seesEveryone: false,
+      seesDepartments: false,
+    });
+  });
 
-    expect(err).toBeInstanceOf(ClanLoginError);
+  it('names the account from a nested user, or its email, when Clan sends no name', async () => {
+    const nested = fakeClan({ me: { user: { name: 'Forge Sync' } } });
+    expect((await client(nested).check(CLAN_TOKEN, ...WINDOW)).accountName).toBe('Forge Sync');
+    const email = fakeClan({ me: { email: 'forge@kvelld.example' } });
+    expect((await client(email).check(CLAN_TOKEN, ...WINDOW)).accountName).toBe(
+      'forge@kvelld.example',
+    );
+  });
+
+  it('refuses a token Clan refuses: 422 clan_token_refused, without Clan’s words', async () => {
+    const err = await caught(client(fakeClan()).check('not-the-token', ...WINDOW));
+
+    expect(err).toBeInstanceOf(ClanAuthError);
     expect(err.status).toBe(422);
-    expect(reasonOf(err)).toBe('clan_login_failed');
+    expect(reasonOf(err)).toBe('clan_token_refused');
+    expect((err as ClanAuthError).answered).toBe(401);
     expect(JSON.stringify(err.toBody())).not.toContain('CLAN-SECRET-WORDS');
   });
 
-  it('completes the second factor with the token, and refuses a wrong code', async () => {
-    const fake = fakeClan({ twoFactorMethods: ['email'], twoFactorCode: '123456' });
-    const c = client(fake);
-
-    const wrong = await caught(c.twoFactor(CLAN_TOKEN, 'email', '000000'));
-    expect(reasonOf(wrong)).toBe('clan_login_failed');
-
-    expect(await c.twoFactor(CLAN_TOKEN, 'email', '123456')).toEqual({
-      token: null,
-      expiresAt: null,
-    });
-    const last = fake.to('/auth/two-factor').at(-1);
-    expect(last?.authorization).toBe(`Bearer ${CLAN_TOKEN}`);
-    expect(JSON.parse(last?.body ?? '{}')).toEqual({ method: 'email', code: '123456' });
-  });
-
-  it('never calls /auth/refresh', async () => {
+  it('never signs in, never refreshes, and never writes', async () => {
     const fake = fakeClan({ employees: [employee(1, 'Ada', 'ada@example.test')] });
     const c = client(fake);
-    await c.login(CLAN_EMAIL, CLAN_PASSWORD);
+    await c.check(CLAN_TOKEN, ...WINDOW);
     await c.employees(CLAN_TOKEN);
-    await c.holidays(CLAN_TOKEN, '2025-01-01', '2027-12-31');
-    await c.leave(CLAN_TOKEN, '2025-01-01', '2027-12-31');
+    await c.holidays(CLAN_TOKEN, ...WINDOW);
+    await c.leave(CLAN_TOKEN, ...WINDOW);
 
+    expect(fake.requests.every((r) => r.method === 'GET')).toBe(true);
     expect(fake.requests.map((r) => r.path)).toEqual([
-      '/auth/login',
+      '/auth/me',
+      '/leave',
+      '/employee',
       '/employee',
       '/holiday',
       '/leave',
@@ -178,6 +195,7 @@ describe('reading', () => {
         email: 'ada@example.test',
         departmentRef: '3',
         designationRef: '7',
+        employmentType: 'full_time',
       },
       {
         id: '2',
@@ -185,6 +203,7 @@ describe('reading', () => {
         email: null,
         departmentRef: '9',
         designationRef: '7',
+        employmentType: 'full_time',
       },
     ]);
     const [req] = fake.to('/employee');
@@ -221,21 +240,41 @@ describe('reading', () => {
     );
   });
 
-  it('refuses a list that ends short of the total it named — an incomplete read', async () => {
+  it('pages until a short page, whatever meta.paging.total says', async () => {
+    // A live Clan answered `total: 2` with 25 rows (LAI-1180's log).
+    const fake = fakeClan({
+      leave: Array.from({ length: 2_500 }, (_, i) => leaveRow(i + 1, 1, '2026-03-02')),
+    });
+    fake.total = 2;
+    expect(await client(fake).leave(CLAN_TOKEN, '2025-01-01', '2027-12-31')).toHaveLength(2_500);
+    expect(fake.to('/leave')).toHaveLength(3);
+
+    // And one that overcounts does not send it looking for rows that are not there.
+    const over = fakeClan({
+      leave: Array.from({ length: 1_500 }, (_, i) => leaveRow(i + 1, 1, '2026-03-02')),
+    });
+    over.total = 9_000;
+    expect(await client(over).leave(CLAN_TOKEN, '2025-01-01', '2027-12-31')).toHaveLength(1_500);
+    expect(over.to('/leave')).toHaveLength(2);
+
+    const none = fakeClan({ employees: [employee(1, 'Ada', 'ada@example.test')] });
+    none.total = 'absent';
+    expect(await client(none).employees(CLAN_TOKEN)).toHaveLength(1);
+  });
+
+  it('fails the whole read when a later page fails — it never answers part of a list', async () => {
     const fake = fakeClan({
       leave: Array.from({ length: 1_500 }, (_, i) => leaveRow(i + 1, 1, '2026-03-02')),
     });
     fake.intercept = (req) =>
       req.path === '/leave' && req.query.get('offset') === '1000'
-        ? new Response(JSON.stringify({ data: [], meta: { paging: { total: 1_500 } } }), {
-            status: 200,
-          })
+        ? new Response(JSON.stringify({ data: 'not a list' }), { status: 200 })
         : undefined;
     const err = await caught(client(fake).leave(CLAN_TOKEN, '2025-01-01', '2027-12-31'));
 
     expect(err).toBeInstanceOf(ClanAnswerError);
     expect(reasonOf(err)).toBe('clan_bad_answer');
-    expect((err.details as { why: string }).why).toBe('leave: ended at 1000 of 1500');
+    expect((err.details as { why: string }).why).toBe('leave: no data list');
   });
 
   it('reads a half day each way, and anything else as a whole day', async () => {
@@ -266,26 +305,56 @@ describe('reading', () => {
   it('reads holidays defensively — label, day and scope — and keeps the window', async () => {
     const fake = fakeClan({
       holidays: [
-        { id: 10, date: '2026-09-24T00:00:00.000000Z', occassion: 'Heritage Day' },
+        // As a live Clan sends them (LAI-1180's log): JSON strings.
+        {
+          id: 10,
+          date: '2026-09-24T00:00:00.000000Z',
+          occassion: 'Heritage Day',
+          department_id_json: '[3004,3023]',
+          designation_id_json: null,
+          employment_type_json: '["full_time"]',
+        },
         { id: 11, date: '2026-08-15', occasion: 'Independence Day', department_ids: [4, '5'] },
         { id: 12, date: '2026-12-25', name: 'Christmas', designation_id: 7 },
-        { id: 13, date: '2026-01-01', title: 'New Year', departments: '[6]' },
+        { id: 13, date: '2026-01-01', title: 'New Year', department_id_json: '[]' },
         { id: 14, date: '2028-01-01', occassion: 'Outside the window' },
       ],
     });
     const holidays = await client(fake).holidays(CLAN_TOKEN, '2025-01-01', '2027-12-31');
 
     expect(holidays).toEqual([
-      { id: '10', day: '2026-09-24', label: 'Heritage Day', departments: [], designations: [] },
+      {
+        id: '10',
+        day: '2026-09-24',
+        label: 'Heritage Day',
+        departments: ['3004', '3023'],
+        designations: [],
+        employmentTypes: ['full_time'],
+      },
       {
         id: '11',
         day: '2026-08-15',
         label: 'Independence Day',
         departments: ['4', '5'],
         designations: [],
+        employmentTypes: [],
       },
-      { id: '12', day: '2026-12-25', label: 'Christmas', departments: [], designations: ['7'] },
-      { id: '13', day: '2026-01-01', label: 'New Year', departments: ['6'], designations: [] },
+      {
+        id: '12',
+        day: '2026-12-25',
+        label: 'Christmas',
+        departments: [],
+        designations: ['7'],
+        employmentTypes: [],
+      },
+      {
+        id: '13',
+        day: '2026-01-01',
+        label: 'New Year',
+        departments: [],
+        designations: [],
+        employmentTypes: [],
+      },
     ]);
     // No filter is sent for holidays: their fields are undocumented.
     expect(fake.to('/holiday')[0]?.query.get('filters')).toBeNull();
@@ -370,7 +439,7 @@ describe('failures', () => {
     const err = await caught(client(fake).employees('not-the-token'));
 
     expect(err).toBeInstanceOf(ClanAuthError);
-    expect(reasonOf(err)).toBe('clan_token_rejected');
+    expect(reasonOf(err)).toBe('clan_token_refused');
     expect(JSON.stringify(err.toBody())).not.toContain('CLAN-SECRET-WORDS');
   });
 });

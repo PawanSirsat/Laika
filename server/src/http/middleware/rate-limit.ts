@@ -135,10 +135,9 @@ export const TIME_REPORT_PATH = '/api/v1/time/report';
 /** The Time logging grid (D-148, LAI-1175). */
 export const TIME_DAYS_PATH = '/api/v1/time/days';
 
-/** The calls to the HR system a person makes (D-149, LAI-1181): sign in, the code, sync now. */
+/** The calls to the HR system a person makes (D-149, LAI-1181): connect, and sync now. */
 export const HR_CALL_PATHS: ReadonlySet<string> = new Set([
   '/api/v1/org/hr/connect',
-  '/api/v1/org/hr/connect/verify',
   '/api/v1/org/hr/sync',
 ]);
 

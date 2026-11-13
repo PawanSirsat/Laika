@@ -93,9 +93,9 @@ export const LIMITS = {
   timeReport: { perMinute: 30, burst: 30 },
   /**
    * Connecting the HR system and syncing it now (D-149, LAI-1181): each is a
-   * call to Clan, so **6 a minute per person**, on its own bucket — enough for
-   * a mistyped password and a code, and never a loop that has Laika hammer
-   * Clan's sign-in on somebody's behalf.
+   * call to Clan, so **6 a minute per person**, on its own bucket — enough to
+   * paste a token twice and sync, and never a loop that has Laika hammer Clan
+   * on somebody's behalf.
    */
   hr: { perMinute: 6 },
 } as const satisfies Record<string, LimitPolicy>;
