@@ -2,10 +2,11 @@
 id: LAI-1182
 title: 'Organisation settings: the HR connection card (Clan) and the Holidays list (D-149)'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-1181]
-status: backlog
+status: in-progress
+started: 2026-11-13T12:01:12Z
 ---
 
 ## Goal

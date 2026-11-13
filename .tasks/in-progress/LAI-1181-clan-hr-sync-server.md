@@ -2,10 +2,11 @@
 id: LAI-1181
 title: 'Clan HR sync (server): connect once, pull holidays and leave every 30 minutes, people by email, manual holidays (D-149)'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-1180]
-status: backlog
+status: in-progress
+started: 2026-11-13T12:01:12Z
 ---
 
 ## Goal

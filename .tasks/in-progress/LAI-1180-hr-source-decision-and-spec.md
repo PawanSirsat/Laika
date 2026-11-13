@@ -2,10 +2,11 @@
 id: LAI-1180
 title: 'D-149 and the SPEC for leave and holidays from the organisation''s HR system (Clan)'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-13T12:01:12Z
 ---
 
 ## Goal
