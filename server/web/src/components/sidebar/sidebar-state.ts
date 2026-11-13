@@ -14,12 +14,14 @@
  * what is remembered for a wide window.
  */
 
+import { atOrBelow } from '../../theme/breakpoints.ts';
+
 export const SIDEBAR_KEY = 'laika.sidebar';
 
 export type SidebarPreference = 'expanded' | 'collapsed';
 
 /** Below this the rail is automatic. Above the off-canvas 900px, below 1366. */
-export const NARROW_QUERY = '(max-width: 1180px)';
+export const NARROW_QUERY = atOrBelow('laptop');
 
 export interface RailState {
   /** What this browser remembered; `undefined` when nothing is. */

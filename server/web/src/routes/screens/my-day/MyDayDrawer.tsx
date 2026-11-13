@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { atOrBelow } from '../../../theme/breakpoints.ts';
 
 /** What the drawer holds: the editor for what is in hand, or the two side cards. */
 export type DrawerMode = 'editor' | 'cards';
@@ -8,7 +9,7 @@ export type DrawerMode = 'editor' | 'cards';
  * the shell's sidebar is off-canvas (`app-shell.css`), so a phone never has a
  * side column and a desktop never has a sheet.
  */
-export const SHEET_QUERY = '(max-width: 900px)';
+export const SHEET_QUERY = atOrBelow('tablet');
 
 const FOCUSABLE =
   'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';

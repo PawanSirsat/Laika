@@ -33,18 +33,18 @@
 }
 
 .myday {
-  padding: 1.25rem 1.125rem 2rem;
+  padding: var(--space-4-5) 1.125rem var(--space-6);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .myday-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 /* ------------------------------------------------------------- the drawer */
@@ -96,8 +96,8 @@
 .myday-drawer-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.875rem 1.25rem;
+  gap: var(--space-2);
+  padding: var(--space-3-5) var(--space-4-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -112,8 +112,8 @@
 .myday-drawer-cards {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.25rem 1.5rem;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4-5) var(--space-5);
 }
 
 .myday-scrim {
@@ -123,7 +123,7 @@
 /* With the drawer open under 1280px the body closes in (the design's `tight`). */
 @media (max-width: 1279px) {
   .myday-page[data-drawer-open='true'] .myday {
-    padding: 1rem 1.25rem 3rem;
+    padding: var(--space-4) var(--space-4-5) var(--space-7);
   }
 }
 
@@ -148,7 +148,7 @@
     height: auto;
     max-height: 86dvh;
     border-left: 0;
-    border-radius: 1rem 1rem 0 0;
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
     box-shadow: var(--shadow-modal);
     z-index: 50;
   }
@@ -156,7 +156,7 @@
   .myday-drawer-grab {
     display: flex;
     justify-content: center;
-    padding: 0.5rem 0 0;
+    padding: var(--space-2) 0 0;
   }
 
   .myday-drawer-grab > span {
@@ -173,7 +173,7 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
 }
 
 .myday-subtitle-dot {
@@ -229,9 +229,9 @@
 .myday-switch {
   display: inline-flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-height: 2.125rem;
-  padding: 0 0.625rem 0 0.75rem;
+  padding: 0 var(--space-2-5) 0 var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -274,17 +274,17 @@
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   box-shadow: var(--shadow-card);
-  padding: 1rem 1.125rem 1.125rem;
+  padding: var(--space-4) 1.125rem 1.125rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .myday-card-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem 0.625rem;
+  gap: var(--space-1) var(--space-2-5);
   min-height: 1.75rem;
 }
 
@@ -320,7 +320,7 @@
 }
 
 .myday-pad {
-  padding: 0 0.125rem;
+  padding: 0 var(--space-0-5);
 }
 
 .myday-error {
@@ -335,9 +335,9 @@
 .myday-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
-  padding: 0.3125rem 0.75rem;
+  padding: 0.3125rem var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -409,7 +409,7 @@
 /* A card's key as a chip: one click puts the block on it. */
 .myday-cardchip {
   margin: 0;
-  padding: 0.25rem 0.5625rem;
+  padding: var(--space-1) 0.5625rem;
   border: 1px solid var(--border-card);
   border-radius: var(--radius-xs);
   background: var(--bg-card);
@@ -471,7 +471,7 @@
 .myday-kbd {
   display: inline-block;
   min-width: 1.25em;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-chip);
   font-family: var(--font-mono);
@@ -545,7 +545,7 @@
 .myday-week {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -555,7 +555,7 @@
   flex: none;
   height: 2rem;
   border: 1px solid var(--border-card);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-card);
   overflow: hidden;
   background: var(--bg-card);
 }
@@ -577,7 +577,7 @@
 
 .myday-week-today {
   width: auto;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   border-left: 1px solid var(--border-card);
@@ -601,7 +601,7 @@
   list-style: none;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 
@@ -612,9 +612,9 @@
   flex-direction: column;
   gap: 0.3125rem;
   margin: 0;
-  padding: 0.375rem 0.625rem 0.4375rem;
+  padding: var(--space-1-5) var(--space-2-5) 0.4375rem;
   border: 1px solid var(--border-card);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-card);
   background: var(--bg-card);
   font: inherit;
   text-align: left;
@@ -650,7 +650,7 @@
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0 0.375rem;
+  gap: 0 var(--space-1-5);
   min-width: 0;
   height: 1rem;
   overflow: hidden;
@@ -687,7 +687,7 @@
 .myday-week-track {
   display: flex;
   height: 0.25rem;
-  border-radius: 0.125rem;
+  border-radius: var(--radius-hairline);
   background: var(--border-subtle);
   overflow: hidden;
 }
@@ -713,7 +713,7 @@
 
 .myday-future {
   margin: 0;
-  padding: 2.5rem 1.25rem;
+  padding: 2.5rem var(--space-4-5);
   text-align: center;
   font-size: var(--text-body);
   color: var(--text-secondary);
@@ -731,8 +731,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  padding: 0.875rem 1.125rem;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3-5) 1.125rem;
 }
 
 .inspector-head-gap {
@@ -744,7 +744,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3125rem;
-  padding: 0.1875rem 0.5rem 0.1875rem 0.3125rem;
+  padding: 0.1875rem var(--space-2) 0.1875rem 0.3125rem;
   border: 1px solid transparent;
   border-radius: var(--radius-xs);
   font-size: var(--text-small);
@@ -814,8 +814,8 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.875rem 1.125rem;
+  gap: var(--space-2);
+  padding: var(--space-3-5) 1.125rem;
   border-right: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -831,7 +831,7 @@
 
 .inspector-warn {
   margin: 0;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--chip-orange-border);
   border-radius: var(--radius-card);
   background: var(--chip-orange-bg);
@@ -851,14 +851,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .inspector-other {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .inspector-other .input {
@@ -869,7 +869,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .inspector-stepper {
@@ -908,7 +908,7 @@
   align-items: center;
   justify-content: center;
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border-left: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
@@ -928,7 +928,7 @@ p.inspector-length {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem 0.5rem;
+  gap: var(--space-1-5) var(--space-2);
 }
 
 .inspector-length-input {
@@ -947,21 +947,21 @@ p.inspector-length {
 }
 
 .inspector-pad {
-  padding: 0 1.125rem 0.875rem;
+  padding: 0 1.125rem var(--space-3-5);
 }
 
 .inspector-counts {
   margin: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(4.75rem, 1fr));
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .inspector-count {
   min-width: 0;
   display: flex;
   flex-direction: column-reverse;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: var(--bg-column);
@@ -987,8 +987,8 @@ p.inspector-length {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.375rem;
-  padding: 0.625rem 1.125rem;
+  gap: var(--space-1) var(--space-1-5);
+  padding: var(--space-2-5) 1.125rem;
   background: var(--bg-column);
   font-size: var(--text-small);
   color: var(--text-secondary);
@@ -996,7 +996,7 @@ p.inspector-length {
 
 .inspector-empty {
   margin: 0;
-  padding: 1rem 1.125rem;
+  padding: var(--space-4) 1.125rem;
   font-size: var(--text-body);
   color: var(--text-primary);
 }
@@ -1007,7 +1007,7 @@ p.inspector-length {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
@@ -1042,7 +1042,7 @@ p.inspector-length {
 
 .myday-settle > .myday-card-head,
 .myday-entries > .myday-card-head {
-  padding: 0 1.125rem 0.75rem;
+  padding: 0 1.125rem var(--space-3);
 }
 
 /*
@@ -1061,7 +1061,7 @@ p.inspector-length {
   list-style: none;
   display: grid;
   grid-template-columns: auto auto max-content max-content minmax(0, 1fr) auto auto;
-  column-gap: 0.75rem;
+  column-gap: var(--space-3);
 }
 
 .myday-blocks:has(> .myday-settle-row) {
@@ -1078,7 +1078,7 @@ p.inspector-length {
   flex: none;
   width: 1rem;
   height: 0.75rem;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   box-sizing: border-box;
   border: 1.5px dashed var(--accent-border);
   background: var(--accent-bg);
@@ -1194,7 +1194,7 @@ p.inspector-length {
 
 .myday-source {
   flex: none;
-  padding: 0.125rem 0.4375rem;
+  padding: var(--space-0-5) 0.4375rem;
   border-radius: var(--radius-xs);
   background: var(--chip-neutral-bg);
   font-family: var(--font-mono);
@@ -1228,8 +1228,8 @@ p.inspector-length {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0.5rem 1.125rem;
+  gap: var(--space-2);
+  padding: var(--space-2) 1.125rem;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -1245,7 +1245,7 @@ p.inspector-length {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem 0.625rem;
+  gap: var(--space-1-5) var(--space-2-5);
 }
 
 .myday-bulk-count {
@@ -1266,7 +1266,7 @@ p.inspector-length {
 .myday-bulk-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-bulk .myday-chip {
@@ -1279,8 +1279,8 @@ p.inspector-length {
 .myday-bulk-progress {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0 1.125rem 0.75rem;
+  gap: var(--space-2);
+  margin: 0 1.125rem var(--space-3);
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -1295,8 +1295,8 @@ p.inspector-length {
 .myday-add {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.875rem 1.125rem 1rem;
+  gap: var(--space-2-5);
+  padding: var(--space-3-5) 1.125rem var(--space-4);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-column);
 }
@@ -1305,7 +1305,7 @@ p.inspector-length {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem 0.625rem;
+  gap: var(--space-1) var(--space-2-5);
 }
 
 .myday-add-title {
@@ -1324,8 +1324,8 @@ p.inspector-length {
 .myday-slot {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  gap: var(--space-1-5);
+  padding: var(--space-0-5) var(--space-1) var(--space-0-5) var(--space-2);
   border-radius: var(--radius-xs);
   background: var(--accent-bg);
   font-family: var(--font-mono);
@@ -1364,21 +1364,21 @@ p.inspector-length {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .myday-segmented {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   border-radius: var(--radius-control);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
 }
 
 .myday-segment {
-  padding: 0.25rem 0.625rem;
+  padding: var(--space-1) var(--space-2-5);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -1426,14 +1426,14 @@ p.inspector-length {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
 }
 
 .myday-agent-row {
   display: flex;
   flex-direction: column;
   gap: 0.3125rem;
-  padding: 0.4375rem 0.75rem;
+  padding: 0.4375rem var(--space-3);
   border-radius: var(--radius-card);
 }
 
@@ -1448,7 +1448,7 @@ p.inspector-length {
 .myday-agent-line {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
   font-size: var(--text-small);
 }
@@ -1490,8 +1490,8 @@ p.inspector-length {
   margin: 0;
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding-top: 0.625rem;
+  gap: var(--space-2);
+  padding-top: var(--space-2-5);
   border-top: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   color: var(--text-secondary);
@@ -1502,13 +1502,13 @@ p.inspector-length {
 .plate-groups {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .plate-group {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .plate-head {
@@ -1551,7 +1551,7 @@ p.inspector-length {
 .plate-more {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin-left: auto;
   letter-spacing: 0;
   text-transform: none;
@@ -1571,13 +1571,13 @@ p.inspector-length {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .plate-list li {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
   flex-wrap: wrap;
 }
@@ -1586,7 +1586,7 @@ p.inspector-length {
   flex: 1;
   display: flex;
   align-items: baseline;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-width: 0;
   padding: 0.1875rem 0;
   color: var(--text-primary);
@@ -1629,7 +1629,7 @@ p.inspector-length {
 
 /* *+N more*: the rest, where they live — one link a space when several (LAI-810). */
 .plate-list li.plate-rests {
-  gap: 0.25rem 0.75rem;
+  gap: var(--space-1) var(--space-3);
 }
 
 .plate-rest {
@@ -1674,8 +1674,8 @@ p.inspector-length {
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
-  padding: 1.125rem 1.25rem;
+  gap: var(--space-3-5);
+  padding: 1.125rem var(--space-4-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   background: var(--bg-card);
@@ -1700,21 +1700,21 @@ p.inspector-length {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-keys-sheet {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-keys-row {
   display: grid;
   grid-template-columns: 3rem minmax(0, 1fr);
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-keys-row dd {
@@ -1739,7 +1739,7 @@ p.inspector-length {
 
 @container myday (max-width: 34rem) {
   .myday {
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   /* The week scrolls sideways rather than squeezing seven days into a phone. */
@@ -1757,8 +1757,8 @@ p.inspector-length {
   }
 
   .dayline-head {
-    padding-left: 0.875rem;
-    padding-right: 0.875rem;
+    padding-left: var(--space-3-5);
+    padding-right: var(--space-3-5);
   }
 
   /* The lane column folds away; the figures are in the header and the editor. */
@@ -1778,14 +1778,14 @@ p.inspector-length {
 
   .inspector-head,
   .inspector-part {
-    padding-left: 0.875rem;
-    padding-right: 0.875rem;
+    padding-left: var(--space-3-5);
+    padding-right: var(--space-3-5);
   }
 
   .myday-settle-row,
   .myday-ledger-row {
-    padding-left: 0.875rem;
-    padding-right: 0.875rem;
+    padding-left: var(--space-3-5);
+    padding-right: var(--space-3-5);
   }
 
   /* A phone keeps the rows as wrapping lines, the card below the time. */
@@ -1798,12 +1798,12 @@ p.inspector-length {
   .myday-ledger-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 0.75rem;
+    gap: var(--space-1) var(--space-3);
   }
 
   .myday-row-select {
     display: inline-flex;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .myday-row-target {
@@ -1834,8 +1834,8 @@ p.inspector-length {
 
 /* Read only, said once and plainly, above the day it is about. */
 .myday-viewing-banner {
-  margin: 0.75rem 1.125rem 0;
-  padding: 0.625rem 0.875rem;
+  margin: var(--space-3) 1.125rem 0;
+  padding: var(--space-2-5) var(--space-3-5);
   border: 1px solid var(--chip-blue-border);
   border-radius: var(--radius-card);
   background: var(--chip-blue-bg);
@@ -1855,14 +1855,14 @@ p.inspector-length {
 }
 
 .myday-embedded .myday-viewing-banner {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-4);
 }
 
 .myday-embed-head {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .myday-embed-head .myday-subtitle {
@@ -1882,8 +1882,8 @@ p.inspector-length {
 .myday-looked-row {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.125rem;
+  gap: var(--space-2-5);
+  padding: var(--space-2) var(--space-0-5);
   border-top: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   min-width: 0;
@@ -1895,7 +1895,7 @@ p.inspector-length {
   place-items: center;
   width: 1.5rem;
   height: 1.5rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   color: var(--on-accent);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
@@ -1981,7 +1981,7 @@ p.inspector-length {
   z-index: 3;
   display: flex;
   align-items: flex-end;
-  padding: 0.25rem 0.375rem;
+  padding: var(--space-1) var(--space-1-5);
   overflow: hidden;
 }
 
@@ -2000,14 +2000,14 @@ p.inspector-length {
 .myday-details {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-width: 0;
 }
 
 .myday-kinds {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .myday-kind {
@@ -2055,7 +2055,7 @@ p.inspector-length {
 .myday-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -2072,7 +2072,7 @@ p.inspector-length {
 }
 
 .myday-add .myday-details {
-  margin: 0.25rem 0;
+  margin: var(--space-1) 0;
 }
 
 /* ------------------------------------------- the header's controls (LAI-502) */
@@ -2090,8 +2090,8 @@ p.inspector-length {
   z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.875rem;
+  gap: var(--space-3);
+  padding: var(--space-3-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -2111,7 +2111,7 @@ p.inspector-length {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-pop-title {
@@ -2131,18 +2131,18 @@ p.inspector-length {
 .myday-pop-group {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-pop-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-pop-input {
   min-height: 2.25rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-input);
@@ -2160,38 +2160,38 @@ p.inspector-length {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-pop-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.25rem 0;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
 }
 
 .myday-pop-row + .myday-pop-row {
   border-top: 1px solid var(--border-card);
-  padding-top: 0.75rem;
+  padding-top: var(--space-3);
 }
 
 .myday-pop-column {
   flex-direction: column;
   align-items: stretch;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-pop-words {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
 .myday-pop-text {
   margin: 0;
-  padding: 0 0.125rem;
+  padding: 0 var(--space-0-5);
 }
 
 .myday-pop .myday-switch-bare {
@@ -2230,10 +2230,10 @@ p.inspector-length {
 }
 
 .myday-kbd-hint {
-  margin-left: 0.125rem;
+  margin-left: var(--space-0-5);
   font-size: var(--text-small);
   line-height: 1;
-  padding: 0.0625rem 0.25rem;
+  padding: 0.0625rem var(--space-1);
 }
 
 .myday-figure strong {
@@ -2252,8 +2252,8 @@ p.inspector-length {
   right: -0.375rem;
   min-width: 1rem;
   height: 1rem;
-  padding: 0 0.25rem;
-  border-radius: 0.5rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-card);
   background: var(--accent);
   color: var(--on-accent);
   font-size: var(--text-small);
@@ -2271,7 +2271,7 @@ p.inspector-length {
 .myday-timer {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 2.125rem;
   padding: 0 0.1875rem 0 0.6875rem;
   border: 1px solid var(--accent-border);
@@ -2289,7 +2289,7 @@ p.inspector-length {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent);
   animation: myday-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
@@ -2337,7 +2337,7 @@ p.inspector-length {
   height: 1.625rem;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -2370,7 +2370,7 @@ p.inspector-length {
 }
 
 .myday-draft-off .myday-linkish {
-  margin-left: 0.25rem;
+  margin-left: var(--space-1);
   font-weight: var(--weight-semibold);
 }
 
@@ -2378,7 +2378,7 @@ p.inspector-length {
 .myday-below {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-daynav {
@@ -2394,7 +2394,7 @@ p.inspector-length {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .myday-daynav-title {
@@ -2425,7 +2425,7 @@ p.inspector-length {
   }
 
   .myday-week-day {
-    padding: 0.375rem 0.5rem 0.4375rem;
+    padding: var(--space-1-5) var(--space-2) 0.4375rem;
     align-items: center;
   }
 
@@ -2483,7 +2483,7 @@ p.inspector-length {
 .myday-summary-fill {
   display: block;
   height: 100%;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-chip);
   background: var(--accent);
 }
 
@@ -2535,14 +2535,14 @@ p.inspector-length {
 /* -------------------------------- the header band (LAI-509, the design) */
 
 .myday-page .screen-page {
-  padding: 0.875rem 2rem 0;
+  padding: var(--space-3-5) var(--space-6) 0;
   gap: 0;
   border-bottom: 0;
 }
 
 .myday-page .screen-page-row {
   align-items: center;
-  gap: 0.75rem 1rem;
+  gap: var(--space-3) var(--space-4);
 }
 
 .myday-page .screen-page-titles {
@@ -2551,7 +2551,7 @@ p.inspector-length {
 
 .myday-page .screen-page-titleline {
   align-items: baseline;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .myday-page .screen-page-title {
@@ -2563,7 +2563,7 @@ p.inspector-length {
 .myday-figure {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-figure-total {
@@ -2594,14 +2594,14 @@ p.inspector-length {
   flex-basis: 100%;
   margin-left: 0;
   justify-content: flex-start;
-  gap: 0.5rem;
-  padding: 0.125rem 0 0.875rem;
+  gap: var(--space-2);
+  padding: var(--space-0-5) 0 var(--space-3-5);
 }
 
 .myday-head-divider {
   width: 1px;
   height: 1.25rem;
-  margin: 0 0.25rem;
+  margin: 0 var(--space-1);
   background: var(--border-card);
 }
 
@@ -2626,8 +2626,8 @@ p.inspector-length {
 
 /* The week band, on the card colour, with the rule under it. */
 .myday-page .screen-page-below {
-  padding: 0.625rem 2rem 0.875rem;
-  margin: 0 -2rem;
+  padding: var(--space-2-5) var(--space-6) var(--space-3-5);
+  margin: 0 calc(var(--space-6) * -1);
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-card);
@@ -2635,12 +2635,12 @@ p.inspector-length {
 
 @container myday (max-width: 34rem) {
   .myday-page .screen-page {
-    padding: 0.75rem 1rem 0;
+    padding: var(--space-3) var(--space-4) 0;
   }
 
   .myday-page .screen-page-below {
-    padding: 0.5rem 1rem 0.75rem;
-    margin: 0 -1rem;
+    padding: var(--space-2) var(--space-4) var(--space-3);
+    margin: 0 calc(var(--space-4) * -1);
   }
 
   .myday-week-nav {
@@ -2654,14 +2654,14 @@ p.inspector-length {
   flex-direction: row;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
-  padding: 0.75rem 1.125rem;
+  gap: var(--space-3) var(--space-4-5);
+  padding: var(--space-3) 1.125rem;
 }
 
 .myday-tray-words {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -2671,15 +2671,15 @@ p.inspector-length {
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-tray-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin: 0;
-  padding: 0.375rem 0.75rem 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-3) var(--space-1-5) var(--space-2);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -2716,7 +2716,7 @@ p.inspector-length {
 }
 
 .myday-tray-kind {
-  padding: 0.0625rem 0.375rem;
+  padding: 0.0625rem var(--space-1-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-pill);
   font-size: var(--text-small);
@@ -2750,8 +2750,8 @@ p.inspector-length {
   margin: 0;
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.375rem 1.125rem;
+  gap: var(--space-2);
+  padding: var(--space-1-5) 1.125rem;
   background: var(--bg-column);
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
@@ -2785,21 +2785,21 @@ p.inspector-length {
 /* ------------------------------------------------- Overview (LAI-505) */
 
 .myday-ov {
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .myday-ov-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .myday-ov-head > div:first-child {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
 }
 
 .myday-ov-stats {
@@ -2809,14 +2809,14 @@ p.inspector-length {
   display: grid;
   /* Four across on a desk, two by two on a phone, as the design lays them. */
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .myday-ov-stat {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
-  padding: 0.75rem 0.875rem;
+  gap: var(--space-0-5);
+  padding: var(--space-3) var(--space-3-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -2837,21 +2837,21 @@ p.inspector-length {
 .myday-ov-columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: 1.25rem 2rem;
+  gap: var(--space-4-5) var(--space-6);
 }
 
 .myday-ov-column {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .myday-ov-bar {
   display: flex;
-  gap: 2px;
+  gap: var(--space-0-5);
   height: 0.5rem;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-chip);
   overflow: hidden;
   background: var(--bg-column);
 }
@@ -2866,13 +2866,13 @@ p.inspector-length {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-ov-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: var(--text-small);
   color: var(--text-primary);
 }
@@ -2881,7 +2881,7 @@ p.inspector-length {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
   display: inline-block;
 }
 
@@ -2908,14 +2908,14 @@ p.inspector-length {
 .myday-ov-task {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: var(--text-small);
 }
 
 .myday-ov-task-line {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -2943,7 +2943,7 @@ p.inspector-length {
 .myday-ov-track {
   display: block;
   height: 0.25rem;
-  border-radius: 0.125rem;
+  border-radius: var(--radius-hairline);
   background: var(--bg-column);
   overflow: hidden;
 }
@@ -2960,7 +2960,7 @@ p.inspector-length {
   list-style: none;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: end;
 }
 
@@ -2968,7 +2968,7 @@ p.inspector-length {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: var(--text-small);
 }
 
@@ -2983,7 +2983,7 @@ p.inspector-length {
   align-items: flex-end;
   width: 100%;
   height: 5rem;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-chip);
   background: var(--bg-column);
   overflow: hidden;
 }
@@ -3018,7 +3018,7 @@ p.inspector-length {
 .inspector-nav {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .inspector-nav .myday-week-step,
@@ -3026,7 +3026,7 @@ p.inspector-length {
   width: 1.75rem;
   height: 1.75rem;
   border: 1px solid var(--border-card);
-  border-radius: 0.375rem;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
 }
 
@@ -3034,7 +3034,7 @@ p.inspector-length {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   padding: 0 1.125rem;
   font-size: var(--text-heading-md);
   font-weight: var(--weight-bold);
@@ -3052,7 +3052,7 @@ p.inspector-length {
 
 .inspector > .inspector-source {
   margin: 0;
-  padding: 0.25rem 1.125rem 0.875rem;
+  padding: var(--space-1) 1.125rem var(--space-3-5);
 }
 
 .inspector-body {
@@ -3076,8 +3076,8 @@ p.inspector-length {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.75rem 1.125rem;
+  gap: var(--space-2);
+  padding: var(--space-3) 1.125rem;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-card);
 }
@@ -3091,13 +3091,13 @@ p.inspector-length {
 .myday-when {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-when-fields {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .myday-when-one {
@@ -3111,7 +3111,7 @@ p.inspector-length {
 .myday-when-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -3130,7 +3130,7 @@ p.inspector-length {
 .myday-when-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 /* The task search and its results. */
@@ -3138,7 +3138,7 @@ p.inspector-length {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-task-search-field {
@@ -3147,11 +3147,11 @@ p.inspector-length {
 
 .myday-task-results {
   margin: 0;
-  padding: 0.25rem;
+  padding: var(--space-1);
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -3160,18 +3160,18 @@ p.inspector-length {
 }
 
 .myday-task-results > li.myday-quiet {
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
 }
 
 .myday-task-result {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 100%;
   margin: 0;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   border: 0;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-sm);
   background: transparent;
   font: inherit;
   font-size: var(--text-small);
@@ -3197,11 +3197,11 @@ p.inspector-length {
 .myday-keys-group {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .myday-keys-group + .myday-keys-group {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
 }
 
 /* -------------------------------- the header as designed (LAI-513) */
@@ -3215,7 +3215,7 @@ p.inspector-length {
 
 .myday-pop-who {
   width: min(20rem, calc(100vw - 2rem));
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .myday-who-trigger {
@@ -3230,7 +3230,7 @@ p.inspector-length {
 .myday-who-grid {
   display: grid;
   grid-template-columns: 5.75rem minmax(0, 1fr);
-  gap: 0.5rem 0.625rem;
+  gap: var(--space-2) var(--space-2-5);
   margin: 0;
   font-size: var(--text-body);
   line-height: var(--leading-body);
@@ -3263,7 +3263,7 @@ p.inspector-length {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .myday-viewing-eye {
@@ -3295,7 +3295,7 @@ p.inspector-length {
 .myday-head-tools {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin-left: auto;
   flex: none;
 }

@@ -15,7 +15,7 @@
   min-height: 0;
 }
 
-@media (max-width: 60rem) {
+@media (max-width: 960px) {
   /* One column rather than a sideways scroll: the page body must never scroll
      horizontally, and the proposal text is the thing that must stay readable. */
   .mr-body {

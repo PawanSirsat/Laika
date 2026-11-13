@@ -17,6 +17,7 @@ import {
   type ActivityRange,
   type PeopleActivity,
 } from '../../../api/people-activity.ts';
+import { atOrBelow } from '../../../theme/breakpoints.ts';
 import { InfoTip } from './InfoTip.tsx';
 import {
   activityStats,
@@ -110,7 +111,7 @@ const SOURCE: Readonly<Record<HeatSource, string>> = {
 };
 
 /** Phones open on 12 weeks: a year is 53 columns, and scrolls there. */
-const PHONE = '(max-width: 40rem)';
+const PHONE = atOrBelow('phablet');
 
 function readDesign(viewerId: string): HeatDesign {
   try {

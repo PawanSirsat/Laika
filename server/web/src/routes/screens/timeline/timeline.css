@@ -42,9 +42,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-  margin-bottom: 0.625rem;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-2-5);
 }
 
 .tlx-toolbar-spacer {
@@ -61,7 +61,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   height: 2rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -127,7 +127,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-3);
 }
 
 .tlx:focus-visible {
@@ -157,8 +157,8 @@
   width: var(--tlx-side);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.75rem 0 0.5rem;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) 0 var(--space-2);
   background: var(--bg-card);
   border-right: 1px solid var(--border-subtle);
   min-width: 0;
@@ -195,7 +195,7 @@
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  padding-left: 0.875rem;
+  padding-left: var(--space-3-5);
 }
 
 .tlx-scale {
@@ -228,7 +228,7 @@
   position: absolute;
   top: 0;
   display: inline-block;
-  padding: 0.3125rem 0.5rem 0;
+  padding: 0.3125rem var(--space-2) 0;
   font-family: var(--font-mono);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
@@ -242,7 +242,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  padding: 0.25rem 0 0 0.25rem;
+  padding: var(--space-1) 0 0 var(--space-1);
   border-left: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
   font-size: var(--text-small);
@@ -327,7 +327,7 @@
 .tlx-sprint-text {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -357,7 +357,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border-radius: var(--radius-xs);
-  padding: 0.0625rem 0.375rem;
+  padding: 0.0625rem var(--space-1-5);
   border: 1px solid transparent;
 }
 
@@ -393,9 +393,9 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0.375rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   overflow: hidden;
   border: 1px solid;
   border-radius: var(--radius-chip);
@@ -470,7 +470,7 @@
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   white-space: nowrap;
 }
 
@@ -487,7 +487,7 @@
   background: var(--blocked-bg);
   border: 1px solid var(--overdue-border);
   border-radius: var(--radius-pill);
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   white-space: nowrap;
 }
 
@@ -507,7 +507,7 @@
   flex-wrap: wrap;
   align-items: center;
   align-content: flex-start;
-  column-gap: 0.25rem;
+  column-gap: var(--space-1);
   height: 1.125rem;
   min-width: 1.5rem;
   overflow: hidden;
@@ -532,7 +532,7 @@
 }
 
 .tlx-unscheduled .tlx-side {
-  padding-left: 0.5rem;
+  padding-left: var(--space-2);
 }
 
 /* ------------------------------------------------------------- task rows */
@@ -555,11 +555,11 @@
 .tlx-task-open {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex: 1 1 auto;
   /* The title wins: the blocked label shrinks to its icon before this does. */
   min-width: 9rem;
-  padding: 0.25rem;
+  padding: var(--space-1);
   font: inherit;
   text-align: left;
   color: var(--text-primary);
@@ -608,8 +608,8 @@
 }
 
 .tlx-notice {
-  margin: 0 0 0.625rem;
-  padding: 0.5rem 0.75rem;
+  margin: 0 0 var(--space-2-5);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-body);
   color: var(--text-primary);
   background: var(--chip-orange-bg);
@@ -624,7 +624,7 @@
   flex: none;
   width: 1.375rem;
   height: 1.375rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   font-size: var(--text-tiny);
   font-weight: var(--weight-heavy);
 }
@@ -635,8 +635,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem 1rem;
-  margin-bottom: 1rem;
+  gap: var(--space-1-5) var(--space-4);
+  margin-bottom: var(--space-4);
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
@@ -644,7 +644,7 @@
 .tlx-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .tlx-swatch {
@@ -661,7 +661,7 @@
 
 /* --------------------------------------------------------------- narrow */
 
-@media (max-width: 47.5rem) {
+@media (max-width: 760px) {
   .tlx {
     --tlx-side: 13rem;
   }
@@ -674,7 +674,7 @@
 
 /* A phone gives the track most of the width (LAI-1195): at 13rem the sprint
    column left a 140px window on the dates. */
-@media (max-width: 30rem) {
+@media (max-width: 480px) {
   .tlx {
     --tlx-side: 9.5rem;
   }
@@ -792,7 +792,7 @@
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
 }
 
 /* The tray's own list scrolls inside it — beside the chart, never inside it. */
@@ -814,7 +814,7 @@
 
 .tlx-pan {
   display: inline-flex;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .tlx-tool-icon {
@@ -836,7 +836,7 @@
 }
 
 .tlx-zoom-label {
-  margin-left: 0.25rem;
+  margin-left: var(--space-1);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
@@ -845,7 +845,7 @@
 .tlx-keys {
   flex: none;
   margin-top: 0;
-  margin-bottom: 0.375rem;
+  margin-bottom: var(--space-1-5);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -853,7 +853,7 @@
 .tlx-keys kbd {
   font-family: var(--font-mono);
   font-size: var(--text-small);
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
   background: var(--bg-column);
@@ -898,13 +898,13 @@
   opacity: 1;
 }
 
-@media (max-width: 47.5rem) {
+@media (max-width: 760px) {
   .tlx-frame {
     --tlx-side-cue: 13rem;
   }
 }
 
-@media (max-width: 30rem) {
+@media (max-width: 480px) {
   .tlx-frame {
     --tlx-side-cue: 9.5rem;
   }

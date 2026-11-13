@@ -40,7 +40,7 @@
   z-index: var(--layer-dropdown);
   min-width: 12rem;
   margin: 0;
-  padding: 0.25rem;
+  padding: var(--space-1);
   list-style: none;
   /* Level-3 glass (LAI-1132): the pane is `glass.css`'s ::before. */
   isolation: isolate;
@@ -73,7 +73,7 @@
 .overflow-menu-item {
   display: block;
   width: 100%;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: 0;
   border-radius: var(--radius-chip);
   background: transparent;
@@ -92,7 +92,7 @@
 
 /* An item's second line (LAI-1152): what *Manage member…* leads to. */
 .overflow-menu-hint {
-  margin-top: 0.125rem;
+  margin-top: var(--space-0-5);
   font-size: var(--text-small);
   font-weight: var(--weight-medium);
   color: var(--text-muted);

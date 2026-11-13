@@ -121,5 +121,5 @@
 
 /* `+128` widens into a lozenge rather than shrinking its digits. */
 .avatar-more .avatar-disc {
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
 }

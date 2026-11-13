@@ -16,7 +16,7 @@
      layer ladder, mirrored in `overlay-tokens.ts`. */
   z-index: var(--layer-tooltip, 95);
   max-width: min(18rem, calc(100vw - 1rem));
-  padding: 0.3125rem 0.5rem;
+  padding: 0.3125rem var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -37,13 +37,13 @@
 .tip-label {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* An info button's explanation: a sentence or two, in the reading weight. */
 .tip-hint {
   max-width: min(20rem, calc(100vw - 1rem));
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   font-weight: var(--weight-normal);
   line-height: var(--leading-small);
   color: var(--text-secondary);
@@ -54,7 +54,7 @@
   flex: none;
   padding: 0 0.3125rem;
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-chip);
   background: var(--bg-column);
   color: var(--text-secondary);
   font-family: var(--font-mono);

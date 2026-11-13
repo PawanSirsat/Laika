@@ -87,11 +87,11 @@
 }
 
 .brand-lockup-lg {
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .brand-lockup-xl {
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 /* ---------------------------------------------------------- icon loader */
@@ -194,7 +194,7 @@
   width: min(100%, 26rem);
   box-sizing: border-box;
   padding: 2.5rem var(--space-6) 2.25rem;
-  border-radius: 1.25rem;
+  border-radius: var(--radius-sheet);
   border: 1px solid var(--border-subtle);
   background: var(--brand-panel);
   box-shadow: var(--shadow-modal);
@@ -213,7 +213,7 @@
 
 .brand-splash-steps {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   margin-top: var(--space-2);
 }
 
@@ -255,7 +255,7 @@
 /* Phone: the panel keeps its 16px gutter and the lockup scales down. */
 @media (max-width: 480px) {
   .brand-splash-panel {
-    padding: 2rem var(--space-4) 1.75rem;
+    padding: var(--space-6) var(--space-4) 1.75rem;
   }
 
   .brand-splash-lockup .brand-mark {

@@ -34,7 +34,7 @@
   min-width: 0;
   overflow: visible;
   /* The design's card: 16px round. */
-  border-radius: 1rem;
+  border-radius: var(--radius-sheet);
 }
 
 /* What a drag just did, for a screen reader; drawn nowhere. */
@@ -51,14 +51,14 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem 1.375rem;
-  padding: 1rem 1.25rem 0.875rem;
+  gap: var(--space-3) 1.375rem;
+  padding: var(--space-4) var(--space-4-5) var(--space-3-5);
 }
 
 .dayline-head-title {
   display: flex;
   align-items: baseline;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .dayline-title {
@@ -86,14 +86,14 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.375rem 1rem;
+  gap: var(--space-1-5) var(--space-4);
 }
 
 .dayline-totals li,
 .dayline-total {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
   padding: 0;
   border: none;
@@ -128,7 +128,7 @@
   flex: none;
   width: 1rem;
   height: 0.75rem;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   box-sizing: border-box;
 }
 
@@ -159,7 +159,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin-left: auto;
   min-width: 0;
 }
@@ -169,7 +169,7 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 /* ‹ Now ›: one bordered group, as the design draws it. */
@@ -186,7 +186,7 @@
   min-width: 1.875rem;
   height: 100%;
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border: none;
   background: transparent;
   font: inherit;
@@ -196,7 +196,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 /*
@@ -205,7 +205,7 @@
  * small-text size and the padding gives way to it.
  */
 .dayline-tool:has(> .icon:only-child) {
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
 }
 
 .dayline-tool:hover:not(:disabled, [aria-disabled='true']) {
@@ -219,7 +219,7 @@
 }
 
 .dayline-tool-now {
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border-left: 1px solid var(--border-card);
   border-right: 1px solid var(--border-card);
   font-size: var(--text-small);
@@ -242,7 +242,7 @@
   width: 3.5rem;
   height: 100%;
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border-left: 1px solid var(--border-card);
   background: transparent;
   accent-color: var(--accent);
@@ -319,7 +319,7 @@
 .dayline-grip-label {
   position: sticky;
   left: calc(50% + 3rem);
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--accent);
@@ -341,8 +341,8 @@
 .dayline-row-height {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.25rem;
+  gap: var(--space-1-5);
+  margin-top: var(--space-1);
   min-width: 0;
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -375,7 +375,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-left: 1px solid var(--border-card);
   border-right: 1px solid var(--border-card);
   font-family: var(--font-mono);
@@ -387,8 +387,8 @@
 
 .dayline-zoom {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
   background: var(--bg-column);
@@ -396,7 +396,7 @@
 
 .dayline-zoom-option {
   height: 1.5rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -437,7 +437,7 @@
   height: var(--axis-h);
   display: flex;
   align-items: center;
-  padding: 0 0.75rem 0 0.875rem;
+  padding: 0 var(--space-3) 0 var(--space-3-5);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -454,7 +454,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.1875rem;
-  padding: 0.5rem 0.75rem 0 0.875rem;
+  padding: var(--space-2) var(--space-3) 0 var(--space-3-5);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-small);
   color: var(--text-secondary);
@@ -478,7 +478,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -495,8 +495,8 @@
 
 .dayline-label-agents {
   height: var(--agents-h);
-  gap: 0.125rem;
-  padding-top: 0.5rem;
+  gap: var(--space-0-5);
+  padding-top: var(--space-2);
   line-height: var(--leading-small);
 }
 
@@ -545,7 +545,7 @@
 }
 
 .dayline-lane-figure {
-  margin-top: 0.25rem;
+  margin-top: var(--space-1);
   font-size: var(--text-heading-sm);
   white-space: nowrap;
   overflow: hidden;
@@ -678,7 +678,7 @@
   top: 0.4375rem;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   line-height: 0.875rem;
@@ -785,7 +785,7 @@
 }
 
 .dayline-hour-sum .dayline-key-commit {
-  margin-left: 0.25rem;
+  margin-left: var(--space-1);
 }
 
 .dayline-bucket {
@@ -802,13 +802,13 @@
 
 .dayline-prompt,
 .dayline-key-prompt {
-  border-radius: 1px;
+  border-radius: var(--radius-hairline);
   background: var(--text-secondary);
 }
 
 .dayline-commit,
 .dayline-key-commit {
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--chip-green);
 }
 
@@ -873,7 +873,7 @@
   left: 0;
   margin: 0;
   max-width: min(100%, 36rem);
-  padding: 0 1rem;
+  padding: 0 var(--space-4);
   font-size: var(--text-body);
   line-height: var(--leading-body);
   color: var(--text-secondary);
@@ -909,11 +909,11 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 0 7px 2px;
+  padding: 0 7px var(--space-0-5);
   overflow: hidden;
   white-space: nowrap;
   border: 1px solid var(--chip-green-border);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--chip-green) 12%, var(--bg-card));
   color: var(--chip-green);
   font-size: var(--text-small);
@@ -1018,8 +1018,8 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  gap: 2px;
-  padding: 0 0.25rem;
+  gap: var(--space-0-5);
+  padding: 0 var(--space-1);
   overflow: hidden;
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -1047,9 +1047,9 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border: none;
   border-left: 1.5px solid var(--text-secondary);
   border-right: 1.5px solid var(--text-secondary);
@@ -1065,7 +1065,7 @@
 
 .dayline-strip-n {
   flex: none;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   border: 1px solid var(--text-secondary);
   border-radius: var(--radius-xs);
   font-family: var(--font-mono);
@@ -1101,11 +1101,11 @@
   height: var(--block-h);
   box-sizing: border-box;
   margin: 0;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   overflow: hidden;
   border: 1.5px dotted var(--text-muted);
   border-radius: var(--radius-card);
@@ -1173,11 +1173,11 @@
   height: 100%;
   min-width: 0;
   margin: 0;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   overflow: hidden;
   /* A draft: outlined in the accent itself, dashed — a proposal, not yet a record (LAI-1215). */
   border: 1.5px dashed var(--accent);
@@ -1344,7 +1344,7 @@
   position: absolute;
   top: 3px;
   height: 1.375rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   transform: translateX(-50%);
   border-radius: var(--radius-xs);
   background: var(--text-primary);
@@ -1388,12 +1388,12 @@
   height: var(--block-h);
   min-width: 2px;
   margin: 0;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-0-5);
   overflow: hidden;
   border: 1px solid var(--accent);
   border-radius: var(--radius-card);
@@ -1492,7 +1492,7 @@
   display: flex;
   align-items: center;
   gap: 0.3125rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   overflow: hidden;
   border: 1px solid var(--chip-blue-border);
   border-radius: var(--radius-xs);
@@ -1513,7 +1513,7 @@
 .dayline-agent-chip {
   flex: none;
   padding: 0 3px;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: color-mix(in srgb, currentColor 16%, transparent);
   font-family: var(--font-mono);
   font-size: var(--text-small);
@@ -1586,7 +1586,7 @@
   left: 0;
   transform: translateX(-50%);
   height: 1.125rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-radius: var(--radius-pill);
   background: var(--overdue);
   font-family: var(--font-mono);
@@ -1604,8 +1604,8 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 0.875rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3-5);
   border-radius: var(--radius-column);
   background: var(--text-primary);
   box-shadow: var(--shadow-modal);
@@ -1621,7 +1621,7 @@
 .dayline-tip-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .dayline-tip-label {
@@ -1642,15 +1642,15 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding-top: 0.5rem;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
   border-top: 1px solid color-mix(in srgb, var(--bg-card) 20%, transparent);
 }
 
 .dayline-tip-row {
   display: grid;
   grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: 0.5rem;
+  gap: var(--space-2);
   line-height: 1rem;
 }
 
@@ -1673,7 +1673,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3125rem;
-  padding: 0.125rem 0.5rem 0.125rem 0.3125rem;
+  padding: var(--space-0-5) var(--space-2) var(--space-0-5) 0.3125rem;
   border: 1px solid transparent;
   border-radius: var(--radius-xs);
   font-size: var(--text-small);

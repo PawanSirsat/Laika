@@ -1,0 +1,25 @@
+/*
+ * The breakpoint scale in CSS (LAI-1220). `theme/breakpoints.ts` is the
+ * source; these repeat it name for name (camelCase there, kebab-case here),
+ * and test/breakpoint-tokens.test.ts fails if the two disagree either way.
+ *
+ * A custom property cannot be used inside `@media`, so these are for reading
+ * — the token reference, `getComputedStyle` — not for queries. A query writes
+ * the width literally, as one of these values: `max-width: N` (at or below),
+ * `max-width: N-1` (below, the complement of `min-width: N`), `min-width: N`,
+ * or `min-width: N+1`. The guard refuses any other width outside its
+ * exemption list. The scheme is written out in `theme/breakpoints.ts`.
+ */
+:root {
+  --bp-phone-sm: 390px;
+  --bp-phone-md: 480px;
+  --bp-phone: 600px;
+  --bp-phablet: 640px;
+  --bp-tablet-sm: 768px;
+  --bp-tablet: 900px;
+  --bp-tablet-lg: 1024px;
+  --bp-laptop: 1180px;
+  --bp-desktop: 1280px;
+  --bp-wide: 1440px;
+  --bp-ultra: 1600px;
+}

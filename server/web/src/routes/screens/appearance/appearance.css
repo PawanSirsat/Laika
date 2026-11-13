@@ -143,7 +143,7 @@
 .appearance-card-text {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -166,7 +166,7 @@
   gap: 5px;
   box-sizing: border-box;
   height: 7rem;
-  padding: 6px;
+  padding: var(--space-1-5);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
@@ -200,27 +200,27 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   width: 18%;
   max-width: 2.25rem;
-  padding: 4px 3px;
+  padding: var(--space-1) 3px;
   box-sizing: border-box;
   border: 1px solid var(--border-subtle);
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   background: var(--sidebar-tint);
 }
 
 .appearance-preview-mark {
   width: 8px;
   height: 8px;
-  margin-bottom: 2px;
-  border-radius: 3px;
+  margin-bottom: var(--space-0-5);
+  border-radius: var(--radius-chip);
   background: var(--brand-mark-2);
 }
 
 .appearance-preview-nav {
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
   background: var(--border-default);
 }
 
@@ -240,21 +240,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--space-1);
   height: 12px;
 }
 
 .appearance-preview-title {
   width: 40%;
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: var(--text-primary);
 }
 
 .appearance-preview-button {
   width: 18%;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: var(--accent);
 }
 
@@ -262,16 +262,16 @@
   display: grid;
   flex: 1;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 0;
 }
 
 .appearance-preview-lane {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 5px;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-xs);
   background: var(--bg-column);
 }
 
@@ -279,15 +279,15 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 4px;
+  padding: var(--space-1);
   border: 1px solid var(--border-card);
-  border-radius: 4px;
+  border-radius: var(--radius-chip);
   background: var(--bg-card);
 }
 
 .appearance-preview-line {
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
   background: var(--text-secondary);
 }
 
@@ -298,7 +298,7 @@
 .appearance-preview-chip {
   width: 45%;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 .appearance-preview-chip-blue {
@@ -326,13 +326,13 @@
 .appearance-variant-text {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
 .appearance-segments {
   display: inline-flex;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: 3px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
@@ -467,7 +467,7 @@
 .appearance-fact {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);

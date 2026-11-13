@@ -272,17 +272,17 @@
 .skeleton-text-line {
   display: block;
   height: 0.625rem;
-  margin-block: calc((var(--leading-body) - 0.625rem) / 2);
+  margin-block: calc((var(--leading-body) - var(--space-2-5)) / 2);
 }
 
 .skeleton-text[data-size='small'] .skeleton-text-line {
   height: 0.5rem;
-  margin-block: calc((var(--leading-small) - 0.5rem) / 2);
+  margin-block: calc((var(--leading-small) - var(--space-2)) / 2);
 }
 
 .skeleton-text[data-size='title'] .skeleton-text-line {
   height: 0.875rem;
-  margin-block: calc((var(--leading-heading-sm) - 0.875rem) / 2);
+  margin-block: calc((var(--leading-heading-sm) - var(--space-3-5)) / 2);
 }
 
 .skeleton-avatar-kit {

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { atOrBelow } from '../../../theme/breakpoints.ts';
 
 /**
  * Where My day is the owner's phone page (LAI-518): the width at which the
  * shell's sidebar goes off-canvas (`app-shell.css`) and the drawer becomes a
  * sheet (`MyDayDrawer.tsx`'s `SHEET_QUERY`, the same value).
  */
-export const PHONE_QUERY = '(max-width: 900px)';
+export const PHONE_QUERY = atOrBelow('tablet');
 
 /** Whether the window is a phone's, kept live as it is resized. */
 export function usePhone(): boolean {
