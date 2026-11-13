@@ -20,6 +20,7 @@ import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
 import { usePermissions } from '../../api/permissions.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { preloadOn } from '../../routes/screen-chunks.ts';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -163,6 +164,8 @@ export function Sidebar({
                   href={href}
                   className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
                   aria-current={active ? 'page' : undefined}
+                  // Warm the page's chunk before the click lands (LAI-1219).
+                  {...preloadOn(href)}
                   onClick={(event) => {
                     // Modified clicks stay the browser's — new tab, new
                     // window, download.
