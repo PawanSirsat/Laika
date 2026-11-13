@@ -55,8 +55,8 @@ const OFF = {
   token_last4: null,
   token_expires_at: null,
   expiring_soon: false,
-  sees_everyone: null,
-  sees_departments: null,
+  sees_everyone: false,
+  sees_departments: false,
   sync_every_minutes: 30,
   last_attempt_at: null,
   last_success_at: null,
@@ -624,7 +624,6 @@ void describe('HR system: connected', () => {
       [true, false, ['sees-departments']],
       [false, false, ['sees-everyone', 'sees-departments']],
       [true, true, []],
-      [null, null, []],
     ] as const) {
       const h = await integrations(
         orgStub('owner', {

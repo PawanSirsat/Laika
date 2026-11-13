@@ -133,10 +133,6 @@ void describe('a refusal, in words', () => {
     );
     assert.match(hrRefusal(refused(422, 'unprocessable', 'base_url_not_https')), /https:\/\//);
     assert.match(hrRefusal(refused(422, 'unprocessable', 'base_url_invalid')), /not a company/);
-    assert.match(
-      hrRefusal(refused(422, 'unprocessable', 'clan_token_rejected')),
-      /refused the token/,
-    );
     assert.match(hrRefusal(refused(503, 'internal', 'clan_bad_answer')), /could not read/);
     assert.match(
       hrRefusal(refused(422, 'unprocessable', 'clan_token_refused')),

@@ -76,10 +76,10 @@ export interface HrSource {
   /**
    * What the last check found the token can read — on connecting, and at
    * every complete sync: more than one person's leave, and people's
-   * departments. `null` while nothing has been checked.
+   * departments. `false` while off.
    */
-  readonly sees_everyone: boolean | null;
-  readonly sees_departments: boolean | null;
+  readonly sees_everyone: boolean;
+  readonly sees_departments: boolean;
   readonly sync_every_minutes: number;
   readonly last_attempt_at: number | null;
   readonly last_success_at: number | null;
@@ -203,7 +203,6 @@ export const HR_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   holiday_from_clan: 'That holiday comes from Clan. Change it there.',
   clan_token_refused:
     'Clan refused this token — check it was copied whole and finished its two-factor step.',
-  clan_token_rejected: 'Clan refused the token — connect again.',
   clan_bad_answer: 'Clan answered with something Laika could not read. Try again in a minute.',
   base_url_not_https: 'Use the https:// address you sign in to Clan at.',
   base_url_invalid: 'That is not a company address. Use the one you sign in to Clan at.',

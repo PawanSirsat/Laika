@@ -480,12 +480,12 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
               </span>
             )}
             {/* What the last check found the token can read (LAI-1181). */}
-            {view.sees_everyone === false && (
+            {!view.sees_everyone && (
               <span className="org-fact-note org-hr-warning" data-hr-warning="sees-everyone">
                 This token can only see one person’s leave — it needs an HR or admin role in Clan.
               </span>
             )}
-            {view.sees_departments === false && (
+            {!view.sees_departments && (
               <span className="org-fact-note org-hr-warning" data-hr-warning="sees-departments">
                 People’s departments are hidden from this token, so holidays meant for some
                 departments can’t be matched.
