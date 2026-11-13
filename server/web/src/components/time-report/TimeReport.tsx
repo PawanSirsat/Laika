@@ -74,6 +74,7 @@ import {
 } from './time-report-derive.ts';
 import './time-report.css';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
+import type { ReportAddress } from './report-address.ts';
 
 /** A space as the Space filter offers it. */
 export interface ReportSpace {
@@ -110,6 +111,18 @@ export interface TimeReportProps {
   readonly version?: string | undefined;
   /** The heading, when the place it is drawn names it otherwise — the profile's *Time report* tab on your own (LAI-1152). */
   readonly title?: string | undefined;
+  /**
+   * The period and filters to open on (LAI-1189): Insights → Time reads them
+   * from its address. Absent fields, and values this report cannot use, are
+   * its defaults. My day and the profile pass none.
+   */
+  readonly address?: ReportAddress | undefined;
+  /**
+   * Called with the report's period and filters after each change, defaults
+   * left out — so an untouched report hands back `{}`, and the caller's
+   * address stays clean.
+   */
+  readonly onAddress?: ((address: ReportAddress) => void) | undefined;
 }
 
 type Load =
@@ -189,19 +202,80 @@ export function TimeReport({
   orgName,
   version,
   title: named,
+  address,
+  onAddress,
 }: TimeReportProps) {
   const ids = useId();
   const weekly = ledSpaces !== undefined;
-  const [range, setRange] = useState<ReportRange>(
-    initialRange ?? (weekly ? 'month' : scope === 'org' ? 'range' : 'week'),
-  );
-  const [anchor, setAnchor] = useState(openOn ?? today);
-  const [picked, setPicked] = useState<DayRange>(() => presetRange('last30', today));
-  // Only the reader's own drafts are read unasked (D-088 items 2–3).
+  // What the report opens on untouched; an address only ever says how it differs.
+  const fallbackRange: ReportRange =
+    initialRange ?? (weekly ? 'month' : scope === 'org' ? 'range' : 'week');
+  const fallbackAnchor = openOn ?? today;
+  const fallbackPicked = presetRange('last30', today);
   const own = scope === 'me';
-  const [drafts, setDrafts] = useState(own && !weekly);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
-  const [space, setSpace] = useState<string | undefined>(ledSpaces?.[0]?.slug);
+  const fallbackDrafts = own && !weekly;
+  const fallbackSpace = ledSpaces?.[0]?.slug;
+  const [range, setRange] = useState<ReportRange>(() =>
+    address?.range === undefined || (weekly && address.range === 'day')
+      ? fallbackRange
+      : address.range,
+  );
+  const [anchor, setAnchor] = useState(() =>
+    address?.anchor !== undefined && address.anchor <= today ? address.anchor : fallbackAnchor,
+  );
+  const [picked, setPicked] = useState<DayRange>(() => ({
+    from: address?.from ?? fallbackPicked.from,
+    to: address?.to ?? fallbackPicked.to,
+  }));
+  // Only the reader's own drafts are read unasked (D-088 items 2–3).
+  const [drafts, setDrafts] = useState(() =>
+    weekly ? false : address?.drafts === true ? true : fallbackDrafts,
+  );
+  const [filters, setFilters] = useState<Filters>(() =>
+    address === undefined || weekly
+      ? NO_FILTERS
+      : {
+          spaces: address.spaces ?? [],
+          members: address.members ?? [],
+          kinds: address.kinds ?? [],
+          link: address.link,
+        },
+  );
+  const [space, setSpace] = useState<string | undefined>(() => {
+    const asked = address?.spaces?.[0];
+    return asked !== undefined && (ledSpaces ?? []).some((s) => s.slug === asked)
+      ? asked
+      : fallbackSpace;
+  });
+
+  // The report as an address, defaults left out (LAI-1189): written by the
+  // caller after the first paint and after every change.
+  const told = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (onAddress === undefined) return;
+    const next: ReportAddress = {
+      range: range === fallbackRange ? undefined : range,
+      anchor: range === 'range' || anchor === fallbackAnchor ? undefined : anchor,
+      from: range !== 'range' || picked.from === fallbackPicked.from ? undefined : picked.from,
+      to: range !== 'range' || picked.to === fallbackPicked.to ? undefined : picked.to,
+      spaces: weekly
+        ? space === undefined || space === fallbackSpace
+          ? undefined
+          : [space]
+        : filters.spaces.length === 0
+          ? undefined
+          : filters.spaces,
+      members: weekly || filters.members.length === 0 ? undefined : filters.members,
+      kinds: weekly || filters.kinds.length === 0 ? undefined : filters.kinds,
+      link: weekly ? undefined : filters.link,
+      drafts: weekly || drafts === fallbackDrafts ? undefined : drafts,
+    };
+    const said = JSON.stringify(next);
+    if (said === told.current) return;
+    told.current = said;
+    onAddress(next);
+    // The address is a function of these; the callback's identity is not.
+  }, [range, anchor, picked.from, picked.to, drafts, filters, space]);
   const [pop, setPop] = useState<string | undefined>();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);

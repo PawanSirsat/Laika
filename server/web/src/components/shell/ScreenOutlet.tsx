@@ -29,6 +29,10 @@ import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
 import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
 import { TimeTab } from '../../routes/screens/insights/TimeTab.tsx';
 import {
+  readReportAddress,
+  writeReportAddress,
+} from '../../components/time-report/report-address.ts';
+import {
   insightsHolder,
   ledProjectIds,
   timeSubview,
@@ -408,7 +412,7 @@ function InboxRoute() {
  */
 function InsightsRoute() {
   const {
-    route: { params, navigate },
+    route: { params, navigate, setParams },
     me,
     tokenAlerts,
     orgName,
@@ -445,6 +449,14 @@ function InsightsRoute() {
           orgName={orgName}
           subview={timeSubview(params.get('view'))}
           onNavigate={navigate}
+          // The report's period and filters live in the address (LAI-1189):
+          // read once as it opens, written — replacing — after each change.
+          address={readReportAddress(params)}
+          onAddress={(address) => {
+            const now = new URLSearchParams(window.location.search);
+            const next = writeReportAddress(now, address);
+            if (next.toString() !== now.toString()) setParams(next);
+          }}
         />
       ) : tab === 'usage' ? (
         <UsageRoute />
