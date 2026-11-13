@@ -183,13 +183,18 @@ export function initialChoice(person: HrPerson): string {
 /**
  * The body of `PUT /org/hr/people`: each row whose choice differs from what
  * the server holds. An untouched unmatched row (`''`) sends nothing.
+ *
+ * **Only rows the form shows** (LAI-1182 review): a choice left in state for
+ * a person a later sync matched by email is not on screen, so it is never
+ * sent — sending it would overwrite the fresh match with a pick the owner can
+ * no longer see.
  */
 export function mappingChanges(
   people: readonly HrPerson[],
   choices: Readonly<Record<string, string>>,
 ): readonly { readonly external_id: string; readonly user_id: string | null }[] {
   const out: { external_id: string; user_id: string | null }[] = [];
-  for (const person of people) {
+  for (const person of peopleToReview(people)) {
     const chosen = choices[person.external_id];
     if (chosen === undefined || chosen === '' || chosen === initialChoice(person)) continue;
     out.push({
@@ -214,7 +219,8 @@ export interface Holder {
 /**
  * Each Laika member held by a Clan person other than `except`, counting this
  * form's unsaved choices, with that person's name — so a row's picker can say
- * whose a member is, and grey out the ones it may not take.
+ * whose a member is, and grey out the ones it may not take. A choice counts
+ * only for a row the form shows; anyone else holds what the server says.
  */
 export function heldBy(
   people: readonly HrPerson[],
@@ -224,7 +230,7 @@ export function heldBy(
   const out = new Map<string, Holder>();
   for (const p of people) {
     if (p.external_id === except) continue;
-    const chosen = choices[p.external_id];
+    const chosen = p.matched_by === 'email' ? undefined : choices[p.external_id];
     if (chosen === undefined || chosen === '') {
       if (p.user !== null) out.set(p.user.id, { name: p.name, locked: p.matched_by === 'owner' });
     } else if (chosen !== NOT_ON_LAIKA) {
@@ -232,6 +238,20 @@ export function heldBy(
     }
   }
   return out;
+}
+
+/**
+ * The choices still worth keeping once a new view arrives: only those for a
+ * row the form shows. The same object when nothing goes, so a component can
+ * set it unconditionally without re-rendering for nothing.
+ */
+export function pruneChoices(
+  people: readonly HrPerson[],
+  choices: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  const shown = new Set(peopleToReview(people).map((p) => p.external_id));
+  const kept = Object.entries(choices).filter(([id]) => shown.has(id));
+  return kept.length === Object.keys(choices).length ? choices : Object.fromEntries(kept);
 }
 
 /**
