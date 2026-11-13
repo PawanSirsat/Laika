@@ -369,119 +369,122 @@ export function CapacityScreen({
           )}
         </div>
 
-        <div className="cap-toolbar">
-          <label className="cap-search">
-            <span className="visually-hidden">Search people</span>
-            <svg className="cap-search-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="M10.5 10.5 14 14" />
-            </svg>
-            <input
-              type="search"
-              placeholder="Search people by name or email"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-              }}
-            />
-          </label>
-          <div className="cap-chips" role="group" aria-label="Show">
-            {FILTERS.filter((f) => on || !PRESENCE_FILTERS.has(f.id)).map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className="cap-chip"
-                aria-pressed={effectiveFilter === f.id}
-                onClick={() => {
-                  pick(f.id);
-                }}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div className="cap-selects">
-            <span className="cap-select">
-              <span className="cap-select-label" aria-hidden="true">
-                Space
-              </span>
-              <Dropdown
-                className="cap-dropdown"
-                aria-label="Space"
-                value={space ?? ''}
-                options={[
-                  { value: '', label: 'All spaces' },
-                  ...[...(spaces ?? new Map<string, { slug: string; name: string }>())]
-                    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
-                    .map(([id, s]) => ({ value: id, label: s.name })),
-                ]}
-                onChange={(value) => {
-                  setSpace(value === '' ? null : value);
+        {/* Nobody at all (LAI-1216): no search, filters or sort for a list that is not there. */}
+        {everyone.length > 0 && (
+          <div className="cap-toolbar">
+            <label className="cap-search">
+              <span className="visually-hidden">Search people</span>
+              <svg className="cap-search-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.5" />
+                <path d="M10.5 10.5 14 14" />
+              </svg>
+              <input
+                type="search"
+                placeholder="Search people by name or email"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
                 }}
               />
-            </span>
-            <span className="cap-select">
-              <span className="cap-select-label" aria-hidden="true">
-                Sort
+            </label>
+            <div className="cap-chips" role="group" aria-label="Show">
+              {FILTERS.filter((f) => on || !PRESENCE_FILTERS.has(f.id)).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className="cap-chip"
+                  aria-pressed={effectiveFilter === f.id}
+                  onClick={() => {
+                    pick(f.id);
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="cap-selects">
+              <span className="cap-select">
+                <span className="cap-select-label" aria-hidden="true">
+                  Space
+                </span>
+                <Dropdown
+                  className="cap-dropdown"
+                  aria-label="Space"
+                  value={space ?? ''}
+                  options={[
+                    { value: '', label: 'All spaces' },
+                    ...[...(spaces ?? new Map<string, { slug: string; name: string }>())]
+                      .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+                      .map(([id, s]) => ({ value: id, label: s.name })),
+                  ]}
+                  onChange={(value) => {
+                    setSpace(value === '' ? null : value);
+                  }}
+                />
               </span>
-              <Dropdown<CapacitySort>
-                className="cap-dropdown"
-                aria-label="Sort"
-                value={effectiveSort}
-                options={SORTS.filter((s) => on || (s.id !== 'online' && s.id !== 'seen')).map(
-                  (s) => ({ value: s.id, label: s.label }),
-                )}
-                onChange={setSort}
-              />
-            </span>
-            <span className="cap-view" role="group" aria-label="View">
-              <button
-                type="button"
-                className="cap-view-button"
-                aria-pressed={view === 'cards'}
-                onClick={() => {
-                  chooseView('cards');
-                }}
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                className="cap-view-button"
-                aria-pressed={view === 'list'}
-                onClick={() => {
-                  chooseView('list');
-                }}
-              >
-                List
-              </button>
-            </span>
-            <InfoTip label="About these figures">
-              <dl className="prof-defs">
-                <dt>Online, away, last seen</dt>
-                <dd>
-                  The newest of a sign-in, a board action, and an agent’s heartbeat, MCP call or
-                  write. Online is the last 5 minutes, away the last hour. Reading the board does
-                  not count.
-                </dd>
-                <dt>Load</dt>
-                <dd>{LOAD_RULE}</dd>
-                <dt>Workload</dt>
-                <dd>
-                  Open tasks assigned to them, in the spaces you can see. To do is committed and not
-                  started; backlog is the pipeline, not yet committed. Waiting on reviewers is their
-                  work in review: it waits on the reviewer, not on them. Overdue is past its due
-                  date, and is its own badge.
-                </dd>
-                <dt>List</dt>
-                <dd>
-                  The same people as the cards, one row each. Every row’s bar is drawn to the same
-                  scale, so the longest bar is the heaviest person.
-                </dd>
-              </dl>
-            </InfoTip>
+              <span className="cap-select">
+                <span className="cap-select-label" aria-hidden="true">
+                  Sort
+                </span>
+                <Dropdown<CapacitySort>
+                  className="cap-dropdown"
+                  aria-label="Sort"
+                  value={effectiveSort}
+                  options={SORTS.filter((s) => on || (s.id !== 'online' && s.id !== 'seen')).map(
+                    (s) => ({ value: s.id, label: s.label }),
+                  )}
+                  onChange={setSort}
+                />
+              </span>
+              <span className="cap-view" role="group" aria-label="View">
+                <button
+                  type="button"
+                  className="cap-view-button"
+                  aria-pressed={view === 'cards'}
+                  onClick={() => {
+                    chooseView('cards');
+                  }}
+                >
+                  Cards
+                </button>
+                <button
+                  type="button"
+                  className="cap-view-button"
+                  aria-pressed={view === 'list'}
+                  onClick={() => {
+                    chooseView('list');
+                  }}
+                >
+                  List
+                </button>
+              </span>
+              <InfoTip label="About these figures">
+                <dl className="prof-defs">
+                  <dt>Online, away, last seen</dt>
+                  <dd>
+                    The newest of a sign-in, a board action, and an agent’s heartbeat, MCP call or
+                    write. Online is the last 5 minutes, away the last hour. Reading the board does
+                    not count.
+                  </dd>
+                  <dt>Load</dt>
+                  <dd>{LOAD_RULE}</dd>
+                  <dt>Workload</dt>
+                  <dd>
+                    Open tasks assigned to them, in the spaces you can see. To do is committed and
+                    not started; backlog is the pipeline, not yet committed. Waiting on reviewers is
+                    their work in review: it waits on the reviewer, not on them. Overdue is past its
+                    due date, and is its own badge.
+                  </dd>
+                  <dt>List</dt>
+                  <dd>
+                    The same people as the cards, one row each. Every row’s bar is drawn to the same
+                    scale, so the longest bar is the heaviest person.
+                  </dd>
+                </dl>
+              </InfoTip>
+            </div>
           </div>
-        </div>
+        )}
 
         <p className="visually-hidden" role="status">
           {`${String(cards.length + never.length)} ${cards.length + never.length === 1 ? 'person' : 'people'} shown`}
@@ -556,17 +559,21 @@ export function CapacityScreen({
           </button>
         )}
 
-        <ul className="cap-legend" aria-hidden="true">
-          <li>
-            <span className="cap-swatch cap-part-in_progress" />
-            In progress
-          </li>
-          <li>
-            <span className="cap-swatch cap-part-todo" />
-            To do
-          </li>
-          <li className="cap-legend-note">committed work; backlog and review are counted apart</li>
-        </ul>
+        {everyone.length > 0 && (
+          <ul className="cap-legend" aria-hidden="true">
+            <li>
+              <span className="cap-swatch cap-part-in_progress" />
+              In progress
+            </li>
+            <li>
+              <span className="cap-swatch cap-part-todo" />
+              To do
+            </li>
+            <li className="cap-legend-note">
+              committed work; backlog and review are counted apart
+            </li>
+          </ul>
+        )}
       </div>
     </div>
   );
