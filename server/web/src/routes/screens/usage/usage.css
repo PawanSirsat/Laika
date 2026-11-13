@@ -256,6 +256,30 @@
   color: var(--text-muted);
 }
 
+/*
+ * The caveat is the point of a caption (D-084: counts are minimums, cost is
+ * not a bill), so on a phone — two tiles to a row — it wraps rather than
+ * losing its end to an ellipsis (LAI-1216).
+ */
+@media (max-width: 600px) {
+  .usage-stat-sub {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+}
+
+/*
+ * Tokens against the period before (LAI-1216): a direction, not a verdict —
+ * more tokens is neither good nor bad — so secondary ink, never red or green.
+ */
+.usage-stat-change {
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
 /* ----------------------------------------------------------------- cards */
 
 /* Two cards side by side on a laptop (LAI-1127), one above the other on a phone. */
