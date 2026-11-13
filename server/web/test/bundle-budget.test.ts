@@ -10,12 +10,13 @@
  * sibling that loads up front anyway — which it did, before `vite.config.ts`
  * grouped the initial modules.
  *
- * **The budget: 150 KB gzip**, against 136.2 KB measured when it was set —
- * about 10% of headroom, so ordinary growth fits and a screen pulled back into
- * the entry (the smallest is several KB, the board alone ~30 KB) does not go
- * unnoticed for long. `docs/ux` sets the ceiling at 200 KB; this sits under it
- * on purpose, because a budget at the ceiling is only noticed once it is hit.
- * Before the split the same measure was ~668 KB.
+ * **The budget: 150 KiB gzip (153,600 B)**, against 134,915 B by this
+ * test's own measure (Node's zlib, default level) when it was set — about 14%
+ * headroom, so ordinary growth fits and a large screen pulled back into the
+ * entry (My day is ~70 KB gzip, Developer ~68 KB) fails it at once.
+ * `docs/ux` sets the ceiling at 200 KB; this sits under it on purpose,
+ * because a budget at the ceiling is only noticed once it is hit. Before the
+ * split the same measure was 662,916 B.
  */
 
 import assert from 'node:assert/strict';
