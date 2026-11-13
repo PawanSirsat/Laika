@@ -143,7 +143,7 @@ holidays (LAI-1176 item 1) land here too.
   - `DELETE /org/holidays/:id` (`org.time.set`) → 204; a Clan row → 409
     `holiday_from_clan`.
   - Own rate-limit bucket `hr:<who>` (6/min) for `/connect*` and `/sync`.
-- [ ] Mounted in `app.ts`; `response-type-coverage`, `endpoint-coverage`,
+- [x] Mounted in `app.ts`; `response-type-coverage`, `endpoint-coverage`,
       `structure` mirrors, `schema-spec-drift`, `schema-migration-drift`,
       `env-contract` (no new env var) green.
 - [x] Tests against a **fake Clan** (an injected `fetchImpl`): login with and
@@ -187,9 +187,12 @@ differ, SPEC was followed, as CHIEF's log of 13:10 and 13:40 directs.
   page that fails; it changes nothing.
 - **Unreachable is `503 unavailable` reason `clan_unreachable`**, not 502:
   §6.3's codes are closed (CHIEF's answer, LAI-1180 log 12:45).
-- **Not ticked, waiting on another owner's half (§4.4):** the mounting
-  criterion's web `endpoint-coverage` is red until LAI-1182 calls the new
-  endpoints (SHELL). The Policy criterion's `policy-spec-drift` went green
-  when LAI-1180's `bd605ea5` named `org.hr.configure` in §3's grants table,
-  merged here as `1f7e71c7`. Exact failures are in
-  `logs/chief-2026-11-13-LAI-1181.md`.
+- **Every criterion holds on this branch alone** since LAI-1180's
+  `bd605ea5` (§3's grants row, merged as `1f7e71c7`) and LAI-1182's
+  `3e810901` (the web half's callers and view pairs, merged as `77326bf8`):
+  `policy-spec-drift`, `response-type-coverage` and the web
+  `endpoint-coverage` are green, and no HR view is left in `UNPAIRED`.
+- **Measured on a live Clan and built in:** two-factor `methods` arrive as
+  `{ email: false, google_authenticator: true }`; a sign-in's pre-code token
+  answers every read `403 TWO_FACTOR_REQUIRED`, which is the token refused
+  (`clan_token_refused`), never "this role may not read it"
