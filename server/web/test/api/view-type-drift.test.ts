@@ -1037,6 +1037,40 @@ const PAIRS: readonly Pair[] = [
     client: 'OrgHolidays',
     clientFile: 'hr.ts',
   },
+  // A day off on the reads that draw days (D-149, LAI-1183's contract,
+  // LAI-1184's mirror): each named shape on both sides, so the holiday and
+  // the leave inside `OffDayView` are compared field by field, not read as
+  // the parent's.
+  {
+    server: 'OffHolidayView',
+    serverFile: 'services/off-days.ts',
+    client: 'OffHoliday',
+    clientFile: 'off-days.ts',
+  },
+  {
+    server: 'OffLeaveView',
+    serverFile: 'services/off-days.ts',
+    client: 'OffLeave',
+    clientFile: 'off-days.ts',
+  },
+  {
+    server: 'OffDayView',
+    serverFile: 'services/off-days.ts',
+    client: 'OffDay',
+    clientFile: 'off-days.ts',
+  },
+  {
+    server: 'OffDayEntryView',
+    serverFile: 'services/off-days.ts',
+    client: 'OffDayEntry',
+    clientFile: 'off-days.ts',
+  },
+  {
+    server: 'OnLeaveView',
+    serverFile: 'services/off-days.ts',
+    client: 'OnLeave',
+    clientFile: 'off-days.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
