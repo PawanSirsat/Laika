@@ -109,7 +109,7 @@ holidays (LAI-1176 item 1) land here too.
       in flight instead of starting another. `serverSecret` threaded through
       `SchedulerDeps` from `index.ts`. `system.hr.sync` in `SYSTEM_ACTIONS`
       and the §3.4 row; `scheduler.test.ts` registry.
-- [ ] Policy: `org.hr.configure` in `ORG_ACTIONS` and `SESSION_ONLY_ACTIONS`,
+- [x] Policy: `org.hr.configure` in `ORG_ACTIONS` and `SESSION_ONLY_ACTIONS`,
       owners and admins through `change_org_settings` in `grants.ts`; `can.ts`
       case with the §3.1 row as its comment; `permissions.ts` label; the
       censuses (`policy-spec-drift`, `matrix`, `permissions`, `can.test.ts`).
@@ -187,9 +187,9 @@ differ, SPEC was followed, as CHIEF's log of 13:10 and 13:40 directs.
   page that fails; it changes nothing.
 - **Unreachable is `503 unavailable` reason `clan_unreachable`**, not 502:
   §6.3's codes are closed (CHIEF's answer, LAI-1180 log 12:45).
-- **Not ticked, waiting on another owner's half (§4.4):** the Policy
-  criterion's `policy-spec-drift` census is red on one assertion until SPEC
-  §3's grants table row *Change organisation settings, Time and breaks*
-  names `org.hr.configure` (CHIEF, docs); and the mounting criterion's web
-  `endpoint-coverage` is red until LAI-1182 calls the new endpoints (SHELL).
-  Exact failures are in `logs/chief-2026-11-13-LAI-1181.md`.
+- **Not ticked, waiting on another owner's half (§4.4):** the mounting
+  criterion's web `endpoint-coverage` is red until LAI-1182 calls the new
+  endpoints (SHELL). The Policy criterion's `policy-spec-drift` went green
+  when LAI-1180's `bd605ea5` named `org.hr.configure` in §3's grants table,
+  merged here as `1f7e71c7`. Exact failures are in
+  `logs/chief-2026-11-13-LAI-1181.md`.
