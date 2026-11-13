@@ -3776,13 +3776,13 @@ change is additive. Written only through `org.hr.configure` and the sync.
 | --- | --- |
 | `org_id` | pk, FK `orgs`, cascade |
 | `provider` | `clan` (CHECK) |
-| `status` | `pending_2fa` \| `connected` (CHECK) — `pending_2fa` while a sign-in waits for its two-factor code |
 | `base_url` | `https://…/api/v1`, no trailing slash |
-| `account_email` | the HR account Laika signed in as, lowercased — shown to owners and admins |
+| `account_name` | the HR account the token belongs to, as the HR system names it — shown to owners and admins |
 | `token_enc` | the bearer token, AES-256-GCM under purpose `clan_api_token` (D-009's scheme); never returned, never logged |
 | `token_last4` | for display |
-| `token_expires_at` | nullable — when the HR system says the token lapses |
-| `pending_expires_at` | nullable — a two-factor sign-in left unfinished is void after ten minutes |
+| `token_expires_at` | nullable — when the token lapses, if the person pasting it gave the date |
+| `sees_everyone` | 0/1 — the last check found the token reads more than one person's leave |
+| `sees_departments` | 0/1 — the last check found people's departments filled in |
 | `connected_by` | nullable, FK `users`, set null |
 | `connected_at` | |
 | `last_attempt_at` | nullable — the last sync, whatever came of it |
@@ -3792,8 +3792,9 @@ change is additive. Written only through `org.hr.configure` and the sync.
 | `last_result_json` | nullable — the last complete sync's counts |
 | `updated_at` | |
 
-**The password is never stored**: it is used for the one sign-in and dropped.
-Disconnecting deletes the row; what was synced stays (D-149 item 7).
+**Laika never signs in to the HR system**: an owner or admin pastes a token made
+for a dedicated HR account (D-149 item 1); no password or two-factor code reaches
+Laika. Disconnecting deletes the row; what was synced stays (D-149 item 7).
 
 ### 4.89 `hr_people`
 
@@ -4279,9 +4280,8 @@ GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai
 POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged; only the owner orgs.owner_user_id names may — another owner from before D-104 is 403 reason not_recorded_owner   (owner only; session only; LAI-982)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
-GET    /api/v1/org/hr                        the HR connection → { status: off | pending_2fa | connected, provider, base_url, account_email, token_last4, token_expires_at, expiring_soon, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result, people: [{ external_id, name, user, matched_by }] }   (owner, admin; session only; D-149, LAI-1181)
-POST   /api/v1/org/hr/connect                body { base_url, email, password } — signs in once and keeps only the token → the connection, or status pending_2fa with two_factor.methods; 422 unprocessable reason clan_login_failed, 503 unavailable reason clan_unreachable   (owner, admin; session only)
-POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes a two-factor sign-in → the connection; 409 conflict reason two_factor_expired   (owner, admin; session only)
+GET    /api/v1/org/hr                        the HR connection → { status: off | connected, provider, base_url, account_name, token_last4, token_expires_at, expiring_soon, sees_everyone, sees_departments, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result, people: [{ external_id, name, user, matched_by }] }   (owner, admin; session only; D-149, LAI-1181)
+POST   /api/v1/org/hr/connect                body { base_url, token, expires_on? } — checks the token (who, sees everyone, sees departments), keeps it encrypted, starts the first sync → the connection; 422 unprocessable reason clan_token_refused, 503 unavailable reason clan_unreachable   (owner, admin; session only)
 POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } — map a person, or null for not on Laika → the connection   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
@@ -6968,7 +6968,7 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -7220,10 +7220,11 @@ anything missing sends the task back.
   table does not have.
   An **HR system** section on *Integrations* for owners and admins (D-149,
   LAI-1182): off, one line on what it does — holidays and leave from Clan every
-  30 minutes, the sign-in token kept, never the password — and *Connect Clan*
-  with the company address, an account's email and password, and a code when
-  the account asks for one; connected, who it signed in as, the token's last
-  four and when it must be renewed (warned 30 days ahead), the last sync's time
+  30 minutes, from a token your HR administrator makes; Laika never asks for a
+  password — and *Connect Clan* with the company address, the token and, if
+  known, its expiry date; connected, whose token it is, its last four, a warning
+  when it cannot see everyone's leave or people's departments, when it must be
+  renewed (warned 30 days ahead), the last sync's time
   and counts or its error in words, *Sync now* and *Disconnect*; and the HR
   system's people, matched by email, each unmatched one with a member picker
   and *Not on Laika*. A **Holidays** list on *Overview* beside *Time* for every
@@ -8043,7 +8044,7 @@ is exempt and §7.2 says why.
 absent. The only outbound calls Laika ever makes are to the org's configured LLM
 provider (§12), configured SMTP, a webhook source it was configured to talk
 to, and the organisation's configured HR system (D-149) — read-only `GET`s of
-its holidays, leave and people, plus the one sign-in that makes the token. Any
+its holidays, leave and people, and nothing else. Any
 task proposing otherwise is rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts

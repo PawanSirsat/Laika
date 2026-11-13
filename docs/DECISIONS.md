@@ -7444,13 +7444,15 @@ approved, in Clan, and typing it twice is the problem, not the fix.
 them; it never writes to it.
 
 1. **A fourth outbound call.** §13.4 lists the only calls Laika makes; the organisation's
-   **configured HR source** joins them — **read-only `GET`s**, plus the one sign-in that
-   makes the token. Off until an owner or admin connects it (`org.hr.configure`, session
-   only). The person connecting gives the HR system's address and an account's email and
-   password once; Laika signs in, keeps **only the token**, encrypted as D-009's provider key
-   is (purpose `clan_api_token`), never returned, never logged, shown as its last four and
-   its expiry, and warns 30 days before it lapses. **The password is never stored.** A
-   two-factor code, when the account has one, is asked for in the same flow. Clan is the
+   **configured HR source** joins them — **read-only `GET`s** and nothing else. Off until an
+   owner or admin connects it (`org.hr.configure`, session only). **Connecting is pasting a
+   token** (owner, 2026-11-13: *"I don't want to ask anyone for a password"*): the HR
+   system's address and a token made for a dedicated HR account — e.g. a *Forge* user in
+   Clan — by whoever administers it. **No password and no two-factor code ever reach
+   Laika.** Laika checks the token on paste (who it is, whether it sees everyone's leave and
+   people's departments, and says so), keeps it encrypted as D-009's provider key is
+   (purpose `clan_api_token`), never returns or logs it, shows its last four and the expiry
+   when one is given, and says *connect again* when the HR system refuses it. Clan is the
    only provider today; the shape is a provider, not a product.
 2. **What Laika keeps:** each holiday's day, name and scope (the departments or
    designations it covers); each leave day's person, date, part (whole day,
