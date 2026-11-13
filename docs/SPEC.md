@@ -3777,7 +3777,7 @@ change is additive. Written only through `org.hr.configure` and the sync.
 | `org_id` | pk, FK `orgs`, cascade |
 | `provider` | `clan` (CHECK) |
 | `status` | `pending_2fa` \| `connected` (CHECK) — `pending_2fa` while a sign-in waits for its two-factor code |
-| `base_url` | `https://…/api/v1`, no trailing slash |
+| `base_url` | `https://<company>.clan.biz/api/v1` — **only a single-label host under `clan.biz`**, port 443, no IP literal or credentials; checked on connect and again before every request, so the sync can never be aimed at another host (review of LAI-1181) |
 | `account_name` | the HR account the token belongs to, as the HR system names it — shown to owners and admins |
 | `account_email` | nullable — the account's email when Laika signed in with it; null for a pasted token |
 | `token_enc` | the bearer token, AES-256-GCM under purpose `clan_api_token` (D-009's scheme); never returned, never logged. One `LAIKA_SECRET` can no longer open reads as `token_rejected`, naming `LAIKA_SECRET`, and wants connecting again |
