@@ -18,8 +18,10 @@ days, with D-149's visibility and not-due rules decided on the server once.
 - [ ] One helper `offDaysFor(db, viewer, userIds, from, to)` in
       `services/off-days.ts`: per person and day `{ holiday?: {label},
       leave?: {part, status: 'approved'|'pending', type?} }`; a holiday covers
-      a person when its scope is null or names their `hr_people`
-      department/designation; a manual holiday wins over a Clan one on the same
+      a person when it is manual (everyone), or synced **and the person is
+      matched in `hr_people`** with the scope null or naming their
+      department/designation (Clan is CodeSage India's — its holidays never
+      reach a member not in it); a manual holiday wins over a Clan one on the same
       day; `type` only when the viewer is the person, an owner, an admin, or
       holds *See everyone's analytics*; removed rows never read; leave for a
       person the viewer cannot see is never read.

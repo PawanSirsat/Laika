@@ -11,10 +11,18 @@ import { ApiError } from '../errors.ts';
  * own response text never echoed — it is a third party's words on their way
  * to a Laika user (§13.1).
  *
- * **Reads only**, plus the one sign-in: `POST /auth/login` and, when the
- * account has a second factor, `POST /auth/two-factor`. Laika never writes to
- * Clan, and **never calls `/auth/refresh`**, which answers a token good for an
- * hour and revokes the year-long one it was given.
+ * **`GET`s, plus the one sign-in that makes a token** (D-149 item 1): a
+ * dedicated HR account is either signed in with once — `POST /auth/login`
+ * and, when Clan asks, `POST /auth/two-factor`, the password and code used
+ * for those calls and nothing else — or a token made for it is pasted.
+ * Laika never writes to Clan, and **never calls `/auth/refresh`**, which
+ * answers a token good for an hour and revokes the year-long one it was
+ * given.
+ *
+ * **Lists are paged until a short page**, never by `meta.paging.total`:
+ * measured against a live Clan, `/employee` answered `total: 2` with 25 rows
+ * (LAI-1180's log). A total that undercounts would end a read early, and the
+ * sync removes by absence.
  *
  * **One retry, bounded.** A `429` or a `503` is asked once more after the
  * `Retry-After` it names (a second when it names none) — the pattern of
@@ -66,18 +74,24 @@ export class ClanUnavailableError extends ApiError {
   }
 }
 
-/** Clan refused the token (`401`), or the account it belongs to may not read this (`403`). */
+/**
+ * Clan refused the token (`401`), or the account it belongs to may not read
+ * this (`403`). Its words are not passed on. `answered` is which.
+ */
 export class ClanAuthError extends ApiError {
-  constructor(why: string) {
-    super('unprocessable', 'Clan refused the stored token', {
-      reason: 'clan_token_rejected',
-      why,
+  readonly answered: number;
+
+  constructor(answered: number) {
+    super('unprocessable', 'Clan refused that token', {
+      reason: 'clan_token_refused',
+      why: `answered ${String(answered)}`,
     });
     this.name = 'ClanAuthError';
+    this.answered = answered;
   }
 }
 
-/** Clan did not accept the email, password or second-factor code. Its words are not passed on. */
+/** Clan did not accept the email, password or two-factor code. Its words are not passed on. */
 export class ClanLoginError extends ApiError {
   constructor() {
     super('unprocessable', 'Clan did not accept that sign-in', { reason: 'clan_login_failed' });
@@ -101,8 +115,9 @@ export class ClanAnswerError extends ApiError {
  * API root, `https://<company>.clan.biz/api/v1`, with no trailing slash.
  *
  * **`https:` only**: the token travels in a header on every request, and a
- * password on the first. No credentials, query or fragment in the URL either
- * — each is somewhere a secret could hide, or a request Laika did not mean.
+ * sign-in's password in the first. No
+ * credentials, query or fragment in the URL either — each is somewhere a
+ * secret could hide, or a request Laika did not mean.
  */
 export function normaliseClanBaseUrl(input: string): string {
   let url: URL;
@@ -133,6 +148,11 @@ export function normaliseClanBaseUrl(input: string): string {
 
 /** What `POST /auth/login` answers. */
 export interface ClanLogin {
+  /**
+   * The token. With a second factor on, it is a **restricted** one — Clan
+   * answers every read `403` until the code is given — and the code's answer
+   * carries the token to keep (LAI-1180's live login).
+   */
   token: string;
   /** Unix ms, or null when Clan did not say. */
   expiresAt: number | null;
@@ -140,10 +160,23 @@ export interface ClanLogin {
   twoFactor: { methods: string[] } | null;
 }
 
-/** What `POST /auth/two-factor` answers: a new token when Clan sends one. */
+/** What `POST /auth/two-factor` answers: the token to keep, when Clan sends one. */
 export interface ClanTwoFactor {
   token: string | null;
   expiresAt: number | null;
+}
+
+/**
+ * What a token can read, checked when it is connected (D-149 item 1): whose it
+ * is, and whether it sees everyone's leave and people's departments.
+ */
+export interface ClanTokenCheck {
+  /** The HR account the token belongs to, as Clan names it. */
+  accountName: string;
+  /** A page of leave named more than one person. */
+  seesEveryone: boolean;
+  /** A page of employees had a department filled in. */
+  seesDepartments: boolean;
 }
 
 /** One employee, as Laika keeps them: never their email past the match. */
@@ -154,6 +187,8 @@ export interface ClanEmployee {
   email: string | null;
   departmentRef: string | null;
   designationRef: string | null;
+  /** `full_time`, `part_time`, … as Clan has it. */
+  employmentType: string | null;
 }
 
 export interface ClanHoliday {
@@ -161,9 +196,10 @@ export interface ClanHoliday {
   /** `YYYY-MM-DD`. */
   day: string;
   label: string;
-  /** Empty for both is everyone. */
+  /** Empty for all three is everyone Clan lists. */
   departments: string[];
   designations: string[];
+  employmentTypes: string[];
 }
 
 /** One day of leave — Clan keeps a row per day. */
@@ -184,6 +220,8 @@ export interface ClanLeaveDay {
 export interface ClanClient {
   login(email: string, password: string): Promise<ClanLogin>;
   twoFactor(token: string, method: string, code: string): Promise<ClanTwoFactor>;
+  /** Whose the token is and what it reads, from `/auth/me` and a page each of leave and people. */
+  check(token: string, from: string, to: string): Promise<ClanTokenCheck>;
   employees(token: string): Promise<ClanEmployee[]>;
   /** Every holiday whose day falls in `from`–`to`, inclusive. */
   holidays(token: string, from: string, to: string): Promise<ClanHoliday[]>;
@@ -265,33 +303,46 @@ export function clanClient(options: ClanClientOptions): ClanClient {
     return once(url, init);
   }
 
-  function headers(token: string | null, json: boolean): Record<string, string> {
-    const h: Record<string, string> = { Accept: 'application/json' };
-    if (json) h['Content-Type'] = 'application/json';
-    if (token !== null) h.Authorization = `Bearer ${token}`;
-    return h;
-  }
-
   /** A token-carrying read: `2xx` is the body, anything else a named failure. */
   async function read(path: string, token: string): Promise<unknown> {
-    const answer = await send(path, { method: 'GET', headers: headers(token, false) });
+    const answer = await send(path, {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
     if (answer.status >= 200 && answer.status < 300) return answer.body;
-    if (answer.status === 401 || answer.status === 403) {
-      throw new ClanAuthError(`answered ${String(answer.status)}`);
-    }
+    if (answer.status === 401 || answer.status === 403) throw new ClanAuthError(answer.status);
     if (answer.status === 429 || answer.status >= 500) {
       throw new ClanUnavailableError(`answered ${String(answer.status)}`, true);
     }
     throw new ClanAnswerError(`answered ${String(answer.status)}`);
   }
 
+  /** One page of a list's rows, or a bad answer when there is no list. */
+  async function page(
+    resource: string,
+    token: string,
+    params: Record<string, string>,
+    offset: number,
+  ): Promise<unknown[]> {
+    const query = new URLSearchParams({
+      ...params,
+      limit: String(CLAN_PAGE_LIMIT),
+      offset: String(offset),
+    });
+    const body = await read(`/${resource}?${query.toString()}`, token);
+    const data = (body as { data?: unknown } | undefined)?.data;
+    if (!Array.isArray(data)) throw new ClanAnswerError(`${resource}: no data list`);
+    return data as unknown[];
+  }
+
   /**
-   * Every row of a list, page by page, by `offset` until `meta.paging.total`.
+   * Every row of a list, page by page by `offset`, **until a page comes back
+   * shorter than asked for**. `meta.paging.total` is not read: a live Clan
+   * has been measured getting it wrong.
    *
-   * **All of it or a throw.** A list that ends short of the total it named is
-   * not a smaller list — it is an incomplete read, and the sync reconciles by
-   * absence, so treating it as complete would remove whatever the missing
-   * pages held.
+   * **All of it or a throw.** A page that fails fails the whole read — the
+   * sync removes by absence, so a read missing a page must never look
+   * complete.
    */
   async function list(
     resource: string,
@@ -299,52 +350,58 @@ export function clanClient(options: ClanClientOptions): ClanClient {
     params: Record<string, string>,
   ): Promise<unknown[]> {
     const rows: unknown[] = [];
-    for (let page = 0; page < MAX_PAGES; page += 1) {
-      const query = new URLSearchParams({
-        ...params,
-        limit: String(CLAN_PAGE_LIMIT),
-        offset: String(rows.length),
-      });
-      const body = await read(`/${resource}?${query.toString()}`, token);
-      const root = body as { data?: unknown; meta?: { paging?: { total?: unknown } } } | undefined;
-      const data = root?.data;
-      if (!Array.isArray(data)) throw new ClanAnswerError(`${resource}: no data list`);
-      rows.push(...(data as unknown[]));
-
-      const totalRaw = root?.meta?.paging?.total;
-      const total =
-        typeof totalRaw === 'number' || typeof totalRaw === 'string' ? Number(totalRaw) : NaN;
-      if (Number.isFinite(total)) {
-        if (rows.length >= total) return rows;
-        if (data.length === 0) {
-          throw new ClanAnswerError(
-            `${resource}: ended at ${String(rows.length)} of ${String(total)}`,
-          );
-        }
-      } else if (data.length < CLAN_PAGE_LIMIT) {
-        return rows;
-      }
+    for (let n = 0; n < MAX_PAGES; n += 1) {
+      const data = await page(resource, token, params, rows.length);
+      rows.push(...data);
+      if (data.length < CLAN_PAGE_LIMIT) return rows;
     }
     throw new ClanAnswerError(`${resource}: more than ${String(MAX_PAGES)} pages`);
   }
 
+  /** A first page that a `403` leaves empty: the token may not read it, which is the answer. */
+  async function firstPageOrNone(
+    resource: string,
+    token: string,
+    params: Record<string, string>,
+  ): Promise<unknown[]> {
+    try {
+      return await page(resource, token, params, 0);
+    } catch (err) {
+      if (err instanceof ClanAuthError && err.answered === 403) return [];
+      throw err;
+    }
+  }
+
+  /** A sign-in call: `2xx` is `data`, a refusal `ClanLoginError`, never Clan's words. */
+  async function signIn(
+    path: string,
+    body: unknown,
+    token: string | null,
+  ): Promise<Record<string, unknown> | undefined> {
+    const answer = await send(path, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(body),
+    });
+    if (answer.status >= 500 || answer.status === 429) {
+      throw new ClanUnavailableError(`answered ${String(answer.status)}`, true);
+    }
+    // Wrong password, unknown email, a wrong code, a company address Clan
+    // does not know: all refusals, and none of Clan's wording goes further.
+    if (answer.status >= 400) throw new ClanLoginError();
+    if (answer.status < 200 || answer.status >= 300) {
+      throw new ClanAnswerError(`answered ${String(answer.status)}`);
+    }
+    return (answer.body as { data?: Record<string, unknown> } | undefined)?.data;
+  }
+
   return {
     async login(email, password) {
-      const answer = await send('/auth/login', {
-        method: 'POST',
-        headers: headers(null, true),
-        body: JSON.stringify({ email, password }),
-      });
-      if (answer.status >= 500 || answer.status === 429) {
-        throw new ClanUnavailableError(`answered ${String(answer.status)}`, true);
-      }
-      // Wrong password, unknown email, a company URL Clan does not know: all
-      // refusals of the sign-in, and none of Clan's wording reaches the person.
-      if (answer.status >= 400) throw new ClanLoginError();
-      if (answer.status < 200 || answer.status >= 300) {
-        throw new ClanAnswerError(`answered ${String(answer.status)}`);
-      }
-      const data = (answer.body as { data?: Record<string, unknown> } | undefined)?.data;
+      const data = await signIn('/auth/login', { email, password }, null);
       const token = data?.token;
       if (typeof token !== 'string' || token === '') {
         throw new ClanAnswerError('login: no token');
@@ -359,23 +416,45 @@ export function clanClient(options: ClanClientOptions): ClanClient {
     },
 
     async twoFactor(token, method, code) {
-      const answer = await send('/auth/two-factor', {
-        method: 'POST',
-        headers: headers(token, true),
-        body: JSON.stringify({ method, code }),
-      });
-      if (answer.status >= 500 || answer.status === 429) {
-        throw new ClanUnavailableError(`answered ${String(answer.status)}`, true);
-      }
-      if (answer.status >= 400) throw new ClanLoginError();
-      if (answer.status < 200 || answer.status >= 300) {
-        throw new ClanAnswerError(`answered ${String(answer.status)}`);
-      }
-      const data = (answer.body as { data?: Record<string, unknown> } | undefined)?.data;
+      const data = await signIn('/auth/two-factor', { method, code }, token);
       const next = data?.token;
       return {
         token: typeof next === 'string' && next !== '' ? next : null,
         expiresAt: instantOf(data?.expires),
+      };
+    },
+
+    async check(token, from, to) {
+      // Whose it is. A `401` here is the token refused — the caller's answer.
+      const me = await read('/auth/me', token);
+      const data = (me as { data?: unknown } | undefined)?.data;
+      if (typeof data !== 'object' || data === null) throw new ClanAnswerError('auth/me: no data');
+      const user = data as { name?: unknown; email?: unknown; user?: unknown };
+      const nested = (user.user ?? {}) as { name?: unknown; email?: unknown };
+      const accountName =
+        textOf(user.name, 200) ??
+        textOf(nested.name, 200) ??
+        textOf(user.email, 200) ??
+        textOf(nested.email, 200) ??
+        'Clan account';
+
+      // What it reads: one page each is enough to say so. A `403` is a role
+      // that may not read the list, which is what the check reports.
+      const leave = await firstPageOrNone('leave', token, {
+        fields: 'id,user_id',
+        filters: `leave_date ge "${from}" and leave_date le "${to}"`,
+      });
+      const people = await firstPageOrNone('employee', token, { fields: EMPLOYEE_FIELDS });
+      const persons = new Set(
+        leave.flatMap((row) => {
+          const ref = refOf((row as { user_id?: unknown } | null)?.user_id);
+          return ref === null ? [] : [ref];
+        }),
+      );
+      return {
+        accountName,
+        seesEveryone: persons.size > 1,
+        seesDepartments: people.some((row) => employeeOf(row).departmentRef !== null),
       };
     },
 
@@ -488,6 +567,7 @@ function employeeOf(row: unknown): ClanEmployee {
     email: email === null ? null : email.toLowerCase(),
     departmentRef: refOf(detail.department_id) ?? refOf(detail.department),
     designationRef: refOf(detail.designation_id) ?? refOf(detail.designation),
+    employmentType: textOf(detail.employment_type, 80) ?? textOf(r.employment_type, 80),
   };
 }
 
@@ -505,15 +585,25 @@ function holidayOf(row: unknown): ClanHoliday {
     id,
     day: dayOf(r.date, 'holiday'),
     label,
+    // Measured on a live Clan: `department_id_json`, `designation_id_json`
+    // and `employment_type_json`, each a JSON string. The other spellings are
+    // Worksuite's elsewhere, read in case a build sends them.
     departments: unique([
+      ...refsOf(r.department_id_json),
       ...refsOf(r.department_id),
       ...refsOf(r.department_ids),
       ...refsOf(r.departments),
     ]),
     designations: unique([
+      ...refsOf(r.designation_id_json),
       ...refsOf(r.designation_id),
       ...refsOf(r.designation_ids),
       ...refsOf(r.designations),
+    ]),
+    employmentTypes: unique([
+      ...refsOf(r.employment_type_json),
+      ...refsOf(r.employment_type),
+      ...refsOf(r.employment_types),
     ]),
   };
 }

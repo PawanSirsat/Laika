@@ -675,8 +675,8 @@ export const HR_PROVIDERS = ['clan'] as const;
 export type HrProvider = (typeof HR_PROVIDERS)[number];
 
 /**
- * `org_hr_source`'s `status` (D-149, LAI-1181): signed in and waiting on the
- * second factor for ten minutes, or connected. **No row is off.**
+ * `org_hr_source`'s `status` (§4.88, D-149 item 1, LAI-1181): a sign-in
+ * waiting ten minutes for its two-factor code, or connected. **No row is off.**
  */
 export const HR_SOURCE_STATUSES = ['pending_2fa', 'connected'] as const;
 export type HrSourceStatus = (typeof HR_SOURCE_STATUSES)[number];

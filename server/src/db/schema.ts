@@ -1473,17 +1473,21 @@ export const memberNotices = sqliteTable(
   ],
 );
 
-// ------------------------------------------------------------ org_hr_source
+// ------------------------------------------------------- §4.88 org_hr_source
 
 /**
- * The organisation's HR system (D-149 items 1 and 7, LAI-1181): Clan, connected
- * once by an owner or admin who signs in from Laika. **No row is off.**
+ * The organisation's HR system (§4.88, D-149 items 1 and 7, LAI-1181): Clan,
+ * connected by an owner or admin **through a dedicated HR account, never a
+ * person's own** — signed in with once, or a token made for it, pasted. **No
+ * row is off.** A sign-in's password and two-factor code are used for those
+ * calls and never stored; while Clan waits for the code the row is
+ * `pending_2fa` until `pending_expires_at`, ten minutes on, and the sync
+ * reads a `connected` row only.
  *
- * Laika keeps the **token** Clan answers with, as §12's ciphertext under its
- * own purpose (`clan_api_token`), and its last four characters to show. The
- * password is used for that one sign-in call and never stored. While Clan asks
- * for a second factor the row is `pending_2fa` until `pending_expires_at`, ten
- * minutes on; the sync reads a `connected` row only.
+ * The token is §12's ciphertext under its own purpose (`clan_api_token`),
+ * with its last four characters to show. `sees_everyone` and
+ * `sees_departments` are what the last check found the token can read — on
+ * connecting, and again at every complete sync.
  *
  * Its own table rather than columns on `orgs`, the `org_time_settings`
  * precedent: additive, and a CHECK on `orgs` is a rebuild of `orgs`.
@@ -1498,25 +1502,29 @@ export const orgHrSource = sqliteTable(
     status: text('status', { enum: HR_SOURCE_STATUSES }).notNull(),
     /** `https://<company>.clan.biz/api/v1`, normalised, no trailing slash. */
     baseUrl: text('base_url').notNull(),
-    /** The Clan account Laika signed in as — shown, never used to sign in again. */
-    accountEmail: text('account_email').notNull(),
+    /** The HR account the token belongs to, as the HR system names it. */
+    accountName: text('account_name').notNull(),
+    /** The account's email when Laika signed in with it; null for a pasted token. */
+    accountEmail: text('account_email'),
     /** §12 ciphertext. Never logged, never served, never in `activity`. */
     tokenEnc: text('token_enc').notNull(),
     tokenLast4: text('token_last4').notNull(),
-    /** When Clan says the token stops working, unix ms; null when it did not say. */
+    /** When the token lapses, unix ms: Clan's answer to a sign-in, or the date given with a pasted one. */
     tokenExpiresAt: integer('token_expires_at'),
     /** While `pending_2fa`: when the half-done sign-in is given up. */
     pendingExpiresAt: integer('pending_expires_at'),
-    connectedBy: text('connected_by')
-      .notNull()
-      .references(() => users.id),
+    /** The last check found the token reads more than one person's leave. */
+    seesEveryone: integer('sees_everyone').notNull(),
+    /** The last check found people's departments filled in. */
+    seesDepartments: integer('sees_departments').notNull(),
+    connectedBy: text('connected_by').references(() => users.id, { onDelete: 'set null' }),
     connectedAt: integer('connected_at').notNull(),
     lastAttemptAt: integer('last_attempt_at'),
     lastSuccessAt: integer('last_success_at'),
     lastErrorCode: text('last_error_code', { enum: HR_SYNC_ERROR_CODES }),
-    /** Laika's own words for the failure — never Clan's response text. */
+    /** Laika's own words for the failure — never the HR system's response text. */
     lastError: text('last_error'),
-    /** The last successful sync's counts, as `HrSyncResultView`. */
+    /** The last complete sync's counts, as `HrSyncResultView`. */
     lastResultJson: text('last_result_json'),
     updatedAt,
   },
@@ -1524,22 +1532,27 @@ export const orgHrSource = sqliteTable(
     index('org_hr_source_connected_by_idx').on(t.connectedBy),
     check('org_hr_source_provider_check', oneOf('provider', HR_PROVIDERS)),
     check('org_hr_source_status_check', oneOf('status', HR_SOURCE_STATUSES)),
-    check(
-      'org_hr_source_last_error_code_check',
-      oneOfOrNull('last_error_code', HR_SYNC_ERROR_CODES),
-    ),
     // Pending has a deadline; a connected token has none to give up on.
     check(
       'org_hr_source_pending_check',
       sql.raw("(status = 'pending_2fa') = (pending_expires_at IS NOT NULL)"),
     ),
+    check(
+      'org_hr_source_last_error_code_check',
+      oneOfOrNull('last_error_code', HR_SYNC_ERROR_CODES),
+    ),
+    check(
+      'org_hr_source_sees_check',
+      sql.raw('sees_everyone IN (0, 1) AND sees_departments IN (0, 1)'),
+    ),
+    check('org_hr_source_account_name_check', sql.raw('length(account_name) BETWEEN 1 AND 200')),
   ],
 );
 
-// ---------------------------------------------------------------- hr_people
+// ----------------------------------------------------------- §4.89 hr_people
 
 /**
- * A person in the HR system (D-149 item 4, LAI-1181), by Clan's id, and the
+ * A person in the HR system (§4.89, D-149 item 4, LAI-1181), by Clan's id, and the
  * Laika person they are. Matched at each sync by exact lowercased email to an
  * active person (`email`), or mapped by an owner or admin (`owner`) — to a
  * person, or to *not on Laika* with `user_id` null — which a later email match
@@ -1553,6 +1566,8 @@ export const hrPeople = sqliteTable(
     name: text('name').notNull(),
     departmentRef: text('department_ref'),
     designationRef: text('designation_ref'),
+    /** The HR system's employment type (`full_time`, `part_time`, …), for a holiday's scope. */
+    employmentType: text('employment_type'),
     matchedBy: text('matched_by', { enum: HR_MATCHED_BY }).notNull(),
     /** The last sync whose employee list carried them. */
     seenAt: integer('seen_at').notNull(),
@@ -1568,14 +1583,15 @@ export const hrPeople = sqliteTable(
   ],
 );
 
-// ------------------------------------------------------------- org_holidays
+// -------------------------------------------------------- §4.90 org_holidays
 
 /**
- * A holiday (D-149 items 2 and 8, LAI-1181): typed by an owner or admin
- * (`manual`), or read from Clan (`clan`, by Clan's id in `source_ref`). Clan's
- * may be scoped to departments or designations (`scope_json`); null is
- * everyone. **Never deleted**: a holiday Clan stops sending, or one an owner
- * removes, is stamped `removed_at`, and one that comes back is cleared.
+ * A holiday (§4.90, D-149 items 2 and 8, LAI-1181): typed by an owner or admin
+ * (`manual`), or read from Clan (`clan`, by Clan's id in `source_ref`). A
+ * manual one covers every member; Clan's covers the people Clan lists, scoped
+ * further to departments, designations or employment types when it names any
+ * (`scope_json`). **Never deleted**: a holiday Clan stops sending, or one an
+ * owner removes, is stamped `removed_at`, and one that comes back is cleared.
  */
 export const orgHolidays = sqliteTable(
   'org_holidays',
@@ -1586,7 +1602,10 @@ export const orgHolidays = sqliteTable(
     label: text('label').notNull(),
     source: text('source', { enum: HOLIDAY_SOURCES }).notNull(),
     sourceRef: text('source_ref'),
-    /** `{"departments":[…],"designations":[…]}`, or null — everyone. */
+    /**
+     * `{"departments":[…],"designations":[…],"employment_types":[…]}`, each
+     * list only when the HR system named one; null is everyone it lists.
+     */
     scopeJson: text('scope_json'),
     /** Who typed a manual holiday; null for Clan's. */
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -1616,10 +1635,10 @@ export const orgHolidays = sqliteTable(
   ],
 );
 
-// --------------------------------------------------------------- leave_days
+// ---------------------------------------------------------- §4.91 leave_days
 
 /**
- * A day of leave from Clan (D-149 items 2 and 7, LAI-1181), one row per day as
+ * A day of leave from Clan (§4.91, D-149 items 2 and 7, LAI-1181), one row per day as
  * Clan keeps it, for a Laika person. Only `approved` and `pending` are kept;
  * **never** the reason, the balance, the approver or an attachment. A day
  * Clan stops sending, one that is rejected or cancelled, or one whose person

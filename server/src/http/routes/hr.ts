@@ -29,19 +29,29 @@ import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
  * `/hr*` is `org.hr.configure`, signed in; reading holidays is any member's
  * (`org.read`), typing or removing one is `org.time.set`. `/hr/connect*` and
  * `/hr/sync` spend their own rate-limit bucket (`hr:<who>`, 6 a minute) —
- * each is a call to Clan, and a person retrying a password must not be able
- * to make Laika hammer it.
+ * each calls Clan, and somebody retrying a password must not be able to make
+ * Laika hammer its sign-in.
  *
- * **The password is in one request body and nowhere else**: the body is
+ * **A password, a code or a token is in one request body and nowhere else**:
  * validated, handed to the service, and not logged — the request logger
  * records the path and the status only.
  */
 
-const ConnectBody = strictObject({
+/** Sign in with the dedicated account once (D-149 item 1). */
+const SignInBody = strictObject({
   base_url: z.string().trim().min(1).max(500),
   email: z.string().trim().min(3).max(320),
   password: z.string().min(1).max(500),
 });
+
+/** Or paste a token made for it. */
+const PasteBody = strictObject({
+  base_url: z.string().trim().min(1).max(500),
+  token: z.string().trim().min(8).max(2000),
+  expires_on: z.string().min(1).max(10).optional(),
+});
+
+const ConnectBody = z.union([SignInBody, PasteBody]);
 
 const VerifyBody = strictObject({
   method: z.string().trim().min(1).max(40),

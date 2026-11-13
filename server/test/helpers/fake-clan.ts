@@ -2,23 +2,32 @@
  * A fake Clan (D-149, LAI-1181), served through an injected `fetch` — **no
  * test makes a real call** to an HR system.
  *
- * It answers the calls `services/clan-client.ts` makes, the way the Clan API
- * documentation says Clan does: `POST /auth/login` and `/auth/two-factor`,
- * and `GET /employee`, `/holiday` and `/leave` as `{data, meta: {paging:
- * {total}}}`, paged by `limit` (at most 1000) and `offset`. A request without
- * the token it issued is `401`.
+ * It answers the calls `services/clan-client.ts` makes: `POST /auth/login`
+ * and `/auth/two-factor`, `GET /auth/me`, and `GET /employee`, `/holiday`
+ * and `/leave` as `{data, meta: {paging: {total}}}`, paged by `limit` (at
+ * most 1000) and `offset`. A request without the token is `401`; a path in
+ * `forbidden` is `403`, as for a role that may not read it. `total` can be
+ * made to lie, as a live Clan's did (LAI-1180's log: `total: 2` for 25 rows).
+ *
+ * With a second factor on, the login answers a **restricted** token that
+ * every read refuses `403` until the code is given, and the code's answer
+ * carries the token to keep — what LAI-1180's live login measured.
  *
  * `intercept` answers a request before the fake does — a `429`, a `500` on
  * the second page, a hang until the client gives up — and `hold` keeps every
- * read waiting until released, so a test can start a second sync while the
- * first is still reading.
+ * list read waiting until released, so a test can start a second sync while
+ * the first is still reading.
  */
 
 export const CLAN_BASE = 'https://kvell.clan.biz/api/v1';
-export const CLAN_EMAIL = 'laika-sync@kvelld.example';
+/** The HR account the fixture token belongs to, and its sign-in. */
+export const CLAN_ACCOUNT = 'Forge';
+export const CLAN_EMAIL = 'forge@kvelld.example';
 /** A fixture string, never a real credential. */
 export const CLAN_PASSWORD = 'fixture-password-Zq7-never-real';
-/** What the fake issues: Sanctum's `{id}|{plain}`. */
+/** What a login answers when a second factor is still owed. */
+export const CLAN_RESTRICTED_TOKEN = '41|fixtureRestrictedUntilTheCode0000RSTR';
+/** A fixture string, never a real credential: Sanctum's `{id}|{plain}`. */
 export const CLAN_TOKEN = '42|fixtureTokenPlainPart0123456789abcdWXYZ';
 
 export interface FakeRequest {
@@ -36,12 +45,12 @@ export interface FakeClanOptions {
   employees?: Record<string, unknown>[];
   holidays?: Record<string, unknown>[];
   leave?: Record<string, unknown>[];
-  /** Second-factor methods; set, and the login asks for a code. */
+  /** What `/auth/me` answers as `data`. */
+  me?: Record<string, unknown>;
+  /** Two-factor methods; set, and the login answers a restricted token and asks for a code. */
   twoFactorMethods?: string[];
   twoFactorCode?: string;
-  /** The token a second factor answers with, when Clan sends a new one. */
-  twoFactorToken?: string;
-  /** `data.expires`; a year from the fixtures' clock by default. */
+  /** `data.expires` of a login or a code. */
   expires?: string;
 }
 
@@ -51,8 +60,12 @@ export interface FakeClan {
   employees: Record<string, unknown>[];
   holidays: Record<string, unknown>[];
   leave: Record<string, unknown>[];
-  /** The token the next login issues, and that reads require. */
+  /** The token every read requires. */
   token: string;
+  /** Paths answered `403`, as for a role that may not read them. */
+  forbidden: Set<string>;
+  /** What `meta.paging.total` says: the true count, a fixed number, or nothing. */
+  total: 'rows' | number | 'absent';
   /** Answer a request before the fake does; return undefined to let it. */
   intercept: ((req: FakeRequest) => Intercepted) | null;
   /** Keep every `GET` waiting until the returned function is called. */
@@ -68,12 +81,18 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
   });
 }
 
-function page(rows: Record<string, unknown>[], query: URLSearchParams): Response {
+function page(
+  rows: Record<string, unknown>[],
+  query: URLSearchParams,
+  total: FakeClan['total'],
+): Response {
   const limit = Math.min(Number(query.get('limit') ?? '1000'), 1000);
   const offset = Number(query.get('offset') ?? '0');
+  const data = rows.slice(offset, offset + limit);
+  if (total === 'absent') return json(200, { data });
   return json(200, {
-    data: rows.slice(offset, offset + limit),
-    meta: { paging: { total: rows.length } },
+    data,
+    meta: { paging: { total: total === 'rows' ? rows.length : total } },
   });
 }
 
@@ -97,6 +116,8 @@ export function fakeClan(options: FakeClanOptions = {}): FakeClan {
     holidays: options.holidays ?? [],
     leave: options.leave ?? [],
     token: CLAN_TOKEN,
+    forbidden: new Set(),
+    total: 'rows',
     intercept: null,
     hold() {
       let release = () => undefined as void;
@@ -137,40 +158,46 @@ export function fakeClan(options: FakeClanOptions = {}): FakeClan {
       if (req.method === 'POST' && req.path === '/auth/login') {
         const sent = JSON.parse(req.body) as { email?: string; password?: string };
         if (sent.email !== CLAN_EMAIL || sent.password !== CLAN_PASSWORD) {
-          // Clan's own words, which Laika must never pass on.
-          return json(401, {
-            error: { code: 401, message: 'CLAN-SECRET-WORDS invalid credentials' },
-          });
+          return json(401, { error: { code: 401, message: 'CLAN-SECRET-WORDS bad credentials' } });
         }
+        const owed = options.twoFactorMethods !== undefined;
         return json(200, {
           data: {
-            token: fake.token,
+            token: owed ? CLAN_RESTRICTED_TOKEN : fake.token,
             expires: options.expires ?? '2027-11-13T12:00:00.000000Z',
-            two_factor_auth: {
-              enabled: options.twoFactorMethods !== undefined,
-              methods: options.twoFactorMethods ?? [],
-            },
+            two_factor_auth: { enabled: owed, methods: options.twoFactorMethods ?? [] },
           },
         });
       }
+      if (req.authorization === `Bearer ${CLAN_RESTRICTED_TOKEN}`) {
+        if (req.method === 'POST' && req.path === '/auth/two-factor') {
+          const sent = JSON.parse(req.body) as { method?: string; code?: string };
+          if (sent.code !== options.twoFactorCode) {
+            return json(422, { error: { code: 422, message: 'CLAN-SECRET-WORDS wrong code' } });
+          }
+          return json(200, {
+            data: { token: fake.token, expires: options.expires ?? '2027-11-13T12:00:00.000000Z' },
+          });
+        }
+        return json(403, { error: { code: 403, innererror: { code: 'TWO_FACTOR_REQUIRED' } } });
+      }
       if (req.authorization !== `Bearer ${fake.token}`) {
+        // Clan's own words, which Laika must never pass on.
         return json(401, { error: { code: 401, message: 'CLAN-SECRET-WORDS unauthenticated' } });
       }
-      if (req.method === 'POST' && req.path === '/auth/two-factor') {
-        const sent = JSON.parse(req.body) as { method?: string; code?: string };
-        if (sent.code !== options.twoFactorCode) {
-          return json(422, { error: { code: 422, message: 'CLAN-SECRET-WORDS wrong code' } });
-        }
-        if (options.twoFactorToken !== undefined) fake.token = options.twoFactorToken;
+      if (fake.forbidden.has(req.path)) {
+        return json(403, { error: { code: 403, message: 'CLAN-SECRET-WORDS forbidden' } });
+      }
+      if (req.method === 'GET' && req.path === '/auth/me') {
         return json(200, {
-          data: options.twoFactorToken === undefined ? {} : { token: options.twoFactorToken },
+          data: options.me ?? { id: 9, name: CLAN_ACCOUNT, email: 'forge@kvelld.example' },
         });
       }
       if (req.method === 'GET') {
         if (gate !== null) await gate;
-        if (req.path === '/employee') return page(fake.employees, req.query);
-        if (req.path === '/holiday') return page(fake.holidays, req.query);
-        if (req.path === '/leave') return page(fake.leave, req.query);
+        if (req.path === '/employee') return page(fake.employees, req.query, fake.total);
+        if (req.path === '/holiday') return page(fake.holidays, req.query, fake.total);
+        if (req.path === '/leave') return page(fake.leave, req.query, fake.total);
       }
       return json(404, { error: { code: 404 } });
     },
@@ -185,7 +212,17 @@ export function employee(
   email: string | null,
   detail: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return { id, name, email, employee_detail: { department_id: 3, designation_id: 7, ...detail } };
+  return {
+    id,
+    name,
+    email,
+    employee_detail: {
+      department_id: 3,
+      designation_id: 7,
+      employment_type: 'full_time',
+      ...detail,
+    },
+  };
 }
 
 /** A day of leave as Clan sends it: one row per day. */

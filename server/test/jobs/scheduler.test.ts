@@ -24,8 +24,8 @@ import { configureClaims, DEFAULT_CLAIM_TIMINGS } from '../../src/services/claim
 import { createTask, startWorking } from '../../src/services/tasks.ts';
 import { captureLog, type CapturedLog } from '../helpers/app.ts';
 import {
+  CLAN_ACCOUNT,
   CLAN_BASE,
-  CLAN_EMAIL,
   CLAN_TOKEN,
   employee,
   fakeClan,
@@ -333,9 +333,11 @@ describe('hr.sync (D-149, LAI-1181)', () => {
         provider: 'clan',
         status: 'connected',
         baseUrl: CLAN_BASE,
-        accountEmail: CLAN_EMAIL,
+        accountName: CLAN_ACCOUNT,
         tokenEnc: encryptSecret(CLAN_TOKEN, SECRET, 'clan_api_token'),
         tokenLast4: CLAN_TOKEN.slice(-4),
+        seesEveryone: 1,
+        seesDepartments: 1,
         connectedBy: seeded.userId,
         connectedAt: NOW,
         updatedAt: NOW,

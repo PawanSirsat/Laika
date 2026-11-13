@@ -14,6 +14,7 @@ import {
   signUp,
 } from '../../helpers/auth.ts';
 import {
+  CLAN_ACCOUNT,
   CLAN_BASE,
   CLAN_EMAIL,
   CLAN_PASSWORD,
@@ -113,10 +114,11 @@ async function errorOf(res: Response): Promise<ErrorBody['error']> {
   return ((await res.json()) as ErrorBody).error;
 }
 
-const LOGIN = { base_url: 'https://kvell.clan.biz', email: CLAN_EMAIL, password: CLAN_PASSWORD };
+const PASTE = { base_url: 'https://kvell.clan.biz', token: CLAN_TOKEN };
+const SIGN_IN = { base_url: 'https://kvell.clan.biz', email: CLAN_EMAIL, password: CLAN_PASSWORD };
 
 async function connect(): Promise<Response> {
-  const res = await call('POST', '/hr/connect', LOGIN);
+  const res = await call('POST', '/hr/connect', PASTE);
   expect(res.status, await res.clone().text()).toBe(200);
   await settle();
   return res;
@@ -137,7 +139,8 @@ describe('who may', () => {
     const member = await join('member@example.test', 'member');
     for (const [method, path, body] of [
       ['GET', '/hr', undefined],
-      ['POST', '/hr/connect', LOGIN],
+      ['POST', '/hr/connect', PASTE],
+      ['POST', '/hr/connect', SIGN_IN],
       ['POST', '/hr/connect/verify', { method: 'email', code: '1' }],
       ['DELETE', '/hr', undefined],
       ['POST', '/hr/sync', undefined],
@@ -158,7 +161,7 @@ describe('who may', () => {
     expect(minted.status, await minted.clone().text()).toBe(201);
     const { secret } = (await minted.json()) as { secret: string };
 
-    const res = await call('POST', '/hr/connect', LOGIN, { Authorization: `Bearer ${secret}` });
+    const res = await call('POST', '/hr/connect', PASTE, { Authorization: `Bearer ${secret}` });
     expect(res.status).toBe(403);
     expect((await errorOf(res)).details).toEqual({
       action: 'org.hr.configure',
@@ -169,19 +172,20 @@ describe('who may', () => {
 });
 
 describe('connecting', () => {
-  it('connects, syncs, and never answers or logs the password or the token', async () => {
+  it('connects, syncs, and never answers or logs the token', async () => {
     const res = await connect();
     const text = await res.text();
 
     // A positive control: what is meant to be shown, is.
     expect(text).toContain(CLAN_TOKEN.slice(-4));
+    expect(text).toContain(CLAN_ACCOUNT);
     expect(text).toContain(CLAN_BASE);
     expect(text).not.toContain(CLAN_TOKEN);
-    expect(text).not.toContain(CLAN_PASSWORD);
 
     const read = await (await call('GET', '/hr')).text();
     expect(JSON.parse(read)).toMatchObject({
       status: 'connected',
+      account_name: CLAN_ACCOUNT,
       token_last4: CLAN_TOKEN.slice(-4),
       last_result: { people: 1, matched: 1, leave_days: 1, holidays: 1 },
     });
@@ -190,11 +194,65 @@ describe('connecting', () => {
     const log = JSON.stringify(h.log.records);
     expect(log).toContain('/api/v1/org/hr/connect');
     expect(log).not.toContain(CLAN_TOKEN);
+  });
+
+  it('answers a refused token 422 clan_token_refused, without Clan’s words', async () => {
+    const res = await call('POST', '/hr/connect', { ...PASTE, token: 'not-the-token-at-all' });
+    expect(res.status).toBe(422);
+    const text = await res.text();
+    expect(JSON.parse(text)).toMatchObject({
+      error: { code: 'unprocessable', details: { reason: 'clan_token_refused' } },
+    });
+    expect(text).not.toContain('CLAN-SECRET-WORDS');
+  });
+
+  it('answers an unreachable Clan as unavailable, clan_unreachable', async () => {
+    fake.intercept = () => 'hang';
+    const res = await call('POST', '/hr/connect', PASTE);
+    expect(res.status).toBe(503);
+    expect((await errorOf(res)).details).toMatchObject({ reason: 'clan_unreachable' });
+  });
+
+  it('answers a non-https address, a bad date, and a body that is neither way 422', async () => {
+    const http = await call('POST', '/hr/connect', { ...PASTE, base_url: 'http://kvell.clan.biz' });
+    expect(http.status).toBe(422);
+    expect((await errorOf(http)).details).toEqual({
+      field: 'base_url',
+      reason: 'base_url_not_https',
+    });
+
+    const date = await call('POST', '/hr/connect', { ...PASTE, expires_on: 'next year' });
+    expect(date.status).toBe(422);
+
+    // A sign-in and a token at once is neither body, and neither is a field
+    // Laika does not take.
+    const both = await call('POST', '/hr/connect', { ...SIGN_IN, token: CLAN_TOKEN });
+    expect(both.status).toBe(422);
+    const extra = await call('POST', '/hr/connect', { ...PASTE, remember: true });
+    expect(extra.status).toBe(422);
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('signs in with the account, never answering or logging the password', async () => {
+    const res = await call('POST', '/hr/connect', SIGN_IN);
+    expect(res.status, await res.clone().text()).toBe(200);
+    await settle();
+    const text = await res.text();
+    expect(JSON.parse(text)).toMatchObject({
+      status: 'connected',
+      account_name: CLAN_ACCOUNT,
+      account_email: CLAN_EMAIL,
+    });
+    expect(text).not.toContain(CLAN_PASSWORD);
+    expect(text).not.toContain(CLAN_TOKEN);
+    const log = JSON.stringify(h.log.records);
+    expect(log).toContain('/api/v1/org/hr/connect');
     expect(log).not.toContain(CLAN_PASSWORD);
+    expect(log).not.toContain(CLAN_TOKEN);
   });
 
   it('answers a wrong password 422 clan_login_failed, without Clan’s words', async () => {
-    const res = await call('POST', '/hr/connect', { ...LOGIN, password: 'wrong' });
+    const res = await call('POST', '/hr/connect', { ...SIGN_IN, password: 'wrong' });
     expect(res.status).toBe(422);
     const text = await res.text();
     expect(JSON.parse(text)).toMatchObject({
@@ -203,36 +261,19 @@ describe('connecting', () => {
     expect(text).not.toContain('CLAN-SECRET-WORDS');
   });
 
-  it('answers an unreachable Clan as unavailable, clan_unreachable', async () => {
-    fake.intercept = () => 'hang';
-    const res = await call('POST', '/hr/connect', LOGIN);
-    expect(res.status).toBe(503);
-    expect((await errorOf(res)).details).toMatchObject({ reason: 'clan_unreachable' });
-  });
-
-  it('answers a non-https address 422, and a field it does not know 422', async () => {
-    const http = await call('POST', '/hr/connect', { ...LOGIN, base_url: 'http://kvell.clan.biz' });
-    expect(http.status).toBe(422);
-    expect((await errorOf(http)).details).toEqual({
-      field: 'base_url',
-      reason: 'base_url_not_https',
-    });
-
-    const extra = await call('POST', '/hr/connect', { ...LOGIN, remember: true });
-    expect(extra.status).toBe(422);
-    expect(fake.requests).toEqual([]);
-  });
-
-  it('waits for a second factor, then connects', async () => {
-    fake = fakeClan({ twoFactorMethods: ['email'], twoFactorCode: '123456' });
-    const pending = await call('POST', '/hr/connect', LOGIN);
+  it('waits for a two-factor code, then connects', async () => {
+    fake = fakeClan({ twoFactorMethods: ['google_authenticator'], twoFactorCode: '123456' });
+    const pending = await call('POST', '/hr/connect', SIGN_IN);
     expect(pending.status).toBe(200);
     expect(await pending.json()).toMatchObject({
       status: 'pending_2fa',
-      two_factor: { methods: ['email'] },
+      two_factor: { methods: ['google_authenticator'] },
     });
 
-    const done = await call('POST', '/hr/connect/verify', { method: 'email', code: '123456' });
+    const done = await call('POST', '/hr/connect/verify', {
+      method: 'google_authenticator',
+      code: '123456',
+    });
     expect(done.status, await done.clone().text()).toBe(200);
     expect(await done.json()).toMatchObject({ status: 'connected', two_factor: null });
   });
@@ -293,9 +334,9 @@ describe('sync now and the people map', () => {
       key: 'hr:u1',
       policy: LIMITS.hr,
     });
-    expect(
-      classify('/api/v1/org/hr/connect/verify', { userId: 'u1', tokenId: null }, 'POST').key,
-    ).toBe('hr:u1');
+    for (const path of ['/api/v1/org/hr/connect', '/api/v1/org/hr/connect/verify']) {
+      expect(classify(path, { userId: 'u1', tokenId: null }, 'POST').key, path).toBe('hr:u1');
+    }
     // Reading the connection is an ordinary read.
     expect(classify('/api/v1/org/hr', { userId: 'u1', tokenId: null }, 'GET').key).toBe(
       'session:u1',

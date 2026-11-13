@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fa41f023-eee3-49a9-b1f2-63b8f184fbc6",
+  "id": "28ba5429-33c1-4f34-9d19-3f88bca165b8",
   "prevId": "ee447db1-2fc6-485c-a69b-01c2fd403c94",
   "tables": {
     "accounts": {
@@ -3150,6 +3150,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "employment_type": {
+          "name": "employment_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "matched_by": {
           "name": "matched_by",
           "type": "text",
@@ -4201,11 +4208,18 @@
           "notNull": true,
           "autoincrement": false
         },
+        "account_name": {
+          "name": "account_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "account_email": {
           "name": "account_email",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "token_enc": {
@@ -4236,11 +4250,25 @@
           "notNull": false,
           "autoincrement": false
         },
+        "sees_everyone": {
+          "name": "sees_everyone",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sees_departments": {
+          "name": "sees_departments",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "connected_by": {
           "name": "connected_by",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "connected_at": {
@@ -4316,7 +4344,7 @@
           "tableTo": "users",
           "columnsFrom": ["connected_by"],
           "columnsTo": ["id"],
-          "onDelete": "no action",
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -4331,13 +4359,21 @@
           "name": "org_hr_source_status_check",
           "value": "status IN ('pending_2fa', 'connected')"
         },
+        "org_hr_source_pending_check": {
+          "name": "org_hr_source_pending_check",
+          "value": "(status = 'pending_2fa') = (pending_expires_at IS NOT NULL)"
+        },
         "org_hr_source_last_error_code_check": {
           "name": "org_hr_source_last_error_code_check",
           "value": "last_error_code IS NULL OR last_error_code IN ('token_rejected', 'unreachable', 'bad_answer')"
         },
-        "org_hr_source_pending_check": {
-          "name": "org_hr_source_pending_check",
-          "value": "(status = 'pending_2fa') = (pending_expires_at IS NOT NULL)"
+        "org_hr_source_sees_check": {
+          "name": "org_hr_source_sees_check",
+          "value": "sees_everyone IN (0, 1) AND sees_departments IN (0, 1)"
+        },
+        "org_hr_source_account_name_check": {
+          "name": "org_hr_source_account_name_check",
+          "value": "length(account_name) BETWEEN 1 AND 200"
         }
       }
     },

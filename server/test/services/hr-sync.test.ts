@@ -11,8 +11,8 @@ import {
 } from '../../src/services/hr-sync.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 import {
+  CLAN_ACCOUNT,
   CLAN_BASE,
-  CLAN_EMAIL,
   CLAN_TOKEN,
   employee,
   fakeClan,
@@ -61,11 +61,12 @@ function connect(token = CLAN_TOKEN): void {
       provider: 'clan',
       status: 'connected',
       baseUrl: CLAN_BASE,
-      accountEmail: CLAN_EMAIL,
+      accountName: CLAN_ACCOUNT,
       tokenEnc: encryptSecret(token, SECRET, 'clan_api_token'),
       tokenLast4: token.slice(-4),
       tokenExpiresAt: null,
-      pendingExpiresAt: null,
+      seesEveryone: 0,
+      seesDepartments: 0,
       connectedBy: s.userId,
       connectedAt: NOW,
       updatedAt: NOW,
@@ -138,7 +139,7 @@ describe('nothing to sync', () => {
     expect(fake.requests).toEqual([]);
   });
 
-  it('does not sync a sign-in still waiting for its second factor', async () => {
+  it('does not sync a sign-in still waiting for its two-factor code', async () => {
     connect();
     t.db
       .update(orgHrSource)
@@ -177,7 +178,12 @@ describe('people', () => {
       // Deactivated on Laika: never matched.
       '4': [null, 'none', 'Cid Cole'],
     });
-    expect(rows[0]).toMatchObject({ departmentRef: '3', designationRef: '7', seenAt: NOW });
+    expect(rows[0]).toMatchObject({
+      departmentRef: '3',
+      designationRef: '7',
+      employmentType: 'full_time',
+      seenAt: NOW,
+    });
   });
 
   it('counts a person with no Laika match, and stores none of their leave', async () => {
@@ -379,17 +385,30 @@ describe('leave', () => {
 });
 
 describe('holidays', () => {
-  it('keeps a holiday for everyone and one scoped to departments', async () => {
+  it('keeps a holiday for everyone Clan lists, and scoped ones with only the lists named', async () => {
     connect();
     const fake = fakeClan({
       holidays: [
         { id: 10, date: '2026-09-24', occassion: 'Heritage Day' },
-        { id: 11, date: '2026-08-15', occasion: 'Independence Day', department_ids: [5, 4] },
+        {
+          id: 11,
+          date: '2026-08-15T00:00:00.000000Z',
+          occassion: 'Independence Day',
+          department_id_json: '[5,4]',
+          designation_id_json: null,
+          employment_type_json: null,
+        },
+        {
+          id: 12,
+          date: '2026-10-02',
+          occassion: 'Gandhi Jayanti',
+          employment_type_json: '["full_time","part_time"]',
+        },
       ],
     });
     const result = await synced(fake);
 
-    expect(result).toMatchObject({ holidays: 2, created: 2 });
+    expect(result).toMatchObject({ holidays: 3, created: 3 });
     expect(holidayOf('10')).toMatchObject({
       day: '2026-09-24',
       label: 'Heritage Day',
@@ -398,9 +417,9 @@ describe('holidays', () => {
       createdBy: null,
       removedAt: null,
     });
-    expect(JSON.parse(holidayOf('11')?.scopeJson ?? 'null')).toEqual({
-      departments: ['4', '5'],
-      designations: [],
+    expect(JSON.parse(holidayOf('11')?.scopeJson ?? 'null')).toEqual({ departments: ['4', '5'] });
+    expect(JSON.parse(holidayOf('12')?.scopeJson ?? 'null')).toEqual({
+      employment_types: ['full_time', 'part_time'],
     });
   });
 
@@ -443,6 +462,22 @@ describe('holidays', () => {
 });
 
 describe('the record on the connection', () => {
+  it('says again what the token reads, as each complete read found it', async () => {
+    connect();
+    const fake = fakeClan({
+      employees: staff(),
+      leave: [leaveRow(100, 1, '2026-11-20'), leaveRow(101, 2, '2026-11-20')],
+    });
+    await synced(fake);
+    expect(source()).toMatchObject({ seesEveryone: 1, seesDepartments: 1 });
+
+    // The account's role was narrowed: one person's leave, no departments.
+    fake.employees = [employee(1, 'Ada Lovelace', 'ada@example.test', { department_id: null })];
+    fake.leave = [leaveRow(100, 1, '2026-11-20')];
+    await synced(fake, NOW + 1_000);
+    expect(source()).toMatchObject({ seesEveryone: 0, seesDepartments: 0 });
+  });
+
   it('writes the counts, the time, and clears the last error', async () => {
     connect();
     t.db
@@ -524,7 +559,7 @@ describe('the record on the connection', () => {
 });
 
 describe('an incomplete read changes nothing', () => {
-  it('removes nothing and writes nothing when a later page of leave is short', async () => {
+  it('removes nothing and writes nothing when a later page of leave cannot be read', async () => {
     connect();
     const many = Array.from({ length: 1_500 }, (_, i) => leaveRow(1_000 + i, 1, '2026-11-20'));
     const fake = fakeClan({ employees: staff(), leave: many });
@@ -532,12 +567,10 @@ describe('an incomplete read changes nothing', () => {
     expect(t.db.select().from(leaveDays).all()).toHaveLength(1_500);
     const before = source();
 
-    // The second page comes back empty: a read of 1000 out of 1500.
+    // The second page is not a list: a read of 1000 out of 1500.
     fake.intercept = (req) =>
       req.path === '/leave' && req.query.get('offset') === '1000'
-        ? new Response(JSON.stringify({ data: [], meta: { paging: { total: 1_500 } } }), {
-            status: 200,
-          })
+        ? new Response(JSON.stringify({ data: 'not a list' }), { status: 200 })
         : undefined;
     expect(await sync(fake, NOW + 1_000)).toEqual({ kind: 'failed', code: 'bad_answer' });
 

@@ -4,6 +4,7 @@ CREATE TABLE `hr_people` (
 	`name` text NOT NULL,
 	`department_ref` text,
 	`designation_ref` text,
+	`employment_type` text,
 	`matched_by` text NOT NULL,
 	`seen_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
@@ -62,12 +63,15 @@ CREATE TABLE `org_hr_source` (
 	`provider` text NOT NULL,
 	`status` text NOT NULL,
 	`base_url` text NOT NULL,
-	`account_email` text NOT NULL,
+	`account_name` text NOT NULL,
+	`account_email` text,
 	`token_enc` text NOT NULL,
 	`token_last4` text NOT NULL,
 	`token_expires_at` integer,
 	`pending_expires_at` integer,
-	`connected_by` text NOT NULL,
+	`sees_everyone` integer NOT NULL,
+	`sees_departments` integer NOT NULL,
+	`connected_by` text,
 	`connected_at` integer NOT NULL,
 	`last_attempt_at` integer,
 	`last_success_at` integer,
@@ -76,11 +80,13 @@ CREATE TABLE `org_hr_source` (
 	`last_result_json` text,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`org_id`) REFERENCES `orgs`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`connected_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`connected_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "org_hr_source_provider_check" CHECK(provider IN ('clan')),
 	CONSTRAINT "org_hr_source_status_check" CHECK(status IN ('pending_2fa', 'connected')),
+	CONSTRAINT "org_hr_source_pending_check" CHECK((status = 'pending_2fa') = (pending_expires_at IS NOT NULL)),
 	CONSTRAINT "org_hr_source_last_error_code_check" CHECK(last_error_code IS NULL OR last_error_code IN ('token_rejected', 'unreachable', 'bad_answer')),
-	CONSTRAINT "org_hr_source_pending_check" CHECK((status = 'pending_2fa') = (pending_expires_at IS NOT NULL))
+	CONSTRAINT "org_hr_source_sees_check" CHECK(sees_everyone IN (0, 1) AND sees_departments IN (0, 1)),
+	CONSTRAINT "org_hr_source_account_name_check" CHECK(length(account_name) BETWEEN 1 AND 200)
 );
 --> statement-breakpoint
 CREATE INDEX `org_hr_source_connected_by_idx` ON `org_hr_source` (`connected_by`);
