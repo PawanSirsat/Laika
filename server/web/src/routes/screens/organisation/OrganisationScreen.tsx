@@ -29,7 +29,7 @@ import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
-import { HrSourceFact } from './HrSourceFact.tsx';
+import { HrSourceSection } from './HrSourceSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
@@ -499,12 +499,9 @@ export function OrganisationScreen({
                       everyone else, and absent when there are none. */}
                   <BreakScheduleFact canManage={canSetTime} />
 
-                  {/* D-149 (LAI-1182): the HR system holidays and leave come
-                      from — its holder's alone — and the holidays everyone
-                      reads, added to by whoever sets Time. */}
-                  {canConfigureHr && (
-                    <HrSourceFact members={state.people.filter((p) => p.is_active)} />
-                  )}
+                  {/* D-149 (LAI-1182): the holidays everyone reads, added to
+                      by whoever sets Time. The HR system they sync from is on
+                      Integrations. */}
                   <HolidaysFact canManage={canSetTime} />
                 </dl>
               </section>
@@ -625,6 +622,12 @@ export function OrganisationScreen({
                   );
                 }}
               />
+            )}
+
+            {/* D-149 (LAI-1182): the HR system holidays and leave come from,
+                beside the other connection GitHub is — its holder's alone. */}
+            {canConfigureHr && (
+              <HrSourceSection members={state.people.filter((p) => p.is_active)} />
             )}
 
             {/* LAI-773: the prices every cost on Usage is computed with — read by

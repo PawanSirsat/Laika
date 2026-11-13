@@ -50,10 +50,13 @@ const OFF = {
   status: 'off',
   provider: null,
   base_url: null,
+  account_name: null,
   account_email: null,
   token_last4: null,
   token_expires_at: null,
   expiring_soon: false,
+  sees_everyone: null,
+  sees_departments: null,
   sync_every_minutes: 30,
   last_attempt_at: null,
   last_success_at: null,
@@ -100,9 +103,12 @@ const connected = (patch: Record<string, unknown> = {}) => ({
   ...OFF,
   status: 'connected',
   provider: 'clan',
-  base_url: 'https://acme.clan.biz/api/v1',
-  account_email: 'hr@acme.test',
+  base_url: 'https://codesage.clan.biz/api/v1',
+  account_name: 'Forge',
+  account_email: 'forge@codesage.test',
   token_last4: 'a1b2',
+  sees_everyone: true,
+  sees_departments: true,
   token_expires_at: Date.now() + 200 * DAY,
   last_attempt_at: ago(4),
   last_success_at: ago(4),
@@ -167,6 +173,7 @@ function orgStub(role: string, extra: ApiStub = {}): ApiStub {
     },
     '/api/v1/permissions': permissionsFor(role),
     '/api/v1/org/holidays': { holidays: HOLIDAYS },
+    '/api/v1/org/model-prices': { as_of: '2026-10-18', can_set: false, entries: [] },
     ...extra,
   };
 }
@@ -193,18 +200,26 @@ const refused = (status: number, code: string, reason: string) =>
     error: { code, message: 'Clan said: invalid credentials for user', details: { reason } },
   });
 
+/** Overview, where the Holidays fact is. */
 async function organisation(stub: ApiStub, ready = '[data-fact="holidays"]'): Promise<Harness> {
   const h = await openPage('/organisation', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }
 
-const hrFact = (h: Harness) => h.page.locator('[data-fact="hr"]');
+/** Integrations, where the HR system card is, beside the GitHub webhook. */
+async function integrations(stub: ApiStub, ready = '[data-section="hr"]'): Promise<Harness> {
+  const h = await openPage('/organisation?tab=integrations', stub);
+  await h.page.locator(ready).waitFor({ timeout: 20_000 });
+  return h;
+}
+
+const hrCard = (h: Harness) => h.page.locator('[data-section="hr"]');
 
 async function fillConnect(h: Harness, url: string): Promise<void> {
-  const form = hrFact(h).getByRole('form', { name: 'Connect Clan' });
+  const form = hrCard(h).getByRole('form', { name: 'Connect Clan' });
   await form.getByLabel('Company URL').fill(url);
-  await form.getByLabel('Email').fill('hr@acme.test');
+  await form.getByLabel('Email').fill('forge@codesage.test');
   await form.locator('input[type="password"]').fill(SECRET);
   await form.getByRole('button', { name: 'Connect', exact: true }).click();
 }
@@ -217,7 +232,7 @@ void describe('HR system: connecting Clan', () => {
   void test('off → connect → connected; the password is sent once and shown never', async () => {
     const posts: StubCall[] = [];
     const hr = hrState(OFF);
-    const h = await organisation(
+    const h = await integrations(
       orgStub('owner', {
         '/api/v1/org/hr': hr.route,
         '/api/v1/org/hr/connect': (call: StubCall) => {
@@ -226,10 +241,10 @@ void describe('HR system: connecting Clan', () => {
           return connected({ last_attempt_at: null, last_success_at: null, last_result: null });
         },
       }),
-      '[data-fact="hr"]',
+      '[data-section="hr"]',
     );
     try {
-      const fact = hrFact(h);
+      const fact = hrCard(h);
       assert.equal(await fact.getAttribute('data-hr-status'), 'off');
       assert.equal(
         await fact.locator('[data-hr-lead]').innerText(),
@@ -240,19 +255,19 @@ void describe('HR system: connecting Clan', () => {
       await form.waitFor();
       assert.equal(
         await form.getByLabel('Company URL').getAttribute('placeholder'),
-        'https://yourcompany.clan.biz',
+        'https://codesage.clan.biz',
       );
       const password = form.locator('input[type="password"]');
       assert.equal(await password.inputValue(), '', 'the password field is never pre-filled');
       assert.equal(await password.getAttribute('autocomplete'), 'new-password');
 
-      await fillConnect(h, 'https://acme.clan.biz');
+      await fillConnect(h, 'https://codesage.clan.biz');
       await until(() => posts.length === 1);
       assert.equal(posts.length, 1);
       assert.equal(posts[0]?.method, 'POST');
       assert.deepEqual(posts[0]?.body, {
-        base_url: 'https://acme.clan.biz',
-        email: 'hr@acme.test',
+        base_url: 'https://codesage.clan.biz',
+        email: 'forge@codesage.test',
         password: SECRET,
       });
 
@@ -260,7 +275,7 @@ void describe('HR system: connecting Clan', () => {
       assert.equal(await fact.getAttribute('data-hr-status'), 'connected');
       assert.match(
         await fact.locator('[data-hr-connected]').innerText(),
-        /^Connected as hr@acme\.test · token …a1b2, renews by \d{1,2} [A-Z][a-z]{2} \d{4}$/,
+        /^Connected as Forge \(forge@codesage\.test\) · token …a1b2, renews by \d{1,2} [A-Z][a-z]{2} \d{4}$/,
       );
       assert.equal(await fact.locator('[data-hr-connected]').getAttribute('data-tone'), null);
       assert.match(await fact.innerText(), /No sync has finished yet\./);
@@ -277,11 +292,11 @@ void describe('HR system: connecting Clan', () => {
       ...OFF,
       status: 'pending_2fa',
       provider: 'clan',
-      base_url: 'https://acme.clan.biz/api/v1',
-      account_email: 'hr@acme.test',
+      base_url: 'https://codesage.clan.biz/api/v1',
+      account_email: 'forge@codesage.test',
       two_factor: { methods: ['email', 'google_authenticator'] },
     };
-    const h = await organisation(
+    const h = await integrations(
       orgStub('admin', {
         '/api/v1/org/hr': OFF,
         '/api/v1/org/hr/connect': pending,
@@ -290,12 +305,12 @@ void describe('HR system: connecting Clan', () => {
           return connected();
         },
       }),
-      '[data-fact="hr"]',
+      '[data-section="hr"]',
     );
     try {
-      const fact = hrFact(h);
+      const fact = hrCard(h);
       await fact.getByRole('button', { name: 'Connect Clan' }).click();
-      await fillConnect(h, 'https://acme.clan.biz');
+      await fillConnect(h, 'https://codesage.clan.biz');
       const codeForm = fact.getByRole('form', { name: 'Clan sign-in code' });
       await codeForm.waitFor({ timeout: 5_000 });
       assert.match(
@@ -318,7 +333,7 @@ void describe('HR system: connecting Clan', () => {
       assert.equal(await fact.getAttribute('data-hr-status'), 'connected');
       assert.match(
         await fact.locator('[data-hr-connected]').innerText(),
-        /^Connected as hr@acme\.test/,
+        /^Connected as Forge \(forge@codesage\.test\)/,
       );
     } finally {
       await h.close();
@@ -326,7 +341,7 @@ void describe('HR system: connecting Clan', () => {
   });
 
   void test('an expired code says so and goes back to the connect form, password empty', async () => {
-    const h = await organisation(
+    const h = await integrations(
       orgStub('owner', {
         '/api/v1/org/hr': OFF,
         '/api/v1/org/hr/connect': {
@@ -336,12 +351,12 @@ void describe('HR system: connecting Clan', () => {
         },
         '/api/v1/org/hr/connect/verify': refused(409, 'conflict', 'two_factor_expired'),
       }),
-      '[data-fact="hr"]',
+      '[data-section="hr"]',
     );
     try {
-      const fact = hrFact(h);
+      const fact = hrCard(h);
       await fact.getByRole('button', { name: 'Connect Clan' }).click();
-      await fillConnect(h, 'https://acme.clan.biz');
+      await fillConnect(h, 'https://codesage.clan.biz');
       const codeForm = fact.getByRole('form', { name: 'Clan sign-in code' });
       await codeForm.waitFor({ timeout: 5_000 });
       // One method: no choice to make.
@@ -371,7 +386,7 @@ void describe('HR system: connecting Clan', () => {
       ],
     ] as const) {
       const posts: StubCall[] = [];
-      const h = await organisation(
+      const h = await integrations(
         orgStub('owner', {
           '/api/v1/org/hr': OFF,
           '/api/v1/org/hr/connect': (call: StubCall) => {
@@ -379,12 +394,12 @@ void describe('HR system: connecting Clan', () => {
             return answer;
           },
         }),
-        '[data-fact="hr"]',
+        '[data-section="hr"]',
       );
       try {
-        const fact = hrFact(h);
+        const fact = hrCard(h);
         await fact.getByRole('button', { name: 'Connect Clan' }).click();
-        await fillConnect(h, 'https://acme.clan.biz');
+        await fillConnect(h, 'https://codesage.clan.biz');
         const alert = fact.locator('[role="alert"]');
         await alert.waitFor({ timeout: 5_000 });
         assert.equal(await alert.innerText(), words);
@@ -392,7 +407,10 @@ void describe('HR system: connecting Clan', () => {
         const form = fact.getByRole('form', { name: 'Connect Clan' });
         assert.equal(await form.locator('input[type="password"]').inputValue(), '');
         // What was typed otherwise stays, to correct.
-        assert.equal(await form.getByLabel('Company URL').inputValue(), 'https://acme.clan.biz');
+        assert.equal(
+          await form.getByLabel('Company URL').inputValue(),
+          'https://codesage.clan.biz',
+        );
         assert.equal(posts.length, 1);
       } finally {
         await h.close();
@@ -402,7 +420,7 @@ void describe('HR system: connecting Clan', () => {
 
   void test('an address that is not https is refused before anything is sent', async () => {
     const posts: StubCall[] = [];
-    const h = await organisation(
+    const h = await integrations(
       orgStub('owner', {
         '/api/v1/org/hr': OFF,
         '/api/v1/org/hr/connect': (call: StubCall) => {
@@ -410,12 +428,12 @@ void describe('HR system: connecting Clan', () => {
           return connected();
         },
       }),
-      '[data-fact="hr"]',
+      '[data-section="hr"]',
     );
     try {
-      const fact = hrFact(h);
+      const fact = hrCard(h);
       await fact.getByRole('button', { name: 'Connect Clan' }).click();
-      await fillConnect(h, 'http://acme.clan.biz');
+      await fillConnect(h, 'http://codesage.clan.biz');
       await until(async () => (await fact.innerText()).includes('https:// address'));
       assert.match(await fact.innerText(), /Use the https:\/\/ address you sign in to Clan at\./);
       assert.equal(posts.length, 0);
@@ -432,7 +450,7 @@ void describe('HR system: connected', () => {
       ['unreachable', 'Laika could not reach Clan'],
       ['bad_answer', 'Clan answered with something Laika could not read'],
     ] as const) {
-      const h = await organisation(
+      const h = await integrations(
         orgStub('owner', {
           '/api/v1/org/hr': connected({
             expiring_soon: true,
@@ -445,7 +463,7 @@ void describe('HR system: connected', () => {
         '[data-hr-sync]',
       );
       try {
-        const fact = hrFact(h);
+        const fact = hrCard(h);
         const sync = fact.locator('[data-hr-sync]');
         assert.match(await sync.innerText(), new RegExp(`Last sync 4 min ago failed: ${words}\\.`));
         assert.match(
@@ -477,13 +495,55 @@ void describe('HR system: connected', () => {
     }
   });
 
+  void test('what the token can see: each warning only when the check found it cannot', async () => {
+    for (const [sees_everyone, sees_departments, shown] of [
+      [false, true, ['sees-everyone']],
+      [true, false, ['sees-departments']],
+      [false, false, ['sees-everyone', 'sees-departments']],
+      [true, true, []],
+      [null, null, []],
+    ] as const) {
+      const h = await integrations(
+        orgStub('owner', {
+          '/api/v1/org/hr': connected({ sees_everyone, sees_departments }),
+        }),
+        '[data-hr-sync]',
+      );
+      try {
+        const card = hrCard(h);
+        assert.deepEqual(
+          await card
+            .locator('[data-hr-warning]')
+            .evaluateAll((els) => els.map((el) => el.getAttribute('data-hr-warning'))),
+          shown,
+          `sees_everyone ${String(sees_everyone)}, sees_departments ${String(sees_departments)}`,
+        );
+        if ((shown as readonly string[]).includes('sees-everyone')) {
+          assert.equal(
+            await card.locator('[data-hr-warning="sees-everyone"]').innerText(),
+            'This token can only see one person’s leave — it needs an HR or admin role in Clan.',
+          );
+        }
+        if ((shown as readonly string[]).includes('sees-departments')) {
+          assert.equal(
+            await card.locator('[data-hr-warning="sees-departments"]').innerText(),
+            'People’s departments are hidden from this token, so holidays meant for some departments can’t be matched.',
+          );
+        }
+        assert.equal(await card.locator('.org-count').innerText(), 'connected');
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
   void test('Sync now posts once, spins without changing its label, and shows the new counts', async () => {
     const syncs: StubCall[] = [];
     let release = (): void => undefined;
     const held = new Promise<void>((done) => {
       release = done;
     });
-    const h = await organisation(
+    const h = await integrations(
       orgStub('owner', {
         '/api/v1/org/hr': connected(),
         '/api/v1/org/hr/sync': (call: StubCall) => {
@@ -500,7 +560,7 @@ void describe('HR system: connected', () => {
       '[data-hr-sync]',
     );
     try {
-      const fact = hrFact(h);
+      const fact = hrCard(h);
       assert.match(
         await fact.locator('[data-hr-counts]').innerText(),
         /^Last sync 4 min ago: 12 holidays · 340 leave days · 2 of 4 people matched\.$/,
@@ -527,12 +587,12 @@ void describe('HR system: connected', () => {
 
   void test('Disconnect confirms that synced days stay, then forgets the connection', async () => {
     const hr = hrState(connected());
-    const h = await organisation(
+    const h = await integrations(
       orgStub('owner', { '/api/v1/org/hr': hr.route }),
       '[data-hr-sync]',
     );
     try {
-      const fact = hrFact(h);
+      const fact = hrCard(h);
       await fact.getByRole('button', { name: 'Disconnect' }).click();
       const dialog = h.page.getByRole('alertdialog');
       await dialog.waitFor();
@@ -553,7 +613,7 @@ void describe('HR system: connected', () => {
 
   void test('people: the matched count, and a picker for the unmatched and the owner-mapped', async () => {
     const puts: StubCall[] = [];
-    const h = await organisation(
+    const h = await integrations(
       orgStub('owner', {
         '/api/v1/org/hr': connected(),
         '/api/v1/org/hr/people': (call: StubCall) => {
@@ -571,7 +631,7 @@ void describe('HR system: connected', () => {
       '[data-hr-people]',
     );
     try {
-      const people = hrFact(h).locator('[data-hr-people]');
+      const people = hrCard(h).locator('[data-hr-people]');
       assert.match(await people.innerText(), /People: 2 of 4 matched/);
       const rows = people.locator('[data-hr-person]');
       assert.deepEqual(
@@ -642,12 +702,23 @@ void describe('Holidays', () => {
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-holiday'))),
         ['h1', 'h2', 'h3'],
       );
-      const heritage = fact.locator('[data-holiday="h2"]');
-      assert.match(await heritage.innerText(), /Heritage Day/);
-      assert.equal(await heritage.locator('[data-holiday-tag="clan"]').innerText(), 'Clan');
-      assert.equal(await heritage.locator('[data-holiday-tag="some"]').innerText(), 'Some people');
-      assert.equal(await fact.locator('[data-holiday="h1"] [data-holiday-tag="some"]').count(), 0);
-      assert.equal(await fact.locator('[data-holiday="h3"] [data-holiday-tag]').count(), 0);
+      // Whom each covers: Clan's only ever the people Clan lists; one added here, everyone.
+      const tags = (id: string) =>
+        fact
+          .locator(`[data-holiday="${id}"] [data-holiday-tag]`)
+          .evaluateAll((els) =>
+            els.map((el) => [el.getAttribute('data-holiday-tag'), el.textContent]),
+          );
+      assert.match(await fact.locator('[data-holiday="h2"]').innerText(), /Heritage Day/);
+      assert.deepEqual(await tags('h1'), [
+        ['clan', 'Clan'],
+        ['clan-staff', 'Clan staff'],
+      ]);
+      assert.deepEqual(await tags('h2'), [
+        ['clan', 'Clan'],
+        ['some', 'Some people'],
+      ]);
+      assert.deepEqual(await tags('h3'), [['everyone', 'Everyone']]);
       assert.equal(await fact.getByRole('button').count(), 0, 'a member changes nothing');
       assert.equal(await fact.locator('input').count(), 0);
       // The window asked for: 1 Jan this year to 31 Dec next.
@@ -659,8 +730,20 @@ void describe('Holidays', () => {
         ),
         `asked ${h.requests.map((r) => r.url).join(', ')}`,
       );
-      // No HR system for a member: not drawn, and never asked.
-      assert.equal(await h.page.locator('[data-fact="hr"]').count(), 0);
+      // The HR system is not on Overview for anyone.
+      assert.equal(await h.page.locator('[data-section="hr"]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member on Integrations is shown no HR system, and it is never asked', async () => {
+    const h = await integrations(
+      orgStub('member', { '/api/v1/org/hr': connected() }),
+      '[data-section="prices"]',
+    );
+    try {
+      assert.equal(await hrCard(h).count(), 0);
       assert.equal(h.calls.filter((c) => c.path.startsWith('/api/v1/org/hr')).length, 0);
     } finally {
       await h.close();
@@ -734,62 +817,83 @@ void describe('Holidays', () => {
 });
 
 void describe('both themes, 1440 and 390', () => {
-  void test('connected with people, and the forms open: no sideways scroll, no type under 12 px', async () => {
-    const h = await organisation(
-      orgStub('owner', { '/api/v1/org/hr': connected({ expiring_soon: true }) }),
+  /** Every theme × width: no sideways scroll, no text under 12 px, no row past the card. */
+  async function fits(h: Harness, root: string, rows: string): Promise<void> {
+    for (const theme of ['Light', 'Dark']) {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await setTheme(h.page, theme);
+      for (const [width, height] of [
+        [1440, 900],
+        [390, 844],
+      ] as const) {
+        await h.page.setViewportSize({ width, height });
+        const spill = () =>
+          h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        await until(async () => (await spill()) <= 0);
+        assert.ok((await spill()) <= 0, `${theme} at ${String(width)}: sideways`);
+        const smallest = await h.page.evaluate((selector) => {
+          let min = Infinity;
+          for (const el of document.querySelector(selector)?.querySelectorAll('*') ?? []) {
+            if (el.textContent?.trim() === '' || el.closest('svg') !== null) continue;
+            min = Math.min(min, parseFloat(getComputedStyle(el).fontSize));
+          }
+          return min;
+        }, root);
+        assert.ok(smallest >= 12, `${theme} at ${String(width)}: text at ${String(smallest)}px`);
+        const outside = await h.page.evaluate(
+          ([selector, rowSelector]) => {
+            const card = document.querySelector(selector)?.closest('.org-card');
+            const edge = card?.getBoundingClientRect().right ?? 0;
+            return [...document.querySelectorAll(rowSelector)].filter(
+              (el) => el.getBoundingClientRect().right > edge + 0.5,
+            ).length;
+          },
+          [root, rows] as const,
+        );
+        assert.equal(outside, 0, `${theme} at ${String(width)}: a row overflows the card`);
+      }
+    }
+  }
+
+  void test('the HR card, connected with warnings and people: it fits', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/hr': connected({
+          expiring_soon: true,
+          sees_everyone: false,
+          sees_departments: false,
+        }),
+      }),
       '[data-hr-people]',
     );
+    try {
+      await fits(h, '[data-section="hr"]', '[data-hr-person]');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Holidays fact, its add form open: it fits', async () => {
+    const h = await organisation(orgStub('owner'));
     try {
       await h.page
         .locator('[data-fact="holidays"]')
         .getByRole('button', { name: 'Add a holiday' })
         .click();
-      for (const theme of ['Light', 'Dark']) {
-        await h.page.setViewportSize({ width: 1440, height: 900 });
-        await setTheme(h.page, theme);
-        for (const [width, height] of [
-          [1440, 900],
-          [390, 844],
-        ] as const) {
-          await h.page.setViewportSize({ width, height });
-          const spill = () =>
-            h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-          await until(async () => (await spill()) <= 0);
-          assert.ok((await spill()) <= 0, `${theme} at ${String(width)}: sideways`);
-          const smallest = await h.page.evaluate(() => {
-            let min = Infinity;
-            for (const root of document.querySelectorAll(
-              '[data-fact="hr"], [data-fact="holidays"]',
-            )) {
-              for (const el of root.querySelectorAll('*')) {
-                if (el.textContent?.trim() === '' || el.closest('svg') !== null) continue;
-                min = Math.min(min, parseFloat(getComputedStyle(el).fontSize));
-              }
-            }
-            return min;
-          });
-          assert.ok(smallest >= 12, `${theme} at ${String(width)}: text at ${String(smallest)}px`);
-          // Every row of the people map and the holidays stays inside the card.
-          const outside = await h.page.evaluate(() => {
-            const card = document.querySelector('[data-fact="hr"]')?.closest('.org-card');
-            const edge = card?.getBoundingClientRect().right ?? 0;
-            return [...document.querySelectorAll('[data-hr-person], [data-holiday]')].filter(
-              (el) => el.getBoundingClientRect().right > edge + 0.5,
-            ).length;
-          });
-          assert.equal(outside, 0, `${theme} at ${String(width)}: a row overflows the card`);
-        }
-      }
+      await fits(h, '[data-fact="holidays"]', '[data-holiday], .org-holiday-add');
     } finally {
       await h.close();
     }
   });
 
   void test('the connect form at 390 in both themes fits', async () => {
-    const h = await organisation(orgStub('owner', { '/api/v1/org/hr': OFF }), '[data-fact="hr"]');
+    const h = await integrations(
+      orgStub('owner', { '/api/v1/org/hr': OFF }),
+      '[data-section="hr"]',
+    );
     try {
-      await hrFact(h).getByRole('button', { name: 'Connect Clan' }).click();
-      await hrFact(h).getByRole('form', { name: 'Connect Clan' }).waitFor();
+      await hrCard(h).getByRole('button', { name: 'Connect Clan' }).click();
+      await hrCard(h).getByRole('form', { name: 'Connect Clan' }).waitFor();
       for (const theme of ['Light', 'Dark']) {
         await h.page.setViewportSize({ width: 1440, height: 900 });
         await setTheme(h.page, theme);

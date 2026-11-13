@@ -41,7 +41,11 @@ void describe('the calls (§6.4, LAI-1181)', () => {
   void test('each path written out whole, with its method and body', async () => {
     sent.length = 0;
     await getHrSource();
-    await connectHr({ base_url: 'https://acme.clan.biz', email: 'hr@acme.test', password: 'pw-1' });
+    await connectHr({
+      base_url: 'https://codesage.clan.biz',
+      email: 'forge@codesage.test',
+      password: 'pw-1',
+    });
     await verifyHr({ method: 'email', code: '123456' });
     await syncHr();
     await mapHrPeople([
@@ -59,7 +63,7 @@ void describe('the calls (§6.4, LAI-1181)', () => {
         [
           'POST',
           '/api/v1/org/hr/connect',
-          { base_url: 'https://acme.clan.biz', email: 'hr@acme.test', password: 'pw-1' },
+          { base_url: 'https://codesage.clan.biz', email: 'forge@codesage.test', password: 'pw-1' },
         ],
         ['POST', '/api/v1/org/hr/connect/verify', { method: 'email', code: '123456' }],
         ['POST', '/api/v1/org/hr/sync', undefined],
@@ -122,6 +126,10 @@ void describe('a refusal, in words', () => {
       /refused the token/,
     );
     assert.match(hrRefusal(refused(503, 'internal', 'clan_bad_answer')), /could not read/);
+    assert.match(
+      hrRefusal(refused(422, 'unprocessable', 'clan_token_refused')),
+      /^Clan refused this token — check it was copied whole/,
+    );
   });
 
   void test('a reason it does not know, or none, is the server’s message', () => {

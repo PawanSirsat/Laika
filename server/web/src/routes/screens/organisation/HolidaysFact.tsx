@@ -9,6 +9,8 @@ import {
 import { Button } from '../../../components/forms/Button.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import {
+  coversOf,
+  HOLIDAY_COVERS,
   holidayDayLabel,
   holidaysByYear,
   holidayWindow,
@@ -27,9 +29,11 @@ const MAX_LABEL = 120;
 /**
  * The organisation's holidays (D-149 item 8, LAI-1182), one of the
  * Organisation card's facts: this year and next, by day, for every member.
- * Those synced from Clan wear a *Clan* tag and change only in Clan; one Clan
- * scoped to some departments says *Some people*. An owner or admin adds a day
- * of their own and removes one they added — never a Clan one.
+ * Each says whom it covers. One synced from Clan wears a *Clan* tag, changes
+ * only in Clan, and covers the people Clan lists — *Clan staff*, or *Some
+ * people* when Clan scoped it to departments; one added here is *Everyone*'s.
+ * An owner or admin adds a day of their own and removes one they added —
+ * never a Clan one.
  *
  * Read from `GET /org/holidays`, which every member may ask. Absent when it
  * cannot be read, as the card's other facts are.
@@ -143,15 +147,13 @@ export function HolidaysFact({ canManage }: HolidaysFactProps) {
                             Clan
                           </span>
                         )}
-                        {!holiday.everyone && (
-                          <span
-                            className="org-holiday-tag"
-                            data-holiday-tag="some"
-                            title="Clan gives this day to some departments or roles, not everyone"
-                          >
-                            Some people
-                          </span>
-                        )}
+                        <span
+                          className="org-holiday-tag"
+                          data-holiday-tag={HOLIDAY_COVERS[coversOf(holiday)].tag}
+                          title={HOLIDAY_COVERS[coversOf(holiday)].title}
+                        >
+                          {HOLIDAY_COVERS[coversOf(holiday)].words}
+                        </span>
                       </span>
                       {canManage && holiday.source === 'manual' && (
                         <button

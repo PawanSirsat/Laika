@@ -2374,10 +2374,24 @@
 }
 
 /*
- * D-149's HR system and holidays (LAI-1182), two facts on Workspace settings.
- * Tokens only — no Clan colours. The token's warning is the orange the rest of
- * the screen uses for "act before it lapses"; a failed sync is the overdue red.
+ * D-149's HR system (LAI-1182), a card on Integrations, and the holidays, a
+ * fact on Workspace settings. Tokens only — no Clan colours. The token's
+ * warning is the orange the rest of the screen uses for "act before it
+ * lapses"; a failed sync is the overdue red.
  */
+.org-hr-lead {
+  margin: 0 0 var(--space-3);
+}
+
+.org-hr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
 .org-hr-form {
   display: flex;
   flex-direction: column;

@@ -32,7 +32,7 @@ import {
   twoFactorWords,
 } from './hr-derive.ts';
 
-export interface HrSourceFactProps {
+export interface HrSourceSectionProps {
   /** Active members, for the picker beside each Clan person an owner maps. */
   readonly members: readonly OrgUser[];
 }
@@ -42,11 +42,19 @@ type Busy = 'connect' | 'verify' | 'sync' | 'disconnect' | 'people';
 
 const MINUTE = 60_000;
 
+/** The card head's chip, as the GitHub webhook card's says *secret set*. */
+const STATUS_WORDS: Readonly<Record<HrSource['status'], string>> = {
+  off: 'not connected',
+  pending_2fa: 'waiting for a code',
+  connected: 'connected',
+};
+
 /**
- * The organisation's HR system (D-149, LAI-1182), one of the Organisation
- * card's facts beside *Time* and *Breaks*: an owner or admin connects Clan
- * once, sees how syncing is going, runs it now, and maps the people Clan's
- * emails did not match. Shown only to a holder of `org.hr.configure`.
+ * The organisation's HR system (D-149, LAI-1182), a card on Organisation →
+ * Integrations beside the GitHub webhook: an owner or admin connects Clan
+ * once, sees how syncing is going and what the token can see, runs a sync
+ * now, and maps the people Clan's emails did not match. Shown only to a
+ * holder of `org.hr.configure`.
  *
  * Modelled on `GithubWebhookSection` — the other secret held for the whole
  * organisation — and stricter about it: **the password is sent once and kept
@@ -55,7 +63,7 @@ const MINUTE = 60_000;
  * never pre-filled (`new-password` keeps the browser's saved Laika password
  * out), and the server never answers it. The token is shown as its last four.
  */
-export function HrSourceFact({ members }: HrSourceFactProps) {
+export function HrSourceSection({ members }: HrSourceSectionProps) {
   const confirm = useConfirm();
   const [view, setView] = useState<HrSource | undefined>(undefined);
   const [readFailed, setReadFailed] = useState<string | undefined>(undefined);
@@ -100,14 +108,14 @@ export function HrSourceFact({ members }: HrSourceFactProps) {
   if (view === undefined) {
     if (readFailed === undefined) return null;
     return (
-      <div className="org-fact" data-fact="hr">
-        <dt>HR system</dt>
-        <dd>
-          <span className="org-fact-error" role="alert">
-            The HR connection could not be read. {readFailed}
-          </span>
-        </dd>
-      </div>
+      <section className="org-card org-hr" aria-labelledby="org-hr" data-section="hr">
+        <header className="org-card-head">
+          <h2 id="org-hr">HR system</h2>
+        </header>
+        <p className="org-fact-error" role="alert">
+          The HR connection could not be read. {readFailed}
+        </p>
+      </section>
     );
   }
 
@@ -227,7 +235,7 @@ export function HrSourceFact({ members }: HrSourceFactProps) {
           setBaseUrl(value);
           setUrlError(undefined);
         }}
-        placeholder="https://yourcompany.clan.biz"
+        placeholder="https://codesage.clan.biz"
         autoComplete="off"
         error={urlError}
         required
@@ -276,30 +284,37 @@ export function HrSourceFact({ members }: HrSourceFactProps) {
   const chosenMethod = method ?? methods[0];
 
   return (
-    <div className="org-fact" data-fact="hr" data-hr-status={view.status}>
-      <dt id="org-hr-label">HR system</dt>
-      <dd>
-        {view.status === 'off' && (
-          <>
-            <span>not connected</span>
-            <span className="org-fact-note" data-hr-lead>
-              Holidays and leave from Clan, every {String(view.sync_every_minutes)} minutes. Laika
-              keeps the sign-in token, never the password.
-            </span>
-            {!connecting && (
-              <span className="org-break-actions">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setConnecting(true);
-                    setError(undefined);
-                  }}
-                >
-                  Connect Clan
-                </Button>
-              </span>
-            )}
-          </>
+    <section
+      className="org-card org-hr"
+      aria-labelledby="org-hr"
+      data-section="hr"
+      data-hr-status={view.status}
+    >
+      <header className="org-card-head">
+        <h2 id="org-hr">HR system</h2>
+        <span className="org-count" data-configured={view.status === 'connected'}>
+          {STATUS_WORDS[view.status]}
+        </span>
+      </header>
+
+      <p className="org-note org-hr-lead" data-hr-lead>
+        Holidays and leave from Clan, every {String(view.sync_every_minutes)} minutes. Laika keeps
+        the sign-in token, never the password.
+      </p>
+
+      <div className="org-hr-body">
+        {view.status === 'off' && !connecting && (
+          <span className="org-break-actions">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setConnecting(true);
+                setError(undefined);
+              }}
+            >
+              Connect Clan
+            </Button>
+          </span>
         )}
 
         {pending && methods.length > 0 && (
@@ -393,6 +408,18 @@ export function HrSourceFact({ members }: HrSourceFactProps) {
                 The token runs out within 30 days. Connect again before then, or syncing stops.
               </span>
             )}
+            {/* What the last check found the token can read (LAI-1181). */}
+            {view.sees_everyone === false && (
+              <span className="org-fact-note org-hr-warning" data-hr-warning="sees-everyone">
+                This token can only see one person’s leave — it needs an HR or admin role in Clan.
+              </span>
+            )}
+            {view.sees_departments === false && (
+              <span className="org-fact-note org-hr-warning" data-hr-warning="sees-departments">
+                People’s departments are hidden from this token, so holidays meant for some
+                departments can’t be matched.
+              </span>
+            )}
             <span className="org-hr-sync" data-hr-sync>
               {view.last_attempt_at === null ? (
                 'No sync has finished yet.'
@@ -414,10 +441,9 @@ export function HrSourceFact({ members }: HrSourceFactProps) {
                 </span>
               )}
             </span>
-            <span className="org-fact-note">
-              Syncs every {String(view.sync_every_minutes)} minutes from{' '}
-              {view.base_url === null ? 'Clan' : companyAddress(view.base_url)}.
-            </span>
+            {view.base_url !== null && (
+              <span className="org-fact-note">Reading from {companyAddress(view.base_url)}.</span>
+            )}
             <span className="org-break-actions">
               <Button
                 variant="secondary"
@@ -475,8 +501,8 @@ export function HrSourceFact({ members }: HrSourceFactProps) {
             {error}
           </span>
         )}
-      </dd>
-    </div>
+      </div>
+    </section>
   );
 }
 

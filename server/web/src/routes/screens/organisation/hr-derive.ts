@@ -65,6 +65,31 @@ export function holidaysByYear(
   }));
 }
 
+/** Whom a holiday covers. */
+export type HolidayCovers = 'everyone' | 'clan_staff' | 'some';
+
+/**
+ * A manual holiday is everyone's. A synced one only ever covers the people
+ * Clan lists — the server's `everyone` on it means *everyone in Clan* — or,
+ * scoped to departments or designations, some of them.
+ */
+export function coversOf(holiday: Pick<OrgHoliday, 'source' | 'everyone'>): HolidayCovers {
+  if (holiday.source === 'manual') return 'everyone';
+  return holiday.everyone ? 'clan_staff' : 'some';
+}
+
+export const HOLIDAY_COVERS: Readonly<
+  Record<HolidayCovers, { readonly tag: string; readonly words: string; readonly title: string }>
+> = {
+  everyone: { tag: 'everyone', words: 'Everyone', title: 'Added here, for everyone on Laika' },
+  clan_staff: { tag: 'clan-staff', words: 'Clan staff', title: 'Everyone Clan lists' },
+  some: {
+    tag: 'some',
+    words: 'Some people',
+    title: 'Clan gives this day to some departments or roles, not everyone',
+  },
+};
+
 /** A new holiday, put where the list would have it. */
 export function withHoliday(
   holidays: readonly OrgHoliday[],
@@ -75,9 +100,19 @@ export function withHoliday(
   );
 }
 
-/** `Connected as hr@kvelld.co.za · token …a1b2, renews by 12 Jul 2027`. */
+/**
+ * `Connected as Forge (forge@codesage.in) · token …a1b2, renews by 12 Jul
+ * 2027` — the account by Clan's name for it, its email when there is one, the
+ * token's last four, and its end only when one is known.
+ */
 export function connectedLine(view: HrSource): string {
-  const who = view.account_email ?? 'Clan';
+  const name = view.account_name ?? view.account_email ?? 'Clan';
+  const who =
+    view.account_name !== null &&
+    view.account_email !== null &&
+    view.account_email !== view.account_name
+      ? `${name} (${view.account_email})`
+      : name;
   const token = view.token_last4 === null ? '' : ` · token …${view.token_last4}`;
   const renews =
     view.token_expires_at === null ? '' : `, renews by ${dateLabel(view.token_expires_at)}`;

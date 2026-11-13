@@ -9,6 +9,8 @@ import type { HrPerson, HrSource, OrgHoliday } from '../../../../src/api/hr.ts';
 import {
   companyAddress,
   connectedLine,
+  coversOf,
+  HOLIDAY_COVERS,
   countsLine,
   holidayDayLabel,
   holidaysByYear,
@@ -84,6 +86,16 @@ void describe('the Holidays window', () => {
     );
   });
 
+  void test('whom it covers: a manual one everyone, a Clan one Clan staff or some of them', () => {
+    assert.equal(coversOf({ source: 'manual', everyone: true }), 'everyone');
+    assert.equal(coversOf({ source: 'clan', everyone: true }), 'clan_staff');
+    assert.equal(coversOf({ source: 'clan', everyone: false }), 'some');
+    assert.deepEqual(
+      (['everyone', 'clan_staff', 'some'] as const).map((c) => HOLIDAY_COVERS[c].words),
+      ['Everyone', 'Clan staff', 'Some people'],
+    );
+  });
+
   void test('an added holiday lands in order, once', () => {
     const list = [
       holiday('a', '2026-03-21', 'Human Rights Day'),
@@ -100,11 +112,14 @@ void describe('the Holidays window', () => {
 const view = (patch: Partial<HrSource>): HrSource => ({
   status: 'connected',
   provider: 'clan',
-  base_url: 'https://acme.clan.biz/api/v1',
-  account_email: 'hr@acme.test',
+  base_url: 'https://codesage.clan.biz/api/v1',
+  account_name: 'Forge',
+  account_email: 'forge@codesage.test',
   token_last4: 'a1b2',
   token_expires_at: Date.UTC(2027, 6, 12),
   expiring_soon: false,
+  sees_everyone: true,
+  sees_departments: true,
   sync_every_minutes: 30,
   last_attempt_at: null,
   last_success_at: null,
@@ -119,11 +134,20 @@ void describe('the connection, in words', () => {
   void test('who it is, the token’s last four, and when it runs out', () => {
     assert.equal(
       connectedLine(view({})),
-      'Connected as hr@acme.test · token …a1b2, renews by 12 Jul 2027',
+      'Connected as Forge (forge@codesage.test) · token …a1b2, renews by 12 Jul 2027',
+    );
+    // No end date known: no "renews by".
+    assert.equal(
+      connectedLine(view({ token_expires_at: null })),
+      'Connected as Forge (forge@codesage.test) · token …a1b2',
     );
     assert.equal(
-      connectedLine(view({ token_last4: null, token_expires_at: null })),
-      'Connected as hr@acme.test',
+      connectedLine(view({ account_email: null, token_last4: null, token_expires_at: null })),
+      'Connected as Forge',
+    );
+    assert.equal(
+      connectedLine(view({ account_name: null, token_expires_at: null })),
+      'Connected as forge@codesage.test · token …a1b2',
     );
   });
 
@@ -158,9 +182,9 @@ void describe('the connection, in words', () => {
   });
 
   void test('the company address, without the API path the server keeps', () => {
-    assert.equal(companyAddress('https://acme.clan.biz/api/v1'), 'https://acme.clan.biz');
-    assert.equal(companyAddress('https://acme.clan.biz/api/v1/'), 'https://acme.clan.biz');
-    assert.equal(companyAddress('https://acme.clan.biz'), 'https://acme.clan.biz');
+    assert.equal(companyAddress('https://codesage.clan.biz/api/v1'), 'https://codesage.clan.biz');
+    assert.equal(companyAddress('https://codesage.clan.biz/api/v1/'), 'https://codesage.clan.biz');
+    assert.equal(companyAddress('https://codesage.clan.biz'), 'https://codesage.clan.biz');
   });
 
   void test('the address must be https', () => {
