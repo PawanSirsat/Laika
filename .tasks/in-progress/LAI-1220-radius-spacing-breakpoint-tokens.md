@@ -2,12 +2,12 @@
 id: LAI-1220
 title: 'Radius, spacing and breakpoint tokens, each with a guard that refuses a new raw literal'
 area: shell
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: null
-status: backlog
-started: null
+status: in-progress
+started: 2026-11-13T07:39:17Z
 finished: null
 ---
 
