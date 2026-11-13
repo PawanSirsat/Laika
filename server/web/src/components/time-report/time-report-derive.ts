@@ -1,3 +1,4 @@
+import { spaceSeries } from '../../theme/avatar-color.ts';
 import type {
   EntryKind,
   SpaceWeek,
@@ -792,13 +793,22 @@ export function groupRows(
       : [...list].sort((a, b) => b.total - a.total || a.face.sort.localeCompare(b.face.sort));
   const colours = new Map<string, { color: string; other: boolean }>();
   let slot = 0;
+  let named = 0;
+  // A space keeps its own hue (LAI-1216), as its badge does; two spaces that
+  // share a palette colour in one report, the smaller takes the next slot.
+  const taken = new Set<string>();
   for (const g of colourOrder) {
     if (g.face.kind !== undefined)
       colours.set(g.face.key, { color: `var(--kind-${g.face.kind})`, other: false });
     else if (g.face.none === true) colours.set(g.face.key, { color: NONE_COLOR, other: false });
-    else if (slot < SLOT_COLORS.length)
-      colours.set(g.face.key, { color: SLOT_COLORS[slot++] ?? OTHER_COLOR, other: false });
-    else colours.set(g.face.key, { color: OTHER_COLOR, other: true });
+    else if (named < SLOT_COLORS.length) {
+      named += 1;
+      const own = g.face.space === undefined ? undefined : spaceSeries(g.face.space.slug);
+      const color =
+        own !== undefined && !taken.has(own) ? own : (SLOT_COLORS[slot++] ?? OTHER_COLOR);
+      taken.add(color);
+      colours.set(g.face.key, { color, other: false });
+    } else colours.set(g.face.key, { color: OTHER_COLOR, other: true });
   }
   return list.map((g) => {
     const { color, other } = colours.get(g.face.key) ?? { color: OTHER_COLOR, other: true };

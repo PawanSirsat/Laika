@@ -124,3 +124,17 @@ export function avatarColorSolid(userId: string, theme: 'light' | 'dark' = 'ligh
 
 /** How many distinct colours exist — used by the token reference page. */
 export const AVATAR_COLOR_COUNT = HUES.length;
+
+/**
+ * A space drawn as a data series — a bar, a donut slice, a swatch (LAI-1216):
+ * the hue of its {@link SpaceBadge} letter (`avatarColor('space:<slug>')`), so
+ * a chart never paints a space one colour beside a badge that paints it
+ * another. The badge fill is tuned to carry a white letter, and on the dark
+ * card some hues sit under 3:1; mixed a little toward the theme's text ink it
+ * clears 3:1 in dark and only deepens in light. One string for both themes:
+ * the ink it mixes with is the theme's.
+ */
+export function spaceSeries(slug: string): string {
+  const { background } = avatarColor(`space:${slug}`, 'dark');
+  return `color-mix(in srgb, ${background} 72%, var(--text-primary))`;
+}
