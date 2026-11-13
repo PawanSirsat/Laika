@@ -254,7 +254,7 @@ void after(async () => {
 
 void describe('red means overdue, and nothing else (visual audit #12)', () => {
   for (const theme of ['dark', 'light'] as const) {
-    void test(`${theme}: an ordinary sprint day is neutral; the overdue chip is flagged`, async () => {
+    void test(`${theme}: an ordinary sprint day is neutral; the overdue task is in the lane alone`, async () => {
       const h = await openCalendar();
       try {
         await h.page.locator(cell(13)).waitFor({ timeout: 20_000 });
@@ -361,7 +361,7 @@ void describe('the grid is driven from the keyboard', () => {
     }
   });
 
-  void test('each day names itself, its tasks and what is overdue', async () => {
+  void test('each day names itself, its tasks and its sprint', async () => {
     const h = await openCalendar();
     try {
       await h.page
