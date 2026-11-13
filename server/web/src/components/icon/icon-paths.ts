@@ -63,7 +63,9 @@ export type IconName =
   | 'dot'
   | 'tag'
   | 'hash'
-  | 'question';
+  | 'question'
+  | 'minus'
+  | 'arrow-left';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -226,4 +228,8 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
     'M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6',
     'M12 17h.01',
   ],
+  // LAI-1214: the Timeline's zoom out beside `plus`, and 404's Go back
+  // (LAI-1213 added `arrow-right`, `chevron-down` and `question`, used too).
+  minus: ['M5 12h14'],
+  'arrow-left': ['M19 12H5', 'm11 6-6 6 6 6'],
 };

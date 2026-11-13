@@ -214,6 +214,8 @@ void describe('the Create task dialog (LAI-1209)', () => {
       const box = h.page.locator(DIALOG);
       const close = box.getByRole('button', { name: 'Close', exact: true });
       const tip = await tooltipOf(close);
+      // Past the Tooltip's arrival window (LAI-1214), as for Add column below.
+      await h.page.waitForTimeout(400);
       await close.focus();
       await tip.waitFor({ state: 'visible', timeout: 2_000 });
 
@@ -526,6 +528,9 @@ void describe('the shared Dialog (LAI-1209)', () => {
 
       const close = dialog.getByRole('button', { name: 'Close', exact: true });
       const tip = await tooltipOf(close);
+      // Past the Tooltip's arrival window (LAI-1214): focus that lands as the
+      // dialog opens is its first focus, not the reader's, and shows nothing.
+      await h.page.waitForTimeout(400);
       await close.focus();
       await tip.waitFor({ state: 'visible', timeout: 2_000 });
       assert.match(await tip.innerText(), /Close\s*Esc/);

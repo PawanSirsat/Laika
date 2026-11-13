@@ -9,6 +9,8 @@ import {
 import { buildLabel } from '../../../api/estimates.ts';
 import { pageState, toggleOne, togglePage } from '../list/list-select.ts';
 import type { SpaceGroup } from './review-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface ReviewGroupsProps {
   readonly groups: readonly SpaceGroup[];
@@ -132,9 +134,9 @@ export function ReviewGroups({
                     >
                       <span className="rev-key">{item.task.key}</span>
                       <span className="rev-title">{item.task.title}</span>
-                      <span className="rev-wait" title="Waiting since it entered review">
-                        {waitingFor(item.waiting_since, now)}
-                      </span>
+                      <Tooltip content="Waiting since it entered review">
+                        <span className="rev-wait">{waitingFor(item.waiting_since, now)}</span>
+                      </Tooltip>
                       <span className="rev-meta">
                         <span>{item.assignee_name ?? 'Unassigned'}</span>
                         {agent !== null && <span className="rev-agent">{agent}</span>}
@@ -142,15 +144,15 @@ export function ReviewGroups({
                       </span>
                       <span className="rev-proof">
                         {item.cue !== null && (
-                          <span
-                            className="rev-chip rev-chip-check"
-                            data-cue={item.cue.kind}
-                            title={`Finished in ${buildLabel(item.cue.build_ms)} against a forecast of ${buildLabel(
+                          <Tooltip
+                            content={`Finished in ${buildLabel(item.cue.build_ms)} against a forecast of ${buildLabel(
                               item.cue.forecast_p50_ms,
                             )}, and CI has not confirmed it`}
                           >
-                            check this one
-                          </span>
+                            <span className="rev-chip rev-chip-check" data-cue={item.cue.kind}>
+                              check this one
+                            </span>
+                          </Tooltip>
                         )}
                         {summary.empty ? (
                           <span className="rev-chip rev-chip-none">no proof</span>
@@ -164,22 +166,30 @@ export function ReviewGroups({
                             {summary.pullRequest !== null && <span className="rev-chip">PR</span>}
                             {summary.testsPassed > 0 && (
                               <span className="rev-chip rev-chip-pass">
-                                ✓ {summary.testsPassed} passed
+                                <Icon name="check" size="tiny" /> {summary.testsPassed} passed
                               </span>
                             )}
                             {summary.testsFailed > 0 && (
                               <span className="rev-chip rev-chip-fail">
-                                ✗ {summary.testsFailed} failed
+                                <Icon name="close" size="tiny" /> {summary.testsFailed} failed
                               </span>
                             )}
                             {ci !== 'none' && item.round?.ci != null && (
-                              <span
-                                className={`rev-chip rev-chip-ci rev-chip-ci-${ci}`}
-                                title={ciLine(item.round.ci)}
-                                data-ci={ci}
-                              >
-                                {ci === 'failed' ? '✗ CI' : ci === 'confirmed' ? '✓ CI' : '… CI'}
-                              </span>
+                              <Tooltip content={ciLine(item.round.ci)}>
+                                <span
+                                  className={`rev-chip rev-chip-ci rev-chip-ci-${ci}`}
+                                  data-ci={ci}
+                                >
+                                  {ci === 'failed' ? (
+                                    <Icon name="close" size="tiny" />
+                                  ) : ci === 'confirmed' ? (
+                                    <Icon name="check" size="tiny" />
+                                  ) : (
+                                    '…'
+                                  )}{' '}
+                                  CI
+                                </span>
+                              </Tooltip>
                             )}
                           </>
                         )}

@@ -515,6 +515,9 @@
 }
 
 .editor-result-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-family: var(--font-mono);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
@@ -562,7 +565,8 @@
   color: var(--accent);
 }
 
-.editor-date:disabled {
+.editor-date:disabled,
+.editor-date[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
 }

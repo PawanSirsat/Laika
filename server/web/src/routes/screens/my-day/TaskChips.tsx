@@ -1,4 +1,5 @@
 import type { CardChip } from './card-chips.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface TaskChipsProps {
   /** The key of the card the block is on, if any. */
@@ -19,35 +20,36 @@ export function TaskChips({ current, general, chips, busy, onPick }: TaskChipsPr
   return (
     <div className="editor-chips" data-task-chips>
       {chips.map((chip) => (
+        <Tooltip key={chip.task.key} content={chip.task.title}>
+          <button
+            type="button"
+            className="editor-chip"
+            data-card={chip.task.key}
+            aria-pressed={current === chip.task.key}
+            disabled={busy}
+            onClick={() => {
+              if (current !== chip.task.key) onPick(chip.task.key);
+            }}
+          >
+            {chip.task.key}
+            {chip.why !== undefined && <span className="editor-chip-why">{chip.why}</span>}
+          </button>
+        </Tooltip>
+      ))}
+      <Tooltip content="No task, on purpose" shortcut="G">
         <button
-          key={chip.task.key}
           type="button"
-          className="editor-chip"
-          data-card={chip.task.key}
-          aria-pressed={current === chip.task.key}
-          title={chip.task.title}
+          className="editor-chip editor-chip-words"
+          data-card="general"
+          aria-pressed={general}
           disabled={busy}
           onClick={() => {
-            if (current !== chip.task.key) onPick(chip.task.key);
+            if (!general) onPick('general');
           }}
         >
-          {chip.task.key}
-          {chip.why !== undefined && <span className="editor-chip-why">{chip.why}</span>}
+          General
         </button>
-      ))}
-      <button
-        type="button"
-        className="editor-chip editor-chip-words"
-        data-card="general"
-        aria-pressed={general}
-        title="No task, on purpose"
-        disabled={busy}
-        onClick={() => {
-          if (!general) onPick('general');
-        }}
-      >
-        General
-      </button>
+      </Tooltip>
     </div>
   );
 }

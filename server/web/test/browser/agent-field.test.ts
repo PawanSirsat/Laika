@@ -2062,7 +2062,7 @@ void describe('two agents that share a harness and a device', () => {
                   b.left >= option.left &&
                   b.right <= option.right &&
                   b.right <= window.innerWidth,
-                name: el.getAttribute('title') ?? '',
+                name: el.querySelector('.dd-label')?.textContent ?? '',
               };
             }),
           );
@@ -2081,13 +2081,14 @@ void describe('two agents that share a harness and a device', () => {
           seen.every((o) => o.markWhole),
           `${theme}: a mark is cut or off screen — ${JSON.stringify(seen)}`,
         );
-        // The whole name is still the option's: hover and the accessible name.
+        // The whole name is still the option's: its words (the accessible
+        // name) and, on hover, the shared tooltip (LAI-1214; it was title=).
         assert.ok(
-          seen.some((o) =>
-            o.name.startsWith('Claude Code · build-server-eu-west-1-primary (alpha agent)'),
-          ),
+          seen.some((o) => o.name.startsWith('Claude Code · build-server-eu-west-1-primary')),
           JSON.stringify(seen),
         );
+        const first = list.locator('[role="option"][data-value^="ag-long-"]').first();
+        assert.match(await tipText(first), /^Claude Code · build-server-eu-west-1-primary/);
         // And the computed accessible name of each option — what a screen
         // reader announces — carries the whole label with its own mark.
         for (const mark of ['alpha agent', 'bravo agent']) {

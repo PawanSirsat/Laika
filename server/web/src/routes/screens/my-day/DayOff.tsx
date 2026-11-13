@@ -14,6 +14,7 @@ import {
 } from './off-plate-derive.ts';
 import { plainClick, taskHref } from './task-link.ts';
 import './day-states.css';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 export interface DayOffProps {
   readonly me: MeProfile | undefined;
@@ -173,7 +174,8 @@ export function DayOff({ me, spaces, canTurnOn, now, onNavigate }: DayOffProps) 
           )}
           <span className="myday-card-head-gap" />
           <a className="plate-more" href={allHref} onClick={follow(allHref)}>
-            All your work →
+            All your work
+            <Icon name="arrow-right" size="tiny" />
           </a>
         </header>
         {load.kind === 'loading' && (

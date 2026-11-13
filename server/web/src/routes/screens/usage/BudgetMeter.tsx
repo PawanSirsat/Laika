@@ -8,6 +8,7 @@ import {
   type Budget,
 } from '../../../api/budgets.ts';
 import { compactTokens, exactTokens } from '../../../api/usage.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * One budget as a bar (LAI-773): spent against the budget, a badge from 80%,
@@ -48,12 +49,11 @@ export function BudgetMeter({
       >
         <span className="budget-bar" style={{ width: `${String(width)}%` }} />
       </span>
-      <span
-        className="budget-line"
-        title={`${exactTokens(budget.used)} of ${exactTokens(budget.tokens)} tokens`}
-      >
-        {budgetLine(budget)} · {budgetSource(budget)}
-      </span>
+      <Tooltip content={`${exactTokens(budget.used)} of ${exactTokens(budget.tokens)} tokens`}>
+        <span className="budget-line">
+          {budgetLine(budget)} · {budgetSource(budget)}
+        </span>
+      </Tooltip>
       {children}
     </div>
   );

@@ -73,6 +73,7 @@ import {
   type ReportScope,
 } from './time-report-derive.ts';
 import './time-report.css';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 /** A space as the Space filter offers it. */
 export interface ReportSpace {
@@ -1084,42 +1085,42 @@ function Chart({
             onKeyDown={onKey}
           >
             {bars.map((b, i) => (
-              <button
-                key={b.day}
-                type="button"
-                className={
-                  hover === i || (focusAt === i && hover === undefined)
-                    ? 'trep-col trep-col-on'
-                    : 'trep-col'
-                }
-                tabIndex={i === at ? 0 : -1}
-                aria-label={b.aria}
-                title={b.aria}
-                data-tr-day={b.day}
-                onMouseEnter={() => {
-                  setHover(i);
-                }}
-                onMouseLeave={() => {
-                  setHover(undefined);
-                }}
-                onFocus={() => {
-                  setFocusAt(i);
-                }}
-              >
-                <span
-                  className={b.future ? 'trep-stack trep-stack-future' : 'trep-stack'}
-                  style={{ height: `${String(b.height)}%` }}
+              <Tooltip key={b.day} content={b.aria}>
+                <button
+                  type="button"
+                  className={
+                    hover === i || (focusAt === i && hover === undefined)
+                      ? 'trep-col trep-col-on'
+                      : 'trep-col'
+                  }
+                  tabIndex={i === at ? 0 : -1}
+                  aria-label={b.aria}
+                  data-tr-day={b.day}
+                  onMouseEnter={() => {
+                    setHover(i);
+                  }}
+                  onMouseLeave={() => {
+                    setHover(undefined);
+                  }}
+                  onFocus={() => {
+                    setFocusAt(i);
+                  }}
                 >
                   <span
-                    className="trep-fill-confirmed"
-                    style={{ flexBasis: `${String(b.confirmedPct)}%` }}
-                  />
-                  <span
-                    className="trep-fill-drafted"
-                    style={{ flexBasis: `${String(b.draftedPct)}%` }}
-                  />
-                </span>
-              </button>
+                    className={b.future ? 'trep-stack trep-stack-future' : 'trep-stack'}
+                    style={{ height: `${String(b.height)}%` }}
+                  >
+                    <span
+                      className="trep-fill-confirmed"
+                      style={{ flexBasis: `${String(b.confirmedPct)}%` }}
+                    />
+                    <span
+                      className="trep-fill-drafted"
+                      style={{ flexBasis: `${String(b.draftedPct)}%` }}
+                    />
+                  </span>
+                </button>
+              </Tooltip>
             ))}
           </div>
           {tip !== undefined && hover !== undefined && (

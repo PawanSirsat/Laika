@@ -5,6 +5,7 @@ import { SpacesPopover } from './SpacesPopover.tsx';
 import { SpaceBadge } from '../SpaceBadge.tsx';
 import { NavIcon } from './NavIcon.tsx';
 import { PinButton } from './PinButton.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface SpacesSectionProps {
   /** The rail's rows: the pinned, then the three most recent (LAI-248, LAI-989). */
@@ -90,30 +91,31 @@ export function SpacesSection({
             </svg>
             <span>Spaces</span>
           </button>
-          <a
-            className="spaces-create"
-            href="/projects"
-            title="Create space"
-            onClick={(event) => {
-              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              onNavigate('/projects');
-              onClose();
-            }}
-          >
-            <span className="visually-hidden">Create space</span>
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              aria-hidden="true"
+          <Tooltip content="Create space">
+            <a
+              className="spaces-create"
+              href="/projects"
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onNavigate('/projects');
+                onClose();
+              }}
             >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </a>
+              <span className="visually-hidden">Create space</span>
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </a>
+          </Tooltip>
         </div>
       )}
 

@@ -1,10 +1,15 @@
 import type { ReactNode } from 'react';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface EditorNav {
   /** `5 of 8`, `Gap 3 of 3`. */
   readonly text: string;
   readonly prevLabel: string;
   readonly nextLabel: string;
+  /** Their keys, as `K` and `J` (LAI-1214): keycaps in the tooltips. */
+  readonly prevShortcut?: string | undefined;
+  readonly nextShortcut?: string | undefined;
   readonly onPrev: () => void;
   readonly onNext: () => void;
 }
@@ -103,33 +108,39 @@ export function EditorFrame({
               <span className="editor-nav-text" data-inspector-position>
                 {nav.text}
               </span>
-              <button
-                type="button"
-                className="myday-week-step"
-                aria-label={nav.prevLabel}
-                onClick={nav.onPrev}
-              >
-                ‹
-              </button>
-              <button
-                type="button"
-                className="myday-week-step"
-                aria-label={nav.nextLabel}
-                onClick={nav.onNext}
-              >
-                ›
-              </button>
+              <Tooltip content={nav.prevLabel.replace(/ \(.\)$/, '')} shortcut={nav.prevShortcut}>
+                <button
+                  type="button"
+                  className="myday-week-step"
+                  aria-label={nav.prevLabel}
+                  onClick={nav.onPrev}
+                >
+                  <Icon name="chevron-left" size="small" />
+                </button>
+              </Tooltip>
+              <Tooltip content={nav.nextLabel.replace(/ \(.\)$/, '')} shortcut={nav.nextShortcut}>
+                <button
+                  type="button"
+                  className="myday-week-step"
+                  aria-label={nav.nextLabel}
+                  onClick={nav.onNext}
+                >
+                  <Icon name="chevron" size="small" />
+                </button>
+              </Tooltip>
             </span>
           )}
           {onClose !== undefined && (
-            <button
-              type="button"
-              className="myday-week-step inspector-close editor-close"
-              aria-label="Close (Esc)"
-              onClick={onClose}
-            >
-              ×
-            </button>
+            <Tooltip content="Close" shortcut="Escape">
+              <button
+                type="button"
+                className="myday-week-step inspector-close editor-close"
+                aria-label="Close (Esc)"
+                onClick={onClose}
+              >
+                <Icon name="close" size="small" />
+              </button>
+            </Tooltip>
           )}
         </div>
         <div className="editor-title-block">

@@ -43,6 +43,7 @@ import {
 } from './status-vocabulary.ts';
 import { catalogTool } from './tool-catalog.ts';
 import './tool-groups.css';
+import { Icon } from '../../../../components/icon/Icon.tsx';
 
 export const TOOLS_TITLE = 'dv3-tools-title';
 
@@ -386,7 +387,8 @@ function ToolRecord({
             aria-label={`Set up a project for ${label}`}
             onClick={follow}
           >
-            Set up project →
+            Set up project
+            <Icon name="arrow-right" size="tiny" />
           </a>
         )}
         {action === 'finish-in-wizard' && canManage && (
@@ -398,7 +400,8 @@ function ToolRecord({
               onFinish(listed);
             }}
           >
-            Finish setup →
+            Finish setup
+            <Icon name="arrow-right" size="tiny" />
           </button>
         )}
         {action === 'finish-in-details' && (
@@ -410,7 +413,8 @@ function ToolRecord({
               onDetails(agent.id);
             }}
           >
-            Finish setup →
+            Finish setup
+            <Icon name="arrow-right" size="tiny" />
           </button>
         )}
       </div>
@@ -459,7 +463,7 @@ export function RowOpen({
 export function RowChevron() {
   return (
     <span className="dv3-row-chevron" aria-hidden="true">
-      ›
+      <Icon name="chevron" size="small" />
     </span>
   );
 }

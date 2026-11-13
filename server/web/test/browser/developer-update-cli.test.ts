@@ -321,12 +321,12 @@ void describe('Overview', () => {
       await overview(h.page).waitFor({ timeout: 20_000 });
       await settled(h, 3);
       // Update required (a2) needs the reader; Version unknown (a3) does not.
-      assert.equal(await chip(h.page).textContent(), '1 needs an update▾');
+      assert.equal(await chip(h.page).textContent(), '1 needs an update');
       assert.equal(await h.page.locator('[data-cli-notice], [data-update-cli]').count(), 0);
       await chip(h.page).click();
       const items = h.page.locator('[data-attention] li');
       assert.deepEqual(await items.evaluateAll((els) => els.map((el) => el.dataset.agent)), ['a2']);
-      await items.getByRole('link', { name: /^Open details →\s*: Codex · Belka$/ }).click();
+      await items.getByRole('link', { name: /^Open details\s*: Codex · Belka$/ }).click();
       // Tool details, where the guide is offered (as the first describe asserts)
       // once the panel has read the tool's report again — in its Helper section.
       await unfold(toolPanel(h.page, 'a2'), 'helper');

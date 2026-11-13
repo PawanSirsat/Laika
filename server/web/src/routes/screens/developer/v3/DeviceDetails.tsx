@@ -26,6 +26,8 @@ import {
   type Conflict,
 } from './devices-view.ts';
 import { DeviceUpdate, useDeviceUpdate, useVerification } from './ToolUpdate.tsx';
+import { Icon } from '../../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 
 export const DEVICE_PANEL_TITLE = 'dv3-device-panel-title';
 
@@ -411,9 +413,11 @@ export function DeviceDetails({
                     seen === undefined ? (
                       'Never'
                     ) : (
-                      <time dateTime={seen.iso} title={seen.full}>
-                        {seen.text.replace(/^just now$/, 'Just now')}
-                      </time>
+                      <Tooltip content={seen.full}>
+                        <time dateTime={seen.iso}>
+                          {seen.text.replace(/^just now$/, 'Just now')}
+                        </time>
+                      </Tooltip>
                     ),
                   id: 'last-seen',
                 },
@@ -611,7 +615,7 @@ function PanelTool({
         <span className="dv3-panel-tool-name">{label}</span>
         <DesignChip tone={chipTone(status.tone)}>{status.word}</DesignChip>
         <span className="dv3-panel-tool-go" aria-hidden="true">
-          →
+          <Icon name="arrow-right" size="tiny" />
         </span>
       </button>
     </li>

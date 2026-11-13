@@ -94,10 +94,9 @@ async function unnamedOrUntipped(page: Page, scope: string): Promise<string[]> {
           .map((id) => document.getElementById(id))
           .find((t) => t?.getAttribute('role') === 'tooltip');
         // The phone sheet's handle and the click-away layer are exempt in
-        // space-icon-names.test.ts, for the reasons written there. The
-        // profile's InfoTip is a disclosure that opens a definition list —
-        // not a tooltip, and not this task's (it is the census's follow-up).
-        if (el.matches('.drawer-handle, .bt-catcher, .prof-info-button')) return name === '';
+        // space-icon-names.test.ts, for the reasons written there. (The
+        // profile's InfoTip was too, until LAI-1214 gave it its tooltip.)
+        if (el.matches('.drawer-handle, .bt-catcher')) return name === '';
         return name === '' || (tip?.textContent ?? '').trim() === '';
       })
       .map((el) => el.outerHTML.slice(0, 160)),

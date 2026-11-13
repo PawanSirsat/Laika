@@ -1,5 +1,6 @@
 import { compactTokens, COST_LABEL, percent, usd, type Usage } from '../../../api/usage.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * *Cache efficiency* per space (LAI-773; the research's idea 6): of every
@@ -41,9 +42,11 @@ export function CacheCard({ usage }: { readonly usage: Usage }) {
             {usage.cache_by_project.map((p) => (
               <tr key={p.project.slug}>
                 <th scope="row">{p.project.name}</th>
-                <td title={`${compactTokens(p.cache_read)} of ${compactTokens(p.input_side)}`}>
-                  {percent(p.share)}
-                </td>
+                <Tooltip
+                  content={`${compactTokens(p.cache_read)} of ${compactTokens(p.input_side)}`}
+                >
+                  <td>{percent(p.share)}</td>
+                </Tooltip>
                 <td className="usage-money">
                   {p.saving_usd === null ? 'no price' : usd(p.saving_usd)}
                 </td>

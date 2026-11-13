@@ -14,6 +14,7 @@ import {
   statusText,
   workloadIn,
 } from './capacity-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface CapacityListProps {
   readonly people: readonly CapacityEntry[];
@@ -48,25 +49,39 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
             <th scope="col">Person</th>
             <th scope="col">Load</th>
             <th scope="col">Workload</th>
-            <th scope="col" className="cap-list-num" title={HOVER.in_progress}>
-              In progress
-            </th>
-            <th scope="col" className="cap-list-num" title={HOVER.todo}>
-              To do
-            </th>
-            <th scope="col" className="cap-list-num" title={HOVER.in_review}>
-              Review
-            </th>
-            <th scope="col" className="cap-list-num" title={HOVER.running}>
-              Agents
-            </th>
+            <Tooltip content={HOVER.in_progress}>
+              <th scope="col" className="cap-list-num">
+                In progress
+              </th>
+            </Tooltip>
+            <Tooltip content={HOVER.todo}>
+              <th scope="col" className="cap-list-num">
+                To do
+              </th>
+            </Tooltip>
+            <Tooltip content={HOVER.in_review}>
+              <th scope="col" className="cap-list-num">
+                Review
+              </th>
+            </Tooltip>
+            <Tooltip content={HOVER.running}>
+              <th scope="col" className="cap-list-num">
+                Agents
+              </th>
+            </Tooltip>
             {withActivity && (
               <th scope="col" className="cap-list-act">
-                <span title={HOVER.by_self}>Hand</span>
+                <Tooltip content={HOVER.by_self}>
+                  <span>Hand</span>
+                </Tooltip>
                 {' · '}
-                <span title={HOVER.by_agents}>Agents</span>
+                <Tooltip content={HOVER.by_agents}>
+                  <span>Agents</span>
+                </Tooltip>
                 {' · '}
-                <span title={HOVER.bookkeeping}>Bookkeeping</span>
+                <Tooltip content={HOVER.bookkeeping}>
+                  <span>Bookkeeping</span>
+                </Tooltip>
               </th>
             )}
             <th scope="col">Spaces</th>
@@ -128,22 +143,24 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                       <span className="cap-meta-sep" aria-hidden="true">
                         {' · '}
                       </span>
-                      <span className={`cap-status cap-status-${ring}`} title={statusTitle}>
-                        {status.text}
-                      </span>
+                      <Tooltip content={statusTitle}>
+                        <span className={`cap-status cap-status-${ring}`}>{status.text}</span>
+                      </Tooltip>
                     </span>
                   </span>
                 </td>
                 <td>
                   <span className="cap-badges cap-badges-row">
-                    <span className={`cap-load cap-load-${load}`} title={LOAD_RULE}>
-                      <span className="visually-hidden">Load: </span>
-                      {LOAD_LABEL[load]}
-                    </span>
-                    {work.overdue > 0 && (
-                      <span className="cap-overdue" title={HOVER.overdue}>
-                        {count(work.overdue)} overdue
+                    <Tooltip content={LOAD_RULE}>
+                      <span className={`cap-load cap-load-${load}`}>
+                        <span className="visually-hidden">Load: </span>
+                        {LOAD_LABEL[load]}
                       </span>
+                    </Tooltip>
+                    {work.overdue > 0 && (
+                      <Tooltip content={HOVER.overdue}>
+                        <span className="cap-overdue">{count(work.overdue)} overdue</span>
+                      </Tooltip>
                     )}
                   </span>
                 </td>
@@ -166,60 +183,63 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                     ))}
                   </span>
                 </td>
-                <td
-                  className={work.in_progress === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}
-                  title={HOVER.in_progress}
-                >
-                  {count(work.in_progress)}
-                </td>
-                <td
-                  className={work.todo === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}
-                  title={HOVER.todo}
-                >
-                  {count(work.todo)}
-                </td>
-                <td
-                  className={work.in_review === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}
-                  title={HOVER.in_review}
-                >
-                  {count(work.in_review)}
-                </td>
-                <td
-                  className={running === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}
-                  title={HOVER.running}
-                >
-                  <span className="cap-list-running">
-                    <span
-                      className={running === 0 ? 'cap-run-dot' : 'cap-run-dot cap-run-dot-on'}
-                      aria-hidden="true"
-                    />
-                    {count(running)}
-                  </span>
-                </td>
+                <Tooltip content={HOVER.in_progress}>
+                  <td
+                    className={
+                      work.in_progress === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'
+                    }
+                  >
+                    {count(work.in_progress)}
+                  </td>
+                </Tooltip>
+                <Tooltip content={HOVER.todo}>
+                  <td className={work.todo === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}>
+                    {count(work.todo)}
+                  </td>
+                </Tooltip>
+                <Tooltip content={HOVER.in_review}>
+                  <td
+                    className={work.in_review === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}
+                  >
+                    {count(work.in_review)}
+                  </td>
+                </Tooltip>
+                <Tooltip content={HOVER.running}>
+                  <td className={running === 0 ? 'cap-list-num cap-list-zero' : 'cap-list-num'}>
+                    <span className="cap-list-running">
+                      <span
+                        className={running === 0 ? 'cap-run-dot' : 'cap-run-dot cap-run-dot-on'}
+                        aria-hidden="true"
+                      />
+                      {count(running)}
+                    </span>
+                  </td>
+                </Tooltip>
                 {withActivity && (
                   <td className="cap-list-act">
                     {split === undefined ? (
                       <span className="cap-quiet">—</span>
                     ) : (
                       <span className="cap-list-split">
-                        <span
-                          className={split.by_self === 0 ? 'cap-list-zero' : undefined}
-                          title={`${count(split.by_self)} by hand. ${HOVER.by_self}`}
+                        <Tooltip content={`${count(split.by_self)} by hand. ${HOVER.by_self}`}>
+                          <span className={split.by_self === 0 ? 'cap-list-zero' : undefined}>
+                            {count(split.by_self)}
+                          </span>
+                        </Tooltip>
+                        <Tooltip
+                          content={`${count(split.by_agents)} by agents. ${HOVER.by_agents}`}
                         >
-                          {count(split.by_self)}
-                        </span>
-                        <span
-                          className={split.by_agents === 0 ? 'cap-list-zero' : undefined}
-                          title={`${count(split.by_agents)} by agents. ${HOVER.by_agents}`}
+                          <span className={split.by_agents === 0 ? 'cap-list-zero' : undefined}>
+                            {count(split.by_agents)}
+                          </span>
+                        </Tooltip>
+                        <Tooltip
+                          content={`${count(split.bookkeeping)} bookkeeping. ${HOVER.bookkeeping}`}
                         >
-                          {count(split.by_agents)}
-                        </span>
-                        <span
-                          className={split.bookkeeping === 0 ? 'cap-list-zero' : undefined}
-                          title={`${count(split.bookkeeping)} bookkeeping. ${HOVER.bookkeeping}`}
-                        >
-                          {count(split.bookkeeping)}
-                        </span>
+                          <span className={split.bookkeeping === 0 ? 'cap-list-zero' : undefined}>
+                            {count(split.bookkeeping)}
+                          </span>
+                        </Tooltip>
                       </span>
                     )}
                   </td>

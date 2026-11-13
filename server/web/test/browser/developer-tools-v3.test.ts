@@ -738,7 +738,7 @@ void describe('the details panel: folded (LAI-1100)', () => {
       assert.equal(await next.getAttribute('data-next'), 'finish');
       assert.equal(
         (await next.innerText()).replace(/\s+/g, ' ').trim(),
-        'Finish setup Codex connected: Codex has not called the board yet. Open Codex, trust the hooks in /hooks, then ask it to call laika_whoami. Finish setup →',
+        'Finish setup Codex connected: Codex has not called the board yet. Open Codex, trust the hooks in /hooks, then ask it to call laika_whoami. Finish setup',
       );
       // Every other section is a row, folded, saying its state.
       await until(async () =>
@@ -1036,7 +1036,7 @@ void describe('a row opens its details (LAI-1097, the owner’s design: one chip
         undefined,
         { timeout: 5_000 },
       );
-      // Add tool → keeps its own click.
+      // Add tool keeps its own click.
       await h.page.getByRole('button', { name: 'Add a tool to Belka' }).click();
       await until(() => h.page.url().includes('add=tool'));
     } finally {

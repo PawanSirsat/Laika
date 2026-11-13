@@ -17,6 +17,7 @@ import {
 import { timeLabel } from '../../../api/time-label.ts';
 import '../../../components/markers.css';
 import './unlisted.css';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface UnlistedListProps {
   /** Already in the order to show — newest first is the caller's. */
@@ -188,15 +189,17 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                   setExpanded(open ? undefined : row.id);
                 }}
               >
-                <span className="unl-repo" title={row.repo}>
-                  {row.repo}
-                </span>
-                <span className="unl-who" title={who}>
-                  {who}
-                </span>
-                <time className="unl-when" dateTime={when.iso} title={when.full}>
-                  {when.text}
-                </time>
+                <Tooltip content={row.repo}>
+                  <span className="unl-repo">{row.repo}</span>
+                </Tooltip>
+                <Tooltip content={who}>
+                  <span className="unl-who">{who}</span>
+                </Tooltip>
+                <Tooltip content={when.full}>
+                  <time className="unl-when" dateTime={when.iso}>
+                    {when.text}
+                  </time>
+                </Tooltip>
                 <span className="unl-first">{firstLine(row.note)}</span>
                 {/* Decided rows say so on the line, so the queue can be read
                     without opening anything. */}

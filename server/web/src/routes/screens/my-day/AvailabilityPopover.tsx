@@ -28,6 +28,8 @@ import {
 import '../../../components/availability/availability.css';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { dayIn } from './my-day-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 type Choice = AvailabilityStatus | 'away';
 
@@ -318,20 +320,22 @@ export function AvailabilityPopover({
         <div className="avail-form-head">
           <h3 className="avail-form-title">My availability</h3>
           {head && (
-            <button
-              type="button"
-              className="avail-close"
-              aria-label="Close"
-              onClick={(event) => {
-                // Back to the pill that opened it, before the panel goes.
-                event.currentTarget.closest('.myday-pop')?.querySelector('button')?.focus();
-                setOpen(false);
-              }}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 6l12 12M18 6 6 18" />
-              </svg>
-            </button>
+            <Tooltip content="Close" shortcut="Escape">
+              <button
+                type="button"
+                className="avail-close"
+                aria-label="Close"
+                onClick={(event) => {
+                  // Back to the pill that opened it, before the panel goes.
+                  event.currentTarget.closest('.myday-pop')?.querySelector('button')?.focus();
+                  setOpen(false);
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
         </div>
         {saved === undefined || draft === undefined ? (
@@ -452,16 +456,18 @@ export function AvailabilityPopover({
                 {draft.tags.map((tag) => (
                   <span key={tag} className="avail-tag">
                     {tag}
-                    <button
-                      type="button"
-                      className="avail-tag-x"
-                      aria-label={`Remove ${tag}`}
-                      onClick={() => {
-                        change({ tags: draft.tags.filter((t) => t !== tag) });
-                      }}
-                    >
-                      ×
-                    </button>
+                    <Tooltip content={`Remove ${tag}`}>
+                      <button
+                        type="button"
+                        className="avail-tag-x"
+                        aria-label={`Remove ${tag}`}
+                        onClick={() => {
+                          change({ tags: draft.tags.filter((t) => t !== tag) });
+                        }}
+                      >
+                        <Icon name="close" size="tiny" />
+                      </button>
+                    </Tooltip>
                   </span>
                 ))}
                 <input
@@ -544,17 +550,19 @@ export function AvailabilityPopover({
                   {upcoming.map((p) => (
                     <li key={p.id}>
                       <span aria-hidden="true">◐</span> {rangeShort(p.from, p.to)}
-                      <button
-                        type="button"
-                        className="avail-tag-x"
-                        aria-label={`Remove away ${rangeShort(p.from, p.to)}`}
-                        disabled={busy}
-                        onClick={() => {
-                          void removePeriod(p.id);
-                        }}
-                      >
-                        ×
-                      </button>
+                      <Tooltip content="Remove this time away">
+                        <button
+                          type="button"
+                          className="avail-tag-x"
+                          aria-label={`Remove away ${rangeShort(p.from, p.to)}`}
+                          disabled={busy}
+                          onClick={() => {
+                            void removePeriod(p.id);
+                          }}
+                        >
+                          <Icon name="close" size="tiny" />
+                        </button>
+                      </Tooltip>
                     </li>
                   ))}
                 </ul>

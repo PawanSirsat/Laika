@@ -39,6 +39,25 @@ export async function tipText(control: Locator): Promise<string> {
   return words;
 }
 
+/**
+ * {@link tipText} for every element a locator matches, in order, read from
+ * the DOM (LAI-1214) — a list's worth of rules in one pass. For tooltips that
+ * are not `lazy`: an unreached lazy one has no description yet and reads `''`,
+ * as does an element with none, so a missing one shows in the list.
+ */
+export async function tipTexts(controls: Locator): Promise<string[]> {
+  return controls.evaluateAll((els) =>
+    els.map((el) => {
+      for (const id of (el.getAttribute('aria-describedby') ?? '').split(/\s+/)) {
+        const tip = id === '' ? null : document.getElementById(id);
+        if (tip?.getAttribute('role') !== 'tooltip') continue;
+        return (tip.querySelector('.tip-words') ?? tip).textContent ?? '';
+      }
+      return '';
+    }),
+  );
+}
+
 /** The server's policy with `style-src-attr` tightened to `'none'` (as dialog-tooltips.test.ts). */
 export const STRICT_CSP = [
   "default-src 'self'",

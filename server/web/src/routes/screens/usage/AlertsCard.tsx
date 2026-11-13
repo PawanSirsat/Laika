@@ -10,6 +10,8 @@ import { compactTokens } from '../../../api/usage.ts';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { alertRows } from './usage-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** How many alerts show before *Show all N* (the owner's design, LAI-1127). */
 export const ALERTS_COLLAPSED = 6;
@@ -129,15 +131,20 @@ export function AlertsCard({
                 className="usage-alert"
                 data-kind={alert.kind}
                 data-over={isOver ? 'true' : undefined}
-                title={alertLine(alert)}
               >
                 <span className="usage-alert-mark">
                   {alert.kind === 'runaway' ? 'p95' : `${String(Math.round(share * 100))}%`}
                 </span>
-                <a className="usage-alert-line" href={href} onClick={follow(href)}>
-                  {alert.task !== null && <span className="usage-task-key">{alert.task.key}</span>}{' '}
-                  <span className="usage-alert-title">{alertTitle(alert)}</span>
-                </a>
+                {/* The alert's whole line on the link it names (LAI-1214) — on
+                    the row it was a title= the dismiss button's tooltip sat on. */}
+                <Tooltip content={alertLine(alert)}>
+                  <a className="usage-alert-line" href={href} onClick={follow(href)}>
+                    {alert.task !== null && (
+                      <span className="usage-task-key">{alert.task.key}</span>
+                    )}{' '}
+                    <span className="usage-alert-title">{alertTitle(alert)}</span>
+                  </a>
+                </Tooltip>
                 <span className="usage-alert-use">
                   <span className="usage-alert-figures">
                     {compactTokens(alert.tokens)} / {compactTokens(alert.limit_tokens)}
@@ -150,18 +157,19 @@ export function AlertsCard({
                     />
                   </span>
                 </span>
-                <button
-                  type="button"
-                  className="usage-alert-dismiss"
-                  aria-label={`Dismiss ${alert.task?.key ?? 'alert'}`}
-                  title="Dismiss"
-                  disabled={busy}
-                  onClick={() => {
-                    dismiss([alert.id]);
-                  }}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
+                <Tooltip content="Dismiss">
+                  <button
+                    type="button"
+                    className="usage-alert-dismiss"
+                    aria-label={`Dismiss ${alert.task?.key ?? 'alert'}`}
+                    disabled={busy}
+                    onClick={() => {
+                      dismiss([alert.id]);
+                    }}
+                  >
+                    <Icon name="close" size="tiny" />
+                  </button>
+                </Tooltip>
               </li>
             );
           })}

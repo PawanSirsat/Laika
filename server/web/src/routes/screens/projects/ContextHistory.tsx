@@ -17,6 +17,7 @@ import { agentDevice, twinNames } from '../../../api/selected-agent.ts';
 import type { Member } from '../../../api/tasks.ts';
 import { dateTime } from '../../../api/time-label.ts';
 import { DeliveredTo } from './DeliveredTo.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /**
  * What the reader asked to see under the history: one revision whole, or the
@@ -428,7 +429,7 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
                 setFrom(Number(value));
               }}
             />
-            <span aria-hidden="true">→</span>
+            <Icon name="arrow-right" size="tiny" />
             <Dropdown
               className="ctx-compare-field"
               aria-label="To revision"

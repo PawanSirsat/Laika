@@ -1,6 +1,7 @@
 import { shortcutLabel } from './palette-model.ts';
 import { openPalette } from './palette-store.ts';
 import './command-palette.css';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface PaletteTriggerProps {
   /**
@@ -51,18 +52,24 @@ export function PaletteTrigger({ variant }: PaletteTriggerProps) {
 
   if (variant === 'header') {
     return (
-      <button
-        type="button"
-        className="cmdk-trigger cmdk-trigger-header"
-        aria-haspopup="dialog"
-        data-palette-trigger="header"
-        onClick={(event) => {
-          openPalette(event.currentTarget);
-        }}
-      >
-        <SearchGlyph />
-        <span className="visually-hidden">Search and commands ({hint})</span>
-      </button>
+      // The key in the words, not as `shortcut`: that would put
+      // `aria-keyshortcuts` on every page, and a viewer's board must carry
+      // none (card-reorder.test.ts, LAI-473) — the sidebar row says it the
+      // same way.
+      <Tooltip content={`Search and commands (${hint})`}>
+        <button
+          type="button"
+          className="cmdk-trigger cmdk-trigger-header"
+          aria-haspopup="dialog"
+          data-palette-trigger="header"
+          onClick={(event) => {
+            openPalette(event.currentTarget);
+          }}
+        >
+          <SearchGlyph />
+          <span className="visually-hidden">Search and commands ({hint})</span>
+        </button>
+      </Tooltip>
     );
   }
 

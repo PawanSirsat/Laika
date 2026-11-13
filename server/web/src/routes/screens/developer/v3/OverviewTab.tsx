@@ -40,6 +40,8 @@ import { StaleNotice } from './StaleNotice.tsx';
 import { RepoRows } from './RepoRows.tsx';
 import { updateManifestOf, updateStatus, type UpdateStatus } from './update-status.ts';
 import './overview.css';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../../components/icon/Icon.tsx';
 
 export interface OverviewTabProps {
   readonly onNavigate: (to: string) => void;
@@ -154,7 +156,7 @@ function AttentionChip({
       >
         {word}
         <span className="dx-chip-caret" aria-hidden="true">
-          ▾
+          <Icon name="chevron-down" size="tiny" />
         </span>
       </button>
       {open && (
@@ -181,6 +183,7 @@ function AttentionChip({
                   }}
                 >
                   {item.action}
+                  <Icon name="arrow-right" size="tiny" />
                   <span className="visually-hidden">{`: ${item.label}`}</span>
                 </AppLink>
               </li>
@@ -398,6 +401,8 @@ export function OverviewTab({
                     onNavigate={onNavigate}
                   >
                     {hero.primary.label}
+                    {/* Drawn, not typed (LAI-1214): the label no longer ends in →. */}
+                    <Icon name="arrow-right" size="tiny" />
                   </AppLink>
                   {hero.secondary !== undefined && (
                     <AppLink href={hero.secondary.href} className="dx-btn" onNavigate={onNavigate}>
@@ -453,15 +458,17 @@ export function OverviewTab({
                         <span className="visually-hidden">{`: ${row.name}`}</span>
                       </AppLink>
                     ) : (
-                      <button
-                        type="button"
-                        className="dx-btn dx-btn-sm"
-                        disabled
-                        title={row.locked}
-                      >
-                        {row.action.label}
-                        <span className="visually-hidden">{`: ${row.name}. ${row.locked}`}</span>
-                      </button>
+                      <Tooltip content={row.locked}>
+                        <button
+                          type="button"
+                          className="dx-btn dx-btn-sm"
+                          data-locked-step
+                          aria-disabled="true"
+                        >
+                          {row.action.label}
+                          <span className="visually-hidden">{`: ${row.name}. ${row.locked}`}</span>
+                        </button>
+                      </Tooltip>
                     )}
                   </li>
                 ))}
@@ -482,9 +489,9 @@ export function OverviewTab({
                       </span>
                       <div className="dx-stat-text">
                         <strong className="dx-stat-count">{line.count}</strong>
-                        <span className="dx-stat-names" title={line.names}>
-                          {line.names}
-                        </span>
+                        <Tooltip content={line.names}>
+                          <span className="dx-stat-names">{line.names}</span>
+                        </Tooltip>
                       </div>
                       {line.key === 'tools' && attention.length > 0 ? (
                         <AttentionChip
@@ -520,7 +527,8 @@ export function OverviewTab({
                   className="dx-btn dx-btn-soft dx-btn-full"
                   onNavigate={onNavigate}
                 >
-                  Explore project setup →
+                  Explore project setup
+                  <Icon name="arrow-right" size="tiny" />
                 </AppLink>
                 <p className="dx-overview-aside">
                   Scripts and the API use your personal credentials, under{' '}
@@ -556,7 +564,8 @@ export function OverviewTab({
                     className="dx-btn dx-btn-primary"
                     onNavigate={onNavigate}
                   >
-                    Set up repository →
+                    Set up repository
+                    <Icon name="arrow-right" size="tiny" />
                   </AppLink>
                 </div>
               </li>
