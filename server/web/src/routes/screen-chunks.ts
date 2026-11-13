@@ -1,6 +1,81 @@
 import { chunksFor, type ScreenChunk } from './route-table.ts';
 
 /**
+ * The URL a failed `import()` names. Chromium and Firefox put it in the
+ * message; Safari does not, and its retry falls back to a reload (see
+ * `ScreenBoundary`).
+ */
+export function failedModuleUrl(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(https?:\/\/[^\s'"]+\.js)\b/.exec(message)?.[1];
+}
+
+/**
+ * One `import()`, able to be asked again after it failed.
+ *
+ * **The browser remembers a failed module fetch** — measured in Chromium: the
+ * same URL imported again rejects at once, with no request. So the retry asks
+ * for the URL the failure named with `?retry=N`, which the module map has not
+ * seen. The first attempt never ran, so nothing is evaluated twice.
+ */
+function retryable<T>(load: () => Promise<T>): () => Promise<T> {
+  let failedUrl: string | undefined;
+  let attempt = 0;
+  return async () => {
+    try {
+      if (failedUrl === undefined) return await load();
+      attempt += 1;
+      return (await import(/* @vite-ignore */ `${failedUrl}?retry=${String(attempt)}`)) as T;
+    } catch (error) {
+      failedUrl = failedModuleUrl(error) ?? failedUrl;
+      throw error;
+    }
+  };
+}
+
+/*
+ * One per module, each able to retry on its own: in a chunk of several, only
+ * the module that failed is asked for again.
+ */
+const spaceLayout = retryable(() => import('../components/space/SpaceLayout.tsx'));
+const boardScreen = retryable(() => import('./screens/BoardScreen.tsx'));
+const timelineScreen = retryable(() => import('./screens/timeline/TimelineScreen.tsx'));
+const calendarScreen = retryable(() => import('./screens/calendar/CalendarScreen.tsx'));
+const sprintsScreen = retryable(() => import('./screens/sprints/SprintsScreen.tsx'));
+const dashboardScreen = retryable(() => import('./screens/dashboard/DashboardScreen.tsx'));
+const activityScreen = retryable(() => import('./screens/activity/ActivityScreen.tsx'));
+const meetingReviewScreen = retryable(
+  () => import('./screens/meeting-review/MeetingReviewScreen.tsx'),
+);
+const projectsScreen = retryable(() => import('./screens/ProjectsScreen.tsx'));
+const myDayScreen = retryable(() => import('./screens/my-day/MyDayScreen.tsx'));
+const inboxScreen = retryable(() => import('./screens/inbox/InboxScreen.tsx'));
+const reviewScreen = retryable(() => import('./screens/review/ReviewScreen.tsx'));
+const unlistedScreen = retryable(() => import('./screens/unlisted/UnlistedScreen.tsx'));
+const insightsScreen = retryable(() => import('./screens/insights/InsightsScreen.tsx'));
+const capacityScreen = retryable(() => import('./screens/capacity/CapacityScreen.tsx'));
+const usageScreen = retryable(() => import('./screens/usage/UsageScreen.tsx'));
+const timeTab = retryable(() => import('./screens/insights/TimeTab.tsx'));
+const organisationScreen = retryable(() => import('./screens/organisation/OrganisationScreen.tsx'));
+const developerScreen = retryable(() => import('./screens/developer/DeveloperScreen.tsx'));
+const membersScreen = retryable(() => import('./screens/MembersScreen.tsx'));
+const spaceSettingsScreen = retryable(
+  () => import('./screens/space-settings/SpaceSettingsScreen.tsx'),
+);
+const workroomScreen = retryable(() => import('./screens/workroom/WorkroomScreen.tsx'));
+const profileScreen = retryable(() => import('./screens/profile/ProfileScreen.tsx'));
+const appearanceScreen = retryable(() => import('./screens/appearance/AppearanceScreen.tsx'));
+const loginRoute = retryable(() => import('./screens/LoginRoute.tsx'));
+const inviteRoute = retryable(() => import('./screens/InviteRoute.tsx'));
+const resetPasswordRoute = retryable(() => import('./screens/ResetPasswordRoute.tsx'));
+const setupRoute = retryable(() => import('./screens/SetupRoute.tsx'));
+const tokenReference = retryable(() => import('../theme/TokenReference.tsx'));
+const stateGallery = retryable(() => import('../components/StateGallery.tsx'));
+const documentsTrialRoute = retryable(
+  () => import('../components/documents/DocumentsTrialRoute.tsx'),
+);
+
+/**
  * The `import()` behind every screen chunk (LAI-1219), and the one cache of
  * them. `ROUTE_CHUNKS` in `route-table.ts` chooses which chunk a route's
  * screen is in; this file says where that chunk's code lives.
@@ -11,54 +86,54 @@ import { chunksFor, type ScreenChunk } from './route-table.ts';
  * count.
  */
 const LOADERS = {
-  'space-frame': () => import('../components/space/SpaceLayout.tsx'),
-  board: () => import('./screens/BoardScreen.tsx'),
-  timeline: () => import('./screens/timeline/TimelineScreen.tsx'),
-  calendar: () => import('./screens/calendar/CalendarScreen.tsx'),
-  sprints: () => import('./screens/sprints/SprintsScreen.tsx'),
-  dashboard: () => import('./screens/dashboard/DashboardScreen.tsx'),
-  activity: () => import('./screens/activity/ActivityScreen.tsx'),
-  'meeting-review': () => import('./screens/meeting-review/MeetingReviewScreen.tsx'),
-  projects: () => import('./screens/ProjectsScreen.tsx'),
-  'my-day': () => import('./screens/my-day/MyDayScreen.tsx'),
+  'space-frame': spaceLayout,
+  board: boardScreen,
+  timeline: timelineScreen,
+  calendar: calendarScreen,
+  sprints: sprintsScreen,
+  dashboard: dashboardScreen,
+  activity: activityScreen,
+  'meeting-review': meetingReviewScreen,
+  projects: projectsScreen,
+  'my-day': myDayScreen,
   inbox: async () => {
     const [inbox, review, unlisted] = await Promise.all([
-      import('./screens/inbox/InboxScreen.tsx'),
-      import('./screens/review/ReviewScreen.tsx'),
-      import('./screens/unlisted/UnlistedScreen.tsx'),
+      inboxScreen(),
+      reviewScreen(),
+      unlistedScreen(),
     ]);
     return { ...inbox, ...review, ...unlisted };
   },
   insights: async () => {
     const [insights, capacity, usage, time] = await Promise.all([
-      import('./screens/insights/InsightsScreen.tsx'),
-      import('./screens/capacity/CapacityScreen.tsx'),
-      import('./screens/usage/UsageScreen.tsx'),
-      import('./screens/insights/TimeTab.tsx'),
+      insightsScreen(),
+      capacityScreen(),
+      usageScreen(),
+      timeTab(),
     ]);
     return { ...insights, ...capacity, ...usage, ...time };
   },
-  organisation: () => import('./screens/organisation/OrganisationScreen.tsx'),
-  developer: () => import('./screens/developer/DeveloperScreen.tsx'),
-  members: () => import('./screens/MembersScreen.tsx'),
-  'space-settings': () => import('./screens/space-settings/SpaceSettingsScreen.tsx'),
-  workroom: () => import('./screens/workroom/WorkroomScreen.tsx'),
-  profile: () => import('./screens/profile/ProfileScreen.tsx'),
-  appearance: () => import('./screens/appearance/AppearanceScreen.tsx'),
+  organisation: organisationScreen,
+  developer: developerScreen,
+  members: membersScreen,
+  'space-settings': spaceSettingsScreen,
+  workroom: workroomScreen,
+  profile: profileScreen,
+  appearance: appearanceScreen,
   auth: async () => {
     const [login, invite, reset, setup] = await Promise.all([
-      import('./screens/LoginRoute.tsx'),
-      import('./screens/InviteRoute.tsx'),
-      import('./screens/ResetPasswordRoute.tsx'),
-      import('./screens/SetupRoute.tsx'),
+      loginRoute(),
+      inviteRoute(),
+      resetPasswordRoute(),
+      setupRoute(),
     ]);
     return { ...login, ...invite, ...reset, ...setup };
   },
   reference: async () => {
     const [tokens, states, documents] = await Promise.all([
-      import('../theme/TokenReference.tsx'),
-      import('../components/StateGallery.tsx'),
-      import('../components/documents/DocumentsTrialRoute.tsx'),
+      tokenReference(),
+      stateGallery(),
+      documentsTrialRoute(),
     ]);
     return { ...tokens, ...states, ...documents };
   },
@@ -84,6 +159,24 @@ export class ChunkLoadError extends Error {
     this.name = 'ChunkLoadError';
     this.chunk = chunk;
   }
+}
+
+/**
+ * Bumped by Try again (`retryScreens`). A screen whose chunk failed makes a
+ * fresh `lazy` only once this has moved: React re-renders a failed lazy on its
+ * own, and fetching again on every such render would loop — the failure is
+ * the user's to retry, not the renderer's.
+ */
+let retries = 0;
+
+/** Try again: let screens whose chunk failed ask for it once more. */
+export function retryScreens(): void {
+  retries += 1;
+}
+
+/** How many times Try again has been pressed in this page's life. */
+export function retryCount(): number {
+  return retries;
 }
 
 /** In flight or settled; a failure is dropped, so the next ask fetches again. */

@@ -112,7 +112,10 @@ void describe('the entry chunk (LAI-1219)', () => {
     const initial = staticClosure(entryKey());
     for (const screen of screens) {
       const chunk = manifest[screen];
-      assert.ok(chunk !== undefined, `${screen} is not in the build — a wrong path in screen-chunks.ts?`);
+      assert.ok(
+        chunk !== undefined,
+        `${screen} is not in the build — a wrong path in screen-chunks.ts?`,
+      );
       assert.equal(chunk.isDynamicEntry, true, `${screen} is not loaded on demand`);
       assert.ok(!initial.has(screen), `${screen} is loaded with the first page`);
     }

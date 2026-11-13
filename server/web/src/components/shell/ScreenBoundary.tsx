@@ -14,6 +14,8 @@ import {
   arrivedChunk,
   ChunkLoadError,
   loadChunk,
+  retryCount,
+  retryScreens,
   type ChunkModule,
 } from '../../routes/screen-chunks.ts';
 import { ErrorState } from '../ErrorState.tsx';
@@ -39,13 +41,16 @@ export function lazyScreen<K extends ScreenChunk, P extends object>(
   chunk: K,
   pick: (module: ChunkModule<K>) => ComponentType<P>,
 ): ComponentType<P> {
-  let failed = false;
+  // The retry generation the current `lazy` was made in, or -1 while it has
+  // not failed. A failed one is replaced only once Try again has moved the
+  // generation past it.
+  let failedIn = -1;
   const make = () =>
     lazy(async () => {
       try {
         return { default: pick(await loadChunk(chunk)) };
       } catch (error) {
-        failed = true;
+        failedIn = retryCount();
         throw error;
       }
     });
@@ -58,8 +63,8 @@ export function lazyScreen<K extends ScreenChunk, P extends object>(
     const [Screen] = useState<ComponentType<P>>(() => {
       const ready = arrivedChunk(chunk);
       if (ready !== undefined) return pick(ready);
-      if (failed) {
-        failed = false;
+      if (failedIn !== -1 && retryCount() > failedIn) {
+        failedIn = -1;
         current = make();
       }
       return current as ComponentType<P>;
@@ -71,7 +76,13 @@ export function lazyScreen<K extends ScreenChunk, P extends object>(
 }
 
 /** The shared loading state, after {@link SCREEN_LOADING_DELAY_MS} and not before. */
-function DelayedLoading({ shape, label }: { readonly shape: SkeletonShape; readonly label: string }) {
+function DelayedLoading({
+  shape,
+  label,
+}: {
+  readonly shape: SkeletonShape;
+  readonly label: string;
+}) {
   const [shown, setShown] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -107,8 +118,8 @@ interface BoundaryProps {
  *
  * The caller keys it by path, so moving to another page starts clean.
  */
-export class ScreenBoundary extends Component<BoundaryProps, { error: unknown }> {
-  override state: { error: unknown } = { error: undefined };
+export class ScreenBoundary extends Component<BoundaryProps, { error: unknown; retried: boolean }> {
+  override state: { error: unknown; retried: boolean } = { error: undefined, retried: false };
 
   static getDerivedStateFromError(error: unknown): { error: unknown } {
     return { error };
@@ -120,19 +131,38 @@ export class ScreenBoundary extends Component<BoundaryProps, { error: unknown }>
     }
   }
 
+  /**
+   * Fetch the chunk again, in place. If that already failed once, reload
+   * instead: what is left is a failure an in-page retry cannot reach — a
+   * shared file the browser remembers failing, or a deploy that renamed every
+   * file — and a fresh page asks for all of it anew.
+   */
   private readonly retry = (): void => {
-    this.setState({ error: undefined });
+    if (this.state.retried) {
+      window.location.reload();
+      return;
+    }
+    retryScreens();
+    this.setState({ error: undefined, retried: true });
   };
 
   override render(): ReactNode {
     const { error } = this.state;
     if (error !== undefined) {
-      if (!(error instanceof ChunkLoadError)) throw error;
+      if (!(error instanceof ChunkLoadError)) {
+        throw error instanceof Error
+          ? error
+          : new Error('A screen threw a non-Error value', { cause: error });
+      }
       return (
         <div data-screen-failed={error.chunk}>
           <ErrorState
             headline="This page didn’t load"
-            body="Part of Laika could not be fetched — the connection dropped, or a new version was released since this page opened. Try again to fetch it."
+            body={
+              this.state.retried
+                ? 'It still could not be fetched. Try again reloads Laika, which picks up a new version if one was released.'
+                : 'Part of Laika could not be fetched — the connection dropped, or a new version was released since this page opened. Try again to fetch it.'
+            }
             onRetry={this.retry}
           />
         </div>
