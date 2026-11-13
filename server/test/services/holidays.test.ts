@@ -226,6 +226,52 @@ describe('typing and removing', () => {
     );
   });
 
+  it('holds a manual holiday to its creator and a synced one to nobody, in the database', () => {
+    // Two-sided (LAI-1181 review): no manual row without a name, no Clan row with one.
+    expectSqliteError(
+      () =>
+        t.db
+          .insert(orgHolidays)
+          .values({
+            id: newId(),
+            day: '2026-12-30',
+            label: 'Nobody typed this',
+            source: 'manual',
+            createdBy: null,
+            createdAt: NOW,
+            updatedAt: NOW,
+          })
+          .run(),
+      /CHECK constraint failed: org_holidays_origin_check/,
+    );
+    expectSqliteError(
+      () =>
+        t.db
+          .insert(orgHolidays)
+          .values({
+            id: newId(),
+            day: '2026-12-30',
+            label: 'Clan, with a name',
+            source: 'clan',
+            sourceRef: '9',
+            createdBy: s.userId,
+            createdAt: NOW,
+            updatedAt: NOW,
+          })
+          .run(),
+      /CHECK constraint failed: org_holidays_origin_check/,
+    );
+  });
+
+  it('keeps the creator of a manual holiday from being deleted, as the set null meets the check', () => {
+    const admin = person('admin');
+    addHoliday(t.db, admin, { day: '2026-12-26', label: 'One' }, NOW);
+    expectSqliteError(
+      () => t.db.delete(users).where(eq(users.id, admin.userId)).run(),
+      /CHECK constraint failed: org_holidays_origin_check/,
+    );
+  });
+
   it('refuses a day that is not a date', () => {
     const err = caught(() => addHoliday(t.db, owner, { day: '2026-02-30', label: 'X' }, NOW));
     expect(err.status).toBe(422);

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "28ba5429-33c1-4f34-9d19-3f88bca165b8",
+  "id": "bc984fd5-5dbb-4e8d-b13b-fd09d54026a0",
   "prevId": "ee447db1-2fc6-485c-a69b-01c2fd403c94",
   "tables": {
     "accounts": {
@@ -4173,7 +4173,7 @@
         },
         "org_holidays_origin_check": {
           "name": "org_holidays_origin_check",
-          "value": "(source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL)"
+          "value": "(source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL AND created_by IS NOT NULL)"
         }
       }
     },

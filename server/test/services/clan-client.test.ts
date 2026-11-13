@@ -7,6 +7,7 @@ import {
   clanClient,
   ClanLoginError,
   ClanUnavailableError,
+  isClanApiRoot,
   normaliseClanBaseUrl,
 } from '../../src/services/clan-client.ts';
 import {
@@ -54,46 +55,88 @@ function reasonOf(err: ApiError): string | undefined {
 }
 
 describe('the base URL', () => {
-  it('normalises what a person pastes to the API root, with no trailing slash', () => {
-    expect(normaliseClanBaseUrl('https://kvell.clan.biz')).toBe(CLAN_BASE);
-    expect(normaliseClanBaseUrl('  https://kvell.clan.biz/  ')).toBe(CLAN_BASE);
-    expect(normaliseClanBaseUrl('https://kvell.clan.biz/api/v1/')).toBe(CLAN_BASE);
-    expect(normaliseClanBaseUrl('https://KVELL.clan.biz/api/v1')).toBe(CLAN_BASE);
+  function refusal(input: string): unknown {
+    try {
+      normaliseClanBaseUrl(input);
+    } catch (err) {
+      if (err instanceof ApiError) return { status: err.status, details: err.details };
+      throw err;
+    }
+    return 'accepted';
+  }
+
+  it('normalises a Clan company’s address, however it is pasted, to its API root', () => {
+    for (const input of [
+      'https://codesage.clan.biz',
+      '  https://codesage.clan.biz/  ',
+      'https://codesage.clan.biz/api/v1',
+      'https://codesage.clan.biz/api/v1/',
+      'https://CodeSage.Clan.Biz',
+      'https://codesage.clan.biz:443',
+    ]) {
+      expect(normaliseClanBaseUrl(input), input).toBe('https://codesage.clan.biz/api/v1');
+    }
   });
 
   it('refuses anything but https, naming the field', () => {
-    let err: unknown;
-    try {
-      normaliseClanBaseUrl('http://kvell.clan.biz');
-    } catch (e) {
-      err = e;
-    }
-    expect(err).toBeInstanceOf(ApiError);
-    expect((err as ApiError).status).toBe(422);
-    expect((err as ApiError).details).toEqual({
-      field: 'base_url',
-      reason: 'base_url_not_https',
+    expect(refusal('http://codesage.clan.biz')).toEqual({
+      status: 422,
+      details: { field: 'base_url', reason: 'base_url_not_https' },
     });
   });
 
-  it('refuses a URL carrying credentials, a query or a fragment, and one that is not a URL', () => {
-    for (const bad of [
-      'https://user:pw@kvell.clan.biz',
-      'https://kvell.clan.biz/?x=1',
-      'https://kvell.clan.biz/#a',
-      'kvell.clan.biz',
+  it('refuses every host but one company label under clan.biz (LAI-1181 review)', () => {
+    // The sync runs every 30 minutes with a token in its headers, and reflects
+    // the answer's name back: none of these may be asked anything.
+    for (const input of [
+      'https://localhost',
+      'https://127.0.0.1',
+      'https://169.254.169.254',
+      'https://10.0.0.5',
+      'https://[::1]',
+      'https://clan.biz',
+      'https://clan.biz.evil.com',
+      'https://evil.com/.clan.biz',
+      'https://a.b.clan.biz',
+      'https://codesage.clan.biz.',
+      'https://-codesage.clan.biz',
+      'https://codesage.clan.biz:8443',
+      'https://user@codesage.clan.biz',
+      'https://user:pw@codesage.clan.biz',
+      'https://codesage.clan.biz/?x=1',
+      'https://codesage.clan.biz/#a',
+      'https://codesage.clan.biz/elsewhere',
+      'codesage.clan.biz',
     ]) {
-      let err: unknown;
-      try {
-        normaliseClanBaseUrl(bad);
-      } catch (e) {
-        err = e;
-      }
-      expect((err as ApiError).details, bad).toEqual({
-        field: 'base_url',
-        reason: 'base_url_invalid',
+      expect(refusal(input), input).toEqual({
+        status: 422,
+        details: { field: 'base_url', reason: 'base_url_invalid' },
       });
     }
+  });
+
+  it('says a stored address is a Clan API root only when it is exactly one', () => {
+    expect(isClanApiRoot('https://codesage.clan.biz/api/v1')).toBe(true);
+    expect(isClanApiRoot('https://codesage.clan.biz')).toBe(false);
+    expect(isClanApiRoot('https://169.254.169.254/api/v1')).toBe(false);
+  });
+
+  it('asks a host that is not a Clan company nothing, whatever the caller', async () => {
+    // Counted on `fetch` itself: the fake refuses an unknown host before it
+    // records a request, so its own list could not see a call that was made.
+    let fetched = 0;
+    const err = await caught(
+      clanClient({
+        baseUrl: 'https://169.254.169.254/api/v1',
+        fetchImpl: () => {
+          fetched += 1;
+          return Promise.resolve(new Response('{"data":{"name":"metadata"}}', { status: 200 }));
+        },
+      }).check(CLAN_TOKEN, '2025-01-01', '2027-12-31'),
+    );
+    expect(reasonOf(err)).toBe('clan_unreachable');
+    expect((err.details as { why: string }).why).toBe('not a Clan company address');
+    expect(fetched).toBe(0);
   });
 });
 
@@ -398,6 +441,23 @@ describe('reading', () => {
     const none = fakeClan({ employees: [employee(1, 'Ada', 'ada@example.test')] });
     none.total = 'absent';
     expect(await client(none).employees(CLAN_TOKEN)).toHaveLength(1);
+  });
+
+  it('gives up on a list that never ends: no short page in 200 is a bad answer', async () => {
+    const fake = fakeClan();
+    // Every page full, whatever the offset: a Clan that never says it is done.
+    const full = JSON.stringify({
+      data: Array.from({ length: CLAN_PAGE_LIMIT }, (_, i) =>
+        employee(i + 1, `P${String(i)}`, null),
+      ),
+    });
+    fake.intercept = (req) =>
+      req.path === '/employee' ? new Response(full, { status: 200 }) : undefined;
+    const err = await caught(client(fake).employees(CLAN_TOKEN));
+
+    expect(err).toBeInstanceOf(ClanAnswerError);
+    expect((err.details as { why: string }).why).toBe('employee: more than 200 pages');
+    expect(fake.to('/employee')).toHaveLength(200);
   });
 
   it('fails the whole read when a later page fails — it never answers part of a list', async () => {

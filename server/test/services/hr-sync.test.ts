@@ -535,6 +535,43 @@ describe('the record on the connection', () => {
     expect(source()).toMatchObject({ lastErrorCode: 'unreachable', lastAttemptAt: NOW });
   });
 
+  it('never calls a stored address that is not a Clan company’s, and says so (LAI-1181 review)', async () => {
+    connect();
+    // The row edited behind Laika's back to aim the sync somewhere else.
+    t.db.update(orgHrSource).set({ baseUrl: 'https://169.254.169.254/api/v1' }).run();
+    const fake = fakeClan({ employees: staff() });
+    let fetched = 0;
+    const outcome = await runHrSync(t.db, SECRET, {
+      fetchImpl: (input, init) => {
+        fetched += 1;
+        return fake.fetchImpl(input, init);
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ kind: 'failed', code: 'unreachable' });
+    expect(fetched).toBe(0);
+    expect(source()).toMatchObject({ lastErrorCode: 'unreachable', lastAttemptAt: NOW });
+    expect(source().lastError).toContain('not a Clan company address');
+  });
+
+  it('records a list that never ends as bad_answer, and reconciles nothing', async () => {
+    connect();
+    const fake = fakeClan();
+    const full = JSON.stringify({
+      data: Array.from({ length: 1_000 }, (_, i) =>
+        employee(i + 1, `P${String(i)}`, `p${String(i)}@example.test`),
+      ),
+    });
+    fake.intercept = (req) =>
+      req.path === '/employee' ? new Response(full, { status: 200 }) : undefined;
+
+    expect(await sync(fake)).toEqual({ kind: 'failed', code: 'bad_answer' });
+    expect(fake.to('/employee')).toHaveLength(200);
+    expect(fake.to('/leave')).toEqual([]);
+    expect(t.db.select().from(hrPeople).all()).toEqual([]);
+  });
+
   it('records an answer it cannot read as bad_answer', async () => {
     connect();
     const fake = fakeClan();
@@ -634,6 +671,23 @@ describe('one run at a time', () => {
     await sync(fake);
     await sync(fake);
     expect(fake.to('/employee')).toHaveLength(2);
+  });
+
+  it('writes and records nothing when the connection was removed while it read', async () => {
+    connect();
+    const fake = fakeClan({ employees: staff(), leave: [leaveRow(100, 1, '2026-11-20')] });
+    const release = fake.hold();
+    const run = sync(fake);
+    // The owner disconnects mid-read: the row is gone.
+    t.db.delete(orgHrSource).run();
+    release();
+
+    expect(await run).toEqual({ kind: 'skipped' });
+    expect(t.db.select().from(orgHrSource).all()).toEqual([]);
+    expect(t.db.select().from(hrPeople).all()).toEqual([]);
+    expect(t.db.select().from(leaveDays).all()).toEqual([]);
+    // It did read, so the hold was real and the write is what was refused.
+    expect(fake.to('/employee')).toHaveLength(1);
   });
 
   it('writes nothing when the connection was replaced while it read', async () => {

@@ -51,7 +51,7 @@ CREATE TABLE `org_holidays` (
 	FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "org_holidays_source_check" CHECK(source IN ('manual', 'clan')),
 	CONSTRAINT "org_holidays_label_check" CHECK(length(label) BETWEEN 1 AND 120),
-	CONSTRAINT "org_holidays_origin_check" CHECK((source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL))
+	CONSTRAINT "org_holidays_origin_check" CHECK((source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL AND created_by IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `org_holidays_source_ref_unique` ON `org_holidays` (`source`,`source_ref`) WHERE "org_holidays"."source_ref" IS NOT NULL;--> statement-breakpoint

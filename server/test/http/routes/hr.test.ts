@@ -221,6 +221,16 @@ describe('connecting', () => {
       reason: 'base_url_not_https',
     });
 
+    // Not a Clan company's host: the same shape, the reason the screen already words.
+    for (const base_url of ['https://169.254.169.254', 'https://clan.biz.evil.com']) {
+      const elsewhere = await call('POST', '/hr/connect', { ...SIGN_IN, base_url });
+      expect(elsewhere.status, base_url).toBe(422);
+      expect((await errorOf(elsewhere)).details, base_url).toEqual({
+        field: 'base_url',
+        reason: 'base_url_invalid',
+      });
+    }
+
     const date = await call('POST', '/hr/connect', { ...PASTE, expires_on: 'next year' });
     expect(date.status).toBe(422);
 

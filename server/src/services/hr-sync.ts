@@ -22,6 +22,7 @@ import {
   type ClanHoliday,
   type ClanLeaveDay,
   ClanUnavailableError,
+  isClanApiRoot,
 } from './clan-client.ts';
 
 /**
@@ -162,6 +163,18 @@ export async function syncHr(
   if (source?.status !== 'connected' || serverSecret === '') return { kind: 'skipped' };
 
   const started = clock();
+  // The address is read from the database, so it is asked again here (LAI-1181
+  // review): a row edited to point anywhere but a Clan company is never
+  // fetched, and the failure says why.
+  if (!isClanApiRoot(source.baseUrl)) {
+    return recordFailure(
+      db,
+      source,
+      started,
+      'unreachable',
+      'The stored address is not a Clan company address, so Laika did not call it. Connect again.',
+    );
+  }
   let token: string;
   try {
     token = decryptSecret(source.tokenEnc, serverSecret, 'clan_api_token');

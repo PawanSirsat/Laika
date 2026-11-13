@@ -125,39 +125,81 @@ export class ClanAnswerError extends ApiError {
 }
 
 /**
+ * One DNS label, as a company's Clan subdomain is: lowercase letters, digits
+ * and inner hyphens, at most 63 characters.
+ */
+const CLAN_COMPANY_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** The provider's domain. Clan is the only provider (D-149 item 1). */
+const CLAN_DOMAIN = '.clan.biz';
+
+function refuseBaseUrl(message: string, reason: 'base_url_invalid' | 'base_url_not_https'): never {
+  throw new ApiError('unprocessable', message, { field: 'base_url', reason });
+}
+
+/**
  * `https://<company>.clan.biz` in any of the ways a person pastes it → the
  * API root, `https://<company>.clan.biz/api/v1`, with no trailing slash.
  *
+ * **Only a Clan company's own host** (LAI-1181 review): exactly one label
+ * under `clan.biz`, on the default port, with no userinfo, query or
+ * fragment, and a path of nothing or `/api/v1`. Anything else — `localhost`,
+ * an IP literal, `clan.biz.evil.com`, a second label, another port — is the
+ * recurring sync aimed at a host that is not Clan, with a token in its
+ * headers and the answer's `name` reflected back as `account_name`, so it is
+ * refused rather than normalised.
+ *
  * **`https:` only**: the token travels in a header on every request, and a
- * sign-in's password in the first. No
- * credentials, query or fragment in the URL either — each is somewhere a
- * secret could hide, or a request Laika did not mean.
+ * sign-in's password in the first.
+ *
+ * A refusal is `422` with `{ field: 'base_url', reason }` —
+ * `base_url_not_https` for another scheme, `base_url_invalid` for anything
+ * else.
  */
 export function normaliseClanBaseUrl(input: string): string {
   let url: URL;
   try {
     url = new URL(input.trim());
   } catch {
-    throw new ApiError('unprocessable', 'base_url is not a URL', {
-      field: 'base_url',
-      reason: 'base_url_invalid',
-    });
+    refuseBaseUrl('base_url is not a URL', 'base_url_invalid');
   }
   if (url.protocol !== 'https:') {
-    throw new ApiError('unprocessable', 'base_url must be an https address', {
-      field: 'base_url',
-      reason: 'base_url_not_https',
-    });
+    refuseBaseUrl('base_url must be an https address', 'base_url_not_https');
   }
   if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
-    throw new ApiError('unprocessable', 'base_url carries more than an address', {
-      field: 'base_url',
-      reason: 'base_url_invalid',
-    });
+    refuseBaseUrl('base_url carries more than an address', 'base_url_invalid');
+  }
+  // `URL` lowercases the host, turns IP literals into their canonical form
+  // (never one label under clan.biz) and drops a default `:443`.
+  const host = url.hostname;
+  const label = host.endsWith(CLAN_DOMAIN) ? host.slice(0, -CLAN_DOMAIN.length) : '';
+  if (url.port !== '' || !CLAN_COMPANY_LABEL.test(label)) {
+    refuseBaseUrl(
+      'base_url must be a Clan company address, https://<company>.clan.biz',
+      'base_url_invalid',
+    );
   }
   const path = url.pathname.replace(/\/+$/, '');
-  const root = path.endsWith('/api/v1') ? path : `${path}/api/v1`;
-  return `${url.origin}${root}`;
+  if (path !== '' && path !== '/api/v1') {
+    refuseBaseUrl(
+      'base_url must be a Clan company address, https://<company>.clan.biz',
+      'base_url_invalid',
+    );
+  }
+  return `https://${host}/api/v1`;
+}
+
+/**
+ * Whether a stored address is still one {@link normaliseClanBaseUrl} would
+ * produce — asked before every request, because the sync reads it from the
+ * database, not from a person who was just checked.
+ */
+export function isClanApiRoot(baseUrl: string): boolean {
+  try {
+    return normaliseClanBaseUrl(baseUrl) === baseUrl;
+  } catch {
+    return false;
+  }
 }
 
 /** What `POST /auth/login` answers. */
@@ -274,9 +316,13 @@ export function clanClient(options: ClanClientOptions): ClanClient {
     options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
   const timeoutMs = options.timeoutMs ?? CLAN_TIMEOUT_MS;
   const base = options.baseUrl;
+  // Asked once here and kept: a client is built for one address, and an
+  // address that is not a Clan company's is never asked anything.
+  const allowed = isClanApiRoot(base);
 
   /** One request, body read inside the same timeout. */
   async function once(url: string, init: RequestInit): Promise<Answer> {
+    if (!allowed) throw new ClanUnavailableError('not a Clan company address', false);
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort();

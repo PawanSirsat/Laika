@@ -1625,11 +1625,14 @@ export const orgHolidays = sqliteTable(
     index('org_holidays_created_by_idx').on(t.createdBy),
     check('org_holidays_source_check', oneOf('source', HOLIDAY_SOURCES)),
     check('org_holidays_label_check', sql.raw('length(label) BETWEEN 1 AND 120')),
-    // Clan's rows carry Clan's id and nobody's name; a manual one is the reverse.
+    // Clan's rows carry Clan's id and nobody's name; a manual one is the
+    // reverse, both ways (LAI-1181 review). With `created_by`'s set null, the
+    // creator of any manual holiday therefore cannot be hard-deleted — nothing
+    // deletes a user but the removal of a brand-new orphan account.
     check(
       'org_holidays_origin_check',
       sql.raw(
-        "(source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL)",
+        "(source = 'clan' AND source_ref IS NOT NULL AND created_by IS NULL) OR (source = 'manual' AND source_ref IS NULL AND created_by IS NOT NULL)",
       ),
     ),
   ],
