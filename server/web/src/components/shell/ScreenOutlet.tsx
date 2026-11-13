@@ -217,11 +217,15 @@ function CalendarRoute() {
         next.set('task', taskId);
         setParams(next, { push: true });
       }}
-      onMonth={(month) => {
-        // `?month=` only off this month, so today's calendar stays a plain link (LAI-1178).
+      onPeriod={(period) => {
+        // Only what is off the defaults — month view, this month, this week —
+        // so today's calendar stays a plain link (LAI-1178, LAI-1218).
         const next = new URLSearchParams(params);
-        if (month === undefined) next.delete('month');
-        else next.set('month', month);
+        for (const key of ['view', 'month', 'week'] as const) {
+          const value = period[key];
+          if (value === undefined) next.delete(key);
+          else next.set(key, value);
+        }
         setParams(next, { push: true });
       }}
     />
