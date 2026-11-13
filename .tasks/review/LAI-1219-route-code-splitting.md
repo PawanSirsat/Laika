@@ -55,7 +55,7 @@ mutations.
 - **CSS is deliberately not split.** Screens depend on stylesheets only other
   screens import (the board's lane layout lives in a file only Activity
   imported), so the entry stylesheet is kept rule for rule as it was —
-  verified against a build of 844319cc. Splitting it is LAI-1133.
+  verified against a build of 844319cc. Splitting it is LAI-1180 (filed as LAI-1133, renumbered: that id is LAIKA-997's outside id).
 - **Try again** retries at `?retry=N`, because Chromium caches a failed module
   fetch; a second failure's Try again reloads.
 - **Existing tests adjusted** (both assumed one script bundle):
