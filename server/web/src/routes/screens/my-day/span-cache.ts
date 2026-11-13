@@ -91,6 +91,11 @@ export interface SpanCache {
     tz: string,
     limits?: ReadLimits,
   ): Promise<void>;
+  /**
+   * A day the Day page has just read: a week holding it takes it from here
+   * instead of asking for it again. Emptied with everything else.
+   */
+  seedDay(subjectId: string | undefined, view: MyDay): void;
   /** Drop one period, so the next read asks again — the error card's *Try again*. */
   forget(subjectId: string | undefined, span: WideSpan, day: string): void;
   /** Time changed on Day: nothing read before it is trusted. */
@@ -108,6 +113,7 @@ interface Entry {
 
 export function createSpanCache(readers: SpanReaders): SpanCache {
   const store = new Map<string, Entry>();
+  const seeds = new Map<string, MyDay>();
   const listeners = new Set<() => void>();
   let version = 0;
   const bump = (): void => {
@@ -130,10 +136,13 @@ export function createSpanCache(readers: SpanReaders): SpanCache {
       const read: Promise<Got> =
         span === 'week'
           ? pool(
-              Array.from(
-                { length: 7 },
-                (_, i) => () => readers.readDay(subjectId, addDays(from, i), tz),
-              ),
+              Array.from({ length: 7 }, (_, i) => {
+                const d = addDays(from, i);
+                const seeded = seeds.get(`${subjectKey(subjectId)}|${d}`);
+                return seeded === undefined
+                  ? () => readers.readDay(subjectId, d, tz)
+                  : () => Promise.resolve(seeded);
+              }),
               limits.days,
             ).then((days) => ({ kind: 'week' as const, days }))
           : pool(
@@ -153,10 +162,14 @@ export function createSpanCache(readers: SpanReaders): SpanCache {
       store.set(key, entry);
       return entry.inflight;
     },
+    seedDay(subjectId, view) {
+      seeds.set(`${subjectKey(subjectId)}|${view.day}`, view);
+    },
     forget(subjectId, span, day) {
       if (store.delete(keyFor(subjectId, span, day))) bump();
     },
     invalidate() {
+      seeds.clear();
       if (store.size === 0) return;
       store.clear();
       bump();

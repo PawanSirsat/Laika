@@ -428,7 +428,10 @@ export function MyDayScreen({
       : getPersonDay(subjectId, selectedDay, tz, controller.signal)
     )
       .then((view) => {
-        if (!controller.signal.aborted) setLoad({ kind: 'ready', view });
+        if (controller.signal.aborted) return;
+        // A week holding this day takes it from here rather than reading it again (LAI-1179).
+        spanCache.seedDay(subjectId, view);
+        setLoad({ kind: 'ready', view });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setLoad({ kind: 'error', error });

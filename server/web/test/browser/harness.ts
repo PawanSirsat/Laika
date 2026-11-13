@@ -403,6 +403,8 @@ export function applyStatusWrite(
 export interface StubCall {
   readonly method: string;
   readonly path: string;
+  /** The query as sent, `?` included, or `''` — `path` is the path alone (LAI-1179). */
+  readonly query: string;
   /** The parsed JSON body, or `undefined` for a request that sent none. */
   readonly body: unknown;
 }
@@ -624,7 +626,7 @@ function serve(
           // a request the stub cannot parse is itself worth being able to see.
           sent = raw;
         }
-        const call: StubCall = { method: req.method ?? 'GET', path, body: sent };
+        const call: StubCall = { method: req.method ?? 'GET', path, query: url.search, body: sent };
         calls.push(call);
 
         // Path alone by default — the stub is keyed by route, and a query

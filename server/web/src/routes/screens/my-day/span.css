@@ -172,7 +172,14 @@
 .span-stage {
   position: relative;
   min-width: 0;
-  overflow: hidden;
+  /*
+   * `clip`, not `hidden`: both cut a layer off at the stage's edge while it
+   * grows or slides, but `hidden` makes the stage a scroll container, and
+   * `position: sticky` binds to the nearest one — the Day page's Confirm bar
+   * (`.myday-bulk-dock`, sticky in `.shell-main`) would then rest at the foot
+   * of the stage, under the list, instead of the window's.
+   */
+  overflow: clip;
 }
 
 .span-layer {

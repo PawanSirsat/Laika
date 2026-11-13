@@ -130,6 +130,33 @@ void describe('span-cache', () => {
     assert.equal(r.daysCalls.length, 2);
   });
 
+  void test('a day seeded from the Day page is not asked for again by a week holding it; invalidate drops the seed', async () => {
+    const r = readers();
+    const cache = createSpanCache(r);
+    cache.seedDay(undefined, aDay('2026-11-12'));
+    const read = cache.read(undefined, 'week', '2026-11-12', 'UTC', { days: 7, chunks: 1 });
+    await settle();
+    assert.deepEqual(
+      r.dayCalls.map((c) => c.day),
+      ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-13', '2026-11-14', '2026-11-15'],
+      'six reads: the seeded day is taken as it is',
+    );
+    r.dayCalls.forEach((c) => {
+      c.resolve(aDay(c.day));
+    });
+    await read;
+    const got = cache.peek(undefined, 'week', '2026-11-12');
+    assert.equal(got?.kind, 'week');
+    assert.equal(got?.kind === 'week' ? got.days[3]?.day : undefined, '2026-11-12', 'in its place');
+    // Somebody else's seed is not the reader's.
+    cache.seedDay('u7', aDay('2026-11-10'));
+    cache.invalidate();
+    r.dayCalls.length = 0;
+    void cache.read(undefined, 'week', '2026-11-12', 'UTC', { days: 7, chunks: 1 });
+    await settle();
+    assert.equal(r.dayCalls.length, 7, 'after invalidate every day is read again');
+  });
+
   void test('a failed read is held as an error, and forget lets it be asked again', async () => {
     const r = readers();
     const cache = createSpanCache(r);
