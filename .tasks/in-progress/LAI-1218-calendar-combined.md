@@ -2,10 +2,11 @@
 id: LAI-1218
 title: 'The combined Calendar: LAI-1178 as the base, with LAI-1200''s week view and keyboard grid'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-1178, LAI-1200]
-status: backlog
+status: in-progress
+started: 2026-11-13T10:00:00Z
 ---
 
 ## Goal
