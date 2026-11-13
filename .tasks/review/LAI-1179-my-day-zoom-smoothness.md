@@ -98,21 +98,16 @@ and the prefetch have something fast to fill from.
 
 ## Server half (CHIEF)
 
-- [ ] `server/src/services/time-days.ts`: _(CHIEF fills in what changed and
-      the measured before/after of `GET /me/time/days` for a 92-day stretch
-      against production data)_
-- [ ] Its test: _(CHIEF)_
-- [ ] SPEC line(s): _(CHIEF)_
-
-## Notes
-
-- Builder: a dispatched web builder on Belka, branch
-  `LAI-1179-my-day-zoom-smoothness` from `origin/master` 50db9b28.
-- Kept from LAI-1174 on the owner's word: one scale on both axes, no 8 h
-  target, `?span=` in the address, the keys.
-- Deviations from the design and the brief, each in the log: slides arriving
-  while busy are **coalesced** (played at `finish`) rather than ignored,
-  because the address has already changed; Day → Day ‹ › does not slide (Day
-  stays the page it was); the stage's height is held at the taller layer and
-  released at `finish`, so a Year → Week zoom ends with the page shortening
-  — the brief's choice, noted.
+- [x] `server/src/services/time-days.ts` reads a stretch in **two range queries**
+      (`entriesBetween`, `draftsBetween` — the range twins of `entriesOn`/
+      `draftsOn`) and buckets by day, where it read two queries a day. Measured
+      on a copy of the pre-cutover production database (Pawan's 536 entries,
+      Belka): a month 10.5 → 1.6 ms, a 92-day stretch 38.6 → 4.5 ms, a year's
+      four chunks 108.7 → 6.4 ms. Output unchanged.
+- [x] Its test: `test/services/time-days.test.ts` pins two statements for three
+      days and for ninety-two, the day before `from` and after `to` out, a
+      deleted entry and a dismissed draft counting for nothing; the existing
+      four cases and `test/http/routes/time-days.test.ts` (8) hold. Mutation:
+      `isNull(deletedAt)` dropped → red.
+- [x] SPEC: no change — the `GET /me/time/days` contract (§6.4) is the same; how
+      the server reads it is not a contract line.
