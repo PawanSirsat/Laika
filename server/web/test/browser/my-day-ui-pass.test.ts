@@ -99,7 +99,7 @@ function worstStub(): ApiStub {
       project: ATLAS,
     });
   }
-  data.set(TODAY, { drafts, entries } as never);
+  data.set(TODAY, { drafts, entries });
   return onStub(data);
 }
 
