@@ -154,6 +154,15 @@
   box-shadow: 0 1px 0 var(--border-card);
 }
 
+/* Tracking off (LAI-1191): the page's name and nothing to walk. */
+.myday-page[data-phone] .myday-phone-off-title {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
 .myday-page[data-phone] .myday-phone-row {
   position: relative;
   display: flex;
@@ -177,7 +186,8 @@
   cursor: pointer;
 }
 
-.myday-phone-step:disabled {
+.myday-phone-step:disabled,
+.myday-phone-step[aria-disabled='true'] {
   cursor: default;
   opacity: 0.4;
 }
@@ -653,7 +663,8 @@
   cursor: pointer;
 }
 
-.tlm-tool:disabled {
+.tlm-tool:disabled,
+.tlm-tool[aria-disabled='true'] {
   cursor: default;
   opacity: 0.45;
 }
@@ -929,7 +940,8 @@
   justify-content: center;
   gap: 2px;
   overflow: hidden;
-  border: 1.5px dashed var(--accent-border);
+  /* A draft: outlined in the accent itself, dashed (LAI-1215), as on the desktop. */
+  border: 1.5px dashed var(--accent);
   border-radius: 0.5rem;
   background: var(--accent-bg);
   font: inherit;
@@ -1077,10 +1089,11 @@
   color: var(--chip-orange);
 }
 
+/* A gap: dotted and empty, the hour lines showing through (LAI-1215). */
 .tlm-gap {
   border: 1.5px dotted var(--text-muted);
-  background: var(--bg-card);
-  color: var(--text-secondary);
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .tlm-gap:disabled {
@@ -1191,4 +1204,51 @@
   white-space: nowrap;
   color: var(--on-accent);
   pointer-events: none;
+}
+
+/*
+ * The bar at phone widths (LAI-1215). Availability (LAI-1139) and the shell's
+ * search joined a bar sized for the design's eye, switch and avatar, and at
+ * 390px it ran past the screen: the brand squashed to a sliver and *Viewing*
+ * slid under the avatar. Under 480px the bar keeps every control and lets the
+ * decoration go — the brand (the drawer carries it), the avatar (the person
+ * menu is in the drawer), *Viewing*'s word — and the pill ellipsises.
+ */
+@media (max-width: 479px) {
+  .shell-head[data-myday-bar] {
+    gap: 0.375rem;
+  }
+
+  .myday-bar {
+    gap: 0.375rem;
+  }
+
+  .myday-bar-mark,
+  .myday-bar-name,
+  .myday-bar-avatar,
+  .shell-head[data-myday-bar] .myday-viewing-label {
+    display: none;
+  }
+
+  .shell-head[data-myday-bar] .avail-trigger {
+    min-width: 0;
+    max-width: 7.5rem;
+    flex: 0 1 auto;
+    overflow: hidden;
+  }
+
+  .shell-head[data-myday-bar] .avail-head-trigger,
+  .shell-head[data-myday-bar] .avail-trigger-quiet {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .shell-head[data-myday-bar] .myday-viewing-trigger {
+    min-width: 0;
+    max-width: 6rem;
+  }
 }

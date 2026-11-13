@@ -283,3 +283,12 @@
   min-width: 0;
   max-width: 100%;
 }
+
+/*
+ * Off with a reason (LAI-1214): `aria-disabled` keeps the control focusable so
+ * its tooltip can say why; it looks as a disabled one does.
+ */
+.bar-control[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}

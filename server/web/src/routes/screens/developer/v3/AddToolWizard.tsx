@@ -53,6 +53,7 @@ import { DxIcon } from './DxIcon.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import '../../connect/connect.css';
 import './add-wizards.css';
+import { Icon } from '../../../../components/icon/Icon.tsx';
 
 export interface AddToolWizardProps {
   readonly devices: readonly Device[] | undefined;
@@ -512,7 +513,7 @@ export function AddToolWizard({
             onAddDevice(undefined, harness);
           }}
         >
-          Add a device <span aria-hidden="true">→</span>
+          Add a device <Icon name="arrow-right" size="tiny" />
         </button>
       ) : (
         <button
@@ -525,7 +526,7 @@ export function AddToolWizard({
           aria-describedby={`${ids}-hint`}
           onClick={add}
         >
-          Get the command <span aria-hidden="true">→</span>
+          Get the command <Icon name="arrow-right" size="tiny" />
         </button>
       );
   } else if (setup !== undefined && step === 2) {
@@ -629,7 +630,7 @@ export function AddToolWizard({
           setStep(3);
         }}
       >
-        I ran it <span aria-hidden="true">→</span>
+        I ran it <Icon name="arrow-right" size="tiny" />
       </button>
     );
   } else if (setup !== undefined && step === 3) {
@@ -686,7 +687,7 @@ export function AddToolWizard({
           });
         }}
       >
-        Set up a project <span aria-hidden="true">→</span>
+        Set up a project <Icon name="arrow-right" size="tiny" />
       </button>
     );
   } else {

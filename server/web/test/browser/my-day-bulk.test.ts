@@ -25,6 +25,7 @@ import {
   busyStub,
   defaultWrites,
 } from './my-day-busy.ts';
+import { tipText } from './tooltip-probe.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -306,10 +307,7 @@ void describe('confirming in bulk', () => {
       await tick(h, 'd10').click({ modifiers: ['Shift'] });
       // One of the ten has no task: Confirm says how many it will take.
       assert.equal(await confirmSelected9(h).innerText(), 'Confirm 9');
-      assert.match(
-        (await confirmSelected9(h).getAttribute('title')) ?? '',
-        /^1 with no task yet stay in To review$/,
-      );
+      assert.match(await tipText(confirmSelected9(h)), /^1 with no task yet stay in To review$/);
       const reads = dayReads(h);
 
       await confirmSelected(h).click();

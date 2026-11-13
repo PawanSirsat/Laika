@@ -85,7 +85,7 @@
   height: 0.875rem;
   margin-left: auto;
   stroke: var(--text-muted);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .dd-trigger[aria-expanded='true'] .dd-chevron {
@@ -103,16 +103,19 @@
  */
 .dd-panel {
   position: fixed;
-  z-index: 70;
+  /* Above any panel it opens from (B16, LAI-1132, LAI-1205). */
+  z-index: var(--layer-dropdown);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
+  /* Level-3 glass (LAI-1132): the pane is `glass.css`'s ::before. */
+  isolation: isolate;
+  background: transparent;
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-popover);
   padding: 0.25rem;
   font-size: var(--text-body);
   color: var(--text-primary);
@@ -403,4 +406,21 @@
 
 .dd-tag-neutral {
   border-color: var(--border-default);
+}
+
+/*
+ * **Opening** (LAI-1208): a short fade, from the strong ease-out, so the panel
+ * arrives rather than blinks in. Opacity only, on purpose: `Dropdown.tsx`
+ * places the panel by measuring its own box (`getBoundingClientRect`), and a
+ * transform mid-flight would be measured as an offset and "corrected" into a
+ * wrong place. No exit: a picker closes the instant it is answered.
+ */
+.dd-panel {
+  animation: dd-panel-in var(--duration-fast) var(--ease-enter);
+}
+
+@keyframes dd-panel-in {
+  from {
+    opacity: 0;
+  }
 }

@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../../../api/projects.ts';
 import { settingsFieldErrors, updateSpace } from '../../../api/space-settings.ts';
+import { Button } from '../../../components/forms/Button.tsx';
+import { focusFirstInvalid } from '../../../components/forms/field-model.ts';
+import { Textarea } from '../../../components/forms/Textarea.tsx';
+import { TextInput } from '../../../components/forms/TextInput.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 import { SPACE_COLORS, spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
 import {
   draftOf,
@@ -16,6 +22,11 @@ export interface GeneralTabProps {
   readonly counts: Readonly<Record<string, number>> | undefined;
   readonly mayEdit: boolean;
   readonly onSaved: (project: Project) => void;
+  /**
+   * Whether the form holds changes not yet saved, so the screen can ask before
+   * a tab switch throws them away (B11). Told `false` when the tab goes.
+   */
+  readonly onDirtyChange?: ((dirty: boolean) => void) | undefined;
 }
 
 /**
@@ -25,125 +36,148 @@ export interface GeneralTabProps {
  * task, and a half-typed name should not land on everybody's sidebar. The
  * server's refusal goes under the field it names — a `422` from validation,
  * a `409` for a prefix another space holds or held.
+ *
+ * Beside Save, *Saving… / Saved / Couldn't save — Retry* (`SaveStatus`,
+ * LAI-1129), *Saved* only on the server's answer. **Unsaved changes are
+ * guarded** (B11): the screen asks before another tab replaces this one, and
+ * the browser warns before the page is reloaded or left.
  */
-export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProps) {
+export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }: GeneralTabProps) {
   const [draft, setDraft] = useState<GeneralDraft>(() => draftOf(project));
-  const [saving, setSaving] = useState(false);
+  const status = useSaveStatus();
+  const saving = status.state.kind === 'saving';
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
   // A save, or another tab's change, gives a new project: start from it.
   useEffect(() => {
     setDraft(draftOf(project));
   }, [project]);
 
-  const dirty = isDirty(project, draft);
+  const dirty = mayEdit && isDirty(project, draft);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange],
+  );
+
+  // Reloading or leaving the page with changes unsaved gets the browser's own warning.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, [dirty]);
   const next = nextTaskKey(mayEdit ? draft.prefix : project.prefix, counts);
 
   const set = (patch: Partial<GeneralDraft>): void => {
     setDraft((current) => ({ ...current, ...patch }));
     setFailure(undefined);
+    // *Saved* was about the values before this edit.
+    status.reset();
   };
 
+  // The whole save — its answer handled too — is what Retry runs again.
   const save = (): void => {
-    setSaving(true);
-    setErrors({});
-    setFailure(undefined);
-    updateSpace(project.slug, generalPatch(project, draft))
-      .then(onSaved)
-      .catch((cause: unknown) => {
-        const byField = settingsFieldErrors(cause);
-        setErrors(byField);
-        if (Object.keys(byField).length === 0) {
-          setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
-        }
+    const patch = generalPatch(project, draft);
+    status
+      .run(() => {
+        setErrors({});
+        setFailure(undefined);
+        return updateSpace(project.slug, patch).then(onSaved, (cause: unknown) => {
+          const byField = settingsFieldErrors(cause);
+          setErrors(byField);
+          // Once the refusal has marked its field, take the focus there (LAI-1204):
+          // the Save button that was pressed sits below the problem, out of sight.
+          requestAnimationFrame(() => {
+            focusFirstInvalid(sectionRef.current);
+          });
+          if (Object.keys(byField).length === 0) {
+            setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
+          }
+          throw cause;
+        });
       })
-      .finally(() => {
-        setSaving(false);
+      .catch(() => {
+        // Said under the field it names, or above Save, and by the status.
       });
   };
 
   return (
-    <section className="ss-card" aria-labelledby="ss-general-title">
+    <section className="ss-card" aria-labelledby="ss-general-title" ref={sectionRef}>
       <header className="ss-card-head">
         <h2 id="ss-general-title">General</h2>
         <p>How this space appears across Laika.</p>
       </header>
 
       <div className="ss-rows">
-        <Row label="Name" htmlFor="ss-name">
-          {mayEdit ? (
-            <Input
-              id="ss-name"
-              value={draft.name}
-              error={errors.name}
-              onChange={(name) => {
-                set({ name });
-              }}
-            />
-          ) : (
+        {mayEdit ? (
+          <TextInput
+            layout="row"
+            id="ss-name"
+            label="Name"
+            value={draft.name}
+            error={errors.name}
+            onChange={(name) => {
+              set({ name });
+            }}
+          />
+        ) : (
+          <Row label="Name">
             <p className="ss-value">{project.name}</p>
-          )}
-        </Row>
+          </Row>
+        )}
 
-        <Row
-          label="Key"
-          htmlFor="ss-prefix"
-          help="Prefix for task numbers. Existing tasks keep their numbers. Old keys keep working."
-        >
-          {mayEdit ? (
-            <Input
-              id="ss-prefix"
-              className="ss-input-key"
-              value={draft.prefix}
-              error={errors.prefix}
-              onChange={(prefix) => {
-                set({ prefix: prefix.toUpperCase() });
-              }}
-            />
-          ) : (
+        {mayEdit ? (
+          <TextInput
+            layout="row"
+            id="ss-prefix"
+            label="Key"
+            help={KEY_HELP}
+            appearance="code"
+            width="short"
+            value={draft.prefix}
+            error={errors.prefix}
+            onChange={(prefix) => {
+              set({ prefix: prefix.toUpperCase() });
+            }}
+            after={<KeyNotes next={next} former={project.former_prefixes} />}
+          />
+        ) : (
+          <Row label="Key" help={KEY_HELP}>
             <p className="ss-value ss-mono">{project.prefix}</p>
-          )}
-          {next !== undefined && (
-            <p className="ss-next" data-next-key>
-              Next task: {next}
-            </p>
-          )}
-          {project.former_prefixes.length > 0 && (
-            <p className="ss-next">Also answers to: {project.former_prefixes.join(', ')}</p>
-          )}
-        </Row>
+            <KeyNotes next={next} former={project.former_prefixes} />
+          </Row>
+        )}
 
-        <Row
-          label="Description"
-          htmlFor="ss-description"
-          help="Shown on the space card and at the top of the board."
-        >
-          {mayEdit ? (
-            <>
-              <textarea
-                id="ss-description"
-                className="ss-textarea"
-                rows={3}
-                value={draft.description}
-                aria-invalid={errors.description !== undefined}
-                aria-describedby={
-                  errors.description === undefined ? undefined : 'ss-description-error'
-                }
-                onChange={(event) => {
-                  set({ description: event.target.value });
-                }}
-              />
-              {errors.description !== undefined && (
-                <p className="ss-field-error" id="ss-description-error" role="alert">
-                  {errors.description}
-                </p>
-              )}
-            </>
-          ) : (
+        {mayEdit ? (
+          <Textarea
+            layout="row"
+            id="ss-description"
+            label="Description"
+            help={DESCRIPTION_HELP}
+            rows={3}
+            value={draft.description}
+            error={errors.description}
+            onChange={(description) => {
+              set({ description });
+            }}
+          />
+        ) : (
+          <Row label="Description" help={DESCRIPTION_HELP}>
             <p className="ss-value">{project.description ?? 'No description yet.'}</p>
-          )}
-        </Row>
+          </Row>
+        )}
 
         <Row label="Colour" id="ss-colour-label">
           {mayEdit ? (
@@ -165,7 +199,7 @@ export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProp
                       set({ color: colour });
                     }}
                   >
-                    {on && <span aria-hidden="true">✓</span>}
+                    {on && <Icon name="check" size="small" />}
                   </button>
                 );
               })}
@@ -187,71 +221,93 @@ export function GeneralTab({ project, counts, mayEdit, onSaved }: GeneralTabProp
           )}
         </Row>
 
-        <Row
-          label="Repository"
-          htmlFor="ss-repo"
-          help="Commits and pull requests that mention a task key link to it."
-        >
-          {mayEdit ? (
-            <Input
-              id="ss-repo"
-              className="ss-mono"
-              value={draft.repo}
-              placeholder="owner/name"
-              error={errors.repo}
-              onChange={(repo) => {
-                set({ repo });
-              }}
-            />
-          ) : (
+        {mayEdit ? (
+          <TextInput
+            layout="row"
+            id="ss-repo"
+            label="Repository"
+            help={REPO_HELP}
+            appearance="code"
+            value={draft.repo}
+            placeholder="owner/name"
+            error={errors.repo}
+            onChange={(repo) => {
+              set({ repo });
+            }}
+          />
+        ) : (
+          <Row label="Repository" help={REPO_HELP}>
             <p className="ss-value ss-mono">{project.repo ?? 'None'}</p>
-          )}
-        </Row>
+          </Row>
+        )}
       </div>
 
       {mayEdit && (
         <footer className="ss-card-foot">
+          <SaveStatus className="ss-save-status" state={status.state} onRetry={status.retry} />
           {failure !== undefined && (
             <p className="ss-field-error ss-foot-error" role="alert">
               {failure}
             </p>
           )}
-          <button
-            type="button"
-            className="ss-btn"
+          <Button
+            variant="secondary"
             disabled={!dirty || saving}
             onClick={() => {
               setDraft(draftOf(project));
               setErrors({});
               setFailure(undefined);
+              status.reset();
             }}
           >
             Discard
-          </button>
-          <button
-            type="button"
-            className="ss-btn ss-btn-primary"
-            disabled={!dirty || saving}
-            aria-busy={saving}
-            onClick={save}
-          >
+          </Button>
+          <Button disabled={!dirty} busy={saving} onClick={save}>
             Save changes
-          </button>
+          </Button>
         </footer>
       )}
     </section>
   );
 }
 
+const KEY_HELP =
+  'Prefix for task numbers. Existing tasks keep their numbers. Old keys keep working.';
+const DESCRIPTION_HELP = 'Shown on the space card and at the top of the board.';
+const REPO_HELP = 'Commits and pull requests that mention a task key link to it.';
+
+/** What the key will make next, and the old keys that still lead here. */
+function KeyNotes({
+  next,
+  former,
+}: {
+  readonly next: string | undefined;
+  readonly former: readonly string[];
+}) {
+  return (
+    <>
+      {next !== undefined && (
+        <p className="ss-next" data-next-key>
+          Next task: {next}
+        </p>
+      )}
+      {former.length > 0 && <p className="ss-next">Also answers to: {former.join(', ')}</p>}
+    </>
+  );
+}
+
+/**
+ * A read-only row, or one whose control is not a single labelled field (the
+ * colour radiogroup). An editable field is a `Field` in its `row` layout,
+ * which draws the same grid with the label wired to the control.
+ */
 function Row({
   label,
-  htmlFor,
   id,
   help,
   children,
 }: {
   readonly label: string;
-  readonly htmlFor?: string;
   readonly id?: string;
   readonly help?: string;
   readonly children: React.ReactNode;
@@ -259,56 +315,12 @@ function Row({
   return (
     <div className="ss-row">
       <div className="ss-row-label">
-        {htmlFor === undefined ? (
-          <span className="ss-label" id={id}>
-            {label}
-          </span>
-        ) : (
-          <label className="ss-label" htmlFor={htmlFor} id={id}>
-            {label}
-          </label>
-        )}
+        <span className="ss-label" id={id}>
+          {label}
+        </span>
         {help !== undefined && <p className="ss-help">{help}</p>}
       </div>
       <div className="ss-row-field">{children}</div>
     </div>
-  );
-}
-
-function Input({
-  id,
-  value,
-  onChange,
-  error,
-  className,
-  placeholder,
-}: {
-  readonly id: string;
-  readonly value: string;
-  readonly onChange: (value: string) => void;
-  readonly error: string | undefined;
-  readonly className?: string;
-  readonly placeholder?: string;
-}) {
-  return (
-    <>
-      <input
-        id={id}
-        type="text"
-        className={className === undefined ? 'ss-input' : `ss-input ${className}`}
-        value={value}
-        placeholder={placeholder}
-        aria-invalid={error !== undefined}
-        aria-describedby={error === undefined ? undefined : `${id}-error`}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-      />
-      {error !== undefined && (
-        <p className="ss-field-error" id={`${id}-error`} role="alert">
-          {error}
-        </p>
-      )}
-    </>
   );
 }

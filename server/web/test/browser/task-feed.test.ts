@@ -22,6 +22,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -426,7 +427,7 @@ void describe('the task feed (D-129, LAI-1122)', () => {
         'Ada Lovelace via Claude Code · laptop-1 · claude-opus-5-5',
       );
       assert.equal(squash(await head.locator('.who-chip').innerText()), 'Claude Code · laptop-1');
-      assert.match((await head.locator('time').getAttribute('title')) ?? '', /\d{4}, \d/);
+      assert.match(await tipText(head.locator('time')), /\d{4}, \d/);
     } finally {
       await h.close();
     }
@@ -489,19 +490,19 @@ void describe('the task feed (D-129, LAI-1122)', () => {
         .locator('#panel-all .feed-row[data-event-icon]')
         .evaluateAll((els) =>
           els.map((el) => [
-            el.querySelector('.feed-icon')?.textContent ?? '',
+            el.querySelector('.feed-icon svg')?.getAttribute('data-icon') ?? '',
             (el.querySelector('.feed-what')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
           ]),
         );
       assert.deepEqual(rows, [
-        ['+', 'Created this task · via MCP · Polly'],
-        ['⇄', 'Sent the work request to Claude Code · laptop-1'],
-        ['→', 'Moved Backlog → In progress · Claude Code 2.1.280 · claude-opus-5-5'],
-        ['▶', 'Accepted and started work · Claude Code 2.1.280 · claude-opus-5-5'],
-        ['✓', 'Marked Terminal viewer built'],
-        ['→', 'Moved In progress → Review · Claude Code 2.1.280 · claude-opus-5-5'],
-        ['↩', 'Sent back Review → In progress'],
-        ['▶', 'Accepted and started work'],
+        ['plus', 'Created this task · via MCP · Polly'],
+        ['swap', 'Sent the work request to Claude Code · laptop-1'],
+        ['arrow-right', 'Moved Backlog → In progress · Claude Code 2.1.280 · claude-opus-5-5'],
+        ['play', 'Accepted and started work · Claude Code 2.1.280 · claude-opus-5-5'],
+        ['check', 'Marked Terminal viewer built'],
+        ['arrow-right', 'Moved In progress → Review · Claude Code 2.1.280 · claude-opus-5-5'],
+        ['reply', 'Sent back Review → In progress'],
+        ['play', 'Accepted and started work'],
       ]);
       // The status names are pills.
       assert.deepEqual(
@@ -528,7 +529,7 @@ void describe('the task feed (D-129, LAI-1122)', () => {
       assert.match(await own.innerText(), /Checking the Terminal viewer/);
       const edited = own.locator('.cmt-edited');
       assert.equal((await edited.innerText()).trim(), 'Edited');
-      assert.match((await edited.getAttribute('title')) ?? '', /^Edited \w{3} \d/);
+      assert.match(await tipText(edited), /^Edited \w{3} \d/);
       assert.equal(
         await h.page.locator('#panel-all [data-comment-kind="reason"] .cmt-sent-back').count(),
         1,
@@ -565,7 +566,7 @@ void describe('the task feed (D-129, LAI-1122)', () => {
       await own.getByRole('button', { name: 'Edit comment' }).click();
       const editor = own.locator('.rich-editor');
       await editor.waitFor({ timeout: 10_000 });
-      await editor.getByRole('button', { name: 'Markdown' }).click();
+      await editor.getByRole('button', { name: 'Markdown source' }).click();
       const source = editor.locator('textarea');
       await source.waitFor({ timeout: 5_000 });
       await source.fill('Checked on Belka: the path is quoted.');

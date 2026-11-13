@@ -3,6 +3,7 @@ import { after, describe, test } from 'node:test';
 import { closeBrowser, refuse, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import { QUIET, SETTINGS, TOMORROW, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { tipText } from './tooltip-probe.ts';
 
 /**
  * The page's states as the owner's `MyDay.dc.html` draws them (LAI-513): the
@@ -59,7 +60,9 @@ void describe('the page states as designed (LAI-513)', () => {
     }
   });
 
-  void test('time tracking off for the organisation: the card, the way to the setting, no controls and no week', async () => {
+  void test('time tracking off for the organisation: the note, the way to the setting, no controls and no week', async () => {
+    // Since LAI-1191 the page is the reader's open work under a one-line note
+    // (my-day-time-off.test.ts has the work); this keeps the note's own words.
     const h = await openDay(
       TODAY,
       withDay(TODAY, (view) => ({
@@ -68,17 +71,12 @@ void describe('the page states as designed (LAI-513)', () => {
       })),
     );
     try {
-      const card = h.page.locator('[data-day-off]');
-      await card.waitFor({ timeout: 20_000 });
-      assert.match(await card.innerText(), /Time tracking is off for/);
-      assert.match(
-        await card.innerText(),
-        /Owners and admins can turn it on in Organisation settings/,
-      );
-      assert.equal(
-        await card.getByRole('button', { name: 'Open Organisation settings' }).count(),
-        1,
-      );
+      const note = h.page.locator('[data-day-off]');
+      await note.waitFor({ timeout: 20_000 });
+      assert.match(await note.innerText(), /Time tracking is off for/);
+      assert.match(await note.innerText(), /Nothing is collected or drafted/);
+      const settings = note.locator('[data-day-off-settings]');
+      assert.equal(await settings.count(), 1);
       for (const sel of [
         '[data-add-time]',
         '[data-timer-start]',
@@ -90,7 +88,7 @@ void describe('the page states as designed (LAI-513)', () => {
       ]) {
         assert.equal(await h.page.locator(sel).count(), 0, `${sel} is drawn with tracking off`);
       }
-      await card.getByRole('button', { name: 'Open Organisation settings' }).click();
+      await settings.click();
       await h.page.waitForURL((url) => url.pathname === '/organisation', { timeout: 10_000 });
     } finally {
       await h.close();
@@ -219,7 +217,7 @@ void describe('the page states as designed (LAI-513)', () => {
     try {
       const trigger = h.page.locator('[data-who-can-see] > button');
       await trigger.waitFor({ timeout: 20_000 });
-      assert.match((await trigger.getAttribute('title')) ?? '', /Drafts: you, owners and admins/);
+      assert.match(await tipText(trigger), /Drafts: you, owners and admins/);
       await trigger.click();
       const panel = h.page.getByRole('region', { name: 'Who can see this' });
       await panel.waitFor({ timeout: 5_000 });
@@ -246,10 +244,7 @@ void describe('the page states as designed (LAI-513)', () => {
       const confirm = h.page.locator('[data-confirm-day]');
       await confirm.waitFor({ timeout: 20_000 });
       assert.match(await confirm.innerText(), /^Confirm day\s+3 ready · 3 h 50 min$/);
-      assert.match(
-        (await confirm.getAttribute('title')) ?? '',
-        /2 without a task stay in To review/,
-      );
+      assert.match(await tipText(confirm), /2 without a task stay in To review/);
       await h.page
         .locator(`[data-week-day="${YESTERDAY}"], .myday-week-day`)
         .first()

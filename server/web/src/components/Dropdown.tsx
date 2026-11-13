@@ -25,6 +25,9 @@ import {
   type Move,
   type OpenAt,
 } from './dropdown-model.ts';
+import { useLayer } from './overlay/layer-stack.ts';
+import { Tooltip } from './tooltip/Tooltip.tsx';
+import './overlay/overlay.css';
 import './dropdown.css';
 
 export interface DropdownOption<V extends string = string> {
@@ -44,7 +47,7 @@ export interface DropdownOption<V extends string = string> {
   /** Drawn first, set apart, and kept through a search: "Any", "Anyone". */
   readonly pinned?: boolean | undefined;
   readonly disabled?: boolean | undefined;
-  /** The tooltip, when the label alone does not say enough. Defaults to the label. */
+  /** The tooltip, when the label alone does not say enough (none by default — LAI-1214). */
   readonly title?: string | undefined;
 }
 
@@ -196,6 +199,9 @@ export function Dropdown<V extends string = string>({
   searchOnType = false,
 }: DropdownProps<V>) {
   const [open, setOpen] = useState(false);
+  // On the overlay stack while open (LAI-1205), so the modal or panel it sits
+  // in knows it is not the top layer; its own Escape handling is unchanged.
+  useLayer('menu', open);
   const [query, setQuery] = useState('');
   /** The search box has focus — so it, and not the trigger, names the active option. */
   const [inSearchBox, setInSearchBox] = useState(false);
@@ -665,59 +671,65 @@ export function Dropdown<V extends string = string>({
             shown[index + 1] !== undefined &&
             shown[index + 1]!.pinned !== true;
           return (
-            <div
-              key={option.value}
-              id={optionId(indexOf.get(option.value) ?? index)}
-              data-index={index}
-              data-value={option.value}
-              role="option"
-              aria-selected={isSelected}
-              aria-disabled={option.disabled === true ? true : undefined}
-              title={option.title ?? option.label}
-              className={[
-                'dd-option',
-                isActive ? 'dd-option-active' : '',
-                isSelected ? 'dd-option-selected' : '',
-                option.pinned === true ? 'dd-option-pinned' : '',
-                lastPinned ? 'dd-option-pinned-last' : '',
-              ]
-                .filter((c) => c !== '')
-                .join(' ')}
-              onMouseMove={() => {
-                if (!isActive && (option.disabled !== true || reachDisabled)) {
-                  setActive(option.value);
-                }
-              }}
-              onClick={() => {
-                choose(option);
-              }}
-            >
-              <span className="dd-check" aria-hidden="true">
-                {isSelected && (
-                  <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.6">
-                    <path d="m5 12.5 4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </span>
-              {option.icon !== undefined && (
-                <span className="dd-icon" aria-hidden="true">
-                  {option.icon}
+            // An option's whole name on hover — a cut label stays readable — lazily,
+            // so a long list carries no tooltip until one is pointed at.
+            <Tooltip key={option.value} content={option.title ?? option.label} lazy>
+              <div
+                id={optionId(indexOf.get(option.value) ?? index)}
+                data-index={index}
+                data-value={option.value}
+                role="option"
+                aria-selected={isSelected}
+                aria-disabled={option.disabled === true ? true : undefined}
+                className={[
+                  'dd-option',
+                  isActive ? 'dd-option-active' : '',
+                  isSelected ? 'dd-option-selected' : '',
+                  option.pinned === true ? 'dd-option-pinned' : '',
+                  lastPinned ? 'dd-option-pinned-last' : '',
+                ]
+                  .filter((c) => c !== '')
+                  .join(' ')}
+                onMouseMove={() => {
+                  if (!isActive && (option.disabled !== true || reachDisabled)) {
+                    setActive(option.value);
+                  }
+                }}
+                onClick={() => {
+                  choose(option);
+                }}
+              >
+                <span className="dd-check" aria-hidden="true">
+                  {isSelected && (
+                    <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.6">
+                      <path
+                        d="m5 12.5 4.5 4.5L19 7.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
                 </span>
-              )}
-              <span className={option.labelClass ? `dd-label ${option.labelClass}` : 'dd-label'}>
-                {highlight(option.label, withSearch ? query : '').map((run, i) =>
-                  run.match ? (
-                    <mark key={i} className="dd-match">
-                      {run.text}
-                    </mark>
-                  ) : (
-                    run.text
-                  ),
+                {option.icon !== undefined && (
+                  <span className="dd-icon" aria-hidden="true">
+                    {option.icon}
+                  </span>
                 )}
-              </span>
-              {option.badge !== undefined && <span className="dd-badge">{option.badge}</span>}
-              {option.detail !== undefined && <span className="dd-detail">{option.detail}</span>}
-            </div>
+                <span className={option.labelClass ? `dd-label ${option.labelClass}` : 'dd-label'}>
+                  {highlight(option.label, withSearch ? query : '').map((run, i) =>
+                    run.match ? (
+                      <mark key={i} className="dd-match">
+                        {run.text}
+                      </mark>
+                    ) : (
+                      run.text
+                    ),
+                  )}
+                </span>
+                {option.badge !== undefined && <span className="dd-badge">{option.badge}</span>}
+                {option.detail !== undefined && <span className="dd-detail">{option.detail}</span>}
+              </div>
+            </Tooltip>
           );
         })}
       </div>
@@ -731,77 +743,80 @@ export function Dropdown<V extends string = string>({
 
   return (
     <>
-      <button
-        ref={(el) => {
-          trigger.current = el;
-          setRef(triggerRef, el);
-        }}
-        id={id}
-        type="button"
-        role="combobox"
-        className={['dd-trigger', variant === 'field' ? 'dd-field' : '', className ?? '']
-          .filter((c) => c !== '')
-          .join(' ')}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        aria-activedescendant={open && triggerLeads ? activeId : undefined}
-        aria-label={ariaLabel}
-        aria-labelledby={labelledBy}
-        aria-describedby={describedBy}
-        aria-invalid={invalid === true ? true : undefined}
-        title={title ?? selected?.label}
-        disabled={disabled}
-        data-value={value}
-        onPointerDown={() => {
-          pressing.current = open;
-        }}
-        onMouseDown={() => {
-          pressing.current = open;
-        }}
-        onClick={() => {
-          pressing.current = false;
-          if (open) hide(true);
-          else show();
-        }}
-        onKeyDown={onKey}
-        // Space's click lands on key-up; it was handled on key-down.
-        onKeyUp={(event) => {
-          if (event.key === ' ') event.preventDefault();
-        }}
-        onBlur={(event) => {
-          if (!open || (withSearch && !searchOnType)) return;
-          const to = event.relatedTarget as Node | null;
-          if (to !== null && panel.current?.contains(to) === true) return;
-          setOpen(false);
-          setSearchWanted(false);
-          setInSearchBox(false);
-        }}
-      >
-        {display ?? (
-          <>
-            {selected?.icon !== undefined && (
-              <span className="dd-icon" aria-hidden="true">
-                {selected.icon}
+      {/* Its `title` only, in the shared Tooltip (LAI-1214) — it was a native
+          title= on every trigger, the selected label repeated by default. */}
+      <Tooltip content={title ?? ''} lazy>
+        <button
+          ref={(el) => {
+            trigger.current = el;
+            setRef(triggerRef, el);
+          }}
+          id={id}
+          type="button"
+          role="combobox"
+          className={['dd-trigger', variant === 'field' ? 'dd-field' : '', className ?? '']
+            .filter((c) => c !== '')
+            .join(' ')}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-activedescendant={open && triggerLeads ? activeId : undefined}
+          aria-label={ariaLabel}
+          aria-labelledby={labelledBy}
+          aria-describedby={describedBy}
+          aria-invalid={invalid === true ? true : undefined}
+          disabled={disabled}
+          data-value={value}
+          onPointerDown={() => {
+            pressing.current = open;
+          }}
+          onMouseDown={() => {
+            pressing.current = open;
+          }}
+          onClick={() => {
+            pressing.current = false;
+            if (open) hide(true);
+            else show();
+          }}
+          onKeyDown={onKey}
+          // Space's click lands on key-up; it was handled on key-down.
+          onKeyUp={(event) => {
+            if (event.key === ' ') event.preventDefault();
+          }}
+          onBlur={(event) => {
+            if (!open || (withSearch && !searchOnType)) return;
+            const to = event.relatedTarget as Node | null;
+            if (to !== null && panel.current?.contains(to) === true) return;
+            setOpen(false);
+            setSearchWanted(false);
+            setInSearchBox(false);
+          }}
+        >
+          {display ?? (
+            <>
+              {selected?.icon !== undefined && (
+                <span className="dd-icon" aria-hidden="true">
+                  {selected.icon}
+                </span>
+              )}
+              <span className={selected === undefined ? 'dd-value dd-placeholder' : 'dd-value'}>
+                {selected?.label ?? placeholder}
               </span>
-            )}
-            <span className={selected === undefined ? 'dd-value dd-placeholder' : 'dd-value'}>
-              {selected?.label ?? placeholder}
-            </span>
-          </>
-        )}
-        {chevron && (
-          <svg
-            className="dd-chevron"
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeWidth="2.2"
-            aria-hidden="true"
-          >
-            <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
+            </>
+          )}
+          {chevron && (
+            <svg
+              className="dd-chevron"
+              viewBox="0 0 24 24"
+              fill="none"
+              strokeWidth="2.2"
+              aria-hidden="true"
+            >
+              <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </button>
+      </Tooltip>
       {name !== undefined && <input type="hidden" name={name} value={value} />}
       {/*
         **Into the modal it belongs to** (LAI-726 round 1). `aria-modal="true"`

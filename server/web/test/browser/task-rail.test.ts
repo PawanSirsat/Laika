@@ -25,6 +25,7 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -590,7 +591,7 @@ void describe('the rail, to the 2026-11-04 design', () => {
       );
       assert.match(times, / Updated \d{1,2} \w{3}(?: \d{4})?, \d{1,2}:\d{2} [AP]M/);
       assert.match(
-        (await foot.locator('.panel-foot-times time').first().getAttribute('title')) ?? '',
+        await tipText(foot.locator('.panel-foot-times time').first()),
         /\w{3} \d{1,2} \w{3} \d{4}, /,
       );
       assert.equal(

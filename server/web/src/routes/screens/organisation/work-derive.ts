@@ -222,3 +222,83 @@ export function workRows(tasks: readonly TaskSummary[], lookups: WorkLookups): W
     updatedAt: task.updated_at,
   }));
 }
+
+/**
+ * How the page's rows are grouped (LAI-1196), kept in the URL as `?group=`.
+ * `none` is the default and leaves no param.
+ */
+export const WORK_GROUPS = ['none', 'space', 'status', 'assignee'] as const;
+export type WorkGroup = (typeof WORK_GROUPS)[number];
+
+export const WORK_GROUP_LABELS: Readonly<Record<WorkGroup, string>> = {
+  none: 'No grouping',
+  space: 'Space',
+  status: 'Status',
+  assignee: 'Assignee',
+};
+
+export function readWorkGroup(params: URLSearchParams): WorkGroup {
+  const value = params.get('group');
+  return WORK_GROUPS.find((g) => g === value) ?? 'none';
+}
+
+/** `params` with the grouping set — `none` is no param at all. */
+export function withWorkGroup(params: URLSearchParams, group: WorkGroup): URLSearchParams {
+  const next = new URLSearchParams(params);
+  if (group === 'none') next.delete('group');
+  else next.set('group', group);
+  return next;
+}
+
+export interface WorkRowGroup {
+  /** Stable across renders: a space id, a status, a user id or `none`. */
+  readonly key: string;
+  readonly label: string;
+  readonly rows: readonly WorkRow[];
+}
+
+/**
+ * The page's rows in groups. **Grouping reorders nothing the server sent
+ * within a group** — each keeps the served order — and adds or drops no row;
+ * it only decides which heading a row sits under. Groups go in board order for
+ * status, by name for space and assignee, with *Unassigned* and an unnamed
+ * space last.
+ */
+export function groupWorkRows(rows: readonly WorkRow[], group: WorkGroup): WorkRowGroup[] {
+  if (group === 'none') return [{ key: 'all', label: 'Tasks', rows }];
+  const groups = new Map<string, { label: string; rows: WorkRow[]; rank: number | string }>();
+  for (const row of rows) {
+    const [key, label, rank] = groupOf(row, group);
+    const found = groups.get(key);
+    if (found === undefined) groups.set(key, { label, rows: [row], rank });
+    else found.rows.push(row);
+  }
+  return [...groups.entries()]
+    .sort(([, a], [, b]) =>
+      typeof a.rank === 'number' && typeof b.rank === 'number'
+        ? a.rank - b.rank
+        : String(a.rank).localeCompare(String(b.rank), undefined, { sensitivity: 'base' }),
+    )
+    .map(([key, g]) => ({ key, label: g.label, rows: g.rows }));
+}
+
+/** `[key, heading, rank]` — the rank orders the groups. `￿` sorts last. */
+function groupOf(
+  row: WorkRow,
+  group: Exclude<WorkGroup, 'none'>,
+): [string, string, number | string] {
+  switch (group) {
+    case 'status': {
+      const index = STATUS_FILTERS.findIndex((s) => s.value === row.status);
+      return [row.status, STATUS_FILTERS[index]?.label ?? row.statusName, index];
+    }
+    case 'space':
+      return row.space === undefined
+        ? ['none', 'Space not named', '￿']
+        : [row.space.slug, row.space.name, row.space.name];
+    case 'assignee':
+      return row.assigneeId === null
+        ? ['none', 'Unassigned', '￿']
+        : [row.assigneeId, row.assignee, row.assignee];
+  }
+}

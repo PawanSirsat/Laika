@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { navHref } from '../../routes/nav-url.ts';
+import { CREATE_SPACE_HREF, navHref } from '../../routes/nav-url.ts';
 import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import { SpacesPopover } from './SpacesPopover.tsx';
 import { SpaceBadge } from '../SpaceBadge.tsx';
 import { NavIcon } from './NavIcon.tsx';
 import { PinButton } from './PinButton.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface SpacesSectionProps {
   /** The rail's rows: the pinned, then the three most recent (LAI-248, LAI-989). */
@@ -90,34 +91,59 @@ export function SpacesSection({
             </svg>
             <span>Spaces</span>
           </button>
-          <a
-            className="spaces-create"
-            href="/projects"
-            title="Create space"
-            onClick={(event) => {
-              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              onNavigate('/projects');
-              onClose();
-            }}
-          >
-            <span className="visually-hidden">Create space</span>
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              aria-hidden="true"
+          <Tooltip content="Create space">
+            <a
+              className="spaces-create"
+              href="/projects"
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onNavigate('/projects');
+                onClose();
+              }}
             >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </a>
+              <span className="visually-hidden">Create space</span>
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </a>
+          </Tooltip>
         </div>
       )}
 
-      {(open || collapsed) && (
+      {(open || collapsed) && spaces.length === 0 && (
+        // No space yet (LAI-1191, the audit's B21): the way to the first one,
+        // drawn only for a reader who may create it — the caller asks.
+        <ul className="sidebar-list" aria-label="Spaces">
+          <li>
+            <a
+              href={CREATE_SPACE_HREF}
+              className="sidebar-link"
+              data-create-first-space
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onNavigate(CREATE_SPACE_HREF);
+                onClose();
+              }}
+            >
+              <span className="sidebar-link-bar" aria-hidden="true" />
+              <NavIcon name="plus" size={16} />
+              <span className="sidebar-label sidebar-tip">Create a space</span>
+            </a>
+          </li>
+        </ul>
+      )}
+
+      {(open || collapsed) && spaces.length > 0 && (
         <ul className="sidebar-list" aria-label="Spaces">
           {spaces.map((space) => {
             // A space is current for **any** view of it, not only the board —

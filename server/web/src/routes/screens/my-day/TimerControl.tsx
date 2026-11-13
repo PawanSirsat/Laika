@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { EntryKind, TaskRef, Timer, TimerStart } from '../../../api/time.ts';
 import { kindChartLabel, TIMER_KINDS } from './entry-kinds.ts';
 import { HeaderPopover } from './HeaderPopover.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface TimerControlProps {
   readonly timer: Timer | null;
@@ -107,42 +109,47 @@ export function TimerControl({
         data-timer={paused ? 'paused' : 'running'}
       >
         <span className="myday-timer-dot" aria-hidden="true" />
-        <span className="myday-timer-label" title={timerLabel(timer)}>
-          {timerLabel(timer)}
-        </span>
+        <Tooltip content={timerLabel(timer)}>
+          {/* Cut to one line on screen; the tooltip shows it whole. A screen
+              reader reads the span's own text, which is never cut. */}
+          <span className="myday-timer-label">{timerLabel(timer)}</span>
+        </Tooltip>
         <span className="myday-timer-clock" data-timer-clock>
           {timerClock(seconds)}
         </span>
-        <button
-          type="button"
-          className="myday-timer-button"
-          aria-label={paused ? 'Resume timer' : 'Pause timer'}
-          title={paused ? 'Resume timer' : 'Pause timer'}
-          disabled={busy}
-          onClick={paused ? onResume : onPause}
-        >
-          {paused ? <Play /> : <Pause />}
-        </button>
-        <button
-          type="button"
-          className="myday-timer-button"
-          aria-label="Stop timer and save"
-          title="Stop and save (T)"
-          disabled={busy}
-          onClick={onStop}
-        >
-          <Stop />
-        </button>
-        <button
-          type="button"
-          className="myday-timer-button myday-timer-discard"
-          aria-label="Discard timer"
-          title="Discard — nothing is saved"
-          disabled={busy}
-          onClick={onDiscard}
-        >
-          ×
-        </button>
+        <Tooltip content={paused ? 'Resume timer' : 'Pause timer'}>
+          <button
+            type="button"
+            className="myday-timer-button"
+            aria-label={paused ? 'Resume timer' : 'Pause timer'}
+            disabled={busy}
+            onClick={paused ? onResume : onPause}
+          >
+            {paused ? <Play /> : <Pause />}
+          </button>
+        </Tooltip>
+        <Tooltip content="Stop and save" shortcut="T">
+          <button
+            type="button"
+            className="myday-timer-button"
+            aria-label="Stop timer and save"
+            disabled={busy}
+            onClick={onStop}
+          >
+            <Stop />
+          </button>
+        </Tooltip>
+        <Tooltip content="Discard — nothing is saved">
+          <button
+            type="button"
+            className="myday-timer-button myday-timer-discard"
+            aria-label="Discard timer"
+            disabled={busy}
+            onClick={onDiscard}
+          >
+            <Icon name="close" size="small" />
+          </button>
+        </Tooltip>
       </div>
     );
   }
@@ -162,7 +169,8 @@ export function TimerControl({
   return (
     <HeaderPopover
       label="Start timer"
-      title="Start a timer (T)"
+      tooltip="Start a timer"
+      shortcut="T"
       triggerClassName="myday-chip myday-head-button"
       dataAttr="data-timer-start"
       width="wide"
@@ -185,19 +193,19 @@ export function TimerControl({
           <span className="myday-pop-label">Task</span>
           <div className="myday-pop-chips">
             {chips.map((chip) => (
-              <button
-                key={chip.id}
-                type="button"
-                className="myday-cardchip"
-                aria-pressed={card === chip.key}
-                title={chip.title}
-                data-timer-card={chip.key}
-                onClick={() => {
-                  setCard((c) => (c === chip.key ? undefined : chip.key));
-                }}
-              >
-                {chip.key}
-              </button>
+              <Tooltip key={chip.id} content={chip.title}>
+                <button
+                  type="button"
+                  className="myday-cardchip"
+                  aria-pressed={card === chip.key}
+                  data-timer-card={chip.key}
+                  onClick={() => {
+                    setCard((c) => (c === chip.key ? undefined : chip.key));
+                  }}
+                >
+                  {chip.key}
+                </button>
+              </Tooltip>
             ))}
           </div>
         </div>

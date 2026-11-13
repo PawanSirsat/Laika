@@ -1,0 +1,263 @@
+/*
+ * Overlays (LAI-1205): the layer order, the open motion, the scroll lock and
+ * the Dialog's shell. The numbers mirror `overlay-tokens.ts`, which explains
+ * them; a test keeps the two equal. Colours are theme tokens only — this file
+ * declares no colour and `theme.css` stays the one place that does.
+ */
+
+:root {
+  /* The layers only overlays need (LAI-1205). The shared ladder — sticky,
+     header, panel, popover, menu, dialog, toast — is theme.css's (LAI-1132);
+     these sit on it, and overlay-tokens.ts holds the whole order. */
+  --layer-catcher: 64;
+  --layer-sheet: 40;
+  --layer-sheet-content: 41;
+  --layer-panel-scrim: 59;
+  --layer-nested-scrim: 62;
+  --layer-nested: 63;
+  --layer-dropdown: 70;
+
+  /* Durations and curves are motion.css's tokens (LAI-1208), so reduced
+     motion zeroes them there; the eases are the same curves by name. */
+  --overlay-in: var(--duration-base);
+  --overlay-scrim-in: var(--duration-base);
+  --overlay-menu-in: var(--duration-fast);
+  --overlay-sheet-in: var(--duration-slow);
+  --overlay-ease-out: var(--ease-enter);
+  --overlay-ease-sheet: var(--ease-drawer);
+  --overlay-rise: 0.5rem;
+  --overlay-scale: 0.98;
+  --overlay-menu-scale: 0.97;
+  --overlay-slide: 1.5rem;
+  --overlay-sheet-rise: 2rem;
+}
+
+/* --- the scroll lock (layer-stack.ts) -------------------------------------- */
+
+html.overlay-scroll-locked {
+  overflow: hidden;
+}
+
+/* Only when the page had a scrollbar: keep its gutter, so nothing shifts. */
+html.overlay-scroll-locked.overlay-scroll-gutter {
+  scrollbar-gutter: stable;
+}
+
+/* --- the Dialog ------------------------------------------------------------ */
+
+/*
+ * The layer covers the window and centres the card. A modal opened over
+ * another sits two steps above it per modal beneath (`--overlay-depth`, set
+ * by `Dialog` from the stack), so the scrim of the upper one dims the lower.
+ */
+.overlay-layer {
+  /* Modals beneath it; `Dialog` sets it from the stack. */
+  --overlay-depth: 0;
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-dialog) + var(--overlay-depth) * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.overlay-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  transition: opacity var(--overlay-scrim-in) var(--overlay-ease-out);
+}
+
+/*
+ * The card. Header and footer are its fixed rows and only the body scrolls,
+ * so a long form keeps its title and its buttons in view.
+ *
+ * **The box itself never transforms.** A transform on it — even for the
+ * 200ms of the entrance — would make it the containing block of the Dropdown
+ * portaled inside it (it is `aria-modal`, so the list must be), and a list
+ * opened in those frames would land off its trigger; LAI-726 hit exactly that
+ * with a centring transform. So the box only fades, and its own rows — never
+ * a portaled list — carry the rise (below).
+ */
+.overlay-dialog {
+  --overlay-width: 32rem;
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--overlay-width), 100%);
+  max-height: calc(100dvh - 2 * var(--space-4));
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  transition: opacity var(--overlay-in) var(--overlay-ease-out);
+}
+
+.overlay-dialog > :not([data-dropdown-panel]) {
+  transition: transform var(--overlay-in) var(--overlay-ease-out);
+}
+
+.overlay-dialog:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.overlay-dialog[data-size='sm'] {
+  --overlay-width: 24rem;
+}
+
+.overlay-dialog[data-size='lg'] {
+  --overlay-width: 44rem;
+}
+
+.overlay-dialog-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3) var(--space-5);
+}
+
+.overlay-dialog-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.overlay-dialog-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.overlay-dialog-desc {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+.overlay-dialog-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-1)) 0 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-heading-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.overlay-dialog-close:hover {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.overlay-dialog-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.overlay-dialog-close:active {
+  transform: scale(0.96);
+}
+
+.overlay-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--space-5) var(--space-4);
+}
+
+.overlay-dialog-foot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/*
+ * A phone: a bottom sheet the width of the screen, rounded at the top, its
+ * buttons full width with the action on top — the confirmation's shape. A
+ * large dialog takes the whole screen.
+ */
+@media (max-width: 34rem) {
+  .overlay-layer {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .overlay-dialog {
+    width: 100%;
+    max-height: calc(100dvh - var(--space-6));
+    border-bottom: 0;
+    border-radius: var(--radius-column) var(--radius-column) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .overlay-dialog,
+  .overlay-dialog > :not([data-dropdown-panel]) {
+    transition-duration: var(--overlay-sheet-in);
+    transition-timing-function: var(--overlay-ease-sheet);
+  }
+
+  .overlay-dialog[data-size='lg'] {
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .overlay-dialog-foot {
+    flex-direction: column-reverse;
+  }
+
+  .overlay-dialog-foot > * {
+    width: 100%;
+  }
+}
+
+/* --- open motion ----------------------------------------------------------- */
+
+/*
+ * Transitions from a starting style rather than keyframes: a transition
+ * retargets from wherever it is, so an overlay reopened mid-entrance carries
+ * on instead of restarting. Opacity and transform only — both composite, so
+ * the entrance stays smooth while the page behind is still rendering.
+ */
+@starting-style {
+  .overlay-scrim {
+    opacity: 0;
+  }
+
+  .overlay-dialog {
+    opacity: 0;
+  }
+
+  .overlay-dialog > :not([data-dropdown-panel]) {
+    transform: translateY(var(--overlay-rise));
+  }
+}
+
+/* The sheet rises further, from the edge it sits on. */
+@media (max-width: 34rem) {
+  @starting-style {
+    .overlay-dialog > :not([data-dropdown-panel]) {
+      transform: translateY(var(--overlay-sheet-rise));
+    }
+  }
+}

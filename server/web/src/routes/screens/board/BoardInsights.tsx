@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { usePopoverLayer } from '../../../components/overlay/layer-stack.ts';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { formatDurationMs } from '../../../api/duration.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { InfoHint } from '../../../components/tooltip/InfoHint.tsx';
 import './board-insights.css';
 
 export interface BoardInsightsProps {
@@ -37,6 +41,8 @@ export function BoardInsights({ slug, onClose }: BoardInsightsProps) {
     | { status: 'ready'; data: MetricsView }
     | { status: 'error'; why: string }
   >({ status: 'loading' });
+  // Escape closes it, as every other popover (LAI-1205) — it had none.
+  usePopoverLayer(true, onClose);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,9 +79,11 @@ export function BoardInsights({ slug, onClose }: BoardInsightsProps) {
       <div className="bi" role="dialog" aria-label="Insights">
         <header className="bi-head">
           <h2 className="bi-title">Insights</h2>
-          <button type="button" className="bi-close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="bi-close" onClick={onClose} aria-label="Close">
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
 
         {state.status === 'loading' && <p className="bi-note">Reading…</p>}
@@ -88,28 +96,41 @@ export function BoardInsights({ slug, onClose }: BoardInsightsProps) {
         {state.status === 'ready' && (
           <>
             <section className="bi-section">
-              <h3 className="bi-label">Throughput</h3>
+              <h3 className="bi-label">
+                Throughput{' '}
+                <InfoHint label="About throughput">
+                  Tasks finished each day. Every day in the range is drawn, a day with nothing
+                  finished as zero, so the shape is the server&apos;s and not smoothed here.
+                </InfoHint>
+              </h3>
               <p className="bi-big">
                 {total} <span className="bi-unit">finished</span>
               </p>
               <div className="bi-spark" aria-hidden="true">
                 {state.data.throughput.map((bucket) => (
-                  <span
+                  <Tooltip
                     key={bucket.day}
-                    className="bi-bar"
-                    style={{ height: `${String(Math.round((bucket.completed / peak) * 100))}%` }}
-                    title={`${bucket.day}: ${String(bucket.completed)}`}
-                  />
+                    content={`${bucket.day}: ${String(bucket.completed)} finished`}
+                    lazy
+                  >
+                    <span
+                      className="bi-bar"
+                      style={{ height: `${String(Math.round((bucket.completed / peak) * 100))}%` }}
+                    />
+                  </Tooltip>
                 ))}
               </div>
-              <p className="bi-note">
-                {state.data.throughput.length} days. Days with nothing finished are present and zero
-                — the server sends them, so the shape is not invented here.
-              </p>
+              <p className="bi-note">{state.data.throughput.length} days.</p>
             </section>
 
             <section className="bi-section">
-              <h3 className="bi-label">Cycle time</h3>
+              <h3 className="bi-label">
+                Cycle time{' '}
+                <InfoHint label="About cycle time">
+                  From when work started to when it finished. Half the tasks took less than the
+                  median, three in four less than p75, nine in ten less than p90.
+                </InfoHint>
+              </h3>
               {state.data.cycle_time === null ? (
                 /*
                  * `null` means nothing has been completed with a start to

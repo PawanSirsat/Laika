@@ -203,7 +203,7 @@ export function heroOf(
         eyebrow: 'Start here',
         title,
         sub: 'Pair your laptop or cloud runner with Laika. No coding tool selection is needed yet.',
-        primary: { label: 'Add a device →', href: OVERVIEW_ADDRESSES.addDevice },
+        primary: { label: 'Add a device', href: OVERVIEW_ADDRESSES.addDevice },
       };
     case 'no-tool':
       return {
@@ -211,7 +211,7 @@ export function heroOf(
         eyebrow: 'Start here',
         title,
         sub: `Add Claude Code, Codex or another coding tool on ${namesOf(state.devices)}. Each tool gets a credential of its own, so you can see what it did and disconnect it alone.`,
-        primary: { label: 'Add your first tool →', href: OVERVIEW_ADDRESSES.addTool },
+        primary: { label: 'Add your first tool', href: OVERVIEW_ADDRESSES.addTool },
       };
     case 'finish-tool': {
       const pending = state.pending;
@@ -223,7 +223,7 @@ export function heroOf(
         title,
         sub: `${why}Finish its setup ${device === '' ? 'on its device' : `on ${device}`}; this page moves on once it has connected.`,
         primary: {
-          label: 'Continue setup →',
+          label: 'Continue setup',
           href: pending === undefined ? OVERVIEW_ADDRESSES.addTool : toolAddress(pending.id),
         },
       };
@@ -234,7 +234,7 @@ export function heroOf(
         eyebrow: 'Your next step',
         title,
         sub: 'Your tool is connected. Pick a Laika project, give the tool access to it, and copy a prompt that adds the board’s block to the repository’s instructions file.',
-        primary: { label: 'Set up a project →', href: wizardAddress(projectsHref) },
+        primary: { label: 'Set up a project', href: wizardAddress(projectsHref) },
         secondary: manage,
       };
     case 'all-done':
@@ -243,7 +243,7 @@ export function heroOf(
         eyebrow: 'Your next step',
         title,
         sub: `${plural(state.setUp, 'repository setup', 'repository setups')} so far. Each repository needs its own block; your devices and tools are already done.`,
-        primary: { label: 'Set up a repository →', href: wizardAddress(projectsHref) },
+        primary: { label: 'Set up a repository', href: wizardAddress(projectsHref) },
         secondary: manage,
       };
   }
@@ -305,7 +305,7 @@ export function attentionItems(
       href: toolAddress(agent.id),
       setup: notConnected,
       update: required,
-      action: notConnected ? 'Finish setup →' : 'Open details →',
+      action: notConnected ? 'Finish setup' : 'Open details',
     });
   }
   return items;

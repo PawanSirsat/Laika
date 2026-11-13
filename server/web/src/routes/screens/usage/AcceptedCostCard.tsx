@@ -12,6 +12,7 @@ import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { AcceptedSide } from './AcceptedSide.tsx';
 import { CostCaveats } from './CostCaveats.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * *Cost per accepted task* (LAI-773; the estimation research's idea 2): what
@@ -63,10 +64,12 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
                     <th scope="row">{p.project.name}</th>
                     <td>{p.tasks}</td>
                     <td className="usage-money">{perTaskText(p.cost, p.cost_per_task)}</td>
-                    <td className="usage-money" title={`${compactTokens(p.tokens)} tokens`}>
-                      {costText(p.cost)}
-                      <CostCaveats cost={p.cost} />
-                    </td>
+                    <Tooltip content={`${compactTokens(p.tokens)} tokens`}>
+                      <td className="usage-money">
+                        {costText(p.cost)}
+                        <CostCaveats cost={p.cost} />
+                      </td>
+                    </Tooltip>
                   </tr>
                 ))}
               </tbody>

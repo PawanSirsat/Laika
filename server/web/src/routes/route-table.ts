@@ -317,6 +317,20 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 2',
   },
+  /*
+   * **A task's own page, the Workroom** (LAI-1199). The drawer stays the quick
+   * look over a view; this is the same task as a page, by key, reached from
+   * the drawer's *Expand* or a pasted link. Org-level for the nav: its key
+   * names its space already.
+   */
+  {
+    orgLevel: true,
+    path: '/task/:key',
+    label: 'Task',
+    group: null,
+    status: 'ready',
+    phase: 'Phase C',
+  },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   // D-104 item 4 (LAI-988): an admin-issued link sets a new password here.
@@ -334,6 +348,8 @@ export const ROUTES: readonly Route[] = [
   // required them — but out of the product nav, since they are not product.
   { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
   { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
+  // LAI-1131: the deliverable design trial. Illustrative fixtures, lazily loaded.
+  { public: true, path: '/design/documents', label: 'Documents', group: null, phase: 'reference' },
 ];
 
 /**

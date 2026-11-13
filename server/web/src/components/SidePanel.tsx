@@ -1,7 +1,10 @@
-import { useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useDialogFocus } from './use-dialog-focus.ts';
+import { useModalLayer } from './overlay/layer-stack.ts';
+import './overlay/overlay.css';
 import './side-panel.css';
+import { Icon } from './icon/Icon.tsx';
+import { Tooltip } from './tooltip/Tooltip.tsx';
 
 export interface SidePanelProps {
   readonly title: ReactNode;
@@ -32,9 +35,12 @@ export interface SidePanelProps {
  * desktop, a bottom sheet on a phone, at the width the shell's sidebar goes
  * off-canvas (`MyDayDrawer`'s `SHEET_QUERY`).
  *
- * A modal: focus moves in, Tab stays inside, and closing hands focus back
- * (`useDialogFocus`). Escape, the scrim and × close it. The page addresses it
- * in the URL, so Back closes it too — that is the caller's, through `onClose`.
+ * A modal on the shared overlay contract (`useModalLayer`, LAI-1205): focus
+ * moves in, Tab stays inside, closing hands focus back, and Escape closes it
+ * only when it is the top layer — a menu or picker open inside it, or a
+ * question asked from it, takes the key first. Escape, the scrim and × close
+ * it. The page addresses it in the URL, so Back closes it too — that is the
+ * caller's, through `onClose`. It slides in from its edge (up, as a sheet).
  */
 export function SidePanel({
   title,
@@ -50,22 +56,12 @@ export function SidePanel({
 }: SidePanelProps) {
   const ref = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  useDialogFocus(ref, {
+  const { onKeyDown } = useModalLayer(ref, {
+    kind: 'panel',
     initial: () => closeRef.current,
     restore,
+    onEscape: onClose,
   });
-
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-    // A control inside that uses Escape itself (an open menu) has had it first.
-    if (event.key !== 'Escape' || event.defaultPrevented) return;
-    // A modal opened from inside the panel (an offboarding question, LAI-1134)
-    // is portaled out of it, but React still bubbles its keys here: its
-    // Escape closes that modal, never the panel under it.
-    if (!(event.target instanceof Node) || ref.current?.contains(event.target) !== true) return;
-    event.preventDefault();
-    onClose();
-  };
-
   return createPortal(
     <>
       <div
@@ -82,6 +78,7 @@ export function SidePanel({
         aria-modal="true"
         aria-labelledby={titleId}
         data-panel={panel}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <header className="side-panel-head">
@@ -91,15 +88,17 @@ export function SidePanel({
             </h2>
             {subtitle !== undefined && <div className="side-panel-sub">{subtitle}</div>}
           </div>
-          <button
-            type="button"
-            className="side-panel-close"
-            aria-label={closeLabel}
-            ref={closeRef}
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content={closeLabel} shortcut="Escape">
+            <button
+              type="button"
+              className="side-panel-close"
+              aria-label={closeLabel}
+              ref={closeRef}
+              onClick={onClose}
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
         <div className="side-panel-body">{children}</div>
         {footer !== undefined && <footer className="side-panel-foot">{footer}</footer>}

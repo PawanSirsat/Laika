@@ -1,0 +1,250 @@
+/*
+ * The signed-out card (LAI-1203): sign-in, invite, reset password.
+ *
+ * Layout and type only. The glass — pane, tint, blur, border, radius, shadow —
+ * is `.glass-2` from `components/glass/glass.css`, put on by `GlassSurface`;
+ * nothing here may declare a background or a filter on the card itself.
+ * Tokens only.
+ */
+
+/* The calm ground the shell leaves, with the card centred in it. Auto margins
+   rather than `align-items: center`, so a card taller than the viewport
+   scrolls from its top instead of losing it. */
+.auth {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: var(--space-6) var(--space-4);
+}
+
+.auth-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 27rem;
+  margin: auto;
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.auth-card-wide {
+  max-width: 30rem;
+}
+
+/* An edge tint only — never the pane. The invite flow is violet where sign-in
+   is neutral, so a colleague's link is not mistaken for the sign-in form. */
+.glass-2.auth-card-invite {
+  border-color: var(--chip-pink-border);
+}
+
+.glass-2.auth-card-warn {
+  border-color: var(--chip-orange-border);
+}
+
+.auth-card form,
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- heading */
+
+.auth-brand {
+  display: flex;
+  width: max-content;
+}
+
+.auth-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.auth-title {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  line-height: 1.25;
+  letter-spacing: -0.022em;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+/* Which instance you are on is not obvious on a self-hosted tool. */
+.auth-host {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Green, because it reports a real property of the connection. */
+.auth-lock {
+  flex: none;
+  stroke: var(--chip-green);
+}
+
+.auth-lede {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.auth-note {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.auth-note-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------- summary */
+
+/* Empty most of the time and then takes no room: the gap above it is the
+   flex gap's, which an empty box does not claim. */
+.auth-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-radius: var(--radius-card);
+}
+
+.auth-summary:empty {
+  display: contents;
+}
+
+.auth-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
+  text-wrap: pretty;
+}
+
+.auth-alert-glyph {
+  flex: none;
+  display: block;
+  margin-top: 0.0625rem;
+}
+
+/* ---------------------------------------------------------------- fields */
+
+/* Labels always visible above the field; 40px fields, the page ground inside
+   the card's, so the field reads as a well rather than a second card. */
+.auth-card .field {
+  margin-bottom: 0;
+}
+
+.auth-card .field-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+  color: var(--text-secondary);
+}
+
+.auth-card .input {
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border-radius: 0.5625rem;
+  background: var(--bg-canvas);
+  font-weight: var(--weight-medium);
+}
+
+/* A typed character is unambiguous in mono once it is shown. */
+.auth-card .input[type='password'],
+.auth-card .input-affix .input[type='text'] {
+  font-family: var(--font-mono);
+}
+
+.auth-card .input-affix-button {
+  min-width: 4rem;
+  font-weight: var(--weight-bold);
+  border-radius: 0.5625rem;
+}
+
+/* The empty live region under each field holds 1em; in a card spaced by its
+   own gap that reads as a ragged second gap, so it takes room only when it
+   has something to say. */
+.auth-card .field-error:empty {
+  min-height: 0;
+}
+
+.auth-card .button {
+  min-height: 2.5rem;
+  border-radius: 0.625rem;
+  font-weight: var(--weight-bold);
+}
+
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.auth-fineprint {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+/* A state glyph above the heading — refused, expired, set. */
+.auth-glyph {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-pill);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+}
+
+.auth-glyph-ok {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+}
+
+@media (max-width: 480px) {
+  .auth {
+    padding: var(--space-4);
+  }
+
+  .auth-card {
+    padding: var(--space-5) var(--space-4) var(--space-4);
+  }
+}

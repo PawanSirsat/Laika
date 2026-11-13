@@ -15,6 +15,8 @@ import { projectRoleLabel } from '../../../api/members.ts';
 import type { Project } from '../../../api/projects.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { inviteButtonLabel, parseEmails, rejectedEmails, spaceRolesFor } from './people-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface InviteDialogProps {
   /** Where the invite is to: the organisation's name. */
@@ -145,9 +147,11 @@ export function InviteDialog({
               to <span className="org-dialog-org">{orgName}</span>
             </p>
           </div>
-          <button type="button" className="org-dialog-close" aria-label="Close" onClick={onClose}>
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="org-dialog-close" aria-label="Close" onClick={onClose}>
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
 
         {issued === undefined ? (
@@ -260,7 +264,15 @@ export function InviteDialog({
               <Button variant="secondary" disabled={busy} onClick={onClose}>
                 Cancel
               </Button>
-              <Button busy={busy} disabled={rejected.length > 0} onClick={send} data-invite-send>
+              <Button
+                busy={busy}
+                disabled={rejected.length > 0}
+                disabledReason={
+                  rejected.length > 0 ? 'Fix the addresses marked above to send' : undefined
+                }
+                onClick={send}
+                data-invite-send
+              >
                 {inviteButtonLabel(emails.length)}
               </Button>
             </footer>

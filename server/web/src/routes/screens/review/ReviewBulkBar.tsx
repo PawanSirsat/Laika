@@ -1,5 +1,7 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { BulkRun } from '../list/list-bulk.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface ReviewBulkBarProps {
   /** How many rows are ticked. */
@@ -46,16 +48,17 @@ export function ReviewBulkBar({
             {busy && <Spinner size="sm" />}
             Accept {String(count)}
           </button>
-          <button
-            type="button"
-            className="rev-bulk-clear"
-            aria-label="Clear selection"
-            title="Clear selection"
-            disabled={busy}
-            onClick={onClear}
-          >
-            ×
-          </button>
+          <Tooltip content="Clear selection">
+            <button
+              type="button"
+              className="rev-bulk-clear"
+              aria-label="Clear selection"
+              disabled={busy}
+              onClick={onClear}
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </div>
       )}
 

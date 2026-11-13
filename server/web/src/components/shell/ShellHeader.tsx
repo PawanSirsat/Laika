@@ -1,10 +1,18 @@
 import { Brand } from '../Brand.tsx';
 import { ThemeSwitch } from '../ThemeSwitch.tsx';
+import { PaletteTrigger } from '../command/PaletteTrigger.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface ShellHeaderProps {
   readonly signedIn: boolean;
   readonly navOpen: boolean;
   readonly onToggleNav: () => void;
+  /**
+   * Draw the brand pre-auth. `false` where the screen's own card carries the
+   * lockup (LAI-1126), so the name appears once. Ignored when signed in — the
+   * sidebar carries it then.
+   */
+  readonly brand?: boolean;
 }
 
 /**
@@ -24,25 +32,29 @@ export interface ShellHeaderProps {
  * No "Not signed in" chip: it is authenticated chrome, and beside a sign-in
  * form it states the obvious.
  */
-export function ShellHeader({ signedIn, navOpen, onToggleNav }: ShellHeaderProps) {
+export function ShellHeader({ signedIn, navOpen, onToggleNav, brand = true }: ShellHeaderProps) {
   return (
     <header className={signedIn ? 'shell-head shell-head-quiet' : 'shell-head'}>
       {signedIn ? (
-        <button
-          type="button"
-          className="shell-navtoggle"
-          aria-expanded={navOpen}
-          aria-controls="sidebar"
-          onClick={onToggleNav}
-        >
-          <span className="visually-hidden">
-            {navOpen ? 'Close navigation' : 'Open navigation'}
-          </span>
-          <span className="shell-navtoggle-bars" aria-hidden="true" />
-        </button>
+        <Tooltip content={navOpen ? 'Close navigation' : 'Open navigation'}>
+          <button
+            type="button"
+            className="shell-navtoggle"
+            aria-expanded={navOpen}
+            aria-controls="sidebar"
+            onClick={onToggleNav}
+          >
+            <span className="visually-hidden">
+              {navOpen ? 'Close navigation' : 'Open navigation'}
+            </span>
+            <span className="shell-navtoggle-bars" aria-hidden="true" />
+          </button>
+        </Tooltip>
       ) : null}
+      {/* The phone's way into the palette (LAI-1192); the bar is hidden above 900px. */}
+      {signedIn && <PaletteTrigger variant="header" />}
 
-      {!signedIn && <Brand />}
+      {!signedIn && brand && <Brand />}
       {!signedIn && (
         <div className="shell-head-right">
           <ThemeSwitch />

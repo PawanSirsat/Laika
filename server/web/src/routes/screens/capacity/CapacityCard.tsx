@@ -15,6 +15,7 @@ import {
   statusText,
   workloadIn,
 } from './capacity-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export const ROLE_LABEL: Readonly<Record<CapacityEntry['org_role'], string>> = {
   owner: 'Owner',
@@ -141,21 +142,23 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
             <span className="cap-meta-sep" aria-hidden="true">
               {' · '}
             </span>
-            <span className={`cap-status cap-status-${ring}`} title={statusTitle}>
-              {status.text}
-            </span>
+            <Tooltip content={statusTitle}>
+              <span className={`cap-status cap-status-${ring}`}>{status.text}</span>
+            </Tooltip>
           </span>
         </span>
         <span className="cap-badges">
-          <span className={`cap-load cap-load-${load}`} title={LOAD_RULE}>
-            <span className="visually-hidden">Load: </span>
-            {LOAD_LABEL[load]}
-          </span>
+          <Tooltip content={LOAD_RULE}>
+            <span className={`cap-load cap-load-${load}`}>
+              <span className="visually-hidden">Load: </span>
+              {LOAD_LABEL[load]}
+            </span>
+          </Tooltip>
           {/* Its own badge, never a load trigger (D-092 item 3). */}
           {work.overdue > 0 && (
-            <span className="cap-overdue" title={HOVER.overdue}>
-              {count(work.overdue)} overdue
-            </span>
+            <Tooltip content={HOVER.overdue}>
+              <span className="cap-overdue">{count(work.overdue)} overdue</span>
+            </Tooltip>
           )}
         </span>
       </div>
@@ -176,13 +179,11 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
               ['backlog', work.backlog, HOVER.backlog],
             ] as const
           ).map(([label, n, title]) => (
-            <li
-              key={label}
-              className={n === 0 ? 'cap-count cap-count-zero' : 'cap-count'}
-              title={title}
-            >
-              <span className="cap-count-n">{count(n)}</span> {label}
-            </li>
+            <Tooltip key={label} content={title}>
+              <li className={n === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+                <span className="cap-count-n">{count(n)}</span> {label}
+              </li>
+            </Tooltip>
           ))}
         </ul>
         <div
@@ -204,42 +205,42 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
         </div>
         {/* Apart from the load: review waits on the reviewer (D-092 item 2). */}
         <ul className="cap-waits">
-          <li
-            className={work.in_review === 0 ? 'cap-count cap-count-zero' : 'cap-count'}
-            title={HOVER.in_review}
-          >
-            <span className="cap-count-n">{count(work.in_review)}</span> waiting on reviewers
-          </li>
-          <li
-            className={work.due_soon === 0 ? 'cap-count cap-count-zero' : 'cap-count'}
-            title={HOVER.due_soon}
-          >
-            <span className="cap-count-n">{count(work.due_soon)}</span> due in 7 days
-          </li>
+          <Tooltip content={HOVER.in_review}>
+            <li className={work.in_review === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+              <span className="cap-count-n">{count(work.in_review)}</span> waiting on reviewers
+            </li>
+          </Tooltip>
+          <Tooltip content={HOVER.due_soon}>
+            <li className={work.due_soon === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+              <span className="cap-count-n">{count(work.due_soon)}</span> due in 7 days
+            </li>
+          </Tooltip>
         </ul>
       </div>
 
       <div className="cap-block cap-agents-block">
         <span className="cap-label">
           Agents
-          <span
-            className={running === 0 ? 'cap-label-note' : 'cap-label-note cap-label-note-on'}
-            title={HOVER.running}
-          >
-            {count(running)} running
-          </span>
+          <Tooltip content={HOVER.running}>
+            <span className={running === 0 ? 'cap-label-note' : 'cap-label-note cap-label-note-on'}>
+              {count(running)} running
+            </span>
+          </Tooltip>
         </span>
         {agents.length === 0 ? (
-          <span className="cap-quiet" title={person.status === null ? HOVER.presence_off : ''}>
-            {person.status === null ? 'Presence is off' : 'No agents running'}
-          </span>
+          person.status === null ? (
+            <Tooltip content={HOVER.presence_off}>
+              <span className="cap-quiet">Presence is off</span>
+            </Tooltip>
+          ) : (
+            <span className="cap-quiet">No agents running</span>
+          )
         ) : (
           <ul className="cap-agents">
             {agents.map((agent) => (
-              <li
+              <Tooltip
                 key={agent.client}
-                className={agent.running ? 'cap-agent cap-agent-running' : 'cap-agent'}
-                title={
+                content={
                   agent.last_at === null
                     ? agent.running
                       ? 'Running now'
@@ -247,13 +248,15 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
                     : `${agent.running ? 'Running now · last signal' : 'Last used'} ${timeLabel(agent.last_at, now).text}`
                 }
               >
-                <span className="cap-agent-mark">
-                  <AgentMark client={agent.client} size="sm" />
-                  {agent.running && <span className="cap-agent-dot" aria-hidden="true" />}
-                </span>
-                {agentClientName(agent.client)}
-                {agent.running && <span className="visually-hidden"> (running now)</span>}
-              </li>
+                <li className={agent.running ? 'cap-agent cap-agent-running' : 'cap-agent'}>
+                  <span className="cap-agent-mark">
+                    <AgentMark client={agent.client} size="sm" />
+                    {agent.running && <span className="cap-agent-dot" aria-hidden="true" />}
+                  </span>
+                  {agentClientName(agent.client)}
+                  {agent.running && <span className="visually-hidden"> (running now)</span>}
+                </li>
+              </Tooltip>
             ))}
           </ul>
         )}
@@ -301,16 +304,18 @@ export function SpaceChip({
   const colour = avatarColor(`space:${space.slug}`, theme);
   const aside = `${count(space.backlog)} in backlog, ${count(space.in_review)} waiting on reviewers`;
   return (
-    <li className={on ? 'cap-space cap-space-on' : 'cap-space'} title={spaceTitle(space)}>
-      <span
-        className="cap-space-swatch"
-        aria-hidden="true"
-        style={{ background: colour.background }}
-      />
-      {space.name}
-      <span className="cap-space-n">{count(space.committed)}</span>
-      <span className="visually-hidden"> committed, {aside}</span>
-    </li>
+    <Tooltip content={spaceTitle(space)}>
+      <li className={on ? 'cap-space cap-space-on' : 'cap-space'}>
+        <span
+          className="cap-space-swatch"
+          aria-hidden="true"
+          style={{ background: colour.background }}
+        />
+        {space.name}
+        <span className="cap-space-n">{count(space.committed)}</span>
+        <span className="visually-hidden"> committed, {aside}</span>
+      </li>
+    </Tooltip>
   );
 }
 
@@ -337,10 +342,12 @@ function ActivityFigures({ split }: { readonly split: ActivitySplit }) {
             ['bookkeeping', split.bookkeeping, HOVER.bookkeeping],
           ] as const
         ).map(([label, n, title]) => (
-          <li key={label} className={n === 0 ? 'cap-fig cap-fig-zero' : 'cap-fig'} title={title}>
-            <span className="cap-count-n">{count(n)}</span>
-            <span className="cap-fig-label">{label}</span>
-          </li>
+          <Tooltip key={label} content={title}>
+            <li className={n === 0 ? 'cap-fig cap-fig-zero' : 'cap-fig'}>
+              <span className="cap-count-n">{count(n)}</span>
+              <span className="cap-fig-label">{label}</span>
+            </li>
+          </Tooltip>
         ))}
       </ul>
     </div>
