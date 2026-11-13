@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import {
+  closeBrowser,
+  navigateInApp,
+  setTheme,
+  until,
+  type ApiStub,
+  type Harness,
+} from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import {
   addDays,
@@ -727,6 +734,89 @@ void describe('My day — the zoom as the design plays it (LAI-1179)', () => {
       assert.equal(byKey, true, 'D from Week zooms in too');
       await h.page.locator('[data-myday-ready]').waitFor();
       assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  });
+
+  void test('a fresh visit reads a period it still holds again, and draws the one it holds meanwhile', async () => {
+    // The week's other six days answer at once the first time and are held
+    // the second: the re-read a fresh visit makes is seen, and seen pending.
+    const data = weekData();
+    const week = periodOf('week', TODAY);
+    const others = Array.from({ length: 7 }, (_, i) => addDays(week.from, i)).filter(
+      (d) => d !== TODAY,
+    );
+    const again = held(() => undefined);
+    const seen = new Map<string, number>();
+    const routes = Object.fromEntries(
+      others.map((d) => [
+        `/api/v1/me/time?day=${d}`,
+        () => {
+          const n = (seen.get(d) ?? 0) + 1;
+          seen.set(d, n);
+          return n === 1 ? viewOf(d, data) : again.route().then(() => viewOf(d, data));
+        },
+      ]),
+    );
+    h = await open(`/my-day?span=week&day=${TODAY}`, { ...stub(), ...routes });
+    try {
+      await settled(h.page, 'week');
+      const blocks = await h.page.locator('.span-week-block').count();
+      assert.ok(blocks > 0);
+      // Away — anything could change the week from here — and back.
+      await navigateInApp(h.page, '/board?project=atlas');
+      await h.page.locator('[data-stage]').waitFor({ state: 'detached' });
+      await navigateInApp(h.page, `/my-day?span=week&day=${TODAY}`);
+      await h.page.locator('[data-layer="week"][data-layer-role="current"]').waitFor();
+      await until(() => [...seen.values()].some((n) => n >= 2));
+      // Read again, and while that is out the week held is what is drawn —
+      // its blocks, no bones, no busy card.
+      assert.equal(await h.page.locator('[data-layer="week"] .span-card[aria-busy]').count(), 0);
+      assert.equal(await h.page.locator('.span-week-block').count(), blocks);
+      assert.equal(
+        (
+          await h.page.locator('[data-span-week] .span-week-total').first().textContent()
+        )?.trim() !== '',
+        true,
+      );
+      again.release();
+      await until(() => others.every((d) => (seen.get(d) ?? 0) >= 2));
+      await settled(h.page, 'week');
+      assert.equal(await h.page.locator('.span-week-block').count(), blocks);
+      // The day on screen was not asked for by the week: the page's own answer stands for it.
+      assert.equal(
+        (h?.calls ?? []).filter(
+          (c) => c.path === '/api/v1/me/time' && new URLSearchParams(c.query).get('day') === TODAY,
+        ).length,
+        2,
+        'today: once per visit, by the page',
+      );
+    } finally {
+      await close();
+    }
+  });
+
+  void test('a Day whose read has not landed leaves as its skeleton, never as the day before', async () => {
+    const before = held(() => viewOf(YESTERDAY, weekData()));
+    h = await open('/my-day', { ...stub(), [`/api/v1/me/time?day=${YESTERDAY}`]: before.route });
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor();
+      // Yesterday into the address, as the week strip or the phone's ‹ would put it.
+      await navigateInApp(h.page, `/my-day?day=${YESTERDAY}`);
+      // Yesterday is in the address and not yet here: the Day layer is its skeleton.
+      await h.page.locator('[data-myday-pending]').waitFor();
+      await h.page.keyboard.press('w');
+      const leaving = h.page.locator('[data-layer="day"][data-layer-role="leaving"]');
+      await leaving.waitFor();
+      assert.equal(
+        await leaving.locator('[data-dayline]').count(),
+        0,
+        'today’s page under yesterday’s address',
+      );
+      assert.equal(await leaving.locator('[data-day-loading]').count(), 1);
+      before.release();
+      await settled(h.page, 'week');
     } finally {
       await close();
     }

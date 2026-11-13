@@ -109,6 +109,8 @@ export async function zoomLayers(
   stage: Box,
   anchor: Box | undefined,
   dir: Direction,
+  /** Let go of early — the stage unmounted mid-zoom — so no timer outlives it. */
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!motionAllowed()) return;
   const runs: Animation[] = [];
@@ -124,7 +126,7 @@ export async function zoomLayers(
     if (entering !== null) arrive = entering.animate([{ opacity: 0 }, { opacity: 1 }], timing);
   }
   if (arrive !== undefined) runs.push(arrive);
-  await settle(runs, ZOOM_MS + 900);
+  await settle(runs, ZOOM_MS + 900, signal);
   // The arriving layer is let go of; the leaving one stays at its last frame
   // until the caller unmounts it, so it never flashes back for a frame.
   arrive?.cancel();
@@ -157,12 +159,22 @@ export function slideIn(el: HTMLElement | null, by: 1 | -1): void {
   );
 }
 
-/** Every run finished, or the failsafe — a stalled animation never strands the page. */
-function settle(runs: readonly Animation[], failsafe: number): Promise<void> {
-  return Promise.race([
-    Promise.all(runs.map((r) => r.finished.catch(() => undefined))).then(() => undefined),
-    new Promise<void>((resolve) => setTimeout(resolve, failsafe)),
-  ]);
+/**
+ * Every run finished, the failsafe, or the caller letting go — a stalled
+ * animation never strands the page, and the timer is cleared whichever way
+ * it ends rather than left to fire into a page that moved on.
+ */
+function settle(runs: readonly Animation[], failsafe: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, failsafe);
+    signal?.addEventListener('abort', done);
+    void Promise.all(runs.map((r) => r.finished.catch(() => undefined))).then(done);
+  });
 }
 
 export const boxOf = (el: Element): Box => {

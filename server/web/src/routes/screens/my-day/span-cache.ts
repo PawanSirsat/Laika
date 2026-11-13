@@ -10,9 +10,11 @@ import { chunks, mondayOf, monthKey, periodOf, yearOf, type Span } from './span.
  *
  * A module, not a component's state, because the thing it serves outlives any
  * one component: My day's stage shows Day most of the time, and a prefetch has
- * no component at all. It is keyed by whose time and which period, and **a
- * change to time on Day empties it** (`invalidate`, called where the Day page
- * re-reads itself), so nothing here is older than the day it draws.
+ * no component at all. It is keyed by whose time and which period. **A change
+ * to time — on Day, or anywhere before a fresh visit — marks every period
+ * stale** (`invalidate`): a stale period still draws, and the next `read`
+ * asks for it again and replaces it when the answer lands, so a view never
+ * drops to its bones for a change it is about to show.
  *
  * `useSyncExternalStore` reads it through `subscribe` and `version`: a
  * component re-renders when any period lands, and `peek` hands back the same
@@ -98,8 +100,13 @@ export interface SpanCache {
   seedDay(subjectId: string | undefined, view: MyDay): void;
   /** Drop one period, so the next read asks again — the error card's *Try again*. */
   forget(subjectId: string | undefined, span: WideSpan, day: string): void;
-  /** Time changed on Day: nothing read before it is trusted. */
+  /**
+   * Time changed: every period held is stale — still drawn, read again on
+   * the next `read` — and an answer still in flight is dropped. The seeds go.
+   */
   invalidate(): void;
+  /** Held and stale: drawn, but due a re-read. */
+  isStale(subjectId: string | undefined, span: WideSpan, day: string): boolean;
   subscribe(fn: () => void): () => void;
   version(): number;
   /** How many periods are held or in flight. */
@@ -109,6 +116,8 @@ export interface SpanCache {
 interface Entry {
   got?: Got | undefined;
   inflight?: Promise<void> | undefined;
+  /** `got` is from before a change: shown until the re-read lands. */
+  stale?: boolean;
 }
 
 export function createSpanCache(readers: SpanReaders): SpanCache {
@@ -130,7 +139,7 @@ export function createSpanCache(readers: SpanReaders): SpanCache {
     read(subjectId, span, day, tz, limits = FOREGROUND) {
       const key = keyFor(subjectId, span, day);
       const held = store.get(key);
-      if (held?.got !== undefined) return Promise.resolve();
+      if (held?.got !== undefined && held.stale !== true) return Promise.resolve();
       if (held?.inflight !== undefined) return held.inflight;
       const { from, to } = periodOf(span, day);
       const read: Promise<Got> =
@@ -149,13 +158,15 @@ export function createSpanCache(readers: SpanReaders): SpanCache {
               chunks(from, to).map((c) => () => readers.readDays(subjectId, c.from, c.to, tz)),
               limits.chunks,
             ).then((parts) => ({ kind: 'days' as const, days: parts.flat() }));
-      const entry: Entry = {};
+      // A stale period keeps drawing from its entry while the re-read is out.
+      const entry: Entry = held ?? {};
       entry.inflight = read
         .catch((error: unknown): Got => ({ kind: 'error', error }))
         .then((got) => {
-          // Emptied while this was in flight: the answer is of a day that changed since.
+          // Invalidated while this was in flight: the answer is of a day that changed since.
           if (store.get(key) !== entry) return;
           entry.got = got;
+          entry.stale = false;
           entry.inflight = undefined;
           bump();
         });
@@ -171,9 +182,15 @@ export function createSpanCache(readers: SpanReaders): SpanCache {
     invalidate() {
       seeds.clear();
       if (store.size === 0) return;
-      store.clear();
+      for (const [key, e] of store) {
+        // A fresh entry object, so a read begun before this lands into nothing;
+        // what was held stays drawn, marked for the next read.
+        if (e.got === undefined) store.delete(key);
+        else store.set(key, { got: e.got, stale: true });
+      }
       bump();
     },
+    isStale: (subjectId, span, day) => store.get(keyFor(subjectId, span, day))?.stale === true,
     subscribe(fn) {
       listeners.add(fn);
       return () => {

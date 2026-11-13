@@ -173,7 +173,7 @@ void describe('span-cache', () => {
     assert.equal(r.daysCalls.length, 2);
   });
 
-  void test('invalidate empties it, and an answer that lands afterwards for a read begun before is dropped', async () => {
+  void test('invalidate drops a read still in flight, and the next read asks afresh', async () => {
     const r = readers();
     const cache = createSpanCache(r);
     const first = cache.read(undefined, 'month', '2026-11-12', 'UTC');
@@ -187,8 +187,68 @@ void describe('span-cache', () => {
     void cache.read(undefined, 'month', '2026-11-12', 'UTC');
     await settle();
     assert.equal(r.daysCalls.length, 2);
+  });
+
+  void test('a period held when time changes stays drawn, stale, until its re-read lands', async () => {
+    const r = readers();
+    const cache = createSpanCache(r);
+    const first = cache.read(undefined, 'month', '2026-11-12', 'UTC');
+    await settle();
+    const old = [{ day: '2026-11-12' }] as unknown as DaysDay[];
+    r.daysCalls[0]?.resolve(old);
+    await first;
+    const held = cache.peek(undefined, 'month', '2026-11-12');
     const v = cache.version();
     cache.invalidate();
     assert.equal(cache.version(), v + 1, 'subscribers hear of it');
+    assert.equal(cache.peek(undefined, 'month', '2026-11-12'), held, 'still drawn');
+    assert.equal(cache.isStale(undefined, 'month', '2026-11-12'), true);
+    // The next read asks again; what is held draws meanwhile.
+    const again = cache.read(undefined, 'month', '2026-11-12', 'UTC');
+    await settle();
+    assert.equal(r.daysCalls.length, 2, 'read again');
+    assert.equal(
+      cache.peek(undefined, 'month', '2026-11-12'),
+      held,
+      'the old answer while the new is out',
+    );
+    assert.equal(
+      cache.read(undefined, 'month', '2026-11-12', 'UTC'),
+      again,
+      'a second read joins the flight',
+    );
+    const fresh = [{ day: '2026-11-12' }, { day: '2026-11-13' }] as unknown as DaysDay[];
+    r.daysCalls[1]?.resolve(fresh);
+    await again;
+    const now = cache.peek(undefined, 'month', '2026-11-12');
+    assert.equal(now?.kind === 'days' ? now.days.length : 0, 2, 'replaced when it lands');
+    assert.equal(cache.isStale(undefined, 'month', '2026-11-12'), false);
+    await cache.read(undefined, 'month', '2026-11-12', 'UTC');
+    assert.equal(r.daysCalls.length, 2, 'fresh: not read a third time');
+  });
+
+  void test('a second change during a re-read drops that answer and keeps the old one drawn, still stale', async () => {
+    const r = readers();
+    const cache = createSpanCache(r);
+    const first = cache.read(undefined, 'month', '2026-11-12', 'UTC');
+    await settle();
+    r.daysCalls[0]?.resolve([]);
+    await first;
+    const held = cache.peek(undefined, 'month', '2026-11-12');
+    cache.invalidate();
+    const again = cache.read(undefined, 'month', '2026-11-12', 'UTC');
+    await settle();
+    cache.invalidate();
+    r.daysCalls[1]?.resolve([{ day: 'x' }] as unknown as DaysDay[]);
+    await again;
+    assert.equal(
+      cache.peek(undefined, 'month', '2026-11-12'),
+      held,
+      'the in-flight answer was of before the change',
+    );
+    assert.equal(cache.isStale(undefined, 'month', '2026-11-12'), true);
+    void cache.read(undefined, 'month', '2026-11-12', 'UTC');
+    await settle();
+    assert.equal(r.daysCalls.length, 3, 'read once more');
   });
 });

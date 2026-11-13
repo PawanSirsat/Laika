@@ -76,7 +76,12 @@ type Motion =
 interface Shown {
   readonly current: Layer;
   readonly leaving?: Layer;
-  /** Counts every change; a movement finishing checks it is still the one it started. */
+  /**
+   * Counts every change. A movement finishing checks it is still the one it
+   * started — which, with `busy` refusing a second movement, only StrictMode's
+   * double run of the motion effect can make untrue. Kept for that; it is
+   * not what keeps two movements apart.
+   */
   readonly seq: number;
   readonly motion?: Motion;
 }
@@ -173,9 +178,9 @@ export const SpanStage = memo(function SpanStage({
   const todayRef = useRef(today);
   const subjectRef = useRef(subjectId);
   const onOpenRef = useRef(onOpen);
-  /** The Day page as it last was, for a Day layer on its way out. */
-  const lastDayBody = useRef<ReactNode>(undefined);
-  if (dayBody !== undefined) lastDayBody.current = dayBody;
+  /** The Day page as it last was, and for which day, for a Day layer on its way out. */
+  const lastDayBody = useRef<{ day: string; body: ReactNode } | undefined>(undefined);
+  if (dayBody !== undefined) lastDayBody.current = { day, body: dayBody };
   useLayoutEffect(() => {
     shownRef.current = shown;
     todayRef.current = today;
@@ -283,25 +288,31 @@ export const SpanStage = memo(function SpanStage({
     el.dataset.zooming = m.dir;
     const coarseEl = m.dir === 'in' ? leavingEl : enteringEl;
     const anchor = coarseEl.querySelector(`[data-zk="${m.key}"]`);
+    // Finished, failed or let go of, the stage is freed: a rejection must not
+    // leave it busy with every later request queued for ever. Unmounting
+    // mid-zoom aborts, which clears the failsafe timer and skips `finish`.
+    const gone = new AbortController();
     void zoomLayers(
       leavingEl,
       enteringEl,
       boxOf(el),
       anchor === null ? undefined : boxOf(anchor),
       m.dir,
-    ).then(() => {
-      if (shownRef.current.seq === seq) finish();
+      gone.signal,
+    ).finally(() => {
+      if (!gone.signal.aborted && shownRef.current.seq === seq) finish();
     });
-    return undefined;
+    return () => {
+      gone.abort();
+    };
   }, [shown, finish]);
 
-  // Read what the layers show, once each; again after time changed on Day.
+  // Read what the layers show: once each, and again when a change made what
+  // is held stale (`read` is a no-op for a period that is fresh or in flight).
   useEffect(() => {
     for (const l of [shown.current, shown.leaving]) {
       if (l === undefined || l.span === 'day') continue;
-      if (spanCache.peek(subjectId, l.span, l.day) === undefined) {
-        void spanCache.read(subjectId, l.span, l.day, tz);
-      }
+      void spanCache.read(subjectId, l.span, l.day, tz);
     }
   }, [shown, subjectId, tz, version]);
 
@@ -381,7 +392,13 @@ export const SpanStage = memo(function SpanStage({
             data-myday-ready={!leaving && dayBody !== undefined ? '' : undefined}
             data-myday-pending={dayBody === undefined && !leaving ? '' : undefined}
           >
-            {(leaving ? lastDayBody.current : dayBody) ?? <DaySkeleton label={dayLoadingLabel} />}
+            {(leaving
+              ? // Only the page of the day this layer is on: a day whose read
+                // had not landed leaves as its skeleton, never as the day before.
+                lastDayBody.current?.day === l.day
+                ? lastDayBody.current.body
+                : undefined
+              : dayBody) ?? <DaySkeleton label={dayLoadingLabel} />}
           </div>
         ) : (
           <div className="myday" data-myday-span={l.span}>

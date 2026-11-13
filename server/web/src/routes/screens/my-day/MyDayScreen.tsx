@@ -412,6 +412,14 @@ export function MyDayScreen({
     setTick((n) => n + 1);
   }, []);
 
+  // A fresh visit trusts nothing the View read on an earlier one: a timer
+  // stopped from a card, an agent's entry, the plugin's drafts all change
+  // periods this page never saw change (LAI-1179). Stale, not dropped — a
+  // period held still draws while it is read again.
+  useEffect(() => {
+    spanCache.invalidate();
+  }, []);
+
   // Somebody else's day is asked only of a reader who holds the capability:
   // the server would refuse it, and a refused read is the not-allowed state.
   const asking = !notOwn || holds;
