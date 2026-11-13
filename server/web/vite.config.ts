@@ -9,8 +9,17 @@ import { defineConfig } from 'vite';
  */
 const OUT_DIR = '../public';
 
-/** Where `pnpm --filter @laika/server dev` listens. */
-const API_ORIGIN = 'http://localhost:3000';
+/**
+ * Where `pnpm --filter @laika/server dev` listens — or, with
+ * `LAIKA_API_ORIGIN` set, another instance to run this frontend against
+ * (LAI-1179): `LAIKA_API_ORIGIN=http://52.72.203.206 pnpm --filter @laika/web dev`
+ * drives the local SPA with the production API's real latency. An origin
+ * other than this machine's gets `Origin` and `Referer` rewritten on the way
+ * through, because better-auth refuses a sign-in whose `Origin` is not its
+ * own; the cookie it sets is then the browser's for `localhost:5173`.
+ */
+const API_ORIGIN = process.env.LAIKA_API_ORIGIN ?? 'http://localhost:3000';
+const REMOTE_API = !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(API_ORIGIN);
 
 /**
  * Paths the server owns. Everything else falls through to the SPA, which
@@ -49,6 +58,21 @@ export default defineConfig({
           // which would hold events until the response ends — and it never
           // does. This is the dev-server twin of the Caddy note in LAI-008.
           ws: false,
+          ...(REMOTE_API
+            ? {
+                configure: (proxy: {
+                  on: (
+                    event: 'proxyReq',
+                    fn: (req: { setHeader: (name: string, value: string) => void }) => void,
+                  ) => void;
+                }) => {
+                  proxy.on('proxyReq', (req) => {
+                    req.setHeader('origin', API_ORIGIN);
+                    req.setHeader('referer', `${API_ORIGIN}/`);
+                  });
+                },
+              }
+            : {}),
         },
       ]),
     ),
