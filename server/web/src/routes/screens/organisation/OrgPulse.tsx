@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getOrgOverview, type OrgOverview } from '../../../api/org.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { OrgStat } from './OrgStat.tsx';
 import { pulseTiles } from './org-pulse.ts';
 
 type PulseState =
@@ -16,7 +17,7 @@ type PulseState =
  * settings still read when this one cannot, so a failure is a line with a
  * retry rather than an error state over the tab.
  */
-export function OrgPulse() {
+export function OrgPulse({ onNavigate }: { readonly onNavigate: (to: string) => void }) {
   const [state, setState] = useState<PulseState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => {
@@ -57,13 +58,16 @@ export function OrgPulse() {
   return (
     <dl className="org-stats org-pulse" aria-label="This week">
       {pulseTiles(state.overview).map((tile) => (
-        <div key={tile.id} className="org-stat" data-pulse={tile.id}>
-          <dt>{tile.label}</dt>
-          <dd>
-            <span className="org-stat-value">{tile.value}</span>
-            <span className="org-stat-sub">{tile.sub}</span>
-          </dd>
-        </div>
+        <OrgStat
+          key={tile.id}
+          label={tile.label}
+          value={tile.value}
+          sub={tile.sub}
+          to={tile.to}
+          destination={tile.destination}
+          onNavigate={onNavigate}
+          data={{ 'data-pulse': tile.id }}
+        />
       ))}
     </dl>
   );

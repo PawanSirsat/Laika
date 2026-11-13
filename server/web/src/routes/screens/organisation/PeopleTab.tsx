@@ -5,6 +5,7 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { OverflowMenu, type OverflowMenuItem } from '../../../components/wizard/OverflowMenu.tsx';
 import {
   reissueInvite,
   revokeInvite,
@@ -31,9 +32,11 @@ import {
   nextSort,
   roleCounts,
   seatLine,
+  readPeopleView,
   sortPeople,
+  withPeopleView,
   type PeopleFilter,
-  type PeopleSort,
+  type PeopleView,
 } from './people-derive.ts';
 
 export interface PeopleTabProps {
@@ -68,6 +71,12 @@ export interface PeopleTabProps {
   readonly onTokens: (id: string) => void;
   readonly onInvite: (initialText?: string) => void;
   readonly onReload: () => void;
+  /**
+   * The address (LAI-1210): the search, filter, space and sort live there, so
+   * a reload or a shared link opens the same view.
+   */
+  readonly params: URLSearchParams;
+  readonly setParams: (next: URLSearchParams) => void;
 }
 
 const FILTERS: readonly (readonly [PeopleFilter, string])[] = [
@@ -128,15 +137,26 @@ export function PeopleTab({
   onTokens,
   onInvite,
   onReload,
+  params,
+  setParams,
 }: PeopleTabProps) {
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<PeopleFilter>('all');
-  const [sort, setSort] = useState<PeopleSort>('active');
+  const { query, filter, space, sort } = readPeopleView(params);
+  const setView = (change: Partial<PeopleView>): void => {
+    setParams(withPeopleView(params, change));
+  };
+  const setQuery = (next: string): void => {
+    setView({ query: next });
+  };
+  const setFilter = (next: PeopleFilter): void => {
+    setView({ filter: next });
+  };
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulk, setBulk] = useState<string | undefined>(undefined);
   const [inviteError, setInviteError] = useState<unknown>(null);
-  /** The space to narrow to, by slug; `''` for every space. */
-  const [space, setSpace] = useState('');
+  /** The space to narrow to, by slug; `''` for every space (in the address, `space`). */
+  const setSpace = (next: string): void => {
+    setView({ space: next });
+  };
   const [pending, setPending] = useState<Pending | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | undefined>(undefined);
@@ -337,6 +357,40 @@ export function PeopleTab({
   const spaceName = (id: string | null): string | undefined =>
     id === null ? undefined : (projects.find((p) => p.id === id)?.name ?? 'a space');
 
+  /**
+   * An active person's row actions, each behind its own gate — **Two verbs,
+   * and the copy says which** (D-048): Deactivate is the danger item.
+   */
+  const rowActions = (person: OrgUser): OverflowMenuItem[] => [
+    ...(canListTokens
+      ? [
+          {
+            id: 'tokens',
+            label: 'Tokens',
+            hint: 'Their tokens, on Security',
+            disabled: busy,
+            onSelect: () => {
+              onTokens(person.id);
+            },
+          },
+        ]
+      : []),
+    ...(canDeactivate
+      ? [
+          {
+            id: 'deactivate',
+            label: 'Deactivate',
+            hint: 'Locks them out; keeps their history',
+            danger: true,
+            disabled: busy,
+            onSelect: () => {
+              setOffboarding(person);
+            },
+          },
+        ]
+      : []),
+  ];
+
   const filters = FILTERS.filter(
     ([key]) =>
       (key !== 'viewer' || counts.viewer > 0) &&
@@ -385,7 +439,7 @@ export function PeopleTab({
             <button
               key={key}
               type="button"
-              className="org-segment"
+              className={key === 'pending' ? 'org-segment org-segment-pending' : 'org-segment'}
               data-people-filter={key}
               aria-pressed={filter === key}
               onClick={() => {
@@ -423,7 +477,7 @@ export function PeopleTab({
             data-people-sort={sort}
             title="Change the order"
             onClick={() => {
-              setSort(nextSort(sort));
+              setView({ sort: nextSort(sort) });
             }}
           >
             Sort: <strong>{SORT_LABELS[sort]}</strong>
@@ -488,6 +542,27 @@ export function PeopleTab({
             Clear
           </button>
         </div>
+      )}
+
+      {filter !== 'pending' && canInvite && invites.length > 0 && (
+        // Pending invites are not people yet, so they are not rows; this line
+        // says they exist on every other view (LAI-1210).
+        <p className="org-pending-notice" data-pending-notice>
+          <span>
+            {invites.length === 1
+              ? '1 invite is waiting to be accepted.'
+              : `${String(invites.length)} invites are waiting to be accepted.`}
+          </span>
+          <button
+            type="button"
+            className="org-pending-notice-open"
+            onClick={() => {
+              setView({ filter: 'pending', query: '', space: '' });
+            }}
+          >
+            Review pending
+          </button>
+        </p>
       )}
 
       {filter === 'pending' ? (
@@ -773,36 +848,26 @@ export function PeopleTab({
                       {signedIn.text}
                     </span>
                     <span role="cell" className="org-people-actions">
-                      {mine && person.is_active && (
-                        <>
-                          {canListTokens && (
-                            <button
-                              type="button"
-                              className="org-tokens-open"
-                              disabled={busy}
-                              onClick={() => {
-                                onTokens(person.id);
-                              }}
-                            >
-                              Tokens
-                            </button>
-                          )}
-                          {/* **Two verbs, and the copy says which** (D-048). */}
-                          {canDeactivate && (
-                            <button
-                              type="button"
-                              className="org-deactivate"
-                              disabled={busy}
-                              onClick={() => {
-                                setOffboarding(person);
-                              }}
-                            >
-                              Deactivate
-                            </button>
-                          )}
-                        </>
+                      {mine && person.is_active && rowActions(person).length > 0 && (
+                        /* One ⋯ menu per row (LAI-1210): the safe action and the
+                           danger one no longer sit as two loose words side by
+                           side. `data-row-actions` names what it holds, so a
+                           gate is readable without opening it. */
+                        <span
+                          className="org-row-menu"
+                          data-row-actions={rowActions(person)
+                            .map((item) => item.id)
+                            .join(' ')}
+                        >
+                          <OverflowMenu
+                            label={`More actions for ${person.name}`}
+                            items={rowActions(person)}
+                          />
+                        </span>
                       )}
                       {mine && !person.is_active && canDeactivate && (
+                        // A deactivated row has one action, so it stays a
+                        // visible button rather than a menu of one.
                         <button
                           type="button"
                           className="org-reactivate"
@@ -838,9 +903,7 @@ export function PeopleTab({
                       className="org-people-empty-clear"
                       data-people-clear
                       onClick={() => {
-                        setFilter('all');
-                        setSpace('');
-                        setQuery('');
+                        setView({ filter: 'all', space: '', query: '' });
                       }}
                     >
                       Show everyone

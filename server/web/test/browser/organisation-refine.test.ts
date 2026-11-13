@@ -324,7 +324,7 @@ void describe('disabled controls say why; hidden ones are not offered', () => {
     try {
       await ready(h);
       assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 0);
-      assert.equal(await h.page.locator('.org-deactivate, .org-reactivate').count(), 0);
+      assert.equal(await h.page.locator('.org-row-menu, .org-reactivate').count(), 0);
       assert.equal(await h.page.locator('.org-transfer').count(), 0);
       const foot = await h.page.locator('.org-people-foot-note').innerText();
       assert.match(foot, /Space roles are set in each space’s settings\./);
@@ -439,10 +439,13 @@ void describe('Roles & permissions is a summary, with the inventory on request',
 });
 
 void describe('a wide table says it scrolls', () => {
-  void test('at 390 the People table is a focusable region with a hint, and arrows scroll it', async () => {
+  // At 768, not 390: since LAI-1210 a phone gets each person as a card and
+  // nothing to scroll (organisation-tabs.test.ts asserts that); a tablet still
+  // gets the wide table, so this is where the cue is needed.
+  void test('at 768 the People table is a focusable region with a hint, and arrows scroll it', async () => {
     const h = await open('/organisation?tab=people', OWNER(), {
       before: async (page) => {
-        await page.setViewportSize({ width: 390, height: 844 });
+        await page.setViewportSize({ width: 768, height: 900 });
       },
     });
     try {

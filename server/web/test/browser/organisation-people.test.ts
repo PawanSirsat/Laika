@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, until, type ApiStub, type StubCall } from './harness.ts';
+import { rowAction } from './row-menu.ts';
 import { capacityPerson } from './capacity-org.ts';
 
 const NOW = Date.now();
@@ -335,7 +336,7 @@ void describe('the People tab (LAI-893)', () => {
   void test('Tokens opens that person’s tokens on Security', async () => {
     const h = await openPeople();
     try {
-      await rowOf(h, 'Tomas Nel').getByRole('button', { name: 'Tokens' }).click();
+      await rowAction(rowOf(h, 'Tomas Nel'), 'Tokens');
       await until(() => new URL(h.page.url()).search === '?tab=security');
       await h.page.locator('#tokens-u2').waitFor({ timeout: 10_000 });
     } finally {

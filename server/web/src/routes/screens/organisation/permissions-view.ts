@@ -106,3 +106,86 @@ export function sameGrants(a: Grants, b: Grants): boolean {
 export function mayEditGrants(actions: readonly string[]): boolean {
   return actions.includes('org.permissions.manage');
 }
+
+/**
+ * A table's rows in groups, by the part of the action id before its first
+ * dot (LAI-1210) — `user.invite` and `user.deactivate` sit together. Groups
+ * come in the order their first row arrived, rows keep the server's order
+ * inside them, and an id with no dot is its own group.
+ *
+ * The heading is a plain word for the prefixes §3 uses today and **the
+ * prefix itself for any other**, so a new area the server adds is still
+ * grouped, under its own name, rather than dropped or misfiled.
+ */
+const GROUP_NAMES: Readonly<Record<string, string>> = {
+  org: 'Organisation',
+  user: 'People',
+  project: 'Spaces',
+  presence: 'Presence',
+  token: 'Tokens',
+  agent: 'Agents',
+  unlisted: 'Unlisted work',
+  audit_log: 'Audit log',
+  webhook: 'Integrations',
+  profile: 'Profiles',
+  usage: 'Usage',
+  time: 'Time',
+  task: 'Tasks',
+  comment: 'Comments',
+  sprint: 'Sprints',
+};
+
+export interface RowGroup {
+  readonly key: string;
+  readonly name: string;
+  readonly rows: readonly PermissionRow[];
+}
+
+export function groupRows(rows: readonly PermissionRow[]): readonly RowGroup[] {
+  const groups: { key: string; name: string; rows: PermissionRow[] }[] = [];
+  for (const row of rows) {
+    const dot = row.action.indexOf('.');
+    const key = dot === -1 ? row.action : row.action.slice(0, dot);
+    let group = groups.find((g) => g.key === key);
+    if (group === undefined) {
+      group = { key, name: GROUP_NAMES[key] ?? key, rows: [] };
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+  return groups;
+}
+
+/** Rows whose name, or action id, holds the find; all of them for an empty one. */
+export function findRows(rows: readonly PermissionRow[], query: string): readonly PermissionRow[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return rows;
+  return rows.filter(
+    (row) =>
+      actionName(row).toLowerCase().includes(needle) || row.action.toLowerCase().includes(needle),
+  );
+}
+
+export interface RoleExplanation {
+  readonly total: number;
+  /** Rows the role may do outright. */
+  readonly yes: number;
+  /** Rows the role may do under a condition, with the server's condition. */
+  readonly conditional: readonly string[];
+  /** Rows the role may not do, by name. */
+  readonly not: readonly string[];
+}
+
+/** What one role may do in one table — every count is a cell the server sent. */
+export function explainRole(rows: readonly PermissionRow[], role: string): RoleExplanation {
+  let yes = 0;
+  const conditional: string[] = [];
+  const not: string[] = [];
+  for (const row of rows) {
+    const cell = cellFor(row, role);
+    if (cell.kind === 'yes') yes += 1;
+    else if (cell.kind === 'conditional') conditional.push(`${actionName(row)} (${cell.text})`);
+    else if (cell.kind === 'no') not.push(actionName(row));
+  }
+  return { total: rows.length, yes, conditional, not };
+}
