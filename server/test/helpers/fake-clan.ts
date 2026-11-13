@@ -165,7 +165,16 @@ export function fakeClan(options: FakeClanOptions = {}): FakeClan {
           data: {
             token: owed ? CLAN_RESTRICTED_TOKEN : fake.token,
             expires: options.expires ?? '2027-11-13T12:00:00.000000Z',
-            two_factor_auth: { enabled: owed, methods: options.twoFactorMethods ?? [] },
+            // Measured: an object of switches, not a list.
+            two_factor_auth: {
+              enabled: owed,
+              methods: Object.fromEntries(
+                ['email', 'google_authenticator'].map((m) => [
+                  m,
+                  options.twoFactorMethods?.includes(m) ?? false,
+                ]),
+              ),
+            },
           },
         });
       }
@@ -179,7 +188,12 @@ export function fakeClan(options: FakeClanOptions = {}): FakeClan {
             data: { token: fake.token, expires: options.expires ?? '2027-11-13T12:00:00.000000Z' },
           });
         }
-        return json(403, { error: { code: 403, innererror: { code: 'TWO_FACTOR_REQUIRED' } } });
+        return json(403, {
+          error: {
+            message: 'CLAN-SECRET-WORDS Two-factor authentication required',
+            innererror: { code: 'TWO_FACTOR_REQUIRED' },
+          },
+        });
       }
       if (req.authorization !== `Bearer ${fake.token}`) {
         // Clan's own words, which Laika must never pass on.

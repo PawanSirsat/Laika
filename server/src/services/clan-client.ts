@@ -80,15 +80,29 @@ export class ClanUnavailableError extends ApiError {
  */
 export class ClanAuthError extends ApiError {
   readonly answered: number;
+  /**
+   * The `403` said `TWO_FACTOR_REQUIRED`: a sign-in's restricted token, which
+   * reads nothing until its code is given (LAI-1180's live login). That is the
+   * token refused, never "this role may not read it".
+   */
+  readonly twoFactorRequired: boolean;
 
-  constructor(answered: number) {
+  constructor(answered: number, twoFactorRequired = false) {
     super('unprocessable', 'Clan refused that token', {
       reason: 'clan_token_refused',
-      why: `answered ${String(answered)}`,
+      why: twoFactorRequired ? 'two-factor required' : `answered ${String(answered)}`,
     });
     this.name = 'ClanAuthError';
     this.answered = answered;
+    this.twoFactorRequired = twoFactorRequired;
   }
+}
+
+/** Clan's machine code on a refusal, when it sent one — read, never passed on. */
+function innerCode(body: unknown): string | null {
+  const code = (body as { error?: { innererror?: { code?: unknown } } } | undefined)?.error
+    ?.innererror?.code;
+  return typeof code === 'string' ? code : null;
 }
 
 /** Clan did not accept the email, password or two-factor code. Its words are not passed on. */
@@ -310,7 +324,9 @@ export function clanClient(options: ClanClientOptions): ClanClient {
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     });
     if (answer.status >= 200 && answer.status < 300) return answer.body;
-    if (answer.status === 401 || answer.status === 403) throw new ClanAuthError(answer.status);
+    if (answer.status === 401 || answer.status === 403) {
+      throw new ClanAuthError(answer.status, innerCode(answer.body) === 'TWO_FACTOR_REQUIRED');
+    }
     if (answer.status === 429 || answer.status >= 500) {
       throw new ClanUnavailableError(`answered ${String(answer.status)}`, true);
     }
@@ -367,7 +383,9 @@ export function clanClient(options: ClanClientOptions): ClanClient {
     try {
       return await page(resource, token, params, 0);
     } catch (err) {
-      if (err instanceof ClanAuthError && err.answered === 403) return [];
+      if (err instanceof ClanAuthError && err.answered === 403 && !err.twoFactorRequired) {
+        return [];
+      }
       throw err;
     }
   }
@@ -521,8 +539,18 @@ function instantOf(value: unknown): number | null {
   return Number.isNaN(at) ? null : at;
 }
 
-/** The second-factor methods Clan offers: names, or objects that carry one. */
+/**
+ * The two-factor methods Clan offers. Measured on a live Clan as an object of
+ * switches — `{ email: false, google_authenticator: true }` — so the methods
+ * are the keys switched on; a list of names, or of objects carrying one, is
+ * read as well.
+ */
 function methodsOf(value: unknown): string[] {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return Object.entries(value as Record<string, unknown>).flatMap(([name, on]) =>
+      on === true || on === 1 ? [name.slice(0, 40)] : [],
+    );
+  }
   if (!Array.isArray(value)) return [];
   return (value as unknown[]).flatMap((m) => {
     const named: unknown =

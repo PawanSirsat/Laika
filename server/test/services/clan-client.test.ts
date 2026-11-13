@@ -152,6 +152,55 @@ describe('checking a pasted token', () => {
     );
   });
 
+  it('refuses a sign-in’s restricted token, even where a 403 would otherwise mean “sees none”', async () => {
+    // LAI-1180's live login: every read of a pre-code token is 403
+    // TWO_FACTOR_REQUIRED, `/auth/me` included.
+    const restricted = await caught(client(fakeClan()).check(CLAN_RESTRICTED_TOKEN, ...WINDOW));
+    expect(reasonOf(restricted)).toBe('clan_token_refused');
+    expect((restricted as ClanAuthError).twoFactorRequired).toBe(true);
+    expect(JSON.stringify(restricted.toBody())).not.toContain('CLAN-SECRET-WORDS');
+
+    // And on a list, where a plain 403 reads as "sees none of it".
+    const fake = fakeClan();
+    fake.intercept = (req) =>
+      req.path === '/leave'
+        ? new Response(JSON.stringify({ error: { innererror: { code: 'TWO_FACTOR_REQUIRED' } } }), {
+            status: 403,
+          })
+        : undefined;
+    const onList = await caught(client(fake).check(CLAN_TOKEN, ...WINDOW));
+    expect(reasonOf(onList)).toBe('clan_token_refused');
+  });
+
+  it('reads an employee as a live Clan sends one: department an object, designation null', async () => {
+    const fake = fakeClan({
+      employees: [
+        {
+          id: 1,
+          name: 'Ada',
+          email: 'ada@example.test',
+          employee_detail: {
+            id: 77,
+            company: { id: 575 },
+            department: { id: 3004, team_name: 'Engineering' },
+            designation: null,
+            shift: null,
+          },
+        },
+      ],
+    });
+    expect(await client(fake).employees(CLAN_TOKEN)).toEqual([
+      {
+        id: '1',
+        name: 'Ada',
+        email: 'ada@example.test',
+        departmentRef: '3004',
+        designationRef: null,
+        employmentType: null,
+      },
+    ]);
+  });
+
   it('refuses a token Clan refuses: 422 clan_token_refused, without Clan’s words', async () => {
     const err = await caught(client(fakeClan()).check('not-the-token', ...WINDOW));
 
@@ -199,12 +248,42 @@ describe('signing in with the dedicated account', () => {
     expect(fake.requests).toHaveLength(1);
   });
 
-  it('answers a restricted token and the methods when a second factor is owed', async () => {
+  it('answers a restricted token and the methods switched on when a second factor is owed', async () => {
+    // Measured: `methods` is `{ email: false, google_authenticator: true }`.
     const fake = fakeClan({ twoFactorMethods: ['google_authenticator'] });
     const login = await client(fake).login(CLAN_EMAIL, CLAN_PASSWORD);
     expect(login).toMatchObject({
       token: CLAN_RESTRICTED_TOKEN,
       twoFactor: { methods: ['google_authenticator'] },
+    });
+    const sent = (await fake
+      .fetchImpl(`${CLAN_BASE}/auth/login`, {
+        method: 'POST',
+        body: JSON.stringify({ email: CLAN_EMAIL, password: CLAN_PASSWORD }),
+      })
+      .then((r) => r.json())) as { data: { two_factor_auth: { methods: unknown } } };
+    expect(sent.data.two_factor_auth.methods).toEqual({
+      email: false,
+      google_authenticator: true,
+    });
+  });
+
+  it('reads the methods from a list too', async () => {
+    const fake = fakeClan();
+    fake.intercept = (req) =>
+      req.path === '/auth/login'
+        ? new Response(
+            JSON.stringify({
+              data: {
+                token: CLAN_RESTRICTED_TOKEN,
+                two_factor_auth: { enabled: true, methods: ['email', { method: 'totp' }] },
+              },
+            }),
+            { status: 200 },
+          )
+        : undefined;
+    expect((await client(fake).login(CLAN_EMAIL, CLAN_PASSWORD)).twoFactor).toEqual({
+      methods: ['email', 'totp'],
     });
   });
 

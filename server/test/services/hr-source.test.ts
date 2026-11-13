@@ -257,6 +257,15 @@ describe('connecting by pasting a token', () => {
     expect(fake.requests).toEqual([]);
   });
 
+  it('refuses a sign-in’s restricted, pre-code token pasted: 422 clan_token_refused', async () => {
+    const err = await caught(
+      connectHr(t.db, owner, SECRET, { ...PASTE, token: CLAN_RESTRICTED_TOKEN }, deps(fakeClan())),
+    );
+    expect(err.status).toBe(422);
+    expect(reasonOf(err)).toBe('clan_token_refused');
+    expect(t.db.select().from(orgHrSource).all()).toEqual([]);
+  });
+
   it('refuses a token Clan refuses: 422 clan_token_refused, and keeps nothing', async () => {
     const err = await caught(
       connectHr(t.db, owner, SECRET, { ...PASTE, token: 'not-the-token' }, deps(fakeClan())),
