@@ -25,16 +25,24 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
       `/org/hr/connect/verify`, `/org/hr/sync`, `/org/hr/people`,
       `/org/holidays`); `view-type-drift` PAIRS for each view and nested shape
       (name nested shapes on both sides).
-- [x] **HR system card** (shown to `org.hr.configure` holders only, via
-      `useGates`), modelled on `GithubWebhookSection.tsx`:
+- [x] **HR system card** on **Organisation → Integrations, beside the GitHub
+      webhook card** (CHIEF, 2026-11-13; it was Overview) — shown to
+      `org.hr.configure` holders only, via `useGates`, modelled on
+      `GithubWebhookSection.tsx`:
   - off: one line on what it does ("Holidays and leave from Clan, every 30
     minutes. Laika keeps the sign-in token, never the password.") and
     **Connect Clan** opening a form: company URL (placeholder
-    `https://yourcompany.clan.biz`), email, password; on `pending_2fa` a code
-    field and the method; errors in words (`clan_login_failed`,
-    `clan_unreachable`, `two_factor_expired`).
-  - connected: "Connected as {account_email} · token …{last4}, renews by
-    {date}" with a warning tone ≤ 30 days; last sync "N min ago" with the
+    `https://codesage.clan.biz`, the bare origin accepted), email, password;
+    on `pending_2fa` a code field and the method; errors in words by
+    `details.reason` (`clan_login_failed`, `clan_unreachable`,
+    `two_factor_expired`, and every other reason the server names).
+  - connected: "Connected as {account_name} ({account_email}) · token
+    …{last4}", with "renews by {date}" only when the end is known and a
+    warning tone ≤ 30 days; a warning when `sees_everyone` is false ("This
+    token can only see one person’s leave — it needs an HR or admin role in
+    Clan.") and when `sees_departments` is false ("People’s departments are
+    hidden from this token, so holidays meant for some departments can’t be
+    matched."); last sync "N min ago" with the
     counts (holidays, leave days, people matched N of M) or the error in words
     (`token_rejected` → "Clan refused the token — connect again"); **Sync
     now** (busy state without a label swap — the `loading-sweep` guard);
@@ -42,8 +50,11 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
   - People: matched count, then the unmatched and owner-mapped people with a
     member picker per row and "Not on Laika"; saving sends `PUT
     /org/hr/people`.
-- [x] **Holidays** list for every member: this year and next, by day, label,
-      a "Clan" tag on synced rows and "Some people" when not everyone's;
+- [x] **Holidays** list for every member, on **Overview → Workspace settings,
+      beside Time and Breaks**: this year and next, by day, label, a "Clan"
+      tag on synced rows, and whom each covers — "Clan staff" for a synced
+      one with no scope (the server's `everyone` means everyone in Clan),
+      "Some people" for a scoped one, "Everyone" for a manual one;
       owners/admins (`org.time.set`) add (day + label) and remove manual
       rows; Clan rows have no remove.
 - [x] Both themes, 1440 and 390 with no sideways scroll, tokens only, every
@@ -73,5 +84,12 @@ Clan, sees how syncing is going, runs it now, and maps people; and a
   the surface is actually guarded*: `expected 190 to be 182`. Both go green
   when LAI-1181 drops the eight `UNPAIRED` lines it added, which it can only do
   once these pairs exist.
-- The two parts sit as facts inside the Workspace settings card (beside Time
-  and Breaks), not as a separate card.
+- Placement after CHIEF's correction: the HR system is a card on
+  Integrations; Holidays is a fact on Overview → Workspace settings.
+- **Also red on this branch, until LAI-1181 commits its next view:**
+  `view-type-drift` → *the client declares nothing the server does not send*:
+  `HrSource.account_name`, `HrSource.sees_everyone` and
+  `HrSource.sees_departments` "is declared and HrSourceView does not send it".
+  CHIEF asked for them; LAI-1181's working tree adds them. If the owner picks
+  the pasted token, `account_email`, `two_factor` and `pending_2fa` leave the
+  server, and this side follows (the connect form is held as it is until then).
