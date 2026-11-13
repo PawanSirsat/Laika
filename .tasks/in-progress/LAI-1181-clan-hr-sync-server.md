@@ -45,7 +45,7 @@ holidays (LAI-1176 item 1) land here too.
 
 ## Acceptance criteria
 
-- [ ] Migration `0081_hr_source` + `schema.ts` + SPEC §4 entries (LAI-1180):
+- [x] Migration `0081_hr_source` + `schema.ts` + SPEC §4 entries (LAI-1180):
   - `org_hr_source` (`org_id` PK → orgs, `provider` CHECK 'clan', `status`
     CHECK 'pending_2fa'|'connected', `base_url`, `account_email`,
     `token_enc`, `token_last4`, `token_expires_at`, `pending_expires_at`,
@@ -66,12 +66,12 @@ holidays (LAI-1176 item 1) land here too.
     `type_name` ≤ 80, `status` CHECK 'approved'|'pending', `source_ref`
     unique (Clan's day id), `application_ref`, `hash`, `synced_at`,
     `removed_at`); index `(user_id, day)`.
-- [ ] `secrets.ts` `SecretPurpose` gains `'clan_api_token'`; the token is
+- [x] `secrets.ts` `SecretPurpose` gains `'clan_api_token'`; the token is
       encrypted with it, decrypted per run, never logged, never returned, never
       in `activity`; `token_last4` for display. The password is used for the
       one login call and **never stored or logged** (a test greps the DB file
       and the captured log for it).
-- [ ] `services/clan-client.ts`: the `services/provider.ts` shape —
+- [x] `services/clan-client.ts`: the `services/provider.ts` shape —
       injectable `fetchImpl`, `AbortController` timeout 20 s cleared in
       `finally`, no SDK, Clan's error body never echoed,
       `ClanUnavailableError { reached }` and `ClanAuthError` (401); one bounded
@@ -81,7 +81,7 @@ holidays (LAI-1176 item 1) land here too.
       `holidays(from,to)`, `leave(from,to)`. `base_url` must be `https:`,
       normalised to `…/api/v1` without a trailing slash. **No test makes a real
       call.**
-- [ ] `services/hr-sync.ts` `syncHr(db, serverSecret, deps)`: fetch employees,
+- [x] `services/hr-sync.ts` `syncHr(db, serverSecret, deps)`: fetch employees,
       holidays and leave for the window **1 Jan last year → 31 Dec next year**
       outside any transaction; then one `BEGIN IMMEDIATE` reconcile, **only
       when every page was read** (else record the error, change nothing):
@@ -102,7 +102,7 @@ holidays (LAI-1176 item 1) land here too.
     `last_success_at` set, `last_error*` cleared. A 401 → `last_error_code:
     'token_rejected'`; unreachable → `'unreachable'`; a bad answer →
     `'bad_answer'`. `last_attempt_at` always set.
-- [ ] Job `hr.sync` in `jobs/scheduler.ts` `buildJobs`: every 30 min,
+- [x] Job `hr.sync` in `jobs/scheduler.ts` `buildJobs`: every 30 min,
       `atStart`, does nothing without a connected row; **an in-flight guard**
       so a slow run is never overlapped (the first async job — the scheduler
       has none), shared with `POST /org/hr/sync`, which joins a run already
@@ -113,7 +113,7 @@ holidays (LAI-1176 item 1) land here too.
       owners and admins through `change_org_settings` in `grants.ts`; `can.ts`
       case with the §3.1 row as its comment; `permissions.ts` label; the
       censuses (`policy-spec-drift`, `matrix`, `permissions`, `can.test.ts`).
-- [ ] Routes `http/routes/hr.ts` (session only, `org.hr.configure` unless
+- [x] Routes `http/routes/hr.ts` (session only, `org.hr.configure` unless
       said):
   - `GET /org/hr` → `HrSourceView { status: 'off'|'pending_2fa'|'connected',
     provider, base_url, account_email, token_last4, token_expires_at,
@@ -146,7 +146,7 @@ holidays (LAI-1176 item 1) land here too.
 - [ ] Mounted in `app.ts`; `response-type-coverage`, `endpoint-coverage`,
       `structure` mirrors, `schema-spec-drift`, `schema-migration-drift`,
       `env-contract` (no new env var) green.
-- [ ] Tests against a **fake Clan** (an injected `fetchImpl`): login with and
+- [x] Tests against a **fake Clan** (an injected `fetchImpl`): login with and
       without 2FA; wrong password; 401 later → `token_rejected`; paging past
       1000 rows; a half day each way; pending → approved; approved → cancelled
       removes; a person with no Laika match counted, never stored; an owner's
@@ -166,3 +166,30 @@ holidays (LAI-1176 item 1) land here too.
 - §13.4 forbids this outbound call until LAI-1180's D-149 lands — same PR.
 - Live verification waits for Kvell's Clan subdomain and an integration
   account (`view_leave = all`) from Andrea / Abhinav.
+
+## Build notes (2026-11-13, the builder CHIEF dispatched)
+
+Built to SPEC as of LAI-1180's `1f8c7f0f` (D-149 "both ways"), which moved
+under this task twice while it was built; where SPEC and the criteria above
+differ, SPEC was followed, as CHIEF's log of 13:10 and 13:40 directs.
+
+- **Connect takes either body**: `{ base_url, email, password }` (sign in once,
+  `pending_2fa` + `/connect/verify` when Clan asks for a code) or
+  `{ base_url, token, expires_on? }` (a pasted token). Either way the token
+  is checked (`/auth/me`, a page of `/leave`, a page of `/employee`) before
+  it is kept. A refused paste is `422 clan_token_refused`.
+- **`org_hr_source` per §4.88**: adds `account_name`, `sees_everyone`,
+  `sees_departments`; `account_email` nullable; `connected_by` nullable, set
+  null. `hr_people` adds `employment_type` (§4.89); holiday scope reads
+  `*_json` fields and carries `employment_types` (§4.90).
+- **Paging is until a short page, never `paging.total`** — a live Clan
+  answered `total: 2` for 25 rows (LAI-1180's log). An incomplete read is a
+  page that fails; it changes nothing.
+- **Unreachable is `503 unavailable` reason `clan_unreachable`**, not 502:
+  §6.3's codes are closed (CHIEF's answer, LAI-1180 log 12:45).
+- **Not ticked, waiting on another owner's half (§4.4):** the Policy
+  criterion's `policy-spec-drift` census is red on one assertion until SPEC
+  §3's grants table row *Change organisation settings, Time and breaks*
+  names `org.hr.configure` (CHIEF, docs); and the mounting criterion's web
+  `endpoint-coverage` is red until LAI-1182 calls the new endpoints (SHELL).
+  Exact failures are in `logs/chief-2026-11-13-LAI-1181.md`.
