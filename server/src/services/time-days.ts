@@ -4,6 +4,7 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { dayIn, isTimeZone } from './calendar-days.ts';
 import { stateOf, type DayState } from './my-day.ts';
+import { offDaysFor, offOn, type OffDayView } from './off-days.ts';
 import { draftsBetween, draftZone, type TimeDraftView } from './time-drafts.ts';
 import {
   entriesBetween,
@@ -28,6 +29,14 @@ import { stretch } from './time-summary.ts';
  *
  * `stretch()`: at most 92 days (`422 range_too_long`), never backwards
  * (`422 range_backwards`). A year is four reads.
+ *
+ * ## Days off, as the reader may see them
+ *
+ * Each day carries `off` — a holiday covering the person, their leave — from
+ * `offDaysFor` (D-149, LAI-1183), read once for the stretch. The reader is the
+ * person on `/me`, and an owner or admin on the people twin, who is asked
+ * `people.analytics.read` first; the type of leave is decided by who reads.
+ * `state` is unchanged by it: what a day off owes is the client's verdict.
  */
 
 /** How many of a day's tasks it names: what a month cell has room for. */
@@ -56,6 +65,8 @@ export interface DaysDayView {
   untied_minutes: number;
   /** The day's largest tasks, at most `DAYS_TOP_TASKS`, largest first. */
   top_tasks: DaysTaskView[];
+  /** A holiday covering the person, or their leave, that day; null when neither (D-149, LAI-1183). */
+  off: OffDayView | null;
 }
 
 export interface TimeDaysView {
@@ -71,11 +82,12 @@ const largest = (a: DaysTaskView, b: DaysTaskView): number =>
   b.confirmed_minutes + b.drafted_minutes - (a.confirmed_minutes + a.drafted_minutes);
 
 /**
- * One person's days — **no `can()` here**: each caller asks its own question
- * first, as `summaryOf` and `dayOf` do.
+ * One person's days, as `viewer` reads them — **no `can()` here**: each
+ * caller asks its own question first, as `summaryOf` and `dayOf` do.
  */
 export function daysOf(
   db: Db,
+  viewer: ResolvedActor,
   userId: string,
   query: { from?: string | undefined; to?: string | undefined; tz?: string | undefined },
   now: number = Date.now(),
@@ -106,6 +118,7 @@ export function daysOf(
     list.push(d);
     draftsByDay.set(d.day, list);
   }
+  const off = offDaysFor(db, viewer, [userId], from, to);
 
   const rows: DaysDayView[] = days.map((day) => {
     const tasks = new Map<string, DaysTaskView>();
@@ -149,6 +162,7 @@ export function daysOf(
       drafted_minutes: drafted,
       untied_minutes: untied,
       top_tasks: [...tasks.values()].sort(largest).slice(0, DAYS_TOP_TASKS),
+      off: offOn(off, userId, day),
     };
   });
 
@@ -164,5 +178,5 @@ export function getMyDays(
 ): TimeDaysView {
   assertCan(actor, 'time_drafts.read_own');
   assertCan(actor, 'time_entries.read_own');
-  return daysOf(db, actor.userId, query, now);
+  return daysOf(db, actor, actor.userId, query, now);
 }

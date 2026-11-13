@@ -1,15 +1,16 @@
 import { and, eq, gte, inArray, isNull, ne } from 'drizzle-orm';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type AvailabilityStatus, type ProjectRole } from '../db/enums.ts';
 import { projectMemberships, projects, tasks, timeEntries, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan, can } from '../policy/can.ts';
-import { capabilityOf, holdsCapability } from '../policy/grants.ts';
+import { assertCan } from '../policy/can.ts';
 import { visibleProjectIds } from './activity.ts';
 import { readLogged } from './analytics-views.ts';
+import { availabilityAudienceOf, type AvailabilityReader } from './availability-audience.ts';
 import { availabilityFor, type AvailabilityView, todaysFor } from './availability.ts';
 import { addDays } from './calendar-days.ts';
+import { type OnLeaveView } from './off-days.ts';
 import { type ProjectRef } from './time-entries.ts';
 import { summaryOf } from './time-summary.ts';
 
@@ -91,6 +92,12 @@ export interface MemberAvailabilityView {
   tags: string[];
   /** The end of the period covering the person's today, or null. */
   away: { until: string } | null;
+  /**
+   * The HR system's leave covering their today (D-149 item 5, LAI-1183) —
+   * *On leave* or *Leave requested*; its type only for a reader who may see
+   * why, null for anyone else.
+   */
+  on_leave: OnLeaveView | null;
 }
 
 /**
@@ -267,7 +274,7 @@ function loadOf(db: Db, actor: ResolvedActor, userId: string, now: number): Pers
   const cards = cardsOf(db, [userId], [...visible]);
   const open = (s: string): boolean => s !== 'done' && s !== 'cancelled';
 
-  const availability = availabilityFor(db, [userId], now).get(userId) ?? null;
+  const availability = availabilityFor(db, actor, [userId], now).get(userId) ?? null;
   const from = mondayOf(today);
   const to = addDays(from, 6);
   const week = summaryOf(db, userId, { from, to });
@@ -299,7 +306,7 @@ function loadOf(db: Db, actor: ResolvedActor, userId: string, now: number): Pers
 
 // -------------------------------------------------------------------- list
 
-type Reader = 'people' | 'lead' | 'member';
+type Reader = AvailabilityReader;
 
 /**
  * Each reader's view of somebody else's availability (D-137), **built from an
@@ -307,7 +314,7 @@ type Reader = 'people' | 'lead' | 'member';
  * it is named below.
  */
 function memberView(a: AvailabilityView): MemberAvailabilityView {
-  return { status: a.status, note: a.note, tags: a.tags, away: a.away };
+  return { status: a.status, note: a.note, tags: a.tags, away: a.away, on_leave: a.on_leave };
 }
 
 function leadView(a: AvailabilityView): LeadAvailabilityView {
@@ -325,19 +332,6 @@ const PROJECTIONS: Readonly<
   lead: leadView,
   member: memberView,
 };
-
-/**
- * Whether the reader holds *See everyone's analytics* — the grant
- * `people.analytics.read` is carried by — **asked of the reader's own role**,
- * not of some other person. `can()` answers that action only about a named
- * target, and naming an arbitrary one made an owner whose organisation held
- * nobody else listable read as a member (LAI-1130 review note 3). The list is
- * `availability.read`, session only, so a token never reaches this.
- */
-function seesEveryonesAnalytics(actor: ResolvedActor): boolean {
-  const capability = capabilityOf('people.analytics.read');
-  return capability !== null && holdsCapability(actor.orgRole, actor.orgGrants, capability);
-}
 
 /**
  * `GET /people/availability?space=&tag=&open_only=` under `availability.read`
@@ -375,19 +369,12 @@ export function listPeopleAvailability(
     })
     .from(projectMemberships)
     .all();
-  const allProjects = db.select({ id: projects.id }).from(projects).all();
   const visible = new Set(visibleProjectIds(db, actor));
 
-  const led = new Set(
-    allProjects
-      .map((p) => p.id)
-      .filter((id) => can(withProject(actor, id), 'project.members.manage', { projectId: id })),
-  );
-  const reader: Reader = seesEveryonesAnalytics(actor)
-    ? 'people'
-    : led.size > 0
-      ? 'lead'
-      : 'member';
+  // Who the reader sees is `availability-audience.ts`' one rule (D-137) —
+  // the same answer every read carrying a person's leave gets (LAI-1183).
+  // The list is `availability.read`, session only, so a token never reaches it.
+  const { reader, led } = availabilityAudienceOf(db, actor);
 
   // Which spaces decide who is listed, and where cards are counted.
   const own = new Set(actor.memberships.map((m) => m.projectId));
@@ -420,6 +407,7 @@ export function listPeopleAvailability(
 
   const availability = availabilityFor(
     db,
+    actor,
     rows.map((r) => r.id),
     now,
   );

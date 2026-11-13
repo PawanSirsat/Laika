@@ -176,6 +176,7 @@ interface Days {
       confirmed_minutes: number;
       drafted_minutes: number;
     }[];
+    off: unknown;
   }[];
 }
 
@@ -207,6 +208,8 @@ describe('GET /me/time/days', () => {
       drafted_minutes: 0,
       untied_minutes: 0,
       top_tasks: [],
+      // No holiday and no leave: the day is not off (LAI-1183).
+      off: null,
     });
     expect([tue?.state, tue?.confirmed_minutes, tue?.drafted_minutes, tue?.untied_minutes]).toEqual(
       ['drafted', 45, 60, 0],

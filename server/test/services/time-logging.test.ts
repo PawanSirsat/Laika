@@ -23,6 +23,7 @@ import {
 import { REPORT_MAX_MEMBERS } from '../../src/services/time-report.ts';
 import { summaryOf } from '../../src/services/time-summary.ts';
 import { freshDb, queryPlansOf, seed, type TestDb } from '../helpers/db.ts';
+import { clanHoliday, hrPerson, leaveDay, manualHoliday } from '../helpers/hr.ts';
 
 /**
  * The Time logging grid's assembly (D-148, LAI-1175), below the route: one
@@ -431,6 +432,84 @@ describe('scope', () => {
     expect((thrown as ApiError).code).toBe('forbidden');
     expect((thrown as ApiError).details).toMatchObject({ action: 'time.report.read' });
     expect(looks()).toEqual([]);
+  });
+});
+
+describe('days off (D-149, LAI-1183)', () => {
+  it('serves each person’s holidays and leave in the stretch, only the days that have one, and touches no cell', () => {
+    const bea = person('Bea');
+    const cal = person('Cal');
+    const pb = hrPerson(t.db, bea, { departmentRef: '4' });
+    manualHoliday(t.db, '2026-11-02', 'Founders’ day', owner);
+    // Clan's, for department 4: Bea's, never Cal's — he is not in Clan.
+    clanHoliday(t.db, '2026-11-09', 'Diwali', { scope: { departments: ['4'] } });
+    leaveDay(t.db, bea, pb, '2026-11-10', { part: 'first_half', type: 'Sick' });
+    leaveDay(t.db, bea, pb, '2026-11-11', { status: 'pending', type: 'Annual' });
+    leaveDay(t.db, bea, pb, '2026-12-01', { type: 'Annual' });
+    entry(bea, '2026-11-10', 240);
+
+    const v = grid(owner);
+    expect(row(v, bea).off_days).toEqual([
+      { day: '2026-11-02', holiday: { label: 'Founders’ day' }, leave: null },
+      { day: '2026-11-09', holiday: { label: 'Diwali' }, leave: null },
+      {
+        day: '2026-11-10',
+        holiday: null,
+        leave: { part: 'first_half', status: 'approved', type: 'Sick' },
+      },
+      {
+        day: '2026-11-11',
+        holiday: null,
+        leave: { part: 'full', status: 'pending', type: 'Annual' },
+      },
+    ]);
+    expect(row(v, cal).off_days).toEqual([
+      { day: '2026-11-02', holiday: { label: 'Founders’ day' }, leave: null },
+    ]);
+    // The cell is what was logged; what the day owes is the client's verdict.
+    expect(row(v, bea).days).toEqual([
+      { day: '2026-11-10', confirmed_minutes: 240, drafted_minutes: 0 },
+    ]);
+    expect(v.threshold_minutes).toBe(TIME_LOGGING_THRESHOLD_MINUTES);
+  });
+
+  it('shows a space lead their people’s leave and never why — their own, with it', () => {
+    const lead = person('Lena');
+    const bea = person('Bea');
+    member(lead, laika, 'lead');
+    member(bea, laika);
+    const pb = hrPerson(t.db, bea);
+    const pl = hrPerson(t.db, lead);
+    leaveDay(t.db, bea, pb, '2026-11-10', { type: 'Sick' });
+    leaveDay(t.db, lead, pl, '2026-11-11', { type: 'Annual' });
+
+    const led = grid(lead);
+    expect(led.scope).toBe('lead');
+    expect(row(led, bea).off_days).toEqual([
+      { day: '2026-11-10', holiday: null, leave: { part: 'full', status: 'approved', type: null } },
+    ]);
+    expect(row(led, lead).off_days[0]?.leave?.type).toBe('Annual');
+    // An owner reading the same grid sees why.
+    expect(row(grid(owner), bea).off_days[0]?.leave?.type).toBe('Sick');
+  });
+
+  it('reads the holidays and the leave on their indexes, never a scan', () => {
+    const bea = person('Bea');
+    const pb = hrPerson(t.db, bea);
+    clanHoliday(t.db, '2026-11-09', 'Diwali');
+    leaveDay(t.db, bea, pb, '2026-11-10');
+    for (const [table, index] of [
+      ['org_holidays', 'org_holidays_day_idx'],
+      ['hr_people', 'hr_people_user_id_unique'],
+      ['leave_days', 'leave_days_user_day_idx'],
+    ] as const) {
+      const plans = queryPlansOf(t.sqlite, table, () => grid(owner));
+      expect(plans.length, table).toBeGreaterThan(0);
+      for (const plan of plans) {
+        expect(plan).toMatch(new RegExp(`USING (COVERING )?INDEX ${index}`));
+        expect(plan).not.toMatch(new RegExp(`SCAN ${table}(?! USING)`));
+      }
+    }
   });
 });
 

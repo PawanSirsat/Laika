@@ -15,6 +15,7 @@ import {
 } from '../../src/services/availability.ts';
 import { setTimeSettings } from '../../src/services/time-settings.ts';
 import { expectSqliteError, freshDb, type TestDb } from '../helpers/db.ts';
+import { hrPerson, leaveDay } from '../helpers/hr.ts';
 
 /**
  * A person's own availability (SPEC §4.85, §4.86, D-131, LAI-1130): the
@@ -85,6 +86,7 @@ describe('a person who set nothing', () => {
     expect(getMyAvailability(t.db, actor(bea), NOW)).toEqual({
       status: null,
       away: null,
+      on_leave: null,
       hours_per_week: null,
       note: null,
       tags: [],
@@ -93,7 +95,7 @@ describe('a person who set nothing', () => {
       updated_at: null,
     });
     // And is `null` to every people read, which draws no pill.
-    expect(availabilityFor(t.db, [bea], NOW).get(bea)).toBeNull();
+    expect(availabilityFor(t.db, actor(bea), [bea], NOW).get(bea)).toBeNull();
   });
 });
 
@@ -114,6 +116,7 @@ describe('PUT /me/availability', () => {
     expect(view).toEqual({
       status: 'open',
       away: null,
+      on_leave: null,
       hours_per_week: 10,
       note: 'Happy to pair on payments',
       tags: ['Payments', 'react'],
@@ -310,5 +313,44 @@ describe('away periods', () => {
     expect(t.db.select({ to: userAwayPeriods.toDay }).from(userAwayPeriods).all()).toEqual([
       { to: '2026-11-21' },
     ]);
+  });
+});
+
+describe('on leave (D-149, LAI-1183)', () => {
+  it('sits beside away: the leave covering today in the person’s own zone, until the end of its run', () => {
+    // Bea is in Auckland, where it is already the 22nd; Cal sets no place: UTC, the 21st.
+    setTimeSettings(t.db, actor(bea), { place: 'Pacific/Auckland' });
+    const pb = hrPerson(t.db, bea);
+    const pc = hrPerson(t.db, cal);
+    for (const day of ['2026-10-21', '2026-10-22', '2026-10-23']) {
+      leaveDay(t.db, bea, pb, day, { type: 'Annual' });
+    }
+    leaveDay(t.db, cal, pc, '2026-10-22', { status: 'pending', type: 'Sick' });
+
+    expect(getMyAvailability(t.db, actor(bea), NOW).on_leave).toEqual({
+      until: '2026-10-23',
+      status: 'approved',
+      type: 'Annual',
+    });
+    // Cal's request is tomorrow in UTC: not today's, so not on leave yet…
+    expect(getMyAvailability(t.db, actor(cal), NOW).on_leave).toBeNull();
+    // …and a day later, requested — never approved by being shown.
+    expect(getMyAvailability(t.db, actor(cal), NOW + DAY).on_leave).toEqual({
+      until: '2026-10-22',
+      status: 'pending',
+      type: 'Sick',
+    });
+  });
+
+  it('makes a person who set nothing a view, not null — leave is availability too', () => {
+    const pb = hrPerson(t.db, bea);
+    leaveDay(t.db, bea, pb, '2026-10-21');
+    const view = availabilityFor(t.db, actor(bea), [bea, cal], NOW);
+    expect(view.get(bea)).toMatchObject({
+      status: null,
+      away: null,
+      on_leave: { until: '2026-10-21', status: 'approved' },
+    });
+    expect(view.get(cal)).toBeNull();
   });
 });

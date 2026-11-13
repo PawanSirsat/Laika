@@ -7,6 +7,7 @@ import { userAvailability, userAwayPeriods, userTimeSettings } from '../db/schem
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { daysBetween, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
+import { onLeaveFor, type OnLeaveView } from './off-days.ts';
 
 /**
  * A person's own availability (SPEC §4.85, §4.86, §6.4, D-131, LAI-1130):
@@ -30,6 +31,13 @@ import { daysBetween, dayIn, isCalendarDay, isTimeZone } from './calendar-days.t
  * There is no *away* status. `away` is the period covering **today in the
  * person's own zone** — their `place` (§4.46), UTC when they set none — so a
  * person in Auckland is back on their own Monday, not London's.
+ *
+ * ## Leave beside it
+ *
+ * `on_leave` is the leave the HR system holds covering the same today
+ * (D-149 item 5, LAI-1183, `off-days.ts`) — approved beating pending, its
+ * type only for a reader who may see why. It is the reader's, so every read
+ * here names its reader.
  */
 
 export const AVAILABILITY_NOTE_MAX = 140;
@@ -69,6 +77,8 @@ export interface AvailabilityView {
   status: AvailabilityStatus | null;
   /** The period covering today in the person's zone, or null. */
   away: { until: string } | null;
+  /** The HR system's leave covering today in the person's zone, or null (D-149, LAI-1183). */
+  on_leave: OnLeaveView | null;
   hours_per_week: number | null;
   note: string | null;
   tags: string[];
@@ -96,6 +106,7 @@ export interface AvailabilityInput {
 const EMPTY: AvailabilityView = {
   status: null,
   away: null,
+  on_leave: null,
   hours_per_week: null,
   note: null,
   tags: [],
@@ -153,13 +164,15 @@ function workWeekView(
 }
 
 /**
- * Everyone's availability in `userIds`, by id — `null` for a person who has
- * set nothing and has no current or upcoming away period. Three reads,
- * whatever the number of people. **No `can()` here**: every caller asks its
- * own question first, as `summaryOf`'s do.
+ * Everyone's availability in `userIds`, by id, as `viewer` reads it — `null`
+ * for a person who has set nothing, has no current or upcoming away period
+ * and is not on leave. Three reads, and the leave's (`onLeaveFor`), whatever
+ * the number of people. **No `can()` here**: every caller asks its own
+ * question first, as `summaryOf`'s do.
  */
 export function availabilityFor(
   db: Db,
+  viewer: ResolvedActor,
   userIds: readonly string[],
   now: number,
 ): Map<string, AvailabilityView | null> {
@@ -189,11 +202,13 @@ export function availabilityFor(
     list.push({ id: p.id, from: p.fromDay, to: p.toDay });
     periods.set(p.userId, list);
   }
+  const leave = onLeaveFor(db, viewer, today);
 
   for (const id of ids) {
     const row = rows.get(id);
     const own = periods.get(id) ?? [];
-    if (row === undefined && own.length === 0) {
+    const onLeave = leave.get(id) ?? null;
+    if (row === undefined && own.length === 0 && onLeave === null) {
       out.set(id, null);
       continue;
     }
@@ -214,6 +229,7 @@ export function availabilityFor(
             updated_at: row.updatedAt,
           }),
       away: covering === undefined ? null : { until: covering.to },
+      on_leave: onLeave,
       away_periods: own,
     });
   }
@@ -221,8 +237,8 @@ export function availabilityFor(
 }
 
 /** One person's view, never null: a person who set nothing reads the empty view. */
-function viewOf(db: Db, userId: string, now: number): AvailabilityView {
-  return availabilityFor(db, [userId], now).get(userId) ?? EMPTY;
+function viewOf(db: Db, viewer: ResolvedActor, userId: string, now: number): AvailabilityView {
+  return availabilityFor(db, viewer, [userId], now).get(userId) ?? EMPTY;
 }
 
 /** `GET /me/availability`. */
@@ -232,7 +248,7 @@ export function getMyAvailability(
   now: number = Date.now(),
 ): AvailabilityView {
   assertCan(actor, 'availability.set_own');
-  return viewOf(db, actor.userId, now);
+  return viewOf(db, actor, actor.userId, now);
 }
 
 // ------------------------------------------------------------- validation
@@ -394,7 +410,7 @@ export function setMyAvailability(
       })
       .run();
   }
-  return viewOf(db, actor.userId, now);
+  return viewOf(db, actor, actor.userId, now);
 }
 
 /**
@@ -448,7 +464,7 @@ export function addAwayPeriod(
       createdAt: now,
     })
     .run();
-  return viewOf(db, actor.userId, now);
+  return viewOf(db, actor, actor.userId, now);
 }
 
 /**

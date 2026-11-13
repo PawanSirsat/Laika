@@ -8,11 +8,17 @@ import { type OrgGrants } from '../../src/policy/grants.ts';
 import { getOwnLocalActivity } from '../../src/services/local-activity.ts';
 import { getMyDay } from '../../src/services/my-day.ts';
 import { getPeopleActivity } from '../../src/services/people-activity.ts';
-import { getPersonDay, getPersonLocalActivity } from '../../src/services/people-analytics.ts';
+import {
+  getPersonDay,
+  getPersonDays,
+  getPersonLocalActivity,
+} from '../../src/services/people-analytics.ts';
+import { getMyDays } from '../../src/services/time-days.ts';
 import { createEntry } from '../../src/services/time-entries.ts';
 import { setOrgTimeMode, setTimeSettings } from '../../src/services/time-settings.ts';
 import { getPersonUsage } from '../../src/services/token-usage.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { hrPerson, leaveDay } from '../helpers/hr.ts';
 
 /**
  * An owner or admin reading a person's analytics the way the person reads
@@ -135,6 +141,21 @@ describe('the same shape the person reads (D-102 rule 1)', () => {
     for (const reader of [owner, admin]) {
       expect(getPersonDay(t.db, actor(reader), bea, { day: TODAY, tz: 'UTC' }, NOW)).toEqual(own);
     }
+  });
+
+  it('carries the person’s days off with why, as they read them (D-149, LAI-1183)', () => {
+    const p = hrPerson(t.db, bea);
+    leaveDay(t.db, bea, p, TODAY, { part: 'first_half', type: 'Sick' });
+    const own = getMyDay(t.db, actor(bea), { day: TODAY, tz: 'UTC' }, NOW);
+    expect(own.off?.leave).toEqual({ part: 'first_half', status: 'approved', type: 'Sick' });
+    // An owner and an admin may see why, so the twin is the person's own answer.
+    for (const reader of [owner, admin]) {
+      expect(getPersonDay(t.db, actor(reader), bea, { day: TODAY, tz: 'UTC' }, NOW)).toEqual(own);
+    }
+    const range = { from: '2026-10-19', to: TODAY, tz: 'UTC' };
+    const days = getMyDays(t.db, actor(bea), range, NOW);
+    expect(days.days.map((d) => d.off?.leave?.type ?? null)).toEqual([null, null, 'Sick']);
+    expect(getPersonDays(t.db, actor(owner), bea, range, NOW)).toEqual(days);
   });
 
   it("defaults the zone and the day to the person's, as /me/time does", () => {

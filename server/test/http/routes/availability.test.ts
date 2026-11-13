@@ -356,6 +356,7 @@ describe('GET /people/availability', () => {
     expect(Object.keys(member?.availability ?? {}).sort()).toEqual([
       'away',
       'note',
+      'on_leave',
       'status',
       'tags',
     ]);
@@ -364,6 +365,7 @@ describe('GET /people/availability', () => {
       note: 'Ask me about billing',
       tags: ['billing'],
       away: null,
+      on_leave: null,
     });
 
     // Bea, a space admin: plus hours a week and away dates, never a working week or an id.
@@ -379,6 +381,7 @@ describe('GET /people/availability', () => {
       'away_periods',
       'hours_per_week',
       'note',
+      'on_leave',
       'status',
       'tags',
     ]);

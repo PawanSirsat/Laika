@@ -6,6 +6,7 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { agentDay, type AgentDayView } from './agent-time.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
+import { offDaysFor, offOn, type OffDayView } from './off-days.ts';
 import { breaksOn, type TimeBreakView } from './time-breaks.ts';
 import { dayNoteOn, type DayNoteView } from './time-day-notes.ts';
 import { timerOf, type TimerView } from './time-timer.ts';
@@ -40,7 +41,9 @@ import { timeSettingsFor, type TimeSettingsView } from './time-settings.ts';
  * drafts held on every day one range of `(user_id)`; the week is one grouped range of
  * each of the same two indexes; the agent minutes are two ranges of primary
  * keys that lead with `(user_id, day)`; the switches are two primary-key
- * reads. `my-day.test.ts` holds that with the work it counts.
+ * reads; the week's days off (LAI-1183) one range of the holidays' `(day)`
+ * and one of the leave's `(user_id, day)` — the HR people only when a synced
+ * holiday falls in the week. `my-day.test.ts` holds that with the work it counts.
  *
  * ## A day with nothing is *no signal*, never zero hours
  *
@@ -58,6 +61,8 @@ export interface WeekDayView {
   confirmed_minutes: number;
   drafted_minutes: number;
   state: DayState;
+  /** A holiday covering the person, or their leave, that day; null when neither (D-149, LAI-1183). */
+  off: OffDayView | null;
 }
 
 /** `GET /me/time` (§6.4). */
@@ -86,6 +91,12 @@ export interface MyDayView {
   /** Agent minutes — the agent's, never the person's hours (D-088 item 8). */
   agent: AgentDayView;
   state: DayState;
+  /**
+   * A holiday covering the person, or their leave, on `day`; null when
+   * neither (D-149, LAI-1183). Its leave type only for a reader who may see
+   * why. A fact beside `state`, never a change to it.
+   */
+  off: OffDayView | null;
   /** Monday to Sunday around `day`. */
   week: WeekDayView[];
   /** The person's running timer (§4.61, LAI-500), whatever day is open; null when none. */
@@ -120,17 +131,18 @@ export function getMyDay(
   assertCan(actor, 'time_drafts.read_own');
   assertCan(actor, 'time_entries.read_own');
   assertCan(actor, 'time_settings.read_own');
-  return dayOf(db, actor.userId, query, now);
+  return dayOf(db, actor, actor.userId, query, now);
 }
 
 /**
- * One person's day, as `GET /me/time` answers it — **no `can()` here**: each
- * caller asks its own question first (`getMyDay` the person's, the people
- * read `people.analytics.read`). Without `tz`, the zone `userId`'s drafts
- * were made in; without `day`, today there.
+ * One person's day, as `GET /me/time` answers it, to `viewer` — **no `can()`
+ * here**: each caller asks its own question first (`getMyDay` the person's,
+ * the people read `people.analytics.read`). Without `tz`, the zone
+ * `userId`'s drafts were made in; without `day`, today there.
  */
 export function dayOf(
   db: Db,
+  viewer: ResolvedActor,
   userId: string,
   query: { day?: string | undefined; tz?: string | undefined },
   now: number = Date.now(),
@@ -199,11 +211,20 @@ export function dayOf(
       .map((r) => [r.day, r.minutes]),
   );
 
+  // Days off for the week, which holds the day (D-149, LAI-1183).
+  const off = offDaysFor(db, viewer, [userId], monday, sunday);
+
   const week: WeekDayView[] = [];
   for (let d = monday; d <= sunday; d = addDays(d, 1)) {
     const c = confirmed.get(d) ?? 0;
     const p = drafted.get(d) ?? 0;
-    week.push({ day: d, confirmed_minutes: c, drafted_minutes: p, state: stateOf(d, today, c, p) });
+    week.push({
+      day: d,
+      confirmed_minutes: c,
+      drafted_minutes: p,
+      state: stateOf(d, today, c, p),
+      off: offOn(off, userId, d),
+    });
   }
 
   return {
@@ -223,6 +244,7 @@ export function dayOf(
       entries.reduce((n, e) => n + e.minutes, 0),
       drafts.reduce((n, d) => n + d.minutes, 0),
     ),
+    off: offOn(off, userId, day),
     week,
     timer,
     day_note: dayNote,

@@ -8,6 +8,7 @@ import { createTask } from '../../src/services/tasks.ts';
 import { createEntry } from '../../src/services/time-entries.ts';
 import { setOrgTimeMode, setTimeSettings } from '../../src/services/time-settings.ts';
 import { freshDb, preparedDuring, seed, type TestDb } from '../helpers/db.ts';
+import { clanHoliday, hrPerson, leaveDay, manualHoliday } from '../helpers/hr.ts';
 import { work } from '../helpers/work.ts';
 
 /**
@@ -113,6 +114,49 @@ describe('the day and its week', () => {
     expect(refused).toBe('session_required');
   });
 
+  it('carries the day off and each week day’s, beside a state they never change (D-149, LAI-1183)', () => {
+    const p = hrPerson(t.db, owner.userId);
+    manualHoliday(t.db, '2026-10-20', 'Founders’ day', owner.userId);
+    leaveDay(t.db, owner.userId, p, TODAY, { part: 'second_half', type: 'Annual' });
+    // Pending leave tomorrow, under a synced holiday the person is in.
+    clanHoliday(t.db, '2026-10-22', 'Diwali');
+    leaveDay(t.db, owner.userId, p, '2026-10-22', { status: 'pending', type: 'Sick' });
+    // Removed, so never read.
+    leaveDay(t.db, owner.userId, p, '2026-10-23', { removedAt: NOW });
+
+    const view = getMyDay(t.db, owner, { tz: 'UTC' }, NOW);
+    expect(view.off).toEqual({
+      holiday: null,
+      leave: { part: 'second_half', status: 'approved', type: 'Annual' },
+    });
+    // A day off still says what reached Laika: the state is the day's minutes.
+    expect(view.state).toBe('drafted');
+    expect(view.week.map((d) => [d.day, d.state, d.off])).toEqual([
+      ['2026-10-19', 'confirmed', null],
+      ['2026-10-20', 'no_signal', { holiday: { label: 'Founders’ day' }, leave: null }],
+      [
+        '2026-10-21',
+        'drafted',
+        { holiday: null, leave: { part: 'second_half', status: 'approved', type: 'Annual' } },
+      ],
+      [
+        '2026-10-22',
+        'future',
+        {
+          holiday: { label: 'Diwali' },
+          leave: { part: 'full', status: 'pending', type: 'Sick' },
+        },
+      ],
+      ['2026-10-23', 'future', null],
+      ['2026-10-24', 'future', null],
+      ['2026-10-25', 'future', null],
+    ]);
+    expect(getMyDay(t.db, owner, { day: '2026-10-20', tz: 'UTC' }, NOW).off).toEqual({
+      holiday: { label: 'Founders’ day' },
+      leave: null,
+    });
+  });
+
   it('finds Monday from any day of the week', () => {
     expect(['2026-10-19', '2026-10-21', '2026-10-25'].map(mondayOf)).toEqual([
       '2026-10-19',
@@ -156,7 +200,10 @@ describe('the work it does', () => {
     // of the drafts, every state), the drafts held on every day (LAI-831: one
     // grouped count, bounded by the drafts' 30 days), its agent seconds,
     // when the agent worked (LAI-833: one range of buckets) and their split, the week's drafts and its entries, the timer (LAI-500: one primary-key
-    // read), the day's note (LAI-501: one more) — and nothing that grows with the history.
+    // read), the day's note (LAI-501: one more), the week's days off (LAI-1183:
+    // one range of the holidays and one of the person's own leave — no HR
+    // people, with no synced holiday in the week, and no memberships, since
+    // the reader is the person) — and nothing that grows with the history.
     const sections = {
       org: statements.filter((s) => s.includes('from "orgs"')).length,
       switches: statements.filter((s) => /from "(org|user)_time_settings"/.test(s)).length,
@@ -170,6 +217,8 @@ describe('the work it does', () => {
       timer: statements.filter((s) => s.includes('from "time_timers"')).length,
       // The day's note (LAI-501): one primary-key read.
       day_note: statements.filter((s) => s.includes('from "time_day_notes"')).length,
+      // Days off (LAI-1183): the holidays, and the leave.
+      off: statements.filter((s) => /from "(org_holidays|hr_people|leave_days)"/.test(s)).length,
     };
     expect(sections).toEqual({
       org: 1,
@@ -180,8 +229,9 @@ describe('the work it does', () => {
       agent: 3,
       timer: 1,
       day_note: 1,
+      off: 2,
     });
-    expect(statements).toHaveLength(15);
+    expect(statements).toHaveLength(17);
   });
 
   it('reads the same number of rows for a day whatever came before it', () => {

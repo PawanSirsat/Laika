@@ -219,6 +219,7 @@ describe('an owner', () => {
     expect(Object.keys(beaRow ?? {}).sort()).toEqual([
       'days',
       'joined_day',
+      'off_days',
       'today_day',
       'user',
       'work_days',
@@ -232,6 +233,8 @@ describe('an owner', () => {
         { day: '2026-11-03', confirmed_minutes: 480, drafted_minutes: 0 },
         { day: '2026-11-04', confirmed_minutes: 0, drafted_minutes: 90 },
       ],
+      // No holiday and no leave in the stretch (LAI-1183).
+      off_days: [],
     });
     expect(beaRow?.joined_day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(beaRow?.today_day).toBe(new Date().toISOString().slice(0, 10));
