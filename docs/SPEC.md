@@ -3806,6 +3806,7 @@ The HR system's people and which member each one is (D-149 item 4).
 | `name` | as the HR system has it |
 | `department_ref` | nullable — the HR system's department id, for a holiday's scope |
 | `designation_ref` | nullable — likewise |
+| `employment_type` | nullable — the HR system's employment type (`full_time`, `part_time`, …), for a holiday's scope |
 | `matched_by` | `email` \| `owner` \| `none` (CHECK) — an owner's choice is never overwritten by the email match |
 | `seen_at` | the last sync that listed the person |
 | `updated_at` | |
@@ -3824,14 +3825,14 @@ or added by an owner or admin.
 | `label` | 1–120 (CHECK) |
 | `source` | `manual` \| `clan` (CHECK) |
 | `source_ref` | nullable — the HR system's id; unique with `source` where present |
-| `scope_json` | nullable JSON — `{ "departments": [...], "designations": [...] }` of `hr_people` refs; null is everyone the HR system lists |
+| `scope_json` | nullable JSON — `{ "departments": [...], "designations": [...], "employment_types": [...] }`, each list optional; null is everyone the HR system lists |
 | `created_by` | nullable, FK `users`, set null — the owner or admin who added a manual one; null for synced |
 | `created_at`, `updated_at` | |
 | `removed_at` | nullable — no longer in the HR system, or removed by an owner; such rows are never read |
 
 Index `(day)`. **A manual holiday covers every member. A synced one covers a
-person only when `hr_people` matches them**, and then when its scope is null or
-names their department or designation — the HR system's holidays are its own
+person only when `hr_people` matches them**, and then when every list its scope
+names includes their department, designation or employment type — the HR system's holidays are its own
 people's (D-149 item 2). **A manual holiday wins** over a
 synced one on the same day; at most one live manual holiday per day.
 
@@ -3849,7 +3850,7 @@ One day of a member's leave, as the HR system has it (D-149 items 2 and 3).
 | `type_name` | ≤ 80 — *Annual*, *Sick*…; shown only to the person, owners, admins and *See everyone's analytics* (D-149 item 5) |
 | `status` | `approved` \| `pending` (CHECK) |
 | `source_ref` | unique — the HR system's id for the day |
-| `application_ref` | nullable — the request the day belongs to |
+| `application_ref` | nullable — the request the day belongs to, when the HR system gives one |
 | `hash` | of what Laika last took, so an unchanged day is not rewritten |
 | `synced_at` | |
 | `removed_at` | nullable — rejected, cancelled, gone from the HR system, or its person unmapped; never read |

@@ -7458,7 +7458,7 @@ them; it never writes to it.
    balances, approvers, attachments or anything about leave that was rejected or cancelled.
    Laika never creates, approves or cancels leave; that stays in Clan. **A synced holiday
    covers only the people the HR system lists** — members matched in it, narrowed further
-   by the holiday's departments or designations when it names any. Kvell's Clan is
+   by the holiday's departments, designations or employment types when it names any. Kvell's Clan is
    *CodeSage India Private Limited* (`codesage.clan.biz`, zone `Asia/Kolkata`), so its
    holidays are India's and never reach a member who is not in it; a holiday for everyone
    is a manual one (item 8).
