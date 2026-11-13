@@ -18,6 +18,12 @@
 /* One tab's sections, stacked; the width the page has (LAI-889). */
 .org-body {
   display: grid;
+  /* One column no wider than the page (LAI-1182). An implicit track is sized
+     to its widest card's min-content: the model-prices table made it 499 px at
+     a 390 px phone, every Integrations card was drawn that wide, and the
+     shell's hidden overflow cut them at the screen's edge without a sideways
+     scroll to show it. The table scrolls inside its own card instead. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
@@ -2484,6 +2490,16 @@
 
 .org-hr-pick.dd-field {
   flex: 0 1 18rem;
+}
+
+/* A phone: each person's name, then their picker at the card's full width —
+   the row wraps rather than turning into a column, where the name's flex
+   basis would become a height. */
+@media (max-width: 40rem) {
+  .org-hr-pick.dd-field {
+    flex: none;
+    width: 100%;
+  }
 }
 
 .org-holiday-year {

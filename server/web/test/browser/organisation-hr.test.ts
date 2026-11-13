@@ -939,8 +939,18 @@ void describe('Holidays', () => {
 });
 
 void describe('both themes, 1440 and 390', () => {
-  /** Every theme × width: no sideways scroll, no text under 12 px, no row past the card. */
-  async function fits(h: Harness, root: string, rows: string): Promise<void> {
+  /**
+   * Every theme × width: no sideways scroll, no text under 12 px, and nothing
+   * drawn past the card — the card inside the viewport, and every visible
+   * element inside the card.
+   *
+   * **The page-wide scroll check alone cannot see a clipped card** (CHIEF's
+   * LAI-1182 review): the shell hides horizontal overflow, so at 390 every
+   * Integrations card was 499 px wide, cut at the screen's edge, and
+   * `scrollWidth` still equalled the viewport. Measuring each element against
+   * the card, and the card against the viewport, is what sees it.
+   */
+  async function fits(h: Harness, root: string): Promise<void> {
     for (const theme of ['Light', 'Dark']) {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       await setTheme(h.page, theme);
@@ -962,17 +972,29 @@ void describe('both themes, 1440 and 390', () => {
           return min;
         }, root);
         assert.ok(smallest >= 12, `${theme} at ${String(width)}: text at ${String(smallest)}px`);
-        const outside = await h.page.evaluate(
-          ([selector, rowSelector]) => {
-            const card = document.querySelector(selector)?.closest('.org-card');
-            const edge = card?.getBoundingClientRect().right ?? 0;
-            return [...document.querySelectorAll(rowSelector)].filter(
-              (el) => el.getBoundingClientRect().right > edge + 0.5,
-            ).length;
-          },
-          [root, rows] as const,
-        );
-        assert.equal(outside, 0, `${theme} at ${String(width)}: a row overflows the card`);
+        const lost = await h.page.evaluate((selector) => {
+          const node = document.querySelector(selector);
+          const card = node?.closest('.org-card') ?? node;
+          if (node === null || card === null || card === undefined) return [`${selector} absent`];
+          const edge = card.getBoundingClientRect().right;
+          const out: string[] = [];
+          if (edge > window.innerWidth + 1) {
+            out.push(`the card ends at ${edge.toFixed(0)}, past ${String(window.innerWidth)}`);
+          }
+          for (const el of node.querySelectorAll('*')) {
+            const box = el.getBoundingClientRect();
+            if (box.width === 0 && box.height === 0) continue;
+            if (getComputedStyle(el).visibility === 'hidden') continue;
+            if (box.right > edge + 1) {
+              out.push(
+                `${el.tagName.toLowerCase()}.${el.getAttribute('class') ?? ''} ends at ` +
+                  `${box.right.toFixed(0)}, past the card's ${edge.toFixed(0)}`,
+              );
+            }
+          }
+          return out;
+        }, root);
+        assert.deepEqual(lost, [], `${theme} at ${String(width)}: drawn past the card`);
       }
     }
   }
@@ -989,7 +1011,33 @@ void describe('both themes, 1440 and 390', () => {
       '[data-hr-people]',
     );
     try {
-      await fits(h, '[data-section="hr"]', '[data-hr-person]');
+      await fits(h, '[data-section="hr"]');
+      // On a phone each person stacks: the name, then the picker across the row.
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      const rows = await h.page.locator('[data-hr-person]').evaluateAll((els) =>
+        els.map((row) => {
+          const name = row.querySelector('.org-hr-person-name')?.getBoundingClientRect();
+          const pick = row.querySelector('.org-hr-pick')?.getBoundingClientRect();
+          const box = row.getBoundingClientRect();
+          return {
+            below: name !== undefined && pick !== undefined && pick.top >= name.bottom - 1,
+            // Right under it: the name's box is its words (two lines at most), not a
+            // flex basis turned into a height that leaves empty rows above the picker.
+            close:
+              name !== undefined &&
+              pick !== undefined &&
+              name.height <= 48 &&
+              pick.top - name.bottom <= 16,
+            full: pick !== undefined && pick.width >= box.width - 1,
+          };
+        }),
+      );
+      assert.equal(rows.length, 3);
+      assert.deepEqual(
+        rows,
+        rows.map(() => ({ below: true, close: true, full: true })),
+        'a picker beside its name, or narrower than the row, at 390',
+      );
     } finally {
       await h.close();
     }
@@ -1002,29 +1050,36 @@ void describe('both themes, 1440 and 390', () => {
         .locator('[data-fact="holidays"]')
         .getByRole('button', { name: 'Add a holiday' })
         .click();
-      await fits(h, '[data-fact="holidays"]', '[data-holiday], .org-holiday-add');
+      await fits(h, '[data-fact="holidays"]');
     } finally {
       await h.close();
     }
   });
 
-  void test('the connect form at 390 in both themes fits', async () => {
+  void test('the connect form, either way, and the code step: each fits', async () => {
     const h = await integrations(
-      orgStub('owner', { '/api/v1/org/hr': OFF }),
-      '[data-section="hr"]',
+      orgStub('owner', {
+        '/api/v1/org/hr': OFF,
+        '/api/v1/org/hr/connect': {
+          ...OFF,
+          status: 'pending_2fa',
+          two_factor: { methods: ['email', 'google_authenticator'] },
+        },
+      }),
     );
     try {
-      await hrCard(h).getByRole('button', { name: 'Connect Clan' }).click();
-      await hrCard(h).getByRole('form', { name: 'Connect Clan' }).waitFor();
-      for (const theme of ['Light', 'Dark']) {
-        await h.page.setViewportSize({ width: 1440, height: 900 });
-        await setTheme(h.page, theme);
-        await h.page.setViewportSize({ width: 390, height: 844 });
-        const spill = () =>
-          h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-        await until(async () => (await spill()) <= 0);
-        assert.ok((await spill()) <= 0, `${theme} at 390: sideways`);
-      }
+      const card = hrCard(h);
+      await card.getByRole('button', { name: 'Connect Clan' }).click();
+      const form = card.getByRole('form', { name: 'Connect Clan' });
+      await form.waitFor();
+      await fits(h, '[data-section="hr"]');
+      await form.getByRole('button', { name: 'Paste a token' }).click();
+      await form.getByLabel('Expires on').waitFor();
+      await fits(h, '[data-section="hr"]');
+      await form.getByRole('button', { name: 'Sign in with the account' }).click();
+      await fillConnect(h, 'https://codesage.clan.biz');
+      await card.getByRole('form', { name: 'Clan sign-in code' }).waitFor({ timeout: 5_000 });
+      await fits(h, '[data-section="hr"]');
     } finally {
       await h.close();
     }
