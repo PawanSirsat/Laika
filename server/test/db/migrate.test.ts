@@ -2806,6 +2806,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_analytics_views_profile$/),
         // LAI-1165's time_changed notice: member_notices rebuilt.
         expect.stringMatching(/_member_notices_time_changed$/),
+        // LAI-1181's HR tables: four new tables, nothing rebuilt.
+        expect.stringMatching(/_hr_source$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2943,8 +2945,8 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
     // The guard on this guard: the first entry cut is 0075 and the last kept
     // is 0074 — a later migration lands here and says so. LAI-1130's two new
     // tables, LAI-1136's one, LAI-1137's and LAI-1150's analytics_views
-    // rebuilds and LAI-1165's member_notices rebuild ride along and touch no
-    // `tasks` row, so a boot applies six.
+    // rebuilds, LAI-1165's member_notices rebuild and LAI-1181's HR tables
+    // ride along and touch no `tasks` row, so a boot applies every one listed.
     expect(dropped.map((e) => e.tag)).toEqual([
       '0075_task_deliverables',
       '0076_user_availability',
@@ -2952,6 +2954,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0078_developer_setup_reads',
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
+      '0081_hr_source',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3003,10 +3006,19 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
           })),
         );
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 6);
+        // Every migration cut is applied, and only those: the folder's whole
+        // journal, read rather than counted here, since each later migration
+        // rides along (LAI-1181 made this a read; it was a count to bump).
+        const journalled = (
+          JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')) as {
+            entries: unknown[];
+          }
+        ).entries.length;
+        expect(migrations.length).toBeLessThan(journalled);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(journalled);
         // And again is a no-op.
         runMigrations(db);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 6);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(journalled);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });
@@ -3037,6 +3049,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0078_developer_setup_reads',
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
+      '0081_hr_source',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3065,7 +3078,18 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
 
         runMigrations(db);
 
-        expect(tables()).toEqual([...before, 'member_notices'].sort());
+        // LAI-1181's 0081 rides along and adds its four HR tables; nothing
+        // else appears.
+        expect(tables()).toEqual(
+          [
+            ...before,
+            'member_notices',
+            'hr_people',
+            'leave_days',
+            'org_holidays',
+            'org_hr_source',
+          ].sort(),
+        );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
 
         const insert = (kind: string, message: string | null) =>
@@ -3109,6 +3133,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0078_developer_setup_reads',
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
+      '0081_hr_source',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3221,6 +3246,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
     expect(dropped.map((e) => e.tag)).toEqual([
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
+      '0081_hr_source',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3297,7 +3323,10 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
     const at = journal.entries.findIndex((e) => e.tag === '0080_member_notices_time_changed');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0080_member_notices_time_changed']);
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0080_member_notices_time_changed',
+      '0081_hr_source',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }

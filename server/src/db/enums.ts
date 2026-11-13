@@ -666,3 +666,49 @@ export type TimeRevisionChange = (typeof TIME_REVISION_CHANGES)[number];
  */
 export const AGENT_TIME_KINDS = ['user', 'cli'] as const;
 export type AgentTimeKind = (typeof AGENT_TIME_KINDS)[number];
+
+/**
+ * `org_hr_source`'s `provider` (D-149, LAI-1181): the HR system an owner or
+ * admin connected. Clan, a Worksuite build, is the only one.
+ */
+export const HR_PROVIDERS = ['clan'] as const;
+export type HrProvider = (typeof HR_PROVIDERS)[number];
+
+/**
+ * `org_hr_source`'s `status` (D-149, LAI-1181): signed in and waiting on the
+ * second factor for ten minutes, or connected. **No row is off.**
+ */
+export const HR_SOURCE_STATUSES = ['pending_2fa', 'connected'] as const;
+export type HrSourceStatus = (typeof HR_SOURCE_STATUSES)[number];
+
+/**
+ * `org_hr_source`'s `last_error_code` (D-149, LAI-1181): why the last sync
+ * changed nothing. The HR system refused the token (or the stored token could
+ * not be read — connecting again is the remedy either way), could not be
+ * reached, or answered something Laika could not read.
+ */
+export const HR_SYNC_ERROR_CODES = ['token_rejected', 'unreachable', 'bad_answer'] as const;
+export type HrSyncErrorCode = (typeof HR_SYNC_ERROR_CODES)[number];
+
+/**
+ * `hr_people`'s `matched_by` (D-149 item 4, LAI-1181): the sync matched the
+ * person by email, an owner or admin mapped them (to a person, or to *not on
+ * Laika*), or nobody did.
+ */
+export const HR_MATCHED_BY = ['email', 'owner', 'none'] as const;
+export type HrMatchedBy = (typeof HR_MATCHED_BY)[number];
+
+/** `org_holidays`' `source` (D-149 item 8, LAI-1181): typed by an owner, or read from Clan. */
+export const HOLIDAY_SOURCES = ['manual', 'clan'] as const;
+export type HolidaySource = (typeof HOLIDAY_SOURCES)[number];
+
+/** `leave_days`' `part` (D-149 item 2, LAI-1181): the whole day, or its first or second half. */
+export const LEAVE_PARTS = ['full', 'first_half', 'second_half'] as const;
+export type LeavePart = (typeof LEAVE_PARTS)[number];
+
+/**
+ * `leave_days`' `status` (D-149 item 2, LAI-1181). Only these two are kept: a
+ * rejected or cancelled day is a removed row, never a stored status.
+ */
+export const LEAVE_STATUSES = ['approved', 'pending'] as const;
+export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
