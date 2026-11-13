@@ -218,7 +218,7 @@ const hrCard = (h: Harness) => h.page.locator('[data-section="hr"]');
 
 async function fillConnect(h: Harness, url: string): Promise<void> {
   const form = hrCard(h).getByRole('form', { name: 'Connect Clan' });
-  await form.getByLabel('Company URL').fill(url);
+  await form.getByLabel('Clan address').fill(url);
   await form.getByLabel('Email').fill('forge@codesage.test');
   await form.locator('input[type="password"]').fill(SECRET);
   await form.getByRole('button', { name: 'Connect', exact: true }).click();
@@ -254,7 +254,7 @@ void describe('HR system: connecting Clan', () => {
       const form = fact.getByRole('form', { name: 'Connect Clan' });
       await form.waitFor();
       assert.equal(
-        await form.getByLabel('Company URL').getAttribute('placeholder'),
+        await form.getByLabel('Clan address').getAttribute('placeholder'),
         'https://codesage.clan.biz',
       );
       const password = form.locator('input[type="password"]');
@@ -408,7 +408,7 @@ void describe('HR system: connecting Clan', () => {
         assert.equal(await form.locator('input[type="password"]').inputValue(), '');
         // What was typed otherwise stays, to correct.
         assert.equal(
-          await form.getByLabel('Company URL').inputValue(),
+          await form.getByLabel('Clan address').inputValue(),
           'https://codesage.clan.biz',
         );
         assert.equal(posts.length, 1);
@@ -437,6 +437,129 @@ void describe('HR system: connecting Clan', () => {
       await until(async () => (await fact.innerText()).includes('https:// address'));
       assert.match(await fact.innerText(), /Use the https:\/\/ address you sign in to Clan at\./);
       assert.equal(posts.length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('HR system: pasting a token', () => {
+  const TOKEN = '123|tok-Zq8-never-echoed';
+
+  void test('both ways are offered, signing in first; the line says to use a dedicated account', async () => {
+    const h = await integrations(orgStub('owner', { '/api/v1/org/hr': OFF }));
+    try {
+      await hrCard(h).getByRole('button', { name: 'Connect Clan' }).click();
+      const form = hrCard(h).getByRole('form', { name: 'Connect Clan' });
+      const ways = form.getByRole('group', { name: 'How to connect' });
+      await ways.waitFor();
+      assert.deepEqual(
+        await ways
+          .getByRole('button')
+          .evaluateAll((els) => els.map((el) => [el.textContent, el.getAttribute('aria-pressed')])),
+        [
+          ['Sign in with the account', 'true'],
+          ['Paste a token', 'false'],
+        ],
+      );
+      assert.equal(
+        await form.locator('[data-hr-dedicated]').innerText(),
+        'Use a dedicated, read-only Clan account (for example Forge) — never your own login. Laika keeps only a sign-in key, never the password.',
+      );
+      assert.equal(await form.getByLabel('Email').count(), 1);
+      await ways.getByRole('button', { name: 'Paste a token' }).click();
+      await until(async () => (await form.getByLabel('Email').count()) === 0);
+      assert.equal(await form.getByLabel('Email').count(), 0, 'no email for a token');
+      const token = form.locator('input[type="password"]');
+      assert.equal(await token.inputValue(), '', 'the token field is never pre-filled');
+      assert.equal(await token.getAttribute('autocomplete'), 'new-password');
+      assert.equal(await form.getByLabel('Expires on').inputValue(), '');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a token with its end date, and one without: each body as the server reads it', async () => {
+    for (const [expires, body] of [
+      [
+        `${String(YEAR + 1)}-06-30`,
+        {
+          base_url: 'https://codesage.clan.biz',
+          token: TOKEN,
+          expires_on: `${String(YEAR + 1)}-06-30`,
+        },
+      ],
+      ['', { base_url: 'https://codesage.clan.biz', token: TOKEN }],
+    ] as const) {
+      const posts: StubCall[] = [];
+      const h = await integrations(
+        orgStub('owner', {
+          '/api/v1/org/hr': OFF,
+          '/api/v1/org/hr/connect': (call: StubCall) => {
+            posts.push(call);
+            return connected({
+              account_email: null,
+              token_expires_at: expires === '' ? null : Date.now() + 200 * DAY,
+              last_attempt_at: null,
+              last_success_at: null,
+              last_result: null,
+            });
+          },
+        }),
+      );
+      try {
+        const card = hrCard(h);
+        await card.getByRole('button', { name: 'Connect Clan' }).click();
+        const form = card.getByRole('form', { name: 'Connect Clan' });
+        await form.getByRole('button', { name: 'Paste a token' }).click();
+        await form.getByLabel('Clan address').fill('https://codesage.clan.biz');
+        await form.locator('input[type="password"]').fill(` ${TOKEN} `);
+        if (expires !== '') await form.getByLabel('Expires on').fill(expires);
+        await form.getByRole('button', { name: 'Connect', exact: true }).click();
+        await until(() => posts.length === 1);
+        assert.deepEqual(posts[0]?.body, body);
+        await until(async () => (await card.getAttribute('data-hr-status')) === 'connected');
+        // No email for a token: the account by Clan's name alone.
+        assert.match(
+          await card.locator('[data-hr-connected]').innerText(),
+          expires === ''
+            ? /^Connected as Forge · token …a1b2$/
+            : /^Connected as Forge · token …a1b2, renews by \d{1,2} [A-Z][a-z]{2} \d{4}$/,
+        );
+        assert.equal((await h.page.content()).includes(TOKEN), false, 'the token is on the page');
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('a refused token is in words, and the field is emptied', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/hr': OFF,
+        '/api/v1/org/hr/connect': refused(422, 'unprocessable', 'clan_token_refused'),
+      }),
+    );
+    try {
+      const card = hrCard(h);
+      await card.getByRole('button', { name: 'Connect Clan' }).click();
+      const form = card.getByRole('form', { name: 'Connect Clan' });
+      await form.getByRole('button', { name: 'Paste a token' }).click();
+      await form.getByLabel('Clan address').fill('https://codesage.clan.biz');
+      await form.locator('input[type="password"]').fill(TOKEN);
+      await form.getByRole('button', { name: 'Connect', exact: true }).click();
+      const alert = card.locator('[role="alert"]');
+      await alert.waitFor({ timeout: 5_000 });
+      assert.equal(
+        await alert.innerText(),
+        'Clan refused this token — check it was copied whole and finished its two-factor step.',
+      );
+      assert.equal(await form.locator('input[type="password"]').inputValue(), '');
+      // Still the token way, to paste again.
+      assert.equal(
+        await form.getByRole('button', { name: 'Paste a token' }).getAttribute('aria-pressed'),
+        'true',
+      );
     } finally {
       await h.close();
     }

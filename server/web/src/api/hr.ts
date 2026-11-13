@@ -95,11 +95,22 @@ export interface HrSource {
   readonly people: readonly HrPerson[];
 }
 
-export interface HrConnectInput {
-  readonly base_url: string;
-  readonly email: string;
-  readonly password: string;
-}
+/**
+ * `POST /org/hr/connect`, either way: Laika signs in once as the dedicated
+ * account, or an administrator pastes a token Clan made for it.
+ */
+export type HrConnectInput =
+  | {
+      readonly base_url: string;
+      readonly email: string;
+      readonly password: string;
+    }
+  | {
+      readonly base_url: string;
+      readonly token: string;
+      /** `YYYY-MM-DD`, when whoever made the token knows when it lapses. */
+      readonly expires_on?: string;
+    };
 
 export interface HrVerifyInput {
   readonly method: string;
@@ -137,7 +148,7 @@ export function getHrSource(signal?: AbortSignal): Promise<HrSource> {
   return request<HrSource>('/org/hr', signal === undefined ? {} : { signal });
 }
 
-/** Sign in to Clan once. The password is sent here and kept nowhere. */
+/** Connect Clan. A password is used for one sign-in and forgotten; a token is kept encrypted. */
 export function connectHr(input: HrConnectInput): Promise<HrSource> {
   return request<HrSource>('/org/hr/connect', { method: 'POST', body: input });
 }

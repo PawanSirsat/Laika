@@ -2405,6 +2405,25 @@
   margin-bottom: var(--space-2);
 }
 
+.org-hr-ways {
+  margin-bottom: var(--space-2);
+}
+
+.org-hr-expires {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.org-hr-expires-input {
+  max-width: 12rem;
+}
+
+.org-hr-dedicated {
+  margin-bottom: var(--space-1);
+}
+
 .org-hr-connected {
   overflow-wrap: anywhere;
 }

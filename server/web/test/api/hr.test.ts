@@ -46,6 +46,12 @@ void describe('the calls (§6.4, LAI-1181)', () => {
       email: 'forge@codesage.test',
       password: 'pw-1',
     });
+    await connectHr({
+      base_url: 'https://codesage.clan.biz',
+      token: '1|t',
+      expires_on: '2027-06-30',
+    });
+    await connectHr({ base_url: 'https://codesage.clan.biz', token: '1|t' });
     await verifyHr({ method: 'email', code: '123456' });
     await syncHr();
     await mapHrPeople([
@@ -65,6 +71,12 @@ void describe('the calls (§6.4, LAI-1181)', () => {
           '/api/v1/org/hr/connect',
           { base_url: 'https://codesage.clan.biz', email: 'forge@codesage.test', password: 'pw-1' },
         ],
+        [
+          'POST',
+          '/api/v1/org/hr/connect',
+          { base_url: 'https://codesage.clan.biz', token: '1|t', expires_on: '2027-06-30' },
+        ],
+        ['POST', '/api/v1/org/hr/connect', { base_url: 'https://codesage.clan.biz', token: '1|t' }],
         ['POST', '/api/v1/org/hr/connect/verify', { method: 'email', code: '123456' }],
         ['POST', '/api/v1/org/hr/sync', undefined],
         [

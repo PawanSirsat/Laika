@@ -40,6 +40,18 @@ export interface HrSourceSectionProps {
 /** Which control is waiting on the server, so only that one spins. */
 type Busy = 'connect' | 'verify' | 'sync' | 'disconnect' | 'people';
 
+/**
+ * How the dedicated Clan account is connected (D-149, CHIEF's final contract):
+ * Laika signs in once as it, or an administrator pastes a token Clan made for
+ * it. Which one depends on what Clan offers, so the form offers both.
+ */
+type ConnectWay = 'sign_in' | 'token';
+
+const CONNECT_WAYS: readonly { readonly way: ConnectWay; readonly label: string }[] = [
+  { way: 'sign_in', label: 'Sign in with the account' },
+  { way: 'token', label: 'Paste a token' },
+];
+
 const MINUTE = 60_000;
 
 /** The card head's chip, as the GitHub webhook card's says *secret set*. */
@@ -57,11 +69,13 @@ const STATUS_WORDS: Readonly<Record<HrSource['status'], string>> = {
  * holder of `org.hr.configure`.
  *
  * Modelled on `GithubWebhookSection` — the other secret held for the whole
- * organisation — and stricter about it: **the password is sent once and kept
- * nowhere.** Not in this component past the call that sends it (cleared on
- * every outcome, so a refused attempt is typed again rather than shown again),
- * never pre-filled (`new-password` keeps the browser's saved Laika password
- * out), and the server never answers it. The token is shown as its last four.
+ * organisation — and stricter about it: **a password or a pasted token is
+ * sent once and the page keeps neither.** Not in this component past the call
+ * that sends it (cleared on every outcome, so a refused attempt is typed again
+ * rather than shown again), never pre-filled (`new-password` keeps the
+ * browser's saved Laika password out), and the server never answers either.
+ * The password is forgotten after its one sign-in; the token Laika keeps,
+ * encrypted, is shown as its last four.
  */
 export function HrSourceSection({ members }: HrSourceSectionProps) {
   const confirm = useConfirm();
@@ -71,6 +85,9 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
   const [baseUrl, setBaseUrl] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [way, setWay] = useState<ConnectWay>('sign_in');
+  const [token, setToken] = useState('');
+  const [expiresOn, setExpiresOn] = useState('');
   const [urlError, setUrlError] = useState<string | undefined>(undefined);
   const [code, setCode] = useState('');
   const [method, setMethod] = useState<string | undefined>(undefined);
@@ -144,9 +161,14 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
       return;
     }
     setUrlError(undefined);
-    const sent = { base_url: baseUrl.trim(), email: email.trim(), password };
+    const base_url = baseUrl.trim();
+    const sent =
+      way === 'sign_in'
+        ? { base_url, email: email.trim(), password }
+        : { base_url, token: token.trim(), ...(expiresOn === '' ? {} : { expires_on: expiresOn }) };
     // Gone from the form whatever the answer: kept nowhere, shown never again.
     setPassword('');
+    setToken('');
     void run('connect', () => connectHr(sent)).then((answer) => {
       if (answer === undefined) return;
       setConnecting(false);
@@ -218,6 +240,10 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
   const methods = view.two_factor?.methods ?? [];
   const pending = view.status === 'pending_2fa' && !connecting;
 
+  const ready =
+    baseUrl.trim() !== '' &&
+    (way === 'sign_in' ? email.trim() !== '' && password !== '' : token.trim() !== '');
+
   const connectForm = (
     <form
       className="org-hr-form"
@@ -227,8 +253,26 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
         connect();
       }}
     >
+      <span className="org-modes org-hr-ways" role="group" aria-label="How to connect">
+        {CONNECT_WAYS.map((option) => (
+          <button
+            key={option.way}
+            type="button"
+            className="org-mode"
+            aria-pressed={option.way === way}
+            data-connect-way={option.way}
+            disabled={busy !== undefined}
+            onClick={() => {
+              setWay(option.way);
+              setError(undefined);
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </span>
       <TextInput
-        label="Company URL"
+        label="Clan address"
         type="url"
         value={baseUrl}
         onChange={(value) => {
@@ -240,29 +284,55 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
         error={urlError}
         required
       />
-      <TextInput
-        label="Email"
-        type="email"
-        value={email}
-        onChange={setEmail}
-        autoComplete="off"
-        help="A Clan account that can see everyone’s leave."
-        required
-      />
-      <PasswordInput
-        label="Password"
-        value={password}
-        onChange={setPassword}
-        autoComplete="new-password"
-        help="Used once to sign in. Laika keeps the token Clan gives back, not this."
-        required
-      />
+      {way === 'sign_in' ? (
+        <>
+          <TextInput
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="off"
+            required
+          />
+          <PasswordInput
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            help="Used once to sign in, then forgotten. If Clan asks for a code, that comes next."
+            required
+          />
+        </>
+      ) : (
+        <>
+          <PasswordInput
+            label="Token"
+            value={token}
+            onChange={setToken}
+            autoComplete="new-password"
+            help="The API token Clan made for that account. Laika keeps it encrypted and shows only its last four."
+            required
+          />
+          <label className="org-hr-expires">
+            <span className="field-label">Expires on</span>
+            <input
+              className="input org-hr-expires-input"
+              type="date"
+              value={expiresOn}
+              onChange={(e) => {
+                setExpiresOn(e.target.value);
+              }}
+            />
+            <span className="field-help">Optional. Laika warns 30 days before.</span>
+          </label>
+        </>
+      )}
+      <span className="org-fact-note org-hr-dedicated" data-hr-dedicated>
+        Use a dedicated, read-only Clan account (for example Forge) — never your own login. Laika
+        keeps only a sign-in key, never the password.
+      </span>
       <span className="org-break-actions">
-        <Button
-          type="submit"
-          busy={busy === 'connect'}
-          disabled={baseUrl.trim() === '' || email.trim() === '' || password === ''}
-        >
+        <Button type="submit" busy={busy === 'connect'} disabled={!ready}>
           Connect
         </Button>
         <Button
@@ -271,6 +341,7 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
           onClick={() => {
             setConnecting(false);
             setPassword('');
+            setToken('');
             setUrlError(undefined);
             setError(undefined);
           }}
@@ -462,6 +533,8 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
                     setConnecting(true);
                     setBaseUrl(view.base_url === null ? '' : companyAddress(view.base_url));
                     setEmail(view.account_email ?? '');
+                    // The way it was connected: a pasted token carries no email.
+                    setWay(view.account_email === null ? 'token' : 'sign_in');
                     setError(undefined);
                   }}
                 >
