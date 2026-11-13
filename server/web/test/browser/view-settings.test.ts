@@ -24,6 +24,8 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
+import { boardAction } from './board-menu.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -138,7 +140,7 @@ async function openPanel(h: Harness): Promise<void> {
   await h.page.waitForSelector('.card-title');
   // The trigger moved into the board toolbar's icon cluster (LAI-290), where
   // Jira puts it — it used to be a text button in the slot below the bar.
-  await h.page.locator('.bt-icon[title="View settings"]').click();
+  await boardAction(h.page, 'View settings');
   await h.page.waitForSelector('.view-settings');
 }
 
@@ -233,8 +235,10 @@ void describe('the fields that are not optional', () => {
         assert.equal(await row.count(), 1, `${field} should be listed`);
         assert.equal(await row.isDisabled(), true, `${field} must not be removable`);
 
-        // And it says why, rather than leaving a dead control to puzzle over.
-        const why = await row.getAttribute('title');
+        // And it says why, rather than leaving a dead control to puzzle over —
+        // in the shared tooltip, which a focus or a hover reaches (LAI-1213).
+        assert.equal(await row.getAttribute('title'), null, `${field}: a bare title`);
+        const why = await tipText(row);
         assert.ok((why ?? '').length > 10, `${field} gives no reason`);
       }
     } finally {

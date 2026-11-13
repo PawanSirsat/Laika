@@ -594,7 +594,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
         (await wizard(page, 'tool').locator('.dx-wizard-foot button').allTextContents()).map((t) =>
           t.replace(/\s+/g, ' ').trim(),
         ),
-        ['Back', 'Set up a project →'],
+        ['Back', 'Set up a project'],
       );
       assert.equal(await page.getByRole('button', { name: 'Add another tool' }).count(), 0);
 

@@ -7,8 +7,11 @@ import {
   type TokenAlert,
 } from '../../../api/token-alerts.ts';
 import { compactTokens } from '../../../api/usage.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { alertRows } from './usage-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** How many alerts show before *Show all N* (the owner's design, LAI-1127). */
 export const ALERTS_COLLAPSED = 6;
@@ -23,6 +26,10 @@ export const ALERTS_COLLAPSED = 6;
  * In-app only: nothing here is emailed or sent anywhere. Soft: an alert
  * refuses nothing, and putting one away changes only this person's view.
  * *Dismiss all* is one `POST …/dismiss` per alert — there is no bulk route.
+ *
+ * Putting alerts away says so in the app's toast once the server has taken
+ * them (LAI-1129) — with no Undo, because there is no endpoint that brings a
+ * dismissed alert back, and no confirm either: it takes nothing that matters.
  */
 export function AlertsCard({
   alerts,
@@ -37,6 +44,7 @@ export function AlertsCard({
   const [error, setError] = useState<string | undefined>(undefined);
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
+  const toast = useToast();
 
   const open = alertRows((alerts ?? []).filter((a) => !gone.has(a.id)));
   const shown = expanded ? open : open.slice(0, ALERTS_COLLAPSED);
@@ -55,7 +63,14 @@ export function AlertsCard({
           setError(cause instanceof ApiError ? cause.message : 'That alert could not be put away.');
         }
         setBusy(false);
-        if (done.length > 0) onChanged();
+        if (done.length > 0) {
+          toast.show({
+            text: done.length === 1 ? 'Alert put away.' : `${String(done.length)} alerts put away.`,
+            tone: 'success',
+            mark: 'alert-dismissed',
+          });
+          onChanged();
+        }
       },
     );
   };
@@ -116,15 +131,20 @@ export function AlertsCard({
                 className="usage-alert"
                 data-kind={alert.kind}
                 data-over={isOver ? 'true' : undefined}
-                title={alertLine(alert)}
               >
                 <span className="usage-alert-mark">
                   {alert.kind === 'runaway' ? 'p95' : `${String(Math.round(share * 100))}%`}
                 </span>
-                <a className="usage-alert-line" href={href} onClick={follow(href)}>
-                  {alert.task !== null && <span className="usage-task-key">{alert.task.key}</span>}{' '}
-                  <span className="usage-alert-title">{alertTitle(alert)}</span>
-                </a>
+                {/* The alert's whole line on the link it names (LAI-1214) — on
+                    the row it was a title= the dismiss button's tooltip sat on. */}
+                <Tooltip content={alertLine(alert)}>
+                  <a className="usage-alert-line" href={href} onClick={follow(href)}>
+                    {alert.task !== null && (
+                      <span className="usage-task-key">{alert.task.key}</span>
+                    )}{' '}
+                    <span className="usage-alert-title">{alertTitle(alert)}</span>
+                  </a>
+                </Tooltip>
                 <span className="usage-alert-use">
                   <span className="usage-alert-figures">
                     {compactTokens(alert.tokens)} / {compactTokens(alert.limit_tokens)}
@@ -137,18 +157,19 @@ export function AlertsCard({
                     />
                   </span>
                 </span>
-                <button
-                  type="button"
-                  className="usage-alert-dismiss"
-                  aria-label={`Dismiss ${alert.task?.key ?? 'alert'}`}
-                  title="Dismiss"
-                  disabled={busy}
-                  onClick={() => {
-                    dismiss([alert.id]);
-                  }}
-                >
-                  <span aria-hidden="true">×</span>
-                </button>
+                <Tooltip content="Dismiss">
+                  <button
+                    type="button"
+                    className="usage-alert-dismiss"
+                    aria-label={`Dismiss ${alert.task?.key ?? 'alert'}`}
+                    disabled={busy}
+                    onClick={() => {
+                      dismiss([alert.id]);
+                    }}
+                  >
+                    <Icon name="close" size="tiny" />
+                  </button>
+                </Tooltip>
               </li>
             );
           })}

@@ -1,7 +1,10 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 import { ALWAYS_ON, FIELD_ICONS, FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
 import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './view-settings.css';
 
 export interface ViewSettingsProps {
@@ -104,6 +107,8 @@ export function ViewSettings({
 }: ViewSettingsProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
+  // On the overlay stack (LAI-1205): a picker open inside it keeps Escape.
+  const { isTop } = useLayer('popover');
 
   const shown = FIELD_KEYS.filter((key) => preferences.fields[key]);
   const needle = query.trim().toLowerCase();
@@ -137,7 +142,7 @@ export function ViewSettings({
           } as CSSProperties
         }
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
+          if (event.key === 'Escape' && !event.defaultPrevented && isTop()) {
             event.stopPropagation();
             onClose();
           }
@@ -150,9 +155,11 @@ export function ViewSettings({
       >
         <header className="vs-head">
           <h2 className="vs-title">View settings</h2>
-          <button type="button" className="vs-close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="vs-close" onClick={onClose} aria-label="Close">
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
 
         {!forList && (
@@ -195,17 +202,18 @@ export function ViewSettings({
           ) : (
             <div className="vs-chips">
               {filters.map((filter) => (
-                <button
-                  key={filter.key}
-                  type="button"
-                  className="vs-chip"
-                  onClick={() => {
-                    onClearFilter(filter.key);
-                  }}
-                >
-                  {filter.label} <span aria-hidden="true">×</span>
-                  <span className="visually-hidden"> — remove this filter</span>
-                </button>
+                <Tooltip key={filter.key} content={`Remove ${filter.label}`}>
+                  <button
+                    type="button"
+                    className="vs-chip"
+                    onClick={() => {
+                      onClearFilter(filter.key);
+                    }}
+                  >
+                    {filter.label} <Icon name="close" size="tiny" />
+                    <span className="visually-hidden"> — remove this filter</span>
+                  </button>
+                </Tooltip>
               ))}
               <button type="button" className="vs-clear" onClick={onClearFilters}>
                 Clear all
@@ -263,7 +271,7 @@ export function ViewSettings({
                 onOpenSpaceSettings(spaceSettingsHref);
               }}
             >
-              Visibility, members and access <span aria-hidden="true">→</span>
+              Visibility, members and access <Icon name="arrow-right" size="tiny" />
               <span className="visually-hidden"> — open Space settings</span>
             </a>
             <p className="vs-note">These are the space&rsquo;s settings, on its own page.</p>
@@ -305,11 +313,11 @@ export function ViewSettings({
                         }}
                       >
                         <span className="vs-icon" aria-hidden="true">
-                          {FIELD_ICONS[key]}
+                          <Icon name={FIELD_ICONS[key]} size="small" />
                         </span>
                         {FIELD_LABELS[key]}
                         <span className="vs-plus" aria-hidden="true">
-                          +
+                          <Icon name="plus" size="tiny" />
                         </span>
                         <span className="visually-hidden"> — add this field</span>
                       </button>
@@ -323,41 +331,49 @@ export function ViewSettings({
                 {ALWAYS_ON.map((field) => (
                   <li key={field.key} className="vs-row vs-row-locked">
                     <span className="vs-icon" aria-hidden="true">
-                      {field.icon}
+                      <Icon name={field.icon} size="small" />
                     </span>
                     <span className="vs-row-name">{field.label}</span>
                     {/* Disabled rather than absent — the reference greys `Summary`
                     the same way, and a field simply missing reads as a bug. */}
-                    <button
-                      type="button"
-                      className="vs-remove"
-                      data-field={field.key}
-                      disabled
-                      title={field.why}
-                      aria-label={`${field.label} cannot be removed — ${field.why}`}
-                    >
-                      ×
-                    </button>
+                    {/*
+                      `aria-disabled`, not `disabled` (LAI-1213): a natively
+                      disabled button takes no focus and no hover, so its reason
+                      could never be shown. It has no click to stop.
+                    */}
+                    <Tooltip content={field.why}>
+                      <button
+                        type="button"
+                        className="vs-remove"
+                        data-field={field.key}
+                        aria-disabled="true"
+                        aria-label={`${field.label} cannot be removed — ${field.why}`}
+                      >
+                        <Icon name="close" size="tiny" />
+                      </button>
+                    </Tooltip>
                   </li>
                 ))}
 
                 {shown.map((key) => (
                   <li key={key} className="vs-row">
                     <span className="vs-icon" aria-hidden="true">
-                      {FIELD_ICONS[key]}
+                      <Icon name={FIELD_ICONS[key]} size="small" />
                     </span>
                     <span className="vs-row-name">{FIELD_LABELS[key]}</span>
-                    <button
-                      type="button"
-                      className="vs-remove"
-                      data-field={key}
-                      aria-label={`Remove ${FIELD_LABELS[key]}`}
-                      onClick={() => {
-                        setField(key, false);
-                      }}
-                    >
-                      ×
-                    </button>
+                    <Tooltip content={`Remove ${FIELD_LABELS[key]}`}>
+                      <button
+                        type="button"
+                        className="vs-remove"
+                        data-field={key}
+                        aria-label={`Remove ${FIELD_LABELS[key]}`}
+                        onClick={() => {
+                          setField(key, false);
+                        }}
+                      >
+                        <Icon name="close" size="tiny" />
+                      </button>
+                    </Tooltip>
                   </li>
                 ))}
               </ul>

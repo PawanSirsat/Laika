@@ -21,6 +21,7 @@ import { HintChip, StatusLegendLink } from './StatusLegend.tsx';
 import { BoardUpdateNote, DeviceVersionChip, useUpdateStatus } from './ToolUpdate.tsx';
 import { RowChevron, RowOpen } from './ToolsTab.tsx';
 import { deviceChipDescription, deviceChipKey, rowShowsUpdate } from './status-vocabulary.ts';
+import { Icon } from '../../../../components/icon/Icon.tsx';
 
 export const DEVICES_TITLE = 'dv3-devices-title';
 
@@ -282,7 +283,8 @@ function DeviceRecord({
               onAddTool(device.id);
             }}
           >
-            Add tool →
+            Add tool
+            <Icon name="arrow-right" size="tiny" />
           </button>
         )}
       </div>

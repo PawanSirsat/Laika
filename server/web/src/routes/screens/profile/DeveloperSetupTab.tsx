@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 import { revokeAgentDevice } from '../../../api/agent-devices.ts';
 import { revokeAgent } from '../../../api/agents.ts';
 import {
@@ -20,7 +28,10 @@ import { OWNER_SETUP_NOTE } from '../../../api/owner-setup.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { revokeToken, revokeUserToken } from '../../../api/tokens.ts';
 import { useProjects } from '../../../api/use-projects.ts';
+import { Chip } from '../../../components/chip/Chip.tsx';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import '../../../components/forms/button.css';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { OverflowMenu } from '../../../components/wizard/OverflowMenu.tsx';
@@ -31,8 +42,18 @@ import {
   activityLine,
   ago,
   anchorFor,
+  DEVELOPER_HREF,
+  flaggedTokens,
+  flaggedTokensLine,
+  nextStep,
+  PENDING_ANCHOR,
+  summaryHeadline,
+  TOKEN_FLAG_WORDS,
+  tokenFlags,
+  TOKENS_ANCHOR,
+  type NextStep,
+  type TokenFlag,
   attentionItems,
-  attentionWord,
   checkMarks,
   confirmCopy,
   deviceHelper,
@@ -146,6 +167,8 @@ export interface OwnDeveloperSetupTabProps {
   /** Read by the profile, which also draws its *N to fix* (`useOwnSetup`). */
   readonly setup: OwnSetup;
   readonly meId: string;
+  /** Follows a link into Developer access in-app; a modified click stays the browser's. */
+  readonly onNavigate?: ((to: string) => void) | undefined;
 }
 
 /**
@@ -154,7 +177,7 @@ export interface OwnDeveloperSetupTabProps {
  * a pending pairing, and disconnect and revoke through Developer access's own
  * endpoints, with no owner-decision label. Nobody is notified of your own.
  */
-export function OwnDeveloperSetupTab({ setup, meId }: OwnDeveloperSetupTabProps) {
+export function OwnDeveloperSetupTab({ setup, meId, onNavigate }: OwnDeveloperSetupTabProps) {
   return (
     <SetupPanel
       voice={voiceFor(true, '')}
@@ -162,6 +185,7 @@ export function OwnDeveloperSetupTab({ setup, meId }: OwnDeveloperSetupTabProps)
       manifest={setup.manifest}
       canRevokeTokens
       meId={meId}
+      onNavigate={onNavigate}
       onRetry={setup.retry}
       onChanged={setup.reload}
       revoke={(target, view) => {
@@ -194,6 +218,47 @@ interface SetupPanelProps {
   readonly revoke: (target: Pending, view: SetupView) => Promise<unknown>;
   /** Your own only: approve or decline a claimed pairing, echoing the fingerprint shown. */
   readonly decide?: (pairing: DevicePairing, approve: boolean) => Promise<unknown>;
+  /** Your own only: follows a link into Developer access in-app. */
+  readonly onNavigate?: ((to: string) => void) | undefined;
+}
+
+/**
+ * How a link into Developer access is followed (LAI-1217). Absent — someone
+ * else's setup — there are no such links at all: `/developer` is the
+ * reader's own page, so it would show the owner their own setup.
+ */
+const NavContext = createContext<((to: string) => void) | undefined>(undefined);
+
+/** A plain click on an in-app link is the app's to follow; a modified one is the browser's. */
+function follow(go: (to: string) => void, to: string) {
+  return (event: MouseEvent<HTMLAnchorElement>): void => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    go(to);
+  };
+}
+
+/** A link into Developer access, or nothing on someone else's setup. */
+function DevLink({
+  href,
+  children,
+  className = 'ds-manage',
+  hook,
+}: {
+  readonly href: string;
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly hook?: string;
+}) {
+  const go = useContext(NavContext);
+  if (go === undefined) return null;
+  return (
+    <a href={href} className={className} onClick={follow(go, href)} data-ds-dev-link={hook ?? href}>
+      {children}
+    </a>
+  );
 }
 
 /** The tab itself, for someone else's setup or your own: `voice` says which. */
@@ -207,6 +272,7 @@ function SetupPanel({
   onChanged,
   revoke,
   decide,
+  onNavigate,
 }: SetupPanelProps) {
   const { first, own } = voice;
   const [pending, setPending] = useState<Pending | undefined>(undefined);
@@ -308,113 +374,135 @@ function SetupPanel({
   };
 
   const copy = pending === undefined ? undefined : confirmCopy(pending, view, first, own);
+  // Links into Developer access exist only on your own setup (LAI-1217).
+  const nav = own
+    ? (onNavigate ??
+      ((to: string) => {
+        window.location.assign(to);
+      }))
+    : undefined;
+  const empty = isEmptySetup(view);
+  const emptyStep = empty ? nextStep(view, [], own) : undefined;
 
   return (
-    <div
-      className="ds"
-      data-ds-ready
-      data-ds-own={own ? '' : undefined}
-      data-deactivated={deactivated ? '' : undefined}
-    >
-      {notice_}
-      {deactivated && (
-        <p role="note" className="ds-deactivated" data-ds-deactivated>
-          <b>This account is deactivated.</b> Everything below is read-only history.{' '}
-          {canAct ? 'Only revoke actions are left.' : 'Nothing here can be changed.'}
-        </p>
-      )}
-      {/*
-       * Actions follow the server's `can_revoke`, not `mayActOnSetupOf`: the
-       * read already asked `can()` about this reader and this person, so the
-       * tab draws what the server will allow rather than a second guess at it.
-       * The owner note is said only when the owner is why. Your own is always
-       * yours to change (`can_revoke` true), so it never carries the note.
-       */}
-      {!canAct && (
-        <p role="note" className="ds-owner-note" data-ds-owner-note>
-          {view.user.org_role === 'owner'
-            ? `${OWNER_SETUP_NOTE} Those actions are not offered here.`
-            : 'Revoke actions are not offered to you here.'}
-        </p>
-      )}
-      {notice !== undefined && (
-        <p role="status" className="ds-done" data-ds-done>
-          {notice}
-        </p>
-      )}
+    <NavContext.Provider value={nav}>
+      <div
+        className="ds"
+        data-ds-ready
+        data-ds-own={own ? '' : undefined}
+        data-deactivated={deactivated ? '' : undefined}
+      >
+        {notice_}
+        {deactivated && (
+          <p role="note" className="ds-deactivated" data-ds-deactivated>
+            <b>This account is deactivated.</b> Everything below is read-only history.{' '}
+            {canAct ? 'Only revoke actions are left.' : 'Nothing here can be changed.'}
+          </p>
+        )}
+        {/*
+         * Actions follow the server's `can_revoke`, not `mayActOnSetupOf`: the
+         * read already asked `can()` about this reader and this person, so the
+         * tab draws what the server will allow rather than a second guess at it.
+         * The owner note is said only when the owner is why. Your own is always
+         * yours to change (`can_revoke` true), so it never carries the note.
+         */}
+        {!canAct && (
+          <p role="note" className="ds-owner-note" data-ds-owner-note>
+            {view.user.org_role === 'owner'
+              ? `${OWNER_SETUP_NOTE} Those actions are not offered here.`
+              : 'Revoke actions are not offered to you here.'}
+          </p>
+        )}
+        {notice !== undefined && (
+          <p role="status" className="ds-done" data-ds-done>
+            {notice}
+          </p>
+        )}
 
-      {isEmptySetup(view) ? (
-        <section className="ds-card" aria-labelledby="ds-empty-title" data-ds-empty>
-          <h3 className="ds-title" id="ds-empty-title">
-            {voice.emptyTitle}
-          </h3>
-          <p className="ds-muted">{voice.emptyBody}</p>
-          <ul className="ds-muted ds-list">
-            {voice.emptyItems.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <div className="ds-body">
-          <Summary view={view} manifest={manifest} voice={voice} />
-          <Devices
-            view={view}
-            canAct={canAct}
-            onAsk={ask}
-            voice={voice}
-            manifest={manifest}
-            decide={decide}
-            onDecided={(line) => {
-              setNotice(line);
-              onChanged();
-            }}
-          />
-          <Tools view={view} canAct={canAct} onAsk={ask} spaceName={spaceName} />
-          <Repositories view={view} own={own} />
-          <Tokens
-            view={view}
-            canAct={canToken}
-            onAsk={ask}
-            spaceName={spaceName}
-            everySpace={voice.everySpace}
-          />
-          <Activity view={view} meId={meId} />
-        </div>
-      )}
-
-      {pending !== undefined && copy !== undefined && (
-        <ConfirmDialog
-          title={copy.title}
-          confirmLabel={copy.cta}
-          danger
-          icon="warning"
-          busy={busy}
-          error={refusal}
-          onConfirm={() => {
-            run(pending);
-          }}
-          onClose={() => {
-            if (!busy) setPending(undefined);
-          }}
-        >
-          <span className="ds-confirm" data-ds-confirm={pending.kind}>
-            <span className="ds-confirm-lead">{copy.lead}</span>
-            <span className="ds-confirm-head">What stops working</span>
-            <span className="ds-confirm-stops" role="list">
-              {copy.stops.map((line) => (
-                <span role="listitem" key={line}>
-                  {line}
-                </span>
+        {empty ? (
+          <section className="ds-card ds-empty" aria-labelledby="ds-empty-title" data-ds-empty>
+            <span className="ds-empty-glyph" aria-hidden="true">
+              <Icon name="developer" size="reading" />
+            </span>
+            <h3 className="ds-title" id="ds-empty-title">
+              {voice.emptyTitle}
+            </h3>
+            <p className="ds-muted">{voice.emptyBody}</p>
+            <ul className="ds-muted ds-list">
+              {voice.emptyItems.map((line) => (
+                <li key={line}>{line}</li>
               ))}
+            </ul>
+            {emptyStep !== undefined && (
+              <div className="ds-empty-actions">
+                <NextStepAction step={emptyStep} />
+                <DevLink href={DEVELOPER_HREF.connect} hook="empty-add-tool">
+                  Or add a tool first
+                </DevLink>
+              </div>
+            )}
+          </section>
+        ) : (
+          <div className="ds-body">
+            <Summary view={view} manifest={manifest} voice={voice} />
+            <Devices
+              view={view}
+              canAct={canAct}
+              onAsk={ask}
+              voice={voice}
+              manifest={manifest}
+              decide={decide}
+              onDecided={(line) => {
+                setNotice(line);
+                onChanged();
+              }}
+            />
+            <Tools view={view} canAct={canAct} onAsk={ask} spaceName={spaceName} />
+            <Repositories view={view} own={own} />
+            <Tokens
+              view={view}
+              canAct={canToken}
+              onAsk={ask}
+              spaceName={spaceName}
+              everySpace={voice.everySpace}
+            />
+            <Activity view={view} meId={meId} />
+          </div>
+        )}
+
+        {pending !== undefined && copy !== undefined && (
+          <ConfirmDialog
+            title={copy.title}
+            confirmLabel={copy.cta}
+            danger
+            icon="warning"
+            busy={busy}
+            error={refusal}
+            onConfirm={() => {
+              run(pending);
+            }}
+            onClose={() => {
+              if (!busy) setPending(undefined);
+            }}
+          >
+            <span className="ds-confirm" data-ds-confirm={pending.kind}>
+              <span className="ds-confirm-lead">{copy.lead}</span>
+              <span className="ds-confirm-head">What stops working</span>
+              <span className="ds-confirm-stops" role="list">
+                {copy.stops.map((line) => (
+                  <span role="listitem" key={line}>
+                    {line}
+                  </span>
+                ))}
+              </span>
+              <span className="ds-confirm-notify" data-ds-notify>
+                {copy.notify}
+              </span>
             </span>
-            <span className="ds-confirm-notify" data-ds-notify>
-              {copy.notify}
-            </span>
-          </span>
-        </ConfirmDialog>
-      )}
-    </div>
+          </ConfirmDialog>
+        )}
+      </div>
+    </NavContext.Provider>
   );
 }
 
@@ -434,6 +522,7 @@ function Section({
   caption,
   children,
   extra,
+  manage,
 }: {
   readonly id: string;
   readonly title: string;
@@ -441,6 +530,8 @@ function Section({
   readonly caption?: string | undefined;
   readonly children: ReactNode;
   readonly extra?: ReactNode;
+  /** Your own only: where this section is managed in Developer access. */
+  readonly manage?: { readonly href: string; readonly label: string } | undefined;
 }) {
   return (
     <section className="ds-card" aria-labelledby={`ds-${id}-title`} data-ds-section={id}>
@@ -451,6 +542,12 @@ function Section({
         {count !== undefined && <span className="ds-count">{count}</span>}
         {caption !== undefined && <span className="ds-caption">{caption}</span>}
         {extra}
+        {manage !== undefined && (
+          <DevLink href={manage.href} hook={`manage-${id}`}>
+            {manage.label}
+            <Icon name="chevron" size="tiny" />
+          </DevLink>
+        )}
       </header>
       {children}
     </section>
@@ -469,6 +566,39 @@ function jump(target: string) {
   };
 }
 
+/** The one primary next step: a link into Developer access, or a jump within the tab. */
+function NextStepAction({ step }: { readonly step: NextStep }) {
+  const go = useContext(NavContext);
+  const className = 'button button-primary button-sm ds-next-cta';
+  if (step.kind === 'jump') {
+    return (
+      <a
+        href={`#${step.target}`}
+        className={className}
+        onClick={jump(step.target)}
+        data-ds-next="jump"
+        data-ds-next-target={step.target}
+      >
+        {step.label}
+      </a>
+    );
+  }
+  // A link step exists only on your own setup, where the context is set.
+  if (go === undefined) return null;
+  return (
+    <a
+      href={step.href}
+      className={className}
+      onClick={follow(go, step.href)}
+      data-ds-next="link"
+      data-ds-dev-link={step.href}
+    >
+      {step.label}
+      <Icon name="chevron" size="tiny" />
+    </a>
+  );
+}
+
 function Summary({
   view,
   manifest,
@@ -483,10 +613,36 @@ function Summary({
   const reachHidden = hiddenGrants(view.tools);
   const setups = repoRows(view.repositories, view.tools, view.devices).length;
   const items = attentionItems(view, manifest);
+  const flagged = flaggedTokens(view, view.now).length;
+  const tokensLine = flaggedTokensLine(flagged);
+  const step = nextStep(view, items, voice.own);
   const seenOn = view.devices.find((d) => d.last_seen_at === s.last_seen_at)?.display_name;
+  const ok = items.length === 0;
   const tiles: readonly (readonly [string, string, string])[] = [
-    ['Devices', `${String(s.devices_active)} / ${String(s.devices_revoked)}`, 'active / revoked'],
-    ['Tools set up', String(s.tools_active), `${String(s.tools_revoked)} revoked`],
+    [
+      'Devices paired',
+      String(s.devices_active),
+      s.devices_revoked === 0 ? 'none revoked' : `${String(s.devices_revoked)} revoked`,
+    ],
+    [
+      'Tools set up',
+      String(s.tools_active),
+      s.tools_revoked === 0 ? 'none revoked' : `${String(s.tools_revoked)} revoked`,
+    ],
+    [
+      'Active tokens',
+      String(s.tokens_active),
+      tokensLine ?? `${String(s.tokens_inactive)} expired or revoked`,
+    ],
+    [
+      'Last activity',
+      ago(s.last_seen_at, view.now),
+      seenOn === undefined
+        ? s.pending_pairing > 0
+          ? `${String(s.pending_pairing)} pairing waiting`
+          : ''
+        : `on ${seenOn}`,
+    ],
     [
       'Repositories set up',
       String(setups),
@@ -497,19 +653,70 @@ function Summary({
       String(reach.size),
       reachHidden === 0 ? voice.reach : `+${String(reachHidden)} you can’t see`,
     ],
-    ['Active tokens', String(s.tokens_active), `${String(s.tokens_inactive)} expired or revoked`],
-    [
-      'Last activity',
-      ago(s.last_seen_at, view.now),
-      seenOn === undefined
-        ? s.pending_pairing > 0
-          ? `${String(s.pending_pairing)} pairing waiting`
-          : ''
-        : `on ${seenOn}`,
-    ],
   ];
   return (
-    <Section id="summary" title="Developer setup">
+    <Section
+      id="summary"
+      title={voice.own ? 'Your setup at a glance' : `${voice.first}’s setup at a glance`}
+      manage={{ href: DEVELOPER_HREF.overview, label: 'Open Developer access' }}
+    >
+      <div className={ok ? 'ds-lead ds-lead-ok' : 'ds-lead ds-lead-warn'} data-ds-summary>
+        <div className="ds-health" data-ds-health={items.length}>
+          <span aria-hidden="true" className="ds-health-glyph">
+            <Icon name={ok ? 'check' : 'alert'} size="small" />
+          </span>
+          <span className="ds-lead-text">
+            {/* Only the headline is a live region: the links below are for moving. */}
+            <b role="status" data-ds-health-word>
+              {summaryHeadline(view, items.length)}
+            </b>
+            {step !== undefined ? (
+              <span className="ds-lead-why" data-ds-next-why>
+                {step.why}
+              </span>
+            ) : (
+              ok && (
+                <span className="ds-lead-why">
+                  {voice.own
+                    ? 'Every live tool is connected and every repository is up to date.'
+                    : `Every live tool ${voice.first} has is connected.`}
+                </span>
+              )
+            )}
+          </span>
+        </div>
+        {step !== undefined && <NextStepAction step={step} />}
+      </div>
+      {!voice.own && (
+        <p className="ds-caption ds-lead-note" data-ds-only-they>
+          Only {voice.first} can add, pair or fix things, from their own Developer access.
+        </p>
+      )}
+      {(items.length > 0 || tokensLine !== undefined) && (
+        <ul className="ds-attn" aria-label="Needs attention" data-ds-attention>
+          {items.map((item) => (
+            <li key={item.label}>
+              <Icon name="alert" size="tiny" />
+              <a href={`#${item.target}`} onClick={jump(item.target)} data-ds-jump={item.target}>
+                {item.label}
+              </a>
+            </li>
+          ))}
+          {tokensLine !== undefined && (
+            <li className="ds-attn-soft" data-ds-attn-tokens={flagged}>
+              <Icon name="tokens" size="tiny" />
+              <a
+                href={`#${TOKENS_ANCHOR}`}
+                onClick={jump(TOKENS_ANCHOR)}
+                data-ds-jump={TOKENS_ANCHOR}
+              >
+                {tokensLine}
+              </a>
+              <span className="ds-caption">never used, unused 90+ days or expiring soon</span>
+            </li>
+          )}
+        </ul>
+      )}
       <dl className="ds-tiles">
         {tiles.map(([label, value, sub]) => (
           <div className="ds-tile" key={label} data-ds-tile={label}>
@@ -519,30 +726,6 @@ function Summary({
           </div>
         ))}
       </dl>
-      {/* Only the headline is a live region: the links are for moving, not for announcing. */}
-      <div
-        className={items.length === 0 ? 'ds-health ds-health-ok' : 'ds-health ds-health-warn'}
-        data-ds-health={items.length}
-      >
-        <b>
-          <span aria-hidden="true" className="ds-health-glyph">
-            {items.length === 0 ? '✓' : '!'}
-          </span>
-          <span role="status" data-ds-health-word>
-            {attentionWord(items.length)}
-          </span>
-        </b>
-        {items.map((item) => (
-          <a
-            key={item.label}
-            href={`#${item.target}`}
-            onClick={jump(item.target)}
-            data-ds-jump={item.target}
-          >
-            {item.label}
-          </a>
-        ))}
-      </div>
     </Section>
   );
 }
@@ -569,7 +752,12 @@ function Devices({
   const live = view.devices.filter((d) => d.status === 'active');
   const revoked = view.devices.filter((d) => d.status === 'revoked');
   return (
-    <Section id="devices" title="Devices" count={live.length}>
+    <Section
+      id="devices"
+      title="Devices"
+      count={live.length}
+      manage={{ href: DEVELOPER_HREF.devices, label: 'Manage devices' }}
+    >
       {live.length === 0 ? (
         <p className="ds-muted">No device is paired now.</p>
       ) : (
@@ -637,7 +825,7 @@ function Devices({
         </div>
       )}
       {view.pending_pairing.length > 0 && (
-        <div className="ds-pending" data-ds-pending>
+        <div className="ds-pending" id={PENDING_ANCHOR} data-ds-pending>
           <span className="ds-subhead">
             Pending pairing requests ({view.pending_pairing.length})
           </span>
@@ -853,9 +1041,28 @@ function DeviceRow({
           <span className="ds-lbl">Auto-pickup </span>
           {pickupWord(device.launcher)}
         </span>
-        <span role="cell">
+        <span role="cell" className="ds-dev-tools" data-ds-device-tool-list>
           <span className="ds-lbl">Tools </span>
-          {liveTools}
+          {liveTools === 0 ? (
+            <span className="ds-muted">None</span>
+          ) : (
+            tools
+              .filter((t) => t.status === 'active')
+              .map((t) => {
+                const st = toolState(t, view.now, isUnverified(view, t.id));
+                return (
+                  <span
+                    key={t.id}
+                    className={`ds-dev-tool ds-dev-tool-${st.tone}`}
+                    data-ds-device-tool={t.id}
+                  >
+                    <span aria-hidden="true" className="ds-dev-tool-dot" />
+                    {toolName(t)}
+                    <span className="visually-hidden">: {st.word}</span>
+                  </span>
+                );
+              })
+          )}
         </span>
         <span role="cell" className="ds-cell-menu">
           {offerUnpair && (
@@ -935,7 +1142,12 @@ function Tools({
     { key: 'loose', title: 'Not on a paired device', tools: looseTools(view) },
   ].filter((g) => g.tools.length > 0);
   return (
-    <Section id="tools" title="Tools" caption="by device">
+    <Section
+      id="tools"
+      title="Tools"
+      caption="by device"
+      manage={{ href: DEVELOPER_HREF.tools, label: 'Manage tools' }}
+    >
       {groups.length === 0 && <p className="ds-muted">No tool is set up.</p>}
       {groups.map((g) => (
         <div className="ds-group" key={g.key}>
@@ -1103,7 +1315,12 @@ function Repositories({ view, own }: { readonly view: SetupView; readonly own: b
   const rows = repoRows(view.repositories, view.tools, view.devices);
   const hidden = view.summary.repositories_hidden;
   return (
-    <Section id="repos" title="Repositories & projects" count={rows.length}>
+    <Section
+      id="repos"
+      title="Repositories & projects"
+      count={rows.length}
+      manage={{ href: DEVELOPER_HREF.projects, label: 'Manage project setup' }}
+    >
       {rows.length === 0 && hidden === 0 ? (
         <p className="ds-muted">No repository has been set up for Laika.</p>
       ) : (
@@ -1197,6 +1414,7 @@ function Tokens({
     <Section
       id="tokens"
       title="Tokens"
+      manage={{ href: DEVELOPER_HREF.tokens, label: 'Manage tokens' }}
       extra={
         <>
           <div role="radiogroup" aria-label="Show tokens" className="ds-seg">
@@ -1299,11 +1517,28 @@ function TokenLine({
   const state = tokenState(token, now);
   const live = state === 'active' || state === 'idle' || state === 'never';
   const client = token.last_client_name ?? token.last_client;
+  const flags = tokenFlags(token, now);
   return (
-    <div role="row" className="ds-row" data-ds-token={token.id} data-ds-token-state={state}>
+    <div
+      role="row"
+      className={flags.length > 0 ? 'ds-row ds-row-flagged' : 'ds-row'}
+      data-ds-token={token.id}
+      data-ds-token-state={state}
+      data-ds-token-flags={flags.join(' ')}
+    >
       <span role="rowheader" className="ds-stack ds-cell-main">
-        <span className="ds-strong">{token.name}</span>
+        <span className="ds-strong ds-break">{token.name}</span>
         <code className="ds-mono ds-muted">{token.prefix}…</code>
+        {/* *Never used* is already the status chip's word; the row does not say it twice. */}
+        {flags.some((f) => f !== 'never') && (
+          <span className="ds-flags">
+            {flags
+              .filter((f) => f !== 'never')
+              .map((f) => (
+                <TokenFlagChip key={f} flag={f} />
+              ))}
+          </span>
+        )}
       </span>
       <span role="cell">
         <span className="ds-lbl">Scope </span>
@@ -1368,6 +1603,27 @@ function TokenLine({
         )}
       </span>
     </div>
+  );
+}
+
+const FLAG_LOOK: Readonly<
+  Record<
+    TokenFlag,
+    { readonly tone: 'neutral' | 'orange' | 'danger'; readonly mark: 'dot' | 'clock' | 'alert' }
+  >
+> = {
+  never: { tone: 'neutral', mark: 'dot' },
+  stale: { tone: 'orange', mark: 'clock' },
+  expiring: { tone: 'danger', mark: 'alert' },
+};
+
+/** A token flag as the shared status chip: its words, and a mark of its own — never tone alone. */
+function TokenFlagChip({ flag }: { readonly flag: TokenFlag }) {
+  const look = FLAG_LOOK[flag];
+  return (
+    <Chip variant="status" tone={look.tone} mark={look.mark} data={{ 'data-ds-token-flag': flag }}>
+      {TOKEN_FLAG_WORDS[flag]}
+    </Chip>
   );
 }
 

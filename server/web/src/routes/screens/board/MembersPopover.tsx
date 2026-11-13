@@ -3,6 +3,7 @@ import type { Member } from '../../../api/tasks.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface MembersPopoverProps {
   readonly id: string;
@@ -117,29 +118,30 @@ export function MembersPopover({
             const on = assignee === member.user_id;
             return (
               <li key={member.user_id}>
-                <button
-                  type="button"
-                  className={on ? 'bt-mp-row bt-mp-row-on' : 'bt-mp-row'}
-                  aria-pressed={on}
-                  title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                  onClick={() => {
-                    onAssignee(on ? undefined : member.user_id);
-                    onClose();
-                  }}
-                >
-                  <span
-                    className="bt-mp-avatar t-avatar"
-                    style={{ background: colour.background, color: colour.foreground }}
-                    aria-hidden="true"
+                <Tooltip content={on ? `Showing only ${member.name}` : `Show only ${member.name}`}>
+                  <button
+                    type="button"
+                    className={on ? 'bt-mp-row bt-mp-row-on' : 'bt-mp-row'}
+                    aria-pressed={on}
+                    onClick={() => {
+                      onAssignee(on ? undefined : member.user_id);
+                      onClose();
+                    }}
                   >
-                    {initials(member.name)}
-                  </span>
-                  <span className="bt-mp-text">
-                    <span className="bt-mp-name">{member.name}</span>
-                    <span className="bt-mp-email">{member.email}</span>
-                  </span>
-                  <span className="bt-mp-role">{member.role}</span>
-                </button>
+                    <span
+                      className="bt-mp-avatar t-avatar"
+                      style={{ background: colour.background, color: colour.foreground }}
+                      aria-hidden="true"
+                    >
+                      {initials(member.name)}
+                    </span>
+                    <span className="bt-mp-text">
+                      <span className="bt-mp-name">{member.name}</span>
+                      <span className="bt-mp-email">{member.email}</span>
+                    </span>
+                    <span className="bt-mp-role">{member.role}</span>
+                  </button>
+                </Tooltip>
               </li>
             );
           })}

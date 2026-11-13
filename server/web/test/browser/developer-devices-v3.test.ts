@@ -792,7 +792,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
         'None — it reaches no project',
       );
       assert.equal(
-        await body.getByRole('link', { name: 'Change access →' }).getAttribute('href'),
+        await body.getByRole('link', { name: 'Change access' }).getAttribute('href'),
         '/developer?tab=projects&tool=a5',
       );
       await body.getByRole('button', { name: 'Project access…' }).click();
@@ -812,7 +812,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
       // The row's line follows.
       assert.match(await tool(h.page, 'a5').locator('[data-line]').innerText(), /^1 project/);
 
-      await body.getByRole('link', { name: 'Change access →' }).click();
+      await body.getByRole('link', { name: 'Change access' }).click();
       await h.page.waitForURL(/tab=projects/, { timeout: 10_000 });
       assert.equal(here(h.page), '/developer?tab=projects&tool=a5');
     } finally {
@@ -850,7 +850,7 @@ void describe('V3 Tools: the details panel’s actions', () => {
       const rotate = h.calls.find((c) => c.path === '/api/v1/agents/a1/rotate-token');
       assert.deepEqual(rotate?.body, { token_id: 't-a1' });
       assert.equal(await body.locator('[data-credential]').innerText(), 'lai_newx…');
-      await h.page.getByRole('button', { name: 'Done' }).click();
+      await h.page.getByRole('button', { name: 'I’ve saved it' }).click();
       await h.page.getByTestId('agent-secret').waitFor({ state: 'detached' });
       assert.doesNotMatch(await h.page.content(), /SECRET_ONCE/);
       // Copied and done: the panel closes without asking (LAI-1081).
@@ -1425,4 +1425,77 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
       }
     });
   }
+});
+
+void describe('an unavailable action says why (LAI-1191, the audit’s B10)', () => {
+  void test('Reconnect with no live credential to replace: the reason, described by it, and a click that opens nothing', async () => {
+    const spent = deviceRow({
+      id: 'd1',
+      name: 'Belka',
+      agents: [
+        agentRow({ id: 'a1', tokens: [token('t-a1', 'a1', 'lai_a1xx', { revoked_at: 2 })] }),
+      ],
+    });
+    const h = await open('/developer?tab=tools&agent=a1', stub('v3', [spent]));
+    try {
+      const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
+      await body.waitFor({ timeout: 20_000 });
+      // The credential is a fold since LAI-1100.
+      await unfold(body, 'credential');
+      const button = body.getByRole('button', { name: 'Reconnect (new credential)…' });
+      assert.equal(await button.getAttribute('aria-disabled'), 'true');
+      const why = body.locator('[data-reconnect-why]');
+      assert.match(await why.innerText(), /No live credential to replace/);
+      assert.equal(await button.getAttribute('aria-describedby'), await why.getAttribute('id'));
+      // Chosen anyway (Playwright will not click an aria-disabled button): nothing opens.
+      await button.dispatchEvent('click');
+      await h.page.waitForTimeout(500);
+      assert.equal(await h.page.getByRole('alertdialog').count(), 0);
+      assert.deepEqual(writes(h.calls), [], 'nothing was rotated');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Disconnect device with no active tool: the reason, described by it, and a click that opens nothing', async () => {
+    const idle = deviceRow({
+      id: 'd1',
+      name: 'Belka',
+      agents: [agentRow({ id: 'a1', status: 'revoked' })],
+    });
+    const h = await open('/developer?tab=devices&device=d1', stub('v3', [idle]));
+    try {
+      const button = panel(h.page, 'device').getByRole('button', { name: 'Disconnect device…' });
+      await button.waitFor({ timeout: 20_000 });
+      assert.equal(await button.getAttribute('aria-disabled'), 'true');
+      const why = panel(h.page, 'device').locator('[data-disconnect-why]');
+      assert.match(await why.innerText(), /nothing to disconnect/);
+      assert.equal(await button.getAttribute('aria-describedby'), await why.getAttribute('id'));
+      // Chosen anyway (Playwright will not click an aria-disabled button): nothing opens.
+      await button.dispatchEvent('click');
+      await h.page.waitForTimeout(500);
+      assert.equal(await h.page.getByRole('alertdialog').count(), 0);
+      assert.deepEqual(writes(h.calls), [], 'nothing was revoked');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('neither reason is drawn when the action is available', async () => {
+    const h = await open('/developer?tab=tools&agent=a1', stub('v3', [BELKA]));
+    try {
+      const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
+      await body.waitFor({ timeout: 20_000 });
+      await unfold(body, 'credential');
+      assert.equal(await body.locator('[data-reconnect-why]').count(), 0);
+      assert.equal(
+        await body
+          .getByRole('button', { name: 'Reconnect (new credential)…' })
+          .getAttribute('aria-describedby'),
+        null,
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });

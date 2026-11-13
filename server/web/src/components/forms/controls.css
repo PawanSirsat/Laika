@@ -1,0 +1,29 @@
+/*
+ * Control geometry shared by Button and the form fields (LAI-1204).
+ *
+ * Sizes, not colours — colour lives only in `styles/theme.css`. One height per
+ * size, used by both, so a button beside a text field lines up without either
+ * knowing about the other.
+ *
+ * Two densities, from tokens rather than separate components:
+ * `[data-density="compact"]` on any container re-points the heights, so a table
+ * asks for compact once instead of every control in it asking.
+ */
+
+:root {
+  --control-h-md: 2.25rem; /* 36px: a form's control */
+  --control-h-sm: 1.75rem; /* 28px: a toolbar or row action */
+  --control-pad-md: var(--space-4);
+  --control-pad-sm: var(--space-3);
+  /* Icon to label, in every button. One value so the family stays one rhythm. */
+  --control-gap: var(--space-2);
+  /* WCAG 2.5.5 / Apple HIG: the smallest thing a finger can reliably hit. */
+  --control-hit-coarse: 2.75rem;
+}
+
+[data-density='compact'] {
+  --control-h-md: 2rem; /* 32px */
+  --control-h-sm: 1.5rem; /* 24px — WCAG 2.5.8's floor, and no lower */
+  --control-pad-md: var(--space-3);
+  --control-pad-sm: var(--space-2);
+}

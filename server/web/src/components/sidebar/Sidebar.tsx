@@ -1,3 +1,7 @@
+import { BrandMark } from '../brand/BrandMark.tsx';
+import { Wordmark } from '../brand/Wordmark.tsx';
+import { Chip } from '../chip/Chip.tsx';
+import { COUNT_CAP, formatCount } from '../chip/chip-model.ts';
 import {
   GROUP_TITLES,
   NAV_GROUPS,
@@ -10,10 +14,12 @@ import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
 import { SidebarFooter } from './SidebarFooter.tsx';
 import { NavIcon } from './NavIcon.tsx';
+import { PaletteTrigger } from '../command/PaletteTrigger.tsx';
 import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
 import { usePermissions } from '../../api/permissions.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -44,15 +50,34 @@ export interface SidebarProps {
   readonly spaceName?: string | undefined;
   /** Counts by route path. No entry, no badge — that is how it stays honest. */
   readonly counts?: Readonly<Record<string, number | undefined>> | undefined;
+  /**
+   * What a path's count counts, and the tab it lives on (LAI-1191, the audit's
+   * B8): while the badge shows, the link opens that tab, and a screen reader
+   * hears the noun. No entry: the page's own first tab, and *waiting*.
+   */
+  readonly countTargets?: Readonly<Record<string, CountTarget>> | undefined;
   /** The signed-in user, for the footer. Absent renders no footer. */
   readonly user?: MeProfile | undefined;
   readonly onSignOut?: (() => void) | undefined;
   readonly signingOut?: boolean | undefined;
 }
 
-/** A count as the rail's badge has room for it. */
-function badge(count: number): string {
-  return count > 99 ? '99+' : String(count);
+/** Where a badge leads and what it counts. */
+export interface CountTarget {
+  /** The `?tab=` the counted things are on. */
+  readonly tab?: string;
+  /** The noun for one, and for several: `token alert`, `token alerts`. */
+  readonly one: string;
+  readonly many: string;
+}
+
+/** `href` with `?tab=` set, keeping whatever else it carries. */
+function withTab(href: string, tab: string | undefined): string {
+  if (tab === undefined) return href;
+  const at = href.indexOf('?');
+  const params = new URLSearchParams(at === -1 ? '' : href.slice(at + 1));
+  params.set('tab', tab);
+  return `${at === -1 ? href : href.slice(0, at)}?${params.toString()}`;
 }
 
 /**
@@ -84,6 +109,7 @@ export function Sidebar({
   onTogglePin,
   orgName,
   counts,
+  countTargets,
   user,
   onSignOut,
   signingOut,
@@ -121,10 +147,15 @@ export function Sidebar({
             const active = route.path === section;
             const count = counts?.[route.path];
             const counted = count !== undefined && count > 0;
+            const target = countTargets?.[route.path];
             // The project travels with the link, not beside it — a bare
             // path drops `?project=` and the destination then falls back
-            // to a different project entirely (LAI-423).
-            const href = navHref(route.path, projectSlug);
+            // to a different project entirely (LAI-423). While a badge
+            // shows, the link opens the tab its count lives on (LAI-1191).
+            const href = withTab(
+              navHref(route.path, projectSlug),
+              counted ? target?.tab : undefined,
+            );
 
             return (
               <li key={route.path}>
@@ -154,11 +185,16 @@ export function Sidebar({
 
                   {/* Only where a count is real and non-zero: a fixture
                       badge or a zero badge is noise. */}
+                  {/* The shared count badge (LAI-1206): `99+` past the cap,
+                      the exact number in words for a screen reader. */}
                   {counted && (
-                    <span className="sidebar-count">
-                      {badge(count)}
-                      <span className="visually-hidden"> waiting</span>
-                    </span>
+                    <Chip variant="count" className="sidebar-count">
+                      {formatCount(count)}
+                      <span className="visually-hidden">
+                        {count > COUNT_CAP ? ` — ${String(count)}` : ''}{' '}
+                        {target === undefined ? 'waiting' : count === 1 ? target.one : target.many}
+                      </span>
+                    </Chip>
                   )}
                 </a>
               </li>
@@ -172,51 +208,65 @@ export function Sidebar({
   return (
     <nav id="sidebar" className={railClass} aria-label="Primary">
       <div className="sidebar-head">
-        {/* The mark: a 28px radius-9 square on `--text-primary`, the glyph
-            stroked in `--bg-card` (prototype line 49). */}
-        <span className="sidebar-logo" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" strokeWidth="2">
-            <circle cx="12" cy="12" r="4.5" />
-            <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
-          </svg>
+        {/* The brand mark (LAI-1126): with the wordmark beside it, the lockup;
+            alone in the collapsed rail, the mark. Decorative either way — the
+            wordmark carries the name, and the rail's nav says where you are. */}
+        <span className="sidebar-logo">
+          <BrandMark size={28} />
         </span>
         {!collapsed && (
           <div className="sidebar-identity">
             {/* Always the product, never the open project (owner,
                 2026-09-21): the space bar names the project. */}
-            <span className="sidebar-wordmark">Laika</span>
+            <span className="sidebar-wordmark">
+              <Wordmark height={15} />
+            </span>
             {/* The org's real name, from `GET /org`. `undefined` renders
                 nothing rather than a placeholder that looks like data. */}
             {orgName !== undefined && <span className="sidebar-orgline">{orgName}</span>}
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar-toggle"
-          aria-expanded={!collapsed}
-          aria-controls="sidebar"
-          onClick={onToggleCollapse}
-        >
-          <NavIcon name={collapsed ? 'rail-open' : 'rail-close'} size={17} />
-          <span className="sidebar-tip">{collapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
-        </button>
+        {/* The shared Tooltip (LAI-1214), not the rail's own name reveal: the
+            toggle has no words of its own, so the name is its aria-label and
+            the tooltip shows it on hover and focus, below it in both states.
+            No key collapses the rail today, so none is shown. */}
+        <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            aria-controls="sidebar"
+            onClick={onToggleCollapse}
+          >
+            <NavIcon name={collapsed ? 'rail-open' : 'rail-close'} size={17} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="sidebar-nav">
+        {/* Search and commands, ⌘K (LAI-1192). */}
+        <div className="sidebar-group sidebar-group-search">
+          <PaletteTrigger variant="sidebar" />
+        </div>
+
         {shown.filter((group) => group === 'HOME').map(renderGroup)}
 
-        {spaces !== undefined && spaces.length > 0 && onOpenSpace !== undefined && (
-          <SpacesSection
-            spaces={spaces}
-            all={allSpaces ?? spaces}
-            projectSlug={projectSlug}
-            collapsed={collapsed}
-            onNavigate={onNavigate}
-            onOpenSpace={onOpenSpace}
-            onTogglePin={onTogglePin}
-            onClose={onClose}
-          />
-        )}
+        {/* With no spaces yet, the section stays for whoever may create the first (LAI-1191). */}
+        {spaces !== undefined &&
+          (spaces.length > 0 || holds('project.create')) &&
+          onOpenSpace !== undefined && (
+            <SpacesSection
+              spaces={spaces}
+              all={allSpaces ?? spaces}
+              projectSlug={projectSlug}
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+              onOpenSpace={onOpenSpace}
+              onTogglePin={onTogglePin}
+              onClose={onClose}
+            />
+          )}
 
         {shown.filter((group) => group !== 'HOME').map(renderGroup)}
       </div>

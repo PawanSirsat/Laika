@@ -4,6 +4,8 @@ import type { Sprint } from '../../../api/sprints.ts';
 import { PRIORITIES, type Member, type TaskPriority } from '../../../api/tasks.ts';
 import { anchorOf, ListMenu, type MenuAnchor, type MenuItem } from './ListMenu.tsx';
 import type { BulkAction, BulkRun } from './list-bulk.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import '../../../components/bulk-bar.css';
 
 export interface BulkBarProps {
@@ -201,24 +203,34 @@ export function BulkBar({
     icon: React.ReactNode,
     /** Held back, with the sentence that says what would enable it. */
     held?: { readonly held: string; readonly loading: boolean },
-  ) => (
-    <button
-      type="button"
-      className="list-bulk-action"
-      disabled={busy || held !== undefined}
-      {...(held === undefined ? {} : { title: held.held })}
-      {...(held?.loading === true ? { 'aria-busy': true } : {})}
-      aria-haspopup="menu"
-      aria-expanded={open?.which === which}
-      onClick={(event) => {
-        setConfirming(false);
-        setOpen({ which, at: anchorOf(event.currentTarget) });
-      }}
-    >
-      {icon}
-      {text}
-    </button>
-  );
+  ) => {
+    /*
+     * **Held back says why** (LAI-1213): `aria-disabled` and the reason in the
+     * shared tooltip, so a keyboard can reach it and a pointer can read it. A
+     * natively disabled button takes neither — the bare `title` it carried
+     * was never shown to either. Busy stays `disabled`: it resolves by waiting.
+     */
+    const button = (
+      <button
+        type="button"
+        className="list-bulk-action"
+        disabled={busy}
+        aria-disabled={held === undefined ? undefined : true}
+        {...(held?.loading === true ? { 'aria-busy': true } : {})}
+        aria-haspopup="menu"
+        aria-expanded={open?.which === which}
+        onClick={(event) => {
+          if (held !== undefined) return;
+          setConfirming(false);
+          setOpen({ which, at: anchorOf(event.currentTarget) });
+        }}
+      >
+        {icon}
+        {text}
+      </button>
+    );
+    return held === undefined ? button : <Tooltip content={held.held}>{button}</Tooltip>;
+  };
 
   return (
     <div ref={bar} className="list-bulk" role="region" aria-label="Selected tasks">
@@ -342,16 +354,17 @@ export function BulkBar({
 
         <span className="list-bulk-sep" aria-hidden="true" />
 
-        <button
-          type="button"
-          className="list-bulk-clear"
-          aria-label="Clear selection"
-          title="Clear selection"
-          disabled={busy}
-          onClick={onClear}
-        >
-          ×
-        </button>
+        <Tooltip content="Clear selection">
+          <button
+            type="button"
+            className="list-bulk-clear"
+            aria-label="Clear selection"
+            disabled={busy}
+            onClick={onClear}
+          >
+            <Icon name="close" size="small" />
+          </button>
+        </Tooltip>
       </div>
 
       {run?.phase === 'running' && (

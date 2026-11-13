@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { dateInputToMs } from '../../api/date-only.ts';
 import { everyPage } from '../../api/every-page.ts';
 import type { MeProfile } from '../../api/me.ts';
-import { getProject } from '../../api/projects.ts';
+import { getProject, type Project } from '../../api/projects.ts';
 import { pickerChoices } from '../../api/selected-agent.ts';
 import { addTasksToSprint, listSprints, type Sprint } from '../../api/sprints.ts';
 import type { ProjectTag } from '../../api/tags.ts';
@@ -17,7 +17,11 @@ import type {
 } from '../../routes/screens/task/LazyRichEditor.tsx';
 import { useConfirm } from '../ConfirmProvider.tsx';
 import { Button } from '../forms/Button.tsx';
+import { IconButton } from '../forms/IconButton.tsx';
 import { useShell } from '../shell/shell-context.ts';
+import { InfoHint } from '../tooltip/InfoHint.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { spaceColor } from '../../theme/space-color.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
 import { CreateTaskFields } from './CreateTaskFields.tsx';
 import {
@@ -30,6 +34,7 @@ import {
   type CreateTaskDraft,
 } from './create-task-form.ts';
 import './create-task.css';
+import './create-task-hints.css';
 
 /** One step after the create that did not land, in two voices. */
 export interface FailedStep {
@@ -182,6 +187,8 @@ export function CreateTaskDialog({
   const agents = useMyAgents();
   const [sprints, setSprints] = useState<readonly Sprint[] | undefined>(undefined);
   const [agentsAllowed, setAgentsAllowed] = useState(true);
+  /** For the header's chip: the space's own colour and key (LAI-1209). */
+  const [project, setProject] = useState<Project | undefined>(undefined);
 
   // Where it goes when nothing is chosen: shown in the control before the
   // create, so the person can see it, rather than left to the server.
@@ -206,7 +213,9 @@ export function CreateTaskDialog({
       });
     getProject(slug, controller.signal)
       .then((project) => {
-        if (!controller.signal.aborted) setAgentsAllowed(project.agents_allowed);
+        if (controller.signal.aborted) return;
+        setAgentsAllowed(project.agents_allowed);
+        setProject(project);
       })
       .catch(() => {
         // Unknown is read as allowed; the server judges the pick on create.
@@ -345,6 +354,10 @@ export function CreateTaskDialog({
   };
 
   const canCreate = draft.title.trim() !== '' && !busy;
+  // Said beside the button, not left to a greyed shape (LAI-1209). Busy is
+  // its own state — the spinner says it — so it carries no reason.
+  const whyNot = !busy && draft.title.trim() === '' ? 'Add a title to create' : undefined;
+  const space = spaceName ?? project?.name;
 
   return createPortal(
     <>
@@ -378,22 +391,34 @@ export function CreateTaskDialog({
               <h2 className="ct-title" id={titleId}>
                 Create task
               </h2>
-              {spaceName !== undefined && (
+              {space !== undefined && (
                 <p className="ct-sub">
-                  in <span className="ct-space">{spaceName}</span>
+                  in{' '}
+                  <span className="ct-space-chip" data-space-chip>
+                    <span
+                      className="ct-space-mark"
+                      data-color={spaceColor({ slug, color: project?.color })}
+                      aria-hidden="true"
+                    >
+                      {(space.trim()[0] ?? slug[0] ?? '?').toUpperCase()}
+                    </span>
+                    <span className="ct-space">{space}</span>
+                    {project !== undefined && (
+                      <span className="ct-space-key">{project.prefix}</span>
+                    )}
+                  </span>
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              className="ct-close"
-              aria-label="Close"
+            <IconButton
+              icon="close"
+              label="Close"
+              shortcut="Escape"
+              size="sm"
               onClick={() => {
                 void requestClose();
               }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            />
           </header>
 
           <div className="ct-body">
@@ -429,18 +454,24 @@ export function CreateTaskDialog({
           </div>
 
           <footer className="ct-foot">
-            <label className="checkbox ct-another">
-              <input
-                type="checkbox"
-                className="checkbox-input"
-                checked={another}
-                disabled={busy}
-                onChange={(event) => {
-                  setAnother(event.target.checked);
-                }}
-              />
-              <span className="checkbox-label">Create another</span>
-            </label>
+            <span className="ct-another-wrap">
+              <label className="checkbox ct-another">
+                <input
+                  type="checkbox"
+                  className="checkbox-input"
+                  checked={another}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setAnother(event.target.checked);
+                  }}
+                />
+                <span className="checkbox-label">Create another</span>
+              </label>
+              <InfoHint label="About Create another">
+                Keeps this dialog open after Create, with the same status, priority, assignee and
+                sprint, so the next task starts where this one left off.
+              </InfoHint>
+            </span>
             <span className="ct-foot-actions">
               <Button
                 variant="secondary"
@@ -451,9 +482,11 @@ export function CreateTaskDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" busy={busy} disabled={!canCreate}>
-                Create
-              </Button>
+              <Tooltip content="Create" shortcut="Mod+Enter" side="top">
+                <Button type="submit" busy={busy} disabled={!canCreate} disabledReason={whyNot}>
+                  Create
+                </Button>
+              </Tooltip>
             </span>
           </footer>
         </form>

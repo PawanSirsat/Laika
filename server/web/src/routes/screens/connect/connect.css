@@ -737,7 +737,8 @@
   outline-offset: 2px;
 }
 
-.conn-rail-step:disabled {
+.conn-rail-step:disabled,
+.conn-rail-step[aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
 }

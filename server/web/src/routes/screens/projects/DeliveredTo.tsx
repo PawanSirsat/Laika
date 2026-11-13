@@ -7,6 +7,7 @@ import { listContextDeliveries, type ContextDelivery } from '../../../api/projec
 import { agentHarness, type RegisteredAgent } from '../../../api/agents.ts';
 import { agentDevice, twinNames } from '../../../api/selected-agent.ts';
 import { timeLabel } from '../../../api/time-label.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** The two reads: the sessions on the revision, and every session's latest. */
 type Which = 'on' | 'all';
@@ -211,9 +212,11 @@ export function DeliveredTo({ slug, revision, agents }: DeliveredToProps) {
           )}
         </span>
         <span className="ctx-delivery-meta">
-          <span className="ctx-delivery-session" title={d.session_id}>
-            session <code>{shortSession(d.session_id)}</code>
-          </span>
+          <Tooltip content={d.session_id}>
+            <span className="ctx-delivery-session">
+              session <code>{shortSession(d.session_id)}</code>
+            </span>
+          </Tooltip>
           {older && (
             <span className="ctx-delivery-has" data-delivery-has={d.revision}>
               has r{d.revision}
@@ -221,16 +224,17 @@ export function DeliveredTo({ slug, revision, agents }: DeliveredToProps) {
           )}
           <span>
             received{' '}
-            <time
-              className="ctx-delivery-when"
-              dateTime={when.iso}
-              title={when.full}
-              data-full={when.full}
-              tabIndex={0}
-              aria-label={`${when.text}, ${when.full}`}
-            >
-              {when.text}
-            </time>
+            <Tooltip content={when.full}>
+              <time
+                className="ctx-delivery-when"
+                dateTime={when.iso}
+                data-full={when.full}
+                tabIndex={0}
+                aria-label={`${when.text}, ${when.full}`}
+              >
+                {when.text}
+              </time>
+            </Tooltip>
           </span>
           {d.session_ended_at !== null && <span className="ctx-delivery-flag">session ended</span>}
         </span>

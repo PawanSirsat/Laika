@@ -4,6 +4,7 @@ import {
   noRecentSaveWords,
   type ExecutionState,
 } from './agent-states.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import './agent.css';
 
 export interface ExecutionStateLineProps {
@@ -48,28 +49,31 @@ export function ExecutionStateLine({
 }: ExecutionStateLineProps) {
   const words = EXECUTION_STATE_WORDS[state];
   const extra = hint?.className === undefined ? '' : ` ${hint.className}`;
+  // The meaning on hover and focus (LAI-1214: it was a bare title=), lazy —
+  // a board draws one of these on every card that has an agent.
   return (
-    <p
-      className={`exec-state exec-state-${variant}${extra}`}
-      data-exec-state={state}
-      id={hint?.id}
-      title={hint === undefined ? undefined : words.meaning}
-      onClick={hint?.onActivate}
-      // The drawer's line can change while it is open — Working to Connection
-      // lost on the reader's clock (LAI-597). A status is read out without
-      // taking the focus from whatever the reader is doing.
-      role={variant === 'panel' ? 'status' : undefined}
-    >
-      <StateShape state={state} />
-      <span className="exec-state-text">
-        <b className="exec-state-label">{words.label}</b>
-        {detail !== undefined && <span className="exec-state-detail"> · {detail}</span>}
-        {variant === 'panel' && <span className="exec-state-meaning">{words.meaning}</span>}
-        {variant === 'card' && hint !== undefined && (
-          <span className="visually-hidden">. {words.meaning}</span>
-        )}
-      </span>
-    </p>
+    <Tooltip content={hint === undefined ? '' : words.meaning} lazy>
+      <p
+        className={`exec-state exec-state-${variant}${extra}`}
+        data-exec-state={state}
+        id={hint?.id}
+        onClick={hint?.onActivate}
+        // The drawer's line can change while it is open — Working to Connection
+        // lost on the reader's clock (LAI-597). A status is read out without
+        // taking the focus from whatever the reader is doing.
+        role={variant === 'panel' ? 'status' : undefined}
+      >
+        <StateShape state={state} />
+        <span className="exec-state-text">
+          <b className="exec-state-label">{words.label}</b>
+          {detail !== undefined && <span className="exec-state-detail"> · {detail}</span>}
+          {variant === 'panel' && <span className="exec-state-meaning">{words.meaning}</span>}
+          {variant === 'card' && hint !== undefined && (
+            <span className="visually-hidden">. {words.meaning}</span>
+          )}
+        </span>
+      </p>
+    </Tooltip>
   );
 }
 

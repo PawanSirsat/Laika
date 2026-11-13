@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from 'react';
 import type { PersonInboxCounts } from '../../../api/handoffs.ts';
 import { HandoffsTab } from '../inbox/HandoffsTab.tsx';
 import { plainClick } from '../my-day/task-link.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /** Review's *All hand-offs* view — the whole Hand-offs tab, one link away. */
 export const ALL_HANDOFFS_HREF = '/inbox?tab=review&view=handoffs';
@@ -54,7 +55,8 @@ export function NeedsApprovalSection({
             onNavigate(ALL_HANDOFFS_HREF);
           }}
         >
-          All hand-offs →
+          All hand-offs
+          <Icon name="arrow-right" size="tiny" />
         </a>
       </header>
       <HandoffsTab

@@ -183,7 +183,8 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
 
       assert.equal(await copyWith(clip, button), h.origin);
       await button.and(h.page.locator('[data-outcome="copied"]')).waitFor({ timeout: 10_000 });
-      assert.equal(await button.innerText(), 'Copied ✓');
+      assert.equal((await button.innerText()).trim(), 'Copied');
+      assert.equal(await button.locator('svg').getAttribute('data-icon'), 'check');
     } finally {
       await clip.close();
       await h.close();
@@ -387,7 +388,7 @@ void describe('Copy inside a dialog, served over plain HTTP', () => {
     try {
       await assertInsecure(h);
       await h.page.locator('.card', { hasText: 'Org settings' }).first().click({ timeout: 20_000 });
-      const button = h.page.locator('.panel[aria-modal="true"]').getByRole('button', {
+      const button = h.page.locator('.drawer[aria-modal="true"]').getByRole('button', {
         name: 'Copy link to this task',
         exact: true,
       });
