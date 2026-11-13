@@ -373,6 +373,9 @@ const projectBudgets = (canSet: boolean) => ({
 });
 
 const BASE: ApiStub = {
+  // The Tokens figure's previous period (LAI-1216): twice the range, any scope.
+  '/api/v1/usage?days=14': orgUsage(14),
+  '/api/v1/usage?days=60': orgUsage(60),
   '/api/v1/projects': { data: [LAIKA, ONROUTE], next_cursor: null },
   '/api/v1/me/plan-limit': planLimit(),
   '/api/v1/projects/laika/budgets': projectBudgets(false),

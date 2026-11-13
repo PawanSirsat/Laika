@@ -17,6 +17,11 @@ export interface BarRow {
   readonly cacheRead: number;
   /** A muted line under the figure — a share, a count. */
   readonly note?: string | undefined;
+  /**
+   * The bar's paint when the row is a thing with a colour of its own — a
+   * space (LAI-1216); the accent otherwise.
+   */
+  readonly color?: string | undefined;
 }
 
 /**
@@ -40,7 +45,11 @@ export function BarRows({
           <span className="usage-row-track" aria-hidden="true">
             <span
               className="usage-row-bar"
-              style={{ width: `${String(barHeight(row.tokens, max))}%` }}
+              data-series={row.color === undefined ? undefined : row.key}
+              style={{
+                width: `${String(barHeight(row.tokens, max))}%`,
+                ...(row.color === undefined ? {} : { background: row.color }),
+              }}
             />
           </span>
           <Tooltip

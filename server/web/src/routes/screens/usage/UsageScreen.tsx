@@ -34,8 +34,12 @@ import { PlanLimitCard } from './PlanLimitCard.tsx';
 import { Columns, dayPoints } from './Columns.tsx';
 import {
   axisDays,
+  compareDays,
   dayLabel,
   DEFAULT_RANGE,
+  periodChange,
+  previousTokens,
+  type PeriodChange,
   offeredSpaces,
   scopeFor,
   scopeOptions,
@@ -116,6 +120,9 @@ export function UsageScreen({
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   // A budget a lead set moves the figures: read the page again, in place.
   const [asked, setAsked] = useState(0);
+  // The period before this one (LAI-1216), from a read of twice the range;
+  // keyed, so a figure never sits beside another period's comparison.
+  const [previous, setPrevious] = useState<{ readonly key: string; readonly tokens?: number }>();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -191,6 +198,35 @@ export function UsageScreen({
       controller.abort();
     };
   }, [scope, range, asked]);
+
+  // Not-yet-known and All spaces (`''`) must differ, or the read never starts.
+  const compareKey = `${scope === undefined ? '?' : `=${scope}`}|${String(range)}|${String(asked)}`;
+  useEffect(() => {
+    const days = compareDays(range);
+    if (scope === undefined || days === undefined) return;
+    const controller = new AbortController();
+    getUsage(
+      { days, tz: readerZone(), ...(scope === '' ? {} : { project: scope }) },
+      controller.signal,
+    ).then(
+      (wide) => {
+        if (controller.signal.aborted) return;
+        const tokens = previousTokens(wide.trend, range);
+        setPrevious(tokens === undefined ? { key: compareKey } : { key: compareKey, tokens });
+      },
+      () => {
+        // No comparison is drawn; the page itself never waits on this read.
+        if (!controller.signal.aborted) setPrevious({ key: compareKey });
+      },
+    );
+    return () => {
+      controller.abort();
+    };
+  }, [compareKey]);
+  const change =
+    load.kind === 'ready' && previous?.key === compareKey
+      ? periodChange(load.usage.totals.tokens, previous.tokens, range)
+      : undefined;
 
   const [about, setAbout] = useState(false);
   const scopeName = options.find((o) => o.value === scope)?.label;
@@ -286,6 +322,7 @@ export function UsageScreen({
         ) : (
           <UsageBody
             usage={load.usage}
+            change={change}
             offered={offered}
             alertsCard={alertsCard}
             onNavigate={onNavigate}
@@ -327,6 +364,7 @@ export function UsageScreen({
 
 function UsageBody({
   usage,
+  change,
   offered,
   alertsCard,
   onNavigate,
@@ -334,6 +372,8 @@ function UsageBody({
   onAllSpaces,
 }: {
   readonly usage: Usage;
+  /** Tokens against the period before, when one read could carry it (LAI-1216). */
+  readonly change?: PeriodChange | undefined;
   /** The spaces the selector offers; `null` with no list. */
   readonly offered: ReadonlySet<string> | null;
   /** The reader's own Budget alerts card, drawn beside Top tasks. */
@@ -382,6 +422,12 @@ function UsageBody({
                 ? 'at least · input, output, cache writes'
                 : 'at least · tied to this space’s tasks'}
             </dd>
+            {change !== undefined && (
+              <dd className="usage-stat-change" data-change={change.direction}>
+                <span aria-hidden="true">{change.text}</span>
+                <span className="visually-hidden">{change.spoken}</span>
+              </dd>
+            )}
           </div>
         </Tooltip>
         <Tooltip content={`${exactTokens(totals.cache_read)} cache reads`}>
@@ -542,15 +588,24 @@ function UsageDetail({
     const section = sectionOfHash(window.location.hash);
     if (section !== undefined) openSection(section);
   }, []);
+  // Nothing at all in the range (LAI-1216): say so once, keep what can still
+  // be acted on — alerts and budgets — and draw no chart of zeros.
+  if (nothing) {
+    return (
+      <>
+        <div data-state="usage-empty">
+          <EmptyState
+            headline="No token usage in this range"
+            body="With Developer insights on, tokens arrive from every connected machine (laika activity on) at its next sync."
+          />
+        </div>
+        {alertsCard}
+        <BudgetsCard budgets={usage.budgets} space={usage.project} onChanged={onChanged} />
+      </>
+    );
+  }
   return (
     <>
-      {nothing && (
-        <EmptyState
-          headline="No token usage in this range"
-          body="With Developer insights on, tokens arrive from every connected machine (laika activity on) at its next sync."
-        />
-      )}
-
       <section
         className="prof-card usage-card"
         data-section="trend"

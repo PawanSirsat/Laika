@@ -41,6 +41,7 @@ import {
   wholeWeeks,
   WITHHELD,
 } from '../../../src/components/time-report/time-report-derive.ts';
+import { spaceSeries } from '../../../src/theme/avatar-color.ts';
 
 const kindName = (k: EntryKind): string => k.toUpperCase();
 
@@ -334,7 +335,30 @@ void describe('grouping on the client', () => {
     assert.equal(up[0]?.face.label, 'Space 0', 'not the least first');
     assert.equal(up[0]?.other, true, 'the smallest took a named colour');
     assert.equal(up.at(-1)?.other, false, 'the largest folded into Other');
-    assert.equal(up.at(-1)?.color, 'var(--accent)');
+    // A space keeps its own hue (LAI-1216), wherever the sort puts it.
+    assert.equal(up.at(-1)?.color, spaceSeries('s6'));
+  });
+
+  void test('a space keeps its badge’s hue; two that share one, the smaller takes a slot (LAI-1216)', () => {
+    // Two slugs the palette paints alike, found rather than assumed.
+    const slugs = Array.from({ length: 64 }, (_, i) => `space-${String(i)}`);
+    const first = slugs[0] ?? '';
+    const twin = slugs.find((x) => x !== first && spaceSeries(x) === spaceSeries(first));
+    assert.ok(twin !== undefined, 'no two slugs shared a colour');
+    const pair = [first, twin].map((slug, i) =>
+      row({
+        project: { id: slug, slug, name: slug },
+        confirmed_minutes: (2 - i) * 60,
+        drafted_minutes: 0,
+      }),
+    );
+    const g = groupRows(pair, 'space', 'none', false, kindName);
+    assert.equal(g[0]?.color, spaceSeries(first));
+    assert.equal(g[1]?.color, 'var(--accent)', 'the smaller twin took the first slot');
+    assert.match(
+      spaceSeries(first),
+      /^color-mix\(in srgb, hsl\(\d+ 62% \d+%\) 72%, var\(--text-primary\)\)$/,
+    );
   });
 
   void test('names sort as they read: LAI-9 before LAI-10', () => {
@@ -426,7 +450,7 @@ void describe('grouping on the client', () => {
       ['Atlas', 'Beacon', 'No space'],
     );
     assert.equal(g.at(-1)?.color, NONE_COLOR);
-    assert.equal(g[0]?.color, 'var(--accent)');
+    assert.equal(g[0]?.color, spaceSeries(g[0]?.face.space?.slug ?? ''));
     assert.equal(childCount('task', g[0]?.children.length ?? 0), '2 tasks');
   });
 
@@ -481,7 +505,11 @@ void describe('grouping on the client', () => {
     assert.equal(Math.round(slices.at(-1)?.end ?? 0), 100);
     const bg = donutBackground(slices, 's0');
     assert.match(bg, /^conic-gradient\(/);
-    assert.match(bg, /color-mix\(in srgb, var\(--chip-blue\) 26%/);
+    // The others dimmed toward the card, each its own space's hue (LAI-1216).
+    assert.ok(
+      bg.includes(`color-mix(in srgb, ${slices[1]?.color ?? '?'} 26%, var(--bg-card))`),
+      bg,
+    );
     assert.doesNotMatch(bg, /#[0-9a-f]{3,6}/i, 'tokens only');
     assert.equal(donutBackground([]), 'var(--bg-column)');
   });
