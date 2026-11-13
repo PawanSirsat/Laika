@@ -1043,8 +1043,21 @@ void describe('no mockup data (2)', () => {
       const html = await (await fetch(`${h.origin}/`)).text();
       const scripts = [...html.matchAll(/src="([^"]+\.js)"/g)].map((m) => m[1] ?? '');
       assert.ok(scripts.length > 0, 'no script in the built page');
+      // The whole bundle, not only the entry: since LAI-1219 every screen is a
+      // chunk the entry names (`./X.js`, `assets/X.js`), so follow the names.
+      const seen = new Set<string>();
       let bundle = '';
-      for (const src of scripts) bundle += await (await fetch(`${h.origin}${src}`)).text();
+      while (scripts.length > 0) {
+        const src = scripts.pop() ?? '';
+        if (seen.has(src)) continue;
+        seen.add(src);
+        const text = await (await fetch(`${h.origin}${src}`)).text();
+        bundle += text;
+        for (const m of text.matchAll(/(?:\.\/|assets\/)([\w-]+\.js)\b/g)) {
+          scripts.push(`/assets/${m[1] ?? ''}`);
+        }
+      }
+      assert.ok(seen.size > 10, `followed only ${String(seen.size)} scripts`);
       // The positive control: My day's own words are in it, so the search ran.
       assert.ok(bundle.includes('Drafts: you, owners and admins'), 'My day is not in this bundle');
       assert.deepEqual(
