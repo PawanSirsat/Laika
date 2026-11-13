@@ -807,6 +807,65 @@ void describe('HR system: connected', () => {
   });
 });
 
+void describe('HR system: a sync under an unsaved pick', () => {
+  void test('a pick for a person the sync then matches by email goes with the row: no Save, no PUT', async () => {
+    const puts: StubCall[] = [];
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/hr': connected(),
+        '/api/v1/org/hr/sync': () =>
+          connected({
+            last_attempt_at: Date.now(),
+            last_success_at: Date.now(),
+            people: [
+              PEOPLE[0],
+              {
+                ...PEOPLE[1],
+                user: { id: 'u4', name: 'Katherine Johnson' },
+                matched_by: 'email',
+              },
+              PEOPLE[2],
+              PEOPLE[3],
+            ],
+          }),
+        '/api/v1/org/hr/people': (call: StubCall) => {
+          puts.push(call);
+          return connected();
+        },
+      }),
+      '[data-hr-people]',
+    );
+    try {
+      const card = hrCard(h);
+      const people = card.locator('[data-hr-people]');
+      const save = people.getByRole('button', { name: 'Save people' });
+      await people.getByRole('combobox', { name: 'Laika member for Grace Clan' }).click();
+      await h.page.getByRole('option', { name: /^Grace Hopper/ }).click();
+      await until(async () => !(await save.isDisabled()));
+      assert.equal(await save.isDisabled(), false, 'the pick is a change to save');
+
+      await card.getByRole('button', { name: 'Sync now' }).click();
+      await until(async () => (await people.locator('[data-hr-person="c2"]').count()) === 0);
+      assert.equal(await people.locator('[data-hr-person="c2"]').count(), 0, 'Grace left the form');
+      await until(async () => await save.isDisabled());
+      assert.equal(await save.isDisabled(), true, 'nothing on screen changed, so nothing to save');
+
+      // Katherine is Grace's by email now: offered to another row, not greyed by the old pick.
+      await people.getByRole('combobox', { name: 'Laika member for Linus Clan' }).click();
+      const katherine = h.page.getByRole('option', { name: /^Katherine Johnson/ });
+      await katherine.waitFor();
+      assert.match(await katherine.innerText(), /matched by email to Grace Clan/);
+      assert.equal(await katherine.getAttribute('aria-disabled'), null);
+      const hopper = h.page.getByRole('option', { name: /^Grace Hopper/ });
+      assert.doesNotMatch(await hopper.innerText(), /matched/);
+      await h.page.keyboard.press('Escape');
+      assert.equal(puts.length, 0, 'a PUT was sent');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('Holidays', () => {
   void test('a member reads this year and next, tagged, and is shown no HR system', async () => {
     const h = await organisation(orgStub('member', { '/api/v1/org/hr': connected() }));
@@ -951,6 +1010,8 @@ void describe('both themes, 1440 and 390', () => {
    * the card, and the card against the viewport, is what sees it.
    */
   async function fits(h: Harness, root: string): Promise<void> {
+    // A selector that resolves to nothing would pass every check below vacuously.
+    assert.ok((await h.page.locator(root).count()) > 0, `${root} absent`);
     for (const theme of ['Light', 'Dark']) {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       await setTheme(h.page, theme);

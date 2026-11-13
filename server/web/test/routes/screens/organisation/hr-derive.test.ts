@@ -21,6 +21,7 @@ import {
   mappingChanges,
   NOT_ON_LAIKA,
   peopleToReview,
+  pruneChoices,
   heldBy,
   twoFactorMethodName,
   twoFactorWords,
@@ -236,6 +237,30 @@ void describe('the people an owner maps', () => {
     assert.deepEqual(mappingChanges(people, { '3': NOT_ON_LAIKA, '2': '' }), [
       { external_id: '3', user_id: null },
     ]);
+  });
+
+  void test('a pick left for a person a sync then matched by email is never sent, nor counted', () => {
+    // Grace was picked as u2 here, unsaved; the sync then matched her to u4 by email.
+    const matched = person('2', 'Grace Clan', 'email', { id: 'u4', name: 'Katherine' });
+    const now = [
+      person('1', 'Ada Clan', 'email', { id: 'u1', name: 'Ada' }),
+      matched,
+      linus,
+      contractor,
+    ];
+    const stale = { '2': 'u2' };
+    assert.deepEqual(mappingChanges(now, stale), []);
+    // Seen from Linus's row: Grace holds u4 by email, as the server says — not u2, locked.
+    assert.deepEqual(heldBy(now, stale, '3').get('u4'), { name: 'Grace Clan', locked: false });
+    assert.equal(heldBy(now, stale, '3').has('u2'), false);
+    // And the pick goes when the view arrives; one still shown stays.
+    assert.deepEqual(pruneChoices(now, { '2': 'u2', '4': 'u5' }), { '4': 'u5' });
+  });
+
+  void test('pruning keeps the same object when nothing goes', () => {
+    const choices = { '2': 'u2' };
+    assert.equal(pruneChoices(people, choices), choices);
+    assert.deepEqual(pruneChoices([], choices), {});
   });
 
   void test('who holds each member: an owner’s word and this form’s choices lock, email does not', () => {

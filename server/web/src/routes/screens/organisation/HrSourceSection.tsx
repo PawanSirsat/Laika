@@ -28,6 +28,7 @@ import {
   mappingChanges,
   NOT_ON_LAIKA,
   peopleToReview,
+  pruneChoices,
   twoFactorMethodName,
   twoFactorWords,
 } from './hr-derive.ts';
@@ -118,6 +119,12 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
       }, MINUTE),
     [],
   );
+
+  // A sync, a save or another owner can take a row off the form; a pick left
+  // for it would be invisible, so it goes with the row (LAI-1182 review).
+  useEffect(() => {
+    setChoices((current) => pruneChoices(view?.people ?? [], current));
+  }, [view]);
 
   const review = useMemo(() => peopleToReview(view?.people ?? []), [view]);
   const changes = useMemo(() => mappingChanges(view?.people ?? [], choices), [view, choices]);
