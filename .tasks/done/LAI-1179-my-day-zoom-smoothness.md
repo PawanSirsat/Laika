@@ -5,9 +5,10 @@ area: web+server
 assignee: chief
 priority: p1
 depends-on: [LAI-1174]
-status: review
+status: done
 started: 2026-11-13T12:10:00Z
 finished: 2026-11-13T15:30:00Z
+accepted: 2026-11-13T10:20:00Z
 ---
 
 ## Goal
