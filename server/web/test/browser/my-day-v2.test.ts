@@ -1201,7 +1201,8 @@ void describe('a phone, and both themes (I)', () => {
             assert.ok(gapShows(text, said[1]), `${name}: shows "${text}"`);
           }
           for (const [name = '', text = ''] of drawn.blocks) {
-            const said = /^(.+?), .*, ([^,]+)$/.exec(name);
+            // The state leads the name (LAI-1215): draft or confirmed, then the range.
+            const said = /^(?:Draft(?:, no task yet)?|Confirmed), (.+?), .*, ([^,]+)$/.exec(name);
             assert.ok(said?.[1] !== undefined && said[2] !== undefined, `a block named "${name}"`);
             assert.ok(subForms(said[1], said[2]).includes(text), `${name}: shows "${text}"`);
           }

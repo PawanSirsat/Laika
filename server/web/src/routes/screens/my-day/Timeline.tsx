@@ -1848,7 +1848,14 @@ export function Timeline({
                           className="dayline-block-body"
                           data-block-select={block.id}
                           aria-pressed={selected}
-                          aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
+                          // Its state first, so a screen reader hears draft from confirmed as the eye sees it (LAI-1215).
+                          aria-label={`${
+                            block.kind === 'drafted'
+                              ? block.needsCard
+                                ? 'Draft, no task yet'
+                                : 'Draft'
+                              : 'Confirmed'
+                          }, ${range}, ${top}, ${duration(shape.minutes)}`}
                           onClick={() => {
                             // A drag that just ended is not a click.
                             if (suppressClick.current) {
