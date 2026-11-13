@@ -132,7 +132,7 @@ organisation's grants for exactly these actions and no others.
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
 | *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
-| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149) |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
