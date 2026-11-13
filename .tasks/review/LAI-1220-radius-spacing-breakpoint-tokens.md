@@ -51,7 +51,7 @@ red on a new raw literal.
       `.polly/screenshots/lai-1220/` (outside the repo), compared; existing
       golden and screenshot tests still pass.
 - [x] No new dependency; `theme.css` colours untouched; both themes.
-- [x] Root gates `pnpm test`, `pnpm lint`, `pnpm format` each exit 0, run
+- [ ] Root gates `pnpm test`, `pnpm lint`, `pnpm format` each exit 0, run
       once after the last edit.
 
 ## Builder notes (SHELL, LAI-1220)
@@ -61,7 +61,11 @@ red on a new raw literal.
 - Breakpoints: 30rem/37.5rem/40rem/64rem/80rem were collapsed onto
   480/600/640/1024/1280px. They are equal only at the browser's default font
   size, because `rem` in `@media` follows the browser default, not the root.
-- Gate results and their exit codes are in
-  logs/shell-2026-11-13-LAI-1220.md. The cli workspace's failures are load
+- **The gate criterion is unticked on purpose.** `pnpm lint` and `pnpm format`
+  exit 0. `pnpm test`, run workspace by workspace after the last code edit
+  at df6b8015, exited 1 in all three workspaces. Every failure is on the
+  known-flake list or is load-related, and passed when re-run alone, except
+  host-restart, which fails alone as well and is unrelated (server/
+  untouched). Full table in logs/shell-2026-11-13-LAI-1220.md. The cli workspace's failures are load
   failures (fetch failed, ECONNRESET, missed timing budgets); this branch
   changes nothing under cli/ or server/src/.
