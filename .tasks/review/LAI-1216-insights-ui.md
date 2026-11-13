@@ -77,3 +77,11 @@ strict CSP.
   `usage-derive.test.ts`. Mutations, one per behaviour, each went red: the
   address write, the comparison, the Usage space colour, the Usage empty
   return, the Capacity toolbar guard, the phone caption wrap.
+- Gate results (2026-11-13, after the last code edit): `pnpm lint` 0,
+  `pnpm format` 0, `pnpm typecheck` 0, web shards 1/4 0, 3/4 0, 4/4 0,
+  server `structure` + `task-file-state` 0. **Two known flakes stayed red
+  when re-run alone, and are base failures, not this branch's**: web shard 2/4
+  exits 1 only on `harness-theme.test.ts` (fails the same way with the base's
+  `server/web/src` + `test` checked out), and server `pnpm run test` exits 1
+  only on `host-restart.test.ts` (5 s timeouts; this branch's diff from
+  d3efaf7d outside `server/web/` is empty). Details in the log.
