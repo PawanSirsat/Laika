@@ -2,10 +2,11 @@
 id: LAI-1178
 title: 'Space Calendar: any month, an overdue lane, one-height days, sprint bands, filters and drag to reschedule'
 area: shell
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-13T05:00:00Z
 ---
 
 ## Goal
