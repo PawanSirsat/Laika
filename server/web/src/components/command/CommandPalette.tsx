@@ -6,6 +6,8 @@ import { everyPage } from '../../api/every-page.ts';
 import { listAllTasks, type TaskSummary } from '../../api/tasks.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
+import { CREATE_SPACE_HREF } from '../../routes/nav-url.ts';
+import { useCreateTask } from '../create-task/use-create-task.ts';
 import { toggledTheme } from '../../theme/theme.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useShell } from '../shell/shell-context.ts';
@@ -180,11 +182,11 @@ export function CommandPalette() {
     signOut,
     signingOut,
     spaceName,
-    spaceId,
   } = useShell();
   const projectSlug = params.get('project') ?? undefined;
   const { permissions } = usePermissions(true);
   const gates = useGates(true);
+  const createTask = useCreateTask();
   const { all: spaces } = useSpaces(true, projectSlug);
   const { theme, setPreference, darkVariant } = useTheme();
 
@@ -262,19 +264,29 @@ export function CommandPalette() {
 
   const actions = useMemo((): readonly (PaletteItem & { readonly run: () => void })[] => {
     const rows: (PaletteItem & { readonly run: () => void })[] = [];
-    // Only where the space bar would draw Create: this space's `task.create`.
-    if (
-      projectSlug !== undefined &&
-      spaceId !== undefined &&
-      gates.project(spaceId, 'task.create')
-    ) {
+    // The app's one Create task dialog (LAI-1227), on any screen, exactly
+    // when the header's + Create is available: the dialog's Space field
+    // starts on this space when the reader may create here.
+    if (createTask.mayCreate) {
       rows.push({
         id: 'action:create-task',
         label: 'Create task',
-        hint: spaceName,
+        hint: createTask.mayCreateHere ? spaceName : undefined,
         keywords: ['new', 'add', 'task'],
         run: () => {
-          navigate(`/board?project=${encodeURIComponent(projectSlug)}&new=task`);
+          createTask.open();
+        },
+      });
+    }
+    // Creating a space is not a Create menu any more (LAI-1227): it is here
+    // and on the Spaces page, for whoever the server lets.
+    if (gates.org('project.create')) {
+      rows.push({
+        id: 'action:create-space',
+        label: 'Create space',
+        keywords: ['new', 'add', 'space', 'project'],
+        run: () => {
+          navigate(CREATE_SPACE_HREF);
         },
       });
     }
@@ -306,8 +318,7 @@ export function CommandPalette() {
     }
     return filterItems(rows, query) as typeof rows;
   }, [
-    projectSlug,
-    spaceId,
+    createTask,
     spaceName,
     gates,
     theme,

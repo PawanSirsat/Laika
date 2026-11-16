@@ -48,6 +48,14 @@
  * so the agent logos' gradient ids moved in the two picker scenarios. Only
  * those two `html_sha256` values changed; every accessibility tree and every
  * style digest stayed byte-for-byte the same.
+ *
+ * And a fifth time, for the instrument (LAI-1227): with the top bar's controls
+ * mounting as `/me` and `/permissions` land, the number of `useId`s taken
+ * before the page stopped being fixed, and the two pickers' markup digest
+ * changed from run to run. `normalise` now maps React 19's `_r_…_` ids as it
+ * mapped React 18's, which ends that whole class (the third, fourth and this
+ * regeneration were all it). Before regenerating, the failing runs differed
+ * in `html_sha256` alone — every accessibility tree and style digest matched.
  */
 
 import assert from 'node:assert/strict';
@@ -263,7 +271,11 @@ function normalise(text: string, origin: string): string {
   return text
     .split(origin)
     .join('ORIGIN')
-    .replace(/«[^»]+»|:r[0-9a-z]+:/g, (id) => {
+    // React 18 spelled `useId`s `:r1:` (and `«r1»`); React 19 spells them
+    // `_r_1_`, and the shared Tooltip names its box `tip-r1` from one — both
+    // mapped since LAI-1227, so a golden no longer depends on how many ids
+    // the shell happened to take before the page.
+    .replace(/«[^»]+»|:r[0-9a-z]+:|_r_[0-9a-z]+_|\btip-r[0-9a-z]+\b/g, (id) => {
       const seen = ids.get(id);
       if (seen !== undefined) return seen;
       const named = `«id${String(ids.size)}»`;

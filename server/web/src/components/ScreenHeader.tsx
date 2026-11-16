@@ -1,7 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import './screen-header.css';
-import { HeaderSlotFallback, HeaderTitle, usePageTitleClaim } from './shell/HeaderSlot.tsx';
 
 export interface ScreenHeaderProps {
   /** `Board`, `Timeline`, `Sprints` — the screen's own name. */
@@ -97,10 +96,8 @@ export function ScreenHeader({
   trail,
 }: ScreenHeaderProps) {
   const embed = useContext(EmbedContext);
-  // The title rule (LAI-1221): this header's `h1` names the page, so the app
-  // header's breadcrumb stops short of it. An embedded band draws no `h1`,
-  // and the crumbs variant hands its title up to the header instead.
-  usePageTitleClaim(variant !== 'crumbs' && !(embed !== undefined && variant === 'band'), title);
+  // The title rule (LAI-1227): the top bar names no page; this header's `h1`
+  // is where the page names itself, once.
 
   if (embed !== undefined && variant === 'band') {
     return (
@@ -120,9 +117,9 @@ export function ScreenHeader({
 
   if (variant === 'crumbs') {
     /*
-     * The breadcrumb is the app header's title (LAI-1188): one place says
-     * where the reader is on every screen, so the page keeps only its context
-     * line. Outside the shell it stays in the page, as it was.
+     * The breadcrumb is the page's (LAI-1227): the top bar is Jira's and names
+     * no page, so a member's profile says where it sits — *People / <name>* —
+     * above its context line, as a space says *Spaces /* above its name.
      */
     const crumbs = (
       <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
@@ -133,13 +130,10 @@ export function ScreenHeader({
       </nav>
     );
     return (
-      <>
-        <HeaderTitle fallback={null}>{crumbs}</HeaderTitle>
-        <header className="screen-crumbs">
-          <HeaderSlotFallback>{crumbs}</HeaderSlotFallback>
-          {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
-        </header>
-      </>
+      <header className="screen-crumbs">
+        {crumbs}
+        {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
+      </header>
     );
   }
 

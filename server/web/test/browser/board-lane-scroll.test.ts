@@ -887,9 +887,20 @@ void describe('where the board row sits (LAI-293, LAI-1198)', () => {
       const m = await h.page.evaluate(() => {
         const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
         const bar = box('.board-bar .bt');
-        // The row ends where Create begins since LAI-1198; the toolbar's
-        // last control — Create — is what ends where the columns end.
-        const end = box('.space-toolbar .space-create');
+        // The toolbar's last drawn control is what ends where the columns
+        // end — Create from LAI-1198, the board's own controls since LAI-1227
+        // took Create to the top bar.
+        const drawn = [...document.querySelectorAll('.space-toolbar *')].filter(
+          (el) => el.getClientRects().length > 0 && el.getBoundingClientRect().width > 0,
+        );
+        const end =
+          drawn.length === 0
+            ? null
+            : drawn
+                .reduce((a, b) =>
+                  b.getBoundingClientRect().right > a.getBoundingClientRect().right ? b : a,
+                )
+                .getBoundingClientRect();
         const main = box('.board-main');
         return bar === null || end === null || main === null
           ? null

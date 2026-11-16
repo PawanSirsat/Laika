@@ -1,6 +1,7 @@
 /*
- * The header's own actions (LAI-1221): the bell and its popover, + Create and
- * its menu, the keyboard-shortcuts button, and the shortcuts sheet. Every value
+ * The top bar's own controls (LAI-1221, LAI-1227): + Create, the bell and its
+ * popover, the keyboard-shortcuts button and its sheet, the settings menu and
+ * the person menu. Every value
  * is a token. Loaded with the header, not with the lazy popover or sheet: a
  * lazy chunk brings no CSS of its own (bundle-budget.test.ts).
  */
@@ -104,6 +105,144 @@
 
 .hdr-create:active {
   filter: brightness(0.95);
+}
+
+/* Unavailable, it keeps its place and says why in its tooltip (LAI-1227). */
+.hdr-create[aria-disabled='true'] {
+  border-color: var(--border-default);
+  background: var(--bg-pill);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* ── The person (LAI-1227): the avatar, and the menu that drops from it ── */
+
+.user-menu-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+}
+
+.user-menu-trigger:hover,
+.user-menu-trigger-open {
+  background: var(--bg-card-hover);
+}
+
+.user-menu-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sidebar-user-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.user-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: var(--layer-popover);
+  display: flex;
+  flex-direction: column;
+  width: 16rem;
+  box-sizing: border-box;
+  padding: var(--space-1-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-popover);
+  transform-origin: top right;
+  animation: hdr-pop var(--duration-fast) var(--ease-enter);
+}
+
+.user-menu-who {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2-5) var(--space-2-5);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.user-menu-name {
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.user-menu-email {
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.125rem;
+  padding: 0 var(--space-2-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.user-menu-item:hover,
+.user-menu-item:focus-visible {
+  background: var(--bg-column);
+}
+
+.user-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.user-menu-glyph {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.user-menu-rule {
+  height: 1px;
+  margin: var(--space-1) var(--space-1-5);
+  background: var(--border-subtle);
+}
+
+.user-menu-signout {
+  color: var(--priority-high);
+}
+
+.user-menu-signout:disabled {
+  cursor: default;
+  color: var(--text-muted);
 }
 
 /* ── Popovers: the notifications and the Create menu ──────────────────── */
@@ -449,12 +588,13 @@
 }
 
 /*
- * A phone: the bar keeps the bell. Create is the space's own button and the
- * palette's *Create task*; keyboard shortcuts need a keyboard. The popover
- * spans the window under the bar.
+ * A phone (LAI-1227): the bar keeps Create (its plus), the bell and the
+ * person. Keyboard shortcuts need a keyboard; the settings fold into the
+ * person's menu (Appearance, Developer access) and the sidebar
+ * (Organisation). The popovers span the window under the bar.
  */
 @media (max-width: 600px) {
-  .hdr-anchor-create,
+  .hdr-anchor-settings,
   .hdr-help {
     display: none;
   }
@@ -463,7 +603,8 @@
     position: static;
   }
 
-  .hdr-notifications {
+  .hdr-notifications,
+  .user-menu {
     position: fixed;
     top: calc(var(--app-head-height) + var(--space-1));
     left: var(--space-2);

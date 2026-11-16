@@ -101,7 +101,7 @@ async function createTask(
 ): Promise<Harness> {
   const h = await board(width, height, extra);
   try {
-    await h.page.locator('.space-create').click();
+    await h.page.locator('[data-header-create]').click();
     await h.page.locator(DIALOG).waitFor({ timeout: 5_000 });
     await h.page.locator(`${DIALOG} .rte-toolbar`).first().waitFor({ timeout: 10_000 });
   } catch (cause) {
@@ -400,7 +400,7 @@ function rows(toolbar: Locator): Promise<number[]> {
 }
 
 void describe('the worst case (LAI-1209, break-ui)', () => {
-  void test('a very long space name is cut in the header at 390; its colour and key stay', async () => {
+  void test('a very long space name is cut in the Space field at 390; its colour and key stay', async () => {
     const name =
       'The Extraordinarily Long Space Name That Nobody Would Choose But Somebody Did Anyway 2026';
     const long = { ...CORE, name };
@@ -411,7 +411,8 @@ void describe('the worst case (LAI-1209, break-ui)', () => {
     try {
       const chip = h.page.locator(`${DIALOG} [data-space-chip]`);
       await chip.locator('.ct-space-key').waitFor({ timeout: 5_000 });
-      const fit = await h.page.locator(`${DIALOG} .ct-head`).evaluate((head) => {
+      // The Space field's trigger (LAI-1227; the header's chip until then).
+      const fit = await h.page.locator(`${DIALOG} .ct-space-field`).evaluate((head) => {
         const key = head.querySelector('.ct-space-key')?.getBoundingClientRect();
         const mark = head.querySelector('.ct-space-mark')?.getBoundingClientRect();
         const words = head.querySelector('.ct-space');

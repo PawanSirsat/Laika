@@ -24,6 +24,8 @@ export interface Space {
   readonly key: string;
   /** `34 tasks · 4 members`, from counts the project list already carries. */
   readonly meta: string;
+  /** The colour the space stores, if any (`spaceColor` derives one otherwise). */
+  readonly color?: string | null | undefined;
 }
 
 /**
@@ -60,6 +62,7 @@ export function toSpace(project: Project): Space {
     name: project.name,
     key: spaceKey(project),
     meta: spaceMeta(project),
+    color: project.color,
   };
 }
 

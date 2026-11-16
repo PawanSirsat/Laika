@@ -43,9 +43,10 @@ interface Migrated {
 }
 
 const MIGRATED: Readonly<Record<string, Migrated>> = {
-  'components/sidebar/SidebarFooter.tsx': {
+  // The sidebar's foot until LAI-1227, the top bar's person since.
+  'components/shell/PersonMenu.tsx': {
     exceptions: 1,
-    why: 'the user-menu trigger: an avatar, a name and a role in one control, the menu-button pattern',
+    why: 'the user-menu trigger: the avatar, round, as the person’s menu button (the menu-button pattern)',
   },
   'components/OffboardingDialog.tsx': { exceptions: 0, why: '' },
   'components/ConfirmDialog.tsx': { exceptions: 0, why: '' },

@@ -823,10 +823,11 @@ void describe('the group is in the toolbar row in every tier (LAI-727 review)', 
 void describe('the pill (LAI-727 review)', () => {
   for (const theme of ['Light', 'Dark']) {
     void test(`${theme}: one figure in the row; BLK and LEFT on hover, focus and click`, async () => {
-      // **670, not 920** (LAI-1198): the board's row lost four icons to the
-      // labelled ⋯ menu, so at 920 the group now has room to stay full. 670
-      // is inside the pill's band with this fixture (the boundary test below
-      // finds the band rather than assuming it). Theme is set at 1440, where
+      // **440, not 670** (LAI-1227): + Create left the row for the top bar,
+      // so the group keeps its compact tier down to about 460px with this
+      // fixture; 440 is inside the pill's band (the boundary test below finds
+      // the band rather than assuming it). It was 920 until LAI-1198 moved
+      // four icons into the labelled ⋯ menu. Theme is set at 1440, where
       // the rail and its theme control are on-canvas.
       const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS, {
         before: async (page) => page.setViewportSize({ width: 1440, height: 768 }),
@@ -834,15 +835,16 @@ void describe('the pill (LAI-727 review)', () => {
       try {
         await reads(h, `S2 ${summary('s2')}`);
         await setTheme(h.page, theme);
-        await h.page.setViewportSize({ width: 670, height: 768 });
-        await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
+        await h.page.setViewportSize({ width: 440, height: 768 });
+        // Attached, not visible: under 640px the row folds the faces away.
+        await h.page.locator('.bt-member').first().waitFor({ state: 'attached', timeout: 10_000 });
         await settled(h);
 
         const pill = h.page.locator('.bstats');
         assert.match(
           (await pill.getAttribute('class')) ?? '',
           /bstats-pill/,
-          'not the pill at 670px',
+          'not the pill at 440px',
         );
         assert.equal(await pill.getAttribute('role'), 'button');
         assert.equal(await pill.getAttribute('tabindex'), '0');
@@ -875,7 +877,7 @@ void describe('the pill (LAI-727 review)', () => {
         assert.equal(opened.sideways, false, 'the tooltip pushes the page sideways');
         const tipBox = await tip.boundingBox();
         assert.ok(
-          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 670,
+          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 440,
           'the tooltip runs off the screen',
         );
 
@@ -945,10 +947,11 @@ void describe('the pill on its boundary with compact (LAI-804)', () => {
       );
       while ((await tierAt(width)) !== 'pill') {
         width -= 8;
-        // 600, not 820 (LAI-1198): with four icons moved into the ⋯ menu the
-        // row has room for longer, and the pill band now starts below the
-        // rail's 900px — still with the rail closed, as asserted below.
-        assert.ok(width > 600, 'the pill was never reached on the way down');
+        // 360, not 600 (LAI-1227): with + Create gone to the top bar the row
+        // has room for longer still, and the pill band starts near 460px. It
+        // was 820 until LAI-1198 moved four icons into the ⋯ menu. The rail
+        // stays closed, as asserted below.
+        assert.ok(width > 360, 'the pill was never reached on the way down');
       }
       const firstPill = width;
       while ((await tierAt(width)) === 'pill') {

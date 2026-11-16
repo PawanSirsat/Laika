@@ -1,5 +1,3 @@
-import { BrandMark } from '../brand/BrandMark.tsx';
-import { Wordmark } from '../brand/Wordmark.tsx';
 import { Chip } from '../chip/Chip.tsx';
 import { COUNT_CAP, formatCount } from '../chip/chip-model.ts';
 import {
@@ -12,7 +10,6 @@ import {
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
-import { SidebarFooter } from './SidebarFooter.tsx';
 import { NavIcon } from './NavIcon.tsx';
 import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
@@ -37,7 +34,6 @@ export interface SidebarProps {
    * same counts. Distinct from `open`, which is the phone's off-canvas state.
    */
   readonly collapsed: boolean;
-  readonly onToggleCollapse: () => void;
   /** Slug of the project in the URL, when there is one. */
   readonly projectSlug?: string | undefined;
   /** The rail's spaces: pinned, then recent (LAI-247, LAI-989). Empty renders no section. */
@@ -48,8 +44,6 @@ export interface SidebarProps {
   readonly onOpenSpace?: ((slug: string) => void) | undefined;
   /** Pin or unpin a space, in this browser (LAI-989). Absent draws no pin control. */
   readonly onTogglePin?: ((slug: string) => void) | undefined;
-  /** The organisation's name, under the wordmark (prototype line 50). */
-  readonly orgName?: string | undefined;
   /** Accepted and currently unused: the rail's wordmark is always the
    * product (owner, 2026-09-21); callers still pass the open space's name. */
   readonly spaceName?: string | undefined;
@@ -61,10 +55,8 @@ export interface SidebarProps {
    * hears the noun. No entry: the page's own first tab, and *waiting*.
    */
   readonly countTargets?: Readonly<Record<string, CountTarget>> | undefined;
-  /** The signed-in user, for the footer. Absent renders no footer. */
+  /** The signed-in user: the Alt keys and the gates are a signed-in rail's. */
   readonly user?: MeProfile | undefined;
-  readonly onSignOut?: (() => void) | undefined;
-  readonly signingOut?: boolean | undefined;
 }
 
 /** Where a badge leads and what it counts. */
@@ -106,18 +98,14 @@ export function Sidebar({
   open,
   onClose,
   collapsed,
-  onToggleCollapse,
   projectSlug,
   spaces,
   allSpaces,
   onOpenSpace,
   onTogglePin,
-  orgName,
   counts,
   countTargets,
   user,
-  onSignOut,
-  signingOut,
 }: SidebarProps) {
   const { permissions } = usePermissions(user !== undefined);
   /**
@@ -282,43 +270,12 @@ export function Sidebar({
 
   return (
     <nav id="sidebar" className={railClass} aria-label="Primary">
-      <div className="sidebar-head">
-        {/* The brand mark (LAI-1126): with the wordmark beside it, the lockup;
-            alone in the collapsed rail, the mark. Decorative either way — the
-            wordmark carries the name, and the rail's nav says where you are. */}
-        <span className="sidebar-logo">
-          <BrandMark size={28} />
-        </span>
-        {!collapsed && (
-          <div className="sidebar-identity">
-            {/* Always the product, never the open project (owner,
-                2026-09-21): the space bar names the project. */}
-            <span className="sidebar-wordmark">
-              <Wordmark height={15} />
-            </span>
-            {/* The org's real name, from `GET /org`. `undefined` renders
-                nothing rather than a placeholder that looks like data. */}
-            {orgName !== undefined && <span className="sidebar-orgline">{orgName}</span>}
-          </div>
-        )}
-        {/* The shared Tooltip (LAI-1214), not the rail's own name reveal: the
-            toggle has no words of its own, so the name is its aria-label and
-            the tooltip shows it on hover and focus, below it in both states.
-            No key collapses the rail today, so none is shown. */}
-        <Tooltip content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          <button
-            type="button"
-            className="sidebar-toggle"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!collapsed}
-            aria-controls="sidebar"
-            onClick={onToggleCollapse}
-          >
-            <NavIcon name={collapsed ? 'rail-open' : 'rail-close'} size={17} />
-          </button>
-        </Tooltip>
-      </div>
-
+      {/*
+        **No head and no foot** (LAI-1227). The brand, the collapse toggle and
+        the person menu moved to the app's top bar, which spans the sidebar
+        as Jira's does: the mark and the person are the app's, not the
+        navigation's, and two of each would be two doors to one room.
+      */}
       <div className="sidebar-nav">
         {/* Search and commands, ⌘K, is the app header's search bar (LAI-1188). */}
         {shown.filter((group) => group === 'HOME').map(renderGroup)}
@@ -341,17 +298,6 @@ export function Sidebar({
 
         {shown.filter((group) => group !== 'HOME').map(renderGroup)}
       </div>
-
-      {user !== undefined && onSignOut !== undefined && (
-        <SidebarFooter
-          user={user}
-          collapsed={collapsed}
-          onSignOut={onSignOut}
-          signingOut={signingOut ?? false}
-          onNavigate={onNavigate}
-          onClose={onClose}
-        />
-      )}
     </nav>
   );
 }

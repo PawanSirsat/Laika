@@ -294,27 +294,28 @@ void describe('pinned spaces (LAI-989)', () => {
   });
 });
 
-void describe('the rail ends in the person (LAI-796)', () => {
-  void test('the user block sits at the foot, below every entry', async () => {
+void describe('the person is the top bar’s, not the rail’s (LAI-1227)', () => {
+  void test('the rail ends in its last entry; the person is at the top bar’s right end', async () => {
+    // The rail ended in the person from LAI-796; the owner's Jira header put
+    // the person in the top bar, and two would be two doors to one room.
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       await h.page.setViewportSize({ width: 1280, height: 900 });
+      await h.page.locator('[data-app-header] .user-menu-trigger').waitFor({ timeout: 10_000 });
       const m = await h.page.evaluate(() => {
-        const rail = document.querySelector('#sidebar');
-        const footer = document.querySelector('.sidebar-footer');
-        const links = [...document.querySelectorAll('#sidebar .sidebar-nav .sidebar-link')];
-        if (rail === null || footer === null || links.length === 0) return null;
+        const head = document.querySelector('[data-app-header]')?.getBoundingClientRect();
+        const person = document
+          .querySelector('[data-app-header] .user-menu-trigger')
+          ?.getBoundingClientRect();
         return {
-          railBottom: rail.getBoundingClientRect().bottom,
-          footerBottom: footer.getBoundingClientRect().bottom,
-          footerTop: footer.getBoundingClientRect().top,
-          lastLink: Math.max(...links.map((l) => l.getBoundingClientRect().bottom)),
+          inRail: document.querySelectorAll('#sidebar .user-menu-trigger, .sidebar-footer').length,
+          personRight: Math.round(person?.right ?? 0),
+          headRight: Math.round(head?.right ?? 0),
         };
       });
-      assert.ok(m !== null, 'no footer to measure');
-      assert.ok(Math.abs(m.railBottom - m.footerBottom) <= 1, 'the person is not at the foot');
-      assert.ok(m.footerTop >= m.lastLink, 'the person overlaps the entries');
+      assert.equal(m.inRail, 0, 'the rail still carries a person');
+      assert.ok(m.headRight - m.personRight <= 24, 'the person is not at the bar’s right end');
     } finally {
       await h.close();
     }
@@ -688,14 +689,15 @@ void describe('the prototype geometry (LAI-249)', () => {
         undefined,
         { timeout: 5000 },
       );
-      // …and on keyboard focus: the toggle, then Tab, is the first entry —
-      // My day, since the palette's trigger moved to the app header
-      // (LAI-1188) — and its name shows as a tooltip the same way.
+      // …and on keyboard focus: the top bar's last control, the person
+      // (LAI-1227 — the toggle was the rail's own head until then), then Tab,
+      // is the first entry — My day — and its name shows as a tooltip the
+      // same way.
       await h.page.mouse.move(900, 500);
-      await toggle.focus();
+      await h.page.locator('[data-app-header] .user-menu-trigger').focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.match(focused, /^My day/, 'Tab from the toggle does not reach the first entry');
+      assert.match(focused, /^My day/, 'Tab from the top bar does not reach the first entry');
       await h.page.waitForFunction(
         () => {
           const tip = document.activeElement?.querySelector('.sidebar-tip');
@@ -865,16 +867,18 @@ void describe('the prototype geometry (LAI-249)', () => {
       '/api/v1/tokens': { data: [], next_cursor: null },
     });
     try {
-      const trigger = h.page.locator('.user-menu-trigger');
+      // The top bar's avatar since LAI-1227: the name is its label, and the
+      // menu's head says it in full.
+      const trigger = h.page.locator('[data-app-header] .user-menu-trigger');
       await trigger.waitFor({ timeout: 20_000 });
-      assert.match(await trigger.innerText(), /Ada Lovelace/);
-      assert.match(await trigger.innerText(), /owner/i, 'the role renders under the name');
+      assert.match((await trigger.getAttribute('aria-label')) ?? '', /^Ada Lovelace/);
       assert.equal(await trigger.getAttribute('aria-haspopup'), 'menu');
       assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
 
       await trigger.click();
       const menu = h.page.locator('[role="menu"]');
       await menu.waitFor({ timeout: 5000 });
+      assert.match(await menu.locator('.user-menu-who').innerText(), /Ada Lovelace/);
       const items = menu.locator('[role="menuitem"]');
       const firstLines = async () =>
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|');

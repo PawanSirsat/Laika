@@ -4,13 +4,11 @@
  * that file does not collide with this. Tokens only, both themes.
  */
 
-/* ------------------------------------------------------------ the space chip */
+/* ---------------------------------------------- the space chip (the Space field) */
 
-.ct-sub {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  min-width: 0;
+/* The field's trigger draws the chosen space as this chip (LAI-1227). */
+.ct-space-field .ct-space-chip {
+  flex: 1;
 }
 
 .ct-space-chip {

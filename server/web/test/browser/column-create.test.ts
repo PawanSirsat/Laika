@@ -1,5 +1,7 @@
 /**
- * Creating a card in the column you clicked (LAI-290).
+ * Creating a card in the column you clicked (LAI-290; through the app's one
+ * Create task dialog since LAI-1227 — a lane's + opens it in this space and
+ * that column, where it had opened an inline composer).
  *
  * **This file exists for one assertion.** `KanbanView`'s `onAdd` took no
  * arguments and opened a banner above the whole board that posted no `status`,
@@ -123,7 +125,21 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
   };
 }
 
-/** The `+ Create` button inside the named lane. */
+const DIALOG = '[data-dialog="create-task"]';
+
+/** The dialog's Create, once the space's statuses, members and sprints are in. */
+async function submit(h: Harness): Promise<void> {
+  const create = h.page.locator(DIALOG).getByRole('button', { name: 'Create', exact: true });
+  await until(async () => (await create.getAttribute('aria-disabled')) !== 'true', 10_000);
+  await create.click();
+}
+
+/** The dialog's Status control, by its label. */
+function statusField(h: Harness) {
+  return h.page.locator(DIALOG).getByLabel('Status', { exact: true });
+}
+
+/** The `+ Add task` button inside the named lane. */
 function addIn(h: Harness, name: string) {
   return h.page
     .locator('.lane', { has: h.page.locator('.lane-title', { hasText: name }) })
@@ -151,8 +167,8 @@ void describe('the column decides the status', () => {
     try {
       await board(h);
       await addIn(h, 'Done').click();
-      await h.page.locator('.composer-title').fill('A finished thing');
-      await h.page.locator('.composer-submit').click();
+      await h.page.locator(`${DIALOG} .ct-title-input`).fill('A finished thing');
+      await submit(h);
       await until(() => creates(h).length > 0);
 
       const sent = creates(h);
@@ -178,8 +194,8 @@ void describe('the column decides the status', () => {
     try {
       await board(h);
       await addIn(h, 'Code review').click();
-      await h.page.locator('.composer-title').fill('Needs a second pair of eyes');
-      await h.page.locator('.composer-submit').click();
+      await h.page.locator(`${DIALOG} .ct-title-input`).fill('Needs a second pair of eyes');
+      await submit(h);
       await until(() => creates(h).length > 0);
 
       const body = creates(h)[0]?.body as { status?: string; status_id?: string };
@@ -190,55 +206,60 @@ void describe('the column decides the status', () => {
     }
   });
 
-  void test('the composer says which column it will land in', async () => {
-    // The defect was a card going somewhere unexpected, so the box states it.
+  void test('the dialog says which column it will land in', async () => {
+    // The defect was a card going somewhere unexpected, so the form states it.
     const h = await open('/board?project=laika-core', stub());
 
     try {
       await board(h);
       await addIn(h, 'Code review').click();
+      await until(async () => (await statusField(h).count()) === 1, 10_000);
 
-      assert.equal(await h.page.locator('.composer-target').innerText(), 'Code review');
+      assert.match(await statusField(h).innerText(), /Code review/);
     } finally {
       await h.close();
     }
   });
 });
 
-void describe('the composer opens where it was clicked', () => {
-  void test('only in that column, and not as a banner over the board', async () => {
+void describe('the dialog opens for the column that was clicked', () => {
+  void test('one dialog, in this space and that column, and no banner or inline form', async () => {
     const h = await open('/board?project=laika-core', stub());
 
     try {
       await board(h);
       await addIn(h, 'In progress').click();
+      await h.page.locator(DIALOG).waitFor({ timeout: 10_000 });
 
-      assert.equal(await h.page.locator('.composer').count(), 1, 'more than one composer opened');
+      assert.equal(await h.page.locator(DIALOG).count(), 1, 'more than one dialog opened');
+      await until(async () => (await statusField(h).innerText()).includes('In progress'), 10_000);
+      assert.match(
+        await h.page
+          .locator(DIALOG)
+          .getByRole('combobox', { name: /^Space/ })
+          .innerText(),
+        /Laika Core/,
+      );
 
-      const inLane = await h.page
-        .locator('.lane', { has: h.page.locator('.lane-title', { hasText: 'In progress' }) })
-        .locator('.composer')
-        .count();
-      assert.equal(inLane, 1, 'the composer did not open inside the column that was clicked');
-
-      // The old top banner is gone, not merely hidden.
+      // Neither the old top banner nor the inline composer: one form, the dialog.
       assert.equal(await h.page.locator('.new-task').count(), 0);
+      assert.equal(await h.page.locator('.composer').count(), 0);
     } finally {
       await h.close();
     }
   });
 
-  void test('Escape closes it and the + comes back', async () => {
+  void test('Escape closes it and focus is back on that column’s +', async () => {
     const h = await open('/board?project=laika-core', stub());
 
     try {
       await board(h);
       await addIn(h, 'Done').click();
-      await h.page.locator('.composer-title').press('Escape');
-      await until(async () => (await h.page.locator('.composer').count()) === 0);
+      await h.page.locator(`${DIALOG} .ct-title-input`).press('Escape');
+      await until(async () => (await h.page.locator(DIALOG).count()) === 0);
 
-      assert.equal(await h.page.locator('.composer').count(), 0);
       assert.equal(await addIn(h, 'Done').count(), 1);
+      await until(async () => addIn(h, 'Done').evaluate((el) => el === document.activeElement));
     } finally {
       await h.close();
     }
@@ -261,14 +282,17 @@ void describe('when the server refuses', () => {
     try {
       await board(h);
       await addIn(h, 'Done').click();
-      await h.page.locator('.composer-title').fill('Do not lose me');
-      await h.page.locator('.composer-submit').click();
+      await h.page.locator(`${DIALOG} .ct-title-input`).fill('Do not lose me');
+      await submit(h);
       // The refusal answered, or "the text stays" is read before anything happened.
-      await h.page.locator('.composer-error').waitFor({ timeout: 5_000 });
+      await h.page.locator(`${DIALOG} [data-create-error]`).waitFor({ timeout: 5_000 });
 
-      assert.equal(await h.page.locator('.composer-title').inputValue(), 'Do not lose me');
+      assert.equal(
+        await h.page.locator(`${DIALOG} .ct-title-input`).inputValue(),
+        'Do not lose me',
+      );
       assert.match(
-        await h.page.locator('.composer-error').innerText(),
+        await h.page.locator(`${DIALOG} [data-create-error]`).innerText(),
         /Viewers cannot create tasks/,
       );
     } finally {

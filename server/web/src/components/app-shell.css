@@ -15,7 +15,9 @@
    * that sizes itself to the window: a space is the window less this bar.
    */
   --app-head-height: 3.25rem;
+  /* The top bar, then the frame below it (LAI-1227): the bar spans the window. */
   display: flex;
+  flex-direction: column;
   /*
    * **`height`, not `min-height`** (LAI-601).
    *
@@ -91,6 +93,13 @@
 }
 
 /* ---------------------------------------------------------------- body */
+
+/* Below the top bar: the sidebar and the page, side by side (LAI-1227). */
+.shell-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
 
 .shell-body {
   flex: 1;
@@ -210,36 +219,120 @@
 }
 
 /*
- * The one app header (LAI-1188): the same height on every signed-in screen,
- * at every width. Where the reader is on the left, then the search bar, the
- * Viewing chip and the page-wide actions on the right.
- */
-/*
- * v2 (LAI-1221): three columns, the outer two equal, so the search sits on the
- * bar's true centre whatever the title and the actions weigh. The centre
- * column grows to 36rem and gives way first as the window narrows.
+ * **The top bar** (LAI-1188; Jira's since LAI-1227): one height on every
+ * signed-in screen, the full width of the window. Three columns, the outer two
+ * equal, so the search and + Create sit on the bar's true centre whatever the
+ * brand and the right-hand cluster weigh; the centre grows to 45rem — the
+ * search fills it, Create keeps its own width — and gives way first as the
+ * window narrows.
  */
 .shell-app-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 36rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 45rem) minmax(0, 1fr);
+  align-items: center;
   height: var(--app-head-height);
   box-sizing: border-box;
   flex: none;
-  padding: 0 var(--space-5);
+  padding: 0 var(--space-4) 0 var(--space-3);
   gap: var(--space-4);
 }
 
-.shell-head-title {
+.shell-head-start {
   display: flex;
   align-items: center;
-  gap: var(--space-2-5);
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .shell-head-search {
   display: flex;
-  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
+}
+
+/* The search fills the centre; Create sits straight after it. */
+.shell-head-search > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── The brand: mark, wordmark, the organisation — home to My day ─────── */
+
+.shell-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.shell-brand:hover {
+  background: var(--bg-card-hover);
+}
+
+.shell-brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The brand mark (LAI-1126): the glass L on the bar's own ground. */
+.sidebar-logo {
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* The org's real name — never the prototype's fixture. */
+.sidebar-orgline {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The rail's fold (LAI-796), in the top bar since LAI-1227: a quiet square. */
+.sidebar-toggle {
+  position: relative;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /*
@@ -256,70 +349,12 @@
   flex: none;
 }
 
-/* `display: contents`: what a screen hands up flows in the title row. */
-.shell-head-title-slot,
-.shell-head-actions {
-  display: contents;
-}
-
 .shell-head-tools {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
   min-width: 0;
-}
-
-.shell-crumbs {
-  min-width: 0;
-}
-
-.shell-crumbs-list {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-  font-size: var(--text-body);
-  white-space: nowrap;
-}
-
-.shell-crumb {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  min-width: 0;
-}
-
-.shell-crumb + .shell-crumb::before {
-  content: '/';
-  color: var(--text-muted);
-}
-
-.shell-crumb-link,
-.shell-crumb-step {
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.shell-crumb-link:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
-}
-
-.shell-crumb-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-xs);
-}
-
-.shell-crumb-here {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-primary);
-  font-weight: var(--weight-semibold);
 }
 
 /* ── Viewing: <name> ─────────────────────────────────────────────────── */
@@ -380,27 +415,28 @@
 }
 
 /*
- * Below a laptop the columns stop being equal: the title takes what is left,
- * the search keeps a field's width, and the actions their own.
+ * Below a laptop the columns stop being equal: the brand keeps its width, the
+ * search takes what is left, and the cluster its own.
  */
 @media (max-width: 1180px) {
   .shell-app-head {
-    grid-template-columns: minmax(0, 1fr) minmax(10rem, 20rem) auto;
+    grid-template-columns: auto minmax(10rem, 1fr) auto;
     gap: var(--space-3);
   }
 }
 
-/* Below a tablet the bar has the menu button, the title and the search. */
+/*
+ * Below a tablet the sidebar is off-canvas: the rail's fold gives way to the
+ * menu button, and the brand to its mark.
+ */
 @media (max-width: 900px) {
   .shell-app-head {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
     padding: 0 var(--space-3);
     gap: var(--space-2);
   }
 
-  /* The menu button is the grid's first column; the title, the second. */
-  .shell-head-search {
-    justify-content: flex-end;
+  .sidebar-toggle {
+    display: none;
   }
 
   .shell-head-tools {
@@ -419,6 +455,24 @@
 
   .shell-viewing {
     max-width: 9rem;
+  }
+
+  /* The mark alone: the menu, the search, Create and the person need the room. */
+  .sidebar-identity {
+    display: none;
+  }
+
+  .shell-brand {
+    padding: var(--space-1);
+  }
+
+  /* The search is its icon (PaletteTrigger) and Create its plus, side by side at the end. */
+  .shell-head-search {
+    justify-content: flex-end;
+  }
+
+  .shell-head-search > :first-child {
+    flex: none;
   }
 
   .shell-viewing-label,

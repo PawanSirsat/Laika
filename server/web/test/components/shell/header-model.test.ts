@@ -1,6 +1,5 @@
 /**
- * The app header's rules (LAI-1188): what its breadcrumb says on each kind of
- * screen, when an address is a view of somebody else, where "back to me"
+ * The app header's rules (LAI-1188): when an address is a view of somebody else, where "back to me"
  * goes, which views of a person a reader is offered (from the server's
  * permissions, never a role), who the People group finds, and when `/` is
  * the header search's. The browser half is `test/browser/header-search.test.ts`.
@@ -10,8 +9,6 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   backToMeHref,
-  headerCrumbs,
-  headerTrail,
   matchPeople,
   personTargets,
   personView,
@@ -19,39 +16,6 @@ import {
 } from '../../../src/components/shell/header-model.ts';
 
 const q = (text: string): URLSearchParams => new URLSearchParams(text);
-const labels = (path: string, spaceName?: string): string[] =>
-  headerCrumbs(path, { spaceName }).map((c) => c.label);
-
-void describe('the breadcrumb', () => {
-  void test('a page of the rail is its own name', () => {
-    assert.deepEqual(labels('/my-day'), ['My day']);
-    assert.deepEqual(labels('/organisation'), ['Organisation']);
-    assert.deepEqual(labels('/settings/appearance'), ['Appearance']);
-  });
-
-  void test('a space’s view sits under Spaces, by the space’s name once it is read', () => {
-    assert.deepEqual(labels('/board', 'Laika Core'), ['Spaces', 'Laika Core']);
-    assert.deepEqual(labels('/calendar'), ['Spaces', 'Calendar']);
-    assert.equal(headerCrumbs('/board', {})[0]?.href, '/projects');
-    assert.deepEqual(labels('/spaces/laika/settings'), ['Spaces', 'Space settings']);
-    assert.deepEqual(labels('/projects'), ['Spaces']);
-  });
-
-  void test('a profile sits under Organisation’s people; design pages under the reference', () => {
-    assert.deepEqual(labels('/people'), ['Organisation', 'Member profile']);
-    assert.equal(headerCrumbs('/people', {})[0]?.href, '/organisation?tab=people');
-    assert.deepEqual(labels('/design/tokens'), ['Design reference', 'Design tokens']);
-  });
-
-  void test('an address no route claims says so, and only the last step is unlinked', () => {
-    assert.deepEqual(labels('/nowhere'), ['Page not found']);
-    for (const path of ['/board', '/people', '/spaces/x/settings', '/my-day']) {
-      const crumbs = headerCrumbs(path, {});
-      assert.equal(crumbs.at(-1)?.href, undefined, `${path}: the last step links`);
-    }
-  });
-});
-
 void describe('a person view', () => {
   void test('My day’s ?user=, Work’s &person= and Time’s &member= name somebody else', () => {
     assert.deepEqual(personView('/my-day', q('user=u2'), 'u1'), { kind: 'my-day', userId: 'u2' });
@@ -175,43 +139,6 @@ void describe('who owns /', () => {
           selector === '[aria-keyshortcuts="/"]' ? field : null,
       } as Pick<Document, 'querySelector'>),
       false,
-    );
-  });
-});
-
-void describe('the title rule (LAI-1221)', () => {
-  const place = { orgName: 'Borealis Labs' };
-  const trail = (path: string, title: string | undefined) => {
-    const t = headerTrail(path, place, title);
-    return { labels: t.steps.map((s) => s.label), page: t.endsAtPage };
-  };
-
-  void test('a page with its own h1: the header says where it sits, never its name again', () => {
-    assert.deepEqual(trail('/inbox', 'Inbox'), { labels: ['Borealis Labs'], page: false });
-    assert.deepEqual(trail('/people', 'Ada Lovelace'), {
-      labels: ['Borealis Labs', 'Organisation'],
-      page: false,
-    });
-  });
-
-  void test('a screen with no heading of its own keeps its name, as the page step', () => {
-    assert.deepEqual(trail('/inbox', undefined), {
-      labels: ['Borealis Labs', 'Inbox'],
-      page: true,
-    });
-  });
-
-  void test('never a step that says what the heading says: Organisation is titled by its name', () => {
-    assert.deepEqual(trail('/organisation', 'Borealis Labs'), { labels: [], page: false });
-  });
-
-  void test('rooted at the organisation once its name is read, and nothing before', () => {
-    assert.deepEqual(headerTrail('/inbox', {}, 'Inbox').steps, []);
-    assert.deepEqual(
-      headerTrail('/board', { spaceName: 'Laika Core', orgName: 'B' }, undefined).steps.map(
-        (s) => s.label,
-      ),
-      ['B', 'Spaces', 'Laika Core'],
     );
   });
 });
