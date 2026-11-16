@@ -1,4 +1,5 @@
 import type { AvailabilityRow, AvailabilitySeen, WorkWeek } from '../../api/availability.ts';
+import type { OnLeave } from '../../api/off-days.ts';
 
 /**
  * What every availability screen derives from the server's answer (D-131,
@@ -58,6 +59,18 @@ export function rangeShort(from: string, to: string): string {
   return `${dayShort(from)} – ${dayShort(to)}`;
 }
 
+/**
+ * The HR system's leave covering today, in words (D-149 item 5): *On leave
+ * until Wed 18 Nov*, with the type only when the server sent it — it sends it
+ * only to a reader who may see why — or *Leave requested*, with neither. The
+ * pill and the profile's This week say it the same way.
+ */
+export function onLeaveLabel(leave: OnLeave): string {
+  if (leave.status !== 'approved') return 'Leave requested';
+  const until = `On leave until ${dayShort(leave.until)}`;
+  return leave.type === null || leave.type === '' ? until : `${until} · ${leave.type}`;
+}
+
 export type PillTone = 'open' | 'capacity' | 'away' | 'leave' | 'requested';
 
 export interface Pill {
@@ -86,13 +99,7 @@ export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
   if (seen === null || seen === undefined) return null;
   const leave = seen.on_leave;
   if (leave !== null && leave.status === 'approved') {
-    const until = `On leave until ${dayShort(leave.until)}`;
-    return {
-      tone: 'leave',
-      glyph: '◐',
-      label: leave.type === null || leave.type === '' ? until : `${until} · ${leave.type}`,
-      hours: '',
-    };
+    return { tone: 'leave', glyph: '◐', label: onLeaveLabel(leave), hours: '' };
   }
   if (seen.away !== null) {
     return {
@@ -103,7 +110,7 @@ export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
     };
   }
   if (leave !== null) {
-    return { tone: 'requested', glyph: '◌', label: 'Leave requested', hours: '' };
+    return { tone: 'requested', glyph: '◌', label: onLeaveLabel(leave), hours: '' };
   }
   if (seen.status === 'open') {
     const h = seen.hours_per_week;

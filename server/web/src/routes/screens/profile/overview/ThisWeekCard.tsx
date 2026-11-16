@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AvailabilitySeen } from '../../../../api/availability.ts';
 import { formatHours } from '../../../../api/duration.ts';
 import { getTimeReport, type TimeReport } from '../../../../api/time.ts';
+import { onLeaveLabel } from '../../../../components/availability/availability-derive.ts';
 import { agentMinutes, weekDays } from '../../my-day/my-day-derive.ts';
 import {
   awayText,
@@ -44,8 +45,10 @@ type Load =
  *   everyone on it. What the reader was not served is not said.
  * - **Leave from today** (D-149, LAI-1185): the days the person's leave runs
  *   over, from the same availability's `on_leave`, tinted with a mark beside
- *   the day's name — dashed when only requested. Holidays and the week's
- *   earlier leave are in neither read, so they are not drawn.
+ *   the day's name — dashed when only requested — and said first in the
+ *   foot, *On leave until …* or *Leave requested*, in place of *No time away
+ *   planned*; away dates, when there are any, follow it. Holidays and the
+ *   week's earlier leave are in neither read, so they are not drawn.
  */
 export function ThisWeekCard({
   userId,
@@ -137,6 +140,10 @@ function WeekFigures({
   const periods = availability?.away_periods;
   const backOn = availability?.away?.until;
   const leave = leaveDays(week, today, availability?.on_leave);
+  const onLeave = availability?.on_leave ?? null;
+  const awayDates =
+    (periods !== undefined && periods.length > 0) ||
+    (periods === undefined && backOn !== undefined);
 
   return (
     <>
@@ -221,20 +228,35 @@ function WeekFigures({
 
       {/* No row (null) or not read yet: nothing is known about time away. */}
       {availability !== undefined && availability !== null && (
-        <p className="ov-foot ov-away" data-away>
-          <b>Away</b>{' '}
-          {periods !== undefined && periods.length > 0 ? (
-            periods.map((p) => (
-              <span key={`${p.from}-${p.to}`} className="ov-away-dates">
-                {awayText(p)}
-              </span>
-            ))
-          ) : periods === undefined && backOn !== undefined ? (
-            <span className="ov-away-dates">until {awayText({ from: backOn, to: backOn })}</span>
-          ) : (
-            'No time away planned'
+        <div className="ov-foot ov-week-foot">
+          {/* Leave first: it is today's, and the bars above are marked with it. */}
+          {onLeave !== null && (
+            <p className="ov-leave" data-leave={onLeave.status}>
+              <span className="ov-leave-mark" aria-hidden="true">
+                {LEAVE_MARK[onLeave.status === 'approved' ? 'leave' : 'requested'].glyph}
+              </span>{' '}
+              <b>{onLeaveLabel(onLeave)}</b>
+            </p>
           )}
-        </p>
+          {(onLeave === null || awayDates) && (
+            <p className="ov-away" data-away>
+              <b>Away</b>{' '}
+              {periods !== undefined && periods.length > 0 ? (
+                periods.map((p) => (
+                  <span key={`${p.from}-${p.to}`} className="ov-away-dates">
+                    {awayText(p)}
+                  </span>
+                ))
+              ) : periods === undefined && backOn !== undefined ? (
+                <span className="ov-away-dates">
+                  until {awayText({ from: backOn, to: backOn })}
+                </span>
+              ) : (
+                'No time away planned'
+              )}
+            </p>
+          )}
+        </div>
       )}
     </>
   );

@@ -7,6 +7,7 @@ import {
   dayShort,
   daysLine,
   hoursMinutes,
+  onLeaveLabel,
   pillOf,
   pillSentence,
   rangeShort,
@@ -66,6 +67,24 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
     assert.equal(leave('Annual')?.label, 'On leave until Mon 23 Nov · Annual');
     // An empty type is no type: nothing trails the date.
     assert.equal(leave('')?.label, 'On leave until Mon 23 Nov');
+  });
+
+  void test('onLeaveLabel: the leave in words, the same on the pill and on This week', () => {
+    assert.equal(
+      onLeaveLabel({ until: '2026-11-18', status: 'approved', type: null }),
+      'On leave until Wed 18 Nov',
+    );
+    assert.equal(
+      onLeaveLabel({ until: '2026-11-18', status: 'approved', type: 'Annual' }),
+      'On leave until Wed 18 Nov · Annual',
+    );
+    // Requested: no date and no type, whatever was sent.
+    assert.equal(
+      onLeaveLabel({ until: '2026-11-18', status: 'pending', type: 'Annual' }),
+      'Leave requested',
+    );
+    const leave = { until: '2026-11-18', status: 'approved', type: 'Sick' } as const;
+    assert.equal(pillOf(seen({ on_leave: leave }))?.label, onLeaveLabel(leave));
   });
 
   void test('approved leave wins over away and over the status — and drops the hours', () => {
