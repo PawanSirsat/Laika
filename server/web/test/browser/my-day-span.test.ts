@@ -1096,10 +1096,15 @@ void describe('My day — days off (D-149, LAI-1184)', () => {
           await setTheme(page, theme);
           // The theme's colours ease in: wait until a chip shows the theme's own
           // card colour, so no screenshot catches the switch half-way (LAI-1187).
+          // The colour the wait saw is the one asserted: a second read can land
+          // while the bar is re-rendered and find no chip at all.
           const card = await tokenRgb(page, '--bg-card');
-          const chip = () => styleOf(page, '.myday-viewing-trigger', 'background-color');
-          await until(async () => (await chip()) === card);
-          assert.equal(await chip(), card, 'the chips settled in the theme');
+          let chip: string | null = null;
+          await until(async () => {
+            chip = await styleOf(page, '.myday-viewing-trigger', 'background-color');
+            return chip === card;
+          });
+          assert.equal(chip, card, 'the chips settled in the theme');
           const phone = width === 390;
           const holidayBg = await tokenRgb(page, '--holiday-bg');
           const holidayBorder = await tokenRgb(page, '--holiday-border');
