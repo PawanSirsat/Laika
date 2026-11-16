@@ -313,6 +313,32 @@
   color: var(--accent);
 }
 
+/*
+ * Leave from today (D-149, LAI-1185): the day's plot tinted in leave's own
+ * tokens, or only outlined, dashed, when requested — and a mark beside the
+ * day's name, so it is never the tint alone.
+ */
+.ov-day[data-off='leave'] .ov-day-plot {
+  background: var(--leave-bg);
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+
+.ov-day[data-off='requested'] .ov-day-plot {
+  outline: 1px dashed var(--leave-border);
+  outline-offset: -1px;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+
+.ov-day[data-off] .ov-day-n,
+.ov-day-off {
+  color: var(--leave);
+}
+
+.ov-day-off {
+  margin-left: 0.125rem;
+  font-weight: var(--weight-bold);
+}
+
 .ov-week-facts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -350,6 +376,16 @@
 
 .ov-key-agents {
   box-shadow: inset 0 0 0 1px var(--border-default);
+}
+
+/* This week's foot: today's leave, then the away line — one rule above both. */
+.ov-week-foot p {
+  margin: 0;
+}
+
+.ov-leave-mark {
+  color: var(--leave);
+  font-weight: var(--weight-bold);
 }
 
 .ov-away-dates {

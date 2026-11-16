@@ -235,6 +235,7 @@ void describe('days and the week', () => {
       confirmed_minutes: confirmed,
       drafted_minutes: drafted,
       state,
+      off: null,
     });
     assert.deepEqual(weekCell(cell('no_signal')), { label: 'No signal', figure: '—' });
     assert.doesNotMatch(weekCell(cell('no_signal')).figure, /0:00|^0/);

@@ -15,9 +15,10 @@ import {
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { createEntry } from '../../src/services/time-entries.ts';
-import { setOrgTimeMode } from '../../src/services/time-settings.ts';
+import { setOrgTimeMode, setTimeSettings } from '../../src/services/time-settings.ts';
 import { summaryOf } from '../../src/services/time-summary.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
+import { hrPerson, leaveDay } from '../helpers/hr.ts';
 
 /**
  * Who has room (SPEC §6.4, D-131, LAI-1130): one person's load, read by an
@@ -332,6 +333,7 @@ describe('GET /people/availability', () => {
       expect(Object.keys(row?.availability ?? {}).sort()).toEqual([
         'away',
         'note',
+        'on_leave',
         'status',
         'tags',
       ]);
@@ -340,6 +342,7 @@ describe('GET /people/availability', () => {
         note: 'Can pair on Laika',
         tags: ['react'],
         away: { until: '2026-10-22' },
+        on_leave: null,
       });
     });
 
@@ -356,6 +359,7 @@ describe('GET /people/availability', () => {
         'away_periods',
         'hours_per_week',
         'note',
+        'on_leave',
         'status',
         'tags',
       ]);
@@ -364,6 +368,7 @@ describe('GET /people/availability', () => {
         note: 'Can pair on Laika',
         tags: ['react'],
         away: { until: '2026-10-22' },
+        on_leave: null,
         hours_per_week: 8,
         away_periods: [
           { from: '2026-10-21', to: '2026-10-22' },
@@ -432,5 +437,64 @@ describe('GET /people/availability', () => {
     const { data } = listPeopleAvailability(t.db, actor(cal), {}, NOW);
     expect(data.every((r) => r.availability === null)).toBe(true);
     expect(t.db.select().from(users).where(eq(users.id, cal)).get()?.name).toBe('Cal');
+  });
+});
+
+describe('on leave beside away (D-149 item 5, LAI-1183)', () => {
+  beforeEach(() => {
+    // Cal set nothing, and is on sick leave today and tomorrow.
+    const p = hrPerson(t.db, cal);
+    leaveDay(t.db, cal, p, '2026-10-21', { type: 'Sick' });
+    leaveDay(t.db, cal, p, '2026-10-22', { type: 'Sick' });
+  });
+  const calAs = (reader: ResolvedActor) =>
+    listPeopleAvailability(t.db, reader, {}, NOW).data.find((r) => r.user.id === cal)?.availability;
+  const shown = { until: '2026-10-22', status: 'approved' } as const;
+
+  it('shows the owner, an admin and the person why', () => {
+    expect(calAs(actor(ada))?.on_leave).toEqual({ ...shown, type: 'Sick' });
+    expect(calAs(actor(ari))?.on_leave).toEqual({ ...shown, type: 'Sick' });
+    expect(calAs(actor(cal))?.on_leave).toEqual({ ...shown, type: 'Sick' });
+    // An admin who keeps analytics but leads no space by grant: still an admin.
+    expect(calAs(actor(ari, { orgGrants: ANALYTICS_ONLY }))?.on_leave?.type).toBe('Sick');
+  });
+
+  it('shows a space’s lead and a co-worker that Cal is on leave — never why', () => {
+    expect(calAs(actor(bea))?.on_leave).toEqual({ ...shown, type: null });
+    const plain = actor(ari, { orgGrants: { admin: [], member: [], viewer: [] } });
+    // Ari with every grant off is a plain member of Laika — and still an admin.
+    expect(calAs(plain)?.on_leave).toEqual({ ...shown, type: 'Sick' });
+    // A member who leads nothing: Cal's co-worker on Laika.
+    const zoe = makeUser('Zoe', 'member');
+    addMember(t.db, actor(ada), 'laika', zoe, 'member');
+    expect(calAs(actor(zoe))?.on_leave).toEqual({ ...shown, type: null });
+  });
+
+  it('open_only leaves out approved whole-day leave today in the person’s zone — not half a day, not a request', () => {
+    for (const id of [ada, ari, bea, cal, dee]) {
+      setMyAvailability(t.db, actor(id), { status: 'open' }, NOW);
+    }
+    // Ari is in Auckland, where it is already the 22nd: whole-day leave there.
+    setTimeSettings(t.db, actor(ari), { place: 'Pacific/Auckland' });
+    leaveDay(t.db, ari, hrPerson(t.db, ari), '2026-10-22');
+    // Bea is off the morning only; Dee has asked for the day and not heard.
+    leaveDay(t.db, bea, hrPerson(t.db, bea), '2026-10-21', { part: 'first_half' });
+    leaveDay(t.db, dee, hrPerson(t.db, dee), '2026-10-21', { status: 'pending' });
+    // Ada's whole day off is tomorrow in UTC — today she is open.
+    leaveDay(t.db, ada, hrPerson(t.db, ada), '2026-10-22');
+
+    const open = listPeopleAvailability(t.db, actor(ada), { open_only: true }, NOW).data;
+    expect(open.map((r) => r.user.name)).toEqual(['Ada', 'Bea', 'Dee']);
+    // Without the filter everyone open is listed, Cal and Ari with their leave.
+    const all = listPeopleAvailability(t.db, actor(ada), {}, NOW).data;
+    expect(all.map((r) => r.user.name)).toEqual(['Ada', 'Ari', 'Bea', 'Cal', 'Dee']);
+  });
+
+  it('is on the load an owner reads, and makes a person who set nothing a view', () => {
+    expect(getPersonLoad(t.db, actor(ada), cal, NOW).availability?.on_leave).toEqual({
+      ...shown,
+      type: 'Sick',
+    });
+    expect(calAs(actor(ada))).toMatchObject({ status: null, away: null });
   });
 });

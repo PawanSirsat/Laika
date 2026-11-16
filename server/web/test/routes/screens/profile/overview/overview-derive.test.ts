@@ -12,6 +12,7 @@ import {
   capNote,
   deliveredLine,
   hoursText,
+  leaveDays,
   moreLabel,
   projectRole,
   quietLabel,
@@ -217,6 +218,37 @@ void describe('This week', () => {
     assert.deepEqual(bars[0], { day: '2026-11-02', confirmed: 520, drafted: 0, today: false });
     assert.deepEqual(bars[1], { day: '2026-11-03', confirmed: 0, drafted: 0, today: false });
     assert.deepEqual(bars[4], { day: '2026-11-06', confirmed: 140, drafted: 95, today: true });
+  });
+
+  void test('leaveDays: today to the leave’s last day, approved or requested, and nothing else', () => {
+    const marked = (
+      today: string,
+      onLeave: Parameters<typeof leaveDays>[2],
+    ): [string, string][] => [...leaveDays(week, today, onLeave)];
+    // Approved from Wednesday to the next Tuesday: Wednesday to Sunday of this week.
+    assert.deepEqual(
+      marked('2026-11-04', { until: '2026-11-10', status: 'approved', type: 'Annual' }),
+      [
+        ['2026-11-04', 'leave'],
+        ['2026-11-05', 'leave'],
+        ['2026-11-06', 'leave'],
+        ['2026-11-07', 'leave'],
+        ['2026-11-08', 'leave'],
+      ],
+    );
+    // Requested, today only.
+    assert.deepEqual(marked('2026-11-06', { until: '2026-11-06', status: 'pending', type: null }), [
+      ['2026-11-06', 'requested'],
+    ]);
+    // No leave, or not read: nothing — and never a day before today, which no read carries.
+    assert.deepEqual(marked('2026-11-06', null), []);
+    assert.deepEqual(marked('2026-11-06', undefined), []);
+    assert.equal(
+      leaveDays(week, '2026-11-06', { until: '2026-11-07', status: 'approved', type: null }).has(
+        '2026-11-05',
+      ),
+      false,
+    );
   });
 
   void test('says the week and away dates as the design does', () => {

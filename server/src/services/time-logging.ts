@@ -2,17 +2,18 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole } from '../db/enums.ts';
-import {
-  projectMemberships,
-  timeDrafts,
-  timeEntries,
-  userAvailability,
-  users,
-} from '../db/schema.ts';
+import { projectMemberships, timeDrafts, timeEntries, users } from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { readLoggedMany } from './analytics-views.ts';
 import { zonesFor } from './availability.ts';
 import { dayIn } from './calendar-days.ts';
+import {
+  DEFAULT_WORK_DAYS,
+  offDaysFor,
+  offEntries,
+  type OffDayEntryView,
+  workDaysFor,
+} from './off-days.ts';
 import { minutesByUserDay, REPORT_MAX_MEMBERS } from './time-report.ts';
 import { stretch } from './time-summary.ts';
 
@@ -47,6 +48,19 @@ import { stretch } from './time-summary.ts';
  * apart, read through {@link minutesByUserDay} — the Time report's own two
  * WHEREs. Agent time is never read (D-088 item 8).
  *
+ * Each person's working days are `off-days.ts`' `workDaysFor` — their own,
+ * else Monday to Friday — the rule a run of leave steps over days by too
+ * (LAI-1183), so the two cannot hold a person to different weeks.
+ *
+ * ## Days off are facts too
+ *
+ * Each person carries `off_days` — the days in the stretch a holiday covers
+ * them or they are on leave (D-149, LAI-1183, `offDaysFor`), only the days
+ * that have one. What such a day owes stays the client's verdict (D-149 item
+ * 6): nothing here changes `threshold_minutes` or any cell. The type of leave
+ * is the reader's to see or not — an owner, an admin or *See everyone's
+ * analytics* sees it; a space lead reading their people's rows does not.
+ *
  * ## Deactivated people, and the cap
  *
  * A deactivated person is listed only with minutes in the stretch, flagged,
@@ -66,9 +80,6 @@ import { stretch } from './time-summary.ts';
 
 /** D-148 item 2: a full working day, for the client's verdict — and nowhere else. */
 export const TIME_LOGGING_THRESHOLD_MINUTES = 480;
-
-/** The working week a person who set none is held to: Monday to Friday. */
-export const DEFAULT_WORK_DAYS: readonly number[] = [1, 2, 3, 4, 5];
 
 export interface TimeLoggingQuery {
   from?: string | undefined;
@@ -102,6 +113,8 @@ export interface TimeLoggingPersonView {
   work_days: number[];
   /** Ascending. */
   days: TimeLoggingDayView[];
+  /** The stretch's days a holiday covers them or they are on leave, ascending; no other day (D-149). */
+  off_days: OffDayEntryView[];
 }
 
 export interface TimeLoggingView {
@@ -233,26 +246,6 @@ function earlierDay(a: string, b: string | undefined): string {
   return b !== undefined && b < a ? b : a;
 }
 
-/** Each shown person's working days: their own when they set any, else Monday to Friday. */
-function workDaysFor(db: Db, ids: readonly string[]): Map<string, number[]> {
-  const set = new Map(
-    ids.length === 0
-      ? []
-      : db
-          .select({ userId: userAvailability.userId, workDays: userAvailability.workDays })
-          .from(userAvailability)
-          .where(inArray(userAvailability.userId, [...ids]))
-          .all()
-          .map((r) => [r.userId, r.workDays]),
-  );
-  return new Map(
-    ids.map((id) => {
-      const own = set.get(id);
-      return [id, own !== undefined && own.length > 0 ? [...own] : [...DEFAULT_WORK_DAYS]];
-    }),
-  );
-}
-
 function build(db: Db, actor: ResolvedActor, days: string[], now: number): TimeLoggingView {
   const from = days[0] ?? '';
   const to = days.at(-1) ?? '';
@@ -280,6 +273,7 @@ function build(db: Db, actor: ResolvedActor, days: string[], now: number): TimeL
   const zones = zonesFor(db, ids);
   const workDays = workDaysFor(db, ids);
   const firstDays = firstDaysFor(db, ids);
+  const off = offDaysFor(db, actor, ids, from, to);
 
   return {
     from,
@@ -295,6 +289,7 @@ function build(db: Db, actor: ResolvedActor, days: string[], now: number): TimeL
         today_day: dayIn(zone, now),
         work_days: workDays.get(c.id) ?? [...DEFAULT_WORK_DAYS],
         days: (byPerson.get(c.id) ?? []).sort((a, b) => a.day.localeCompare(b.day)),
+        off_days: offEntries(off, c.id),
       };
     }),
     truncated: listed.length > shown.length,

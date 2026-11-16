@@ -7,7 +7,10 @@ import {
   dayShort,
   daysLine,
   hoursMinutes,
+  leaveShown,
+  onLeaveLabel,
   pillOf,
+  presenceOf,
   pillSentence,
   rangeShort,
   tagsOf,
@@ -23,6 +26,7 @@ const seen = (over: Partial<AvailabilitySeen> = {}): AvailabilitySeen => ({
   note: null,
   tags: [],
   away: null,
+  on_leave: null,
   ...over,
 });
 
@@ -49,8 +53,133 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
       tone: 'away',
       glyph: '◐',
       label: 'Away until Mon 16 Nov',
+      short: 'Away',
       hours: '',
     });
+  });
+
+  void test('approved leave: On leave until the run’s last day, its type only when sent', () => {
+    const leave = (type: string | null) =>
+      pillOf(seen({ on_leave: { until: '2026-11-23', status: 'approved', type } }));
+    assert.deepEqual(leave(null), {
+      tone: 'leave',
+      glyph: '◐',
+      label: 'On leave until Mon 23 Nov',
+      short: 'On leave',
+      hours: '',
+    });
+    assert.equal(leave('Annual')?.label, 'On leave until Mon 23 Nov · Annual');
+    // An empty type is no type: nothing trails the date.
+    assert.equal(leave('')?.label, 'On leave until Mon 23 Nov');
+  });
+
+  void test('onLeaveLabel: the leave in words, the same on the pill and on This week', () => {
+    assert.equal(
+      onLeaveLabel({ until: '2026-11-18', status: 'approved', type: null }),
+      'On leave until Wed 18 Nov',
+    );
+    assert.equal(
+      onLeaveLabel({ until: '2026-11-18', status: 'approved', type: 'Annual' }),
+      'On leave until Wed 18 Nov · Annual',
+    );
+    // Requested: no date and no type, whatever was sent.
+    assert.equal(
+      onLeaveLabel({ until: '2026-11-18', status: 'pending', type: 'Annual' }),
+      'Leave requested',
+    );
+    const leave = { until: '2026-11-18', status: 'approved', type: 'Sick' } as const;
+    assert.equal(pillOf(seen({ on_leave: leave }))?.label, onLeaveLabel(leave));
+  });
+
+  void test('approved leave wins over away and over the status — and drops the hours', () => {
+    const pill = pillOf(
+      seen({
+        status: 'open',
+        hours_per_week: 6,
+        away: { until: '2026-11-16' },
+        on_leave: { until: '2026-11-23', status: 'approved', type: 'Sick' },
+      }),
+    );
+    assert.deepEqual(
+      [pill?.tone, pill?.label, pill?.hours],
+      ['leave', 'On leave until Mon 23 Nov · Sick', ''],
+    );
+    assert.equal(pillSentence(pill!, 6), 'On leave until Mon 23 Nov · Sick');
+  });
+
+  void test('leave requested: said over the status, under away, with no date and no type', () => {
+    const requested = { until: '2026-11-23', status: 'pending', type: 'Annual' } as const;
+    const pill = pillOf(seen({ status: 'open', hours_per_week: 6, on_leave: requested }));
+    assert.deepEqual(pill, {
+      tone: 'requested',
+      glyph: '◌',
+      label: 'Leave requested',
+      short: 'Leave requested',
+      hours: '',
+    });
+    // Someone who set nothing but asked for leave still has a pill.
+    assert.equal(pillOf(seen({ on_leave: requested }))?.tone, 'requested');
+    // Their own word that they are away is the stronger fact.
+    assert.equal(
+      pillOf(seen({ away: { until: '2026-11-16' }, on_leave: requested }))?.label,
+      'Away until Mon 16 Nov',
+    );
+    assert.notEqual(pill?.glyph, pillOf(seen({ away: { until: '2026-11-16' } }))?.glyph);
+  });
+
+  void test('presenceOf: one order for the pill and for This week, case by case', () => {
+    const approved = { until: '2026-11-23', status: 'approved', type: 'Annual' } as const;
+    const pending = { until: '2026-11-23', status: 'pending', type: 'Annual' } as const;
+    const away = { until: '2026-11-16' };
+    // [case, what leads, the pill's tone, the leave This week draws]
+    const cases = [
+      [
+        'approved and away',
+        seen({ status: 'open', away, on_leave: approved }),
+        'leave',
+        'leave',
+        'approved',
+      ],
+      ['pending and away', seen({ status: 'open', away, on_leave: pending }), 'away', 'away', null],
+      [
+        'pending alone',
+        seen({ status: 'open', on_leave: pending }),
+        'requested',
+        'requested',
+        'pending',
+      ],
+      ['away alone', seen({ status: 'open', away }), 'away', 'away', null],
+      ['approved alone', seen({ on_leave: approved }), 'leave', 'leave', 'approved'],
+      ['none', seen({ status: 'capacity' }), 'status', 'capacity', null],
+    ] as const;
+    for (const [name, s, leads, tone, drawn] of cases) {
+      assert.equal(presenceOf(s), leads, `${name}: what leads`);
+      assert.equal(pillOf(s)?.tone, tone, `${name}: the pill`);
+      assert.equal(leaveShown(s)?.status ?? null, drawn, `${name}: This week's leave`);
+      // The card says the leave exactly as the pill does, or not at all.
+      const shown = leaveShown(s);
+      if (shown !== null) assert.equal(onLeaveLabel(shown), pillOf(s)?.label, `${name}: the words`);
+    }
+    assert.equal(leaveShown(null), null);
+    assert.equal(leaveShown(undefined), null);
+  });
+
+  void test('short: the head a narrow bar keeps, always where the label starts', () => {
+    const cases = [
+      seen({ on_leave: { until: '2026-11-23', status: 'approved', type: 'Annual' } }),
+      seen({ away: { until: '2026-11-16' } }),
+      seen({ on_leave: { until: '2026-11-23', status: 'pending', type: 'Annual' } }),
+      seen({ status: 'open', hours_per_week: 6 }),
+      seen({ status: 'capacity' }),
+    ];
+    assert.deepEqual(
+      cases.map((c) => pillOf(c)?.short),
+      ['On leave', 'Away', 'Leave requested', 'Open to more work', 'At capacity'],
+    );
+    for (const c of cases) {
+      const pill = pillOf(c);
+      assert.ok(pill?.label.startsWith(pill.short) === true, `${pill?.label ?? ''}`);
+    }
   });
 
   void test('hours show only when open and only when the server sent them', () => {

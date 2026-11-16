@@ -17,7 +17,8 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
+import type { OnLeave } from '../../src/api/off-days.ts';
 import {
   closeBrowser,
   defaultPermissions,
@@ -377,7 +378,8 @@ const BASE: ApiStub = {
 const loadOf = (workWeek: number | null, away: readonly { from: string; to: string }[]) => {
   const availability = {
     status: 'capacity',
-    away: null,
+    away: null as { until: string } | null,
+    on_leave: null as OnLeave | null,
     hours_per_week: null,
     note: null,
     tags: [],
@@ -901,6 +903,7 @@ void describe('your own profile (frame G)', () => {
       '/api/v1/me/availability': {
         status: 'open',
         away: null,
+        on_leave: null,
         hours_per_week: 6,
         note: null,
         tags: [],
@@ -932,6 +935,283 @@ void describe('your own profile (frame G)', () => {
       );
       const tokens = await card(h.page, 'tokens');
       assert.match(await tokens.locator('.prof-card-title').innerText(), /^Your LLM tokens$/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------- leave (D-149)
+
+/**
+ * Hemant's load with leave covering his today (D-149 item 5, LAI-1185): the
+ * one read This week already makes for someone else carries it, so the days
+ * it runs over are marked — and only those, since nothing read says which
+ * earlier days of the week were leave or a holiday.
+ */
+const onLeaveLoad = (
+  status: 'approved' | 'pending',
+  until: string,
+  away: readonly { from: string; to: string }[] = [],
+) => {
+  const load = loadOf(2400, away);
+  return {
+    ...load,
+    availability: { ...load.availability, on_leave: { until, status, type: 'Annual' } },
+  };
+};
+
+/** Every marked day whose name, mark or figure leaves its box, or is cut. */
+async function marksUnfit(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const out: string[] = [];
+    const inside = (a: DOMRect, b: DOMRect) =>
+      a.left >= b.left - 1 &&
+      a.right <= b.right + 1 &&
+      a.top >= b.top - 1 &&
+      a.bottom <= b.bottom + 1;
+    for (const day of Array.from(document.querySelectorAll('.ov-day[data-off]'))) {
+      const d = day.getAttribute('data-day') ?? '';
+      const name = day.querySelector('.ov-day-name');
+      const mark = day.querySelector('.ov-day-off');
+      const figure = day.querySelector('.ov-day-n');
+      const card = day.closest('.prof-card');
+      if (!(name instanceof HTMLElement) || mark === null || card === null) {
+        out.push(`${d}: no name, mark or card`);
+        continue;
+      }
+      if (name.scrollWidth > name.clientWidth + 1) out.push(`${d}: the name is cut`);
+      if (!inside(name.getBoundingClientRect(), day.getBoundingClientRect())) {
+        out.push(`${d}: the name leaves its day`);
+      }
+      if (!inside(mark.getBoundingClientRect(), day.getBoundingClientRect())) {
+        out.push(`${d}: the mark leaves its day`);
+      }
+      if (
+        figure !== null &&
+        !inside(figure.getBoundingClientRect(), card.getBoundingClientRect())
+      ) {
+        out.push(`${d}: the hours leave the card`);
+      }
+    }
+    return out;
+  });
+}
+
+void describe('leave from today, on This week (D-149, LAI-1185)', () => {
+  const last = addDays(TODAY, 2);
+  const marked = WEEK_DAYS.filter((d) => d >= TODAY && d <= last);
+  /** `Wed 18 Nov`, as the page says a day. */
+  const short = (day: string) => {
+    const d = new Date(`${day}T00:00:00Z`);
+    const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()] ?? '';
+    const mon =
+      ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
+        d.getUTCMonth()
+      ] ?? '';
+    return `${wd} ${String(d.getUTCDate())} ${mon}`;
+  };
+  /** Each line of This week's foot, in order, as read. */
+  const foot = (week: Locator) =>
+    week
+      .locator('.ov-week-foot > p')
+      .evaluateAll((els) =>
+        els.map((el) => (el as HTMLElement).innerText.replace(/\s+/g, ' ').trim()),
+      );
+
+  for (const width of [1440, 390]) {
+    void test(`approved leave at ${String(width)}, both themes: today to its last day tinted and marked, the pill says it, each mark fits`, async () => {
+      const h = await open(
+        '/people?user=u2',
+        stubFor(BUSY, {
+          tokens: 128_000_000,
+          week: DAYS,
+          agents: 242,
+          load: onLeaveLoad('approved', last),
+        }),
+      );
+      try {
+        const week = await card(h.page, 'week');
+        await until(async () => (await week.locator('.ov-day[data-off]').count()) > 0);
+        for (const theme of ['Light', 'Dark']) {
+          await h.page.setViewportSize({ width: 1366, height: 900 });
+          await setTheme(h.page, theme);
+          await h.page.setViewportSize({ width, height: 900 });
+          assert.deepEqual(
+            await week
+              .locator('.ov-day')
+              .evaluateAll((els) => els.map((el) => el.getAttribute('data-off'))),
+            WEEK_DAYS.map((d) => (marked.includes(d) ? 'leave' : null)),
+            `${theme}: from today to the leave's last day, and no other day`,
+          );
+          for (const d of marked) {
+            const day = week.locator(`.ov-day[data-day="${d}"]`);
+            assert.match(
+              await day.locator('.visually-hidden').innerText(),
+              /in drafts, on leave$/,
+              `${theme}: ${d} says it`,
+            );
+            assert.equal(await day.locator('.ov-day-off').innerText(), '◐');
+          }
+          // The tint is leave's own fill, from the theme.
+          const tinted = await week
+            .locator(`.ov-day[data-day="${TODAY}"] .ov-day-plot`)
+            .evaluate((el) => {
+              const probe = document.createElement('span');
+              probe.style.backgroundColor = 'var(--leave-bg)';
+              el.append(probe);
+              const want = getComputedStyle(probe).backgroundColor;
+              probe.remove();
+              return getComputedStyle(el).backgroundColor === want;
+            });
+          assert.ok(tinted, `${theme}: today's plot is --leave-bg`);
+          const pill = h.page.locator('.prof-head [data-profile-pill] [data-avail-pill="leave"]');
+          assert.match(await pill.innerText(), /^◐\s*On leave until \w{3} \d{1,2} \w{3} · Annual$/);
+          // The foot says the leave in place of "No time away planned".
+          assert.deepEqual(
+            await foot(week),
+            [`◐ On leave until ${short(last)} · Annual`],
+            `${theme}: the foot says the leave`,
+          );
+          assert.deepEqual(await marksUnfit(h.page), [], `${theme} at ${String(width)}`);
+          // Each marked day is what is seen at its own name — nothing over it,
+          // once the menu that set the theme has slid away.
+          const seen = () =>
+            week.evaluate((el) =>
+              Array.from(el.querySelectorAll('.ov-day[data-off] .ov-day-name')).every((name) => {
+                const r = name.getBoundingClientRect();
+                const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                return hit !== null && name.closest('.ov-day')?.contains(hit) === true;
+              }),
+            );
+          await week.locator('.ov-days').scrollIntoViewIfNeeded();
+          await until(seen);
+          assert.ok(await seen(), `${theme} at ${String(width)}: a marked day is covered`);
+          // For the picture only: on a phone the rail slides away after the theme is set.
+          if (width < 900) {
+            await until(() =>
+              h.page.evaluate(
+                () => (document.getElementById('sidebar')?.getBoundingClientRect().right ?? 0) <= 0,
+              ),
+            );
+          }
+          if (process.env.LAIKA_SHOTS !== undefined) {
+            await week.screenshot({
+              path: `${process.env.LAIKA_SHOTS}/profile-week-leave-${theme}-${String(width)}.png`,
+            });
+          }
+          const overflow = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          );
+          assert.ok(overflow <= 0, `${theme}: scrolls sideways by ${String(overflow)}px`);
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('leave requested: the same days outlined, dashed, and said as requested', async () => {
+    const h = await open(
+      '/people?user=u2',
+      stubFor(BUSY, {
+        tokens: 128_000_000,
+        week: DAYS,
+        agents: 242,
+        load: onLeaveLoad('pending', last),
+      }),
+    );
+    try {
+      const week = await card(h.page, 'week');
+      const today = week.locator(`.ov-day[data-day="${TODAY}"]`);
+      await until(async () => (await today.getAttribute('data-off')) === 'requested');
+      assert.equal(await week.locator('.ov-day[data-off="requested"]').count(), marked.length);
+      assert.match(await today.locator('.visually-hidden').innerText(), /, leave requested$/);
+      assert.equal(await today.locator('.ov-day-off').innerText(), '◌');
+      const plot = await today
+        .locator('.ov-day-plot')
+        .evaluate((el) => [
+          getComputedStyle(el).outlineStyle,
+          getComputedStyle(el).backgroundColor,
+        ]);
+      assert.deepEqual(plot, ['dashed', 'rgba(0, 0, 0, 0)'], 'an outline, never the fill');
+      assert.match(
+        await h.page.locator('.prof-head [data-profile-pill]').innerText(),
+        /Leave requested/,
+      );
+      assert.deepEqual(await foot(week), ['◌ Leave requested']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('leave requested under a current away period: away leads, as on the pill — no dashes, no Leave requested', async () => {
+    const away = [{ from: TODAY, to: last }];
+    const load = onLeaveLoad('pending', last, away);
+    const h = await open(
+      '/people?user=u2',
+      stubFor(BUSY, {
+        tokens: 128_000_000,
+        week: DAYS,
+        agents: 242,
+        load: { ...load, availability: { ...load.availability, away: { until: last } } },
+      }),
+    );
+    try {
+      const week = await card(h.page, 'week');
+      const pill = h.page.locator('.prof-head [data-profile-pill] [data-avail-pill]');
+      await pill.waitFor({ timeout: 20_000 });
+      await until(async () => (await week.locator('.ov-week-foot > p').count()) > 0);
+      assert.equal(await pill.getAttribute('data-avail-pill'), 'away');
+      assert.equal(
+        (await pill.innerText()).replace(/\s+/g, ' ').trim(),
+        `◐ Away until ${short(last)}`,
+      );
+      // This week leads with the same fact: the away line alone, no day dashed.
+      const lines = await foot(week);
+      assert.equal(lines.length, 1, `the foot: ${lines.join(' / ')}`);
+      assert.match(lines[0] ?? '', /^Away \w{3} \d{1,2}/);
+      assert.doesNotMatch(lines.join(' '), /Leave requested/);
+      assert.equal(await week.locator('.ov-day[data-off], .ov-day-off, [data-leave]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('leave and away dates: the leave first, then the away line as before', async () => {
+    const h = await open(
+      '/people?user=u2',
+      stubFor(BUSY, {
+        tokens: 128_000_000,
+        week: DAYS,
+        agents: 242,
+        load: onLeaveLoad('approved', last, AWAY),
+      }),
+    );
+    try {
+      const week = await card(h.page, 'week');
+      await until(async () => (await week.locator('.ov-week-foot > p').count()) === 2);
+      assert.deepEqual(await foot(week), [
+        `◐ On leave until ${short(last)} · Annual`,
+        'Away Fri 20 – Mon 23 Nov',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no leave: no day is marked', async () => {
+    const h = await open(
+      '/people?user=u2',
+      stubFor(BUSY, { tokens: 128_000_000, week: DAYS, agents: 242 }),
+    );
+    try {
+      const week = await card(h.page, 'week');
+      await until(async () => (await week.locator('.ov-day').count()) === 7);
+      assert.equal(await week.locator('.ov-day[data-off], .ov-day-off').count(), 0);
+      // The away line as it always was, and no leave line.
+      assert.deepEqual(await foot(week), ['Away Fri 20 – Mon 23 Nov']);
+      assert.equal(await week.locator('[data-leave]').count(), 0);
     } finally {
       await h.close();
     }

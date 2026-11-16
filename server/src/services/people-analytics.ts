@@ -63,7 +63,7 @@ export function getPersonDay(
     actor,
     userId,
     'time',
-    () => dayOf(db, userId, query, now),
+    () => dayOf(db, actor, userId, query, now),
     (view) => view.day,
     now,
   );
@@ -111,7 +111,7 @@ export function getPersonDays(
     actor,
     userId,
     'time',
-    () => daysOf(db, userId, query, now),
+    () => daysOf(db, actor, userId, query, now),
     () => null,
     now,
   );

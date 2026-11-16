@@ -71,7 +71,8 @@ export function ViewingSwitch({ meId, subjectId, people, onPick }: ViewingSwitch
             <span className="myday-viewing-label">
               Viewing<span className="myday-viewing-colon">:</span>
             </span>{' '}
-            {current?.label ?? 'Me'}
+            {/* Its own box, so a name too long for the bar ends in … (LAI-1187). */}
+            <span className="myday-viewing-name">{current?.label ?? 'Me'}</span>
           </>
         }
         onChange={(value) => {

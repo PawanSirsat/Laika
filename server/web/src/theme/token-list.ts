@@ -165,6 +165,18 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
       '--kind-admin-border',
     ],
   },
+  {
+    title: 'Day off',
+    note: 'A holiday (teal) and leave (blue, as Away) on My day and the Time logging grid (D-149, LAI-1184): ink, fill and border, clear of the Year’s violet heat. Pending leave draws the leave border dashed, never the fill.',
+    tokens: [
+      '--holiday',
+      '--holiday-bg',
+      '--holiday-border',
+      '--leave',
+      '--leave-bg',
+      '--leave-border',
+    ],
+  },
 ];
 
 /** Flat list of every themed colour token. */
@@ -234,4 +246,9 @@ export const CONTRAST_PAIRS: readonly { readonly text: string; readonly backgrou
   { text: '--text-secondary', background: '--bg-canvas' },
   { text: '--text-secondary', background: '--bg-column' },
   { text: '--text-secondary', background: '--bg-card' },
+  // A day off's label on its own fill, and its ink on a card (D-149, LAI-1184).
+  { text: '--holiday', background: '--holiday-bg' },
+  { text: '--leave', background: '--leave-bg' },
+  { text: '--holiday', background: '--bg-card' },
+  { text: '--leave', background: '--bg-card' },
 ];

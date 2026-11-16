@@ -10,7 +10,12 @@
  *  - a cell is a door to that person's Day; a name to their profile;
  *  - the lead's caption, the cut-list note, the empty state with the stepper
  *    still there, the server's error with Retry;
- *  - both themes at 1440 and 390, nothing sideways, the first column pinned.
+ *  - both themes at 1440 and 390, nothing sideways, the first column pinned;
+ *  - holidays and leave (D-149 item 6, LAI-1185): a holiday and approved
+ *    whole-day leave not due, a half day full at half the threshold, leave
+ *    requested still due, the shared holiday in the column's head, the
+ *    legend only for what is drawn, and every mark fitting its cell in both
+ *    themes at 1440 and 390.
  *
  * `/time/days` is answered by `page.route`, which sees the whole query — the
  * stub server matches paths, and the month asked for is what this is about.
@@ -112,6 +117,7 @@ function person(
     joined_day: '2026-01-05',
     today_day: TODAY,
     work_days: [1, 2, 3, 4, 5],
+    off_days: [],
     ...facts,
   };
 }
@@ -433,6 +439,336 @@ void describe('every cell state, from the server’s facts', () => {
       const total = row.locator('[data-tlg-total]');
       assert.match(await total.innerText(), /8h/);
       assert.doesNotMatch(await total.innerText(), /days/);
+    } finally {
+      await done(h);
+    }
+  });
+});
+
+/**
+ * October again, with days off (D-149): Founders Day covers Bea and Cleo on
+ * Tuesday the 6th — Bea logged a day on it anyway; Bea is on annual leave on
+ * Wednesday the 7th, off for the morning on Thursday the 8th and logged four
+ * hours, and has asked for Friday the 9th and logged nothing. Cleo alone has
+ * Diwali on Wednesday the 14th, so that column's head says nothing.
+ */
+const OFF_FIXTURE: TimeLogging = {
+  ...OCT_FIXTURE,
+  people: [
+    person('u2', 'Bea Nkosi', {
+      joined_day: '2026-10-05',
+      today_day: '2026-10-15',
+      days: [
+        ...(OCT_FIXTURE.people[0]?.days ?? []),
+        { day: '2026-10-06', confirmed_minutes: 480, drafted_minutes: 0 },
+        { day: '2026-10-08', confirmed_minutes: 240, drafted_minutes: 0 },
+      ].sort((a, b) => (a.day < b.day ? -1 : 1)),
+      off_days: [
+        { day: '2026-10-06', holiday: { label: 'Founders Day' }, leave: null },
+        {
+          day: '2026-10-07',
+          holiday: null,
+          leave: { part: 'full', status: 'approved', type: 'Annual' },
+        },
+        {
+          day: '2026-10-08',
+          holiday: null,
+          leave: { part: 'first_half', status: 'approved', type: 'Annual' },
+        },
+        {
+          day: '2026-10-09',
+          holiday: null,
+          leave: { part: 'full', status: 'pending', type: 'Annual' },
+        },
+      ],
+    }),
+    person('u3', 'Cleo Adams', {
+      joined_day: '2026-10-05',
+      today_day: '2026-10-15',
+      days: [],
+      off_days: [
+        { day: '2026-10-06', holiday: { label: 'Founders Day' }, leave: null },
+        { day: '2026-10-14', holiday: { label: 'Diwali' }, leave: null },
+      ],
+    }),
+  ],
+};
+
+/**
+ * Every element matching `selector` that spills out of its `box` — or, with
+ * `self`, whose own content is wider than it is.
+ */
+async function spills(page: Page, selector: string, box: string, self = true): Promise<string[]> {
+  return page.evaluate(
+    ([sel, within, own]) => {
+      const out: string[] = [];
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        if (!(el instanceof HTMLElement)) continue;
+        const name = `${sel} ${el.closest('[data-day]')?.getAttribute('data-day') ?? ''} “${el.innerText.trim()}”`;
+        if (own && el.scrollWidth > el.clientWidth + 1) {
+          out.push(
+            `${name} is ${String(el.scrollWidth)}px of content in ${String(el.clientWidth)}px`,
+          );
+        }
+        const outer = el.closest(within);
+        if (outer === null) continue;
+        const a = el.getBoundingClientRect();
+        const b = outer.getBoundingClientRect();
+        if (
+          a.left < b.left - 1 ||
+          a.right > b.right + 1 ||
+          a.top < b.top - 1 ||
+          a.bottom > b.bottom + 1
+        ) {
+          out.push(`${name} leaves its ${within}`);
+        }
+      }
+      return out;
+    },
+    [selector, box, self] as const,
+  );
+}
+
+void describe('holidays and leave (D-149 item 6)', () => {
+  for (const theme of ['dark', 'light'] as const) {
+    for (const width of [1440, 390]) {
+      void test(`${theme} at ${String(width)}: not due, half a day, requested — drawn, said, and fitting`, async () => {
+        const asked: URL[] = [];
+        const h = await openWith(
+          '/insights?tab=time&view=days&month=2026-10',
+          OWNER_STUB(),
+          asked,
+          () => ok(OFF_FIXTURE),
+          width,
+        );
+        try {
+          await setTheme(h.page, theme);
+          const g = grid(h.page);
+          await g.locator('tr[data-person="u3"]').waitFor({ timeout: 20_000 });
+          const c = (user: string, day: string) => cell(h.page, user, day);
+          const drawn = async (user: string, day: string) => [
+            await c(user, day).getAttribute('data-state'),
+            await c(user, day).getAttribute('data-off'),
+            (await c(user, day).locator('.tlg-cell, .tlg-dash > [aria-hidden="true"]').innerText())
+              .replace(/\s+/g, ' ')
+              .trim(),
+          ];
+          const words = async (user: string, day: string) =>
+            (await c(user, day).locator('a').count()) > 0
+              ? await c(user, day).locator('a').getAttribute('aria-label')
+              : await c(user, day).locator('.tlg-dash').getAttribute('title');
+
+          // A holiday: not due, with or without time on it.
+          assert.deepEqual(await drawn('u2', '2026-10-06'), ['holiday', 'holiday', '✱ 8h']);
+          assert.equal(
+            await words('u2', '2026-10-06'),
+            'Bea Nkosi, Tue 6 Oct: 8h, Founders Day — not due',
+          );
+          assert.deepEqual(await drawn('u3', '2026-10-06'), ['holiday', 'holiday', '✱']);
+          assert.equal(
+            await c('u3', '2026-10-06').locator('a').count(),
+            0,
+            'a quiet holiday is no door',
+          );
+          // Approved whole-day leave: not due, its type said to an owner.
+          assert.deepEqual(await drawn('u2', '2026-10-07'), ['leave', 'leave', '◐']);
+          assert.equal(
+            await words('u2', '2026-10-07'),
+            'Bea Nkosi, Wed 7 Oct: On leave · Annual — not due',
+          );
+          // A half day: four hours is a full day, and the corner says why.
+          assert.deepEqual(await drawn('u2', '2026-10-08'), ['full', 'leave', '✓ 4h']);
+          assert.equal(
+            await words('u2', '2026-10-08'),
+            'Bea Nkosi, Thu 8 Oct: 4h, 4h or more, full day, On leave · Annual · morning',
+          );
+          // Leave requested: still due, nothing logged is still ✕.
+          assert.deepEqual(await drawn('u2', '2026-10-09'), ['none', 'requested', '✕']);
+          assert.equal(
+            await words('u2', '2026-10-09'),
+            'Bea Nkosi, Fri 9 Oct: nothing logged, Leave requested · Annual',
+          );
+          // The corner mark is drawn for the half day and the request, not for a not-due day.
+          const mark = (day: string, user = 'u2') =>
+            h.page.evaluate(
+              ([u, d]) => {
+                const el = document.querySelector(
+                  `tr[data-person="${u}"] td[data-day="${d}"] .tlg-cell, tr[data-person="${u}"] td[data-day="${d}"] .tlg-dash`,
+                );
+                if (el === null) return 'missing';
+                const after = getComputedStyle(el, '::after');
+                return after.content === 'none' || after.content === ''
+                  ? 'none'
+                  : `${after.width} ${after.borderTopStyle}`;
+              },
+              [user, day] as const,
+            );
+          assert.equal(await mark('2026-10-08'), '6px none', 'the half day has a solid corner');
+          assert.equal(
+            await mark('2026-10-09'),
+            '6px dashed',
+            'the request has an outlined corner',
+          );
+          assert.equal(await mark('2026-10-06'), 'none', 'a holiday cell needs no corner');
+          assert.equal(await mark('2026-10-12'), 'none', 'an ordinary day has no corner');
+          // The holiday every person shown shares is in its head; Cleo's alone is not.
+          const head = g.locator('th[data-tlg-day="2026-10-06"]');
+          assert.equal(await head.getAttribute('data-holiday'), 'Founders Day');
+          assert.equal(
+            await head.locator('abbr').getAttribute('title'),
+            'Tue 6 Oct · Founders Day',
+          );
+          assert.match(await head.innerText(), /Founders Day/);
+          assert.equal(
+            await g.locator('th[data-tlg-day="2026-10-14"]').getAttribute('data-holiday'),
+            null,
+          );
+          assert.deepEqual(await drawn('u3', '2026-10-14'), ['holiday', 'holiday', '✱']);
+          // Totals: the holiday's 8h and the half day's 4h toward hours; the
+          // holiday and the leave off the days owed (eight less two), and the
+          // half day toward the days reached.
+          const total = (user: string) =>
+            h.page.locator(`tr[data-person="${user}"] [data-tlg-total]`);
+          assert.match(await total('u2').innerText(), /43h 30m/);
+          assert.match(await total('u2').innerText(), /2 \/ 6 days/);
+          // Cleo: Founders Day and her own Diwali both off the eight.
+          assert.match(await total('u3').innerText(), /0 \/ 6 days/);
+          // The legend explains what is drawn, and only that.
+          const legend = g.locator('.tlg-legend');
+          assert.deepEqual(
+            await legend
+              .locator('[data-tlg-legend]')
+              .evaluateAll((els) => els.map((e) => e.getAttribute('data-tlg-legend'))),
+            ['holiday', 'leave', 'half', 'requested'],
+          );
+          assert.match(await legend.innerText(), /a holiday — not due/);
+          assert.match(await legend.innerText(), /on leave — not due/);
+          assert.match(await legend.innerText(), /half a day on leave — 4h due/);
+          assert.match(await legend.innerText(), /leave requested — still due/);
+          // Every mark fits: a cell's glyph and figure in the cell, the cell in
+          // its column, the head's mark in its head, each legend line in the card.
+          assert.deepEqual(
+            await spills(h.page, 'td[data-off] .tlg-cell, td[data-off] .tlg-dash', 'td'),
+            [],
+          );
+          // The head's mark sits out of the date's flow on purpose: the abbr and
+          // the mark must each stay inside the column's head.
+          assert.deepEqual(await spills(h.page, 'th[data-holiday] abbr', 'th', false), []);
+          assert.deepEqual(await spills(h.page, 'th[data-holiday] .tlg-head-off', 'th'), []);
+          // The mark is beside the date, not under it: the date sits in line with its neighbours'.
+          const tops = await h.page.evaluate(() =>
+            ['2026-10-05', '2026-10-06', '2026-10-07'].map(
+              (d) =>
+                document.querySelector(`th[data-tlg-day="${d}"] .tlg-date`)?.getBoundingClientRect()
+                  .top ?? -1,
+            ),
+          );
+          assert.ok(
+            tops.every((t) => t >= 0 && Math.abs(t - (tops[0] ?? 0)) < 1),
+            `the dates' tops differ: ${tops.join(', ')}`,
+          );
+          assert.deepEqual(await spills(h.page, '.tlg-legend li', '.tlg'), []);
+          assert.deepEqual(await spills(h.page, '.tlg-legend .tlg-swatch', 'li'), []);
+          await noSideways(h.page, width);
+          // On a phone the marked week is past the scroll edge: bring it into the shot.
+          await h.page.evaluate(() => {
+            const scroll = document.querySelector('.tlg-scroll');
+            const col = document.querySelector('th[data-tlg-day="2026-10-05"]');
+            const who = document.querySelector('thead th.tlg-who');
+            if (
+              scroll instanceof HTMLElement &&
+              col instanceof HTMLElement &&
+              who instanceof HTMLElement
+            ) {
+              scroll.scrollLeft = col.offsetLeft - who.offsetWidth;
+            }
+          });
+          await shoot(h.page, `time-logging-off-days-${theme}-${String(width)}`);
+        } finally {
+          await done(h);
+        }
+      });
+    }
+  }
+
+  for (const theme of ['dark', 'light'] as const) {
+    void test(`${theme}: the only holiday is a day not yet come — a corner mark and its own legend line, never the holiday's`, async () => {
+      // Bea alone has Diwali on Tuesday the 20th, after her today, the 15th.
+      const fixture: TimeLogging = {
+        ...OFF_FIXTURE,
+        people: OFF_FIXTURE.people.map((p) =>
+          p.user.id === 'u2'
+            ? { ...p, off_days: [{ day: '2026-10-20', holiday: { label: 'Diwali' }, leave: null }] }
+            : { ...p, off_days: [] },
+        ),
+      };
+      const asked: URL[] = [];
+      const h = await openWith(
+        '/insights?tab=time&view=days&month=2026-10',
+        OWNER_STUB(),
+        asked,
+        () => ok(fixture),
+      );
+      try {
+        await setTheme(h.page, theme);
+        const g = grid(h.page);
+        await g.locator('tr[data-person="u3"]').waitFor({ timeout: 20_000 });
+        const diwali = cell(h.page, 'u2', '2026-10-20');
+        assert.deepEqual(
+          [await diwali.getAttribute('data-state'), await diwali.getAttribute('data-off')],
+          ['future', 'holiday'],
+        );
+        assert.equal(await g.locator('td[data-state="holiday"]').count(), 0, 'no holiday fill');
+        // The legend says what is drawn: the corner mark, not the holiday's fill.
+        assert.deepEqual(
+          await g
+            .locator('[data-tlg-legend]')
+            .evaluateAll((els) => els.map((e) => e.getAttribute('data-tlg-legend'))),
+          ['quiet'],
+        );
+        const quiet = g.locator('[data-tlg-legend="quiet"]');
+        assert.match(
+          await quiet.innerText(),
+          /a holiday or leave on a day otherwise not due — named on hover/,
+        );
+        assert.deepEqual(
+          await quiet
+            .locator('.tlg-swatch-mark')
+            .evaluateAll((els) => els.map((e) => e.getAttribute('data-off'))),
+          ['holiday'],
+        );
+        // The swatch's dot and the cell's are one colour.
+        const dot = (sel: string) =>
+          h.page.evaluate((s) => {
+            const el = document.querySelector(s);
+            return el === null ? 'missing' : getComputedStyle(el, '::after').backgroundColor;
+          }, sel);
+        const swatch = await dot('[data-tlg-legend="quiet"] .tlg-swatch-mark');
+        assert.equal(await dot('tr[data-person="u2"] td[data-day="2026-10-20"] .tlg-dash'), swatch);
+        assert.notEqual(swatch, 'rgba(0, 0, 0, 0)');
+        assert.deepEqual(await spills(h.page, '.tlg-legend li', '.tlg'), []);
+        assert.deepEqual(await spills(h.page, '.tlg-legend .tlg-swatch', 'li'), []);
+        await shoot(h.page, `time-logging-quiet-holiday-${theme}`);
+      } finally {
+        await done(h);
+      }
+    });
+  }
+
+  void test('a month with no days off says nothing of them: no legend line, no head mark, no corner', async () => {
+    const asked: URL[] = [];
+    const h = await openWith(
+      '/insights?tab=time&view=days&month=2026-10',
+      OWNER_STUB(),
+      asked,
+      () => ok(OCT_FIXTURE),
+    );
+    try {
+      const g = grid(h.page);
+      await g.locator('tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.equal(await g.locator('[data-tlg-legend]').count(), 0);
+      assert.equal(await g.locator('th[data-holiday]').count(), 0);
+      assert.equal(await g.locator('td[data-off]').count(), 0);
     } finally {
       await done(h);
     }

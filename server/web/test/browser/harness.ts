@@ -121,6 +121,7 @@ const NO_NOTICES = { data: [], next_cursor: null, unread_count: 0 } as const;
 const NO_AVAILABILITY = {
   status: null,
   away: null,
+  on_leave: null,
   hours_per_week: null,
   note: null,
   tags: [],

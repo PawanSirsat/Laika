@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import type { OffKind } from '../../../api/off-days.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { DaySkeleton } from './DaySkeleton.tsx';
 import { duration } from './format.ts';
@@ -24,7 +25,7 @@ import {
   type Span,
 } from './span.ts';
 import { periodKey, spanCache, type Got, type WideSpan } from './span-cache.ts';
-import { periodFigure } from './span-derive.ts';
+import { offTones, periodFigure } from './span-derive.ts';
 import { boxOf, slideIn, slideOut, zoomLayers, type Direction } from './span-motion.ts';
 import { warm, warmPlan } from './span-prefetch.ts';
 import { WeekView } from './WeekView.tsx';
@@ -492,6 +493,7 @@ const LayerBody = memo(function LayerBody({
         <SpanHead
           label={label}
           figure={rows === undefined ? undefined : periodFigure(rows)}
+          off={days === undefined ? undefined : offTones(days)}
           pending={pending}
           hint="Open a day, or a block"
         />
@@ -517,6 +519,7 @@ const LayerBody = memo(function LayerBody({
               ? undefined
               : periodFigure(days.filter((d) => monthKey(d.day) === month))
           }
+          off={days === undefined ? undefined : offTones(days)}
           pending={pending}
           hint="Open a day, or a week number"
         />
@@ -529,6 +532,7 @@ const LayerBody = memo(function LayerBody({
       <SpanHead
         label={label}
         figure={days === undefined ? undefined : periodFigure(days)}
+        off={days === undefined ? undefined : offTones(days)}
         pending={pending}
         hint="Open a month, or a day"
         heat
@@ -538,16 +542,29 @@ const LayerBody = memo(function LayerBody({
   );
 });
 
-/** The card's head: the period, its figure, and how to go further in. */
+/** What the legend calls each tone a day off is drawn in (D-149, LAI-1184). */
+const OFF_KEYS: Readonly<Record<OffKind, string>> = {
+  holiday: 'Holiday',
+  leave: 'Leave',
+  requested: 'Leave requested',
+};
+
+/**
+ * The card's head: the period, its figure, the key to the days off it holds,
+ * and how to go further in.
+ */
 function SpanHead({
   label,
   figure,
+  off = [],
   pending = false,
   hint,
   heat = false,
 }: {
   readonly label: string;
   readonly figure?: ReturnType<typeof periodFigure> | undefined;
+  /** The tones of the days off the period holds; the legend names only these. */
+  readonly off?: readonly OffKind[] | undefined;
   readonly pending?: boolean;
   readonly hint?: string;
   readonly heat?: boolean;
@@ -581,6 +598,16 @@ function SpanHead({
             </>
           )}
         </p>
+      )}
+      {off.length > 0 && (
+        <span className="span-off-key" data-off-key>
+          {off.map((t) => (
+            <span key={t} className="span-key" data-off-legend={t}>
+              <span className="span-swatch span-swatch-off" data-off={t} aria-hidden="true" />
+              {OFF_KEYS[t]}
+            </span>
+          ))}
+        </span>
       )}
       {heat && (
         <span className="span-heat-key" aria-hidden="true">

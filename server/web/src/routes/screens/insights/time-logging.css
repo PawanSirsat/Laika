@@ -2,7 +2,8 @@
  * Insights → Time → Time logging (D-148, LAI-1175): a month of people by
  * day. Tokens only, so both themes come from theme.css; every size a step of
  * the type scale. A verdict is always a glyph and a figure, never colour
- * alone; colour comes from the existing chip tokens.
+ * alone; colour comes from the existing chip tokens, and a holiday or leave
+ * (D-149, LAI-1185) from `--holiday*` and `--leave*`.
  */
 
 .tlg {
@@ -139,6 +140,30 @@
   font-size: var(--text-small);
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+/*
+ * A holiday everyone shown shares: the head says it, in its own ink, the
+ * mark beside the date and out of the flow so the date stays in line with
+ * its neighbours'.
+ */
+.tlg-grid thead th[data-holiday] .tlg-date,
+.tlg-head-off {
+  color: var(--holiday);
+}
+
+.tlg-date {
+  position: relative;
+}
+
+.tlg-head-off {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 0.0625rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1;
 }
 
 /* The person, pinned to the left edge as the days scroll under it. */
@@ -312,6 +337,73 @@ td[data-state='left'] .tlg-cell,
 td[data-state='before'] .tlg-dash,
 td[data-state='future'] .tlg-dash {
   opacity: 0.55;
+}
+
+/*
+ * A holiday, or approved whole-day leave (D-149 item 6): not due, so no
+ * verdict colour — the day off's own ink on its own fill, glyph and figure
+ * alike, whether or not there is time on it.
+ */
+td[data-state='holiday'] .tlg-cell,
+td[data-state='holiday'] .tlg-dash,
+.tlg-swatch[data-state='holiday'] {
+  color: var(--holiday);
+  background: var(--holiday-bg);
+  border: 1px solid var(--holiday-border);
+  border-radius: var(--radius-xs);
+}
+
+td[data-state='leave'] .tlg-cell,
+td[data-state='leave'] .tlg-dash,
+.tlg-swatch[data-state='leave'] {
+  color: var(--leave);
+  background: var(--leave-bg);
+  border: 1px solid var(--leave-border);
+  border-radius: var(--radius-xs);
+}
+
+/*
+ * Leave or a holiday on a day that keeps its own state — a half day, leave
+ * requested, today, not yet: a mark in the corner, solid for approved leave
+ * and a holiday, an outline for requested. The words say which; the mark is
+ * only where to look.
+ */
+td[data-off] .tlg-cell,
+td[data-off] .tlg-dash,
+.tlg-swatch-mark {
+  position: relative;
+}
+
+td[data-off]:not([data-state='holiday'], [data-state='leave']) .tlg-cell::after,
+td[data-off]:not([data-state='holiday'], [data-state='leave']) .tlg-dash::after,
+.tlg-swatch-mark::after {
+  content: '';
+  position: absolute;
+  top: 0.1875rem;
+  right: 0.1875rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: var(--radius-pill);
+  box-sizing: border-box;
+}
+
+td[data-off='leave'] .tlg-cell::after,
+td[data-off='leave'] .tlg-dash::after,
+.tlg-swatch-mark[data-off='leave']::after {
+  background: var(--leave);
+}
+
+td[data-off='holiday'] .tlg-cell::after,
+td[data-off='holiday'] .tlg-dash::after,
+.tlg-swatch-mark[data-off='holiday']::after {
+  background: var(--holiday);
+}
+
+td[data-off='requested'] .tlg-cell::after,
+td[data-off='requested'] .tlg-dash::after,
+.tlg-swatch-mark[data-off='requested']::after {
+  border: 1px dashed var(--leave);
+  background: transparent;
 }
 
 /* --------------------------------------------------------------- states */

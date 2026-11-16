@@ -1,8 +1,9 @@
 import { memo, useMemo } from 'react';
+import { offDescription, offKind } from '../../../api/off-days.ts';
 import type { DaysDay } from '../../../api/time.ts';
 import { duration, roundHours } from './format.ts';
 import { monthBounds, monthName, yearOf } from './span.ts';
-import { cellKind, heatScale, totalOf } from './span-derive.ts';
+import { cellKind, heatScale, offMark, totalOf } from './span-derive.ts';
 import { dayLong } from './week-derive.ts';
 
 export interface YearViewProps {
@@ -25,6 +26,11 @@ export interface YearViewProps {
  * days** — its busiest quarter darkest, whatever the hours. A day nothing
  * reached is drawn empty with *no signal* in its name, and a day still to
  * come is an outline.
+ *
+ * A day off (D-149, LAI-1184) is in its own tone, never the heat's violet: a
+ * holiday or a day of leave with no time is filled teal or blue; one with
+ * time keeps its heat and wears a corner dot; half-day leave is half filled;
+ * leave still requested is a dashed outline. Its name is in the title.
  *
  * The twelve months are built once per year and data set: 365 buttons each
  * naming their day is the costliest thing on the stage, and a zoom must not
@@ -54,11 +60,25 @@ export const YearView = memo(function YearView({
         const row = byDay.get(d);
         const kind = pending ? 'pending' : row === undefined ? 'future' : cellKind(row);
         const minutes = row === undefined ? 0 : totalOf(row);
+        const off = pending || row === undefined ? null : row.off;
+        const said = offDescription(off);
+        const what =
+          kind === 'time'
+            ? duration(minutes)
+            : kind === 'off'
+              ? (said ?? '')
+              : kind === 'no_signal'
+                ? 'no signal'
+                : kind === 'pending'
+                  ? 'loading'
+                  : 'not yet';
         return {
           d,
           kind,
           heat: kind === 'time' ? heat(minutes) : 0,
-          title: `${dayLong(d)} · ${kind === 'time' ? duration(minutes) : kind === 'no_signal' ? 'no signal' : kind === 'pending' ? 'loading' : 'not yet'}`,
+          tone: offKind(off),
+          mark: pending || row === undefined ? null : offMark(row),
+          title: `${dayLong(d)} · ${what}${kind !== 'off' && said !== null ? ` · ${said}` : ''}`,
         };
       });
       return { first, total, lead, cells };
@@ -106,6 +126,8 @@ export const YearView = memo(function YearView({
                   data-zk={`d:${c.d}`}
                   data-kind={c.kind}
                   data-heat={c.heat}
+                  data-off={c.tone ?? undefined}
+                  data-mark={c.mark ?? undefined}
                   data-today={c.d === today ? '' : undefined}
                   title={c.title}
                   onClick={() => {
