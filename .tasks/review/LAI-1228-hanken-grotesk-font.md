@@ -6,7 +6,8 @@ assignee: shell
 priority: p2
 depends-on: [LAI-1125, LAI-1212]
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-11-16T18:45:00Z
 started: 2026-11-16T18:00:00Z
 ---
 
@@ -22,23 +23,23 @@ sidebar footer in parallel; this task touches no header or sidebar file.
 
 ## Acceptance criteria
 
-- [ ] Self-hosted only (CSP `font-src 'self'`, SPEC §13.4): the variable
+- [x] Self-hosted only (CSP `font-src 'self'`, SPEC §13.4): the variable
       package's latin subset, upright and italic, from our own assets; no
       latin-ext file and no request to Google.
-- [ ] `@fontsource-variable/hanken-grotesk` pinned exactly `5.3.0` in
+- [x] `@fontsource-variable/hanken-grotesk` pinned exactly `5.3.0` in
       `server/web/package.json`, lockfile updated.
-- [ ] A new card in the Interface font picker, previewed in its own face with
+- [x] A new card in the Interface font picker, previewed in its own face with
       the sample line, with the same arrow-key behaviour as the others.
-- [ ] Persists like the others (`laika.font`), and applies before first paint
+- [x] Persists like the others (`laika.font`), and applies before first paint
       through `public/theme-boot.js` — the sign-in screens included. JetBrains
       Mono stays for code and keys.
-- [ ] Lazy: its files download only when it is the face in use; the browser
+- [x] Lazy: its files download only when it is the face in use; the browser
       test that holds "unselected faces are never downloaded" covers it, and
       the bundle budget test stays green.
-- [ ] Real weights 100–900 and a real italic, so no synthesis switch and no
+- [x] Real weights 100–900 and a real italic, so no synthesis switch and no
       caveat note.
-- [ ] Layout checked at 390 and 1440 (truncation, board cards, tables).
-- [ ] Tests: unit (registry, CSS agreement, pin) and browser (pick, reload
+- [x] Layout checked at 390 and 1440 (truncation, board cards, tables).
+- [x] Tests: unit (registry, CSS agreement, pin) and browser (pick, reload
       persists, network shows only its files, keyboard); one behaviour broken
       and seen red.
 
