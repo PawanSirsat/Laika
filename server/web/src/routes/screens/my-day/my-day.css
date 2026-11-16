@@ -1878,6 +1878,14 @@ p.inspector-length {
   font-weight: var(--weight-semibold);
 }
 
+/* Whose day: cut with … rather than drawn past the chip (LAI-1187). */
+.myday-viewing-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Read only, said once and plainly, above the day it is about. */
 .myday-viewing-banner {
   margin: 0.75rem 1.125rem 0;

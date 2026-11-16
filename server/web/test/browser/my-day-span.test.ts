@@ -374,6 +374,54 @@ void describe('My day — the View (LAI-1174)', () => {
   });
 
   for (const theme of ['light', 'dark'] as const) {
+    void test(`390 px, ${theme}: the Year's heat key keeps its swatches (LAI-1187)`, async () => {
+      h = await open(`/my-day?span=year&day=${TODAY}`, stub(), {
+        before: async (page) => {
+          await page.setViewportSize({ width: 390, height: 844 });
+        },
+      });
+      try {
+        await setTheme(h.page, theme);
+        await settled(h.page, 'year');
+        const key = await h.page
+          .locator('[data-layer-role="current"] .span-heat-key')
+          .evaluate((el) => {
+            const head = (el.closest('.span-head') ?? el).getBoundingClientRect();
+            return [...el.querySelectorAll<HTMLElement>('.span-heat-swatch')].map((s) => {
+              const r = s.getBoundingClientRect();
+              return {
+                w: r.width,
+                h: r.height,
+                left: r.left,
+                right: r.right,
+                inside:
+                  r.left >= head.left - 0.5 &&
+                  r.right <= head.right + 0.5 &&
+                  r.top >= head.top - 0.5 &&
+                  r.bottom <= head.bottom + 0.5,
+              };
+            });
+          });
+        assert.equal(key.length, 5);
+        for (const [i, s] of key.entries()) {
+          assert.deepEqual(
+            [s.w, s.h],
+            [12, 12],
+            `swatch ${String(i)} is ${String(s.w)}×${String(s.h)}`,
+          );
+          assert.equal(s.inside, true, `swatch ${String(i)} is outside the card's head`);
+          const next = key[i + 1];
+          if (next !== undefined)
+            assert.ok(
+              next.left >= s.right - 0.5,
+              `swatches ${String(i)} and ${String(i + 1)} overlap`,
+            );
+        }
+      } finally {
+        await close();
+      }
+    });
+
     void test(`390 px, ${theme}: the switch is there and nothing scrolls sideways`, async () => {
       h = await open('/my-day', stub(), {
         before: async (page) => {
@@ -1046,6 +1094,12 @@ void describe('My day — days off (D-149, LAI-1184)', () => {
         try {
           const page = h.page;
           await setTheme(page, theme);
+          // The theme's colours ease in: wait until a chip shows the theme's own
+          // card colour, so no screenshot catches the switch half-way (LAI-1187).
+          const card = await tokenRgb(page, '--bg-card');
+          const chip = () => styleOf(page, '.myday-viewing-trigger', 'background-color');
+          await until(async () => (await chip()) === card);
+          assert.equal(await chip(), card, 'the chips settled in the theme');
           const phone = width === 390;
           const holidayBg = await tokenRgb(page, '--holiday-bg');
           const holidayBorder = await tokenRgb(page, '--holiday-border');

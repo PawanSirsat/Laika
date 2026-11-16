@@ -1080,7 +1080,8 @@
     gap: 3px;
   }
 
-  .span-year-day {
+  /* The grid's days only: the heat key's swatches keep their 12px (LAI-1187). */
+  .span-year-grid .span-year-day {
     width: auto;
     height: 18px;
     font-size: 0;

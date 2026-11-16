@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, setTheme, until, type Harness } from './harness.ts';
+import { closeBrowser, navigateInApp, setTheme, until, type Harness } from './harness.ts';
 import { NOW, open, TODAY } from './my-day-clock.ts';
-import { AGENT, at, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { AGENT, at, QUIET, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
 
 /**
  * My day on a phone, as the owner's design draws it (LAI-518): the 48px top
@@ -564,4 +564,160 @@ void describe('My day on a phone (LAI-518)', () => {
       await h.close();
     }
   });
+});
+
+/** An element's edges, named for the message that reports it. */
+interface Box {
+  readonly name: string;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+const describeBox = (b: Box): string =>
+  `${b.name} [${String(Math.round(b.left))}–${String(Math.round(b.right))}]`;
+
+/** `inner` lies inside `outer`, to half a pixel. */
+const within = (inner: Box, outer: Box): boolean =>
+  inner.left >= outer.left - 0.5 &&
+  inner.right <= outer.right + 0.5 &&
+  inner.top >= outer.top - 0.5 &&
+  inner.bottom <= outer.bottom + 0.5;
+
+/** Two boxes share more than half a pixel each way. */
+const intersect = (a: Box, b: Box): boolean =>
+  a.left < b.right - 0.5 &&
+  b.left < a.right - 0.5 &&
+  a.top < b.bottom - 0.5 &&
+  b.top < a.bottom - 0.5;
+
+/**
+ * The top bar and its controls — ☰, the mark, and each of My day's items after
+ * the brand — with what each draws: words a control is too narrow for spill
+ * past its own box, which the box alone does not show.
+ */
+const barControls = (page: Page): Promise<{ bar: Box; items: Box[]; contents: Box[] }> =>
+  page.evaluate(() => {
+    const box = (el: Element | Range, name: string) => {
+      const r = el.getBoundingClientRect();
+      return { name, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    };
+    const head = document.querySelector('.shell-head[data-myday-bar]');
+    if (head === null) throw new Error('no My day bar');
+    const items: Element[] = [];
+    const toggle = head.querySelector('.shell-navtoggle');
+    if (toggle !== null) items.push(toggle);
+    const mark = head.querySelector('.myday-bar-mark');
+    if (mark !== null) items.push(mark);
+    for (const el of head.querySelector('[data-myday-bar-items]')?.children ?? []) {
+      if (!el.classList.contains('myday-bar-brand')) items.push(el);
+    }
+    const nameOf = (el: Element): string =>
+      el.className === '' ? el.tagName : String(el.className);
+    return {
+      bar: box(head, 'bar'),
+      items: items.map((el) => box(el, nameOf(el))),
+      // The words each draws: its text, less any a screen reader alone is given
+      // (a visually hidden label is a 1px box with its words laid out beyond it).
+      contents: items.map((el) => {
+        const words = { name: `${nameOf(el)}'s words`, left: 0, right: 0, top: 0, bottom: 0 };
+        const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let seen = false;
+        for (let n = walk.nextNode(); n !== null; n = walk.nextNode()) {
+          const host = n.parentElement?.getBoundingClientRect();
+          if (host === undefined || host.width <= 1 || host.height <= 1) continue;
+          if ((n.textContent ?? '').trim() === '') continue;
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          for (const r of range.getClientRects()) {
+            words.left = seen ? Math.min(words.left, r.left) : r.left;
+            words.right = seen ? Math.max(words.right, r.right) : r.right;
+            words.top = seen ? Math.min(words.top, r.top) : r.top;
+            words.bottom = seen ? Math.max(words.bottom, r.bottom) : r.bottom;
+            seen = true;
+          }
+        }
+        return words;
+      }),
+    };
+  });
+
+void describe('My day on a phone: nothing in the head overlaps (LAI-1187)', () => {
+  for (const theme of THEMES) {
+    void test(`390 px, ${theme}: every control of the bar fits it, clear of the others, and Day note holds its words`, async (t) => {
+      const h = await phone(390);
+      try {
+        await setTheme(h.page, theme);
+        const { bar, items, contents } = await barControls(h.page);
+        t.diagnostic(`bar ${describeBox(bar)}: ${items.map(describeBox).join(', ')}`);
+        assert.ok(items.length >= 6, `the bar holds ${String(items.length)} controls`);
+        for (const [i, item] of items.entries()) {
+          assert.ok(item.right - item.left > 0, `${describeBox(item)} has no width`);
+          assert.ok(
+            within(item, bar),
+            `${describeBox(item)} is outside the bar ${describeBox(bar)}`,
+          );
+          // Its words stay inside it across the bar, where they would run into
+          // the next control; up and down, the eye's count rides its corner by
+          // design. A control with no words has nothing to measure.
+          const drawn = contents[i];
+          assert.ok(drawn !== undefined);
+          if (drawn.right - drawn.left > 0) {
+            assert.ok(
+              drawn.left >= item.left - 0.5 && drawn.right <= item.right + 0.5,
+              `${describeBox(drawn)} spill out of ${describeBox(item)}`,
+            );
+          }
+        }
+        for (const [i, a] of items.entries()) {
+          for (const b of items.slice(i + 1)) {
+            assert.ok(!intersect(a, b), `${describeBox(a)} overlaps ${describeBox(b)}`);
+          }
+        }
+        // A long name ends in …, but *Me* has the room to be said whole.
+        const whose = h.page.locator('.shell-head[data-myday-bar] .myday-viewing-name');
+        assert.equal(await whose.innerText(), 'Me');
+        assert.ok(
+          await whose.evaluate((el) => el.scrollWidth <= el.clientWidth),
+          'the bar cuts *Me* short',
+        );
+
+        // An empty past day offers Day note, its words inside the button.
+        await navigateInApp(h.page, `/my-day?day=${QUIET}`);
+        const note = h.page.locator('[data-phone-summary] [data-day-note-button]');
+        await note.waitFor({ timeout: 10_000 });
+        const fit = await note.evaluate((el) => {
+          const box = (r: DOMRect, name: string) => ({
+            name,
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+          });
+          const words = document.createRange();
+          words.selectNodeContents(el);
+          return {
+            button: box(el.getBoundingClientRect(), 'Day note'),
+            words: box(words.getBoundingClientRect(), 'its words'),
+            summary: box(
+              (el.closest('[data-phone-summary]') ?? el).getBoundingClientRect(),
+              'the summary',
+            ),
+            overflow: el.scrollWidth - el.clientWidth,
+          };
+        });
+        assert.equal((await note.innerText()).trim(), 'Day note');
+        assert.ok(
+          within(fit.words, fit.button),
+          `${describeBox(fit.words)} spill out of ${describeBox(fit.button)}`,
+        );
+        assert.ok(fit.overflow <= 0, `Day note overflows its button by ${String(fit.overflow)} px`);
+        assert.ok(within(fit.button, fit.summary), `${describeBox(fit.button)} leaves the summary`);
+        await shoot(h.page, `phone-fit-390-${theme}`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
