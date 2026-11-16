@@ -56,7 +56,7 @@ red on a new raw literal.
 
 ## Builder notes (SHELL, LAI-1220)
 
-- Follow-up filed: LAI-1179 (the 485 off-scale spacing declarations and 13
+- Follow-up filed: LAI-1187, first filed as LAI-1179 (the 485 off-scale spacing declarations and 13
   off-scale breakpoints), discovered-from LAI-1220.
 - Breakpoints: 30rem/37.5rem/40rem/64rem/80rem were collapsed onto
   480/600/640/1024/1280px. They are equal only at the browser's default font

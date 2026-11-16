@@ -28,7 +28,7 @@ const SHEET = 'styles/breakpoints.css';
  * Viewport widths that differ from every named one, by file, with what
  * reflows there and how far the nearest named width is. Collapsing one onto
  * the scale moves where its screen reflows, which is a visible change and a
- * design decision, not a tidy-up — LAI-1179 takes them one screen at a time.
+ * design decision, not a tidy-up — LAI-1187 takes them one screen at a time.
  */
 const BREAKPOINT_EXEMPT: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'components/availability/availability.css': {

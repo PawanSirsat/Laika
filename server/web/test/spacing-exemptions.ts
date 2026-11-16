@@ -6,7 +6,7 @@
  * LAI-1220 moved every padding, margin and gap literal that a `--space-*`
  * token matches exactly (1990 declarations) and left these, because the
  * nearest token is 1px or more away and moving them would shift a layout the
- * task was told not to change. LAI-1179 picks them off screen by screen with
+ * task was told not to change. LAI-1187 picks them off screen by screen with
  * a visual check. Taking one onto a token means deleting its line here; the
  * guard goes red until you do, and red again if anything new appears.
  */
