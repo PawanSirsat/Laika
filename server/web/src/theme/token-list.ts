@@ -288,6 +288,7 @@ export const FAMILY_TOKENS = [
   '--font-face-plus-jakarta-sans',
   '--font-face-poppins',
   '--font-face-commissioner',
+  '--font-face-hanken-grotesk',
   '--font-face-average-sans',
   '--font-face-carter-one',
   '--font-face-short-stack',

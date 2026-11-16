@@ -662,6 +662,8 @@
   --font-face-poppins: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-face-commissioner:
     'Commissioner Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-hanken-grotesk:
+    'Hanken Grotesk Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-face-average-sans: 'Average Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-face-carter-one: 'Carter One', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-face-short-stack: 'Short Stack', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -783,6 +785,11 @@
 
 :root[data-font='commissioner'] {
   --font-ui: var(--font-face-commissioner);
+}
+
+/* Upright and italic on the whole weight axis: nothing to synthesise. */
+:root[data-font='hanken-grotesk'] {
+  --font-ui: var(--font-face-hanken-grotesk);
 }
 
 :root[data-font='average-sans'] {

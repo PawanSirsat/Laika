@@ -19,6 +19,7 @@
     'plus-jakarta-sans',
     'poppins',
     'commissioner',
+    'hanken-grotesk',
     'average-sans',
     'carter-one',
     'short-stack',

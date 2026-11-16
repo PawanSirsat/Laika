@@ -151,6 +151,12 @@ const FACES = [
     family: 'Commissioner Variable',
     file: 'commissioner-',
   },
+  {
+    id: 'hanken-grotesk',
+    label: 'Hanken Grotesk',
+    family: 'Hanken Grotesk Variable',
+    file: 'hanken-grotesk-',
+  },
   { id: 'average-sans', label: 'Average Sans', family: 'Average Sans', file: 'average-sans-' },
   { id: 'carter-one', label: 'Carter One', family: 'Carter One', file: 'carter-one-' },
   { id: 'short-stack', label: 'Short Stack', family: 'Short Stack', file: 'short-stack-' },
@@ -695,6 +701,16 @@ void describe('the keyboard', () => {
       await h.page.keyboard.press('ArrowDown');
       assert.equal(await font(), 'poppins');
       assert.equal(await bodyFamily(h.page), 'Poppins');
+      await fontRadio(h.page, 'Commissioner').click();
+      await h.page.keyboard.press('ArrowDown');
+      assert.equal(await font(), 'hanken-grotesk', 'Hanken Grotesk follows Commissioner');
+      assert.equal(await bodyFamily(h.page), 'Hanken Grotesk Variable');
+      assert.ok(
+        await fontRadio(h.page, 'Hanken Grotesk').evaluate((el) => el === document.activeElement),
+        'focus moved with the choice',
+      );
+      await h.page.keyboard.press('ArrowUp');
+      assert.equal(await font(), 'commissioner');
       await h.page.keyboard.press('End');
       assert.equal(await font(), 'short-stack');
       await h.page.keyboard.press('ArrowDown');
@@ -932,7 +948,7 @@ void describe('choosing a face', () => {
 });
 
 void describe('first load fetches only the face in use', () => {
-  for (const stored of [undefined, 'poppins'] as const) {
+  for (const stored of [undefined, 'poppins', 'hanken-grotesk'] as const) {
     void test(`${stored ?? 'the default'}: no other added face's file is requested`, async () => {
       let seen: string[] = [];
       const h = await open(BOARD, STUB, {
@@ -963,9 +979,103 @@ void describe('first load fetches only the face in use', () => {
           seen.filter((file) => file.endsWith('.woff')),
           [],
         );
+        assert.deepEqual(
+          seen.filter((file) => file.includes('latin-ext')),
+          [],
+          'only latin subsets are requested',
+        );
       } finally {
         await h.close();
       }
     });
   }
+});
+
+void describe('Hanken Grotesk (LAI-1228)', () => {
+  void test('picked on the page, it survives a reload onto the board, which fetches only its files', async () => {
+    const h = await open(PAGE, STUB);
+    try {
+      await onPage(h.page);
+      await fontRadio(h.page, 'Hanken Grotesk').click();
+      assert.equal(
+        await h.page.evaluate(() => localStorage.getItem('laika.font')),
+        'hanken-grotesk',
+      );
+    } finally {
+      await h.close();
+    }
+    let seen: string[] = [];
+    const b = await open(BOARD, STUB, {
+      before: async (page) => {
+        seen = recordFonts(page);
+        await page.addInitScript(() => {
+          localStorage.setItem('laika.font', 'hanken-grotesk');
+        });
+      },
+    });
+    try {
+      await b.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await b.page.reload();
+      await b.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      assert.equal(
+        await b.page.evaluate(() => document.documentElement.getAttribute('data-font')),
+        'hanken-grotesk',
+      );
+      assert.equal(await bodyFamily(b.page), 'Hanken Grotesk Variable');
+      await loaded(b.page, 'Hanken Grotesk Variable');
+      const hanken = seen.filter((file) => file.startsWith('hanken-grotesk-'));
+      assert.ok(
+        hanken.includes('hanken-grotesk-latin-wght-normal.woff2') ||
+          hanken.some((f) => /^hanken-grotesk-latin-wght-normal-[\w-]+\.woff2$/.test(f)),
+        `the upright file was never requested; saw ${seen.join(', ')}`,
+      );
+      const others = seen.filter((file) =>
+        ADDED.some((face) => face.id !== 'hanken-grotesk' && file.startsWith(face.file)),
+      );
+      assert.deepEqual(others, [], 'another added face was downloaded');
+    } finally {
+      await b.close();
+    }
+  });
+
+  void test('bold and italic are the face’s own: one variable face per style, 100–900, nothing synthesised', async () => {
+    const h = await open(PAGE, STUB, {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          localStorage.setItem('laika.font', 'hanken-grotesk');
+        });
+      },
+    });
+    try {
+      await onPage(h.page);
+      const faces = await h.page.evaluate(async () => {
+        await Promise.all([
+          document.fonts.load('italic 700 16px "Hanken Grotesk Variable"'),
+          document.fonts.load('normal 900 16px "Hanken Grotesk Variable"'),
+        ]);
+        return [...document.fonts]
+          .filter((f) => f.family.replace(/["']/g, '') === 'Hanken Grotesk Variable')
+          .map((f) => ({ style: f.style, weight: f.weight, status: f.status }));
+      });
+      assert.deepEqual(
+        faces.map((f) => f.style).sort(),
+        ['italic', 'normal'],
+        JSON.stringify(faces),
+      );
+      for (const face of faces) {
+        assert.equal(face.weight, '100 900', face.style);
+        assert.equal(face.status, 'loaded', face.style);
+      }
+      const synthesis = await h.page.evaluate(
+        () => getComputedStyle(document.documentElement).fontSynthesisWeight,
+      );
+      assert.equal(synthesis, 'auto', 'no weight-synthesis switch is needed or set');
+      const note = await fontRadio(h.page, 'Hanken Grotesk')
+        .locator('.appearance-font-note')
+        .count();
+      assert.equal(note, 0, 'Hanken Grotesk carries no caveat');
+    } finally {
+      await h.close();
+    }
+  });
 });
