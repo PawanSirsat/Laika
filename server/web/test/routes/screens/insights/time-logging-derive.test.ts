@@ -18,6 +18,7 @@ import {
   monthHref,
   monthKey,
   monthLabel,
+  offMarks,
   owedOn,
   rowTotals,
   sharedHoliday,
@@ -353,6 +354,73 @@ void describe('holidays and leave (D-149 item 6)', () => {
     // A requested half day owes the whole day: 240 is under.
     const half = cellState(p, '2026-11-04', THRESHOLD);
     assert.deepEqual([half.state, half.owed], ['under', 480]);
+  });
+
+  void test('offMarks: the legend’s marks are the cells as drawn, never the raw off_days', () => {
+    const { days } = monthDays('2026-11');
+    const marks = (...people: TimeLoggingPerson[]) => offMarks(people, days, THRESHOLD);
+    const none = { holiday: false, leave: false, half: false, requested: false, quiet: [] };
+    // The only holiday is tomorrow: a dash with a corner mark, never the holiday's fill.
+    assert.deepEqual(marks(person([], { off_days: [holiday('2026-11-13', 'Tomorrow Fair')] })), {
+      ...none,
+      quiet: ['holiday'],
+    });
+    // On a due day it is the fill.
+    assert.deepEqual(marks(person([], { off_days: [holiday('2026-11-03', 'Heritage Day')] })), {
+      ...none,
+      holiday: true,
+    });
+    // Whole-day leave today, before joining, or for someone gone: corner marks only.
+    assert.deepEqual(marks(person([], { off_days: [leave('2026-11-12')] })), {
+      ...none,
+      quiet: ['leave'],
+    });
+    assert.deepEqual(
+      marks(person([], { joined_day: '2026-11-05', off_days: [leave('2026-11-04')] })),
+      { ...none, quiet: ['leave'] },
+    );
+    assert.deepEqual(
+      marks(
+        person([], {
+          user: { id: 'u2', name: 'Bea Nkosi', org_role: 'member', deactivated: true },
+          off_days: [leave('2026-11-04')],
+        }),
+      ),
+      { ...none, quiet: ['leave'] },
+    );
+    // A half day on a Saturday owes nothing: no half-day legend, a corner mark.
+    assert.deepEqual(
+      marks(person([], { off_days: [leave('2026-11-07', { part: 'first_half' })] })),
+      { ...none, quiet: ['leave'] },
+    );
+    // A due half day, and a due request, are their own entries.
+    assert.deepEqual(
+      marks(
+        person([], {
+          off_days: [
+            leave('2026-11-02', { part: 'first_half' }),
+            leave('2026-11-04', { status: 'pending' }),
+            leave('2026-11-20', { status: 'pending' }),
+          ],
+        }),
+      ),
+      { ...none, half: true, requested: true, quiet: ['requested'] },
+    );
+    // Whole-day leave on a due day is the fill; the quiet kinds come in tone order.
+    assert.deepEqual(
+      marks(
+        person([], {
+          off_days: [
+            leave('2026-11-03'),
+            leave('2026-11-25', { status: 'pending' }),
+            leave('2026-11-24'),
+            holiday('2026-11-30', 'Month End'),
+          ],
+        }),
+      ),
+      { ...none, leave: true, quiet: ['holiday', 'leave', 'requested'] },
+    );
+    assert.deepEqual(marks(), none);
   });
 
   void test('sharedHoliday: the head says a holiday only when everyone shown has it, under one name', () => {

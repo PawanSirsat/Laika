@@ -691,6 +691,70 @@ void describe('holidays and leave (D-149 item 6)', () => {
     }
   }
 
+  for (const theme of ['dark', 'light'] as const) {
+    void test(`${theme}: the only holiday is a day not yet come — a corner mark and its own legend line, never the holiday's`, async () => {
+      // Bea alone has Diwali on Tuesday the 20th, after her today, the 15th.
+      const fixture: TimeLogging = {
+        ...OFF_FIXTURE,
+        people: OFF_FIXTURE.people.map((p) =>
+          p.user.id === 'u2'
+            ? { ...p, off_days: [{ day: '2026-10-20', holiday: { label: 'Diwali' }, leave: null }] }
+            : { ...p, off_days: [] },
+        ),
+      };
+      const asked: URL[] = [];
+      const h = await openWith(
+        '/insights?tab=time&view=days&month=2026-10',
+        OWNER_STUB(),
+        asked,
+        () => ok(fixture),
+      );
+      try {
+        await setTheme(h.page, theme);
+        const g = grid(h.page);
+        await g.locator('tr[data-person="u3"]').waitFor({ timeout: 20_000 });
+        const diwali = cell(h.page, 'u2', '2026-10-20');
+        assert.deepEqual(
+          [await diwali.getAttribute('data-state'), await diwali.getAttribute('data-off')],
+          ['future', 'holiday'],
+        );
+        assert.equal(await g.locator('td[data-state="holiday"]').count(), 0, 'no holiday fill');
+        // The legend says what is drawn: the corner mark, not the holiday's fill.
+        assert.deepEqual(
+          await g
+            .locator('[data-tlg-legend]')
+            .evaluateAll((els) => els.map((e) => e.getAttribute('data-tlg-legend'))),
+          ['quiet'],
+        );
+        const quiet = g.locator('[data-tlg-legend="quiet"]');
+        assert.match(
+          await quiet.innerText(),
+          /a holiday or leave on a day otherwise not due — named on hover/,
+        );
+        assert.deepEqual(
+          await quiet
+            .locator('.tlg-swatch-mark')
+            .evaluateAll((els) => els.map((e) => e.getAttribute('data-off'))),
+          ['holiday'],
+        );
+        // The swatch's dot and the cell's are one colour.
+        const dot = (sel: string) =>
+          h.page.evaluate((s) => {
+            const el = document.querySelector(s);
+            return el === null ? 'missing' : getComputedStyle(el, '::after').backgroundColor;
+          }, sel);
+        const swatch = await dot('[data-tlg-legend="quiet"] .tlg-swatch-mark');
+        assert.equal(await dot('tr[data-person="u2"] td[data-day="2026-10-20"] .tlg-dash'), swatch);
+        assert.notEqual(swatch, 'rgba(0, 0, 0, 0)');
+        assert.deepEqual(await spills(h.page, '.tlg-legend li', '.tlg'), []);
+        assert.deepEqual(await spills(h.page, '.tlg-legend .tlg-swatch', 'li'), []);
+        await shoot(h.page, `time-logging-quiet-holiday-${theme}`);
+      } finally {
+        await done(h);
+      }
+    });
+  }
+
   void test('a month with no days off says nothing of them: no legend line, no head mark, no corner', async () => {
     const asked: URL[] = [];
     const h = await openWith(

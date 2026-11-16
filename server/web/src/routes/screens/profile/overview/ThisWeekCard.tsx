@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import type { AvailabilitySeen } from '../../../../api/availability.ts';
 import { formatHours } from '../../../../api/duration.ts';
 import { getTimeReport, type TimeReport } from '../../../../api/time.ts';
-import { onLeaveLabel } from '../../../../components/availability/availability-derive.ts';
+import {
+  leaveShown,
+  onLeaveLabel,
+} from '../../../../components/availability/availability-derive.ts';
 import { agentMinutes, weekDays } from '../../my-day/my-day-derive.ts';
 import {
   awayText,
@@ -44,7 +47,8 @@ type Load =
  *   read, not a second one, and **never the list**, which would log a look at
  *   everyone on it. What the reader was not served is not said.
  * - **Leave from today** (D-149, LAI-1185): the days the person's leave runs
- *   over, from the same availability's `on_leave`, tinted with a mark beside
+ *   over, from the same availability's `on_leave` when it leads as it does
+ *   on the pill (`leaveShown`), tinted with a mark beside
  *   the day's name — dashed when only requested — and said first in the
  *   foot, *On leave until …* or *Leave requested*, in place of *No time away
  *   planned*; away dates, when there are any, follow it. Holidays and the
@@ -139,8 +143,9 @@ function WeekFigures({
       : (availability?.work_week?.minutes ?? null);
   const periods = availability?.away_periods;
   const backOn = availability?.away?.until;
-  const leave = leaveDays(week, today, availability?.on_leave);
-  const onLeave = availability?.on_leave ?? null;
+  // What leads is the pill's (`presenceOf`): leave requested under an away period is not drawn.
+  const onLeave = leaveShown(availability);
+  const leave = leaveDays(week, today, onLeave);
   const awayDates =
     (periods !== undefined && periods.length > 0) ||
     (periods === undefined && backOn !== undefined);

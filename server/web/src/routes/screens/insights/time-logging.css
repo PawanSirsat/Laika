@@ -394,7 +394,8 @@ td[data-off='leave'] .tlg-dash::after,
 }
 
 td[data-off='holiday'] .tlg-cell::after,
-td[data-off='holiday'] .tlg-dash::after {
+td[data-off='holiday'] .tlg-dash::after,
+.tlg-swatch-mark[data-off='holiday']::after {
   background: var(--holiday);
 }
 

@@ -293,31 +293,56 @@ export function sharedHoliday(people: readonly TimeLoggingPerson[], day: string)
   return label;
 }
 
-/** Which day-off marks the people shown carry, so the legend explains only what is drawn. */
+/**
+ * Which day-off marks the grid draws, so the legend explains what is drawn
+ * and only that. Read from the cells as {@link cellState} makes them, never
+ * from `off_days`: precedence hides some, and a holiday on a day not yet come
+ * is a corner mark on a dash, not the holiday's fill.
+ */
 export interface OffMarks {
+  /** A cell drawn as a holiday, not due. */
   readonly holiday: boolean;
-  /** Approved whole-day leave. */
+  /** A cell drawn as approved whole-day leave, not due. */
   readonly leave: boolean;
-  /** Approved half-day leave. */
+  /** A due day under approved half-day leave — the solid corner mark. */
   readonly half: boolean;
+  /** A due day with leave requested — the dashed corner mark. */
   readonly requested: boolean;
+  /**
+   * The kinds marked in the corner of a cell with no verdict — not yet,
+   * before joining, today, someone gone, a day off — holiday, leave,
+   * requested in that order; empty when there are none.
+   */
+  readonly quiet: readonly OffKind[];
 }
 
-export function offMarks(people: readonly TimeLoggingPerson[]): OffMarks {
+const QUIET_ORDER: readonly OffKind[] = ['holiday', 'leave', 'requested'];
+
+export function offMarks(
+  people: readonly TimeLoggingPerson[],
+  days: readonly MonthDay[],
+  threshold: number,
+): OffMarks {
   let holiday = false;
   let leave = false;
   let half = false;
   let requested = false;
+  const quiet = new Set<OffKind>();
   for (const p of people) {
-    for (const d of p.off_days) {
-      if (d.holiday !== null) holiday = true;
-      if (d.leave === null) continue;
-      if (d.leave.status === 'pending') requested = true;
-      else if (d.leave.part === 'full') leave = true;
-      else half = true;
+    for (const d of days) {
+      const cell = cellState(p, d.day, threshold);
+      if (cell.off === null) continue;
+      if (cell.state === 'holiday') holiday = true;
+      else if (cell.state === 'leave') leave = true;
+      // A due day can only carry half-day leave or a request: a holiday or
+      // whole-day leave would have made it not due.
+      else if (cell.owed !== null) {
+        if (cell.off === 'requested') requested = true;
+        else half = true;
+      } else quiet.add(cell.off);
     }
   }
-  return { holiday, leave, half, requested };
+  return { holiday, leave, half, requested, quiet: QUIET_ORDER.filter((k) => quiet.has(k)) };
 }
 
 export interface RowTotals {

@@ -378,7 +378,7 @@ const BASE: ApiStub = {
 const loadOf = (workWeek: number | null, away: readonly { from: string; to: string }[]) => {
   const availability = {
     status: 'capacity',
-    away: null,
+    away: null as { until: string } | null,
     on_leave: null as OnLeave | null,
     hours_per_week: null,
     note: null,
@@ -1140,6 +1140,39 @@ void describe('leave from today, on This week (D-149, LAI-1185)', () => {
         /Leave requested/,
       );
       assert.deepEqual(await foot(week), ['◌ Leave requested']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('leave requested under a current away period: away leads, as on the pill — no dashes, no Leave requested', async () => {
+    const away = [{ from: TODAY, to: last }];
+    const load = onLeaveLoad('pending', last, away);
+    const h = await open(
+      '/people?user=u2',
+      stubFor(BUSY, {
+        tokens: 128_000_000,
+        week: DAYS,
+        agents: 242,
+        load: { ...load, availability: { ...load.availability, away: { until: last } } },
+      }),
+    );
+    try {
+      const week = await card(h.page, 'week');
+      const pill = h.page.locator('.prof-head [data-profile-pill] [data-avail-pill]');
+      await pill.waitFor({ timeout: 20_000 });
+      await until(async () => (await week.locator('.ov-week-foot > p').count()) > 0);
+      assert.equal(await pill.getAttribute('data-avail-pill'), 'away');
+      assert.equal(
+        (await pill.innerText()).replace(/\s+/g, ' ').trim(),
+        `◐ Away until ${short(last)}`,
+      );
+      // This week leads with the same fact: the away line alone, no day dashed.
+      const lines = await foot(week);
+      assert.equal(lines.length, 1, `the foot: ${lines.join(' / ')}`);
+      assert.match(lines[0] ?? '', /^Away \w{3} \d{1,2}/);
+      assert.doesNotMatch(lines.join(' '), /Leave requested/);
+      assert.equal(await week.locator('.ov-day[data-off], .ov-day-off, [data-leave]').count(), 0);
     } finally {
       await h.close();
     }

@@ -82,35 +82,63 @@ export interface Pill {
   readonly hours: string;
 }
 
+/** Which fact leads what is said of someone today. */
+export type Presence = 'leave' | 'away' | 'requested' | 'status';
+
 /**
- * The pill for what someone said, or `null` when they have said nothing — no
- * pill rather than a guess. By precedence:
+ * Which fact leads, by precedence (D-131, D-149 item 5):
  *
- * - **approved leave** in the HR system (D-149 item 5): *On leave until Mon
- *   23 Nov*, with the type only when the server sent it — it sends it only
- *   to a reader who may see why;
+ * - **approved leave** in the HR system;
  * - a current **away** period, the person's own word that they are out;
  * - **leave requested**: not yet theirs to take, but said, so a reader does
  *   not plan on a day the person has asked for;
- * - then the status. A person who is away or on leave is not taking work
+ * - then the **status**. A person who is away or on leave is not taking work
  *   whatever they set before they left.
+ *
+ * The pill and the profile's This week both ask here, so the two never lead
+ * with different facts about the same person.
+ */
+export function presenceOf(seen: AvailabilitySeen): Presence {
+  const leave = seen.on_leave;
+  if (leave !== null && leave.status === 'approved') return 'leave';
+  if (seen.away !== null) return 'away';
+  if (leave !== null) return 'requested';
+  return 'status';
+}
+
+/**
+ * The leave to say and draw, when {@link presenceOf} has it lead — approved,
+ * or requested with no away period over it — and null otherwise: leave
+ * requested under an away period is not said, by the pill or by This week.
+ */
+export function leaveShown(seen: AvailabilitySeen | null | undefined): OnLeave | null {
+  if (seen === null || seen === undefined) return null;
+  const leads = presenceOf(seen);
+  return leads === 'leave' || leads === 'requested' ? seen.on_leave : null;
+}
+
+/**
+ * The pill for what someone said, or `null` when they have said nothing — no
+ * pill rather than a guess. {@link presenceOf} picks what leads: *On leave
+ * until Mon 23 Nov* (the type only when the server sent it — it sends it only
+ * to a reader who may see why), *Away until …*, *Leave requested*, or the
+ * status.
  */
 export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
   if (seen === null || seen === undefined) return null;
-  const leave = seen.on_leave;
-  if (leave !== null && leave.status === 'approved') {
-    return { tone: 'leave', glyph: '◐', label: onLeaveLabel(leave), hours: '' };
+  const leave = leaveShown(seen);
+  if (leave !== null) {
+    return leave.status === 'approved'
+      ? { tone: 'leave', glyph: '◐', label: onLeaveLabel(leave), hours: '' }
+      : { tone: 'requested', glyph: '◌', label: onLeaveLabel(leave), hours: '' };
   }
-  if (seen.away !== null) {
+  if (presenceOf(seen) === 'away' && seen.away !== null) {
     return {
       tone: 'away',
       glyph: '◐',
       label: `Away until ${dayShort(seen.away.until)}`,
       hours: '',
     };
-  }
-  if (leave !== null) {
-    return { tone: 'requested', glyph: '◌', label: onLeaveLabel(leave), hours: '' };
   }
   if (seen.status === 'open') {
     const h = seen.hours_per_week;

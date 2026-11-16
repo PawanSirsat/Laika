@@ -7,8 +7,10 @@ import {
   dayShort,
   daysLine,
   hoursMinutes,
+  leaveShown,
   onLeaveLabel,
   pillOf,
+  presenceOf,
   pillSentence,
   rangeShort,
   tagsOf,
@@ -115,6 +117,43 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
       'Away until Mon 16 Nov',
     );
     assert.notEqual(pill?.glyph, pillOf(seen({ away: { until: '2026-11-16' } }))?.glyph);
+  });
+
+  void test('presenceOf: one order for the pill and for This week, case by case', () => {
+    const approved = { until: '2026-11-23', status: 'approved', type: 'Annual' } as const;
+    const pending = { until: '2026-11-23', status: 'pending', type: 'Annual' } as const;
+    const away = { until: '2026-11-16' };
+    // [case, what leads, the pill's tone, the leave This week draws]
+    const cases = [
+      [
+        'approved and away',
+        seen({ status: 'open', away, on_leave: approved }),
+        'leave',
+        'leave',
+        'approved',
+      ],
+      ['pending and away', seen({ status: 'open', away, on_leave: pending }), 'away', 'away', null],
+      [
+        'pending alone',
+        seen({ status: 'open', on_leave: pending }),
+        'requested',
+        'requested',
+        'pending',
+      ],
+      ['away alone', seen({ status: 'open', away }), 'away', 'away', null],
+      ['approved alone', seen({ on_leave: approved }), 'leave', 'leave', 'approved'],
+      ['none', seen({ status: 'capacity' }), 'status', 'capacity', null],
+    ] as const;
+    for (const [name, s, leads, tone, drawn] of cases) {
+      assert.equal(presenceOf(s), leads, `${name}: what leads`);
+      assert.equal(pillOf(s)?.tone, tone, `${name}: the pill`);
+      assert.equal(leaveShown(s)?.status ?? null, drawn, `${name}: This week's leave`);
+      // The card says the leave exactly as the pill does, or not at all.
+      const shown = leaveShown(s);
+      if (shown !== null) assert.equal(onLeaveLabel(shown), pillOf(s)?.label, `${name}: the words`);
+    }
+    assert.equal(leaveShown(null), null);
+    assert.equal(leaveShown(undefined), null);
   });
 
   void test('hours show only when open and only when the server sent them', () => {

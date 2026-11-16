@@ -119,7 +119,10 @@ export function TimeLoggingView({
         ? 'People in the spaces you lead'
         : `Everyone in ${orgName ?? 'the organisation'}`;
   const threshold = view?.threshold_minutes;
-  const marks = useMemo(() => (view === undefined ? undefined : offMarks(view.people)), [view]);
+  const marks = useMemo(
+    () => (view === undefined ? undefined : offMarks(view.people, days, view.threshold_minutes)),
+    [view, days],
+  );
 
   return (
     <section className="tlg" aria-labelledby={`${id}-title`} data-time-logging>
@@ -230,6 +233,19 @@ export function TimeLoggingView({
                   aria-hidden="true"
                 />
                 leave requested — still due
+              </li>
+            )}
+            {marks !== undefined && marks.quiet.length > 0 && (
+              <li data-tlg-legend="quiet">
+                {marks.quiet.map((kind) => (
+                  <span
+                    key={kind}
+                    className="tlg-swatch tlg-swatch-mark"
+                    data-off={kind}
+                    aria-hidden="true"
+                  />
+                ))}
+                a holiday or leave on a day otherwise not due — named on hover
               </li>
             )}
           </ul>
