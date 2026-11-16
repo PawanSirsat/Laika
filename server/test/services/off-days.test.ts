@@ -2,13 +2,21 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { projectMemberships, projects, users, userTimeSettings } from '../../src/db/schema.ts';
+import {
+  projectMemberships,
+  projects,
+  userAvailability,
+  users,
+  userTimeSettings,
+} from '../../src/db/schema.ts';
 import { todaysFor } from '../../src/services/availability.ts';
 import {
   offDaysFor,
   offEntries,
   offOn,
+  ON_LEAVE_MAX_DAYS,
   onLeaveFor,
+  onWholeDayLeaveToday,
   seesLeaveTypeOf,
 } from '../../src/services/off-days.ts';
 import { freshDb, preparedDuring, queryPlansOf, seed, type TestDb } from '../helpers/db.ts';
@@ -306,18 +314,110 @@ describe('leave', () => {
 });
 
 describe('on leave today', () => {
-  it('runs to the last day of the unbroken run, and a gap ends it', () => {
+  // Thursday 12 November 2026 is today in UTC. 14–15 are a weekend, 21–22 the next.
+  const days = (from: string, to: string): string[] => {
+    const out: string[] = [];
+    for (
+      let d = from;
+      d <= to;
+      d = new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+    ) {
+      out.push(d);
+    }
+    return out;
+  };
+  const weekdays = (from: string, to: string): string[] =>
+    days(from, to).filter((d) => ![0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay()));
+
+  it('steps over a weekend: leave Monday to Friday twice reads until the second Friday', () => {
     const bea = person('Bea');
     const p = hrPerson(t.db, bea);
-    for (const day of ['2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14']) {
-      leaveDay(t.db, bea, p, day);
-    }
-    leaveDay(t.db, bea, p, '2026-11-16');
+    for (const day of weekdays('2026-11-09', '2026-11-20')) leaveDay(t.db, bea, p, day);
     expect(onLeave(actor(bea), [bea]).get(bea)).toEqual({
-      until: '2026-11-14',
+      until: '2026-11-20',
       status: 'approved',
       type: 'Annual',
     });
+  });
+
+  it('never ends on a day it stepped over: until is the last day with leave', () => {
+    const bea = person('Bea');
+    const p = hrPerson(t.db, bea);
+    // Thursday and Friday, the weekend, then a Monday at work.
+    leaveDay(t.db, bea, p, '2026-11-12');
+    leaveDay(t.db, bea, p, '2026-11-13');
+    expect(onLeave(actor(bea), [bea]).get(bea)?.until).toBe('2026-11-13');
+  });
+
+  it('a working day with no leave ends the run, whatever comes after it', () => {
+    const bea = person('Bea');
+    const p = hrPerson(t.db, bea);
+    leaveDay(t.db, bea, p, '2026-11-12');
+    // Friday the 13th is a working day with nothing on it.
+    for (const day of weekdays('2026-11-16', '2026-11-20')) leaveDay(t.db, bea, p, day);
+    expect(onLeave(actor(bea), [bea]).get(bea)?.until).toBe('2026-11-12');
+  });
+
+  it('holds the person to their own working week: a Saturday they work ends it', () => {
+    const bea = person('Bea');
+    const p = hrPerson(t.db, bea);
+    t.db
+      .insert(userAvailability)
+      .values({ userId: bea, workDays: [1, 2, 3, 4, 5, 6], tags: [], updatedAt: NOW })
+      .run();
+    leaveDay(t.db, bea, p, '2026-11-12');
+    leaveDay(t.db, bea, p, '2026-11-13');
+    leaveDay(t.db, bea, p, '2026-11-16');
+    expect(onLeave(actor(bea), [bea]).get(bea)?.until).toBe('2026-11-13');
+  });
+
+  it('steps over a holiday that covers the person — and not one that does not', () => {
+    const bea = person('Bea');
+    const cal = person('Cal');
+    const pb = hrPerson(t.db, bea, { departmentRef: '4' });
+    const pc = hrPerson(t.db, cal, { departmentRef: '5' });
+    // Friday the 13th: Clan's holiday for department 4 only.
+    clanHoliday(t.db, '2026-11-13', 'Diwali', { scope: { departments: ['4'] } });
+    for (const [id, p] of [
+      [bea, pb],
+      [cal, pc],
+    ] as const) {
+      leaveDay(t.db, id, p, '2026-11-12');
+      leaveDay(t.db, id, p, '2026-11-16');
+    }
+    const o = onLeave(actor(owner), [bea, cal]);
+    // Bea owes nothing on the 13th or the weekend: one run, to Monday.
+    expect(o.get(bea)?.until).toBe('2026-11-16');
+    // Cal is not in its scope: the 13th is his working day, and ends it.
+    expect(o.get(cal)?.until).toBe('2026-11-12');
+    // A manual holiday covers everyone, Cal included.
+    manualHoliday(t.db, '2026-11-13', 'Office closed', owner);
+    expect(onLeave(actor(owner), [cal]).get(cal)?.until).toBe('2026-11-16');
+  });
+
+  it('steps a requested run over the same days', () => {
+    const bea = person('Bea');
+    const p = hrPerson(t.db, bea);
+    for (const day of ['2026-11-12', '2026-11-13', '2026-11-16']) {
+      leaveDay(t.db, bea, p, day, { status: 'pending' });
+    }
+    // Approved on Tuesday: another status, so the requested run ends Monday.
+    leaveDay(t.db, bea, p, '2026-11-17');
+    expect(onLeave(actor(bea), [bea]).get(bea)).toMatchObject({
+      until: '2026-11-16',
+      status: 'pending',
+    });
+  });
+
+  it('follows a run at most ON_LEAVE_MAX_DAYS past today', () => {
+    const bea = person('Bea');
+    const p = hrPerson(t.db, bea);
+    // Every working day for two years: the walk stops at its cap.
+    for (const day of weekdays('2026-11-12', '2028-11-30')) leaveDay(t.db, bea, p, day);
+    const until = onLeave(actor(bea), [bea]).get(bea)?.until ?? '';
+    const cap = days('2026-11-12', '2028-11-30')[ON_LEAVE_MAX_DAYS] ?? '';
+    expect(until <= cap).toBe(true);
+    expect(until > days('2026-11-12', '2028-11-30')[ON_LEAVE_MAX_DAYS - 7]!).toBe(true);
   });
 
   it('approved beats pending today; a requested run is the requested days', () => {
@@ -384,6 +484,30 @@ describe('on leave today', () => {
     leaveDay(t.db, bea, p, '2026-11-13');
     expect(onLeave(actor(owner), [bea]).get(bea)).toBeNull();
     expect(onLeave(actor(owner), []).size).toBe(0);
+  });
+});
+
+describe('on whole-day leave today (open_only)', () => {
+  it('names approved whole days — two approved halves too — never half a day or a request', () => {
+    const [full, half, halves, pending, sam] = ['Ann', 'Ben', 'Cy', 'Di', 'Sam'].map((x) =>
+      person(x),
+    ) as [string, string, string, string, string];
+    for (const id of [full, half, halves, pending]) member(id, laika);
+    member(sam, skynet);
+    const p = (id: string) => hrPerson(t.db, id);
+    leaveDay(t.db, full, p(full), '2026-11-12');
+    leaveDay(t.db, half, p(half), '2026-11-12', { part: 'second_half' });
+    const ph = p(halves);
+    leaveDay(t.db, halves, ph, '2026-11-12', { part: 'first_half' });
+    leaveDay(t.db, halves, ph, '2026-11-12', { part: 'second_half' });
+    leaveDay(t.db, pending, p(pending), '2026-11-12', { status: 'pending' });
+    const ids = [full, half, halves, pending];
+    const today = todaysFor(t.db, ids, NOW);
+    expect([...onWholeDayLeaveToday(t.db, actor(owner), today)].sort()).toEqual(
+      [full, halves].sort(),
+    );
+    // Sam shares no space with them: their leave is not his to read.
+    expect(onWholeDayLeaveToday(t.db, actor(sam), today).size).toBe(0);
   });
 });
 

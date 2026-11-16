@@ -2,7 +2,7 @@ import { and, asc, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type LeavePart, type LeaveStatus } from '../db/enums.ts';
-import { hrPeople, leaveDays, orgHolidays } from '../db/schema.ts';
+import { hrPeople, leaveDays, orgHolidays, userAvailability } from '../db/schema.ts';
 import { availabilityVisibleAmong, seesEveryonesAnalytics } from './availability-audience.ts';
 import { addDays } from './calendar-days.ts';
 
@@ -185,12 +185,12 @@ function resolve(rows: readonly LeaveRow[]): Resolved {
   return { part, status: first.status, typeName: first.typeName };
 }
 
-/** Live leave of `userIds` from `from` (and to `to`, when given), by person and day. */
+/** Live leave of `userIds` in `from`–`to`, inclusive, by person and day. */
 function leaveByPersonDay(
   db: Db,
   userIds: readonly string[],
   from: string,
-  to: string | null,
+  to: string,
 ): Map<string, Map<string, LeaveRow[]>> {
   const out = new Map<string, Map<string, LeaveRow[]>>();
   if (userIds.length === 0) return out;
@@ -208,7 +208,7 @@ function leaveByPersonDay(
       and(
         inArray(leaveDays.userId, [...userIds]),
         gte(leaveDays.day, from),
-        to === null ? undefined : lte(leaveDays.day, to),
+        lte(leaveDays.day, to),
         isNull(leaveDays.removedAt),
       ),
     )
@@ -223,34 +223,24 @@ function leaveByPersonDay(
 }
 
 /**
- * `offDaysFor(db, viewer, userIds, from, to)`: each person's days off in
- * `from`–`to`, inclusive, as `viewer` may see them — **no `can()` here**:
- * every caller asks its own question first, as `availabilityFor`'s do.
- *
- * At most four reads, whatever the number of people or days: the holidays
- * (the `(day)` index), the people the HR system maps — only when a synced
- * holiday falls in the stretch — who the reader sees, and their leave (the
- * `(user_id, day)` index).
+ * The holiday covering each of `userIds` on each day of `from`–`to`, by
+ * person and day — the label, and only days that have one. A manual one
+ * covers everyone; a synced one only people the HR system maps, in its scope;
+ * a manual one wins, and two synced ones the first by label. One read of the
+ * `(day)` index, and one of the HR people only when a synced holiday falls in
+ * the stretch. Holidays are the organisation's: no reader narrows them.
  */
-export function offDaysFor(
+function holidaysFor(
   db: Db,
-  viewer: ResolvedActor,
   userIds: readonly string[],
   from: string,
   to: string,
-): OffDays {
-  const out: OffDays = new Map();
-  const ids = [...new Set(userIds)];
-  if (ids.length === 0 || from > to) return out;
+): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>();
+  if (userIds.length === 0 || from > to) return out;
 
-  const put = (userId: string, day: string, patch: Partial<OffDayView>): void => {
-    const days = out.get(userId) ?? new Map<string, OffDayView>();
-    days.set(day, { ...(days.get(day) ?? { holiday: null, leave: null }), ...patch });
-    out.set(userId, days);
-  };
-
-  // Holidays: a manual one each day at most (§4.90's partial unique index),
-  // and the synced ones first by label.
+  // A manual one each day at most (§4.90's partial unique index), and the
+  // synced ones first by label.
   const manual = new Map<string, string>();
   const synced = new Map<string, { label: string; scope: HolidayScope | null | undefined }[]>();
   for (const h of db
@@ -284,21 +274,89 @@ export function offDaysFor(
         employmentType: hrPeople.employmentType,
       })
       .from(hrPeople)
-      .where(and(isNotNull(hrPeople.userId), inArray(hrPeople.userId, ids)))
+      .where(and(isNotNull(hrPeople.userId), inArray(hrPeople.userId, [...userIds])))
       .all()) {
       if (p.userId !== null) mapped.set(p.userId, p);
     }
   }
 
-  for (const id of ids) {
-    for (const [day, label] of manual) put(id, day, { holiday: { label } });
+  for (const id of userIds) {
+    const days = new Map(manual);
     const person = mapped.get(id);
-    if (person === undefined) continue;
-    for (const [day, list] of synced) {
-      if (manual.has(day)) continue;
-      const first = list.find((h) => covers(h.scope, person));
-      if (first !== undefined) put(id, day, { holiday: { label: first.label } });
+    if (person !== undefined) {
+      for (const [day, list] of synced) {
+        if (manual.has(day)) continue;
+        const first = list.find((h) => covers(h.scope, person));
+        if (first !== undefined) days.set(day, first.label);
+      }
     }
+    if (days.size > 0) out.set(id, days);
+  }
+  return out;
+}
+
+/** The working week the Time logging grid holds a person to when they set none: Monday to Friday. */
+export const DEFAULT_WORK_DAYS: readonly number[] = [1, 2, 3, 4, 5];
+
+/**
+ * Each person's working days, ISO weekdays 1 (Monday) to 7 — their own when
+ * they set any, else {@link DEFAULT_WORK_DAYS}: the Time logging grid's rule,
+ * and the days a run of leave does not step over. One read of their rows.
+ */
+export function workDaysFor(db: Db, userIds: readonly string[]): Map<string, number[]> {
+  const set = new Map(
+    userIds.length === 0
+      ? []
+      : db
+          .select({ userId: userAvailability.userId, workDays: userAvailability.workDays })
+          .from(userAvailability)
+          .where(inArray(userAvailability.userId, [...userIds]))
+          .all()
+          .map((r) => [r.userId, r.workDays]),
+  );
+  return new Map(
+    userIds.map((id) => {
+      const own = set.get(id);
+      return [id, own !== undefined && own.length > 0 ? [...own] : [...DEFAULT_WORK_DAYS]];
+    }),
+  );
+}
+
+/** A calendar day's ISO weekday, 1 Monday to 7 Sunday. */
+function isoWeekday(day: string): number {
+  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+  return weekday === 0 ? 7 : weekday;
+}
+
+/**
+ * `offDaysFor(db, viewer, userIds, from, to)`: each person's days off in
+ * `from`–`to`, inclusive, as `viewer` may see them — **no `can()` here**:
+ * every caller asks its own question first, as `availabilityFor`'s do.
+ *
+ * At most four reads, whatever the number of people or days: the holidays
+ * (the `(day)` index), the people the HR system maps — only when a synced
+ * holiday falls in the stretch — who the reader sees, and their leave (the
+ * `(user_id, day)` index).
+ */
+export function offDaysFor(
+  db: Db,
+  viewer: ResolvedActor,
+  userIds: readonly string[],
+  from: string,
+  to: string,
+): OffDays {
+  const out: OffDays = new Map();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0 || from > to) return out;
+
+  const put = (userId: string, day: string, patch: Partial<OffDayView>): void => {
+    const days = out.get(userId) ?? new Map<string, OffDayView>();
+    days.set(day, { ...(days.get(day) ?? { holiday: null, leave: null }), ...patch });
+    out.set(userId, days);
+  };
+
+  for (const [userId, days] of holidaysFor(db, ids, from, to)) {
+    for (const [day, label] of days) put(userId, day, { holiday: { label } });
   }
 
   // Leave: only of the people whose availability the reader sees.
@@ -327,13 +385,24 @@ export function offEntries(off: OffDays, userId: string): OffDayEntryView[] {
     .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 }
 
+/** How far past today a run of leave is followed: a little over a year. */
+export const ON_LEAVE_MAX_DAYS = 400;
+
 /**
  * Each person's leave covering their today — `today` is each person's own
  * date, from `todaysFor` — as `viewer` may see it, or null. Approved leave
- * beats pending; `until` runs on while the next day's leave has the same
- * status. Leave is read only for the people whose availability `viewer`
- * sees, from the earliest of their todays on: one read of the `(user_id,
- * day)` index, bounded by the sync's window (D-149 item 7).
+ * beats pending.
+ *
+ * **`until` is the last day of the run**: the next day with leave of the same
+ * status continues it, and a day the person does not owe — not one of their
+ * working days ({@link workDaysFor}), or a holiday covering them — is stepped
+ * over without ending it. A working day with no leave, or leave of the other
+ * status, ends it; `until` is always a day with leave, never a day stepped
+ * over. The walk stops {@link ON_LEAVE_MAX_DAYS} days out.
+ *
+ * Leave is read only for the people whose availability `viewer` sees: one
+ * read of the `(user_id, day)` index over the walk's window; the working
+ * days and holidays only for the people on leave today.
  */
 export function onLeaveFor(
   db: Db,
@@ -345,18 +414,36 @@ export function onLeaveFor(
   if (ids.length === 0) return out;
   const visible = [...availabilityVisibleAmong(db, viewer, ids)];
   if (visible.length === 0) return out;
-  const earliest = visible.map((id) => today.get(id) ?? '').sort()[0] ?? '';
+  const todays = visible.map((id) => today.get(id) ?? '').sort();
+  const earliest = todays[0] ?? '';
+  const last = addDays(todays.at(-1) ?? earliest, ON_LEAVE_MAX_DAYS);
 
-  for (const [userId, days] of leaveByPersonDay(db, visible, earliest, null)) {
+  const leave = leaveByPersonDay(db, visible, earliest, last);
+  const onToday = visible.filter((id) => leave.get(id)?.has(today.get(id) ?? '') === true);
+  if (onToday.length === 0) return out;
+  const workDays = workDaysFor(db, onToday);
+  const holidays = holidaysFor(db, onToday, earliest, last);
+
+  for (const userId of onToday) {
     const day = today.get(userId) ?? '';
+    const days = leave.get(userId) ?? new Map<string, LeaveRow[]>();
     const rows = days.get(day);
     if (rows === undefined) continue;
     const now = resolve(rows);
+    const working = new Set(workDays.get(userId) ?? DEFAULT_WORK_DAYS);
+    const covered = holidays.get(userId) ?? new Map<string, string>();
+    const end = addDays(day, ON_LEAVE_MAX_DAYS);
     let until = day;
-    for (let next = addDays(day, 1); ; next = addDays(next, 1)) {
+    for (let next = addDays(day, 1); next <= end; next = addDays(next, 1)) {
       const more = days.get(next);
-      if (more === undefined || resolve(more).status !== now.status) break;
-      until = next;
+      if (more !== undefined) {
+        if (resolve(more).status !== now.status) break;
+        until = next;
+        continue;
+      }
+      // Nothing owed that day: the run steps over it.
+      if (!working.has(isoWeekday(next)) || covered.has(next)) continue;
+      break;
     }
     out.set(userId, {
       until,
@@ -365,4 +452,33 @@ export function onLeaveFor(
     });
   }
   return out;
+}
+
+/**
+ * Of the people in `today` — each person's own date — those on **approved
+ * whole-day leave** that day, as `viewer` may see their leave: what
+ * `GET /people/availability?open_only=true` leaves out (LAI-1183). Half a day
+ * off or a request still pending does not count. Two approved halves are the
+ * whole day, as {@link offDaysFor} has it. One read of the leave, for the
+ * people the reader sees.
+ */
+export function onWholeDayLeaveToday(
+  db: Db,
+  viewer: ResolvedActor,
+  today: ReadonlyMap<string, string>,
+): Set<string> {
+  const off = new Set<string>();
+  const ids = [...today.keys()];
+  if (ids.length === 0) return off;
+  const visible = [...availabilityVisibleAmong(db, viewer, ids)];
+  if (visible.length === 0) return off;
+  const todays = visible.map((id) => today.get(id) ?? '').sort();
+  const leave = leaveByPersonDay(db, visible, todays[0] ?? '', todays.at(-1) ?? '');
+  for (const [userId, days] of leave) {
+    const rows = days.get(today.get(userId) ?? '');
+    if (rows === undefined) continue;
+    const now = resolve(rows);
+    if (now.status === 'approved' && now.part === 'full') off.add(userId);
+  }
+  return off;
 }

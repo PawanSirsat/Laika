@@ -15,7 +15,7 @@ import {
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { createEntry } from '../../src/services/time-entries.ts';
-import { setOrgTimeMode } from '../../src/services/time-settings.ts';
+import { setOrgTimeMode, setTimeSettings } from '../../src/services/time-settings.ts';
 import { summaryOf } from '../../src/services/time-summary.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 import { hrPerson, leaveDay } from '../helpers/hr.ts';
@@ -468,6 +468,26 @@ describe('on leave beside away (D-149 item 5, LAI-1183)', () => {
     const zoe = makeUser('Zoe', 'member');
     addMember(t.db, actor(ada), 'laika', zoe, 'member');
     expect(calAs(actor(zoe))?.on_leave).toEqual({ ...shown, type: null });
+  });
+
+  it('open_only leaves out approved whole-day leave today in the person’s zone — not half a day, not a request', () => {
+    for (const id of [ada, ari, bea, cal, dee]) {
+      setMyAvailability(t.db, actor(id), { status: 'open' }, NOW);
+    }
+    // Ari is in Auckland, where it is already the 22nd: whole-day leave there.
+    setTimeSettings(t.db, actor(ari), { place: 'Pacific/Auckland' });
+    leaveDay(t.db, ari, hrPerson(t.db, ari), '2026-10-22');
+    // Bea is off the morning only; Dee has asked for the day and not heard.
+    leaveDay(t.db, bea, hrPerson(t.db, bea), '2026-10-21', { part: 'first_half' });
+    leaveDay(t.db, dee, hrPerson(t.db, dee), '2026-10-21', { status: 'pending' });
+    // Ada's whole day off is tomorrow in UTC — today she is open.
+    leaveDay(t.db, ada, hrPerson(t.db, ada), '2026-10-22');
+
+    const open = listPeopleAvailability(t.db, actor(ada), { open_only: true }, NOW).data;
+    expect(open.map((r) => r.user.name)).toEqual(['Ada', 'Bea', 'Dee']);
+    // Without the filter everyone open is listed, Cal and Ari with their leave.
+    const all = listPeopleAvailability(t.db, actor(ada), {}, NOW).data;
+    expect(all.map((r) => r.user.name)).toEqual(['Ada', 'Ari', 'Bea', 'Cal', 'Dee']);
   });
 
   it('is on the load an owner reads, and makes a person who set nothing a view', () => {

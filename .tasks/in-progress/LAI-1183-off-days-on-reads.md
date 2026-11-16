@@ -61,4 +61,12 @@ days, with D-149's visibility and not-due rules decided on the server once.
   `response-type-coverage.test.ts` (five new types unpaired) and web
   `view-type-drift.test.ts` (`MyDayView.off`, `WeekDayView.off`,
   `DaysDayView.off`, `TimeLoggingPersonView.off_days` undeclared).
+- **CHIEF's answers, built (2026-11-13).**
+  - `on_leave.until` steps over days the person does not owe: not their
+    working day (their own `work_days`, else Monday to Friday, the grid's
+    rule), or a holiday covering them. It never ends on a stepped-over day,
+    and the walk stops 400 days out.
+  - `open_only` leaves out approved whole-day leave today in the person's
+    zone. Half a day off or a pending request leaves them open.
+  - No shape changed.
 

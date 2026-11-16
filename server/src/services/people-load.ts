@@ -10,7 +10,7 @@ import { readLogged } from './analytics-views.ts';
 import { availabilityAudienceOf, type AvailabilityReader } from './availability-audience.ts';
 import { availabilityFor, type AvailabilityView, todaysFor } from './availability.ts';
 import { addDays } from './calendar-days.ts';
-import { type OnLeaveView } from './off-days.ts';
+import { type OnLeaveView, onWholeDayLeaveToday } from './off-days.ts';
 import { type ProjectRef } from './time-entries.ts';
 import { summaryOf } from './time-summary.ts';
 
@@ -422,6 +422,22 @@ export function listPeopleAvailability(
       const a = availability.get(r.id);
       return a?.status === 'open' && a.away === null;
     });
+    // Nor is a person on approved whole-day leave today, in their zone (D-149,
+    // LAI-1183). Half a day off or a pending request leaves them open. Asked
+    // only of the people the leave already marks approved today.
+    const onLeave = rows.filter((r) => availability.get(r.id)?.on_leave?.status === 'approved');
+    if (onLeave.length > 0) {
+      const away = onWholeDayLeaveToday(
+        db,
+        actor,
+        todaysFor(
+          db,
+          onLeave.map((r) => r.id),
+          now,
+        ),
+      );
+      rows = rows.filter((r) => !away.has(r.id));
+    }
   }
   if (rows.length > AVAILABILITY_LIST_MAX) {
     throw new ApiError(

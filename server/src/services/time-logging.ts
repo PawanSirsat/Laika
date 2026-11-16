@@ -2,18 +2,18 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole } from '../db/enums.ts';
-import {
-  projectMemberships,
-  timeDrafts,
-  timeEntries,
-  userAvailability,
-  users,
-} from '../db/schema.ts';
+import { projectMemberships, timeDrafts, timeEntries, users } from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { readLoggedMany } from './analytics-views.ts';
 import { zonesFor } from './availability.ts';
 import { dayIn } from './calendar-days.ts';
-import { offDaysFor, offEntries, type OffDayEntryView } from './off-days.ts';
+import {
+  DEFAULT_WORK_DAYS,
+  offDaysFor,
+  offEntries,
+  type OffDayEntryView,
+  workDaysFor,
+} from './off-days.ts';
 import { minutesByUserDay, REPORT_MAX_MEMBERS } from './time-report.ts';
 import { stretch } from './time-summary.ts';
 
@@ -48,6 +48,10 @@ import { stretch } from './time-summary.ts';
  * apart, read through {@link minutesByUserDay} — the Time report's own two
  * WHEREs. Agent time is never read (D-088 item 8).
  *
+ * Each person's working days are `off-days.ts`' `workDaysFor` — their own,
+ * else Monday to Friday — the rule a run of leave steps over days by too
+ * (LAI-1183), so the two cannot hold a person to different weeks.
+ *
  * ## Days off are facts too
  *
  * Each person carries `off_days` — the days in the stretch a holiday covers
@@ -76,9 +80,6 @@ import { stretch } from './time-summary.ts';
 
 /** D-148 item 2: a full working day, for the client's verdict — and nowhere else. */
 export const TIME_LOGGING_THRESHOLD_MINUTES = 480;
-
-/** The working week a person who set none is held to: Monday to Friday. */
-export const DEFAULT_WORK_DAYS: readonly number[] = [1, 2, 3, 4, 5];
 
 export interface TimeLoggingQuery {
   from?: string | undefined;
@@ -243,26 +244,6 @@ function firstDaysFor(db: Db, ids: readonly string[]): Map<string, string> {
 /** The earlier of two `YYYY-MM-DD` days; the one given when the other is missing. */
 function earlierDay(a: string, b: string | undefined): string {
   return b !== undefined && b < a ? b : a;
-}
-
-/** Each shown person's working days: their own when they set any, else Monday to Friday. */
-function workDaysFor(db: Db, ids: readonly string[]): Map<string, number[]> {
-  const set = new Map(
-    ids.length === 0
-      ? []
-      : db
-          .select({ userId: userAvailability.userId, workDays: userAvailability.workDays })
-          .from(userAvailability)
-          .where(inArray(userAvailability.userId, [...ids]))
-          .all()
-          .map((r) => [r.userId, r.workDays]),
-  );
-  return new Map(
-    ids.map((id) => {
-      const own = set.get(id);
-      return [id, own !== undefined && own.length > 0 ? [...own] : [...DEFAULT_WORK_DAYS]];
-    }),
-  );
 }
 
 function build(db: Db, actor: ResolvedActor, days: string[], now: number): TimeLoggingView {
