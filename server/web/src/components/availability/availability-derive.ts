@@ -78,6 +78,12 @@ export interface Pill {
   /** A shape as well as a colour, so the pill never says it by colour alone. */
   readonly glyph: string;
   readonly label: string;
+  /**
+   * The start of `label` that stands alone where the rest has no room — *On
+   * leave*, *Away* — as My day's phone bar draws it; the whole label when it
+   * has no shorter head. The rest is still the pill's `title`.
+   */
+  readonly short: string;
   /** `~6 h/wk` when they are open and said how much; empty otherwise. */
   readonly hours: string;
 }
@@ -129,14 +135,21 @@ export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
   const leave = leaveShown(seen);
   if (leave !== null) {
     return leave.status === 'approved'
-      ? { tone: 'leave', glyph: '◐', label: onLeaveLabel(leave), hours: '' }
-      : { tone: 'requested', glyph: '◌', label: onLeaveLabel(leave), hours: '' };
+      ? { tone: 'leave', glyph: '◐', label: onLeaveLabel(leave), short: 'On leave', hours: '' }
+      : {
+          tone: 'requested',
+          glyph: '◌',
+          label: onLeaveLabel(leave),
+          short: onLeaveLabel(leave),
+          hours: '',
+        };
   }
   if (presenceOf(seen) === 'away' && seen.away !== null) {
     return {
       tone: 'away',
       glyph: '◐',
       label: `Away until ${dayShort(seen.away.until)}`,
+      short: 'Away',
       hours: '',
     };
   }
@@ -146,11 +159,18 @@ export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
       tone: 'open',
       glyph: '●',
       label: 'Open to more work',
+      short: 'Open to more work',
       hours: h === null || h === undefined ? '' : `~${String(h)} h/wk`,
     };
   }
   if (seen.status === 'capacity') {
-    return { tone: 'capacity', glyph: '■', label: 'At capacity', hours: '' };
+    return {
+      tone: 'capacity',
+      glyph: '■',
+      label: 'At capacity',
+      short: 'At capacity',
+      hours: '',
+    };
   }
   return null;
 }

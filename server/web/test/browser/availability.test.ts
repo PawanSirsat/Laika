@@ -413,9 +413,15 @@ void describe('My availability on My day (frames 2a–2c)', () => {
           });
           await until(async () => (await pill.count()) === 1);
           assert.equal(await pill.getAttribute('data-avail-pill'), 'leave');
+          // The header says it all; the phone bar has room for the head, and
+          // the pill's title keeps the rest (LAI-1185).
           assert.match(
             (await pill.innerText()).replace(/\s+/g, ' ').trim(),
-            /^◐ On leave until \w{3} \d{1,2} \w{3} · Annual$/,
+            width < 600 ? /^◐ On leave$/ : /^◐ On leave until \w{3} \d{1,2} \w{3} · Annual$/,
+          );
+          assert.match(
+            (await pill.getAttribute('title')) ?? '',
+            /^On leave until \w{3} \d{1,2} \w{3} · Annual$/,
           );
           const trigger = h.page.locator('[data-my-availability] > button').filter({
             visible: true,

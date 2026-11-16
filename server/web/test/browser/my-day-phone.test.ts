@@ -3,7 +3,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, navigateInApp, setTheme, until, type Harness } from './harness.ts';
 import { NOW, open, TODAY } from './my-day-clock.ts';
-import { AGENT, at, QUIET, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { addDays, AGENT, at, QUIET, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
 
 /**
  * My day on a phone, as the owner's design draws it (LAI-518): the 48px top
@@ -715,6 +715,91 @@ void describe('My day on a phone: nothing in the head overlaps (LAI-1187)', () =
         assert.ok(fit.overflow <= 0, `Day note overflows its button by ${String(fit.overflow)} px`);
         assert.ok(within(fit.button, fit.summary), `${describeBox(fit.button)} leaves the summary`);
         await shoot(h.page, `phone-fit-390-${theme}`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
+/**
+ * The longest pill the bar carries (D-149 item 5, LAI-1185): your own
+ * approved leave, with its type — *On leave until Mon 23 Nov · Annual*. The
+ * bar's controls must still fit it and clear each other, by the same measure
+ * as LAI-1187's.
+ */
+const ON_LEAVE = {
+  status: 'open',
+  away: null,
+  on_leave: { until: addDays(TODAY, 7), status: 'approved', type: 'Annual' },
+  hours_per_week: 6,
+  note: null,
+  tags: [],
+  work_week: { days: [1, 2, 3, 4, 5], start: '08:00', end: '16:00', minutes: 2400 },
+  away_periods: [],
+  updated_at: NOW - 86_400_000,
+};
+
+void describe('My day on a phone: the longest pill in the bar (LAI-1185)', () => {
+  for (const theme of THEMES) {
+    void test(`390 px, ${theme}: On leave until … · Annual, and every control of the bar fits it, clear of the others`, async (t) => {
+      const h = await open(
+        `/my-day?day=${TODAY}`,
+        { ...stub(), '/api/v1/me/availability': ON_LEAVE },
+        {
+          before: async (page) => {
+            await page.setViewportSize({ width: 390, height: 844 });
+          },
+        },
+      );
+      try {
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await setTheme(h.page, theme);
+        const pill = h.page.locator('.shell-head[data-myday-bar] [data-avail-pill]');
+        await soon(async () => (await pill.count()) === 1, 'no pill in the bar');
+        assert.equal(await pill.getAttribute('data-avail-pill'), 'leave');
+        // The bar has room for the head; the date and the type are in its
+        // title and the trigger's name, for a pointer and a screen reader.
+        const said = `On leave until ${dayName(addDays(TODAY, 7))} · Annual`;
+        assert.equal(await pill.getAttribute('title'), said);
+        assert.match(
+          (await h.page
+            .locator('.shell-head[data-myday-bar] [data-my-availability] > button')
+            .getAttribute('aria-label')) ?? '',
+          new RegExp(`^My availability: ${said}\\. Change$`),
+        );
+        assert.equal((await pill.innerText()).replace(/\s+/g, ' ').trim(), '◐ On leave');
+        const { bar, items, contents } = await barControls(h.page);
+        t.diagnostic(`bar ${describeBox(bar)}: ${items.map(describeBox).join(', ')}`);
+        assert.ok(items.length >= 6, `the bar holds ${String(items.length)} controls`);
+        for (const [i, item] of items.entries()) {
+          assert.ok(item.right - item.left > 0, `${describeBox(item)} has no width`);
+          assert.ok(
+            within(item, bar),
+            `${describeBox(item)} is outside the bar ${describeBox(bar)}`,
+          );
+          const drawn = contents[i];
+          assert.ok(drawn !== undefined);
+          if (drawn.right - drawn.left > 0) {
+            assert.ok(
+              drawn.left >= item.left - 0.5 && drawn.right <= item.right + 0.5,
+              `${describeBox(drawn)} spill out of ${describeBox(item)}`,
+            );
+          }
+        }
+        for (const [i, a] of items.entries()) {
+          for (const b of items.slice(i + 1)) {
+            assert.ok(!intersect(a, b), `${describeBox(a)} overlaps ${describeBox(b)}`);
+          }
+        }
+        // Viewing still says *Me* whole beside it.
+        const whose = h.page.locator('.shell-head[data-myday-bar] .myday-viewing-name');
+        assert.equal(await whose.innerText(), 'Me');
+        assert.ok(
+          await whose.evaluate((el) => el.scrollWidth <= el.clientWidth),
+          'the bar cuts *Me* short',
+        );
+        await shoot(h.page, `phone-pill-on-leave-390-${theme}`);
       } finally {
         await h.close();
       }

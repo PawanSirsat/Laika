@@ -37,6 +37,8 @@ export function AvailabilityPill({
     );
   }
   const hours = hideHours ? '' : pill.hours;
+  // The words past the head, apart, so a bar with no room can leave them out.
+  const rest = pill.label.slice(pill.short.length);
   return (
     <span
       className="avail-pill"
@@ -46,7 +48,10 @@ export function AvailabilityPill({
       <span className="avail-pill-glyph" aria-hidden="true">
         {pill.glyph}
       </span>
-      <span>{pill.label}</span>
+      <span>
+        {pill.short}
+        {rest !== '' && <span className="avail-pill-rest">{rest}</span>}
+      </span>
       {hours !== '' && <span className="avail-pill-hours">· {hours}</span>}
     </span>
   );

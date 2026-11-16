@@ -53,6 +53,7 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
       tone: 'away',
       glyph: '◐',
       label: 'Away until Mon 16 Nov',
+      short: 'Away',
       hours: '',
     });
   });
@@ -64,6 +65,7 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
       tone: 'leave',
       glyph: '◐',
       label: 'On leave until Mon 23 Nov',
+      short: 'On leave',
       hours: '',
     });
     assert.equal(leave('Annual')?.label, 'On leave until Mon 23 Nov · Annual');
@@ -108,7 +110,13 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
   void test('leave requested: said over the status, under away, with no date and no type', () => {
     const requested = { until: '2026-11-23', status: 'pending', type: 'Annual' } as const;
     const pill = pillOf(seen({ status: 'open', hours_per_week: 6, on_leave: requested }));
-    assert.deepEqual(pill, { tone: 'requested', glyph: '◌', label: 'Leave requested', hours: '' });
+    assert.deepEqual(pill, {
+      tone: 'requested',
+      glyph: '◌',
+      label: 'Leave requested',
+      short: 'Leave requested',
+      hours: '',
+    });
     // Someone who set nothing but asked for leave still has a pill.
     assert.equal(pillOf(seen({ on_leave: requested }))?.tone, 'requested');
     // Their own word that they are away is the stronger fact.
@@ -154,6 +162,24 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
     }
     assert.equal(leaveShown(null), null);
     assert.equal(leaveShown(undefined), null);
+  });
+
+  void test('short: the head a narrow bar keeps, always where the label starts', () => {
+    const cases = [
+      seen({ on_leave: { until: '2026-11-23', status: 'approved', type: 'Annual' } }),
+      seen({ away: { until: '2026-11-16' } }),
+      seen({ on_leave: { until: '2026-11-23', status: 'pending', type: 'Annual' } }),
+      seen({ status: 'open', hours_per_week: 6 }),
+      seen({ status: 'capacity' }),
+    ];
+    assert.deepEqual(
+      cases.map((c) => pillOf(c)?.short),
+      ['On leave', 'Away', 'Leave requested', 'Open to more work', 'At capacity'],
+    );
+    for (const c of cases) {
+      const pill = pillOf(c);
+      assert.ok(pill?.label.startsWith(pill.short) === true, `${pill?.label ?? ''}`);
+    }
   });
 
   void test('hours show only when open and only when the server sent them', () => {
