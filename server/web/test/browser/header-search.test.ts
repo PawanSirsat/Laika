@@ -169,8 +169,13 @@ void describe('one header on every screen', () => {
       const h = await open(`${tab}?project=laika-core`, stub('owner'));
       try {
         await ready(h.page);
+        // The slug stands in until the space's own read lands; wait for the name.
         await until(
-          async () => (await h.page.locator(`${HEADER} .space-name`).count()) === 1,
+          () =>
+            h.page.evaluate(
+              (sel) => document.querySelector(sel)?.textContent?.trim() === 'Laika Core',
+              `${HEADER} .space-name`,
+            ),
           20_000,
         );
         assert.equal(
