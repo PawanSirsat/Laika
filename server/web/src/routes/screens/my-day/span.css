@@ -216,13 +216,14 @@
 /*
  * A figure not here yet: a bone where the number goes, shimmering, so a view
  * mounted on the click is at its shape before its read lands. Still for a
- * reader who asked for less motion.
+ * reader who asked for less motion: --duration-shimmer is 0ms there
+ * (motion.css), so the loop runs once, at once.
  */
 .span-pending-bone {
   display: inline-block;
   width: 2.25em;
   height: 0.75em;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: linear-gradient(
     90deg,
     var(--bg-column) 0%,
@@ -230,7 +231,7 @@
     var(--bg-column) 100%
   );
   background-size: 200% 100%;
-  animation: span-shimmer 1.4s linear infinite;
+  animation: span-shimmer var(--duration-shimmer) linear infinite;
 }
 
 .span-pending-figure {
@@ -245,12 +246,6 @@
 
   to {
     background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .span-pending-bone {
-    animation: none;
   }
 }
 
