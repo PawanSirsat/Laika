@@ -44,7 +44,8 @@ const RADIUS_EXEMPT: Readonly<Record<string, Readonly<Record<string, string>>>> 
   'routes/screens/usage/usage.css': {
     'calc(var(--radius-control) - 2px)': 'nested corner: the control radius less its 2px inset',
   },
-  'routes/screens/capacity/capacity.css': {
+  // The Segmented control's options inside its 2px-inset track (LAI-1222).
+  'components/kpi/kpi.css': {
     'calc(var(--radius-control) - 2px)': 'nested corner: the control radius less its 2px inset',
   },
 };

@@ -49,105 +49,21 @@
   color: var(--text-primary);
 }
 
-/* ----------------------------------------------------------------- tiles */
-
-.cap-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
-  gap: var(--space-2-5);
-}
-
-.cap-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-0-5);
-  min-width: 0;
-  margin: 0;
-  padding: 0.6875rem 0.8125rem var(--space-3);
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
-  color: inherit;
-}
-
-button.cap-tile,
-a.cap-tile {
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-button.cap-tile:hover,
-a.cap-tile:hover {
-  border-color: var(--accent-border);
-  background: var(--bg-card-hover);
-}
-
-.cap-tile:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.cap-tile[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.cap-tile-label {
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  color: var(--text-muted);
-}
-
-.cap-tile-value {
-  font-family: var(--font-mono);
-  font-size: var(--text-heading-lg);
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-.cap-tile-sub {
-  font-size: var(--text-small);
-  color: var(--text-muted);
-}
-
-.cap-tile-online .cap-tile-value {
-  color: var(--chip-green);
-}
-
-.cap-tile-overdue .cap-tile-value {
-  color: var(--overdue);
-}
-
-.cap-tile-unlisted .cap-tile-value {
-  color: var(--chip-orange);
-}
-
-.cap-tile-link .cap-tile-sub::after {
-  content: ' →';
-}
-
-/* --------------------------------------------------------------- toolbar */
-
+/* The skeleton's stand-in for the bar. */
 .cap-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    'search selects'
-    'chips chips';
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2-5) var(--space-3);
   align-items: center;
 }
 
+/* The search is the bar's first group, and takes what room is left. */
+.cap .fbar-primary {
+  flex: 1 1 18rem;
+}
+
 .cap-search {
-  grid-area: search;
+  flex: 1 1 auto;
   position: relative;
   display: flex;
   align-items: center;
@@ -190,66 +106,47 @@ a.cap-tile:hover {
   border-color: var(--accent-border);
 }
 
-.cap-chips {
-  grid-area: chips;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1-5);
-  min-width: 0;
+/* The summary's links to the queues it counts (LAI-1222). */
+.cap-out {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-.cap-chip {
-  height: 1.875rem;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-pill);
-  background: var(--bg-card);
-  color: var(--text-secondary);
+.cap-out::after {
+  content: ' →';
+}
+
+.cap-out:hover {
+  text-decoration: underline;
+}
+
+.cap-out:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.cap .cap-dropdown {
+  width: 12rem;
+  max-width: 100%;
+}
+
+.cap-clear {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-1);
   font: inherit;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.cap-chip:hover {
-  border-color: var(--accent-border);
-  color: var(--text-primary);
-}
-
-.cap-chip:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.cap-chip[aria-pressed='true'] {
-  background: var(--accent-bg);
-  border-color: var(--accent);
   color: var(--accent);
+  cursor: pointer;
 }
 
-.cap-selects {
-  grid-area: selects;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.cap-select {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1-5);
-  font-size: var(--text-body);
-  font-weight: var(--weight-bold);
-  color: var(--text-muted);
-}
-
-/* The dropdown's field is full-width by default; here it sits beside the
-   search as a control of its own width (Review's filters do the same). */
-.cap-select .cap-dropdown {
-  width: 10.5rem;
-  max-width: 100%;
+.cap-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ------------------------------------------------------------------ grid */
@@ -463,50 +360,6 @@ a.cap-tile:hover {
   justify-content: flex-start;
 }
 
-.cap-load {
-  flex: none;
-  padding: var(--space-0-5) var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--chip-neutral-border);
-  background: var(--chip-neutral-bg);
-  color: var(--chip-neutral);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: help;
-}
-
-.cap-load-light {
-  border-color: var(--chip-green-border);
-  background: var(--chip-green-bg);
-  color: var(--chip-green);
-}
-
-.cap-load-normal {
-  border-color: var(--chip-blue-border);
-  background: var(--chip-blue-bg);
-  color: var(--chip-blue);
-}
-
-.cap-load-heavy {
-  border-color: var(--overdue-border);
-  background: var(--blocked-bg);
-  color: var(--overdue);
-}
-
-.cap-overdue {
-  padding: var(--space-0-5) var(--space-2);
-  border: 1px dashed var(--overdue-border);
-  border-radius: var(--radius-pill);
-  color: var(--overdue);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: help;
-}
-
 /* --- blocks inside a card --- */
 
 .cap-block {
@@ -711,32 +564,54 @@ a.cap-tile:hover {
 
 /* --- the fortnight as three figures (LAI-818; back without the chart, LAI-996) --- */
 
+/* One stacked bar (LAI-1222), its legend under it carrying the numbers. A
+   hairline gap of card between the parts, so neighbours never merge. */
+.cap-act {
+  display: flex;
+  gap: var(--space-0-5);
+  height: 0.5rem;
+  border-radius: var(--radius-hairline);
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.cap-act-part {
+  min-width: 2px;
+}
+
+.cap-act-self {
+  background: var(--chip-blue);
+}
+
+.cap-act-agents {
+  background: var(--chip-pink);
+}
+
+.cap-act-bookkeeping {
+  background: var(--text-muted);
+}
+
 .cap-figs {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-1-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
 }
 
 .cap-fig {
-  display: flex;
-  flex-direction: column;
-  gap: 0.0625rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-1-5) var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
-  background: var(--bg-column);
+  font-size: var(--text-small);
 }
 
-.cap-fig:hover {
-  border-color: var(--accent-border);
-}
-
-.cap-fig .cap-count-n {
-  font-size: var(--text-body);
+.cap-act-swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-xs);
 }
 
 .cap-fig-zero .cap-count-n {
@@ -745,12 +620,92 @@ a.cap-tile:hover {
 }
 
 .cap-fig-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* --- the card's glance line and its disclosure (LAI-1222) --- */
+
+.cap-load-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cap-oldest {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cap-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.cap-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cap-key-zero {
+  color: var(--text-muted);
+}
+
+.cap-key-on .cap-count-n {
+  color: var(--chip-green);
+}
+
+.cap-key-marks {
+  display: inline-flex;
+  gap: var(--space-0-5);
+}
+
+.cap-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding: var(--space-0-5) var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: none;
+  color: var(--accent);
+  font: inherit;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cap-details-toggle:hover {
+  background: var(--accent-bg);
+}
+
+.cap-details-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cap-details-toggle svg {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.cap-details-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.cap-details:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2-5);
+  padding-top: var(--space-2-5);
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* ------------------------------------------------------------ never seen */
@@ -793,43 +748,6 @@ a.cap-tile:hover {
 }
 
 /* ------------------------------------------------------------ view toggle */
-
-.cap-view {
-  display: inline-flex;
-  padding: var(--space-0-5);
-  gap: var(--space-0-5);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  background: var(--bg-card);
-}
-
-.cap-view-button {
-  height: 1.75rem;
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: calc(var(--radius-control) - 2px);
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.cap-view-button:hover {
-  color: var(--text-primary);
-}
-
-.cap-view-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.cap-view-button[aria-pressed='true'] {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
 
 /* ------------------------------------------------------------------ list */
 
@@ -1025,14 +943,8 @@ a.cap-tile:hover {
 }
 
 .cap-skeleton-search {
-  grid-area: search;
+  flex: 1 1 18rem;
   height: 2.25rem;
-}
-
-.cap-skeleton-chips {
-  width: min(32rem, 100%);
-  height: 1.875rem;
-  border-radius: var(--radius-pill);
 }
 
 .cap-skeleton-avatar {
@@ -1047,21 +959,13 @@ a.cap-tile:hover {
 }
 
 .cap-card-skeleton {
-  min-height: 17rem;
+  min-height: 11rem;
 }
 
 /* ----------------------------------------------------------------- phone */
 
 @container cap (max-width: 34rem) {
-  .cap-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'search'
-      'selects'
-      'chips';
-  }
-
-  .cap-view {
-    align-self: flex-start;
+  .cap .cap-dropdown {
+    width: 100%;
   }
 }

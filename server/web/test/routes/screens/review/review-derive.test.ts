@@ -8,12 +8,20 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { NO_FILTER, type ReviewQueueItem } from '../../../../src/api/review.ts';
+import { NO_FILTER, type ReviewQueueItem, type Round } from '../../../../src/api/review.ts';
 import type { Task } from '../../../../src/api/tasks.ts';
 import {
   acceptSummary,
   advanceAfterDecide,
   dialogCommand,
+  evidenceOn,
+  evidenceState,
+  isStale,
+  listCommand,
+  reviewKpis,
+  STALE_AFTER_MS,
+  toggleEvidence,
+  withoutEvidence,
   flatOrder,
   groupBySpace,
   itemParam,
@@ -244,5 +252,134 @@ void describe('dialogCommand', () => {
   void test('an Escape something inside already spent is left to it', () => {
     assert.equal(dialogCommand({ key: 'Escape', defaultPrevented: true }, false), null);
     assert.equal(dialogCommand({ key: 'Escape', defaultPrevented: false }, true), 'close');
+  });
+});
+
+/* ------------------------------------------------- the page body (LAI-1222) */
+
+const claimed = { id: 'e', state: 'claimed', state_source: null, state_at: null } as const;
+
+function withRound(key: string, round: Partial<Round> | null, cue = false): ReviewQueueItem {
+  return {
+    ...queued(key),
+    round:
+      round === null
+        ? null
+        : ({
+            id: 'r',
+            task_id: 't',
+            number: 1,
+            finished_by: 'u',
+            client_name: null,
+            agent: null,
+            by_registered_agent: false,
+            summary_md: '',
+            commits: [],
+            branch: null,
+            pull_request: null,
+            tests: [],
+            ci: null,
+            created_at: 0,
+            ...round,
+          } as Round),
+    cue: cue ? { kind: 'fast', build_ms: 60_000, forecast_p50_ms: 3_600_000 } : null,
+  };
+}
+
+const ci = (failed: number, pending = 0) => ({
+  head_sha: 'abc',
+  total: 3,
+  passed: 3 - failed - pending,
+  failed,
+  pending,
+  failed_names: failed > 0 ? ['lint'] : [],
+});
+const commit = { ...claimed, sha: 'abc', message: 'x' };
+const run = (exit_code: number) => ({ ...claimed, command: 'pnpm test', exit_code });
+
+void describe('evidenceState: one fact per row, the most urgent first', () => {
+  void test('a failure outranks everything; then check this one; then no proof; then CI', () => {
+    const failing = withRound('A', { tests: [run(1)], ci: ci(0) }, true);
+    assert.equal(evidenceState(failing).kind, 'tests_failed');
+    assert.equal(evidenceState(failing).tone, 'danger');
+    assert.equal(
+      evidenceState(withRound('B', { commits: [commit], ci: ci(1) }, true)).kind,
+      'ci_failed',
+    );
+    assert.equal(evidenceState(withRound('C', { commits: [commit] }, true)).kind, 'check');
+    assert.equal(evidenceState(withRound('D', null)).kind, 'none');
+    assert.equal(evidenceState(withRound('E', {})).kind, 'none');
+    assert.equal(
+      evidenceState(withRound('F', { commits: [commit], ci: ci(0, 1) })).kind,
+      'ci_pending',
+    );
+    assert.equal(
+      evidenceState(withRound('G', { commits: [commit], ci: ci(0) })).kind,
+      'ci_confirmed',
+    );
+    assert.equal(
+      evidenceState(withRound('H', { commits: [commit], tests: [run(0)] })).kind,
+      'attached',
+    );
+  });
+
+  void test('no proof is quiet — neutral, never the failure red — and every hint says why', () => {
+    const none = evidenceState(withRound('D', null));
+    assert.equal(none.tone, 'neutral');
+    assert.equal(none.label, 'No proof');
+    assert.match(none.hint, /without a finish/);
+    assert.match(
+      evidenceState(withRound('H', { commits: [commit, commit], tests: [run(0), run(1)] })).hint,
+      /2 commits, 2 test runs \(1 failed\)/,
+    );
+  });
+});
+
+void describe('reviewKpis: the figures that are also the filters', () => {
+  const items = [
+    withRound('A', { tests: [run(1)] }),
+    withRound('B', null),
+    withRound('C', null),
+    withRound('D', { commits: [commit], ci: ci(0) }),
+  ];
+
+  void test('a zero figure is left out unless its filter is on', () => {
+    const ids = reviewKpis(items, NO_FILTER).map((k) => [k.id, k.count]);
+    assert.deepEqual(ids, [
+      ['failing', 1],
+      ['noEvidence', 2],
+      ['ciConfirmed', 1],
+    ]);
+    const on = reviewKpis(items, { ...NO_FILTER, fast: true }).map((k) => k.id);
+    assert.ok(on.includes('fast'), 'a switched-on filter keeps its tile at zero');
+  });
+
+  void test('toggling: CI failed and CI passed exclude each other; clearing keeps the dropdowns', () => {
+    const a = toggleEvidence({ ...NO_FILTER, ciConfirmed: true }, 'ciFailed');
+    assert.equal(a.ciFailed, true);
+    assert.equal(a.ciConfirmed, false);
+    assert.equal(toggleEvidence(a, 'ciFailed').ciFailed, false);
+    const cleared = withoutEvidence({ ...a, project: 'laika', failing: true });
+    assert.equal(evidenceOn(cleared), false);
+    assert.equal(cleared.project, 'laika');
+    assert.equal(evidenceOn(NO_FILTER), false);
+  });
+});
+
+void describe('isStale and listCommand', () => {
+  void test('an age is stale from two days', () => {
+    assert.equal(isStale(STALE_AFTER_MS - 1), false);
+    assert.equal(isStale(STALE_AFTER_MS), true);
+    assert.equal(isStale(Number.NaN), false);
+  });
+
+  void test("the rows answer the dialog's keys, but Escape is not the list's", () => {
+    assert.equal(listCommand({ key: 'j' }, false), 'next');
+    assert.equal(listCommand({ key: 'k' }, false), 'prev');
+    assert.equal(listCommand({ key: 'a' }, false), 'accept');
+    assert.equal(listCommand({ key: 's' }, false), 'send_back');
+    assert.equal(listCommand({ key: 'Escape' }, false), null);
+    assert.equal(listCommand({ key: 'a' }, true), null);
+    assert.equal(listCommand({ key: 'a', metaKey: true }, false), null);
   });
 });

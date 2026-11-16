@@ -127,6 +127,25 @@ export function passesFilter(
   }
 }
 
+/**
+ * How many people each filter leaves, in the chosen space (LAI-1222): the
+ * figures at the top of the page *are* the filters, so each tile shows the
+ * count its filter would draw.
+ */
+export function filterCounts(
+  people: readonly CapacityEntry[],
+  space: string | null,
+): Readonly<Record<CapacityFilter, number>> {
+  const counts = Object.fromEntries(FILTERS.map((f) => [f.id, 0])) as Record<
+    CapacityFilter,
+    number
+  >;
+  for (const person of people) {
+    for (const f of FILTERS) if (passesFilter(person, f.id, space)) counts[f.id] += 1;
+  }
+  return counts;
+}
+
 const STATUS_RANK: Readonly<Record<PersonStatus, number>> = {
   online: 0,
   away: 1,

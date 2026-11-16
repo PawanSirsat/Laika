@@ -1,4 +1,8 @@
+import { buildLabel } from '../../../api/estimates.ts';
 import {
+  ciLine,
+  ciVerdict,
+  evidenceSummary,
   filterQueue,
   type QueueFilter,
   type ReviewQueueItem,
@@ -190,4 +194,231 @@ export function dialogCommand(event: DialogKey, typing: boolean): DialogCommand 
     default:
       return null;
   }
+}
+
+/* ------------------------------------------------- the page body (LAI-1222) */
+
+const DAY_MS = 24 * 3_600_000;
+
+/**
+ * A wait worth colouring: two days in review. Below it the age is plain ink —
+ * colour on every row says nothing, and most rows are hours old.
+ */
+export const STALE_AFTER_MS = 2 * DAY_MS;
+
+export function isStale(ms: number): boolean {
+  return Number.isFinite(ms) && ms >= STALE_AFTER_MS;
+}
+
+/** The one word a row says about its proof, most urgent first. */
+export type EvidenceKind =
+  'tests_failed' | 'ci_failed' | 'check' | 'none' | 'ci_pending' | 'ci_confirmed' | 'attached';
+
+export interface EvidenceState {
+  readonly kind: EvidenceKind;
+  /** The chip's text. */
+  readonly label: string;
+  /** The `Chip` tone: red only for a failure, green only for CI's own pass. */
+  readonly tone: 'danger' | 'orange' | 'green' | 'neutral';
+  /** The status mark drawn in place of the dot — never colour alone. */
+  readonly mark: 'alert' | 'clock' | 'dot';
+  /** What the tooltip explains: why the row says it, and what is behind it. */
+  readonly hint: string;
+}
+
+/** `2 commits, a pull request, 3 test runs (1 failed)` — what a finish carried, in words. */
+function attachedWords(item: ReviewQueueItem): string {
+  const round = item.round;
+  if (round === null) return 'nothing';
+  const parts: string[] = [];
+  if (round.commits.length > 0) {
+    parts.push(
+      `${String(round.commits.length)} ${round.commits.length === 1 ? 'commit' : 'commits'}`,
+    );
+  }
+  if (round.branch !== null) parts.push('a branch');
+  if (round.pull_request !== null) parts.push('a pull request');
+  if (round.tests.length > 0) {
+    const failed = round.tests.filter((t) => t.exit_code !== 0).length;
+    parts.push(
+      `${String(round.tests.length)} test ${round.tests.length === 1 ? 'run' : 'runs'}${
+        failed > 0 ? ` (${String(failed)} failed)` : ''
+      }`,
+    );
+  }
+  return parts.length === 0 ? 'nothing' : parts.join(', ');
+}
+
+/**
+ * **One** evidence state per row (LAI-1222), where the row used to draw a
+ * pill per kind of proof and a loud `no proof` on every bare one. The most
+ * urgent wins — a failure, then *check this one*, then no proof at all, then
+ * CI's verdict, then plain *proof attached* — and the tooltip carries the
+ * rest; the full proof is the Review dialog's.
+ */
+export function evidenceState(item: ReviewQueueItem): EvidenceState {
+  const summary = evidenceSummary(item.round);
+  const ci = ciVerdict(item.round);
+  const carried = `The finish carried ${attachedWords(item)}.`;
+  if (summary.testsFailed > 0) {
+    return {
+      kind: 'tests_failed',
+      label: 'Tests failing',
+      tone: 'danger',
+      mark: 'alert',
+      hint: `${String(summary.testsFailed)} of the test runs the agent reported exited non-zero. ${carried}`,
+    };
+  }
+  if (ci === 'failed' && item.round?.ci != null) {
+    return {
+      kind: 'ci_failed',
+      label: 'CI failed',
+      tone: 'danger',
+      mark: 'alert',
+      hint: `${ciLine(item.round.ci)} — GitHub's verdict on the head commit, not the agent's. ${carried}`,
+    };
+  }
+  if (item.cue !== null) {
+    return {
+      kind: 'check',
+      label: 'Check this one',
+      tone: 'orange',
+      mark: 'clock',
+      hint: `Finished in ${buildLabel(item.cue.build_ms)} against a forecast of ${buildLabel(
+        item.cue.forecast_p50_ms,
+      )}, and CI has not confirmed it. About the task, not the person.`,
+    };
+  }
+  if (summary.empty) {
+    return {
+      kind: 'none',
+      label: 'No proof',
+      tone: 'neutral',
+      mark: 'alert',
+      hint:
+        item.round === null
+          ? 'Moved to review without a finish: no commits, branch, pull request or test runs to check.'
+          : 'The agent finished without attaching commits, a branch, a pull request or test runs.',
+    };
+  }
+  if (ci === 'pending' && item.round?.ci != null) {
+    return {
+      kind: 'ci_pending',
+      label: 'CI running',
+      tone: 'neutral',
+      mark: 'clock',
+      hint: `${ciLine(item.round.ci)}. ${carried}`,
+    };
+  }
+  if (ci === 'confirmed' && item.round?.ci != null) {
+    return {
+      kind: 'ci_confirmed',
+      label: 'CI passed',
+      tone: 'green',
+      mark: 'dot',
+      hint: `${ciLine(item.round.ci)} — GitHub's verdict on the head commit. ${carried}`,
+    };
+  }
+  return {
+    kind: 'attached',
+    label: 'Proof attached',
+    tone: 'neutral',
+    mark: 'dot',
+    hint: `${carried} Claimed by the agent until something checks it.`,
+  };
+}
+
+/** The evidence filters, in the order the figures draw them. */
+export type EvidenceFilter = 'failing' | 'noEvidence' | 'ciFailed' | 'ciConfirmed' | 'fast';
+
+export interface ReviewKpi {
+  readonly id: EvidenceFilter;
+  readonly label: string;
+  readonly count: number;
+  readonly tone: 'danger' | 'warning' | 'positive' | undefined;
+}
+
+/**
+ * The figures that are also the evidence filters (LAI-1222): how many of the
+ * view's rows each would leave. **Only a figure worth a tile is returned** —
+ * a non-zero count, or the filter that is switched on (so a reader can always
+ * see and undo what is narrowing the page). The colour is for a problem that
+ * exists: red for failures, orange for *check these*, nothing for no proof.
+ */
+export function reviewKpis(items: readonly ReviewQueueItem[], filter: QueueFilter): ReviewKpi[] {
+  const summaries = items.map((item) => ({ s: evidenceSummary(item.round), item }));
+  const all: ReviewKpi[] = [
+    {
+      id: 'failing',
+      label: 'Failing tests',
+      count: summaries.filter(({ s }) => s.testsFailed > 0).length,
+      tone: 'danger',
+    },
+    {
+      id: 'ciFailed',
+      label: 'CI failed',
+      count: summaries.filter(({ item }) => ciVerdict(item.round) === 'failed').length,
+      tone: 'danger',
+    },
+    {
+      id: 'fast',
+      label: 'Check these',
+      count: items.filter((item) => item.cue !== null).length,
+      tone: 'warning',
+    },
+    {
+      id: 'noEvidence',
+      label: 'No proof',
+      count: summaries.filter(({ s }) => s.empty).length,
+      tone: undefined,
+    },
+    {
+      id: 'ciConfirmed',
+      label: 'CI passed',
+      count: summaries.filter(({ item }) => ciVerdict(item.round) === 'confirmed').length,
+      tone: 'positive',
+    },
+  ];
+  return all.filter((kpi) => kpi.count > 0 || filter[kpi.id]);
+}
+
+/** The filter with one evidence filter flipped; CI failed and CI passed exclude each other. */
+export function toggleEvidence(filter: QueueFilter, id: EvidenceFilter): QueueFilter {
+  const next = { ...filter, [id]: !filter[id] };
+  if (id === 'ciFailed' && next.ciFailed) return { ...next, ciConfirmed: false };
+  if (id === 'ciConfirmed' && next.ciConfirmed) return { ...next, ciFailed: false };
+  return next;
+}
+
+/** The filter with every evidence filter off and the dropdowns kept. */
+export function withoutEvidence(filter: QueueFilter): QueueFilter {
+  return {
+    ...filter,
+    failing: false,
+    noEvidence: false,
+    ciFailed: false,
+    ciConfirmed: false,
+    fast: false,
+  };
+}
+
+/** Whether any evidence filter is on. */
+export function evidenceOn(filter: QueueFilter): boolean {
+  return (
+    filter.failing || filter.noEvidence || filter.ciFailed || filter.ciConfirmed || filter.fast
+  );
+}
+
+/**
+ * The commands the queue's own rows answer (LAI-1222), the same keys as the
+ * Review dialog so a reader learns them once: `j` / `↓` the next row, `k` /
+ * `↑` the one before, `a` accept the focused row, `s` send it back. Nothing
+ * while typing, nothing with a modifier, and Escape is not the list's.
+ */
+export function listCommand(
+  event: DialogKey,
+  typing: boolean,
+): Exclude<DialogCommand, 'close'> | null {
+  const command = dialogCommand(event, typing);
+  return command === 'close' ? null : command;
 }

@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   barSegments,
+  filterCounts,
   FILTERS,
   LOAD_LABEL,
   loadIn,
@@ -400,5 +401,29 @@ void describe('the view in the address (LAI-1201)', () => {
       withCapacityParams(base, { query: '', sort: 'online' }).toString(),
       'tab=capacity',
     );
+  });
+});
+
+void describe('filterCounts (LAI-1222)', () => {
+  void test('each figure counts the people its own filter leaves, in the chosen space', () => {
+    const people = [
+      person({ user_id: 'a', status: 'online', load: 'heavy', workload: work({ in_progress: 9 }) }),
+      person({ user_id: 'b', status: 'away', load: 'none', workload: work({ overdue: 2 }) }),
+      person({ user_id: 'c', status: 'never', load: 'none' }),
+    ];
+    const counts = filterCounts(people, null);
+    for (const f of FILTERS) {
+      assert.equal(
+        counts[f.id],
+        people.filter((p) => passesFilter(p, f.id, null)).length,
+        `the ${f.id} figure disagrees with its filter`,
+      );
+    }
+    assert.equal(counts.all, 3);
+    assert.equal(counts.online, 1);
+    assert.equal(counts.heavy, 1);
+    assert.equal(counts.overdue, 1);
+    assert.equal(counts.none, 2);
+    assert.equal(counts.never, 1);
   });
 });

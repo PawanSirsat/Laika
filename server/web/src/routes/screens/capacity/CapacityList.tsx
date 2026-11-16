@@ -5,15 +5,8 @@ import { PersonLink } from '../../../components/PersonLink.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { initials } from '../../../theme/initials.ts';
-import { count, HOVER, LOAD_RULE, ROLE_LABEL, SpaceChip } from './CapacityCard.tsx';
-import {
-  barSegments,
-  LOAD_LABEL,
-  loadIn,
-  runningAgents,
-  statusText,
-  workloadIn,
-} from './capacity-derive.ts';
+import { count, HOVER, LoadBadges, ROLE_LABEL, SpaceChip } from './CapacityCard.tsx';
+import { barSegments, loadIn, runningAgents, statusText, workloadIn } from './capacity-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface CapacityListProps {
@@ -150,19 +143,8 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                   </span>
                 </td>
                 <td>
-                  <span className="cap-badges cap-badges-row">
-                    <Tooltip content={LOAD_RULE}>
-                      <span className={`cap-load cap-load-${load}`}>
-                        <span className="visually-hidden">Load: </span>
-                        {LOAD_LABEL[load]}
-                      </span>
-                    </Tooltip>
-                    {work.overdue > 0 && (
-                      <Tooltip content={HOVER.overdue}>
-                        <span className="cap-overdue">{count(work.overdue)} overdue</span>
-                      </Tooltip>
-                    )}
-                  </span>
+                  {/* The cards' badges, the same Chip and words (LAI-1222). */}
+                  <LoadBadges load={load} overdue={work.overdue} />
                 </td>
                 <td className="cap-list-bar">
                   <span

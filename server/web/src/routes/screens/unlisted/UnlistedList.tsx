@@ -14,7 +14,10 @@ import {
   unlistedState,
   type UnlistedWork,
 } from '../../../api/unlisted.ts';
+import { formatAgeCompact } from '../../../api/duration.ts';
 import { timeLabel } from '../../../api/time-label.ts';
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { Button } from '../../../components/forms/Button.tsx';
 import '../../../components/markers.css';
 import './unlisted.css';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -195,21 +198,57 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                 <Tooltip content={who}>
                   <span className="unl-who">{who}</span>
                 </Tooltip>
-                <Tooltip content={when.full}>
-                  <time className="unl-when" dateTime={when.iso}>
-                    {when.text}
-                  </time>
-                </Tooltip>
                 <span className="unl-first">{firstLine(row.note)}</span>
                 {/* Decided rows say so on the line, so the queue can be read
-                    without opening anything. */}
+                    without opening anything; an open row says nothing. */}
                 {state !== 'pending' && (
-                  <span className={`unl-tag unl-tag-${state}`}>
+                  <Chip
+                    variant="status"
+                    tone={state === 'promoted' ? 'green' : 'neutral'}
+                    className={`unl-tag unl-tag-${state}`}
+                    title={
+                      state === 'promoted'
+                        ? 'Promoted: it became a task. Open the line for a link to it.'
+                        : 'Dismissed: kept on record, not deleted.'
+                    }
+                  >
                     {state === 'promoted' ? 'Promoted' : 'Dismissed'}
-                  </span>
+                  </Chip>
                 )}
+                <Tooltip content={`Logged ${when.full}`} lazy>
+                  <time className="unl-when" dateTime={when.iso}>
+                    {formatAgeCompact(now - row.created_at)}
+                  </time>
+                </Tooltip>
                 <span className="unl-caret" aria-hidden="true" />
               </button>
+              {state === 'pending' && !open && (
+                <span className="unl-actions">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label={`Promote the note from ${row.repo} to a task`}
+                    onClick={() => {
+                      setExpanded(row.id);
+                      setPromoting(row);
+                      setTitle(firstLine(row.note).slice(0, 120));
+                      setActionError(undefined);
+                    }}
+                  >
+                    Promote…
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Dismiss the note from ${row.repo}`}
+                    onClick={() => {
+                      dismiss(row);
+                    }}
+                  >
+                    Dismiss
+                  </Button>
+                </span>
+              )}
 
               {open && (
                 <div className="unl-detail">

@@ -245,7 +245,7 @@ void describe('nothing at all', () => {
 
 void describe('on a phone, and under the policy', () => {
   for (const [name, path, ready] of [
-    ['Capacity', '/insights', '.cap-tile-label'],
+    ['Capacity', '/insights', '.cap-kpis .kpi-label'],
     ['Usage', '/insights?tab=usage', '[data-stat="tokens"]'],
     ['Time', '/insights?tab=time', '[data-tr-stat="tracked"]'],
     ['Availability', '/insights?tab=time&view=availability', '[data-availability-view]'],

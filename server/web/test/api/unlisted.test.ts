@@ -10,6 +10,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  ALL_UNLISTED,
+  filterUnlisted,
+  fromAgent,
+  unlistedCounts,
+  unlistedRepos,
   firstLine,
   mayPromote,
   promoteBlocker,
@@ -118,5 +123,33 @@ void describe('promoteBlocker: a greyed Create task says why (LAI-1128, B15)', (
 
   void test('a chosen space and a title: nothing blocks', () => {
     assert.equal(promoteBlocker(spaces, 'onroute', 'Fix the script'), undefined);
+  });
+});
+
+void describe('the Unlisted page filters (LAI-1222)', () => {
+  const rows = [
+    row({ id: 'a', repo: 'laika', token_id: 'tok' }),
+    row({ id: 'b', repo: 'onroute', token_id: null, user_id: 'bea' }),
+    row({ id: 'c', repo: 'laika', promoted_task_id: 't1' }),
+    row({ id: 'd', repo: 'laika', dismissed_at: 5 }),
+  ];
+  const ids = (list: readonly UnlistedWork[]) => list.map((r) => r.id);
+
+  void test('all leaves everything; a state, a source and a repo each narrow', () => {
+    assert.deepEqual(ids(filterUnlisted(rows, ALL_UNLISTED)), ['a', 'b', 'c', 'd']);
+    assert.deepEqual(ids(filterUnlisted(rows, { ...ALL_UNLISTED, state: 'pending' })), ['a', 'b']);
+    assert.deepEqual(ids(filterUnlisted(rows, { ...ALL_UNLISTED, state: 'promoted' })), ['c']);
+    assert.deepEqual(ids(filterUnlisted(rows, { ...ALL_UNLISTED, source: 'person' })), ['b']);
+    assert.deepEqual(
+      ids(filterUnlisted(rows, { state: 'pending', source: 'agent', repo: 'laika' })),
+      ['a'],
+    );
+  });
+
+  void test('an agent note carries its token; the counts are by state', () => {
+    assert.equal(fromAgent(row({ token_id: 'x' })), true);
+    assert.equal(fromAgent(row({ token_id: null })), false);
+    assert.deepEqual(unlistedCounts(rows), { all: 4, pending: 2, promoted: 1, dismissed: 1 });
+    assert.deepEqual(unlistedRepos(rows), ['laika', 'onroute']);
   });
 });

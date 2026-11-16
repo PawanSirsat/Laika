@@ -195,15 +195,12 @@
 
 /* One strip of six cells (LAI-1127): six across a laptop, three, then two. */
 .usage-tiles {
+  /* The figures share the KpiRow's look across Insights (LAI-1222): one
+     bordered tile each, the same label, figure and caption steps. */
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
+  gap: var(--space-2);
   margin: 0;
-  overflow: hidden;
-  background: var(--border-card);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-column);
-  box-shadow: var(--shadow-card);
 }
 
 @container usage (min-width: 36rem) {
@@ -224,8 +221,10 @@
   gap: var(--space-0-5);
   min-width: 0;
   margin: 0;
-  padding: var(--space-3) var(--space-3-5);
+  padding: var(--space-2-5) var(--space-3);
   background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
 }
 
 .usage-stat dd {
@@ -234,8 +233,8 @@
 
 .usage-stat-label {
   font-size: var(--text-small);
-  font-weight: var(--weight-medium);
-  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
 }
 
 .usage-stat-value {
@@ -1272,4 +1271,26 @@
 
 .usage-trend-table .usage-table {
   font-size: var(--text-small);
+}
+
+/* A phone (LAI-1222): the figures scroll sideways, as every KpiRow does,
+   instead of stacking three rows deep above the first chart. */
+@media (max-width: 600px) {
+  .usage-tiles {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    padding-bottom: var(--space-0-5);
+  }
+
+  .usage-tiles::-webkit-scrollbar {
+    display: none;
+  }
+
+  .usage-tiles > .usage-stat {
+    flex: 0 0 auto;
+    width: 10.5rem;
+    scroll-snap-align: start;
+  }
 }

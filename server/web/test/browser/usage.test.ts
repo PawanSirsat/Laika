@@ -1354,14 +1354,23 @@ void describe('both themes, laptop and phone', () => {
             () => document.documentElement.scrollWidth - window.innerWidth,
           );
           assert.ok(overflow <= 0, `${theme} at ${String(width)}: ${String(overflow)} px sideways`);
+          // The figures' strip, not each figure: on a phone it scrolls sideways
+          // inside itself (LAI-1222), so a figure past its edge is in reach.
           const outside = await h.page
-            .locator('.usage-card, .usage-stat')
+            .locator('.usage-card, .usage-tiles')
             .evaluateAll(
               (els) =>
                 els.filter((el) => el.getBoundingClientRect().right > window.innerWidth + 0.5)
                   .length,
             );
           assert.equal(outside, 0, `${theme} at ${String(width)}: a card runs off the page`);
+          if (width === 390) {
+            const strip = await h.page.locator('.usage-tiles').evaluate((el) => ({
+              scrolls: getComputedStyle(el).overflowX === 'auto',
+              more: el.scrollWidth > el.clientWidth,
+            }));
+            assert.deepEqual(strip, { scrolls: true, more: true }, 'the figures do not scroll');
+          }
           const colour = await h.page
             .locator('.usage-trend .usage-bar')
             .last()

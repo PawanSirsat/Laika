@@ -15,6 +15,7 @@ import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, reply, until, type ApiStub, type StubCall } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const now = Date.now();
 const HOUR = 3_600_000;
@@ -146,7 +147,9 @@ void describe('the compact unlisted page', () => {
       const top = lines.first();
       assert.match(await top.innerText(), /PawanSirsat\/Laika/);
       assert.match(await top.innerText(), /Tomas Nel/);
-      assert.match(await top.innerText(), /h ago|min ago|just now/);
+      // The age is compact (LAI-1222): `1h`, the moment itself on its tooltip.
+      assert.equal((await top.locator('.unl-when').innerText()).trim(), '1h');
+      assert.match(await tipText(top.locator('.unl-when')), /^Logged /);
 
       // **One line**: no taller than a line of text and its padding.
       const box = await top.boundingBox();

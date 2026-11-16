@@ -68,6 +68,7 @@ import '../../routes/screens/board/board-motion.css';
 import '../../routes/screens/calendar/calendar.css';
 import '../screen-header.css';
 import '../scroll-cue.css';
+import '../kpi/kpi.css';
 import '../../routes/screens/capacity/capacity.css';
 import '../presence-person.css';
 import '../../routes/screens/board/board-rail.css';
