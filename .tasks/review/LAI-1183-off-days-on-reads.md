@@ -5,7 +5,8 @@ area: server+docs
 assignee: chief
 priority: p1
 depends-on: [LAI-1181]
-status: in-progress
+status: review
+finished: 2026-11-16T07:37:34Z
 started: 2026-11-13T17:29:28Z
 ---
 
@@ -34,7 +35,7 @@ days, with D-149's visibility and not-due rules decided on the server once.
 - [x] Availability (`availabilityFor`, people-load, profile reads) gains
       `on_leave: {until, status, type?} | null` beside `away`, for approved
       leave covering the person's today (pending → `status: 'pending'`).
-- [ ] SPEC §6.4 field lines and §11.4.2.1 wording for each (named docs).
+- [x] SPEC §6.4 field lines and §11.4.2.1 wording for each (named docs).
 - [x] Index use held with `queryPlansOf`; tests for visibility (a co-worker
       gets no `type`), scope, precedence, pending never not-due, half day.
       Mutations: type to a co-worker; Clan beating manual; a removed row read.
