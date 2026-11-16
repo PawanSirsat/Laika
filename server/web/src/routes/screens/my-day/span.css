@@ -900,7 +900,7 @@
 
 .span-year-day[data-mark='half'] {
   border: 1px solid var(--leave-border);
-  background: linear-gradient(135deg, var(--leave-bg) 50%, var(--heat-empty) 50%);
+  background: linear-gradient(135deg, var(--leave-bg) 50%, var(--bg-card) 50%);
   color: var(--leave);
 }
 

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import {
@@ -13,6 +15,7 @@ import { open, TODAY } from './my-day-clock.ts';
 import {
   addDays,
   EARLIER,
+  settledEntries,
   viewOf,
   weekData,
   weekStub,
@@ -22,6 +25,7 @@ import {
 import {
   chunks,
   isoWeek,
+  mondayOf,
   monthWeeks,
   periodOf,
   stepPeriod,
@@ -99,8 +103,7 @@ function daysRoutes(data: Map<string, DayData>): ApiStub {
   );
 }
 
-function stub(): ApiStub {
-  const data = weekData();
+function stub(data: Map<string, DayData> = weekData()): ApiStub {
   // The page still reads the day in the address for its header: ← in Month
   // puts it a month back, past the fixture's three weeks, so it is served too.
   const back = stepPeriod('month', TODAY, -1);
@@ -911,6 +914,394 @@ void describe('My day — the zoom as the design plays it (LAI-1179)', () => {
         sinceLength <= 2 + 2 * yearPaths.length,
         `${String(sinceLength)} reads after switching`,
       );
+    } finally {
+      await close();
+    }
+  });
+});
+
+/**
+ * Days off (D-149, LAI-1184): a holiday and leave are drawn in their own
+ * tones on Year, Month and Week, the legend names them, and the Day page says
+ * so. Last week holds one of each — every day of it past, whatever today is —
+ * and each view is opened on it: a holiday and whole-day leave with nothing
+ * on them, half-day leave, leave still requested, and a holiday with time.
+ */
+const OFF_WEEK = mondayOf(addDays(TODAY, -7));
+const HOLIDAY = OFF_WEEK;
+const LEAVE = addDays(OFF_WEEK, 1);
+const HALF = addDays(OFF_WEEK, 2);
+const ASKED = addDays(OFF_WEEK, 3);
+const WORKED = addDays(OFF_WEEK, 4);
+
+function offData(): Map<string, DayData> {
+  const data = weekData();
+  const none = { drafts: [], entries: [] };
+  data.set(HOLIDAY, { ...none, off: { holiday: { label: 'Heritage Day' }, leave: null } });
+  data.set(LEAVE, {
+    ...none,
+    off: { holiday: null, leave: { part: 'full', status: 'approved', type: 'Annual' } },
+  });
+  data.set(HALF, {
+    ...none,
+    off: { holiday: null, leave: { part: 'first_half', status: 'approved', type: 'Sick' } },
+  });
+  data.set(ASKED, {
+    ...none,
+    off: { holiday: null, leave: { part: 'full', status: 'pending', type: null } },
+  });
+  data.set(WORKED, {
+    drafts: [],
+    entries: settledEntries(WORKED),
+    off: { holiday: { label: 'Founders Day' }, leave: null },
+  });
+  return data;
+}
+
+/** A token as the browser resolves it in the theme shown, to compare with a computed colour. */
+const tokenRgb = (page: Page, name: string): Promise<string> =>
+  page.evaluate((n) => {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${n})`;
+    document.body.append(probe);
+    const rgb = getComputedStyle(probe).color;
+    probe.remove();
+    return rgb;
+  }, name);
+
+/** One computed property of the first match, or of its `::after`. */
+const styleOf = (
+  page: Page,
+  selector: string,
+  property: string,
+  pseudo: '::after' | null = null,
+): Promise<string | null> =>
+  page.evaluate(
+    ([sel, prop, ps]) => {
+      const el = document.querySelector(sel);
+      return el === null ? null : getComputedStyle(el, ps).getPropertyValue(prop);
+    },
+    [selector, property, pseudo] as const,
+  );
+
+/** Every match lies inside its own `container` — not cut by it, not past it. */
+async function inside(page: Page, selector: string, container: string): Promise<string[]> {
+  return page.evaluate(
+    ([sel, box]) =>
+      [...document.querySelectorAll<HTMLElement>(sel)].flatMap((el) => {
+        const outer = el.closest<HTMLElement>(box);
+        if (outer === null || el.getClientRects().length === 0) return [];
+        const a = el.getBoundingClientRect();
+        const b = outer.getBoundingClientRect();
+        const fits =
+          a.left >= b.left - 0.5 &&
+          a.right <= b.right + 0.5 &&
+          a.top >= b.top - 0.5 &&
+          a.bottom <= b.bottom + 0.5;
+        return fits ? [] : [`${sel} ${el.textContent ?? ''} outside ${box}`];
+      }),
+    [selector, container] as const,
+  );
+}
+
+const SHOTS = process.env.LAIKA_SHOTS;
+
+async function shot(page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return;
+  mkdirSync(SHOTS, { recursive: true });
+  await page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+}
+
+void describe('My day — days off (D-149, LAI-1184)', () => {
+  after(async () => {
+    await closeBrowser();
+  });
+
+  let h: Harness | undefined;
+  const close = async () => {
+    await h?.close();
+    h = undefined;
+  };
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [1440, 390] as const) {
+      void test(`days off on Year, Month, Week and the Day page, ${theme}, ${String(width)} px`, async () => {
+        h = await open(`/my-day?span=year&day=${HOLIDAY}`, stub(offData()), {
+          before: async (page) => {
+            await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+          },
+        });
+        try {
+          const page = h.page;
+          await setTheme(page, theme);
+          const phone = width === 390;
+          const holidayBg = await tokenRgb(page, '--holiday-bg');
+          const holidayBorder = await tokenRgb(page, '--holiday-border');
+          const holiday = await tokenRgb(page, '--holiday');
+          const leaveBg = await tokenRgb(page, '--leave-bg');
+
+          // ---------------------------------------------------------- Year
+          await settled(page, 'year');
+          const year = (d: string) =>
+            `[data-layer-role="current"] .span-year-day[data-zk="d:${d}"]`;
+          // Last week may run into this year from the last: only its days in the year shown are drawn.
+          const inYear = (d: string): boolean => d.slice(0, 4) === HOLIDAY.slice(0, 4);
+          const tile = page.locator(year(HOLIDAY));
+          assert.deepEqual(
+            [
+              await tile.getAttribute('data-kind'),
+              await tile.getAttribute('data-off'),
+              await tile.getAttribute('data-mark'),
+            ],
+            ['off', 'holiday', 'tint'],
+          );
+          assert.match((await tile.getAttribute('title')) ?? '', /· Heritage Day$/);
+          assert.equal(await styleOf(page, year(HOLIDAY), 'background-color'), holidayBg);
+          assert.equal(await styleOf(page, year(HOLIDAY), 'border-top-color'), holidayBorder);
+          if (inYear(LEAVE)) {
+            assert.equal(await page.locator(year(LEAVE)).getAttribute('data-off'), 'leave');
+            assert.equal(await styleOf(page, year(LEAVE), 'background-color'), leaveBg);
+            assert.match(
+              (await page.locator(year(LEAVE)).getAttribute('title')) ?? '',
+              /On leave · Annual/,
+            );
+          }
+          if (inYear(HALF)) {
+            // Half-day leave owes half: still no signal, half filled, and said as the half.
+            assert.equal(await page.locator(year(HALF)).getAttribute('data-kind'), 'no_signal');
+            assert.equal(await page.locator(year(HALF)).getAttribute('data-mark'), 'half');
+            assert.match(
+              (await page.locator(year(HALF)).getAttribute('title')) ?? '',
+              /no signal · On leave · Sick · morning$/,
+            );
+            assert.match(
+              (await styleOf(page, year(HALF), 'background-image')) ?? '',
+              /linear-gradient/,
+            );
+          }
+          if (inYear(ASKED)) {
+            // Pending leave is a dashed edge only, never the fill.
+            assert.equal(await page.locator(year(ASKED)).getAttribute('data-off'), 'requested');
+            assert.equal(await page.locator(year(ASKED)).getAttribute('data-mark'), 'dash');
+            assert.equal(await styleOf(page, year(ASKED), 'border-top-style'), 'dashed');
+            assert.notEqual(await styleOf(page, year(ASKED), 'background-color'), leaveBg);
+            assert.match(
+              (await page.locator(year(ASKED)).getAttribute('title')) ?? '',
+              /Leave requested$/,
+            );
+          }
+          if (inYear(WORKED)) {
+            // With time: its heat, and a dot in the tone — an ::after, never the tile's own shadow.
+            assert.equal(await page.locator(year(WORKED)).getAttribute('data-kind'), 'time');
+            assert.notEqual(await page.locator(year(WORKED)).getAttribute('data-heat'), '0');
+            assert.equal(await page.locator(year(WORKED)).getAttribute('data-mark'), 'dot');
+            assert.equal(await styleOf(page, year(WORKED), 'content', '::after'), '""');
+            assert.equal(await styleOf(page, year(WORKED), 'background-color', '::after'), holiday);
+            assert.equal(await styleOf(page, year(WORKED), 'box-shadow'), 'none');
+          }
+          const legend = page.locator('[data-layer-role="current"] [data-off-key]');
+          assert.deepEqual(
+            await legend
+              .locator('[data-off-legend]')
+              .evaluateAll((els) =>
+                els.map((el) => [el.getAttribute('data-off-legend'), el.textContent?.trim()]),
+              ),
+            [
+              ['holiday', 'Holiday'],
+              ['leave', 'Leave'],
+              ['requested', 'Leave requested'],
+            ],
+          );
+          assert.equal(
+            await styleOf(
+              page,
+              '[data-layer-role="current"] .span-swatch-off[data-off="holiday"]',
+              'background-color',
+            ),
+            holidayBg,
+          );
+          assert.deepEqual(await inside(page, '[data-off-key]', '.span-head'), []);
+          assert.deepEqual(await inside(page, '.span-year-day[data-off]', '.span-year-grid'), []);
+          await shot(page, `year-${theme}-${String(width)}`);
+          if (SHOTS !== undefined) {
+            // The page scrolls inside its column, so the month itself is shot too.
+            await page
+              .locator(`[data-layer-role="current"] [data-zk="m:${HOLIDAY.slice(0, 7)}"]`)
+              .screenshot({ path: join(SHOTS, `year-month-${theme}-${String(width)}.png`) });
+          }
+
+          // --------------------------------------------------------- Month
+          await navigateInApp(page, `/my-day?span=month&day=${HOLIDAY}`);
+          await settled(page, 'month');
+          const cell = (d: string) =>
+            `[data-layer-role="current"] .span-month-cell[data-zk="d:${d}"]`;
+          assert.equal(await page.locator(cell(HOLIDAY)).getAttribute('data-mark'), 'tint');
+          assert.equal(await styleOf(page, cell(HOLIDAY), 'background-color'), holidayBg);
+          assert.match(
+            (await page.locator(cell(HALF)).getAttribute('aria-label')) ?? '',
+            /, no signal, On leave · Sick · morning$/,
+          );
+          assert.equal(await styleOf(page, cell(ASKED), 'border-top-style'), 'dashed');
+          if (phone) {
+            // No room for chips: the tint carries it, and a day off with time keeps a dot.
+            assert.equal(await page.locator(`${cell(HOLIDAY)} .span-month-off`).isVisible(), false);
+            assert.equal(await styleOf(page, cell(WORKED), 'content', '::after'), '""');
+          } else {
+            // The chip says it in place of —, or beside the time.
+            assert.equal(
+              (await page.locator(`${cell(HOLIDAY)} .span-month-off`).textContent())?.trim(),
+              'Heritage Day',
+            );
+            assert.equal(
+              (await page.locator(`${cell(HOLIDAY)} .span-month-total`).textContent())?.trim(),
+              '',
+            );
+            assert.equal(
+              (await page.locator(`${cell(ASKED)} .span-month-off`).textContent())?.trim(),
+              'Leave requested',
+            );
+            assert.equal(
+              (await page.locator(`${cell(WORKED)} .span-month-off`).textContent())?.trim(),
+              'Founders Day',
+            );
+            assert.notEqual(
+              (await page.locator(`${cell(WORKED)} .span-month-total`).textContent())?.trim(),
+              '',
+            );
+            assert.equal(await styleOf(page, `${cell(HOLIDAY)} .span-month-off`, 'color'), holiday);
+            assert.deepEqual(await inside(page, '.span-month-off', '.span-month-cell'), []);
+          }
+          assert.equal(await legend.locator('[data-off-legend]').count(), 3);
+          await shot(page, `month-${theme}-${String(width)}`);
+
+          // ---------------------------------------------------------- Week
+          await navigateInApp(page, `/my-day?span=week&day=${HOLIDAY}`);
+          await settled(page, 'week');
+          const cols = page.locator('[data-layer-role="current"] .span-week-col');
+          // Monday's column says the holiday in place of No signal.
+          assert.equal(
+            (await cols.nth(0).locator('.span-week-off').textContent())?.trim(),
+            'Heritage Day',
+          );
+          assert.equal(await cols.nth(0).locator('.span-week-nosignal').count(), 0);
+          assert.equal(
+            await cols
+              .nth(0)
+              .locator('.span-week-off')
+              .evaluate((el) => getComputedStyle(el).backgroundColor),
+            holidayBg,
+          );
+          assert.equal(
+            (await cols.nth(3).locator('.span-week-off').textContent())?.trim(),
+            'Leave requested',
+          );
+          assert.equal(
+            await cols
+              .nth(3)
+              .locator('.span-week-off')
+              .evaluate((el) => getComputedStyle(el).borderTopStyle),
+            'dashed',
+          );
+          const worked = `[data-layer-role="current"] .span-week-day[data-zk="d:${WORKED}"]`;
+          assert.match(
+            (await page.locator(worked).getAttribute('aria-label')) ?? '',
+            /, Founders Day$/,
+          );
+          if (phone) {
+            // No heads on a phone: the row says the day off, with time or without.
+            assert.equal(await cols.nth(4).locator('.span-week-off').isVisible(), true);
+          } else {
+            assert.equal(await page.locator(worked).getAttribute('data-off'), 'holiday');
+            assert.equal(await styleOf(page, worked, 'content', '::after'), '""');
+            assert.equal(await cols.nth(4).locator('.span-week-off').isVisible(), false);
+          }
+          assert.deepEqual(await inside(page, '.span-week-off', '.span-week-col'), []);
+          await shot(page, `week-${theme}-${String(width)}`);
+
+          // ------------------------------------------------------ the Day
+          await navigateInApp(page, `/my-day?day=${HOLIDAY}`);
+          const banner = page.locator('[data-off-banner="holiday"]');
+          await banner.waitFor();
+          // Landed, not mid-zoom: the Week layer gone and the day's own page ready.
+          await page.locator('[data-myday-ready]').waitFor();
+          await until(
+            async () => (await page.locator('[data-layer-role="leaving"]').count()) === 0,
+          );
+          assert.equal((await banner.textContent())?.trim(), 'Public holiday — Heritage Day');
+          assert.equal(
+            await banner.evaluate((el) => getComputedStyle(el).backgroundColor),
+            holidayBg,
+          );
+          const empty = page.locator('[data-day-empty]');
+          assert.equal(await empty.getAttribute('data-day-empty'), 'off');
+          assert.equal(
+            (await empty.locator('.dstate-empty-title').textContent())?.trim(),
+            'Heritage Day',
+          );
+          assert.doesNotMatch((await empty.textContent()) ?? '', /no signal/i);
+          if (phone) {
+            assert.match(
+              (await page.locator('[data-phone-summary]').textContent()) ?? '',
+              /Heritage Day/,
+            );
+            const dot = (d: string) =>
+              page.locator(`[data-phone-week] [data-day="${d}"] [data-dot]`);
+            assert.equal(await dot(LEAVE).getAttribute('data-dot'), 'leave');
+            assert.equal(await dot(ASKED).getAttribute('data-dot'), 'requested');
+          } else {
+            assert.equal(
+              (await page.locator('[data-day-total-sub]').textContent())?.trim(),
+              'Heritage Day',
+            );
+            const strip = (d: string) => `.myday-week-day[data-day="${d}"]`;
+            assert.equal(await page.locator(strip(LEAVE)).getAttribute('data-mark'), 'tint');
+            assert.equal(await styleOf(page, strip(LEAVE), 'background-color'), leaveBg);
+            assert.equal(await styleOf(page, strip(ASKED), 'border-top-style'), 'dashed');
+            assert.equal(await styleOf(page, strip(WORKED), 'content', '::after'), '""');
+            // The open day keeps its accent, and a dot says it is a day off.
+            assert.equal(await styleOf(page, strip(HOLIDAY), 'content', '::after'), '""');
+          }
+          assert.deepEqual(await inside(page, '[data-off-banner]', '.myday-column'), []);
+          const wide = await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          );
+          assert.ok(wide <= 0, `the Day page at ${String(width)} px scrolls ${String(wide)} px`);
+          await shot(page, `day-${theme}-${String(width)}`);
+        } finally {
+          await close();
+        }
+      });
+    }
+  }
+
+  void test('the Day page: half-day leave says its half, requested leave is only requested', async () => {
+    h = await open(`/my-day?day=${HALF}`, stub(offData()));
+    try {
+      const page = h.page;
+      const leave = page.locator('[data-off-banner="leave"]');
+      await leave.waitFor();
+      assert.equal((await leave.textContent())?.trim(), 'On leave — Sick (morning)');
+      // Half is still owed: an empty day stays no signal, and says so.
+      assert.equal(await page.locator('[data-day-empty]').getAttribute('data-day-empty'), 'past');
+      assert.equal((await page.locator('[data-day-total-sub]').textContent())?.trim(), 'no signal');
+
+      await navigateInApp(page, `/my-day?day=${ASKED}`);
+      const asked = page.locator('[data-off-banner="requested"]');
+      await asked.waitFor();
+      assert.equal((await asked.textContent())?.trim(), 'Leave requested');
+      assert.equal(await asked.evaluate((el) => getComputedStyle(el).borderTopStyle), 'dashed');
+      assert.equal(await page.locator('[data-off-banner="leave"]').count(), 0);
+
+      // A day off with time is the day as it was, with the banner over it.
+      await navigateInApp(page, `/my-day?day=${WORKED}`);
+      await page.locator('[data-off-banner="holiday"]').waitFor();
+      await page.locator('[data-dayline]').waitFor();
+      assert.equal(await page.locator('[data-day-empty]').count(), 0);
+
+      // Wider views show no day's banner.
+      await navigateInApp(page, `/my-day?span=week&day=${WORKED}`);
+      await settled(page, 'week');
+      assert.equal(await page.locator('[data-off-banner]').count(), 0);
     } finally {
       await close();
     }
