@@ -257,6 +257,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.handoff.expire',
   'system.checkpoint.prune',
   'system.notices.prune',
+  'system.hr.sync',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -668,6 +669,16 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // — a token may hold that one, and an agent must not turn on the drafting
     // of its own person's day.
     case 'org.time.set':
+      return granted(actor, action);
+
+    // | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-149 (LAI-1181): connecting Clan, syncing now, disconnecting and
+    // mapping its people. Carried by *Change organisation settings, Time and
+    // breaks*, beside the Time setting whose days it marks; session only,
+    // because the connection is signed in with a person's HR password and its
+    // token reads everyone's leave.
+    case 'org.hr.configure':
       return granted(actor, action);
 
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |

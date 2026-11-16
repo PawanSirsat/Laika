@@ -5,6 +5,12 @@ import { pruneCheckpoints } from '../services/checkpoints.ts';
 import { claimSettings, expireClaims } from '../services/claims.ts';
 import { expireOffers } from '../services/handoffs.ts';
 import { refitEstimates } from '../services/estimates.ts';
+import {
+  changedBy,
+  HR_SYNC_EVERY_MINUTES,
+  type HrSyncDeps,
+  runHrSync,
+} from '../services/hr-sync.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
@@ -53,6 +59,13 @@ export interface SchedulerDeps {
   log: Logger;
   /** `$DATA_DIR/backups/` (§11.6). */
   backupDir: string;
+  /**
+   * `LAIKA_SECRET`, to read the HR system's token (D-149, LAI-1181). Absent
+   * or empty, the HR sync does nothing — it never decrypts under no key.
+   */
+  serverSecret?: string;
+  /** The HR sync's `fetch` and waits — injected by the tests, which never call Clan. */
+  hr?: HrSyncDeps;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
   clearTimer?: (handle: unknown) => void;
@@ -143,6 +156,26 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       everyMs: DAY,
       run: (now) => refitEstimates(db, now),
       atStart: true,
+    },
+    // Holidays and leave from the organisation's HR system (D-149 item 7,
+    // LAI-1181), every 30 minutes and at boot; nothing without a connected
+    // source. **Last**, because it waits on the network and the boot runs
+    // `atStart` jobs one after another. A run still going when the next tick
+    // comes is joined, never doubled (`runHrSync`). A failed read is recorded
+    // on the connection and thrown here by its code alone, so the log says
+    // `cron.job_failed` with no token or Clan text in it.
+    {
+      name: 'hr.sync',
+      everyMs: HR_SYNC_EVERY_MINUTES * 60 * 1000,
+      atStart: true,
+      run: async (now) => {
+        const outcome = await runHrSync(db, deps.serverSecret ?? '', {
+          ...deps.hr,
+          now: () => now,
+        });
+        if (outcome.kind === 'failed') throw new Error(`hr sync failed: ${outcome.code}`);
+        return { changed: changedBy(outcome) };
+      },
     },
   ];
 }

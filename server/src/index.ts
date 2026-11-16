@@ -122,6 +122,8 @@ function main(): void {
     sqlite,
     log,
     backupDir,
+    // The HR sync reads the stored token with it (D-149, LAI-1181).
+    serverSecret: env.serverSecret,
   });
 
   const shutdown = createRuntimeShutdown({

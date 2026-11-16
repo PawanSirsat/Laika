@@ -91,6 +91,13 @@ export const LIMITS = {
    * meets it, a loop does, and it never spends the session's budget.
    */
   timeReport: { perMinute: 30, burst: 30 },
+  /**
+   * Connecting the HR system and syncing it now (D-149, LAI-1181): each is a
+   * call to Clan, so **6 a minute per person**, on its own bucket — enough for
+   * a mistyped password and a code, and never a loop that has Laika hammer
+   * Clan's sign-in on somebody's behalf.
+   */
+  hr: { perMinute: 6 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;

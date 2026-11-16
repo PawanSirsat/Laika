@@ -106,6 +106,9 @@ export const ORG_ACTIONS = [
   // D-139 (LAI-1151): a person's own developer setup — their pending pairing
   // requests and their recent setup activity, as Developer access draws them.
   'developer_setup.read_own',
+  // D-149 (LAI-1181): connect, sync and disconnect the organisation's HR
+  // system, and map its people to Laika's.
+  'org.hr.configure',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -197,6 +200,9 @@ export const SYSTEM_ACTIONS = [
   'system.checkpoint.prune',
   // §11.6: member notices older than 90 days (D-134, LAI-1136).
   'system.notices.prune',
+  // §11.6: holidays and leave read from the organisation's HR system every
+  // 30 minutes (D-149 item 7, LAI-1181).
+  'system.hr.sync',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -413,6 +419,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // person's to see, and `developer_setup.read_any`'s reason holds for one's
   // own — an agent reads no picture of every device and tool its person has.
   'developer_setup.read_own',
+  // **The HR connection is signed in with a person's HR password** (D-149,
+  // LAI-1181): the token it keeps reads everyone's leave, so an agent's token
+  // must neither connect one, nor point the organisation's at another account,
+  // nor say whose leave is whose.
+  'org.hr.configure',
 ]);
 
 /**

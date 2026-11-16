@@ -29,6 +29,8 @@ import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
+import { HolidaysFact } from './HolidaysFact.tsx';
+import { HrSourceSection } from './HrSourceSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
@@ -140,6 +142,8 @@ export function OrganisationScreen({
   const canDeactivate = gates.org('user.deactivate');
   const canSetInsights = gates.org('org.developer_insights.set');
   const canSetTime = gates.org('org.time.set');
+  /** D-149 (LAI-1182): connecting Clan is its own §3.1 row, owners and admins by default. */
+  const canConfigureHr = gates.org('org.hr.configure');
   const canListTokens = gates.org('token.list_any');
   /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
   const canRevokeTokens = gates.org('token.revoke_any');
@@ -604,6 +608,10 @@ export function OrganisationScreen({
                   <dl className="org-facts">
                     <TimeModeFact canManage={canSetTime} />
                     <BreakScheduleFact canManage={canSetTime} />
+                    {/* D-149 (LAI-1182): the holidays everyone reads, added to
+                        by whoever sets Time. The HR system they sync from is
+                        on Integrations. */}
+                    <HolidaysFact canManage={canSetTime} />
                   </dl>
                 </section>
               </div>
@@ -726,6 +734,12 @@ export function OrganisationScreen({
                   );
                 }}
               />
+            )}
+
+            {/* D-149 (LAI-1182): the HR system holidays and leave come from,
+                beside the other connection GitHub is — its holder's alone. */}
+            {canConfigureHr && (
+              <HrSourceSection members={state.people.filter((p) => p.is_active)} />
             )}
 
             {/* LAI-773: the prices every cost on Usage is computed with — read by

@@ -109,6 +109,7 @@ describe('the key', () => {
       smtp_json: encryptSecret('{"host":"x"}', SECRET, 'smtp_json'),
       github_webhook_secret: encryptSecret('ghp_0123', SECRET, 'github_webhook_secret'),
       transcript_webhook_secret: encryptSecret('tr_0123', SECRET, 'transcript_webhook_secret'),
+      clan_api_token: encryptSecret('7|clan0123', SECRET, 'clan_api_token'),
     } as const;
 
     for (const purpose of Object.keys(stored) as SecretPurpose[]) {

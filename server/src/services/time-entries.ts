@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, between, eq, isNull, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -444,6 +444,29 @@ export function entriesOn(db: Db, userId: string, day: string): TimeEntryView[] 
       and(eq(timeEntries.userId, userId), eq(timeEntries.day, day), isNull(timeEntries.deletedAt)),
     )
     .orderBy(
+      asc(sql`coalesce(${timeEntries.startedAt}, ${timeEntries.createdAt})`),
+      asc(timeEntries.id),
+    )
+    .all()
+    .map(entryView);
+}
+
+/**
+ * The person's live entries over a stretch of days, `from`..`to` inclusive,
+ * oldest day first (LAI-1179): one read where a loop over `entriesOn` was two
+ * queries a day — a year of days is 730 of them.
+ */
+export function entriesBetween(db: Db, userId: string, from: string, to: string): TimeEntryView[] {
+  return entryQuery(db)
+    .where(
+      and(
+        eq(timeEntries.userId, userId),
+        between(timeEntries.day, from, to),
+        isNull(timeEntries.deletedAt),
+      ),
+    )
+    .orderBy(
+      asc(timeEntries.day),
       asc(sql`coalesce(${timeEntries.startedAt}, ${timeEntries.createdAt})`),
       asc(timeEntries.id),
     )

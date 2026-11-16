@@ -59,7 +59,13 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     'agent.revoke_any',
     'device.revoke_any',
   ],
-  change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
+  // D-149 (LAI-1181): the HR connection, beside the Time setting.
+  change_org_settings: [
+    'org.settings.edit',
+    'org.time.set',
+    'org.developer_insights.set',
+    'org.hr.configure',
+  ],
 };
 
 /** The words a screen shows for each, so the client invents none (§11.4). */

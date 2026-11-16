@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { zoomFrames, zoomTransforms } from '../../../../src/routes/screens/my-day/span-motion.ts';
+import {
+  EASE,
+  ZOOM_MS,
+  zoomFrames,
+  zoomTransforms,
+} from '../../../../src/routes/screens/my-day/span-motion.ts';
 
 /**
  * The View's zoom (LAI-1174): the design's timing kept, its stretch dropped —
@@ -12,6 +17,11 @@ import { zoomFrames, zoomTransforms } from '../../../../src/routes/screens/my-da
 void describe('the zoom', () => {
   const stage = { left: 0, top: 0, width: 1000, height: 600 };
   const cell = { left: 200, top: 100, width: 100, height: 100 };
+
+  void test('the design’s timing and curve: 520 ms on cubic-bezier(.32,.72,0,1)', () => {
+    assert.equal(ZOOM_MS, 520);
+    assert.equal(EASE, 'cubic-bezier(.32,.72,0,1)');
+  });
 
   void test('one scale for both axes, so nothing is stretched mid-zoom', () => {
     const { big, small } = zoomTransforms(stage, cell);
