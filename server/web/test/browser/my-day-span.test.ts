@@ -1312,8 +1312,22 @@ void describe('My day — days off (D-149, LAI-1184)', () => {
             );
             const dot = (d: string) =>
               page.locator(`[data-phone-week] [data-day="${d}"] [data-dot]`);
-            assert.equal(await dot(LEAVE).getAttribute('data-dot'), 'leave');
-            assert.equal(await dot(ASKED).getAttribute('data-dot'), 'requested');
+            // Every mark a day off can have, as Year draws it; with time, the time's own dot.
+            assert.deepEqual(
+              await Promise.all(
+                [HOLIDAY, LEAVE, HALF, ASKED, WORKED].map((d) => dot(d).getAttribute('data-dot')),
+              ),
+              ['holiday', 'leave', 'half-leave', 'requested', 'settled'],
+            );
+            const leave = await tokenRgb(page, '--leave');
+            assert.equal(
+              await dot(HALF).evaluate((el) => getComputedStyle(el).borderTopColor),
+              leave,
+            );
+            assert.match(
+              await dot(HALF).evaluate((el) => getComputedStyle(el).backgroundImage),
+              new RegExp(`linear-gradient\\(90deg, ${leave.replace(/[()]/g, '\\$&')} 50%`),
+            );
           } else {
             assert.equal(
               (await page.locator('[data-day-total-sub]').textContent())?.trim(),

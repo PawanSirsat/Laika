@@ -30,17 +30,32 @@ function dayWord(day: string, today: string, readOnly: boolean): string {
 /**
  * The week's dot (the design's `wk`): filled when settled, half while drafts
  * wait, an accent ring on a today with nothing yet, dashed with no signal, a
- * plain ring for a day not yet come. A day off with nothing on it is filled
- * in its tone, and leave still requested is a dashed ring in it (D-149,
- * LAI-1184); a day off with time keeps its dot.
+ * plain ring for a day not yet come. A day off with nothing on it is drawn as
+ * Year draws it (D-149, LAI-1184): filled in its tone, half filled in leave's
+ * for half-day leave, a dashed ring in leave's while only requested; a day
+ * off with time keeps its time's dot. Every mark `offMark` can give has its
+ * case, so a new one is a type error here, not a plain dot.
  */
 function dotOf({ state, isToday, mark, off }: WeekTile): string {
   if (state === 'confirmed') return 'settled';
   if (state === 'drafted') return 'half';
-  if (mark === 'tint' && off !== null) return off;
-  if (mark === 'dash') return 'requested';
-  if (isToday) return 'today';
-  return state === 'no_signal' ? 'quiet' : 'future';
+  switch (mark) {
+    case 'tint':
+      return off === 'leave' ? 'leave' : 'holiday';
+    case 'half':
+      return 'half-leave';
+    case 'dash':
+      return 'requested';
+    // Only a day with time is dotted, and its dot is its time's, above.
+    case 'dot':
+    case null:
+      if (isToday) return 'today';
+      return state === 'no_signal' ? 'quiet' : 'future';
+    default: {
+      const unknown: never = mark;
+      return unknown;
+    }
+  }
 }
 
 /**

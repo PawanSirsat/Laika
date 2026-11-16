@@ -394,6 +394,12 @@
   border-color: var(--leave);
 }
 
+/* Half-day leave with nothing on it: half filled, as Year's tile is. */
+.myday-phone-dot-half-leave {
+  border-color: var(--leave);
+  background: linear-gradient(90deg, var(--leave) 50%, transparent 50%);
+}
+
 /* -------------------------------------------------------- the summary */
 
 .myday-page[data-phone] .myday-phone-summary {
