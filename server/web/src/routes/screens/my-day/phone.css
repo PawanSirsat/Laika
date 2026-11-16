@@ -1267,3 +1267,13 @@
     max-width: 6rem;
   }
 }
+
+/* The shell bar's My availability (LAI-1223): the state and the chevron, not the word. */
+.shell-head[data-myday-bar] .avail-chip-word {
+  display: none;
+}
+
+.shell-head[data-myday-bar] .avail-chip-trigger {
+  max-width: 100%;
+  overflow: hidden;
+}

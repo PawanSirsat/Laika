@@ -252,13 +252,12 @@ void describe('Confirm day’s summary (LAI-503)', () => {
     const writes: StubCall[] = [];
     const h = await myDay(writes, { note: 'Yesterday’s words', noDrafts: true });
     try {
-      // No drafts: the design's *Day confirmed*, disabled (LAI-513); the day's
-      // note has its own button.
-      assert.equal(
-        (await h.page.locator('[data-confirm-day]').innerText()).trim(),
-        'Day confirmed',
-      );
-      assert.equal(await h.page.locator('[data-confirm-day]').isDisabled(), true);
+      // No drafts: *Day confirmed* is a state, not a disabled button
+      // (LAI-1223, was LAI-513's); the day's note has its own button.
+      const state = h.page.locator('[data-day-state="confirmed"]');
+      await state.waitFor({ timeout: 20_000 });
+      assert.equal((await state.innerText()).trim(), 'Day confirmed');
+      assert.equal(await h.page.locator('[data-confirm-day]').count(), 0);
       await h.page.locator('[data-day-note-button]').click();
       const summary = h.page.locator('[data-confirm-summary]');
       await summary.waitFor({ timeout: 5_000 });

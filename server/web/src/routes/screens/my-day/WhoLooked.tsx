@@ -102,7 +102,7 @@ export function WhoLooked({ open, onOpenChange }: WhoLookedProps) {
   return (
     <HeaderPopover
       label="Who is looking at your day"
-      tooltip="Who is looking"
+      tooltip="Who looked at your day"
       triggerClassName="myday-chip myday-head-icon myday-looked-button"
       dataAttr="data-who-looked"
       width="wide"

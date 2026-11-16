@@ -671,9 +671,34 @@
   color: var(--text-muted);
 }
 
+/* The total, its own line (LAI-1223): a state mark, then the figure. */
+.myday-week-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  height: 1rem;
+  overflow: hidden;
+}
+
+.myday-week-mark {
+  flex: none;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: var(--radius-round);
+}
+
+.myday-week-mark-confirmed {
+  background: var(--accent);
+}
+
+.myday-week-mark-drafted {
+  border: 1.5px dashed var(--accent);
+}
+
 .myday-week-figure {
-  margin-left: auto;
-  font-family: var(--font-mono);
+  /* The sans with even digits: a full "6 h 10 min" fits a tile a seventh wide. */
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
@@ -2382,6 +2407,39 @@ p.inspector-length {
   gap: var(--space-2);
 }
 
+/*
+ * One navigation row (LAI-1223): ‹ Today › and the week grow from the left,
+ * the View and its zoom sit at the end. Where the week would be squeezed past
+ * legibility the View drops under it, still at the end, rather than squash
+ * the days.
+ */
+.myday-navrow {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.myday-navrow > .myday-week {
+  flex: 1 1 44rem;
+}
+
+.myday-navrow > .myday-week ~ .span-switch {
+  flex: none;
+  margin-left: auto;
+}
+
+.myday-navrow > .span-switch:only-child {
+  flex: 1 1 auto;
+}
+
+@container myday (max-width: 34rem) {
+  .myday-navrow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .myday-daynav {
   display: none;
 }
@@ -2421,7 +2479,7 @@ p.inspector-length {
   /* A letter and a bar a day: the figure and the date are the day's own page's. */
   .myday-week-weekday,
   .myday-week-date,
-  .myday-week-figure {
+  .myday-week-sub {
     display: none;
   }
 
@@ -3296,9 +3354,47 @@ p.inspector-length {
 .myday-head-tools {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: var(--space-0-5);
   margin-left: auto;
   flex: none;
+  padding: var(--space-0-5);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+}
+
+/* Inside the cluster the buttons lose their own outline: the group has one. */
+.myday-head-tools .myday-head-icon {
+  min-height: 1.875rem;
+  width: 1.875rem;
+  border-color: transparent;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.myday-head-tools .myday-head-icon:hover:not(:disabled, [aria-disabled='true']),
+.myday-head-tools .myday-head-icon[aria-expanded='true'] {
+  border-color: transparent;
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+/* A day whose time is all confirmed: a state, not a button (LAI-1223). */
+.myday-state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-height: 2.125rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  cursor: default;
 }
 
 /*
@@ -3311,4 +3407,59 @@ p.inspector-length {
   .screen-page-actions:has([data-timer]) .myday-fill-gaps-sub {
     display: none;
   }
+}
+
+/* ------------------------------------- My availability, one control (LAI-1223) */
+
+/*
+ * The word, what is set, a chevron: one bordered control on the title row,
+ * like every other chip on the page. No tooltip — its words are the label,
+ * and the tooltip that repeated them opened over the date line below.
+ */
+.avail-chip-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 1.75rem;
+  padding: 0 var(--space-2) 0 var(--space-2-5);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  font-size: var(--text-small);
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.avail-trigger:hover .avail-chip-trigger,
+.avail-trigger[aria-expanded='true'] .avail-chip-trigger {
+  border-color: var(--accent-border);
+}
+
+.avail-trigger:focus-visible {
+  outline: none;
+}
+
+.avail-trigger:focus-visible .avail-chip-trigger {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.avail-chip-word {
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.avail-chip-trigger .avail-trigger-quiet {
+  height: auto;
+  padding: 0;
+  border: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+/* The pill inside the control keeps its colour, not a second outline. */
+.avail-chip-trigger .avail-pill {
+  border: 0;
+  padding: 0;
+  background: none;
 }

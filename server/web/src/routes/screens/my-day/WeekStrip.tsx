@@ -21,7 +21,7 @@ const pct = (minutes: number): string =>
 /**
  * The week around the open day, Monday to Sunday (LAI-787; the owner's
  * `MyDay.dc.html`, LAI-509): ‹ Today › in one group, then seven low tiles,
- * each its weekday, date and figure on one line and a 4px bar — **confirmed
+ * each its weekday and date, its figure on a line under them (LAI-1223), and a 4px bar — **confirmed
  * solid, drafted striped** — of an eight-hour day. The open day wears the
  * accent; a day with no signal shows — on a hatched track, never zero hours;
  * a day not yet happened is faded. Every tile opens its day. **Never a target
@@ -117,6 +117,20 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
                   </span>
                   <span className="myday-week-weekday">{tile.name}</span>
                   <span className="myday-week-date">{tile.date}</span>
+                </span>
+                {/*
+                  The day's total on a line of its own (LAI-1223), so a narrow
+                  tile never drops it: a mark for its state — settled, still to
+                  review — then the figure; the bar under it splits the two.
+                */}
+                <span className="myday-week-sub">
+                  {(tile.state === 'confirmed' || tile.state === 'drafted') && (
+                    <span
+                      className={`myday-week-mark myday-week-mark-${tile.state}`}
+                      data-week-mark={tile.state}
+                      aria-hidden="true"
+                    />
+                  )}
                   <span className="myday-week-figure">{tile.figure}</span>
                 </span>
                 <span className="myday-week-track" aria-hidden="true">

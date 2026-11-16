@@ -292,18 +292,32 @@ export function AvailabilityPopover({
         {chevron}
       </span>
     )
-  ) : saved === undefined ? (
-    <span className="avail-trigger-quiet">{failed ? 'Availability' : 'Availability…'}</span>
-  ) : pill === null ? (
-    <span className="avail-trigger-quiet">Set availability</span>
   ) : (
-    <AvailabilityPill availability={saved} />
+    /*
+     * One control that says what it is and what it holds (LAI-1223): the
+     * word, the state, a chevron for the panel — and no tooltip, which only
+     * repeated it and opened over the date line under the title.
+     */
+    <span className="avail-chip-trigger">
+      <span className="avail-chip-word">Availability</span>
+      {saved === undefined ? (
+        <span className="avail-trigger-quiet">{failed ? 'unread' : '…'}</span>
+      ) : pill === null ? (
+        <span className="avail-trigger-quiet" data-avail-unset>
+          Not set
+        </span>
+      ) : (
+        <AvailabilityPill availability={saved} />
+      )}
+      {chevron}
+    </span>
   );
 
   return (
     <HeaderPopover
       trigger={trigger}
       label={label}
+      {...(head ? {} : { tooltip: false as const })}
       width="wide"
       align="left"
       className={head ? 'avail-pop avail-pop-head' : 'avail-pop'}
