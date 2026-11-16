@@ -40,6 +40,21 @@
   color: var(--chip-blue);
 }
 
+/* Leave from the HR system (D-149): its own tokens, never Clan's colours. */
+.avail-pill[data-avail-pill='leave'] {
+  border-color: var(--leave-border);
+  background: var(--leave-bg);
+  color: var(--leave);
+}
+
+/* Requested and not yet approved: the outline only, dashed. */
+.avail-pill[data-avail-pill='requested'] {
+  border-style: dashed;
+  border-color: var(--leave-border);
+  background: transparent;
+  color: var(--leave);
+}
+
 .avail-pill[data-avail-pill='none'] {
   border-style: dashed;
   background: transparent;

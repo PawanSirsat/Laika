@@ -46,6 +46,7 @@ void after(async () => {
 const RECORD = {
   status: 'open',
   away: null,
+  on_leave: null,
   hours_per_week: 6,
   note: 'Happy to review front-end work',
   tags: ['Front-end', 'Reviews'],
@@ -395,6 +396,78 @@ void describe('My availability on My day (frames 2a–2c)', () => {
     }
   });
 
+  for (const width of [1440, 390]) {
+    void test(`on leave in the HR system at ${String(width)}, both themes: the pill says it over Open, whole and on screen (D-149)`, async () => {
+      const onLeave = {
+        ...RECORD,
+        on_leave: { until: addDays(TODAY, 7), status: 'approved', type: 'Annual' },
+      };
+      const h = await myDay({ '/api/v1/me/availability': onLeave }, width);
+      try {
+        for (const theme of ['Light', 'Dark']) {
+          await h.page.setViewportSize({ width: 1366, height: 900 });
+          await setTheme(h.page, theme);
+          await h.page.setViewportSize({ width, height: 900 });
+          const pill = h.page.locator('[data-my-availability] [data-avail-pill]').filter({
+            visible: true,
+          });
+          await until(async () => (await pill.count()) === 1);
+          assert.equal(await pill.getAttribute('data-avail-pill'), 'leave');
+          assert.match(
+            (await pill.innerText()).replace(/\s+/g, ' ').trim(),
+            /^◐ On leave until \w{3} \d{1,2} \w{3} · Annual$/,
+          );
+          const trigger = h.page.locator('[data-my-availability] > button').filter({
+            visible: true,
+          });
+          assert.match(
+            (await trigger.getAttribute('aria-label')) ?? '',
+            /^My availability: On leave until \w{3} \d{1,2} \w{3} · Annual\. Change$/,
+          );
+          // Every part of the pill whole — nothing ellipsised — and on screen.
+          const fit = await pill.evaluate((el, w) => {
+            const out: string[] = [];
+            const r = el.getBoundingClientRect();
+            if (r.left < 0 || r.right > w)
+              out.push(`the pill spans ${String(r.left)}…${String(r.right)}`);
+            for (const part of Array.from(el.children)) {
+              if (
+                part instanceof HTMLElement &&
+                part.offsetParent !== null &&
+                part.scrollWidth > part.clientWidth + 1
+              ) {
+                out.push(`“${part.innerText}” is cut`);
+              }
+            }
+            return out;
+          }, width);
+          assert.deepEqual(fit, [], `${theme} at ${String(width)}`);
+          // Seen, not only laid out: once the menu that set the theme has
+          // slid away, the pill is what is at its own centre.
+          const seen = () =>
+            pill.evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+              return hit !== null && el.contains(hit);
+            });
+          await until(seen);
+          assert.ok(await seen(), `${theme} at ${String(width)}: the pill is covered`);
+          // For the picture only: on a phone the rail slides away after the theme is set.
+          if (width < 900) {
+            await until(() =>
+              h.page.evaluate(
+                () => (document.getElementById('sidebar')?.getBoundingClientRect().right ?? 0) <= 0,
+              ),
+            );
+          }
+          await shoot(h.page, `pill-on-leave-${theme}-${String(width)}`);
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
   void test('nobody has set anything: Set availability, never a guessed pill', async () => {
     const h = await myDay({});
     try {
@@ -687,6 +760,7 @@ const profileStub = (reader: { id: string; name: string; role: string }): ApiStu
           note: 'Payments and API work',
           tags: ['Payments'],
           away: null,
+          on_leave: null,
         },
         spaces: [{ id: 'p1', slug: 'sauce', name: 'Sauce' }],
       },

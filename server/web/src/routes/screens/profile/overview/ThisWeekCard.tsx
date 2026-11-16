@@ -3,8 +3,23 @@ import type { AvailabilitySeen } from '../../../../api/availability.ts';
 import { formatHours } from '../../../../api/duration.ts';
 import { getTimeReport, type TimeReport } from '../../../../api/time.ts';
 import { agentMinutes, weekDays } from '../../my-day/my-day-derive.ts';
-import { awayText, shortHours, weekBars, weekdayOf, weekSpan } from './overview-derive.ts';
+import {
+  awayText,
+  leaveDays,
+  shortHours,
+  weekBars,
+  weekdayOf,
+  weekSpan,
+  type WeekLeave,
+} from './overview-derive.ts';
 import { CardLink, OverviewCard } from './OverviewCard.tsx';
+
+/** A leave day's mark and words: a shape as well as the tint (D-149). */
+const LEAVE_MARK: Readonly<Record<WeekLeave, { readonly glyph: string; readonly words: string }>> =
+  {
+    leave: { glyph: '◐', words: 'on leave' },
+    requested: { glyph: '◌', words: 'leave requested' },
+  };
 
 type Load =
   | { readonly kind: 'loading' }
@@ -27,6 +42,10 @@ type Load =
  *   else's the head card's one `GET /people/:id/load` (LAI-1159) — the same
  *   read, not a second one, and **never the list**, which would log a look at
  *   everyone on it. What the reader was not served is not said.
+ * - **Leave from today** (D-149, LAI-1185): the days the person's leave runs
+ *   over, from the same availability's `on_leave`, tinted with a mark beside
+ *   the day's name — dashed when only requested. Holidays and the week's
+ *   earlier leave are in neither read, so they are not drawn.
  */
 export function ThisWeekCard({
   userId,
@@ -117,6 +136,7 @@ function WeekFigures({
       : (availability?.work_week?.minutes ?? null);
   const periods = availability?.away_periods;
   const backOn = availability?.away?.until;
+  const leave = leaveDays(week, today, availability?.on_leave);
 
   return (
     <>
@@ -137,7 +157,9 @@ function WeekFigures({
       <ol className="ov-days" aria-label="Time each day this week">
         {bars.map((bar) => {
           const sum = bar.confirmed + bar.drafted;
-          const words = `${weekdayOf(bar.day)}: ${formatHours(bar.confirmed)} confirmed, ${formatHours(bar.drafted)} in drafts`;
+          const off = leave.get(bar.day);
+          const mark = off === undefined ? undefined : LEAVE_MARK[off];
+          const words = `${weekdayOf(bar.day)}: ${formatHours(bar.confirmed)} confirmed, ${formatHours(bar.drafted)} in drafts${mark === undefined ? '' : `, ${mark.words}`}`;
           return (
             <li
               key={bar.day}
@@ -145,6 +167,7 @@ function WeekFigures({
               data-day={bar.day}
               data-today={bar.today}
               data-zero={sum === 0}
+              data-off={off}
               title={words}
             >
               <span className="ov-day-plot" aria-hidden="true">
@@ -167,6 +190,7 @@ function WeekFigures({
               </span>
               <span className="ov-day-name" aria-hidden="true">
                 {weekdayOf(bar.day)}
+                {mark !== undefined && <span className="ov-day-off">{mark.glyph}</span>}
               </span>
               <span className="visually-hidden">{words}</span>
             </li>

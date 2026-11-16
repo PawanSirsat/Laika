@@ -23,6 +23,7 @@ const seen = (over: Partial<AvailabilitySeen> = {}): AvailabilitySeen => ({
   note: null,
   tags: [],
   away: null,
+  on_leave: null,
   ...over,
 });
 
@@ -51,6 +52,50 @@ void describe('the pill (D-131, frames 2a/2d/2g)', () => {
       label: 'Away until Mon 16 Nov',
       hours: '',
     });
+  });
+
+  void test('approved leave: On leave until the run’s last day, its type only when sent', () => {
+    const leave = (type: string | null) =>
+      pillOf(seen({ on_leave: { until: '2026-11-23', status: 'approved', type } }));
+    assert.deepEqual(leave(null), {
+      tone: 'leave',
+      glyph: '◐',
+      label: 'On leave until Mon 23 Nov',
+      hours: '',
+    });
+    assert.equal(leave('Annual')?.label, 'On leave until Mon 23 Nov · Annual');
+    // An empty type is no type: nothing trails the date.
+    assert.equal(leave('')?.label, 'On leave until Mon 23 Nov');
+  });
+
+  void test('approved leave wins over away and over the status — and drops the hours', () => {
+    const pill = pillOf(
+      seen({
+        status: 'open',
+        hours_per_week: 6,
+        away: { until: '2026-11-16' },
+        on_leave: { until: '2026-11-23', status: 'approved', type: 'Sick' },
+      }),
+    );
+    assert.deepEqual(
+      [pill?.tone, pill?.label, pill?.hours],
+      ['leave', 'On leave until Mon 23 Nov · Sick', ''],
+    );
+    assert.equal(pillSentence(pill!, 6), 'On leave until Mon 23 Nov · Sick');
+  });
+
+  void test('leave requested: said over the status, under away, with no date and no type', () => {
+    const requested = { until: '2026-11-23', status: 'pending', type: 'Annual' } as const;
+    const pill = pillOf(seen({ status: 'open', hours_per_week: 6, on_leave: requested }));
+    assert.deepEqual(pill, { tone: 'requested', glyph: '◌', label: 'Leave requested', hours: '' });
+    // Someone who set nothing but asked for leave still has a pill.
+    assert.equal(pillOf(seen({ on_leave: requested }))?.tone, 'requested');
+    // Their own word that they are away is the stronger fact.
+    assert.equal(
+      pillOf(seen({ away: { until: '2026-11-16' }, on_leave: requested }))?.label,
+      'Away until Mon 16 Nov',
+    );
+    assert.notEqual(pill?.glyph, pillOf(seen({ away: { until: '2026-11-16' } }))?.glyph);
   });
 
   void test('hours show only when open and only when the server sent them', () => {

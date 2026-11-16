@@ -15,8 +15,9 @@ export interface AvailabilityPillProps {
 
 /**
  * What someone said about taking on work (D-131, frames 2a, 2d, 2g): a glyph
- * **and** words — ● open, ■ at capacity, ◐ away until — so it never says it
- * by colour alone. Nothing when they have said nothing.
+ * **and** words — ● open, ■ at capacity, ◐ away until, ◐ on leave until, ◌
+ * leave requested (D-149) — so it never says it by colour alone. Nothing
+ * when they have said nothing.
  */
 export function AvailabilityPill({
   availability,

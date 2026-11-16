@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { request } from './client.ts';
 import type { ProjectRole } from './members.ts';
+import type { OnLeave } from './off-days.ts';
 
 /**
  * Availability (SPEC §6.4, D-131, D-137; LAI-1130 serves it, LAI-1139 draws
@@ -8,7 +9,10 @@ import type { ProjectRole } from './members.ts';
  * week they could take, a note, tags, their working week and the days they are
  * away — and the read-only load facts an owner or admin may look at.
  *
- * Mirrors `services/availability.ts` and `services/people-load.ts`.
+ * Mirrors `services/availability.ts` and `services/people-load.ts`. Each
+ * record carries `on_leave` beside `away` (D-149 item 5, LAI-1183): the leave
+ * the HR system holds covering the person's today — the person's own `away`
+ * is still only what they declared.
  *
  * **Nothing here is computed.** No free hours, no utilisation, no order but
  * A–Z (D-088 item 1, D-131 item 4): the client shows what the server said,
@@ -37,6 +41,8 @@ export interface Availability {
   readonly status: AvailabilityStatus | null;
   /** The period covering the person's today, or null. */
   readonly away: { readonly until: string } | null;
+  /** The HR system's leave covering the person's today, or null (D-149). */
+  readonly on_leave: OnLeave | null;
   readonly hours_per_week: number | null;
   readonly note: string | null;
   readonly tags: readonly string[];
@@ -49,15 +55,18 @@ export interface Availability {
 
 /**
  * What a co-worker sees (D-137 item 1): status, note, tags and when they are
- * back. A space admin's view (item 2) adds `hours_per_week` and the away
- * dates; the whole record (item 3) adds the rest. Every field past the first
- * four is optional here because the server leaves it out for this reader.
+ * back, and their leave today (D-149 item 5) — its type only for a reader
+ * who may see why. A space admin's view (item 2) adds `hours_per_week` and
+ * the away dates; the whole record (item 3) adds the rest. Every field past
+ * the first five is optional here because the server leaves it out for this
+ * reader.
  */
 export interface AvailabilitySeen {
   readonly status: AvailabilityStatus | null;
   readonly note: string | null;
   readonly tags: readonly string[];
   readonly away: { readonly until: string } | null;
+  readonly on_leave: OnLeave | null;
   readonly hours_per_week?: number | null;
   readonly away_periods?: readonly { readonly from: string; readonly to: string }[];
   readonly work_week?: WorkWeek | null;

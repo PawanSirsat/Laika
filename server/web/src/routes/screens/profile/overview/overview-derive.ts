@@ -1,5 +1,6 @@
 import type { AgentClient } from '../../../../api/agent-clients.ts';
 import type { AwayPeriod } from '../../../../api/availability.ts';
+import type { OnLeave } from '../../../../api/off-days.ts';
 import type {
   ProfileAgentToken,
   ProfileDelivery,
@@ -215,6 +216,30 @@ export function weekBars(
     drafted: minutes.get(day)?.drafted_minutes ?? 0,
     today: day === today,
   }));
+}
+
+/** A bar's leave: approved, or only requested (D-149 item 5). */
+export type WeekLeave = 'leave' | 'requested';
+
+/**
+ * The days of the week the person's leave runs over, from today to
+ * `on_leave.until` (D-149, LAI-1185) — `leave` when approved, `requested`
+ * when not. **Only what the card's reads carry:** availability says the leave
+ * covering today and where its run ends, which steps over the person's days
+ * off and the holidays covering them; nothing the card reads says which
+ * earlier days of the week were leave or a holiday, so those are not marked.
+ * Today is the card's — the reader's, as the week is.
+ */
+export function leaveDays(
+  week: readonly string[],
+  today: string,
+  onLeave: OnLeave | null | undefined,
+): ReadonlyMap<string, WeekLeave> {
+  const out = new Map<string, WeekLeave>();
+  if (onLeave === null || onLeave === undefined) return out;
+  const kind: WeekLeave = onLeave.status === 'approved' ? 'leave' : 'requested';
+  for (const day of week) if (day >= today && day <= onLeave.until) out.set(day, kind);
+  return out;
 }
 
 const dateOf = (day: string): Date => new Date(`${day}T00:00:00Z`);

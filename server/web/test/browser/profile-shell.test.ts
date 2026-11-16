@@ -132,6 +132,7 @@ const quietUsage = (userId: string) => ({
 const RECORD = {
   status: 'open',
   away: null,
+  on_leave: null,
   hours_per_week: 6,
   note: 'Happy to review front-end work',
   tags: ['Front-end', 'Reviews'],
@@ -197,6 +198,7 @@ const BASE: ApiStub = {
           note: 'Deep in payments',
           tags: ['Back-end'],
           away: null,
+          on_leave: null,
         },
         spaces: [],
       },
@@ -205,7 +207,13 @@ const BASE: ApiStub = {
   // An analytics reader's pill is this one person's load, never the list,
   // which logs a look at everyone it lists (LAI-1159).
   '/api/v1/people/u2/load': {
-    availability: { status: 'capacity', note: 'Deep in payments', tags: ['Back-end'], away: null },
+    availability: {
+      status: 'capacity',
+      note: 'Deep in payments',
+      tags: ['Back-end'],
+      away: null,
+      on_leave: null,
+    },
   },
 };
 
@@ -313,13 +321,13 @@ void describe('someone else’s profile (frame A)', () => {
         data: [
           {
             user: { id: 'u2', name: 'Hemant Purohit' },
-            availability: { status: null, note: null, tags: [], away: null },
+            availability: { status: null, note: null, tags: [], away: null, on_leave: null },
             spaces: [],
           },
         ],
       },
       '/api/v1/people/u2/load': {
-        availability: { status: null, note: null, tags: [], away: null },
+        availability: { status: null, note: null, tags: [], away: null, on_leave: null },
       },
     });
     try {

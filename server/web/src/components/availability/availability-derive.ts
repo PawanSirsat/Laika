@@ -58,7 +58,7 @@ export function rangeShort(from: string, to: string): string {
   return `${dayShort(from)} – ${dayShort(to)}`;
 }
 
-export type PillTone = 'open' | 'capacity' | 'away';
+export type PillTone = 'open' | 'capacity' | 'away' | 'leave' | 'requested';
 
 export interface Pill {
   readonly tone: PillTone;
@@ -71,11 +71,29 @@ export interface Pill {
 
 /**
  * The pill for what someone said, or `null` when they have said nothing — no
- * pill rather than a guess. A current away period wins over the status: a
- * person who is away is not taking work whatever they set before they left.
+ * pill rather than a guess. By precedence:
+ *
+ * - **approved leave** in the HR system (D-149 item 5): *On leave until Mon
+ *   23 Nov*, with the type only when the server sent it — it sends it only
+ *   to a reader who may see why;
+ * - a current **away** period, the person's own word that they are out;
+ * - **leave requested**: not yet theirs to take, but said, so a reader does
+ *   not plan on a day the person has asked for;
+ * - then the status. A person who is away or on leave is not taking work
+ *   whatever they set before they left.
  */
 export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
   if (seen === null || seen === undefined) return null;
+  const leave = seen.on_leave;
+  if (leave !== null && leave.status === 'approved') {
+    const until = `On leave until ${dayShort(leave.until)}`;
+    return {
+      tone: 'leave',
+      glyph: '◐',
+      label: leave.type === null || leave.type === '' ? until : `${until} · ${leave.type}`,
+      hours: '',
+    };
+  }
   if (seen.away !== null) {
     return {
       tone: 'away',
@@ -83,6 +101,9 @@ export function pillOf(seen: AvailabilitySeen | null | undefined): Pill | null {
       label: `Away until ${dayShort(seen.away.until)}`,
       hours: '',
     };
+  }
+  if (leave !== null) {
+    return { tone: 'requested', glyph: '◌', label: 'Leave requested', hours: '' };
   }
   if (seen.status === 'open') {
     const h = seen.hours_per_week;
