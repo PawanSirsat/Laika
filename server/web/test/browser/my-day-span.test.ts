@@ -54,6 +54,7 @@ function rows(from: string, to: string, data: Map<string, DayData>) {
       confirmed_minutes: confirmed,
       drafted_minutes: drafted,
       untied_minutes: 0,
+      off: day?.off ?? null,
       top_tasks:
         confirmed + drafted > 0
           ? [

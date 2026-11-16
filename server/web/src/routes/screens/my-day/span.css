@@ -313,6 +313,29 @@
   background: var(--accent-bg);
 }
 
+/* The key to the days off a period holds (D-149, LAI-1184): each tone as its tiles draw it. */
+.span-off-key {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.span-swatch-off[data-off='holiday'] {
+  border: 1px solid var(--holiday-border);
+  background: var(--holiday-bg);
+}
+
+.span-swatch-off[data-off='leave'] {
+  border: 1px solid var(--leave-border);
+  background: var(--leave-bg);
+}
+
+.span-swatch-off[data-off='requested'] {
+  border: 1px dashed var(--leave-border);
+}
+
 .span-quiet,
 .span-hint {
   font-size: var(--text-small);
@@ -395,6 +418,32 @@
   color: var(--accent);
 }
 
+/* A day off with time: its head wears a dot in the tone. */
+.span-week-day[data-off] {
+  position: relative;
+}
+
+.span-week-day[data-off]::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--holiday);
+}
+
+.span-week-day[data-off='leave']::after {
+  background: var(--leave);
+}
+
+.span-week-day[data-off='requested']::after {
+  border: 1.5px dashed var(--leave);
+  background: transparent;
+}
+
 .span-week-total {
   font-family: var(--font-mono);
   font-size: var(--text-small);
@@ -437,6 +486,40 @@
   font-size: var(--text-small);
   text-align: center;
   color: var(--text-muted);
+}
+
+/* A day off, said where No signal would be, in its tone; pending leave only outlined. */
+.span-week-off {
+  position: absolute;
+  inset: 8px 4px auto;
+  padding: 6px 4px;
+  overflow: hidden;
+  border: 1px solid var(--holiday-border);
+  border-radius: var(--radius-xs);
+  background: var(--holiday-bg);
+  font-size: var(--text-small);
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--holiday);
+}
+
+.span-week-off[data-off='leave'] {
+  border-color: var(--leave-border);
+  background: var(--leave-bg);
+  color: var(--leave);
+}
+
+.span-week-off[data-off='requested'] {
+  border: 1px dashed var(--leave-border);
+  background: var(--bg-card);
+  color: var(--leave);
+}
+
+/* With time the head's dot says it, and the blocks need the column. */
+.span-week-off[data-timed] {
+  display: none;
 }
 
 .span-week-block {
@@ -564,6 +647,7 @@
 }
 
 .span-month-cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -585,6 +669,27 @@
 
 .span-month-cell[data-kind='future'] {
   opacity: 0.55;
+}
+
+/* A day off with no time is tinted in its tone; pending leave is only dashed. */
+.span-month-cell[data-mark='tint'][data-off='holiday'] {
+  border-color: var(--holiday-border);
+  background: var(--holiday-bg);
+}
+
+.span-month-cell[data-mark='tint'][data-off='leave'],
+.span-month-cell[data-mark='half'] {
+  border-color: var(--leave-border);
+  background: var(--leave-bg);
+}
+
+.span-month-cell[data-mark='half'] {
+  background: linear-gradient(135deg, var(--leave-bg) 50%, var(--bg-card) 50%);
+}
+
+.span-month-cell[data-mark='dash'] {
+  border-style: dashed;
+  border-color: var(--leave-border);
 }
 
 .span-month-cell[data-out] {
@@ -640,6 +745,31 @@
 
 .span-month-chip[data-untied] {
   border-left: 3px solid var(--chip-orange);
+}
+
+.span-month-off {
+  min-width: 0;
+  padding: 1px 4px;
+  overflow: hidden;
+  border-left: 3px solid var(--holiday-border);
+  border-radius: 3px;
+  background: var(--bg-card);
+  font-size: var(--text-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--holiday);
+}
+
+.span-month-off[data-off='leave'] {
+  border-left-color: var(--leave-border);
+  color: var(--leave);
+}
+
+.span-month-off[data-off='requested'] {
+  border-left-style: dashed;
+  border-left-color: var(--leave-border);
+  color: var(--leave);
 }
 
 .span-month-chip-key {
@@ -710,6 +840,8 @@
 }
 
 .span-year-day {
+  position: relative;
+  box-sizing: border-box;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -746,6 +878,60 @@
 .span-year-day[data-heat='4'] {
   background: var(--heat-gh-4);
   color: var(--on-accent);
+}
+
+/*
+ * A day off (D-149, LAI-1184), never in the heat's violet. With no time it is
+ * filled in its tone and edged in its border; half-day leave is half filled;
+ * pending leave is a dashed edge only. The edge is a border, never a
+ * box-shadow, which a day to come and today already use.
+ */
+.span-year-day[data-mark='tint'][data-off='holiday'] {
+  border: 1px solid var(--holiday-border);
+  background: var(--holiday-bg);
+  color: var(--holiday);
+}
+
+.span-year-day[data-mark='tint'][data-off='leave'] {
+  border: 1px solid var(--leave-border);
+  background: var(--leave-bg);
+  color: var(--leave);
+}
+
+.span-year-day[data-mark='half'] {
+  border: 1px solid var(--leave-border);
+  background: linear-gradient(135deg, var(--leave-bg) 50%, var(--heat-empty) 50%);
+  color: var(--leave);
+}
+
+.span-year-day[data-mark='half'][data-kind='future'] {
+  background: linear-gradient(135deg, var(--leave-bg) 50%, transparent 50%);
+}
+
+.span-year-day[data-mark='dash'] {
+  border: 1px dashed var(--leave-border);
+}
+
+.span-year-day[data-mark='half'][data-kind='future'],
+.span-year-day[data-mark='dash'][data-kind='future'] {
+  box-shadow: none;
+}
+
+/* With time it keeps its heat and wears a corner dot in the tone. */
+.span-year-day[data-mark='dot']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--holiday);
+  box-shadow: 0 0 0 1px var(--bg-card);
+}
+
+.span-year-day[data-mark='dot'][data-off='leave']::after {
+  background: var(--leave);
 }
 
 .span-year-day[data-today] {
@@ -834,8 +1020,18 @@
     gap: 6px;
   }
 
-  .span-week-nosignal {
+  .span-week-nosignal,
+  .span-week-off {
     position: static;
+  }
+
+  /* No head on a phone: the row says the day off itself, with time or without. */
+  .span-week-off {
+    width: 100%;
+  }
+
+  .span-week-off[data-timed] {
+    display: block;
   }
 
   .span-week-now {
@@ -854,8 +1050,25 @@
   }
 
   .span-month-chip,
-  .span-month-total {
+  .span-month-total,
+  .span-month-off {
     display: none;
+  }
+
+  /* No room for the chip: a day off with time keeps a corner dot instead. */
+  .span-month-cell[data-mark='dot']::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--holiday);
+  }
+
+  .span-month-cell[data-mark='dot'][data-off='leave']::after {
+    background: var(--leave);
   }
 
   .span-year {
