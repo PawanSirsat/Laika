@@ -29,6 +29,21 @@
   justify-content: flex-start;
 }
 
+/*
+ * The app header's title and Viewing chip give way to My day's own bar
+ * (LAI-1188): the bar names the product and carries the *Viewing* switch, so
+ * the header's breadcrumb and chip would say both twice. The search stays, at
+ * the end of the row.
+ */
+.shell-head[data-myday-bar] .shell-head-title,
+.shell-head[data-myday-bar] .shell-viewing {
+  display: none;
+}
+
+.shell-head[data-myday-bar] .shell-head-tools {
+  order: 1;
+}
+
 .shell-head[data-myday-bar] .shell-navtoggle {
   flex: none;
   width: 2.25rem;

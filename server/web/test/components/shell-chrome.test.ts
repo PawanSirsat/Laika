@@ -164,7 +164,8 @@ void describe('the shell actually applies the rule', () => {
       ),
     );
 
-    const start = src.indexOf('{!signedIn && (');
+    // Since LAI-1188 the pre-auth header is its own early return.
+    const start = src.indexOf('if (!signedIn) {');
     assert.notEqual(start, -1, 'there must be a pre-auth branch in the header');
     const preAuth = src.slice(start, src.indexOf('</header>', start));
 

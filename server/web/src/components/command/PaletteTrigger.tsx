@@ -1,15 +1,8 @@
 import { shortcutLabel } from './palette-model.ts';
 import { openPalette } from './palette-store.ts';
 import './command-palette.css';
+import { Icon } from '../icon/Icon.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
-
-export interface PaletteTriggerProps {
-  /**
-   * `sidebar` is a row of the rail, wearing its classes so the icon rail's
-   * tooltip and sizing apply; `header` is the phone bar's icon button.
-   */
-  readonly variant: 'sidebar' | 'header';
-}
 
 /** Whether this is a Mac, for the hint only — both shortcuts work everywhere. */
 function onMac(): boolean {
@@ -20,76 +13,49 @@ function onMac(): boolean {
   return /mac|iphone|ipad/i.test(platform);
 }
 
-function SearchGlyph() {
-  return (
-    <svg
-      className="cmdk-trigger-icon"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m20 20-4.2-4.2" />
-    </svg>
-  );
-}
-
 /**
- * The visible way into the command palette (LAI-1192), with its shortcut
- * printed beside it and said in its name. Not `aria-keyshortcuts`: a page
- * carries that attribute only for shortcuts on what it shows (a viewer's
- * board carries none, `card-reorder.test.ts`), and screen readers rarely
- * announce it anyway. It opens the palette with itself as the place focus
- * returns to on Escape.
+ * **The header's search bar** (LAI-1188): the visible way into the command
+ * palette (LAI-1192), on every screen. It looks like a field and opens the
+ * palette, whose input is the one search — pages, spaces, tasks, actions and,
+ * for a reader allowed to see everyone, people. On a phone it folds to its
+ * icon, and the palette opens as a full-width sheet with the field at its top.
+ *
+ * The shortcut is printed beside it and said in its name. Not
+ * `aria-keyshortcuts`: a page carries that attribute only for shortcuts on
+ * what it shows (a viewer's board carries none, `card-reorder.test.ts`), and
+ * screen readers rarely announce it anyway. It opens the palette with itself
+ * as the place focus returns to on Escape.
+ *
+ * Until LAI-1188 a second trigger sat in the sidebar as a *Search* row; the
+ * header bar is on every screen at every width now, so the row was a second
+ * door to the same room and went.
  */
-export function PaletteTrigger({ variant }: PaletteTriggerProps) {
+export function PaletteTrigger() {
   const hint = shortcutLabel(onMac());
-
-  if (variant === 'header') {
-    return (
-      // The key in the words, not as `shortcut`: that would put
-      // `aria-keyshortcuts` on every page, and a viewer's board must carry
-      // none (card-reorder.test.ts, LAI-473) — the sidebar row says it the
-      // same way.
-      <Tooltip content={`Search and commands (${hint})`}>
-        <button
-          type="button"
-          className="cmdk-trigger cmdk-trigger-header"
-          aria-haspopup="dialog"
-          data-palette-trigger="header"
-          onClick={(event) => {
-            openPalette(event.currentTarget);
-          }}
-        >
-          <SearchGlyph />
-          <span className="visually-hidden">Search and commands ({hint})</span>
-        </button>
-      </Tooltip>
-    );
-  }
-
+  const name = `Search and commands (${hint})`;
   return (
-    <button
-      type="button"
-      className="sidebar-link sidebar-link-button cmdk-trigger cmdk-trigger-sidebar"
-      aria-haspopup="dialog"
-      data-palette-trigger="sidebar"
-      onClick={(event) => {
-        openPalette(event.currentTarget);
-      }}
-    >
-      <span className="sidebar-link-bar" aria-hidden="true" />
-      <SearchGlyph />
-      <span className="sidebar-link-label sidebar-tip">Search</span>
-      <span className="visually-hidden"> ({hint})</span>
-      <kbd className="cmdk-kbd" aria-hidden="true">
-        {hint}
-      </kbd>
-    </button>
+    // The key in the words, not as `shortcut`: that would put
+    // `aria-keyshortcuts` on every page, and a viewer's board must carry
+    // none (card-reorder.test.ts, LAI-473).
+    <Tooltip content={name}>
+      <button
+        type="button"
+        className="cmdk-trigger cmdk-trigger-header"
+        aria-haspopup="dialog"
+        data-palette-trigger="header"
+        onClick={(event) => {
+          openPalette(event.currentTarget);
+        }}
+      >
+        <Icon name="search" size="small" className="cmdk-trigger-icon" />
+        <span className="cmdk-trigger-text" aria-hidden="true">
+          Search
+        </span>
+        <kbd className="cmdk-kbd cmdk-trigger-kbd" aria-hidden="true">
+          {hint}
+        </kbd>
+        <span className="visually-hidden">{name}</span>
+      </button>
+    </Tooltip>
   );
 }

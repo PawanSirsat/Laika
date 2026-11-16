@@ -5,48 +5,69 @@
  * cmdk ships no styles; its `[cmdk-*]` attributes are ours to dress.
  */
 
-/* ── Triggers ─────────────────────────────────────────────────────────── */
+/* ── The header's search bar (LAI-1188) ─────────────────────────────── */
 
-.cmdk-trigger-sidebar {
-  color: var(--text-secondary);
+/* A field to look at, a button to press: it opens the palette. */
+.cmdk-trigger-header {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 17.5rem;
+  max-width: 100%;
+  height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-1-5) 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-body);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
-.cmdk-trigger-sidebar:hover {
-  background: var(--bg-card-hover);
-  color: var(--text-primary);
+.cmdk-trigger-header:hover {
+  border-color: var(--accent-border);
+  color: var(--text-secondary);
 }
 
 .cmdk-trigger-icon {
   flex: none;
 }
 
-.cmdk-trigger-sidebar .cmdk-kbd {
-  margin-left: auto;
+.cmdk-trigger-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
 }
 
-/* The rail is icons only: the hint would not fit, and the tooltip names it. */
-.sidebar-collapsed .cmdk-trigger-sidebar .cmdk-kbd {
-  display: none;
+.cmdk-trigger-kbd {
+  flex: none;
 }
 
-.cmdk-trigger-header {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  margin-left: auto;
-  padding: 0;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
+/* Narrower windows keep the field, shorter. */
+@media (max-width: 1280px) {
+  .cmdk-trigger-header {
+    width: 12rem;
+  }
 }
 
-.cmdk-trigger-header:hover {
-  color: var(--text-primary);
-  background: var(--bg-card-hover);
+/* A phone folds it to its icon; the palette opens as a full-width sheet. */
+@media (max-width: 600px) {
+  .cmdk-trigger-header {
+    width: 2.25rem;
+    padding: 0;
+    justify-content: center;
+    color: var(--text-secondary);
+  }
+
+  .cmdk-trigger-header .cmdk-trigger-text,
+  .cmdk-trigger-header .cmdk-trigger-kbd {
+    display: none;
+  }
 }
 
 .cmdk-trigger:focus-visible,

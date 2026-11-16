@@ -95,7 +95,11 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
 
   return (
     <div className="members">
-      <ScreenHeader title="Members" context={project === undefined ? slug : project.name} />
+      <ScreenHeader
+        variant="page"
+        title="Members"
+        context={project === undefined ? slug : project.name}
+      />
       <header className="members-head">
         <p className="members-sub">
           Project roles. Org roles are separate and live in Organisation.

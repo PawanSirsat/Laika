@@ -332,7 +332,7 @@ void describe('reaching the page', () => {
   void test('the ⌘K palette’s Go to finds it, by name and by “black”', async () => {
     const h = await open(BOARD, STUB);
     try {
-      await h.page.locator('[data-palette-trigger="sidebar"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-palette-trigger="header"]').waitFor({ timeout: 20_000 });
       const input = h.page.locator('[data-palette] [role="combobox"]');
       await h.page.keyboard.press('Control+k');
       await input.waitFor({ timeout: 10_000 });
@@ -359,7 +359,7 @@ void describe('reaching the page', () => {
       },
     });
     try {
-      await h.page.locator('[data-palette-trigger="sidebar"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-palette-trigger="header"]').waitFor({ timeout: 20_000 });
       const input = h.page.locator('[data-palette] [role="combobox"]');
       for (const want of ['black', 'light']) {
         await h.page.keyboard.press('Control+k');

@@ -27,6 +27,9 @@ import {
   type PaletteItem,
 } from './palette-model.ts';
 import { closePalette, paletteOpener } from './palette-store.ts';
+import { useOrgPeople } from '../../api/use-org-people.ts';
+import type { OrgUser } from '../../api/users.ts';
+import { matchPeople, personTargets, SEE_EVERYONE } from '../shell/header-model.ts';
 
 /** The page `GET /tasks` is read in: the server's ceiling. */
 const TASK_PAGE = 200;
@@ -123,14 +126,18 @@ function StatusChip({ task }: { readonly task: TaskSummary }) {
  * element the CSP refuses (proposal, library verdict). Loaded lazily by
  * `CommandPaletteHost`.
  *
- * Four groups — Go to, Spaces, Tasks, Actions — each from data the app already
- * reads and gated the way the sidebar, the tab bar and the space bar gate
- * them. Filtering is ours (`shouldFilter={false}`), so the empty state and the
+ * Groups — Go to, Spaces, People, Tasks, Actions — each from data the app
+ * already reads and gated the way the sidebar, the tab bar and the space bar
+ * gate them. **People** (LAI-1188) is only for a reader who holds *See
+ * everyone's analytics*; picking a person lists the views of them that
+ * reader may open (`personTargets`), and the header's search bar opens this
+ * same palette. Filtering is ours (`shouldFilter={false}`), so the empty state and the
  * spoken count describe exactly the rows drawn.
  */
 export function CommandPalette() {
   const {
     route: { path, params, navigate },
+    me,
     signOut,
     signingOut,
     spaceName,
@@ -152,7 +159,21 @@ export function CommandPalette() {
    * until the first arrow press.
    */
   const [selected, setSelected] = useState('');
-  const { load, settled, retry } = useTaskSearch(query);
+  /**
+   * The person whose views are on offer (LAI-1188): picking someone in the
+   * People group shows where they can be looked at, instead of leaving the
+   * palette. `undefined` is the palette's own rows.
+   */
+  const [person, setPerson] = useState<OrgUser | undefined>(undefined);
+  /**
+   * *See everyone's analytics* (`people.analytics.read`), as the server
+   * answers it: the permission that opens a member's profile link, My day's
+   * *Viewing* switch and Work's *By person*. Without it there is no People
+   * group, no person view, and the people list is never asked for.
+   */
+  const seesEveryone = gates.org(SEE_EVERYONE);
+  const people = useOrgPeople(seesEveryone);
+  const { load, settled, retry } = useTaskSearch(person === undefined ? query : '');
   const [message, announce] = useLiveRegion(ANNOUNCE_GAP_MS);
 
   useDialogFocus(box, {
@@ -223,13 +244,33 @@ export function CommandPalette() {
     query,
   ]);
 
+  const personRows = useMemo(
+    () => (seesEveryone && people ? matchPeople(people, query, me?.id) : []),
+    [seesEveryone, people, query, me?.id],
+  );
+  const targets = useMemo(() => {
+    if (person === undefined) return [];
+    const holds = permissionHolder(granted);
+    return filterItems(
+      personTargets(person.id, holds, path, params).map((t) => ({
+        id: `person:${t.id}`,
+        label: t.label,
+        href: t.href,
+      })),
+      query,
+    );
+  }, [person, granted, path, params, query]);
+
   const tasks = load.state === 'ready' ? matchTasks(load.tasks, settled) : [];
-  const typedEnough = query.trim().length >= TASK_QUERY_MIN;
+  const typedEnough = person === undefined && query.trim().length >= TASK_QUERY_MIN;
   // Typing has outrun the debounce, or the page is on its way.
   const searching =
     typedEnough && (query !== settled || load.state === 'loading' || load.state === 'idle');
   const failed = typedEnough && load.state === 'error';
-  const count = goTo.length + spaceRows.length + tasks.length + actions.length;
+  const count =
+    person === undefined
+      ? goTo.length + spaceRows.length + personRows.length + tasks.length + actions.length
+      : targets.length;
   const empty = count === 0 && !searching && !failed;
 
   useEffect(() => {
@@ -263,6 +304,14 @@ export function CommandPalette() {
     navigate(href);
   };
 
+  /** Into one person's views, or back out of them; the field starts empty each way. */
+  const choosePerson = (next: OrgUser | undefined): void => {
+    setPerson(next);
+    setQuery('');
+    setSelected('');
+    input.current?.focus();
+  };
+
   return createPortal(
     <div className="cmdk-layer" data-palette>
       <div className="cmdk-scrim" aria-hidden="true" onClick={closePalette} />
@@ -275,6 +324,16 @@ export function CommandPalette() {
         onKeyDown={(event) => {
           // The palette's keys are its own: never also the page's shortcuts.
           event.stopPropagation();
+          // Inside one person's views, Escape and Backspace in an empty field
+          // go back to the palette's rows rather than closing it.
+          if (
+            person !== undefined &&
+            (event.key === 'Escape' || (event.key === 'Backspace' && query === ''))
+          ) {
+            event.preventDefault();
+            choosePerson(undefined);
+            return;
+          }
           if (event.key === 'Escape' || isPaletteShortcut(event)) {
             event.preventDefault();
             closePalette();
@@ -309,7 +368,13 @@ export function CommandPalette() {
               className="cmdk-input"
               value={query}
               onValueChange={setQuery}
-              placeholder="Search pages, spaces, tasks and commands…"
+              placeholder={
+                person !== undefined
+                  ? `Choose a view of ${person.name}…`
+                  : seesEveryone
+                    ? 'Search pages, spaces, people, tasks and commands…'
+                    : 'Search pages, spaces, tasks and commands…'
+              }
             />
             <button type="button" className="cmdk-close" onClick={closePalette}>
               <span className="cmdk-close-label">Esc</span>
@@ -318,7 +383,34 @@ export function CommandPalette() {
           </div>
 
           <Command.List className="cmdk-list" label="Results">
-            {goTo.length > 0 && (
+            {person !== undefined && (
+              <Command.Group heading={person.name} className="cmdk-group" data-palette-person>
+                {targets.map((item) => (
+                  <Command.Item
+                    key={item.id}
+                    value={item.id}
+                    className="cmdk-item"
+                    onSelect={() => {
+                      if (item.href !== undefined) go(item.href);
+                    }}
+                  >
+                    <span className="cmdk-item-label">{item.label}</span>
+                  </Command.Item>
+                ))}
+                <Command.Item
+                  value="person:back"
+                  className="cmdk-item"
+                  onSelect={() => {
+                    choosePerson(undefined);
+                  }}
+                >
+                  <span className="cmdk-item-label">Back to all results</span>
+                  <span className="cmdk-item-hint">Esc</span>
+                </Command.Item>
+              </Command.Group>
+            )}
+
+            {person === undefined && goTo.length > 0 && (
               <Command.Group heading="Go to" className="cmdk-group">
                 {goTo.map((item) => (
                   <Command.Item
@@ -336,7 +428,7 @@ export function CommandPalette() {
               </Command.Group>
             )}
 
-            {spaceRows.length > 0 && (
+            {person === undefined && spaceRows.length > 0 && (
               <Command.Group heading="Spaces" className="cmdk-group">
                 {spaceRows.map((item) => (
                   <Command.Item
@@ -351,6 +443,24 @@ export function CommandPalette() {
                       {item.hint}
                     </span>
                     <span className="cmdk-item-label">{item.label}</span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
+
+            {personRows.length > 0 && person === undefined && (
+              <Command.Group heading="People" className="cmdk-group" data-palette-people>
+                {personRows.map((row) => (
+                  <Command.Item
+                    key={row.id}
+                    value={`people:${row.id}`}
+                    className="cmdk-item"
+                    onSelect={() => {
+                      choosePerson(row);
+                    }}
+                  >
+                    <span className="cmdk-item-label">{row.name}</span>
+                    <span className="cmdk-item-hint">{row.email}</span>
                   </Command.Item>
                 ))}
               </Command.Group>
@@ -396,7 +506,7 @@ export function CommandPalette() {
               </Command.Group>
             )}
 
-            {actions.length > 0 && (
+            {person === undefined && actions.length > 0 && (
               <Command.Group heading="Actions" className="cmdk-group">
                 {actions.map((item) => (
                   <Command.Item

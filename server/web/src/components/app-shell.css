@@ -204,13 +204,177 @@
   max-width: 32rem;
 }
 
-/* Collapsed where the nav toggle it exists for is itself hidden. */
-.shell-head-quiet {
-  display: none;
+/*
+ * The one app header (LAI-1188): the same height on every signed-in screen,
+ * at every width. Where the reader is on the left, then the search bar, the
+ * Viewing chip and the page-wide actions on the right.
+ */
+.shell-app-head {
+  height: 3.25rem;
+  box-sizing: border-box;
+  flex: none;
+  padding: 0 var(--space-5);
+  justify-content: flex-start;
 }
 
+.shell-head-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  flex: 1;
+  min-width: 0;
+}
+
+/* `display: contents`: what a screen hands up flows in the title row. */
+.shell-head-title-slot,
+.shell-head-actions {
+  display: contents;
+}
+
+.shell-head-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  flex: none;
+  min-width: 0;
+}
+
+.shell-crumbs {
+  min-width: 0;
+}
+
+.shell-crumbs-list {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  font-size: var(--text-body);
+  white-space: nowrap;
+}
+
+.shell-crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.shell-crumb + .shell-crumb::before {
+  content: '/';
+  color: var(--text-muted);
+}
+
+.shell-crumb-link,
+.shell-crumb-step {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.shell-crumb-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.shell-crumb-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.shell-crumb-here {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+/* ── Viewing: <name> ─────────────────────────────────────────────────── */
+
+.shell-viewing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 2.25rem;
+  box-sizing: border-box;
+  max-width: 16rem;
+  padding: 0 var(--space-1) 0 var(--space-2-5);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+}
+
+.shell-viewing-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-viewing-label {
+  color: var(--text-secondary);
+}
+
+.shell-viewing-name {
+  font-weight: var(--weight-semibold);
+}
+
+.shell-viewing-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: 1.75rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.shell-viewing-back:hover {
+  color: var(--text-primary);
+}
+
+.shell-viewing-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Below a tablet the bar has the menu button, the title and the search. */
 @media (max-width: 900px) {
-  .shell-head-quiet {
-    display: flex;
+  .shell-app-head {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .shell-head-tools {
+    gap: var(--space-1-5);
+  }
+}
+
+/*
+ * A phone: the bar is 48px, as My day's phone bar always was (LAI-518), and
+ * keeps whose view it is while letting the word go.
+ */
+@media (max-width: 600px) {
+  .shell-app-head {
+    height: 3rem;
+  }
+
+  .shell-viewing {
+    max-width: 9rem;
+  }
+
+  .shell-viewing-label,
+  .shell-viewing-me {
+    display: none;
   }
 }

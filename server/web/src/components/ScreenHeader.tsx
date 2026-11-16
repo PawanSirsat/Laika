@@ -1,6 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import './screen-header.css';
+import { HeaderSlotFallback, HeaderTitle } from './shell/HeaderSlot.tsx';
 
 export interface ScreenHeaderProps {
   /** `Board`, `Timeline`, `Sprints` — the screen's own name. */
@@ -15,7 +16,8 @@ export interface ScreenHeaderProps {
    * title, a line under it, and a row below for its tabs.
    * `crumbs` — a breadcrumb whose last step is the title, and the context at
    * the right; the member profile's chrome (LAI-1152). No band of its own:
-   * the card under it is the page's head.
+   * the card under it is the page's head. The breadcrumb is drawn in the app
+   * header's title slot (LAI-1188).
    */
   readonly variant?: 'band' | 'page' | 'crumbs';
   /** Crumbs only: the steps before the title, each with its own separator. */
@@ -113,16 +115,27 @@ export function ScreenHeader({
   }
 
   if (variant === 'crumbs') {
+    /*
+     * The breadcrumb is the app header's title (LAI-1188): one place says
+     * where the reader is on every screen, so the page keeps only its context
+     * line. Outside the shell it stays in the page, as it was.
+     */
+    const crumbs = (
+      <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
+        {trail}
+        <h1 className="screen-crumbs-here" aria-current="page">
+          {title}
+        </h1>
+      </nav>
+    );
     return (
-      <header className="screen-crumbs">
-        <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
-          {trail}
-          <h1 className="screen-crumbs-here" aria-current="page">
-            {title}
-          </h1>
-        </nav>
-        {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
-      </header>
+      <>
+        <HeaderTitle fallback={null}>{crumbs}</HeaderTitle>
+        <header className="screen-crumbs">
+          <HeaderSlotFallback>{crumbs}</HeaderSlotFallback>
+          {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
+        </header>
+      </>
     );
   }
 

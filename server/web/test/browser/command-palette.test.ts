@@ -101,7 +101,8 @@ function stub(
 const START = '/board?project=laika-core';
 const PALETTE = '[data-palette] [role="dialog"]';
 const INPUT = '[data-palette] [role="combobox"]';
-const TRIGGER = '[data-palette-trigger="sidebar"]';
+/** The header's search bar (LAI-1188): the one trigger, on every screen and width. */
+const TRIGGER = '[data-palette-trigger="header"]';
 
 /** The server's policy (`server/src/http/security-headers.ts`) with no style hashes. */
 const CSP = [
@@ -187,10 +188,22 @@ void describe('opening and closing', () => {
       // Said in its name, not advertised with `aria-keyshortcuts`, which a
       // viewer's board must carry none of (card-reorder.test.ts, LAI-473).
       assert.match(await h.page.locator(TRIGGER).innerText(), /^Search/);
-      assert.match(
-        (await h.page.locator(TRIGGER).textContent()) ?? '',
-        /^Search \((?:⌘K|Ctrl K)\)/,
+      // The accessible name carries the shortcut; the printed word and key are
+      // decoration beside it (LAI-1188).
+      assert.equal(
+        await h.page.locator(TRIGGER).evaluate((el) => {
+          const hidden = el.querySelector('.visually-hidden');
+          return hidden?.textContent ?? '';
+        }),
+        `Search and commands (${hint})`,
         'the shortcut is not in the trigger’s name',
+      );
+      assert.equal(
+        await h.page
+          .getByRole('button', { name: /^Search and commands \((?:⌘K|Ctrl K)\)$/ })
+          .count(),
+        1,
+        'the trigger is not named by its words alone',
       );
       assert.equal(await h.page.locator('[data-palette-trigger][aria-keyshortcuts]').count(), 0);
 
@@ -204,7 +217,7 @@ void describe('opening and closing', () => {
       );
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.getAttribute('data-palette-trigger')),
-        'sidebar',
+        'header',
         'Escape did not restore the focus to the trigger',
       );
     } finally {
@@ -688,7 +701,7 @@ void describe('screenshots', () => {
           },
         });
         try {
-          const trigger = h.page.locator(width < 900 ? '[data-palette-trigger="header"]' : TRIGGER);
+          const trigger = h.page.locator(TRIGGER);
           await trigger.waitFor({ timeout: 20_000 });
           await trigger.click();
           await h.page.locator(INPUT).waitFor({ timeout: 10_000 });

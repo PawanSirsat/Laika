@@ -882,32 +882,37 @@
 }
 
 /*
- * Below 900px the rail is off-canvas and the shell's own head is nothing but
- * the menu button — a whole 44px line before the space starts. On a space it
- * floats over the start of the title row instead, which gives that line back.
+ * Below 900px the space bar's identity used to make room for the shell's
+ * floating menu button. Since LAI-1188 the identity is in the app header,
+ * beside that button, so the bar only tightens its gutter.
  */
 @media (max-width: 900px) {
-  .shell-body:has(.space) {
-    position: relative;
-  }
-
-  .shell-body:has(.space) > .shell-head-quiet {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 5;
-    padding: var(--space-2-5) 0 0 var(--space-3);
-    border-bottom: 0;
-    background: transparent;
-  }
-
   .space-bar {
     padding: var(--space-2-5) var(--space-4) 0;
   }
+}
 
-  .space-bar-top > .space-bar-row {
-    padding-inline-start: 40px;
-  }
+/*
+ * The identity in the app header (LAI-1188): the header is one height on
+ * every screen, so the name is the header's size, not the old bar's.
+ */
+.shell-head .space-bar-row {
+  min-width: 0;
+}
+
+.shell-head .space-identity {
+  flex: 0 1 auto;
+}
+
+.shell-head .space-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.shell-head .space-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--text-heading-sm);
 }
 
 /* A phone: a compact title, and Create keeps its word but loses its width. */
@@ -955,14 +960,19 @@
     padding: 0 9px;
   }
 
+  /*
+   * Flush under the app header (LAI-1188): the header is the space's title
+   * row now, so the tabs start at its edge and the toolbar keeps its 40px
+   * without padding around it — the content still starts in the top 15%.
+   */
   .space-toolbar {
     gap: var(--space-1-5);
     min-height: 40px;
-    padding: var(--space-1) 0;
+    padding: 0;
   }
 
   .space-bar {
-    padding-top: var(--space-2);
+    padding-top: 0;
   }
 
   .space-toolbar .space-search {

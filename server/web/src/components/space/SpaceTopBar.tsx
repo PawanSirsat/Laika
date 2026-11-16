@@ -5,6 +5,7 @@ import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { SpaceMenu } from './SpaceMenu.tsx';
+import { HeaderActions, HeaderTitle } from '../shell/HeaderSlot.tsx';
 
 export interface SpaceTopBarProps {
   /** Whether only agent-authored work is shown — the Agents chip's state. */
@@ -13,7 +14,8 @@ export interface SpaceTopBarProps {
 }
 
 /**
- * Row one of a space: **who and what, and nothing else** (LAI-1198).
+ * Row one of a space: **who and what, and nothing else** (LAI-1198) — drawn
+ * in the app header since LAI-1188.
  *
  * Until LAI-1198 this row also carried Search, Priority, Tag, Assignee and
  * Ready-only on every view that did not claim them, which pushed Agents and
@@ -49,105 +51,115 @@ export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
 
   return (
     <>
-      <div className="space-bar-row">
-        <div className="space-identity">
-          {/*
+      {/*
+        **The space's variant of the one app header** (LAI-1188): the name,
+        key and live pill are the header's title, and the Agents chip and the
+        space menu its page-wide actions, so a space has one bar above its
+        tabs like every other screen — not a second header of its own.
+      */}
+      <HeaderTitle>
+        <div className="space-bar-row">
+          <div className="space-identity">
+            {/*
             **The project name is the bar's** (owner, 2026-09-21; LAI-299): the
             rail names the product, and below 900px it is off-canvas entirely,
             so this headline is the only place the space is named.
           */}
-          <span className="space-icon" aria-hidden="true">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--bg-card)"
-              strokeWidth="2.2"
-            >
-              <path d="M5 20V9M12 20V4M19 20v-7" />
-            </svg>
-          </span>
-          <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>
-          {/* The key every task in it carries (`LC` for `LC-42`), from the same read. */}
-          {spaceKey !== undefined && (
-            <Tooltip content={`Tasks in this space are keyed ${spaceKey}-…`}>
-              <span className="space-key">
-                <span className="visually-hidden">Key </span>
-                {spaceKey}
-              </span>
-            </Tooltip>
-          )}
-        </div>
+            <span className="space-icon" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--bg-card)"
+                strokeWidth="2.2"
+              >
+                <path d="M5 20V9M12 20V4M19 20v-7" />
+              </svg>
+            </span>
+            <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>
+            {/* The key every task in it carries (`LC` for `LC-42`), from the same read. */}
+            {spaceKey !== undefined && (
+              <Tooltip content={`Tasks in this space are keyed ${spaceKey}-…`}>
+                <span className="space-key">
+                  <span className="visually-hidden">Key </span>
+                  {spaceKey}
+                </span>
+              </Tooltip>
+            )}
+          </div>
 
-        {/*
+          {/*
           The LIVE pill. Four states, because the stream has four and a pill
           that only ever says LIVE is decoration (§11.5).
         */}
-        <span className={`space-live space-live-${stream}`}>
-          <span className="space-live-dot" aria-hidden="true" />
-          <span className="space-live-word">
-            {stream === 'live'
-              ? 'LIVE'
-              : stream === 'catching-up'
-                ? 'CATCHING UP'
-                : stream === 'down'
-                  ? 'OFFLINE'
-                  : 'CONNECTING'}
+          <span className={`space-live space-live-${stream}`}>
+            <span className="space-live-dot" aria-hidden="true" />
+            <span className="space-live-word">
+              {stream === 'live'
+                ? 'LIVE'
+                : stream === 'catching-up'
+                  ? 'CATCHING UP'
+                  : stream === 'down'
+                    ? 'OFFLINE'
+                    : 'CONNECTING'}
+            </span>
           </span>
-        </span>
-      </div>
+        </div>
+      </HeaderTitle>
 
-      <div className="space-bar-right">
-        <Tooltip content={`Show only agent-authored work${agentSummary(agents, live)}`}>
-          <button
-            type="button"
-            className={
-              agentOnly
-                ? 'space-chip space-chip-on space-agents-start'
-                : 'space-chip space-agents-start'
-            }
-            aria-pressed={agentOnly}
-            onClick={() => {
-              onAgentOnly(!agentOnly);
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              aria-hidden="true"
+      <HeaderActions>
+        <div className="space-bar-right">
+          <Tooltip content={`Show only agent-authored work${agentSummary(agents, live)}`}>
+            <button
+              type="button"
+              className={
+                agentOnly
+                  ? 'space-chip space-chip-on space-agents-start'
+                  : 'space-chip space-agents-start'
+              }
+              aria-pressed={agentOnly}
+              onClick={() => {
+                onAgentOnly(!agentOnly);
+              }}
             >
-              <rect x="4" y="8" width="16" height="12" rx="3" />
-              <path d="M12 4v4M9 14h.01M15 14h.01" />
-            </svg>
-            {/*
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                aria-hidden="true"
+              >
+                <rect x="4" y="8" width="16" height="12" rx="3" />
+                <path d="M12 4v4M9 14h.01M15 14h.01" />
+              </svg>
+              {/*
               **Nothing until presence lands** (LAI-606): the word stays, the
               number arrives when it arrives.
             */}
-            <span className="space-agents-label">
-              <span className="space-agents-word">Agents</span> {agents}
-            </span>
-            {/*
+              <span className="space-agents-label">
+                <span className="space-agents-word">Agents</span> {agents}
+              </span>
+              {/*
               **The number counts people, the marks count agents** — what the
               number means, and which agents the marks are, is said in words for
               a screen reader and in the title for a pointer.
           */}
-            {agents !== undefined && (
-              <span className="visually-hidden">{agentSummary(agents, live)}</span>
-            )}
-            {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
-            {live.slice(0, 3).map((client) => (
-              <AgentMark key={client} client={client} size="sm" />
-            ))}
-          </button>
-        </Tooltip>
+              {agents !== undefined && (
+                <span className="visually-hidden">{agentSummary(agents, live)}</span>
+              )}
+              {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
+              {live.slice(0, 3).map((client) => (
+                <AgentMark key={client} client={client} size="sm" />
+              ))}
+            </button>
+          </Tooltip>
 
-        {slug !== undefined && <SpaceMenu slug={slug} />}
-      </div>
+          {slug !== undefined && <SpaceMenu slug={slug} />}
+        </div>
+      </HeaderActions>
     </>
   );
 }

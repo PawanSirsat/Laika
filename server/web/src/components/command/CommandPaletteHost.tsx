@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { typingIn } from '../typing-in.ts';
 import { isPaletteShortcut } from './palette-model.ts';
+import { slashOpensSearch } from '../shell/header-model.ts';
 import { closePalette, isPaletteOpen, openPalette, usePaletteOpen } from './palette-store.ts';
 // The layer's styles ship with the shell, so the loading frame is styled too.
 import './command-palette.css';
@@ -16,7 +17,8 @@ const CommandPalette = lazy(async () => {
 });
 
 /**
- * The one global shortcut, ⌘K / Ctrl+K, and where the palette mounts.
+ * The global shortcuts, ⌘K / Ctrl+K and `/` (LAI-1188), and where the
+ * palette mounts.
  * Rendered once by the shell for a signed-in session.
  *
  * The key is ignored while somebody is typing in a field or an editor; the
@@ -27,6 +29,27 @@ export function CommandPaletteHost() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
+      /*
+       * `/` opens the header search too (LAI-1188), but never where a screen
+       * has its own search field: the space and board toolbars mark theirs
+       * `aria-keyshortcuts="/"` and keep focusing it, as they always did
+       * (`slashOpensSearch`). Bare `/` only — with a modifier it is somebody
+       * else's key — and never while typing.
+       */
+      if (
+        event.key === '/' &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.defaultPrevented &&
+        !isPaletteOpen() &&
+        slashOpensSearch(document) &&
+        !typingIn(event.target instanceof Element ? event.target : null)
+      ) {
+        event.preventDefault();
+        openPalette();
+        return;
+      }
       if (!isPaletteShortcut(event)) return;
       if (isPaletteOpen()) {
         event.preventDefault();

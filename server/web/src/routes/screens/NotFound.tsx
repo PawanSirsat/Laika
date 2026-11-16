@@ -42,7 +42,7 @@ export function NotFound({
 
   return (
     <>
-      <ScreenHeader title="Page not found" context="404" />
+      <ScreenHeader variant="page" title="Page not found" context="404" />
 
       <div className="not-found">
         <GlassSurface level={2} className="not-found-card" aria-labelledby="not-found-title">
