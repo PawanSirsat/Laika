@@ -379,7 +379,6 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
   'routes/screens/my-day/day-states.css': [
     'padding: 0 0.8125rem',
     'padding: 0.4375rem 0 0 0.3125rem',
-    'padding: 1.125rem var(--space-4-5)',
   ],
   'routes/screens/my-day/editor.css': [
     'gap: 0.0625rem',

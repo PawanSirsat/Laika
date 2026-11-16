@@ -96,7 +96,7 @@ void describe('the page states as designed (LAI-513)', () => {
   });
 
   for (const theme of ['light', 'dark'] as const) {
-    void test(`${theme}: today with nothing on it — the empty Timeline, Start timer and Add time, 0 min · nothing yet, no lists`, async () => {
+    void test(`${theme}: today with nothing on it — the empty Timeline, Add time, the toolbar's Start timer primary, 0 min · nothing yet, no lists`, async () => {
       const h = await openDay(
         TODAY,
         withDay(TODAY, (view) => ({
@@ -116,17 +116,21 @@ void describe('the page states as designed (LAI-513)', () => {
           await card.innerText(),
           /your collector drafts time from prompts, commits and agent sessions/,
         );
-        assert.equal(await card.getByRole('button', { name: 'Start timer' }).count(), 1);
+        // Start timer is the toolbar's, the page's one primary (LAI-1223); the card adds time.
+        assert.equal(await card.getByRole('button', { name: 'Start timer' }).count(), 0);
         assert.equal(await card.getByRole('button', { name: 'Add time' }).count(), 1);
-        // The hours along the top, with their sky.
+        // The hours along the top; nothing shaded without working hours to shade by.
         assert.equal(await card.locator('.dstate-empty-hour').count(), 15);
-        assert.equal(await card.locator('.dstate-empty-hour[data-sky="night"]').count(), 4);
+        assert.equal(await card.locator('[data-off-hours]').count(), 0);
         assert.match(await h.page.locator('[data-day-total]').innerText(), /0 min\s+nothing yet/);
         assert.equal(await h.page.locator('.myday-tabs').count(), 0);
-        assert.match(await h.page.locator('[data-confirm-day]').innerText(), /^Day confirmed$/);
-        assert.equal(await h.page.locator('[data-confirm-day]').isDisabled(), true);
-        // Start timer opens the timer popover.
-        await card.getByRole('button', { name: 'Start timer' }).click();
+        // Nothing to confirm, and nothing confirmed: neither the action nor the state.
+        assert.equal(await h.page.locator('[data-confirm-day]').count(), 0);
+        assert.equal(await h.page.locator('[data-day-state]').count(), 0);
+        // The toolbar's Start timer opens the timer popover.
+        const start = h.page.locator('[data-timer-start] > button');
+        assert.match((await start.getAttribute('class')) ?? '', /myday-chip-primary/);
+        await start.click();
         await h.page.locator('[data-timer-go]').waitFor({ timeout: 5_000 });
       } finally {
         await h.close();
@@ -238,7 +242,7 @@ void describe('the page states as designed (LAI-513)', () => {
     }
   });
 
-  void test('Confirm day says what is ready; a day with no drafts says Day confirmed', async () => {
+  void test('Confirm day says what is ready; a day with no drafts says Day confirmed, as a state', async () => {
     const h = await openDay(TODAY, weekStub());
     try {
       const confirm = h.page.locator('[data-confirm-day]');
@@ -251,8 +255,13 @@ void describe('the page states as designed (LAI-513)', () => {
         .waitFor({ timeout: 5_000 });
       await h.page.goto(`${h.origin}/my-day?day=${YESTERDAY}`);
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-      await until(async () => (await confirm.innerText()).trim() === 'Day confirmed');
-      assert.equal(await confirm.isDisabled(), true);
+      // A state is not a button (LAI-1223): no Confirm day, a chip that says so.
+      const state = h.page.locator('[data-day-state="confirmed"]');
+      await state.waitFor({ timeout: 5_000 });
+      assert.equal((await state.innerText()).trim(), 'Day confirmed');
+      assert.equal(await state.getAttribute('role'), 'status');
+      assert.equal(await confirm.count(), 0);
+      assert.equal(await h.page.getByRole('button', { name: /Day confirmed/ }).count(), 0);
     } finally {
       await h.close();
     }

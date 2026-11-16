@@ -15,23 +15,45 @@ export interface EmptyAction {
   readonly go: () => void;
 }
 
-/** The hours the empty Timeline draws, 7 AM to 9 PM, each with its sky. */
-const EMPTY_HOURS = Array.from({ length: 15 }, (_, i) => 7 + i);
+/** The hours the empty Timeline draws, 7 AM to 9 PM — fifteen, each an hour wide. */
+const FIRST_HOUR = 7;
+const EMPTY_HOURS = Array.from({ length: 15 }, (_, i) => FIRST_HOUR + i);
+const SPAN_MINUTES = EMPTY_HOURS.length * 60;
+
+/** Where a minute of the day sits along the track, as a share of it; clamped. */
+const along = (minute: number): number =>
+  Math.min(1, Math.max(0, (minute - FIRST_HOUR * 60) / SPAN_MINUTES));
+const pct = (share: number): string => `${String(Math.round(share * 10_000) / 100)}%`;
 
 /**
- * A Timeline with nothing on it (`bd.emptyTl`): the day's hours along the
- * top with the sky behind them and a card in the middle saying why it is
- * empty and what to do — a day not begun, a day nothing was recorded on,
- * drafting off, or today before anything reached the board.
+ * The person's working hours on this day, when they set them (My
+ * availability's working week): the stretch the track leaves unshaded.
+ * `off` is a day that is not one of their working days.
+ */
+export type WorkHours =
+  | { readonly kind: 'hours'; readonly start: number; readonly end: number; readonly label: string }
+  | { readonly kind: 'off' };
+
+/**
+ * A Timeline with nothing on it (`bd.emptyTl`, reworked by LAI-1223): the
+ * day's hours along a short track — shaded outside the person's working
+ * hours **only when they set them, and then with a key that says so**, and a
+ * now line on today — and under it, in the card's own flow rather than
+ * floating over the grid, why it is empty and what to do.
  */
 export function DayEmpty({
   day,
   kind,
   actions,
+  nowMinute,
+  workHours,
 }: {
   readonly day: string;
   readonly kind: EmptyKind;
   readonly actions: readonly EmptyAction[];
+  /** Minutes after the day's midnight, on today only. */
+  readonly nowMinute?: number | undefined;
+  readonly workHours?: WorkHours | undefined;
 }) {
   const weekday = weekdayOf(day);
   const title =
@@ -49,46 +71,87 @@ export function DayEmpty({
         ? 'Draft my time is off, so Laika only shows time you add or record with a timer.'
         : kind === 'past'
           ? NO_SIGNAL
-          : 'As you work, your collector drafts time from prompts, commits and agent sessions. You can also start a timer or add time yourself.';
+          : 'As you work, your collector drafts time from prompts, commits and agent sessions. Start the timer above, or add time yourself.';
+  // The shaded stretches: before and after the working hours, or all of a day off.
+  const off: { readonly from: number; readonly to: number }[] =
+    workHours === undefined
+      ? []
+      : workHours.kind === 'off'
+        ? [{ from: 0, to: 1 }]
+        : [
+            { from: 0, to: along(workHours.start) },
+            { from: along(workHours.end), to: 1 },
+          ].filter((band) => band.to - band.from > 0);
+  const key =
+    workHours === undefined
+      ? undefined
+      : workHours.kind === 'off'
+        ? 'Not one of your working days'
+        : `Outside your working hours (${workHours.label})`;
+  const nowAt =
+    nowMinute === undefined ||
+    nowMinute < FIRST_HOUR * 60 ||
+    nowMinute > FIRST_HOUR * 60 + SPAN_MINUTES
+      ? undefined
+      : along(nowMinute);
   return (
     <section className="myday-card dstate-empty" aria-label="Timeline" data-day-empty={kind}>
       <div className="dstate-empty-head">
         <span className="dstate-skel-title">Timeline</span>
         <span className="dstate-empty-date">{shortDay(day)}</span>
+        {key !== undefined && off.length > 0 && (
+          <span className="dstate-empty-key" data-off-hours-key>
+            <span className="dstate-empty-swatch" aria-hidden="true" />
+            {key}
+          </span>
+        )}
       </div>
-      <div className="dstate-empty-track">
-        <div className="dstate-empty-axis" aria-hidden="true">
+      <div className="dstate-empty-track" aria-hidden="true">
+        <div className="dstate-empty-axis">
           {EMPTY_HOURS.map((h) => (
-            <span key={h} className="dstate-empty-hour" data-sky={h < 18 ? 'day' : 'night'}>
+            <span key={h} className="dstate-empty-hour">
               {hourName(h)}
             </span>
           ))}
         </div>
-        <div className="dstate-empty-body" aria-hidden="true">
+        <div className="dstate-empty-lane">
           {EMPTY_HOURS.map((h) => (
-            <span key={h} className="dstate-empty-cell" data-sky={h < 18 ? 'day' : 'night'} />
+            <span key={h} className="dstate-empty-cell" />
+          ))}
+          {off.map((band) => (
+            <span
+              key={band.from}
+              className="dstate-empty-off"
+              data-off-hours
+              style={{ left: pct(band.from), width: pct(band.to - band.from) }}
+            />
           ))}
         </div>
-        <div className="dstate-empty-centre">
-          <div className="dstate-empty-card">
-            <h2 className="dstate-empty-title">{title}</h2>
-            <p className="dstate-body" data-no-signal={kind === 'past' ? '' : undefined}>
-              {body}
-            </p>
-            <div className="dstate-actions">
-              {actions.map((a) => (
-                <button
-                  key={a.label}
-                  type="button"
-                  className={a.primary === true ? 'myday-chip myday-chip-primary' : 'myday-chip'}
-                  onClick={a.go}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
+        {nowAt !== undefined && (
+          <span className="dstate-empty-now" data-now-line style={{ left: pct(nowAt) }}>
+            <span className="dstate-empty-now-label">Now</span>
+          </span>
+        )}
+      </div>
+      <div className="dstate-empty-message">
+        <h2 className="dstate-empty-title">{title}</h2>
+        <p className="dstate-body" data-no-signal={kind === 'past' ? '' : undefined}>
+          {body}
+        </p>
+        {actions.length > 0 && (
+          <div className="dstate-actions">
+            {actions.map((a) => (
+              <button
+                key={a.label}
+                type="button"
+                className={a.primary === true ? 'myday-chip myday-chip-primary' : 'myday-chip'}
+                onClick={a.go}
+              >
+                {a.label}
+              </button>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </section>
   );

@@ -109,7 +109,12 @@
 
 /* -------------------------------------------------- an empty Timeline */
 
-.dstate-empty {
+/*
+ * LAI-1223: a short track — the hours, the shaded stretch the key names, the
+ * now line — and the message under it in the card's own flow, so nothing
+ * floats over grid lines and the card is no taller than what it says.
+ */
+.myday-card.dstate-empty {
   padding: 0;
   gap: 0;
   border-radius: var(--radius-card);
@@ -119,8 +124,9 @@
 .dstate-empty-head {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2-5);
-  padding: var(--space-4) var(--space-4-5) var(--space-3-5);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2-5);
+  padding: var(--space-4) var(--space-4-5) var(--space-3);
 }
 
 .dstate-empty-date {
@@ -129,35 +135,56 @@
   color: var(--text-muted);
 }
 
+/* The key for the shaded hours: the same fill, said in words. */
+.dstate-empty-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-left: auto;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.dstate-empty-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-hairline);
+  background: var(--sky-night-body);
+}
+
 .dstate-empty-track {
   position: relative;
-  height: 16.25rem;
-  border-top: 1px solid var(--border-subtle);
+  margin: 0 var(--space-4-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  overflow: hidden;
 }
 
 .dstate-empty-axis,
-.dstate-empty-body {
-  position: absolute;
-  left: 0;
-  right: 0;
+.dstate-empty-lane {
   display: flex;
 }
 
 .dstate-empty-axis {
-  top: 0;
-  height: 1.75rem;
+  height: 1.625rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-column);
 }
 
-.dstate-empty-body {
-  top: 1.75rem;
-  bottom: 0;
-  border-top: 1px solid var(--border-subtle);
+.dstate-empty-lane {
+  position: relative;
+  height: 2.75rem;
 }
 
 .dstate-empty-hour,
 .dstate-empty-cell {
   flex: 1;
   min-width: 0;
+}
+
+.dstate-empty-hour + .dstate-empty-hour,
+.dstate-empty-cell + .dstate-empty-cell {
   border-left: 1px solid var(--border-subtle);
 }
 
@@ -170,37 +197,45 @@
   overflow: hidden;
 }
 
-.dstate-empty-hour[data-sky='day'] {
-  background: var(--sky-day);
-}
-
-.dstate-empty-hour[data-sky='night'] {
-  background: var(--sky-night);
-}
-
-.dstate-empty-cell[data-sky='night'] {
-  background: var(--sky-night-body);
-}
-
-.dstate-empty-centre {
+.dstate-empty-off {
   position: absolute;
-  inset: 1.75rem 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
+  top: 0;
+  bottom: 0;
+  background: var(--sky-night-body);
+  pointer-events: none;
 }
 
-.dstate-empty-card {
+/* Now: a hairline through the track, its word on the hour row. */
+.dstate-empty-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--overdue);
+  pointer-events: none;
+}
+
+.dstate-empty-now-label {
+  position: absolute;
+  /* In the lane, under the hour row: never over an hour's name. */
+  top: calc(1.625rem + 0.375rem);
+  left: 0.25rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-hairline);
+  background: var(--overdue);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1.125rem;
+}
+
+.dstate-empty-message {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  max-width: 27.5rem;
-  padding: 1.125rem var(--space-4-5);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-card);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-modal);
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  padding: var(--space-4) var(--space-4-5) var(--space-4-5);
 }
 
 .dstate-empty-title {
@@ -208,6 +243,10 @@
   font-size: var(--text-reading);
   font-weight: var(--weight-heavy);
   color: var(--text-primary);
+}
+
+.dstate-empty-message .dstate-body {
+  max-width: 40rem;
 }
 
 .dstate-actions {
@@ -224,8 +263,19 @@
 }
 
 @container myday (max-width: 34rem) {
+  .dstate-empty-head,
+  .dstate-empty-message {
+    padding-left: var(--space-3-5);
+    padding-right: var(--space-3-5);
+  }
+
   .dstate-empty-track {
-    height: 18.75rem;
+    margin: 0 var(--space-3-5);
+  }
+
+  .dstate-empty-key {
+    margin-left: 0;
+    flex-basis: 100%;
   }
 
   /* Three hours a label on a phone, as the design draws it. */

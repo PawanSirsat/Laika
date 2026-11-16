@@ -19,6 +19,12 @@ export interface TimerControlProps {
   /** The start popover, opened by the page's `T` too. */
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  /**
+   * The page's one primary action (LAI-1223): on a day with nothing on it
+   * yet, starting the timer is what there is to do, so the toolbar's button
+   * carries the accent and the empty Timeline does not repeat it.
+   */
+  readonly primary?: boolean | undefined;
 }
 
 /** The time run, as of `now`, in whole seconds. */
@@ -78,6 +84,7 @@ export function TimerControl({
   onDiscard,
   open,
   onOpenChange,
+  primary = false,
 }: TimerControlProps) {
   const [card, setCard] = useState<string | undefined>(undefined);
   const [kind, setKind] = useState<EntryKind | undefined>(undefined);
@@ -171,7 +178,9 @@ export function TimerControl({
       label="Start timer"
       tooltip="Start a timer"
       shortcut="T"
-      triggerClassName="myday-chip myday-head-button"
+      triggerClassName={
+        primary ? 'myday-chip myday-chip-primary myday-head-button' : 'myday-chip myday-head-button'
+      }
       dataAttr="data-timer-start"
       width="wide"
       disabled={busy}

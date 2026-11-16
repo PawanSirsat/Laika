@@ -66,7 +66,8 @@ import { clock, duration, span } from './format.ts';
 import { kindLabel } from './entry-kinds.ts';
 import { Inspector, type DraftSaid, type Held, type InspectorActions } from './Inspector.tsx';
 import { MyDayDrawer, type DrawerMode } from './MyDayDrawer.tsx';
-import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
+import { DayEmpty, type EmptyAction, type EmptyKind, type WorkHours } from './DayEmpty.tsx';
+import { useSharedAvailability } from '../../../api/availability.ts';
 import { DayError } from './DayError.tsx';
 import { DayOff } from './DayOff.tsx';
 import { DaySkeleton, DaySkeletonActions } from './DaySkeleton.tsx';
@@ -417,6 +418,8 @@ export function MyDayScreen({
     keepZoom(next);
   };
   const [now, setNow] = useState(() => Date.now());
+  // My availability's working week, shared with the header's control (LAI-1223).
+  const [availability] = useSharedAvailability();
   const spaces = useSpaces();
   const plate = usePlate(notOwn ? undefined : me, spaces);
   // The owner's phone page (LAI-518): its own head, bar and Timeline.
@@ -1173,6 +1176,28 @@ export function MyDayScreen({
     );
   };
 
+  // The empty Timeline's shading is the person's own working hours, and only
+  // when they set them (LAI-1223) — never somebody else's, never a guess.
+  const emptyWork: WorkHours | undefined = (() => {
+    const week = notOwn ? undefined : availability?.work_week;
+    if (week === undefined || week === null) return undefined;
+    const iso = ((new Date(`${view.day}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+    if (week.days.length > 0 && !week.days.includes(iso)) return { kind: 'off' };
+    const minutes = (hhmm: string | null): number | undefined => {
+      const m = hhmm === null ? null : /^(\d{1,2}):(\d{2})$/.exec(hhmm);
+      const [, h, min] = m ?? [];
+      return h === undefined || min === undefined ? undefined : Number(h) * 60 + Number(min);
+    };
+    const start = minutes(week.start);
+    const end = minutes(week.end);
+    if (start === undefined || end === undefined || end <= start) return undefined;
+    return { kind: 'hours', start, end, label: `${week.start ?? ''}–${week.end ?? ''}` };
+  })();
+  const emptyNow =
+    view.day === view.today && line.midnight !== undefined
+      ? Math.floor((now - line.midnight) / 60_000)
+      : undefined;
+
   // What an empty Timeline offers (LAI-513), by why it is empty.
   const emptyActions: readonly EmptyAction[] = notOwn
     ? [
@@ -1196,16 +1221,8 @@ export function MyDayScreen({
               { label: 'Back to today', go: () => onDay(view.today) },
               { label: 'Add time', go: addTime },
             ]
-          : [
-              {
-                label: 'Start timer',
-                primary: true,
-                go: () => {
-                  setTimerOpen(true);
-                },
-              },
-              { label: 'Add time', go: addTime },
-            ];
+          : // Start timer is the toolbar's, as the page's one primary (LAI-1223).
+            [{ label: 'Add time', go: addTime }];
 
   const actions: InspectorActions = {
     confirm: confirmOne,
@@ -1618,6 +1635,7 @@ export function MyDayScreen({
               tools: (
                 <>
                   <TimerControl
+                    primary={emptyKind === 'today'}
                     timer={view.timer}
                     tz={view.tz}
                     chips={chipsFor(null)}
@@ -1711,7 +1729,8 @@ export function MyDayScreen({
                     <Tooltip content="A note for whoever reads your day">
                       <button
                         type="button"
-                        className="myday-chip myday-head-button"
+                        // Not a head button: those shrink to an icon on a phone, and this has words (LAI-1223).
+                        className="myday-chip myday-phone-note"
                         data-day-note-button
                         onClick={() => {
                           setSummary(true);
@@ -1741,7 +1760,13 @@ export function MyDayScreen({
           onNavigate={onNavigate}
         />
       ) : emptyKind !== undefined ? (
-        <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />
+        <DayEmpty
+          day={view.day}
+          kind={emptyKind}
+          actions={emptyActions}
+          nowMinute={emptyNow}
+          workHours={emptyWork}
+        />
       ) : phone ? (
         <TimelineMobile
           view={view}
@@ -1992,7 +2017,7 @@ export function MyDayScreen({
             }
             below={
               orgOff ? undefined : wide ? (
-                <div className="myday-below">
+                <div className="myday-below myday-navrow" data-nav-row>
                   <ViewSwitch
                     span={viewSpan}
                     day={selectedDay}
@@ -2010,21 +2035,9 @@ export function MyDayScreen({
                   />
                 </div>
               ) : (
-                <div className="myday-below">
-                  {onSpan !== undefined && (
-                    <ViewSwitch
-                      span={viewSpan}
-                      day={selectedDay}
-                      today={view.today}
-                      withNav={false}
-                      disabled={batching}
-                      onSpan={(next) => {
-                        goSpan(next);
-                      }}
-                      onStep={() => undefined}
-                      onToday={() => undefined}
-                    />
-                  )}
+                // One row (LAI-1223): ‹ Today › and the week, then the View and
+                // its zoom at the row's end — the order the wider views keep.
+                <div className="myday-below myday-navrow" data-nav-row>
                   {/* A phone walks the days one at a time (LAI-502); the width decides, in CSS. */}
                   <div className="myday-daynav" data-day-nav>
                     <Tooltip content="Previous day">
@@ -2075,6 +2088,20 @@ export function MyDayScreen({
                     locked={batching}
                     onPick={onDay}
                   />
+                  {onSpan !== undefined && (
+                    <ViewSwitch
+                      span={viewSpan}
+                      day={selectedDay}
+                      today={view.today}
+                      withNav={false}
+                      disabled={batching}
+                      onSpan={(next) => {
+                        goSpan(next);
+                      }}
+                      onStep={() => undefined}
+                      onToday={() => undefined}
+                    />
+                  )}
                 </div>
               )
             }
@@ -2086,6 +2113,7 @@ export function MyDayScreen({
             {!notOwn && addable && (
               <>
                 <TimerControl
+                  primary={!wide && emptyKind === 'today'}
                   timer={view.timer}
                   tz={view.tz}
                   chips={chipsFor(null)}
@@ -2156,7 +2184,32 @@ export function MyDayScreen({
                 )}
               </>
             )}
-            {!wide && !notOwn && addable && view.state !== 'future' && (
+            {/*
+              A state is not a button (LAI-1223): *Confirm day* is offered only
+              while there are drafts to confirm; a day whose time is all
+              confirmed says so in a chip, and an empty day says nothing here.
+            */}
+            {!wide &&
+              !notOwn &&
+              addable &&
+              view.state !== 'future' &&
+              view.drafts.length === 0 &&
+              view.entries.length > 0 && (
+                <span className="myday-state-chip" role="status" data-day-state="confirmed">
+                  <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+                    <path
+                      d="m2.5 6.2 2.3 2.3 4.7-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  Day confirmed
+                </span>
+              )}
+            {!wide && !notOwn && addable && view.state !== 'future' && view.drafts.length > 0 && (
               <Tooltip
                 content={
                   confirmReason ??
@@ -2178,7 +2231,7 @@ export function MyDayScreen({
                 >
                   {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
                   <span className="myday-confirm-label">
-                    {view.drafts.length === 0 ? 'Day confirmed' : 'Confirm day'}
+                    Confirm day
                     {dayPlan.ready.length > 0 && (
                       <span className="myday-confirm-sub">
                         {dayPlan.needCard.length > 0
@@ -2206,8 +2259,17 @@ export function MyDayScreen({
                 </button>
               </Tooltip>
             )}
-            {/* The day's tools, one group at the row's end that wraps as a unit (LAI-1215). */}
-            <span className="myday-head-tools" data-head-tools>
+            {/*
+              The day's tools, one group at the row's end that wraps as a unit
+              (LAI-1215) — one bordered cluster with a name, so four icons read
+              as one set of view options rather than four strays (LAI-1223).
+            */}
+            <span
+              className="myday-head-tools"
+              data-head-tools
+              role="group"
+              aria-label={notOwn ? 'View options' : 'Day tools'}
+            >
               {!notOwn && !orgOff && (
                 <DaySettings
                   settings={settings}

@@ -9,9 +9,11 @@ export interface HeaderPopoverProps {
   /**
    * The trigger's tooltip (LAI-1214) — the shared Tooltip, on hover and on
    * keyboard focus; the label when absent. It was a bare `title=`, which a
-   * keyboard and a touch screen never show.
+   * keyboard and a touch screen never show. `false` for a trigger whose own
+   * words already say everything (LAI-1223): a tooltip that only repeats them
+   * covers whatever sits beside it, and says nothing new.
    */
-  readonly tooltip?: string | undefined;
+  readonly tooltip?: string | false | undefined;
   /** The trigger's key, as `T`: a keycap in the tooltip and `aria-keyshortcuts`. */
   readonly shortcut?: string | undefined;
   readonly className?: string | undefined;
@@ -160,28 +162,37 @@ export function HeaderPopover({
     panel.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
   }, [open, dialog]);
 
+  const button = (
+    <button
+      type="button"
+      className={triggerClassName ?? 'myday-chip'}
+      aria-label={label}
+      aria-expanded={open}
+      aria-controls={id}
+      {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
+      {...(tooltip === false && shortcut !== undefined ? { 'aria-keyshortcuts': shortcut } : {})}
+      disabled={disabled}
+      onClick={() => {
+        setOpen(!open);
+      }}
+    >
+      {trigger}
+    </button>
+  );
+
   return (
     <div
       ref={root}
       className={['myday-pop', className ?? ''].filter((c) => c !== '').join(' ')}
       {...(dataAttr === undefined ? {} : { [dataAttr]: '' })}
     >
-      <Tooltip content={tooltip ?? label} shortcut={shortcut}>
-        <button
-          type="button"
-          className={triggerClassName ?? 'myday-chip'}
-          aria-label={label}
-          aria-expanded={open}
-          aria-controls={id}
-          {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
-          disabled={disabled}
-          onClick={() => {
-            setOpen(!open);
-          }}
-        >
-          {trigger}
-        </button>
-      </Tooltip>
+      {tooltip === false ? (
+        button
+      ) : (
+        <Tooltip content={tooltip ?? label} shortcut={shortcut}>
+          {button}
+        </Tooltip>
+      )}
       {open && (
         <div
           ref={panel}
