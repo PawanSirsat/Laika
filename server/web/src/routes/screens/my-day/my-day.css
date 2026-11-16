@@ -61,7 +61,8 @@
   align-self: flex-start;
   flex: 0 0 25rem;
   width: 25rem;
-  height: 100dvh;
+  /* The scroller's height: the window less the app header (LAI-1188). */
+  height: calc(100dvh - var(--app-head-height, 0px));
   box-sizing: border-box;
   background: var(--bg-card);
   border-left: 1px solid var(--border-default);

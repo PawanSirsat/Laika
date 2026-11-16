@@ -25,7 +25,8 @@
    * Content taller than this still paints and the document still scrolls to it;
    * this only stops the box being sized by what it contains.
    */
-  height: 100dvh;
+  /* Less the app header above it (LAI-1188), which every screen wears now. */
+  height: calc(100dvh - var(--app-head-height, 0px));
   min-height: 0;
   /* Positioned so anything inside it that needs a containing block has one —
      and so a future scroller here cannot strand an absolutely-positioned child
