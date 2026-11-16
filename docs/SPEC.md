@@ -4264,9 +4264,9 @@ DELETE /api/v1/me/time-drafts                every draft the caller has not conf
 PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at?, folder?, branch? }   POST .../split { at }   POST .../dismiss → 204   (session only)
 POST   /api/v1/me/time-drafts/:id/confirm    body { kind?, title?, description? }, optional → 201, the entry   POST /api/v1/me/time/days/:day/confirm  body { note? }, optional → { entries, day_note }   (session only)
 PUT    /api/v1/me/time/days/:day/note        body { note } — the person's note on the day, null removes it → { day_note }   (session only; §4.62, LAI-501)
-GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week, the timer, the day's note   (session only)
+GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week, the timer, the day's note; the day's and each week day's `off: { holiday: { label } | null, leave: { part: full|first_half|second_half, status: approved|pending, type } | null } | null` (D-149, LAI-1183)   (session only)
 GET    /api/v1/me/time/summary               ?from=&to= — Overview over a stretch of ≤ 92 days: totals, by day, by project, by task, by kind   (session only; LAI-526)
-GET    /api/v1/me/time/days                  ?from=&to=&tz= — My day's Week, Month and Year: one row per day over ≤ 92 days, its state, minutes and largest tasks   (session only; LAI-1173)
+GET    /api/v1/me/time/days                  ?from=&to=&tz= — My day's Week, Month and Year: one row per day over ≤ 92 days, its state, minutes and largest tasks, and its `off: { holiday: { label } | null, leave: { part: full|first_half|second_half, status: approved|pending, type } | null } | null` (D-149, LAI-1183)   (session only; LAI-1173)
 POST   /api/v1/me/time/timer                 body { tz, task?, kind?, title? } — start the person's one timer → 201   POST .../pause   POST .../resume   POST .../stop → 201 { entry, crossed_midnight }   DELETE → 204   (session only; §4.61, LAI-500)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
@@ -4326,13 +4326,14 @@ POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 2
 PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, an import included (a later Solidtime re-sync may put its original back), never a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
 GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
-GET    /api/v1/time/days                     ?from=&to= — the Time logging grid (D-148): { from, to, scope: people|lead, threshold_minutes, people: [{ user: { id, name, org_role, deactivated }, zone, joined_day, today_day, work_days, days: [{ day, confirmed_minutes, drafted_minutes }] }], truncated }, ≤ 92 days, people A–Z, at most 200 (truncated); every person shown logged as a look   (session only; owner / a role granted See everyone's analytics for everyone, a space admin for the people of the spaces they lead; 30/min on its own bucket; D-148, LAI-1175)
+GET    /api/v1/time/days                     ?from=&to= — the Time logging grid (D-148): { from, to, scope: people|lead, threshold_minutes, people: [{ user: { id, name, org_role, deactivated }, zone, joined_day, today_day, work_days, days: [{ day, confirmed_minutes, drafted_minutes }], off_days: [{ day, holiday, leave }] }], truncated } (off_days ascending, only days with a holiday or leave, D-149, LAI-1183), ≤ 92 days, people A–Z, at most 200 (truncated); every person shown logged as a look   (session only; owner / a role granted See everyone's analytics for everyone, a space admin for the people of the spaces they lead; 30/min on its own bucket; D-148, LAI-1175)
 GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)
 GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
 POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
 DELETE /api/v1/me/availability/away/:id      → 204; another person's period is the 404 of one that does not exist   (every role; session only)
-GET    /api/v1/people/availability           ?space=&tag=&open_only= → { data: [{ user, availability, spaces, in_progress?, last_2_weeks_minutes? }] }, A–Z by name, no sort parameter; availability narrowed per reader, D-137   (every role, narrowed to the reader; session only; hours logged)
+GET    /api/v1/people/availability           ?space=&tag=&open_only= → { data: [{ user, availability, spaces, in_progress?, last_2_weeks_minutes? }] }, A–Z by name, no sort parameter; availability narrowed per reader, D-137, each with `on_leave` (below); `open_only` leaves out anyone on approved whole-day leave today (D-149, LAI-1183)   (every role, narrowed to the reader; session only; hours logged)
 GET    /api/v1/people/:id/load               → { availability, projects, cards, week, away } — 14 days by space, card counts, this week beside the set working minutes; logged   (owner, admin by default; session only; not yourself)
+                                             every availability above — the whole record, a member's and a lead's view — carries `on_leave: { until, status: approved|pending, type } | null` beside `away`: the leave covering the person's today in their zone, `until` the last day of the run of same-status leave, which carries on across the person's non-working days and holidays covering them; approved beats pending (D-149, LAI-1183)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
@@ -7514,7 +7515,11 @@ anything missing sends the task back.
   8h), ◷ and the hours for under it, ✕ for nothing — against the person's
   own working days; **a muted — and the hours, muted, when there are any**
   where nothing is due: a day off, a day before they joined, a day not yet
-  come, and every day of a person who has left (no ✕ after them, ever);
+  come, every day of a person who has left (no ✕ after them, ever), **a
+  holiday that covers them and a day of approved whole-day leave**, the
+  holiday's name or *on leave* in its words (D-149 item 6, LAI-1185);
+  **approved half-day leave owes half** the threshold (✓ from 4h of 8h);
+  pending leave changes nothing;
   today is the hours so far with no verdict; any day with time on it, and
   any due day, is a door; a legend under the stepper says all of this. A
   **Total** column pinned on the right: the month's hours as `38h 20m`
@@ -7560,7 +7565,7 @@ anything missing sends the task back.
   it; *Drafted from* shows the name, and the branch when sent, and its line
   then says the name went with the counts; a confirmed entry shows the name.
   In the header (LAI-1139, frames 2a–2c), the reader's own **availability
-  pill** — *Open to more work · ~6 h/wk*, *At capacity* or *Away until …*, a
+  pill** — *Open to more work · ~6 h/wk*, *At capacity*, *Away until …* or *On leave until …* / *Leave requested* (D-149, LAI-1185), a
   glyph and words — opening **My availability**: status, *away until*, hours
   a week they could take, a note, skills and areas, their working week and
   away periods, *updated N ago · everyone in your spaces sees this* and
@@ -7581,7 +7586,15 @@ anything missing sends the task back.
   tasks and a bar, a week number opening the week; Year is twelve small
   months coloured by quartile of the year's own working days. **No target**:
   every bar is a share of the period's busiest day, and a day nothing reached
-  says *no signal* (`—`), never zero hours. Opening a part zooms into it from
+  says *no signal* (`—`), never zero hours. **Holidays and leave are drawn
+  on every view** (D-149, LAI-1184): a day with no time tinted in the
+  holiday's or leave's own colour (tokens, never Clan's), a day with time
+  keeping its colour with a small mark, pending leave a dashed outline;
+  Month's cell names it, Week's column says it in place of *no signal*,
+  the legend has both; on Day a banner — *Public holiday — {name}*, *On
+  leave — {type} (morning|afternoon)* (the type only to those D-149 item 5
+  names; otherwise *On leave*), *Leave requested* — and the header says it
+  instead of *no signal*. Opening a part zooms into it from
   where it sat and leaving zooms back (520 ms, one scale for both axes); less
   motion is no movement. The wider views edit nothing: *Add time*, *Fill
   gaps*, *Confirm day*, the lists and the drawer are Day's. Somebody else's
@@ -7600,7 +7613,8 @@ anything missing sends the task back.
     read-only copy · you can see who looked*.
   - **Head card**, holding the tabs: avatar, name, the **Builder / Manager**
     chip, and the **availability pill** inline — *Open to more work · ~6
-    h/week*, *At capacity*, *Away until …*, or a dashed *Availability not
+    h/week*, *At capacity*, *Away until …*, *On leave until …* (the type
+    only where D-149 item 5 allows) or *Leave requested*, or a dashed *Availability not
     set* — then org role · project count · email · member since, and on its
     own line the note, tags and *set by <first> · updated N ago* (*set by
     you* on your own). On your own profile the pill is a button opening *My
