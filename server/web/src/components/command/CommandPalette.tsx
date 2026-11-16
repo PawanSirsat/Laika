@@ -17,8 +17,10 @@ import {
   emptySuggestion,
   filterItems,
   goToItems,
+  highlightParts,
   isPaletteShortcut,
   matchTasks,
+  recentItems,
   resultCountMessage,
   spaceItems,
   TASK_DEBOUNCE_MS,
@@ -26,6 +28,9 @@ import {
   taskHref,
   type PaletteItem,
 } from './palette-model.ts';
+import { pushRecent, readRecent, writeRecent, type RecentEntry } from './palette-recent.ts';
+import { openShortcuts } from '../shell/shortcuts-store.ts';
+import { formatShortcut, onMac } from '../tooltip/shortcut.ts';
 import { closePalette, paletteOpener } from './palette-store.ts';
 import { useOrgPeople } from '../../api/use-org-people.ts';
 import type { OrgUser } from '../../api/users.ts';
@@ -115,6 +120,40 @@ function useTaskSearch(query: string): {
   };
 }
 
+const MAC = onMac();
+
+/** Storage, or nothing where the browser refuses it. */
+function store(): Storage | undefined {
+  try {
+    return typeof localStorage === 'undefined' ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A label with the query's words marked (LAI-1221). `<mark>` says *matched*
+ * to assistive technology that announces it, and the parts joined are the
+ * label exactly, so the row reads the same.
+ */
+function Highlighted({ text, query }: { readonly text: string; readonly query: string }) {
+  const parts = highlightParts(text, query);
+  if (parts.length === 1 && parts[0]?.match !== true) return <>{text}</>;
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.match ? (
+          <mark key={index} className="cmdk-mark">
+            {part.text}
+          </mark>
+        ) : (
+          <span key={index}>{part.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 /** A task's status as a small chip, coloured by its category. */
 function StatusChip({ task }: { readonly task: TaskSummary }) {
   return <span className={`cmdk-status cmdk-status-${task.status}`}>{task.status_name}</span>;
@@ -173,6 +212,19 @@ export function CommandPalette() {
    */
   const seesEveryone = gates.org(SEE_EVERYONE);
   const people = useOrgPeople(seesEveryone);
+  /**
+   * The last places opened from here (LAI-1221), ids only (`palette-recent.ts`),
+   * per person and per browser; read as the palette opens.
+   */
+  const [recent, setRecent] = useState<readonly RecentEntry[]>(() =>
+    me === undefined ? [] : readRecent(store(), me.id),
+  );
+  const remember = (entry: RecentEntry): void => {
+    if (me === undefined) return;
+    const next = pushRecent(recent, entry);
+    setRecent(next);
+    writeRecent(store(), me.id, next);
+  };
   const { load, settled, retry } = useTaskSearch(person === undefined ? query : '');
   const [message, announce] = useLiveRegion(ANNOUNCE_GAP_MS);
 
@@ -184,10 +236,24 @@ export function CommandPalette() {
   // The server's answer (`me.actions`); before it lands every gated entry
   // stays hidden, as the sidebar's do.
   const granted = permissions?.me.actions;
-  const goTo = useMemo(() => {
+  const allPages = useMemo(() => {
     const holds = granted === undefined ? undefined : permissionHolder(granted);
-    return filterItems(goToItems(holds, projectSlug, spaceName), query);
-  }, [granted, projectSlug, spaceName, query]);
+    return goToItems(holds, projectSlug, spaceName);
+  }, [granted, projectSlug, spaceName]);
+  const goTo = useMemo(() => filterItems(allPages, query), [allPages, query]);
+  const blank = query.trim() === '' && person === undefined;
+  const recentRows = useMemo(
+    () =>
+      blank
+        ? recentItems(recent, {
+            pages: [...allPages, allSpacesItem()],
+            spaces,
+            people: seesEveryone && people !== null ? people : undefined,
+            currentPath: path,
+          })
+        : [],
+    [blank, recent, allPages, spaces, seesEveryone, people, path],
+  );
 
   const spaceRows = useMemo(
     () => filterItems([...spaceItems(spaces, projectSlug, path), allSpacesItem()], query),
@@ -212,6 +278,15 @@ export function CommandPalette() {
         },
       });
     }
+    rows.push({
+      id: 'action:shortcuts',
+      label: 'Keyboard shortcuts',
+      hint: '?',
+      keywords: ['keys', 'keyboard', 'help', 'hotkeys', 'shortcuts'],
+      run: () => {
+        openShortcuts(paletteOpener());
+      },
+    });
     const next = toggledTheme(theme, darkVariant);
     rows.push({
       id: 'action:theme',
@@ -244,6 +319,9 @@ export function CommandPalette() {
     query,
   ]);
 
+  /** Before typing, what is worth doing next — not signing out. */
+  const suggested = actions.filter((item) => item.id !== 'action:sign-out');
+
   const personRows = useMemo(
     () => (seesEveryone && people ? matchPeople(people, query, me?.id) : []),
     [seesEveryone, people, query, me?.id],
@@ -269,7 +347,13 @@ export function CommandPalette() {
   const failed = typedEnough && load.state === 'error';
   const count =
     person === undefined
-      ? goTo.length + spaceRows.length + personRows.length + tasks.length + actions.length
+      ? recentRows.length +
+        (blank ? suggested.length - actions.length : 0) +
+        goTo.length +
+        spaceRows.length +
+        personRows.length +
+        tasks.length +
+        actions.length
       : targets.length;
   const empty = count === 0 && !searching && !failed;
 
@@ -299,13 +383,15 @@ export function CommandPalette() {
     };
   });
 
-  const go = (href: string): void => {
+  const go = (href: string, entry?: RecentEntry): void => {
+    if (entry !== undefined) remember(entry);
     closePalette();
     navigate(href);
   };
 
   /** Into one person's views, or back out of them; the field starts empty each way. */
   const choosePerson = (next: OrgUser | undefined): void => {
+    if (next !== undefined) remember({ kind: 'person', id: next.id });
     setPerson(next);
     setQuery('');
     setSelected('');
@@ -372,8 +458,8 @@ export function CommandPalette() {
                 person !== undefined
                   ? `Choose a view of ${person.name}…`
                   : seesEveryone
-                    ? 'Search pages, spaces, people, tasks and commands…'
-                    : 'Search pages, spaces, tasks and commands…'
+                    ? 'Search tasks, spaces, people, pages and commands…'
+                    : 'Search tasks, spaces, pages and commands…'
               }
             />
             <button type="button" className="cmdk-close" onClick={closePalette}>
@@ -410,6 +496,48 @@ export function CommandPalette() {
               </Command.Group>
             )}
 
+            {recentRows.length > 0 && (
+              <Command.Group heading="Recent" className="cmdk-group" data-palette-recent>
+                {recentRows.map((item) => (
+                  <Command.Item
+                    key={item.id}
+                    value={item.id}
+                    className="cmdk-item"
+                    onSelect={() => {
+                      if (item.entry.kind === 'person') {
+                        const row = people?.find((p) => p.id === item.entry.id);
+                        if (row !== undefined) choosePerson(row);
+                        return;
+                      }
+                      if (item.href !== undefined) go(item.href, item.entry);
+                    }}
+                  >
+                    <span className="cmdk-item-label">{item.label}</span>
+                    {item.hint !== undefined && <span className="cmdk-item-hint">{item.hint}</span>}
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
+
+            {blank && suggested.length > 0 && (
+              <Command.Group heading="Suggested" className="cmdk-group" data-palette-suggested>
+                {suggested.map((item) => (
+                  <Command.Item
+                    key={item.id}
+                    value={item.id}
+                    className="cmdk-item"
+                    onSelect={() => {
+                      closePalette();
+                      item.run();
+                    }}
+                  >
+                    <span className="cmdk-item-label">{item.label}</span>
+                    {item.hint !== undefined && <span className="cmdk-item-hint">{item.hint}</span>}
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            )}
+
             {person === undefined && goTo.length > 0 && (
               <Command.Group heading="Go to" className="cmdk-group">
                 {goTo.map((item) => (
@@ -418,11 +546,20 @@ export function CommandPalette() {
                     value={item.id}
                     className="cmdk-item"
                     onSelect={() => {
-                      if (item.href !== undefined) go(item.href);
+                      if (item.href !== undefined) {
+                        go(item.href, { kind: 'page', id: item.id.slice('go:'.length) });
+                      }
                     }}
                   >
-                    <span className="cmdk-item-label">{item.label}</span>
+                    <span className="cmdk-item-label">
+                      <Highlighted text={item.label} query={query} />
+                    </span>
                     {item.hint !== undefined && <span className="cmdk-item-hint">{item.hint}</span>}
+                    {item.shortcut !== undefined && (
+                      <kbd className="cmdk-kbd cmdk-item-kbd" data-palette-shortcut>
+                        {formatShortcut(item.shortcut, MAC)}
+                      </kbd>
+                    )}
                   </Command.Item>
                 ))}
               </Command.Group>
@@ -436,13 +573,22 @@ export function CommandPalette() {
                     value={item.id}
                     className="cmdk-item"
                     onSelect={() => {
-                      if (item.href !== undefined) go(item.href);
+                      if (item.href !== undefined) {
+                        go(
+                          item.href,
+                          item.id.startsWith('space:')
+                            ? { kind: 'space', id: item.id.slice('space:'.length) }
+                            : { kind: 'page', id: '/projects' },
+                        );
+                      }
                     }}
                   >
                     <span className="cmdk-space-key" aria-hidden="true">
                       {item.hint}
                     </span>
-                    <span className="cmdk-item-label">{item.label}</span>
+                    <span className="cmdk-item-label">
+                      <Highlighted text={item.label} query={query} />
+                    </span>
                   </Command.Item>
                 ))}
               </Command.Group>
@@ -459,7 +605,9 @@ export function CommandPalette() {
                       choosePerson(row);
                     }}
                   >
-                    <span className="cmdk-item-label">{row.name}</span>
+                    <span className="cmdk-item-label">
+                      <Highlighted text={row.name} query={query} />
+                    </span>
                     <span className="cmdk-item-hint">{row.email}</span>
                   </Command.Item>
                 ))}
@@ -490,11 +638,21 @@ export function CommandPalette() {
                       value={`task:${task.id}`}
                       className="cmdk-item"
                       onSelect={() => {
-                        go(taskHref(task, spaces));
+                        const space = spaces.find((sp) => sp.id === task.project_id)?.slug;
+                        go(
+                          taskHref(task, spaces),
+                          space === undefined
+                            ? undefined
+                            : { kind: 'task', id: task.id, key: task.key, space },
+                        );
                       }}
                     >
-                      <span className="cmdk-task-key">{task.key}</span>
-                      <span className="cmdk-item-label">{task.title}</span>
+                      <span className="cmdk-task-key">
+                        <Highlighted text={task.key} query={settled} />
+                      </span>
+                      <span className="cmdk-item-label">
+                        <Highlighted text={task.title} query={settled} />
+                      </span>
                       <StatusChip task={task} />
                     </Command.Item>
                   ))}
@@ -506,7 +664,7 @@ export function CommandPalette() {
               </Command.Group>
             )}
 
-            {person === undefined && actions.length > 0 && (
+            {person === undefined && !blank && actions.length > 0 && (
               <Command.Group heading="Actions" className="cmdk-group">
                 {actions.map((item) => (
                   <Command.Item
@@ -518,7 +676,9 @@ export function CommandPalette() {
                       item.run();
                     }}
                   >
-                    <span className="cmdk-item-label">{item.label}</span>
+                    <span className="cmdk-item-label">
+                      <Highlighted text={item.label} query={query} />
+                    </span>
                     {item.hint !== undefined && <span className="cmdk-item-hint">{item.hint}</span>}
                   </Command.Item>
                 ))}

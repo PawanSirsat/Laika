@@ -1,8 +1,10 @@
 import { shortcutLabel } from './palette-model.ts';
-import { openPalette } from './palette-store.ts';
+import { openPalette, usePaletteOpen } from './palette-store.ts';
 import './command-palette.css';
 import { Icon } from '../icon/Icon.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { useGates } from '../../api/permissions.ts';
+import { SEE_EVERYONE } from '../shell/header-model.ts';
 
 /** Whether this is a Mac, for the hint only — both shortcuts work everywhere. */
 function onMac(): boolean {
@@ -14,7 +16,8 @@ function onMac(): boolean {
 }
 
 /**
- * **The header's search bar** (LAI-1188): the visible way into the command
+ * **The header's search bar** (LAI-1188; v2 LAI-1221 — centred, wider, and
+ * saying what it searches): the visible way into the command
  * palette (LAI-1192), on every screen. It looks like a field and opens the
  * palette, whose input is the one search — pages, spaces, tasks, actions and,
  * for a reader allowed to see everyone, people. On a phone it folds to its
@@ -30,9 +33,20 @@ function onMac(): boolean {
  * header bar is on every screen at every width now, so the row was a second
  * door to the same room and went.
  */
+/**
+ * What the field says it searches (LAI-1221): *people* only for a reader who
+ * holds *See everyone's analytics*, the permission the palette's People group
+ * is gated on — never a promise the palette would not keep.
+ */
+export function searchScope(seesEveryone: boolean): string {
+  return seesEveryone ? 'Search tasks, spaces, people…' : 'Search tasks, spaces, pages…';
+}
+
 export function PaletteTrigger() {
   const hint = shortcutLabel(onMac());
   const name = `Search and commands (${hint})`;
+  const seesEveryone = useGates(true).org(SEE_EVERYONE);
+  const open = usePaletteOpen();
   return (
     // The key in the words, not as `shortcut`: that would put
     // `aria-keyshortcuts` on every page, and a viewer's board must carry
@@ -42,6 +56,7 @@ export function PaletteTrigger() {
         type="button"
         className="cmdk-trigger cmdk-trigger-header"
         aria-haspopup="dialog"
+        aria-expanded={open}
         data-palette-trigger="header"
         onClick={(event) => {
           openPalette(event.currentTarget);
@@ -49,7 +64,7 @@ export function PaletteTrigger() {
       >
         <Icon name="search" size="small" className="cmdk-trigger-icon" />
         <span className="cmdk-trigger-text" aria-hidden="true">
-          Search
+          {searchScope(seesEveryone)}
         </span>
         <kbd className="cmdk-kbd cmdk-trigger-kbd" aria-hidden="true">
           {hint}

@@ -1,6 +1,8 @@
 import type { TaskSummary } from '../../api/tasks.ts';
 import { navRoutes, paletteRoutes, spaceTabs, SPACE_TAB_PATHS } from '../../routes/route-table.ts';
 import { navHref } from '../../routes/nav-url.ts';
+import { navShortcut } from '../shell/nav-shortcuts.ts';
+import type { RecentEntry } from './palette-recent.ts';
 
 /**
  * What the command palette shows and when it opens (LAI-1192), kept apart
@@ -45,6 +47,8 @@ export interface PaletteItem {
   /** Extra words the query may match: `theme` for *Switch to dark*. */
   readonly keywords?: readonly string[] | undefined;
   readonly href?: string | undefined;
+  /** Its keyboard shortcut in `shortcut.ts`'s spelling (`Alt+2`), drawn as a keycap. */
+  readonly shortcut?: string | undefined;
 }
 
 /**
@@ -65,6 +69,7 @@ export function goToItems(
     id: `go:${route.path}`,
     label: route.label,
     href: navHref(route.path, projectSlug),
+    shortcut: navShortcut(route.path),
   }));
   const extra = paletteRoutes(ask).map((route): PaletteItem => ({
     id: `go:${route.path}`,
@@ -223,4 +228,113 @@ export function resultCountMessage(count: number, query: string): string {
 export function emptySuggestion(query: string): string {
   if (looksLikeKey(query)) return 'Check the key, for example LAI-42, or search by title.';
   return 'Try a page, a space or a task title, or fewer words.';
+}
+
+/** One run of a label: matched by the query, or not. */
+export interface HighlightPart {
+  readonly text: string;
+  readonly match: boolean;
+}
+
+/**
+ * A label cut where the query's words appear (LAI-1221), so the palette can
+ * mark what matched. Case-insensitive, every occurrence of every word, the
+ * longest word first so `lai` inside `laika` is one mark, not two. The parts
+ * joined are the label exactly — nothing is added or lost.
+ */
+export function highlightParts(text: string, query: string): readonly HighlightPart[] {
+  const words = [
+    ...new Set(
+      query
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w !== ''),
+    ),
+  ].sort((a, b) => b.length - a.length);
+  if (words.length === 0 || text === '') return [{ text, match: false }];
+  const lower = text.toLowerCase();
+  const marked = new Array<boolean>(text.length).fill(false);
+  for (const word of words) {
+    let from = lower.indexOf(word);
+    while (from !== -1) {
+      for (let i = from; i < from + word.length; i += 1) marked[i] = true;
+      from = lower.indexOf(word, from + word.length);
+    }
+  }
+  const parts: HighlightPart[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const match = marked[i] === true;
+    const last = parts.at(-1);
+    if (last?.match === match) {
+      parts[parts.length - 1] = { text: `${last.text}${text[i] ?? ''}`, match };
+    } else {
+      parts.push({ text: text[i] ?? '', match });
+    }
+  }
+  return parts;
+}
+
+/** What a Recent entry needs looked up again, from what the reader may read now. */
+export interface RecentContext {
+  /** The *Go to* rows the reader is offered — a page not among them is not offered again. */
+  readonly pages: readonly PaletteItem[];
+  readonly spaces: readonly PaletteSpace[];
+  /** The people list, or `undefined` for a reader without *See everyone's analytics*. */
+  readonly people: readonly { readonly id: string; readonly name: string }[] | undefined;
+  readonly currentPath: string;
+}
+
+/** A Recent row; `entry` is what to write back when it is opened again. */
+export interface RecentItem extends PaletteItem {
+  readonly entry: RecentEntry;
+}
+
+/**
+ * The Recent rows (LAI-1221): each entry named again from what the reader may
+ * read now, and dropped when it cannot be — a page no longer offered, a space
+ * no longer listed, a person the reader may no longer look up. A task has no
+ * list to check against; it opens by id in its space, and the board refuses
+ * it if the reader has lost it, as any link would.
+ */
+export function recentItems(
+  entries: readonly RecentEntry[],
+  context: RecentContext,
+): readonly RecentItem[] {
+  return entries.flatMap((entry): RecentItem[] => {
+    if (entry.kind === 'page') {
+      const page = context.pages.find((p) => p.id === `go:${entry.id}`);
+      return page === undefined ? [] : [{ ...page, id: `recent:${page.id}`, hint: 'Page', entry }];
+    }
+    if (entry.kind === 'space') {
+      const space = context.spaces.find((s) => s.slug === entry.id);
+      return space === undefined
+        ? []
+        : [
+            {
+              id: `recent:space:${space.slug}`,
+              label: space.name,
+              hint: space.key,
+              href: spaceHref(space.slug, context.currentPath),
+              entry,
+            },
+          ];
+    }
+    if (entry.kind === 'person') {
+      const person = context.people?.find((p) => p.id === entry.id);
+      return person === undefined
+        ? []
+        : [{ id: `recent:person:${person.id}`, label: person.name, hint: 'Person', entry }];
+    }
+    if (entry.key === undefined || entry.space === undefined) return [];
+    return [
+      {
+        id: `recent:task:${entry.id}`,
+        label: entry.key,
+        hint: 'Task',
+        href: `/board?project=${encodeURIComponent(entry.space)}&task=${encodeURIComponent(entry.id)}`,
+        entry,
+      },
+    ];
+  });
 }

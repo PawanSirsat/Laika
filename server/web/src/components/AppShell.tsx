@@ -6,6 +6,7 @@ import './tooltip/tooltip.css';
 import './icon/icon.css';
 import './states.css';
 import { CommandPaletteHost } from './command/CommandPaletteHost.tsx';
+import { ShortcutsHost } from './shell/ShortcutsHost.tsx';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
 import { ROUTES_WITH_THEIR_OWN_BRAND } from './Brand.tsx';
@@ -269,6 +270,7 @@ function AppFrame() {
 
       {/* ⌘K, and the palette it opens (LAI-1192): a signed-in tool. */}
       {signedIn && <CommandPaletteHost />}
+      {signedIn && <ShortcutsHost />}
     </div>
   );
 }

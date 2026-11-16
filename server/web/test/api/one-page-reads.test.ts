@@ -78,6 +78,13 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       { names: ['listSprints'], why: 'its own cursor loop, reporting `truncated`' },
     ],
     ['api/users.ts', { names: ['listUsers'], why: '`listAllUsers` — its own cursor loop' }],
+    [
+      'components/shell/use-notifications.ts',
+      {
+        names: ['listUnlisted'],
+        why: 'a deliberate window: the header bell lists the newest open notes as a glance and links to Inbox → Unlisted work for all of them (LAI-1221); the badge counts only what it lists, never the whole queue',
+      },
+    ],
     ['api/sprints.ts', { names: ['listSprints'], why: '`countAllSprints` — its own cursor loop' }],
     [
       'api/use-projects.ts',

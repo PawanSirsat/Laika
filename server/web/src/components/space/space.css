@@ -942,6 +942,25 @@
     padding: var(--space-1) var(--space-1-5);
   }
 
+  /*
+   * The word goes, the coloured dot stays and the word is still read
+   * (LAI-1221): the bar carries the header's bell now, and the space's name
+   * is worth more of 390px than OFFLINE spelled out.
+   */
+  .space-live-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .space-live {
+    position: relative;
+    padding: var(--space-1-5);
+  }
+
   .space-agents-word {
     position: absolute;
     width: 1px;

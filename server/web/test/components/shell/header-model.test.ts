@@ -11,6 +11,7 @@ import { describe, test } from 'node:test';
 import {
   backToMeHref,
   headerCrumbs,
+  headerTrail,
   matchPeople,
   personTargets,
   personView,
@@ -174,6 +175,43 @@ void describe('who owns /', () => {
           selector === '[aria-keyshortcuts="/"]' ? field : null,
       } as Pick<Document, 'querySelector'>),
       false,
+    );
+  });
+});
+
+void describe('the title rule (LAI-1221)', () => {
+  const place = { orgName: 'Borealis Labs' };
+  const trail = (path: string, title: string | undefined) => {
+    const t = headerTrail(path, place, title);
+    return { labels: t.steps.map((s) => s.label), page: t.endsAtPage };
+  };
+
+  void test('a page with its own h1: the header says where it sits, never its name again', () => {
+    assert.deepEqual(trail('/inbox', 'Inbox'), { labels: ['Borealis Labs'], page: false });
+    assert.deepEqual(trail('/people', 'Ada Lovelace'), {
+      labels: ['Borealis Labs', 'Organisation'],
+      page: false,
+    });
+  });
+
+  void test('a screen with no heading of its own keeps its name, as the page step', () => {
+    assert.deepEqual(trail('/inbox', undefined), {
+      labels: ['Borealis Labs', 'Inbox'],
+      page: true,
+    });
+  });
+
+  void test('never a step that says what the heading says: Organisation is titled by its name', () => {
+    assert.deepEqual(trail('/organisation', 'Borealis Labs'), { labels: [], page: false });
+  });
+
+  void test('rooted at the organisation once its name is read, and nothing before', () => {
+    assert.deepEqual(headerTrail('/inbox', {}, 'Inbox').steps, []);
+    assert.deepEqual(
+      headerTrail('/board', { spaceName: 'Laika Core', orgName: 'B' }, undefined).steps.map(
+        (s) => s.label,
+      ),
+      ['B', 'Spaces', 'Laika Core'],
     );
   });
 });

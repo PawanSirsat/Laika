@@ -53,6 +53,42 @@ export function headerCrumbs(path: string, place: HeaderPlace): readonly HeaderC
   return [{ label: route.label }];
 }
 
+/** The header's left side: the steps to where the reader is, and whether the last is the page. */
+export interface HeaderTrail {
+  readonly steps: readonly HeaderCrumb[];
+  /** The last step names the page itself — drawn as `aria-current`. */
+  readonly endsAtPage: boolean;
+}
+
+/**
+ * **The title rule** (LAI-1221). The header's left is the way to the page,
+ * rooted at the organisation: *Borealis Labs / Insights* on Insights' Time
+ * tab… and on a page that draws its own `h1` (`pageTitle`), the page's own
+ * name is left out — and any step that would say what that heading says — the page says it once, in its heading, and the header
+ * says where that heading sits. Inbox reads *Borealis Labs* above an `Inbox`
+ * heading, not *Inbox* above *Inbox*. A screen with no heading of its own
+ * keeps its name at the end of the trail, as the page step.
+ */
+export function headerTrail(
+  path: string,
+  place: HeaderPlace,
+  pageTitle: string | undefined,
+): HeaderTrail {
+  const crumbs = headerCrumbs(path, place);
+  const titled = pageTitle !== undefined;
+  const ancestors = titled ? crumbs.slice(0, -1) : crumbs;
+  const root: HeaderCrumb[] =
+    place.orgName === undefined || place.orgName.trim() === '' ? [] : [{ label: place.orgName }];
+  // Never a step that says what the heading says: Organisation's heading *is*
+  // the organisation's name, so there the header leaves its root out too.
+  const same = (label: string): boolean =>
+    titled && label.trim().toLowerCase() === pageTitle.trim().toLowerCase();
+  return {
+    steps: [...root, ...ancestors].filter((step) => !same(step.label)),
+    endsAtPage: !titled && crumbs.length > 0,
+  };
+}
+
 /** The screens that already show another person's data (LAI-959, LAI-1138, LAI-1170). */
 export type PersonViewKind = 'my-day' | 'work' | 'time';
 

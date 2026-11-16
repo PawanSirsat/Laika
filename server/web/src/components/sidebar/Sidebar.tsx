@@ -20,6 +20,11 @@ import './sidebar.css';
 import { usePermissions } from '../../api/permissions.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { preloadOn } from '../../routes/screen-chunks.ts';
+import { useEffect, useRef } from 'react';
+import { navShortcut, navShortcutTarget } from '../shell/nav-shortcuts.ts';
+import { ariaShortcut, formatShortcut, onMac } from '../tooltip/shortcut.ts';
+
+const MAC = onMac();
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -130,6 +135,54 @@ export function Sidebar({
   /* A group with nothing the reader may open is not drawn at all. */
   const shown = NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0);
 
+  /** Where each destination's link goes — the same address its Alt key opens. */
+  const hrefFor = (path: string): string => {
+    const count = counts?.[path];
+    const counted = count !== undefined && count > 0;
+    return withTab(navHref(path, projectSlug), counted ? countTargets?.[path]?.tab : undefined);
+  };
+
+  /*
+   * The destinations' keys (LAI-1221, `nav-shortcuts.ts`): ⌥1 – ⌥5, only for
+   * the destinations drawn here, never while typing, never over a modal.
+   * Kept in a ref so the listener is added once and reads the current rail.
+   */
+  const keys = useRef({ visible: [] as string[], hrefFor, onNavigate, onClose });
+  keys.current = {
+    visible: shown.flatMap((group) => routesInGroup(group, holds).map((r) => r.path)),
+    hrefFor,
+    onNavigate,
+    onClose,
+  };
+  const signedIn = user !== undefined;
+  useEffect(() => {
+    if (!signedIn) return;
+    const onKey = (event: KeyboardEvent): void => {
+      const now = keys.current;
+      const path = navShortcutTarget(
+        {
+          code: event.code,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          defaultPrevented: event.defaultPrevented,
+          target: event.target instanceof Element ? event.target : null,
+        },
+        now.visible,
+      );
+      if (path === undefined) return;
+      if (document.querySelector('[aria-modal="true"]') !== null) return;
+      event.preventDefault();
+      now.onNavigate(now.hrefFor(path));
+      now.onClose();
+    };
+    addEventListener('keydown', onKey);
+    return () => {
+      removeEventListener('keydown', onKey);
+    };
+  }, [signedIn]);
+
   const renderGroup = (group: NavGroup) => {
     const title = GROUP_TITLES[group];
     return (
@@ -152,53 +205,73 @@ export function Sidebar({
             // path drops `?project=` and the destination then falls back
             // to a different project entirely (LAI-423). While a badge
             // shows, the link opens the tab its count lives on (LAI-1191).
-            const href = withTab(
-              navHref(route.path, projectSlug),
-              counted ? target?.tab : undefined,
+            const href = hrefFor(route.path);
+            const shortcut = navShortcut(route.path);
+
+            const link = (
+              <a
+                href={href}
+                className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                aria-current={active ? 'page' : undefined}
+                aria-keyshortcuts={shortcut === undefined ? undefined : ariaShortcut(shortcut, MAC)}
+                // Warm the page's chunk before the click lands (LAI-1219).
+                {...preloadOn(href)}
+                onClick={(event) => {
+                  // Modified clicks stay the browser's — new tab, new
+                  // window, download.
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  // The same URL the href advertises: copy-link and
+                  // left-click must agree.
+                  onNavigate(href);
+                  onClose();
+                }}
+              >
+                {/* Always present, transparent until active — selecting
+                    an item must not shift its label sideways. */}
+                <span className="sidebar-link-bar" aria-hidden="true" />
+                {route.icon !== undefined && <NavIcon name={route.icon} />}
+                {/* The name, and the rail's tooltip: in the rail it is
+                    drawn beside the icon on hover and focus, and it is
+                    what a screen reader reads either way. `data-shortcut`:
+                    the rail's reveal draws the key after the name
+                    (sidebar.css, `::after`), so the label's own text stays
+                    the name alone (LAI-1221). */}
+                <span
+                  className="sidebar-link-label sidebar-tip"
+                  data-shortcut={shortcut === undefined ? undefined : formatShortcut(shortcut, MAC)}
+                >
+                  {route.label}
+                </span>
+
+                {/* Only where a count is real and non-zero: a fixture
+                    badge or a zero badge is noise. */}
+                {/* The shared count badge (LAI-1206): `99+` past the cap,
+                    the exact number in words for a screen reader. */}
+                {counted && (
+                  <Chip variant="count" className="sidebar-count">
+                    {formatCount(count)}
+                    <span className="visually-hidden">
+                      {count > COUNT_CAP ? ` — ${String(count)}` : ''}{' '}
+                      {target === undefined ? 'waiting' : count === 1 ? target.one : target.many}
+                    </span>
+                  </Chip>
+                )}
+              </a>
             );
 
             return (
               <li key={route.path}>
-                <a
-                  href={href}
-                  className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
-                  aria-current={active ? 'page' : undefined}
-                  // Warm the page's chunk before the click lands (LAI-1219).
-                  {...preloadOn(href)}
-                  onClick={(event) => {
-                    // Modified clicks stay the browser's — new tab, new
-                    // window, download.
-                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                    event.preventDefault();
-                    // The same URL the href advertises: copy-link and
-                    // left-click must agree.
-                    onNavigate(href);
-                    onClose();
-                  }}
-                >
-                  {/* Always present, transparent until active — selecting
-                      an item must not shift its label sideways. */}
-                  <span className="sidebar-link-bar" aria-hidden="true" />
-                  {route.icon !== undefined && <NavIcon name={route.icon} />}
-                  {/* The name, and the rail's tooltip: in the rail it is
-                      drawn beside the icon on hover and focus, and it is
-                      what a screen reader reads either way. */}
-                  <span className="sidebar-link-label sidebar-tip">{route.label}</span>
-
-                  {/* Only where a count is real and non-zero: a fixture
-                      badge or a zero badge is noise. */}
-                  {/* The shared count badge (LAI-1206): `99+` past the cap,
-                      the exact number in words for a screen reader. */}
-                  {counted && (
-                    <Chip variant="count" className="sidebar-count">
-                      {formatCount(count)}
-                      <span className="visually-hidden">
-                        {count > COUNT_CAP ? ` — ${String(count)}` : ''}{' '}
-                        {target === undefined ? 'waiting' : count === 1 ? target.one : target.many}
-                      </span>
-                    </Chip>
-                  )}
-                </a>
+                {/* Open, the rail says each destination's key in the shared
+                    tooltip on hover and focus (LAI-1221); collapsed, its own
+                    name reveal says it, so there is one tooltip, not two. */}
+                {shortcut !== undefined && !collapsed ? (
+                  <Tooltip content={route.label} shortcut={shortcut}>
+                    {link}
+                  </Tooltip>
+                ) : (
+                  link
+                )}
               </li>
             );
           })}

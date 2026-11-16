@@ -124,12 +124,14 @@ async function options(page: Page): Promise<string[]> {
 const SCREENS: readonly (readonly [string, string])[] = [
   ['/my-day', 'My day'],
   ['/inbox', 'Inbox'],
-  ['/organisation?tab=work', 'Organisation'],
+  // Organisation's heading is the organisation's name (its lead mark beside it).
+  ['/organisation?tab=work', 'Borealis Labs'],
   ['/insights', 'Insights'],
   ['/developer', 'Developer access'],
   ['/settings/appearance', 'Appearance'],
   ['/projects', 'Spaces'],
-  ['/task/LC-12', 'Task'],
+  // The stub has no LC-12, so the Workroom's own heading says so.
+  ['/task/LC-12', 'No task LC-12'],
   ['/design/tokens', 'Design tokens'],
 ];
 
@@ -149,8 +151,20 @@ void describe('one header on every screen', () => {
           assert.equal(b.count, 1, `${path}: ${String(b.count)} app headers`);
           assert.equal(b.top, 0, `${path}: the bar is not at the top`);
           assert.equal(Math.round(b.height), height, `${path}: the bar is ${String(b.height)}px`);
-          const crumbs = h.page.locator(`${HEADER} [data-header-crumbs] [aria-current="page"]`);
-          assert.equal((await crumbs.innerText()).trim(), here, `${path}: the bar names the page`);
+          // Where the reader is: the page's own heading, or — on a screen with
+          // none — the header's page step (LAI-1221's title rule: said once).
+          await until(
+            async () =>
+              (await h.page.locator(`#main h1, ${HEADER} [aria-current="page"]`).count()) > 0,
+            10_000,
+          );
+          const said = await h.page
+            .locator(`#main h1, ${HEADER} [aria-current="page"]`)
+            .allInnerTexts();
+          assert.ok(
+            said.map((t) => t.trim()).includes(here),
+            `${path}: nothing names the page "${here}": ${said.join(' | ')}`,
+          );
           const field = await h.page.locator(FIELD).boundingBox();
           assert.ok(field !== null && field.x + field.width <= width, `${path}: search off-screen`);
           const overflow = await h.page.evaluate(

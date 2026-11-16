@@ -905,6 +905,16 @@
     transition: opacity var(--duration-instant) var(--ease-standard);
   }
 
+  /* The rail's name reveal says the key after the name (LAI-1221). */
+  .sidebar-collapsed .sidebar-tip[data-shortcut]::after {
+    content: attr(data-shortcut);
+    margin-left: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    opacity: 0.7;
+  }
+
   .sidebar-collapsed .sidebar-user-text.sidebar-tip {
     flex-direction: row;
     gap: var(--space-1-5);

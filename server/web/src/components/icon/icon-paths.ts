@@ -65,7 +65,8 @@ export type IconName =
   | 'hash'
   | 'question'
   | 'minus'
-  | 'arrow-left';
+  | 'arrow-left'
+  | 'bell';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -232,4 +233,6 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
   // (LAI-1213 added `arrow-right`, `chevron-down` and `question`, used too).
   minus: ['M5 12h14'],
   'arrow-left': ['M19 12H5', 'm11 6-6 6 6 6'],
+  // LAI-1221: the header's notifications.
+  bell: ['M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z', 'M10 21h4'],
 };

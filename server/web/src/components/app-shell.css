@@ -214,20 +214,46 @@
  * at every width. Where the reader is on the left, then the search bar, the
  * Viewing chip and the page-wide actions on the right.
  */
+/*
+ * v2 (LAI-1221): three columns, the outer two equal, so the search sits on the
+ * bar's true centre whatever the title and the actions weigh. The centre
+ * column grows to 36rem and gives way first as the window narrows.
+ */
 .shell-app-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 36rem) minmax(0, 1fr);
   height: var(--app-head-height);
   box-sizing: border-box;
   flex: none;
   padding: 0 var(--space-5);
-  justify-content: flex-start;
+  gap: var(--space-4);
 }
 
 .shell-head-title {
   display: flex;
   align-items: center;
   gap: var(--space-2-5);
-  flex: 1;
   min-width: 0;
+}
+
+.shell-head-search {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/*
+ * My day's phone bar portals its own row into this bar and lays it out as a
+ * row (LAI-518, `my-day/phone.css`), so while it holds the bar the bar is a
+ * flex row again; the search and the actions sit at its end, in that order.
+ */
+.shell-app-head[data-myday-bar] {
+  display: flex;
+}
+
+.shell-app-head[data-myday-bar] .shell-head-search {
+  order: 1;
+  flex: none;
 }
 
 /* `display: contents`: what a screen hands up flows in the title row. */
@@ -239,8 +265,8 @@
 .shell-head-tools {
   display: flex;
   align-items: center;
-  gap: var(--space-2-5);
-  flex: none;
+  justify-content: flex-end;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -353,11 +379,28 @@
   outline-offset: 2px;
 }
 
+/*
+ * Below a laptop the columns stop being equal: the title takes what is left,
+ * the search keeps a field's width, and the actions their own.
+ */
+@media (max-width: 1180px) {
+  .shell-app-head {
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 20rem) auto;
+    gap: var(--space-3);
+  }
+}
+
 /* Below a tablet the bar has the menu button, the title and the search. */
 @media (max-width: 900px) {
   .shell-app-head {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     padding: 0 var(--space-3);
     gap: var(--space-2);
+  }
+
+  /* The menu button is the grid's first column; the title, the second. */
+  .shell-head-search {
+    justify-content: flex-end;
   }
 
   .shell-head-tools {

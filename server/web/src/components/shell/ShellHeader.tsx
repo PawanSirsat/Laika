@@ -3,9 +3,10 @@ import { ThemeSwitch } from '../ThemeSwitch.tsx';
 import { PaletteTrigger } from '../command/PaletteTrigger.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { useShell } from './shell-context.ts';
-import { setHeaderSlot, useHeaderTitleClaimed } from './HeaderSlot.tsx';
-import { headerCrumbs } from './header-model.ts';
+import { setHeaderSlot, useHeaderTitleClaimed, usePageTitle } from './HeaderSlot.tsx';
+import { headerTrail } from './header-model.ts';
 import { ViewingChip } from './ViewingChip.tsx';
+import { HeaderActionsCluster } from './HeaderActionsCluster.tsx';
 
 export interface ShellHeaderProps {
   readonly signedIn: boolean;
@@ -31,9 +32,10 @@ const actionsSlotRef = (element: HTMLElement | null): void => {
 };
 
 /**
- * The route's breadcrumb, until a screen puts up a title of its own. Not a
- * heading: every screen draws its own `h1` (the space's name, which a space
- * hands up here, or its page header).
+ * The way to the page (LAI-1221's title rule, `headerTrail`): the
+ * organisation, then the section, and the page's own name only where the page
+ * draws no heading of its own. Not a heading: every screen draws its own `h1`
+ * (its page header, or the space's name, which a space hands up here).
  */
 function HeaderCrumbs() {
   const {
@@ -41,15 +43,17 @@ function HeaderCrumbs() {
     spaceName,
     orgName,
   } = useShell();
-  const crumbs = headerCrumbs(path, { spaceName, orgName });
+  const pageTitle = usePageTitle();
+  const { steps, endsAtPage } = headerTrail(path, { spaceName, orgName }, pageTitle);
+  if (steps.length === 0) return null;
   return (
     <nav className="shell-crumbs" aria-label="Breadcrumb" data-header-crumbs>
       <ol className="shell-crumbs-list">
-        {crumbs.map((crumb, index) => {
-          const last = index === crumbs.length - 1;
+        {steps.map((crumb, index) => {
+          const page = endsAtPage && index === steps.length - 1;
           return (
             <li key={`${String(index)}-${crumb.label}`} className="shell-crumb">
-              {crumb.href !== undefined && !last ? (
+              {crumb.href !== undefined && !page ? (
                 <a
                   href={crumb.href}
                   className="shell-crumb-link"
@@ -63,8 +67,8 @@ function HeaderCrumbs() {
                 </a>
               ) : (
                 <span
-                  className={last ? 'shell-crumb-here' : 'shell-crumb-step'}
-                  aria-current={last ? 'page' : undefined}
+                  className={page ? 'shell-crumb-here' : 'shell-crumb-step'}
+                  aria-current={page ? 'page' : undefined}
                 >
                   {crumb.label}
                 </span>
@@ -78,18 +82,21 @@ function HeaderCrumbs() {
 }
 
 /**
- * **The one app header** (LAI-250; every screen's since LAI-1188).
+ * **The one app header** (LAI-250; every screen's since LAI-1188; v2 LAI-1221).
  *
- * Signed in, the same bar sits above every screen at one height: the phone's
- * menu button, then where the reader is — the route's breadcrumb, or the
- * title a screen hands up (`HeaderTitle`: a space's name and key, a member's
- * breadcrumb) — then the search field, which is the ⌘K palette (LAI-1192),
- * the *Viewing* chip while a person view is open, and the page-wide actions a
- * screen hands up (`HeaderActions`: a space's Agents chip and menu). Each
- * screen's own header below it keeps its tabs and its controls.
+ * Signed in, the same bar sits above every screen at one height, in three
+ * columns. **Left**: the phone's menu button, then the way to the page (the
+ * title rule — `headerTrail`) or the title a screen hands up (`HeaderTitle`: a
+ * space's name and key, a member's breadcrumb). **Centre**: the search field,
+ * which is the ⌘K palette (LAI-1192), centred on the bar so it reads as the
+ * one way to find anything. **Right**: the *Viewing* chip while a person view
+ * is open, the page-wide actions a screen hands up (`HeaderActions`: a
+ * space's Agents chip and menu), then the bar's own — + Create, the
+ * notifications bell, keyboard shortcuts. Each screen's own header below it
+ * keeps its `h1`, tabs and controls.
  *
  * The user chip and theme control live in the sidebar footer once there is a
- * sidebar (LAI-064). Pre-auth there is none, and the theme control must stay
+ * sidebar (LAI-064), and only there (LAI-1221). Pre-auth there is none, and the theme control must stay
  * reachable — someone setting up an instance at night should not have to sign
  * in to stop being dazzled (LAI-062 AC3). So this carries it exactly when the
  * sidebar cannot.
@@ -135,10 +142,14 @@ function AppHeader({ navOpen, onToggleNav }: Pick<ShellHeaderProps, 'navOpen' | 
         <div className="shell-head-title-slot" ref={titleSlotRef} />
       </div>
 
-      <div className="shell-head-tools">
+      <div className="shell-head-search">
         <PaletteTrigger />
+      </div>
+
+      <div className="shell-head-tools">
         <ViewingChip />
         <div className="shell-head-actions" ref={actionsSlotRef} />
+        <HeaderActionsCluster />
       </div>
     </header>
   );

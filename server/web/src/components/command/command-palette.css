@@ -11,27 +11,49 @@
 .cmdk-trigger-header {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  width: 17.5rem;
-  max-width: 100%;
+  gap: var(--space-2-5);
+  /* The centre column's width (app-shell.css): up to 36rem on a wide desktop. */
+  width: 100%;
+  max-width: 36rem;
   height: 2.25rem;
   box-sizing: border-box;
   padding: 0 var(--space-1-5) 0 var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
-  background: var(--bg-card);
+  background: var(--bg-input);
   color: var(--text-muted);
-  font-family: inherit;
+  font: inherit;
   font-size: var(--text-body);
-  cursor: pointer;
+  cursor: text;
   transition:
     border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
 
 .cmdk-trigger-header:hover {
   border-color: var(--accent-border);
+  background: var(--bg-card);
   color: var(--text-secondary);
+}
+
+/* Pressed: it gives a little, as a field taking the click does. */
+.cmdk-trigger-header:active {
+  background: var(--bg-card-hover);
+}
+
+/* Focus reads as a field's: the accent edge and a soft ring, not only the outline. */
+.cmdk-trigger-header:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+  color: var(--text-secondary);
+}
+
+/* While the palette it opened is up, the field stays lit. */
+.cmdk-trigger-header[aria-expanded='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 .cmdk-trigger-icon {
@@ -41,6 +63,9 @@
 .cmdk-trigger-text {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: left;
 }
 
@@ -48,8 +73,8 @@
   flex: none;
 }
 
-/* Narrower windows keep the field, shorter. */
-@media (max-width: 1280px) {
+/* A tablet keeps the field, at a field's width beside the title. */
+@media (max-width: 900px) {
   .cmdk-trigger-header {
     width: 12rem;
   }
@@ -62,6 +87,7 @@
     padding: 0;
     justify-content: center;
     color: var(--text-secondary);
+    cursor: pointer;
   }
 
   .cmdk-trigger-header .cmdk-trigger-text,
@@ -346,6 +372,21 @@
   .cmdk-foot {
     display: none;
   }
+}
+
+/* What the query matched (LAI-1221): the accent's tint, the label's own ink. */
+.cmdk-mark {
+  border-radius: var(--radius-xs);
+  background: var(--accent-bg);
+  color: inherit;
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 0 0 1px var(--accent-bg);
+}
+
+/* A destination's Alt key, at the row's end (LAI-1221). */
+.cmdk-item-kbd {
+  margin-left: auto;
+  flex: none;
 }
 
 @keyframes cmdk-fade {

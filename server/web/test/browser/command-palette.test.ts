@@ -307,9 +307,11 @@ void describe('the groups', () => {
         assert.ok(listed.includes(label), `${label} missing from: ${listed.join(', ')}`);
       }
       // textContent: the heading is upper-cased by CSS, the words are not.
-      assert.equal(
-        await h.page.locator('[data-palette] [cmdk-group-heading]').first().textContent(),
-        'Go to',
+      // Before typing, Suggested comes first and Go to after it (LAI-1221);
+      // with nothing opened yet there is no Recent.
+      assert.deepEqual(
+        (await h.page.locator('[data-palette] [cmdk-group-heading]').allTextContents()).slice(0, 2),
+        ['Suggested', 'Go to'],
       );
 
       await h.page.locator(INPUT).fill('inbox');

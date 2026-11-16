@@ -13,11 +13,17 @@ import { createPortal } from 'react-dom';
  * each screen's own React context (the space's live stream, its permissions)
  * while drawing its markup in the header.
  */
-type SlotName = 'title' | 'actions';
+export type SlotName = 'title' | 'actions';
 
 const slots: Record<SlotName, HTMLElement | null> = { title: null, actions: null };
 /** How many mounted screens have put a title up; the header's own crumbs give way to any. */
 let titleClaims = 0;
+/**
+ * How many mounted screens draw their own page title — an `h1` in their page
+ * header (LAI-1221). While any does, the header's breadcrumb stops before the
+ * page itself, so the page's name is said once, in its own heading.
+ */
+const pageTitles: string[] = [];
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -55,6 +61,39 @@ export function useHeaderTitleClaimed(): boolean {
   );
 }
 
+/**
+ * **The title rule** (LAI-1221): every screen names itself exactly once, in
+ * one `h1`. A screen whose own header draws that `h1` (`ScreenHeader`'s page
+ * and band) says so here, and the app header then shows only the way *to* the
+ * page — the organisation, then the section — never the page's name a second
+ * time. A screen whose chrome *is* the header (a space, a profile) hands its
+ * title up instead (`HeaderTitle`), and the header carries the `h1`.
+ */
+export function usePageTitleClaim(active: boolean, title: string): void {
+  useEffect(() => {
+    if (!active) return;
+    pageTitles.push(title);
+    emit();
+    return () => {
+      const at = pageTitles.lastIndexOf(title);
+      if (at !== -1) pageTitles.splice(at, 1);
+      emit();
+    };
+  }, [active, title]);
+}
+
+/**
+ * The title the page's own `h1` says, while a screen below draws one — the
+ * newest, when one screen sits inside another — or `undefined`.
+ */
+export function usePageTitle(): string | undefined {
+  return useSyncExternalStore(
+    subscribe,
+    () => pageTitles.at(-1),
+    () => undefined,
+  );
+}
+
 export interface HeaderSlotProps {
   readonly children: ReactNode;
   /**
@@ -65,9 +104,23 @@ export interface HeaderSlotProps {
   readonly fallback?: ReactNode;
 }
 
+/**
+ * **One of the header's slots**, filled from wherever a screen renders it: the
+ * children are portalled into the header's `slot` element, keeping the
+ * screen's own React context, or drawn as `fallback` in place where the
+ * header is not mounted. `HeaderTitle` and `HeaderActions` are this, named.
+ */
+export function HeaderSlot({
+  slot: name,
+  children,
+  fallback = children,
+}: HeaderSlotProps & { readonly slot: SlotName }) {
+  const slot = useSlot(name);
+  return slot === null ? <>{fallback}</> : createPortal(children, slot);
+}
+
 /** The screen's title, drawn in the header in place of the route's breadcrumb. */
 export function HeaderTitle({ children, fallback = children }: HeaderSlotProps) {
-  const slot = useSlot('title');
   useEffect(() => {
     titleClaims += 1;
     emit();
@@ -76,13 +129,20 @@ export function HeaderTitle({ children, fallback = children }: HeaderSlotProps) 
       emit();
     };
   }, []);
-  return slot === null ? <>{fallback}</> : createPortal(children, slot);
+  return (
+    <HeaderSlot slot="title" fallback={fallback}>
+      {children}
+    </HeaderSlot>
+  );
 }
 
 /** Page-wide controls, drawn in the header's actions slot. */
 export function HeaderActions({ children, fallback = children }: HeaderSlotProps) {
-  const slot = useSlot('actions');
-  return slot === null ? <>{fallback}</> : createPortal(children, slot);
+  return (
+    <HeaderSlot slot="actions" fallback={fallback}>
+      {children}
+    </HeaderSlot>
+  );
 }
 
 /** Its children only where the header is not mounted — the in-place half of a `fallback={null}` slot. */

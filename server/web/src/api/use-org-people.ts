@@ -4,6 +4,11 @@ import { listAllUsers, type OrgUser } from './users.ts';
 /** `undefined` while reading or not asked; the active people, sorted by name; `null` if the read failed. */
 export type OrgPeople = readonly OrgUser[] | null | undefined;
 
+/** The people as the palette and the chip list them: by name, a copy, the input left alone. */
+export function byName(users: readonly OrgUser[]): readonly OrgUser[] {
+  return [...users].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * The organisation's active people (`GET /users`, every page), for the
  * header's *Viewing* chip and the palette's People group (LAI-1188).
@@ -24,7 +29,7 @@ export function useOrgPeople(enabled: boolean): OrgPeople {
     listAllUsers(controller.signal)
       .then(({ users }) => {
         if (!controller.signal.aborted) {
-          setPeople([...users].sort((a, b) => a.name.localeCompare(b.name)));
+          setPeople(byName(users));
         }
       })
       .catch(() => {

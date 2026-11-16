@@ -1,0 +1,485 @@
+/*
+ * The header's own actions (LAI-1221): the bell and its popover, + Create and
+ * its menu, the keyboard-shortcuts button, and the shortcuts sheet. Every value
+ * is a token. Loaded with the header, not with the lazy popover or sheet: a
+ * lazy chunk brings no CSS of its own (bundle-budget.test.ts).
+ */
+
+.hdr-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.hdr-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ── Icon buttons: the bell and the shortcuts ─────────────────────────── */
+
+.hdr-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.hdr-button:hover,
+.hdr-button-open {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.hdr-button:active {
+  background: var(--bg-pill);
+}
+
+.hdr-button:focus-visible,
+.hdr-create:focus-visible,
+.hdr-menu-item:focus-visible,
+.hdr-item:focus-visible,
+.hdr-text-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The count: the rail's count chip, in the accent, pinned to the bell's corner. */
+.hdr-badge {
+  position: absolute;
+  top: var(--space-0-5);
+  right: var(--space-0-5);
+  min-width: 1.125rem;
+  height: 1.125rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-1);
+  border: 2px solid var(--bg-canvas);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: 0.875rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ── + Create ─────────────────────────────────────────────────────────── */
+
+.hdr-create {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-3) 0 var(--space-2-5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: filter var(--duration-fast) var(--ease-standard);
+}
+
+.hdr-create:hover,
+.hdr-create.hdr-button-open {
+  filter: brightness(1.08);
+}
+
+.hdr-create:active {
+  filter: brightness(0.95);
+}
+
+/* ── Popovers: the notifications and the Create menu ──────────────────── */
+
+.hdr-popover {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: var(--layer-popover);
+  box-sizing: border-box;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
+  transform-origin: top right;
+  animation: hdr-pop var(--duration-fast) var(--ease-enter);
+}
+
+.hdr-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 15rem;
+  max-width: 20rem;
+  padding: var(--space-1-5);
+}
+
+.hdr-menu-heading {
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1-5);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hdr-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  text-decoration: none;
+}
+
+.hdr-menu-item:hover,
+.hdr-menu-item:focus-visible {
+  background: var(--bg-card-hover);
+}
+
+.hdr-menu-label {
+  font-weight: var(--weight-semibold);
+}
+
+.hdr-menu-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.hdr-notifications {
+  display: flex;
+  flex-direction: column;
+  width: 24rem;
+  max-height: min(34rem, 75vh);
+}
+
+.hdr-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hdr-popover-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-bold);
+}
+
+.hdr-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.hdr-text-button:hover {
+  background: var(--accent-bg);
+}
+
+.hdr-text-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.hdr-popover-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) var(--space-1-5) var(--space-2);
+}
+
+.hdr-group + .hdr-group {
+  margin-top: var(--space-1);
+}
+
+.hdr-group-title {
+  margin: 0;
+  padding: var(--space-2-5) var(--space-2-5) var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hdr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hdr-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2-5);
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.hdr-item:hover,
+.hdr-item:focus-visible {
+  background: var(--bg-card-hover);
+}
+
+.hdr-item-unread {
+  color: var(--text-primary);
+}
+
+.hdr-item-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-card);
+  background: var(--bg-pill);
+  color: var(--text-secondary);
+}
+
+.hdr-item-unread .hdr-item-icon {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.hdr-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+.hdr-item-line {
+  font-size: var(--text-body);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.hdr-item-unread .hdr-item-line {
+  font-weight: var(--weight-semibold);
+}
+
+.hdr-item-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.hdr-item-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1-5);
+  padding-top: var(--space-0-5);
+}
+
+.hdr-item-age {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.hdr-item-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+}
+
+.hdr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-7) var(--space-4);
+  text-align: center;
+}
+
+.hdr-empty-icon {
+  color: var(--accent);
+}
+
+.hdr-empty-title {
+  margin: var(--space-1) 0 0;
+  font-weight: var(--weight-semibold);
+}
+
+.hdr-empty-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.hdr-popover-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2-5) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.hdr-popover-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-1-5) var(--space-1-5) 0;
+  padding: var(--space-2) var(--space-2-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+}
+
+.hdr-popover-foot {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-2-5);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+/* ── The keyboard shortcuts sheet ─────────────────────────────────────── */
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-4) var(--space-6);
+}
+
+.shortcuts-group-title {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin: 0;
+}
+
+.shortcuts-row {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.shortcuts-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.shortcuts-key-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.shortcuts-or {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.shortcuts-label {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+}
+
+/* ── Narrower windows ─────────────────────────────────────────────────── */
+
+/* A tablet: Create keeps its plus and lets the word go. */
+@media (max-width: 1024px) {
+  .hdr-create {
+    width: 2.25rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .hdr-create-text {
+    display: none;
+  }
+}
+
+/*
+ * A phone: the bar keeps the bell. Create is the space's own button and the
+ * palette's *Create task*; keyboard shortcuts need a keyboard. The popover
+ * spans the window under the bar.
+ */
+@media (max-width: 600px) {
+  .hdr-anchor-create,
+  .hdr-help {
+    display: none;
+  }
+
+  .hdr-anchor {
+    position: static;
+  }
+
+  .hdr-notifications {
+    position: fixed;
+    top: calc(var(--app-head-height) + var(--space-1));
+    left: var(--space-2);
+    right: var(--space-2);
+    width: auto;
+    max-height: calc(100dvh - var(--app-head-height) - var(--space-4));
+  }
+
+  .hdr-item {
+    min-height: 2.75rem;
+  }
+}
+
+@keyframes hdr-pop {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-1) * -1)) scale(0.97);
+  }
+}

@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import './screen-header.css';
-import { HeaderSlotFallback, HeaderTitle } from './shell/HeaderSlot.tsx';
+import { HeaderSlotFallback, HeaderTitle, usePageTitleClaim } from './shell/HeaderSlot.tsx';
 
 export interface ScreenHeaderProps {
   /** `Board`, `Timeline`, `Sprints` — the screen's own name. */
@@ -97,6 +97,10 @@ export function ScreenHeader({
   trail,
 }: ScreenHeaderProps) {
   const embed = useContext(EmbedContext);
+  // The title rule (LAI-1221): this header's `h1` names the page, so the app
+  // header's breadcrumb stops short of it. An embedded band draws no `h1`,
+  // and the crumbs variant hands its title up to the header instead.
+  usePageTitleClaim(variant !== 'crumbs' && !(embed !== undefined && variant === 'band'), title);
 
   if (embed !== undefined && variant === 'band') {
     return (

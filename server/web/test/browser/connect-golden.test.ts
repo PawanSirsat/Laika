@@ -41,6 +41,13 @@
  * the markup digest. The accessibility tree did not change. Diffed against
  * the dumps of `9ac3be1f` (`LAIKA_GOLDEN_DUMP`) before regenerating: the html
  * differed only in those ids, the styles only in colour values.
+ *
+ * And a fourth time for the same cause (LAI-1221): the app header's new
+ * actions and the sidebar's shortcut tooltips take `useId`s before the page
+ * does, and React 19 spells those ids `_r_k_`, which `normalise` does not map,
+ * so the agent logos' gradient ids moved in the two picker scenarios. Only
+ * those two `html_sha256` values changed; every accessibility tree and every
+ * style digest stayed byte-for-byte the same.
  */
 
 import assert from 'node:assert/strict';
