@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
+import { offLabel } from '../../../api/off-days.ts';
 import type { MyDay } from '../../../api/time.ts';
 import { duration } from './format.ts';
 import { addDays, dayLabel } from './my-day-derive.ts';
-import { weekTiles } from './week-derive.ts';
+import { cellKind } from './span-derive.ts';
+import { weekTiles, type WeekTile } from './week-derive.ts';
 
 export interface MyDayPhoneHeadProps {
   readonly view: MyDay;
@@ -28,11 +30,15 @@ function dayWord(day: string, today: string, readOnly: boolean): string {
 /**
  * The week's dot (the design's `wk`): filled when settled, half while drafts
  * wait, an accent ring on a today with nothing yet, dashed with no signal, a
- * plain ring for a day not yet come.
+ * plain ring for a day not yet come. A day off with nothing on it is filled
+ * in its tone, and leave still requested is a dashed ring in it (D-149,
+ * LAI-1184); a day off with time keeps its dot.
  */
-function dotOf(state: MyDay['week'][number]['state'], isToday: boolean): string {
+function dotOf({ state, isToday, mark, off }: WeekTile): string {
   if (state === 'confirmed') return 'settled';
   if (state === 'drafted') return 'half';
+  if (mark === 'tint' && off !== null) return off;
+  if (mark === 'dash') return 'requested';
   if (isToday) return 'today';
   return state === 'no_signal' ? 'quiet' : 'future';
 }
@@ -58,8 +64,11 @@ export function MyDayPhoneHead({
   const firstName = subjectName.split(/\s+/)[0] ?? subjectName;
   const tiles = weekTiles(view.week, view.today);
   const label = dayLabel(view.day);
-  const sub =
-    view.state === 'future'
+  // A day off with nothing on it says why (D-149, LAI-1184), rather than *not started*.
+  const free = cellKind(view) === 'off';
+  const sub = free
+    ? (offLabel(view.off) ?? 'nothing yet')
+    : view.state === 'future'
       ? 'not started'
       : drafted > 0
         ? `${duration(drafted)} to review`
@@ -139,8 +148,8 @@ export function MyDayPhoneHead({
                     {tile.name.slice(0, 1)}
                   </span>
                   <span
-                    className={`myday-phone-dot myday-phone-dot-${dotOf(tile.state, tile.isToday)}`}
-                    data-dot={dotOf(tile.state, tile.isToday)}
+                    className={`myday-phone-dot myday-phone-dot-${dotOf(tile)}`}
+                    data-dot={dotOf(tile)}
                     aria-hidden="true"
                   />
                 </button>

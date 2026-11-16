@@ -694,6 +694,63 @@
   height: 100%;
 }
 
+/*
+ * A day off (D-149, LAI-1184), as Year draws it: tinted with nothing on it,
+ * half filled for half-day leave, a dashed edge while only requested, and a
+ * corner dot in the tone when it holds time. The open day's accent still wins.
+ */
+.myday-week-day[data-mark] {
+  position: relative;
+}
+
+.myday-week-day[data-mark='tint'][data-off='holiday']:not(.myday-week-selected) {
+  border-color: var(--holiday-border);
+  background: var(--holiday-bg);
+}
+
+.myday-week-day[data-mark='tint'][data-off='leave']:not(.myday-week-selected),
+.myday-week-day[data-mark='half']:not(.myday-week-selected) {
+  border-color: var(--leave-border);
+  background: var(--leave-bg);
+}
+
+.myday-week-day[data-mark='half']:not(.myday-week-selected) {
+  background: linear-gradient(135deg, var(--leave-bg) 50%, var(--bg-card) 50%);
+}
+
+.myday-week-day[data-mark='dash']:not(.myday-week-selected) {
+  border-style: dashed;
+  border-color: var(--leave-border);
+}
+
+.myday-week-day[data-mark='tint'] .myday-week-track {
+  background: var(--border-subtle);
+}
+
+/* With time, and on the open day whose accent hides the tint, a dot says it. */
+.myday-week-day[data-mark='dot']::after,
+.myday-week-selected[data-mark]::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--holiday);
+}
+
+.myday-week-day[data-mark='dot'][data-off='leave']::after,
+.myday-week-selected[data-mark][data-off='leave']::after {
+  background: var(--leave);
+}
+
+.myday-week-selected[data-mark][data-off='requested']::after {
+  border: 1.5px dashed var(--leave);
+  background: transparent;
+}
+
 .myday-week-fill-confirmed {
   background: var(--accent);
 }
@@ -2360,6 +2417,32 @@ p.inspector-length {
 .myday-draft-off .myday-linkish {
   margin-left: 0.25rem;
   font-weight: var(--weight-semibold);
+}
+
+/* A day off (D-149, LAI-1184): a holiday teal, leave blue, leave still requested only dashed. */
+.myday-off-banner {
+  border-color: var(--holiday-border);
+  background: var(--holiday-bg);
+}
+
+.myday-off-banner strong {
+  color: var(--holiday);
+}
+
+.myday-off-banner[data-off-banner='leave'] {
+  border-color: var(--leave-border);
+  background: var(--leave-bg);
+}
+
+.myday-off-banner[data-off-banner='requested'] {
+  border-style: dashed;
+  border-color: var(--leave-border);
+  background: var(--bg-card);
+}
+
+.myday-off-banner[data-off-banner='leave'] strong,
+.myday-off-banner[data-off-banner='requested'] strong {
+  color: var(--leave);
 }
 
 /* Under the title: the day nav is a phone's; the week strip everybody's. */

@@ -368,6 +368,22 @@
   border-color: var(--text-muted);
 }
 
+/* A day off with nothing on it, in its tone; leave still requested, a dashed ring (D-149). */
+.myday-phone-dot-holiday {
+  border-color: var(--holiday-border);
+  background: var(--holiday);
+}
+
+.myday-phone-dot-leave {
+  border-color: var(--leave-border);
+  background: var(--leave);
+}
+
+.myday-phone-dot-requested {
+  border-style: dashed;
+  border-color: var(--leave);
+}
+
 /* -------------------------------------------------------- the summary */
 
 .myday-page[data-phone] .myday-phone-summary {
