@@ -5,8 +5,9 @@ area: web
 assignee: shell
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-16T16:00:00Z
+finished: 2026-11-16T19:30:00Z
 ---
 
 ## Goal
@@ -22,22 +23,22 @@ Inbox/Insights are LAI-1222's.
 
 ## Acceptance criteria
 
-- [ ] The availability affordance is one control whose tooltip never covers
+- [x] The availability affordance is one control whose tooltip never covers
       the date line or other adjacent content.
-- [ ] "Day confirmed" is unambiguous: a state chip when nothing is left to
+- [x] "Day confirmed" is unambiguous: a state chip when nothing is left to
       confirm, the action "Confirm day" only when there is.
-- [ ] The day's tools (settings, who looked, beside, shortcuts) are one
+- [x] The day's tools (settings, who looked, beside, shortcuts) are one
       labelled group; each has a name and a tooltip, with its shortcut where
       it has one.
-- [ ] Date navigation, the Day/Week/Month/Year switch and zoom sit in one
+- [x] Date navigation, the Day/Week/Month/Year switch and zoom sit in one
       row; each week-strip day shows its total and status legibly.
-- [ ] The Timeline labels its shaded hours, draws a now line on today, and
+- [x] The Timeline labels its shaded hours, draws a now line on today, and
       its empty state sits clear of the grid lines; one primary Start timer.
-- [ ] No total-vs-target (the API has no target); 390px layout clean; Week,
+- [x] No total-vs-target (the API has no target); 390px layout clean; Week,
       Month and Year checked for the same consistency.
-- [ ] Existing behaviour and shortcuts kept (N, T, ?, G, J/K, ← →, Esc).
-- [ ] Browser tests for each of the above, each seen red once by a mutation;
+- [x] Existing behaviour and shortcuts kept (N, T, ?, G, J/K, ← →, Esc).
+- [x] Browser tests for each of the above, each seen red once by a mutation;
       existing tests re-aimed honestly.
-- [ ] Gates: lint, format, web typecheck, web build, web unit tests, browser
+- [x] Gates: lint, format, web typecheck, web build, web unit tests, browser
       tests in 8 shards; screenshots before/after, dark + light, 1440 + 390
       in `.polly/screenshots/myday-v3/`.
