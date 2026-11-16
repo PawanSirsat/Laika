@@ -32,3 +32,52 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/*
+ * The Time report's figures on Insights wear the KpiRow's steps (LAI-1222),
+ * so the three Insights tabs open on one shape. Scoped to this tab: My day
+ * and the profile draw the same report and keep their own.
+ */
+.time-tab .trep-stats {
+  gap: var(--space-2);
+}
+
+.time-tab .trep-stat {
+  padding: var(--space-2-5) var(--space-3);
+}
+
+.time-tab .trep-stat-label {
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.time-tab .trep-stat-value {
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-tab .trep-stat-sub {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+@media (max-width: 600px) {
+  .time-tab .trep-stats {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    padding-bottom: var(--space-0-5);
+  }
+
+  .time-tab .trep-stats::-webkit-scrollbar {
+    display: none;
+  }
+
+  .time-tab .trep-stat {
+    flex: 0 0 auto;
+    width: 10.5rem;
+    scroll-snap-align: start;
+  }
+}

@@ -150,3 +150,45 @@ export function promoteBlocker(
   if (title.trim() === '') return 'Give the task a title.';
   return undefined;
 }
+
+/**
+ * What the Unlisted page narrows to (LAI-1222): a state — the figures at the
+ * top are these filters — who logged it, and which repository. Page state,
+ * not the address, as the page's only toggle (*Show dismissed*) always was.
+ */
+export interface UnlistedView {
+  readonly state: 'all' | UnlistedState;
+  readonly source: 'any' | 'agent' | 'person';
+  readonly repo: string | null;
+}
+
+export const ALL_UNLISTED: UnlistedView = { state: 'all', source: 'any', repo: null };
+
+/** An agent's note carries the token it was logged with (§4.14); a person's does not. */
+export function fromAgent(row: UnlistedWork): boolean {
+  return row.token_id !== null;
+}
+
+/** The rows `view` leaves, in the order they came. */
+export function filterUnlisted(rows: readonly UnlistedWork[], view: UnlistedView): UnlistedWork[] {
+  return rows.filter(
+    (row) =>
+      (view.state === 'all' || unlistedState(row) === view.state) &&
+      (view.source === 'any' || fromAgent(row) === (view.source === 'agent')) &&
+      (view.repo === null || row.repo === view.repo),
+  );
+}
+
+/** How many rows of each state, for the figures that filter by it. */
+export function unlistedCounts(
+  rows: readonly UnlistedWork[],
+): Readonly<Record<'all' | UnlistedState, number>> {
+  const counts = { all: rows.length, pending: 0, promoted: 0, dismissed: 0 };
+  for (const row of rows) counts[unlistedState(row)] += 1;
+  return counts;
+}
+
+/** Every repository the rows name, A–Z, for the filter. */
+export function unlistedRepos(rows: readonly UnlistedWork[]): string[] {
+  return [...new Set(rows.map((row) => row.repo))].sort((a, b) => a.localeCompare(b));
+}

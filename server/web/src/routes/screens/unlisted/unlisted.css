@@ -8,14 +8,37 @@
   min-width: 0;
 }
 
-.unl-sub,
 .unl-error {
   margin: 0 var(--space-4);
   font-size: var(--text-body);
 }
 
-.unl-sub {
-  color: var(--text-secondary);
+/* The figures and the bar (LAI-1222), in the list's gutter. */
+.unl > .kpi-row,
+.unl > .fbar,
+.unl-empty-toggle {
+  margin: 0 var(--space-4);
+}
+
+.unl-filter {
+  width: 14rem;
+  max-width: 100%;
+}
+
+.unl-clear {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-1);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.unl-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .unl-error {
@@ -42,6 +65,10 @@
   overflow: hidden;
 }
 
+.unl-row {
+  position: relative;
+}
+
 .unl-row + .unl-row {
   border-top: 1px solid var(--border-subtle);
 }
@@ -54,7 +81,7 @@
 
 .unl-line {
   display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 8rem) 6.5rem minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 8rem) minmax(0, 1fr) 6.5rem 4.5rem auto;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
@@ -103,23 +130,59 @@
   font-size: var(--text-small);
 }
 
-.unl-tag {
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-chip);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
+/* A decided row's chip, in its own column so an open row leaves it empty. */
+.unl-line > .unl-tag {
+  grid-column: 4;
+  justify-self: end;
 }
 
-.unl-tag-promoted {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
+/* `3h`, `2d 4h`: right-aligned so the ages read down the column. */
+.unl-when {
+  grid-column: 5;
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Promote… and Dismiss on an open row, laid over the line's right end on
+   hover or focus (LAI-1222), as Review's rows carry Accept and Send back. */
+.unl-actions {
+  position: absolute;
+  top: 50%;
+  right: var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding-left: var(--space-4);
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, var(--bg-column) var(--space-4));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.unl-row:hover > .unl-actions,
+.unl-row:focus-within > .unl-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .unl-actions {
+    position: static;
+    justify-content: flex-end;
+    padding: 0 var(--space-3) var(--space-2);
+    transform: none;
+    background: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* A chevron drawn with borders — no icon font, no literal colour. */
 .unl-caret {
+  grid-column: 6;
   width: 0.4rem;
   height: 0.4rem;
   border-right: 1.5px solid var(--text-muted);
@@ -296,10 +359,26 @@
  * still one row per note, two short lines rather than one cut to nothing.
  */
 @media (max-width: 640px) {
-  .unl-sub,
   .unl-error,
-  .unl > .state-stale {
+  .unl > .state-stale,
+  .unl > .kpi-row,
+  .unl > .fbar,
+  .unl-empty-toggle {
     margin: 0 var(--space-3);
+  }
+
+  .unl-filter {
+    width: 100%;
+  }
+
+  .unl-actions {
+    position: static;
+    justify-content: flex-end;
+    padding: 0 var(--space-3) var(--space-2);
+    transform: none;
+    background: none;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .unl-list {
@@ -331,7 +410,7 @@
     grid-area: when;
   }
 
-  .unl-tag {
+  .unl-line > .unl-tag {
     grid-area: tag;
   }
 

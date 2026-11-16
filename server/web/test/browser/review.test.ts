@@ -255,7 +255,8 @@ void describe('the Review page', () => {
         { task: BARE, round: null, waiting_since: NOW - 26 * HOUR },
         {
           task: WORKED,
-          round: ROUND_2,
+          // Its tests passed: a failure would outrank the cue on the row (LAI-1222).
+          round: { ...ROUND_2, tests: ROUND_2.tests.filter((t) => t.exit_code === 0) },
           waiting_since: NOW - 3 * HOUR,
           cue: { kind: 'fast', build_ms: 60_000, forecast_p50_ms: 2 * HOUR },
         },
@@ -263,16 +264,19 @@ void describe('the Review page', () => {
     );
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
-      const chip = h.page.locator('.rev-chip-check');
+      const chip = h.page.locator('.rev-evidence[data-evidence="check"]');
       await until(async () => (await chip.count()) === 1);
       assert.equal(await chip.count(), 1);
-      assert.equal(await chip.innerText(), 'check this one');
+      assert.equal((await chip.innerText()).trim(), 'Check this one');
       assert.match(
         await tipText(chip),
         /Finished in 1 min against a forecast of 2 h, and CI has not confirmed it/,
       );
-      assert.equal(await h.page.locator('[data-stat="check"] .prof-stat-value').innerText(), '1');
-      await h.page.getByRole('button', { name: 'Check this one', exact: true }).click();
+      // The figure is the filter (LAI-1222).
+      const figure = h.page.locator('[data-kpi="fast"]');
+      assert.equal(await figure.locator('.kpi-value').innerText(), '1');
+      await figure.click();
+      assert.equal(await figure.getAttribute('aria-pressed'), 'true');
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-1']);
       // About the task, never the person: the cue names nobody.
       assert.doesNotMatch(await chip.innerText(), /Ada/);
@@ -296,19 +300,22 @@ void describe('the Review page', () => {
         'oldest waiting first',
       );
       const worked = rows.nth(1);
-      assert.match(await worked.innerText(), /1 commit/);
-      assert.match(await worked.innerText(), /PR/);
-      assert.match(await worked.innerText(), /1 passed/);
-      // Drawn, not typed (LAI-1214): the tick and the cross are registry icons.
-      assert.equal(await worked.locator('.rev-chip-pass [data-icon="check"]').count(), 1);
-      assert.match(await worked.innerText(), /1 failed/);
-      assert.equal(await worked.locator('.rev-chip-fail [data-icon="close"]').count(), 1);
+      // One fact a row (LAI-1222): the failure, with the rest on its tooltip.
+      const evidence = worked.locator('.rev-evidence');
+      assert.equal(await evidence.getAttribute('data-evidence'), 'tests_failed');
+      assert.equal((await evidence.innerText()).trim(), 'Tests failing');
+      assert.match(
+        await tipText(evidence),
+        /1 commit, a branch, a pull request, 2 test runs \(1 failed\)/,
+      );
+      // The mark is drawn, never colour alone (WCAG 1.4.1).
+      assert.equal(await evidence.locator('[data-mark="alert"]').count(), 1);
       // The agent as harness and device (D-120), never the client's own word.
       assert.match(await worked.innerText(), /Omnigent · Belka/);
       assert.doesNotMatch(await worked.innerText(), /omnigent on Belka/);
       assert.match(await worked.innerText(), /round 2/);
-      assert.match(await rows.first().innerText(), /no proof/);
-      assert.match(await rows.first().innerText(), /1 d/);
+      assert.match(await rows.first().innerText(), /No proof/);
+      assert.match(await rows.first().locator('.rev-wait').innerText(), /^waiting\s*1d 2h$/);
 
       // The tab carries the count, and the sidebar's Inbox the same (LAI-796):
       // nothing is unlisted in this stub, so the sum is Review's alone.
@@ -317,11 +324,11 @@ void describe('the Review page', () => {
       await badge.waitFor({ timeout: 10_000 });
       assert.match(await badge.innerText(), /^2/);
 
-      // The filters mean what they say.
-      await h.page.getByRole('button', { name: 'Failing tests', exact: true }).click();
+      // The figures are the filters, and mean what they say.
+      await h.page.locator('[data-kpi="failing"]').click();
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-1']);
-      await h.page.getByRole('button', { name: 'Failing tests', exact: true }).click();
-      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+      await h.page.locator('[data-kpi="failing"]').click();
+      await h.page.locator('[data-kpi="noEvidence"]').click();
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-2']);
     } finally {
       await h.close();
@@ -484,9 +491,9 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
           .getAttribute('aria-pressed'),
         'false',
       );
-      assert.equal(await h.page.locator('[data-stat="waiting"] .prof-stat-value').innerText(), '4');
+      assert.equal(await h.page.locator('[data-kpi="waiting"] .kpi-value').innerText(), '4');
       assert.match(
-        await h.page.locator('.rev-summary .prof-card-caption').innerText(),
+        await h.page.locator('[data-kpi="waiting"] .kpi-sub').innerText(),
         /for you to decide/,
       );
       // The default view is not in the address.
@@ -512,10 +519,10 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
       assert.equal(new URL(h.page.url()).searchParams.get('view'), 'all');
       assert.deepEqual(await keysIn(h.page, 'laika-core'), ['LC-2', 'LC-3', 'LC-1', 'LC-4']);
       assert.match(
-        await h.page.locator('.rev-summary .prof-card-caption').innerText(),
+        await h.page.locator('[data-kpi="waiting"] .kpi-sub').innerText(),
         /everything in review/,
       );
-      assert.equal(await h.page.locator('[data-stat="waiting"] .prof-stat-value').innerText(), '5');
+      assert.equal(await h.page.locator('[data-kpi="waiting"] .kpi-value').innerText(), '5');
       // The row the reader may not decide: no checkbox, no decisions — only
       // the board link and the reason.
       assert.equal(await theirs.locator('.rev-check').count(), 0);
@@ -533,10 +540,10 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
       assert.match(await inboxBadge(h.page).innerText(), /^4/);
 
       // A filter narrows the view without leaving it.
-      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+      await h.page.locator('[data-kpi="noEvidence"]').click();
       assert.deepEqual(await keysIn(h.page, 'laika-core'), ['LC-2', 'LC-3', 'LC-4']);
       assert.equal(new URL(h.page.url()).searchParams.get('view'), 'all');
-      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+      await h.page.locator('[data-kpi="noEvidence"]').click();
 
       // Back to the reader's own, and the address drops the view again.
       await h.page.getByRole('button', { name: 'For you to decide (4)' }).click();
@@ -683,7 +690,7 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
       assert.match(await bar.innerText(), /2\s+selected/);
 
       // *No proof* hides LC-1: the bar counts one and Accept 1 posts one.
-      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+      await h.page.locator('[data-kpi="noEvidence"]').click();
       await h.page.locator('.rev-row[data-task="LC-1"]').waitFor({ state: 'detached' });
       await until(async () => /1\s+selected/.test(await bar.innerText()));
       assert.match(await bar.innerText(), /1\s+selected/);
@@ -695,7 +702,7 @@ void describe('the decision queue (D-146, LAI-1168)', () => {
         'a hidden row was posted',
       );
       await bar.getByRole('button', { name: 'Dismiss' }).click();
-      await h.page.getByRole('button', { name: 'No proof', exact: true }).click();
+      await h.page.locator('[data-kpi="noEvidence"]').click();
 
       // A view change clears the selection outright.
       await h.page.getByRole('checkbox', { name: 'Select OR-5' }).click();

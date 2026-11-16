@@ -384,33 +384,29 @@ void describe('the proof GitHub confirmed (D-083)', () => {
     const h = await open('/inbox?tab=review', reviewStub());
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
-      const chips = h.page.locator('.rev-chip-ci');
+      // One evidence chip a row (LAI-1222): CI's verdict where GitHub has spoken.
+      const chips = h.page.locator('.rev-evidence');
+      const kinds = () =>
+        chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-evidence')));
       // Wait for every chip it asserts, not the first row (LAI-715).
-      await until(
-        async () =>
-          (await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-ci')))).join(
-            '|',
-          ) === ['failed', 'confirmed'].join('|'),
-      );
-      assert.deepEqual(
-        await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-ci'))),
-        ['failed', 'confirmed'],
-      );
+      await until(async () => (await kinds()).slice(0, 2).join('|') === 'ci_failed|ci_confirmed');
+      assert.deepEqual((await kinds()).slice(0, 2), ['ci_failed', 'ci_confirmed']);
 
-      await h.page.getByRole('button', { name: 'CI failed', exact: true }).click();
+      // The figures are the CI filters.
+      const failed = h.page.locator('[data-kpi="ciFailed"]');
+      const passed = h.page.locator('[data-kpi="ciConfirmed"]');
+      await failed.click();
       await until(
         async () => (await h.page.locator('.rev-key').allInnerTexts()).join('|') === 'LC-1',
       );
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-1']);
-      await h.page.getByRole('button', { name: 'CI confirmed', exact: true }).click();
+      await passed.click();
       await until(
         async () => (await h.page.locator('.rev-key').allInnerTexts()).join('|') === 'LC-2',
       );
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-2']);
       assert.equal(
-        await h.page
-          .getByRole('button', { name: 'CI failed', exact: true })
-          .getAttribute('aria-pressed'),
+        await failed.getAttribute('aria-pressed'),
         'false',
         'the two CI filters are one choice, not a contradiction',
       );

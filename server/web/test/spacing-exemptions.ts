@@ -288,13 +288,11 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
     'padding: var(--space-3-5) 1.125rem 1.125rem',
   ],
   'routes/screens/capacity/capacity.css': [
-    'gap: 0.0625rem',
     'gap: 0.3125rem',
     'gap: 0.3125rem',
     'padding: 0 0.3125rem',
     'padding: 0 var(--space-3) 0 2.125rem',
     'padding: 0.0625rem var(--space-1) 0.0625rem var(--space-2)',
-    'padding: 0.6875rem 0.8125rem var(--space-3)',
     'padding: var(--space-3-5) 1.125rem var(--space-5)',
   ],
   'routes/screens/connect/connect.css': [
@@ -553,7 +551,6 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
   'routes/screens/review/review-dialog.css': ['padding: 1.125rem var(--space-4-5) var(--space-3)'],
   'routes/screens/review/review.css': [
     'margin-inline: 1.125rem',
-    'padding: 0.0625rem var(--space-2)',
     'padding: 0.4375rem var(--space-2-5)',
     'padding: var(--space-1) 0.4375rem',
   ],
@@ -656,7 +653,6 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
     'padding: var(--space-0-5) 0.3125rem',
   ],
   'routes/screens/usage/usage.css': [
-    'gap: 1px',
     'padding: 0.0625rem 0.4375rem',
     'padding: 0.0625rem var(--space-1-5)',
     'padding: 0.0625rem var(--space-1-5)',
