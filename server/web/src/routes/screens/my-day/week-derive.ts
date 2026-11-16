@@ -1,6 +1,8 @@
+import { offDescription, offKind, type OffKind } from '../../../api/off-days.ts';
 import type { DayState, MyDayWeekDay } from '../../../api/time.ts';
 import { duration } from './format.ts';
 import { weekdayShort } from './my-day-derive.ts';
+import { cellKind, offMark, type OffMark } from './span-derive.ts';
 
 /**
  * The week strip (LAI-831, the owner's design): each day's name and date, its
@@ -11,6 +13,11 @@ import { weekdayShort } from './my-day-derive.ts';
  * person's hours are not scored). The bars are shares of the shown week's own
  * busiest day — never of a working day's length, which would read as a goal.
  * A day nothing reached the board on is *No signal* and `—`, never zero hours.
+ *
+ * **A day off is not no signal** (D-149, LAI-1184): a holiday or approved
+ * whole-day leave with nothing on it says its name and has no figure; with
+ * time it keeps its figure and its word, and says the day off after them.
+ * Either way the tile carries the tone and the mark Year draws it with.
  */
 
 export interface WeekTile {
@@ -22,6 +29,10 @@ export interface WeekTile {
   /** Confirmed and drafted together; `—` for no signal, nothing for a day to come. */
   readonly figure: string;
   readonly label: string;
+  /** The day off's tone, when it has one — a holiday wins, pending leave is *requested*. */
+  readonly off: OffKind | null;
+  /** How the tile draws it, as Year's tiles do (`span-derive.ts`). */
+  readonly mark: OffMark | null;
   /** Shares of the week's busiest day, 0 to 1. */
   readonly confirmedShare: number;
   readonly draftedShare: number;
@@ -36,22 +47,32 @@ const LABELS: Readonly<Record<Exclude<DayState, 'drafted'>, string>> = {
 export function weekTiles(week: readonly MyDayWeekDay[], today: string): WeekTile[] {
   const busiest = Math.max(0, ...week.map((d) => d.confirmed_minutes + d.drafted_minutes));
   const share = (minutes: number): number => (busiest === 0 ? 0 : minutes / busiest);
-  return week.map((d) => ({
-    day: d.day,
-    name: weekdayShort(d.day),
-    date: String(Number(d.day.slice(8))),
-    isToday: d.day === today,
-    state: d.state,
-    figure:
-      d.state === 'future'
-        ? ''
-        : d.state === 'no_signal'
-          ? '—'
-          : duration(d.confirmed_minutes + d.drafted_minutes),
-    label: d.state === 'drafted' ? `${duration(d.drafted_minutes)} to settle` : LABELS[d.state],
-    confirmedShare: share(d.confirmed_minutes),
-    draftedShare: share(d.drafted_minutes),
-  }));
+  return week.map((d) => {
+    const free = cellKind(d) === 'off';
+    const about = offDescription(d.off);
+    const word =
+      d.state === 'drafted' ? `${duration(d.drafted_minutes)} to settle` : LABELS[d.state];
+    return {
+      day: d.day,
+      name: weekdayShort(d.day),
+      date: String(Number(d.day.slice(8))),
+      isToday: d.day === today,
+      state: d.state,
+      figure:
+        d.state === 'future' || free
+          ? ''
+          : d.state === 'no_signal'
+            ? '—'
+            : duration(d.confirmed_minutes + d.drafted_minutes),
+      label: free
+        ? (about ?? word)
+        : [word, about].filter((p): p is string => p !== null && p !== '').join(' · '),
+      off: offKind(d.off),
+      mark: offMark(d),
+      confirmedShare: share(d.confirmed_minutes),
+      draftedShare: share(d.drafted_minutes),
+    };
+  });
 }
 
 /** The week's minutes: confirmed, still drafted, and the two together. */

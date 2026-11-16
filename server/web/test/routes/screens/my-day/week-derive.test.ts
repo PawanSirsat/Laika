@@ -15,10 +15,10 @@ import {
  */
 
 const week: MyDayWeekDay[] = [
-  { day: '2026-10-19', confirmed_minutes: 450, drafted_minutes: 0, state: 'confirmed' },
-  { day: '2026-10-20', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal' },
-  { day: '2026-10-21', confirmed_minutes: 90, drafted_minutes: 270, state: 'drafted' },
-  { day: '2026-10-22', confirmed_minutes: 0, drafted_minutes: 0, state: 'future' },
+  { day: '2026-10-19', confirmed_minutes: 450, drafted_minutes: 0, state: 'confirmed', off: null },
+  { day: '2026-10-20', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal', off: null },
+  { day: '2026-10-21', confirmed_minutes: 90, drafted_minutes: 270, state: 'drafted', off: null },
+  { day: '2026-10-22', confirmed_minutes: 0, drafted_minutes: 0, state: 'future', off: null },
 ];
 
 void describe('weekTiles', () => {
@@ -60,10 +60,79 @@ void describe('weekTiles', () => {
 
   void test('a week with nothing in it draws no bars', () => {
     const empty = weekTiles(
-      [{ day: '2026-10-19', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal' }],
+      [
+        {
+          day: '2026-10-19',
+          confirmed_minutes: 0,
+          drafted_minutes: 0,
+          state: 'no_signal',
+          off: null,
+        },
+      ],
       '2026-10-21',
     );
     assert.deepEqual([empty[0]?.confirmedShare, empty[0]?.draftedShare], [0, 0]);
+  });
+});
+
+void describe('weekTiles — a day off (D-149, LAI-1184)', () => {
+  const offWeek: MyDayWeekDay[] = [
+    {
+      day: '2026-09-21',
+      confirmed_minutes: 0,
+      drafted_minutes: 0,
+      state: 'no_signal',
+      off: { holiday: { label: 'Heritage Day' }, leave: null },
+    },
+    {
+      day: '2026-09-22',
+      confirmed_minutes: 240,
+      drafted_minutes: 0,
+      state: 'confirmed',
+      off: { holiday: null, leave: { part: 'full', status: 'approved', type: 'Annual' } },
+    },
+    {
+      day: '2026-09-23',
+      confirmed_minutes: 0,
+      drafted_minutes: 0,
+      state: 'no_signal',
+      off: { holiday: null, leave: { part: 'second_half', status: 'approved', type: null } },
+    },
+    {
+      day: '2026-09-24',
+      confirmed_minutes: 0,
+      drafted_minutes: 0,
+      state: 'future',
+      off: { holiday: null, leave: { part: 'full', status: 'pending', type: null } },
+    },
+  ];
+  const tiles = weekTiles(offWeek, '2026-09-23');
+
+  void test('a holiday with nothing on it is named, and has no figure — never no signal', () => {
+    assert.equal(tiles[0]?.figure, '');
+    assert.equal(tiles[0]?.label, 'Heritage Day');
+    assert.deepEqual([tiles[0]?.off, tiles[0]?.mark], ['holiday', 'tint']);
+  });
+
+  void test('a day off with time keeps its figure and word, and says the leave after them', () => {
+    assert.equal(tiles[1]?.figure, '4 h');
+    assert.equal(tiles[1]?.label, 'Settled · On leave · Annual');
+    assert.deepEqual([tiles[1]?.off, tiles[1]?.mark], ['leave', 'dot']);
+  });
+
+  void test('half-day leave owes half: still no signal, half filled; requested is only dashed', () => {
+    assert.equal(tiles[2]?.figure, '—');
+    assert.equal(tiles[2]?.label, 'No signal · On leave · afternoon');
+    assert.equal(tiles[2]?.mark, 'half');
+    assert.equal(tiles[3]?.label, 'Not yet · Leave requested');
+    assert.deepEqual([tiles[3]?.off, tiles[3]?.mark], ['requested', 'dash']);
+  });
+
+  void test('a day with no day off carries no mark', () => {
+    assert.deepEqual(
+      weekTiles(week, '2026-10-21').map((t) => [t.off, t.mark]),
+      week.map(() => [null, null]),
+    );
   });
 });
 

@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import type { OffDay } from '../../../../src/api/off-days.ts';
 import {
   barOf,
   boxDetail,
   busiest,
   cellKind,
   heatScale,
+  offMark,
+  offTones,
   periodFigure,
   weekBoxes,
   weekHours,
@@ -78,6 +81,74 @@ void describe('cells and figures', () => {
     });
     assert.equal(periodFigure([day(0, 0, 'no_signal'), day(0, 0, 'future')]).kind, 'no_signal');
     assert.equal(periodFigure([day(0, 0, 'future')]).kind, 'future');
+  });
+});
+
+/** A day off as the server sends it (LAI-1183's `OffDayView`). */
+const HOLIDAY: OffDay = { holiday: { label: 'Heritage Day' }, leave: null };
+const LEAVE: OffDay = {
+  holiday: null,
+  leave: { part: 'full', status: 'approved', type: 'Annual' },
+};
+const HALF: OffDay = {
+  holiday: null,
+  leave: { part: 'first_half', status: 'approved', type: null },
+};
+const REQUESTED: OffDay = {
+  holiday: null,
+  leave: { part: 'full', status: 'pending', type: null },
+};
+
+void describe('a day off (D-149, LAI-1184)', () => {
+  void test('a holiday or approved whole-day leave with no time is off, never no signal', () => {
+    assert.equal(cellKind({ state: 'no_signal', off: HOLIDAY }), 'off');
+    assert.equal(cellKind({ state: 'no_signal', off: LEAVE }), 'off');
+    // Still to come, it is off already: the day owes nothing either way.
+    assert.equal(cellKind({ state: 'future', off: HOLIDAY }), 'off');
+  });
+
+  void test('time wins: a day off with time keeps its figure', () => {
+    assert.equal(cellKind({ state: 'confirmed', off: HOLIDAY }), 'time');
+    assert.equal(cellKind({ state: 'drafted', off: LEAVE }), 'time');
+  });
+
+  void test('half-day leave still owes half, and pending leave owes all: neither is off', () => {
+    assert.equal(cellKind({ state: 'no_signal', off: HALF }), 'no_signal');
+    assert.equal(cellKind({ state: 'no_signal', off: REQUESTED }), 'no_signal');
+    assert.equal(cellKind({ state: 'future', off: REQUESTED }), 'future');
+    // A row without the field — an older fixture — is read as no day off.
+    assert.equal(cellKind({ state: 'no_signal' }), 'no_signal');
+    assert.equal(cellKind({ state: 'no_signal', off: null }), 'no_signal');
+  });
+
+  void test('how a tile carries it: tinted, dotted, half filled or only dashed', () => {
+    assert.equal(offMark({ state: 'no_signal', off: HOLIDAY }), 'tint');
+    assert.equal(offMark({ state: 'future', off: LEAVE }), 'tint');
+    assert.equal(offMark({ state: 'confirmed', off: HOLIDAY }), 'dot');
+    assert.equal(offMark({ state: 'drafted', off: LEAVE }), 'dot');
+    assert.equal(offMark({ state: 'no_signal', off: HALF }), 'half');
+    // Pending leave is an outline whether or not the day has time — never the fill.
+    assert.equal(offMark({ state: 'no_signal', off: REQUESTED }), 'dash');
+    assert.equal(offMark({ state: 'confirmed', off: REQUESTED }), 'dash');
+    assert.equal(offMark({ state: 'no_signal', off: null }), null);
+    assert.equal(offMark({ state: 'confirmed' }), null);
+  });
+
+  void test('a holiday wins over leave on the same day', () => {
+    const both: OffDay = { holiday: HOLIDAY.holiday, leave: REQUESTED.leave };
+    assert.equal(offMark({ state: 'no_signal', off: both }), 'tint');
+  });
+
+  void test('the legend names the tones the period holds, in one order', () => {
+    assert.deepEqual(offTones([{ off: REQUESTED }, { off: null }, { off: HOLIDAY }, {}]), [
+      'holiday',
+      'requested',
+    ]);
+    assert.deepEqual(offTones([{ off: LEAVE }, { off: HALF }, { off: HOLIDAY }]), [
+      'holiday',
+      'leave',
+    ]);
+    assert.deepEqual(offTones([{ off: null }, {}]), []);
   });
 });
 

@@ -17,22 +17,22 @@ so.
 
 ## Acceptance criteria
 
-- [ ] Tokens in `theme.css` (both themes), `token-list.ts` and the contrast
+- [x] Tokens in `theme.css` (both themes), `token-list.ts` and the contrast
       pairs: `--holiday`, `--holiday-bg`, `--holiday-border` (teal family) and
       `--leave`, `--leave-bg`, `--leave-border` (blue family, as *Away*);
       clear of the violet Year heat. No server colour is drawn.
-- [ ] `span-derive.ts` `cellKind` gains `'off'`; **Year** tile: no time →
+- [x] `span-derive.ts` `cellKind` gains `'off'`; **Year** tile: no time →
       tinted in the tone; with time → heat plus a corner dot (`::after`, not
       `box-shadow`); pending leave → a dashed outline only; label in `title`
       / aria ("Heritage Day", "On leave · half day", "Leave requested").
-- [ ] **Month** cell: a chip with the label in place of "—"; **Week**
+- [x] **Month** cell: a chip with the label in place of "—"; **Week**
       column: the label in place of "No signal"; `SpanHead` legend gains
       Holiday and Leave swatches.
-- [ ] **Day page**: a banner in the existing stack — "Public holiday —
+- [x] **Day page**: a banner in the existing stack — "Public holiday —
       {label}", "On leave — {type} ({morning|afternoon})", "Leave requested";
       the header sub-line and `emptyKind` say it instead of "no signal";
       `WeekStrip` tiles marked.
-- [ ] Unit tests (span-derive) and browser tests extending
+- [x] Unit tests (span-derive) and browser tests extending
       `my-day-span.test.ts` and the Day fixtures; both themes × 1440/390.
 
 ## Claim note
