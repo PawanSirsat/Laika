@@ -16,16 +16,16 @@ holidays and leave, and people's availability says "On leave".
 
 ## Acceptance criteria
 
-- [ ] `time-logging-derive.ts` `cellState` gains `holiday` and `leave`
+- [x] `time-logging-derive.ts` `cellState` gains `holiday` and `leave`
       before `off`: not due, muted with the label in the words; approved half
       day → due with `threshold_minutes / 2` for full/under; pending → no
       effect; `dueDays` excludes not-due days; time on a not-due day counts
       toward hours, never days; `CELL_WORDS`/glyphs and the legend; column
       heads `data-holiday` with the label.
-- [ ] `availability-derive.ts` `pillOf`: "On leave until {date}" (type where
+- [x] `availability-derive.ts` `pillOf`: "On leave until {date}" (type where
       sent), "Leave requested" for pending; `AvailabilityView`; profile
       `ThisWeekCard` day bars marked.
-- [ ] Unit tests (derive) and browser tests extending `time-logging.test.ts`
+- [x] Unit tests (derive) and browser tests extending `time-logging.test.ts`
       and the availability/profile fixtures; both themes × 1440/390.
       Mutations: half day owing the full threshold; pending making a day not
       due; a holiday with time counting toward days.
