@@ -16,6 +16,7 @@ import {
   addDays,
   EARLIER,
   settledEntries,
+  TOMORROW,
   viewOf,
   weekData,
   weekStub,
@@ -236,28 +237,36 @@ void describe('My day — the View (LAI-1174)', () => {
   });
 
   void test('Month: its weeks, a day nothing reached says —, and a week number opens the week', async () => {
-    h = await open(`/my-day?span=month&day=${TODAY}`, stub());
+    // A past day the fixture holds nothing for, in the month shown. Today's
+    // month has one unless its grid starts within a day of today — the 1st on
+    // a Monday or a Tuesday, the 2nd on a Tuesday — when only today and
+    // yesterday are before it; then last month, all of it past (LAI-1186).
+    const data = weekData();
+    // The latest such day: its week is within the three weeks the fixture serves.
+    const quietIn = (day: string): string | undefined =>
+      monthWeeks(day)
+        .flat()
+        .filter((d) => d < TODAY && !data.has(d))
+        .at(-1);
+    const shown = quietIn(TODAY) === undefined ? stepPeriod('month', TODAY, -1) : TODAY;
+    h = await open(`/my-day?span=month&day=${shown}`, stub());
     try {
       await settled(h.page, 'month');
       const cells = h.page.locator('.span-month-cell');
-      assert.equal(await cells.count(), monthWeeks(TODAY).length * 7);
-      // A past day in the grid the fixture holds nothing for — today's month
-      // always has one, as only today, yesterday and three days ago hold time.
-      const data = weekData();
-      const quietDay = monthWeeks(TODAY)
-        .flat()
-        .find((d) => d < TODAY && !data.has(d));
+      assert.equal(await cells.count(), monthWeeks(shown).length * 7);
+      const quietDay = quietIn(shown);
       assert.ok(quietDay !== undefined, 'the grid has a past day with nothing in it');
       const quiet = h.page.locator(`.span-month-cell[data-zk="d:${quietDay}"]`);
       assert.equal(await quiet.getAttribute('data-kind'), 'no_signal');
       assert.equal((await quiet.locator('.span-month-total').textContent())?.trim(), '—');
-      for (const d of [YESTERDAY, EARLIER].filter((x) => x.slice(0, 7) === TODAY.slice(0, 7))) {
+      for (const d of [YESTERDAY, EARLIER].filter((x) => x.slice(0, 7) === shown.slice(0, 7))) {
         assert.equal(
           await h.page.locator(`.span-month-cell[data-zk="d:${d}"]`).getAttribute('data-kind'),
           'time',
         );
       }
-      await h.page.getByRole('button', { name: `Open week ${String(isoWeek(TODAY))}` }).click();
+      // The quiet day's week is a row of the grid shown, whichever month that is.
+      await h.page.getByRole('button', { name: `Open week ${String(isoWeek(quietDay))}` }).click();
       await settled(h.page, 'week');
       assert.equal(spanOf(h.page), 'week');
     } finally {
@@ -708,7 +717,10 @@ void describe('My day — the zoom as the design plays it (LAI-1179)', () => {
       assert.equal(await h.page.locator('[data-layer="day"]').count(), 0);
 
       // A day's column in Week: Day arrives zooming in from its cell, and is that day.
-      await h.page.locator(`.span-week-day[data-zk="d:${YESTERDAY}"]`).click();
+      // Another day of this week than today, whatever today is: yesterday, or
+      // tomorrow on a Monday, when yesterday is last week's (LAI-1186).
+      const other = mondayOf(YESTERDAY) === mondayOf(TODAY) ? YESTERDAY : TOMORROW;
+      await h.page.locator(`.span-week-day[data-zk="d:${other}"]`).click();
       let dayIn = false;
       await until(async () => {
         dayIn = await animating(page(), '[data-layer="day"][data-layer-role="current"]');
@@ -716,13 +728,13 @@ void describe('My day — the zoom as the design plays it (LAI-1179)', () => {
       });
       assert.equal(dayIn, true, 'the Day layer zooms in');
       await h.page.locator('[data-myday-ready]').waitFor();
-      assert.equal(new URL(h.page.url()).searchParams.get('day'), YESTERDAY);
+      assert.equal(new URL(h.page.url()).searchParams.get('day'), other);
       assert.equal(
         ((await h.page.locator('[data-view-label]').textContent()) ?? '').startsWith(
-          dayLong(YESTERDAY),
+          dayLong(other),
         ),
         true,
-        'the page shown is yesterday’s, never today’s under its address',
+        'the page shown is that day’s, never today’s under its address',
       );
       await until(async () => (await h?.page.locator('[data-layer-role="leaving"]').count()) === 0);
 
