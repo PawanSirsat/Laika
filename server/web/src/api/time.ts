@@ -1,5 +1,6 @@
 import { API_BASE, request } from './client.ts';
 import { NetworkError, toApiError } from './errors.ts';
+import type { OffDay } from './off-days.ts';
 
 /**
  * A person's own time (D-088, LAI-787, SPEC §6.4): their switch, their day as
@@ -231,6 +232,8 @@ export interface MyDayWeekDay {
   readonly confirmed_minutes: number;
   readonly drafted_minutes: number;
   readonly state: DayState;
+  /** A holiday covering the person, or their leave, that day; null when neither (D-149, LAI-1183). */
+  readonly off: OffDay | null;
 }
 
 /**
@@ -278,6 +281,12 @@ export interface MyDay {
   readonly drafts_held: { readonly count: number; readonly minutes: number };
   readonly agent: MyDayAgent;
   readonly state: DayState;
+  /**
+   * A holiday covering the person, or their leave, on `day`; null when
+   * neither (D-149, LAI-1183). A fact beside `state`, never a change to it:
+   * what the day owes is the client's verdict (`offOwes`).
+   */
+  readonly off: OffDay | null;
   /** Monday to Sunday of the week holding `day`. */
   readonly week: readonly MyDayWeekDay[];
   /** The running timer, whatever day is open; null when none (LAI-500). */
@@ -476,6 +485,8 @@ export interface DaysDay {
   readonly untied_minutes: number;
   /** At most three, largest first. */
   readonly top_tasks: readonly DaysTask[];
+  /** A holiday covering the person, or their leave, that day; null when neither (D-149, LAI-1183). */
+  readonly off: OffDay | null;
 }
 
 /**

@@ -15,10 +15,10 @@ import {
  */
 
 const week: MyDayWeekDay[] = [
-  { day: '2026-10-19', confirmed_minutes: 450, drafted_minutes: 0, state: 'confirmed' },
-  { day: '2026-10-20', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal' },
-  { day: '2026-10-21', confirmed_minutes: 90, drafted_minutes: 270, state: 'drafted' },
-  { day: '2026-10-22', confirmed_minutes: 0, drafted_minutes: 0, state: 'future' },
+  { day: '2026-10-19', confirmed_minutes: 450, drafted_minutes: 0, state: 'confirmed', off: null },
+  { day: '2026-10-20', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal', off: null },
+  { day: '2026-10-21', confirmed_minutes: 90, drafted_minutes: 270, state: 'drafted', off: null },
+  { day: '2026-10-22', confirmed_minutes: 0, drafted_minutes: 0, state: 'future', off: null },
 ];
 
 void describe('weekTiles', () => {
@@ -60,7 +60,15 @@ void describe('weekTiles', () => {
 
   void test('a week with nothing in it draws no bars', () => {
     const empty = weekTiles(
-      [{ day: '2026-10-19', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal' }],
+      [
+        {
+          day: '2026-10-19',
+          confirmed_minutes: 0,
+          drafted_minutes: 0,
+          state: 'no_signal',
+          off: null,
+        },
+      ],
       '2026-10-21',
     );
     assert.deepEqual([empty[0]?.confirmedShare, empty[0]?.draftedShare], [0, 0]);
