@@ -290,7 +290,13 @@ void describe('the search bar is the palette', () => {
       await until(() =>
         h.page.evaluate(() => document.activeElement?.getAttribute('aria-keyshortcuts') === '/'),
       );
-      assert.equal(await h.page.locator(PALETTE).count(), 0, 'the palette opened as well');
+      // The palette loads lazily: give an open time to land before saying it did not.
+      await h.page.waitForTimeout(1500);
+      assert.equal(
+        await h.page.locator('[data-palette], [data-palette-loading]').count(),
+        0,
+        'the palette opened as well',
+      );
     } finally {
       await h.close();
     }
