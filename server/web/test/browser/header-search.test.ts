@@ -221,10 +221,11 @@ void describe('one header on every screen', () => {
   for (const theme of ['light', 'dark', 'black'] as const) {
     void test(`the field reads in ${theme}: its words differ from its ground`, async () => {
       const h = await open('/organisation', stub('owner'), {
-        before: (page) =>
-          page.addInitScript((t) => {
+        before: async (page) => {
+          await page.addInitScript((t) => {
             localStorage.setItem('laika.theme', t);
-          }, theme),
+          }, theme);
+        },
       });
       try {
         await ready(h.page);
