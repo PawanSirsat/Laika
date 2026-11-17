@@ -31,6 +31,7 @@ import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
+import { TeamsPostingSection } from './TeamsPostingSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
@@ -144,6 +145,8 @@ export function OrganisationScreen({
   const canSetTime = gates.org('org.time.set');
   /** D-149 (LAI-1182): connecting Clan is its own §3.1 row, owners and admins by default. */
   const canConfigureHr = gates.org('org.hr.configure');
+  /** D-154 (LAI-1314): Teams posting, owners and admins by default. */
+  const canConfigureTeams = gates.org('org.teams.configure');
   const canListTokens = gates.org('token.list_any');
   /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
   const canRevokeTokens = gates.org('token.revoke_any');
@@ -741,6 +744,10 @@ export function OrganisationScreen({
             {canConfigureHr && (
               <HrSourceSection members={state.people.filter((p) => p.is_active)} />
             )}
+
+            {/* D-154 (LAI-1314): each space's Teams channel, and the one
+                switch that turns posting on — its holder's alone. */}
+            {canConfigureTeams && <TeamsPostingSection onNavigate={onNavigate} />}
 
             {/* LAI-773: the prices every cost on Usage is computed with — read by
                 anyone who may view the organisation, set by an owner or admin. */}
