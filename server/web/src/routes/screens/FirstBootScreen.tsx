@@ -239,6 +239,16 @@ export function FirstBootScreen({
                 <span className="boot-chip">FULL CONTROL</span>
               </legend>
 
+              {microsoft && (
+                <p className="boot-sso" data-boot-sso="">
+                  <span className="boot-sso-head">Sign-in: Microsoft</span>
+                  <span>
+                    This instance signs in with Microsoft work accounts. Enter the email of yours —
+                    you sign in with it the moment the instance is created.
+                  </span>
+                </p>
+              )}
+
               <div className="boot-grid">
                 <TextInput
                   label="Full name"
@@ -338,14 +348,16 @@ export function FirstBootScreen({
 
             <footer className="boot-footer">
               <Button type="submit" busy={submitting}>
-                Create instance
+                {microsoft ? 'Create and sign in with Microsoft' : 'Create instance'}
               </Button>
               {/* Honest about what is happening and where (LAI-1203): the
                   database is named by the instance, never typed here. */}
               <p className="boot-footnote" role="status">
                 {submitting
                   ? `Creating the owner account and org in ${database ?? 'this instance’s database'}. This takes a few seconds.`
-                  : 'Takes a few seconds. This page never appears again — after this, you land on the board signed in, and new people arrive by invite.'}
+                  : microsoft
+                    ? 'Takes a few seconds, then Microsoft asks you to sign in. This page never appears again — new people arrive by invite.'
+                    : 'Takes a few seconds. This page never appears again — after this, you land on the board signed in, and new people arrive by invite.'}
               </p>
             </footer>
           </form>

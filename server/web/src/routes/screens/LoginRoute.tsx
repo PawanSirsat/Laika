@@ -36,14 +36,21 @@ function MicrosoftLoginRoute() {
   const [startError, setStartError] = useState<string | undefined>(undefined);
   const returned = route.params.get('error');
   const error = startError ?? (returned === null ? undefined : microsoftErrorWords(returned));
+  // First boot hands over here only when it could not go straight to Microsoft.
+  const ready = route.params.get('ready') === 'owner';
 
   return (
     <MicrosoftSignInScreen
       host={host}
       title="Sign in to your instance"
-      lead="This Laika signs in with your Microsoft work account."
+      lead="Use your Microsoft work account — there is no separate Laika password."
       busy={busy}
       error={error}
+      notice={
+        ready
+          ? 'Laika is set up. Sign in with the Microsoft account you entered as the owner.'
+          : undefined
+      }
       onSignIn={() => {
         setBusy(true);
         setStartError(undefined);
@@ -54,7 +61,7 @@ function MicrosoftLoginRoute() {
           );
         });
       }}
-      note="No account? Only an Owner or Admin can invite you. Ask them to invite the address you use with Microsoft."
+      note="New here? An Owner or Admin has to invite your work email first."
     />
   );
 }

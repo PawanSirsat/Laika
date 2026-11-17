@@ -47,6 +47,16 @@ void describe('signing in on an SSO-only instance', () => {
       await button.waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.auth-card input').count(), 0, 'a field is drawn');
       assert.equal(await h.page.getByRole('heading', { level: 1 }).count(), 1);
+      // The mark is on the button, and the line under it says where the click goes.
+      assert.equal(
+        await button.locator('svg').count(),
+        1,
+        'the Microsoft mark is not on the button',
+      );
+      assert.match(
+        await h.page.locator('.auth-sso-next').innerText(),
+        /sign in on Microsoft’s page, then come straight back/,
+      );
 
       await button.click();
       await until(() => new URL(h.page.url()).pathname === LANDING, 10_000);
@@ -143,7 +153,7 @@ void describe('accepting an invite on an SSO-only instance', () => {
 });
 
 void describe('first boot on an SSO-only instance', () => {
-  void test('asks for no password, sends none, and goes to sign in with Microsoft', async () => {
+  void test('asks for no password, sends none, and goes straight to Microsoft', async () => {
     const h = await open('/setup', {
       '/api/v1/me': refuse(401, 'unauthorized', 'Sign in to continue.'),
       '/api/v1/setup/status': {
@@ -170,10 +180,55 @@ void describe('first boot on an SSO-only instance', () => {
       assert.equal(body.owner_email, 'ada@borealis.example');
       assert.equal('owner_password' in body, false, 'a password was sent');
 
-      await until(() => new URL(h.page.url()).pathname === '/login', 10_000);
-      await h.page
-        .getByRole('button', { name: 'Sign in with Microsoft' })
-        .waitFor({ timeout: 10_000 });
+      // One click less: no stop at a sign-in page that only says "click again".
+      await until(() => new URL(h.page.url()).pathname === LANDING, 10_000);
+      assert.deepEqual(posted(h.calls, '/api/v1/auth/sign-in/social')[0]?.body, {
+        provider: 'microsoft',
+        callbackURL: '/board',
+        errorCallbackURL: '/login',
+      });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('first boot on an SSO-only instance, when Microsoft cannot be reached', () => {
+  void test('lands on sign-in saying the instance is ready, with the same button', async () => {
+    const h = await open('/login?ready=owner', SSO_SIGNED_OUT);
+    try {
+      const notice = h.page.locator('[data-auth-notice]');
+      await notice.waitFor({ timeout: 20_000 });
+      assert.match(await notice.innerText(), /Laika is set up/);
+      assert.equal(await h.page.getByRole('button', { name: 'Sign in with Microsoft' }).count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('says how this instance signs in before the owner types the email', async () => {
+    const h = await open('/setup', {
+      '/api/v1/me': refuse(401, 'unauthorized', 'Sign in to continue.'),
+      '/api/v1/setup/status': {
+        setup_required: true,
+        sign_in: 'microsoft',
+        system: { database: 'SQLite · WAL', migrations_applied: 18, smtp_configured: false },
+      },
+      '/api/v1/health': { status: 'ok', version: '0.1.0', uptime_ms: 1234 },
+    });
+    try {
+      const note = h.page.locator('[data-boot-sso]');
+      await note.waitFor({ timeout: 20_000 });
+      assert.match(await note.innerText(), /Sign-in: Microsoft/);
+      assert.equal(
+        await h.page.getByRole('button', { name: 'Create and sign in with Microsoft' }).count(),
+        1,
+      );
+      assert.doesNotMatch(
+        await h.page.locator('.boot-footnote').innerText(),
+        /land on the board signed in/,
+        'the footer still promises a session first boot does not give',
+      );
     } finally {
       await h.close();
     }

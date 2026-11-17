@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { AuthCard } from '../../components/auth/AuthCard.tsx';
 import { AuthAlert, AuthSummary } from '../../components/auth/AuthSummary.tsx';
+import { MicrosoftMark } from '../../components/auth/MicrosoftMark.tsx';
 import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import './auth.css';
@@ -18,8 +19,19 @@ export interface MicrosoftSignInScreenProps {
   readonly busy?: boolean;
   /** Why the last attempt did not sign anyone in, in words. */
   readonly error?: string | undefined;
+  /**
+   * Good news to say first — *Laika is set up* after first boot. Shown above
+   * the action in the same live region as an error, never beside one.
+   */
+  readonly notice?: string | undefined;
   /** The closing line under the button. */
   readonly note?: ReactNode;
+  /**
+   * Whether the action goes to Microsoft — the default. `false` for a screen
+   * whose one action is something else (a link invite's *Back to sign-in*):
+   * then there is no Microsoft mark and no "you'll come back" line.
+   */
+  readonly toMicrosoft?: boolean;
 }
 
 /**
@@ -27,13 +39,14 @@ export interface MicrosoftSignInScreenProps {
  * first-boot screens draw on an SSO-only instance. Layout and states only,
  * no network, like `LoginScreen`: the route beside it owns the redirect.
  *
- * One lockup, one heading, one action. **No email or password field**: the
- * instance has no password to check, and a field that cannot work is a door
- * drawn on a wall.
+ * One lockup, one heading, one action, and **one sentence about what happens
+ * next** — the click leaves Laika for Microsoft's page, which is the moment
+ * someone hesitates if nothing said it would. While the browser is on its way
+ * the button keeps its words and shows the spinner (the busy rule, LAI-293),
+ * and the line under it says where it is going.
  *
- * The mark is a four-square glyph in the text colour, not Microsoft's
- * four-colour logo: the theme owns every colour on the page, and the words
- * *Sign in with Microsoft* already say whose door it is.
+ * **No email or password field**: the instance has no password to check, and
+ * a field that cannot work is a door drawn on a wall.
  */
 export function MicrosoftSignInScreen({
   host,
@@ -43,11 +56,14 @@ export function MicrosoftSignInScreen({
   onSignIn,
   busy = false,
   error,
+  notice,
   note,
+  toMicrosoft = true,
 }: MicrosoftSignInScreenProps) {
+  const state = error !== undefined ? 'sso-error' : notice !== undefined ? 'sso-ready' : 'sso';
   return (
     <div className="auth-signin">
-      <AuthCard data-auth-state={error === undefined ? 'sso' : 'sso-error'}>
+      <AuthCard data-auth-state={state}>
         <div className="auth-form auth-sso" aria-labelledby="sso-title" role="group">
           <BrandLockup size="lg" className="auth-brand" />
 
@@ -73,27 +89,38 @@ export function MicrosoftSignInScreen({
             {lead !== undefined && <p className="auth-sso-lead">{lead}</p>}
           </header>
 
-          <AuthSummary>{error !== undefined && <AuthAlert>{error}</AuthAlert>}</AuthSummary>
+          <AuthSummary>
+            {error !== undefined ? (
+              <AuthAlert>{error}</AuthAlert>
+            ) : (
+              notice !== undefined && (
+                <p className="auth-sso-notice" data-auth-notice="">
+                  {notice}
+                </p>
+              )
+            )}
+          </AuthSummary>
 
-          <span className="auth-sso-mark" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-              <rect x="1" y="1" width="8.5" height="8.5" />
-              <rect x="10.5" y="1" width="8.5" height="8.5" />
-              <rect x="1" y="10.5" width="8.5" height="8.5" />
-              <rect x="10.5" y="10.5" width="8.5" height="8.5" />
-            </svg>
-          </span>
-
-          <Button
-            type="button"
-            fullWidth
-            busy={busy}
-            onClick={() => {
-              if (!busy) onSignIn?.();
-            }}
-          >
-            {action}
-          </Button>
+          <div className="auth-sso-action">
+            <Button
+              type="button"
+              fullWidth
+              busy={busy}
+              {...(toMicrosoft ? { leading: <MicrosoftMark /> } : {})}
+              onClick={() => {
+                if (!busy) onSignIn?.();
+              }}
+            >
+              {action}
+            </Button>
+            {toMicrosoft && (
+              <p className="auth-sso-next" role="status">
+                {busy
+                  ? 'Opening Microsoft’s sign-in page…'
+                  : 'You’ll sign in on Microsoft’s page, then come straight back here.'}
+              </p>
+            )}
+          </div>
 
           {note !== undefined && <p className="auth-note">{note}</p>}
         </div>

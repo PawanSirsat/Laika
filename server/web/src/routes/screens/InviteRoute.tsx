@@ -152,6 +152,7 @@ function MicrosoftInvite({
         lead={inviteLead(invite)}
         error="This Laika signs in with Microsoft, and that needs an invite to your own email address. Ask the person who invited you to invite your work address instead of sending a link."
         action="Back to sign-in"
+        toMicrosoft={false}
         onSignIn={() => {
           window.location.assign('/login');
         }}
@@ -180,7 +181,7 @@ function MicrosoftInvite({
           );
         });
       }}
-      note={`Sign in with the Microsoft account for ${invite.email}. Any other account is refused.`}
+      note={`Use the Microsoft account for ${invite.email} — any other account is turned away.`}
     />
   );
 }

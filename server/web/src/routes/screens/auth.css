@@ -696,9 +696,51 @@
   color: var(--text-secondary);
 }
 
-/* The four-square mark, in the text colour: the theme owns every colour. */
-.auth-sso-mark {
+/* The action and the one line under it saying where the click goes. */
+.auth-sso-action {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.auth-sso-next {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Good news, said first — *Laika is set up* — in the alert's shape, in green. */
+.auth-sso-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-card);
+}
+
+/* First boot on an SSO-only instance (LAI-1238): how people will sign in, said
+   before the owner types the email that has to match it. */
+.boot-sso {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2-5) var(--space-3);
+  font-size: var(--text-small);
+  line-height: 1.45;
   color: var(--text-secondary);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+}
+
+.boot-sso-head {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
 }
