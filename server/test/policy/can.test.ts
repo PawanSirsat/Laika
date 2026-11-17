@@ -671,6 +671,44 @@ describe('the HR connection refuses every token (LAI-1181)', () => {
   });
 });
 
+describe('org.email.configure (D-153, LAI-1312 review)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+
+  it('allows an owner and an admin on a cookie session, and refuses each to any token', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role, null), 'org.email.configure'), role).toBe(true);
+      for (const token of tokens) {
+        expect(can(actor(role, null, token), 'org.email.configure'), `${role} / ${token.id}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('says a token is refused for being a token: a token must never point the relay', () => {
+    try {
+      assertCan(actor('owner', null, tokens[0]), 'org.email.configure');
+      expect.unreachable('a token reached the email settings');
+    } catch (err) {
+      expect((err as ApiError).details).toEqual({
+        action: 'org.email.configure',
+        reason: 'session_required',
+      });
+    }
+  });
+
+  it('gives a member and a viewer none of it, and follows the admin grant', () => {
+    expect(can(actor('member', null), 'org.email.configure')).toBe(false);
+    expect(can(actor('viewer', null), 'org.email.configure')).toBe(false);
+    const withdrawn = { ...actor('admin', null), orgGrants: { admin: [], member: [], viewer: [] } };
+    expect(can(withdrawn, 'org.email.configure')).toBe(false);
+  });
+});
+
 /**
  * D-157 (LAI-1316): the Outlook calendar connection holds an app secret that
  * reads every member's calendar, so every token is refused — an owner's full

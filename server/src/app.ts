@@ -48,6 +48,7 @@ import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
+import { emailRoutes } from './http/routes/email.ts';
 import { calendarRoutes } from './http/routes/calendar.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
@@ -107,6 +108,7 @@ import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type CalendarSyncDeps } from './services/calendar-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
+import { type MailTransport, noTransport } from './services/email-transport.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -208,6 +210,13 @@ export interface CreateAppOptions {
    * answer `503 attachments_off`, and `GET /org` says `attachments: null`.
    */
   attachments?: AttachmentsDeps;
+  /**
+   * How email leaves (D-153, LAI-1312): `smtpTransport()` from `index.ts`.
+   * **Absent is a transport that refuses everything**, so a test that forgets
+   * to inject its recorder can never reach a mail server — it gets
+   * `ENOTRANSPORT` instead.
+   */
+  emailTransport?: MailTransport;
   /**
    * The Outlook calendar sync's `fetch`, clock and waits (D-157, LAI-1316).
    * Injected by the tests so **none of them calls Microsoft**; `index.ts`
@@ -442,7 +451,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meDeveloperSetupRoutes({ db }));
     // A person's own availability (D-131, LAI-1130); the people reads are above.
     app.route(`${API_BASE}/me`, meAvailabilityRoutes({ db }));
-    app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));
+    app.route(
+      `${API_BASE}/users`,
+      userRoutes({ db, publicUrl: options.publicUrl, serverSecret: options.serverSecret ?? '' }),
+    );
     app.route(
       `${API_BASE}/org`,
       orgRoutes({
@@ -457,6 +469,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(
       `${API_BASE}/org`,
       hrRoutes({ db, serverSecret: options.serverSecret ?? '', hrSync: options.hrSync }),
+    );
+    // Outbound email (D-153, LAI-1312): `/email*`, paths neither has.
+    app.route(
+      `${API_BASE}/org`,
+      emailRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        publicUrl: options.publicUrl,
+        transport: options.emailTransport ?? noTransport,
+      }),
     );
     // The Outlook calendar connection (D-157, LAI-1316): `/calendar*`, a path
     // `orgRoutes` does not have.
@@ -501,7 +523,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,
-      inviteRoutes({ db, auth: options.auth, publicUrl: options.publicUrl }),
+      inviteRoutes({
+        db,
+        auth: options.auth,
+        publicUrl: options.publicUrl,
+        serverSecret: options.serverSecret ?? '',
+      }),
     );
     // Public, like `/invites/accept`: the link's token is the authority (LAI-983).
     app.route(

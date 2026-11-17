@@ -117,6 +117,8 @@ describe('the jobs §11.6 names', () => {
       'checkpoint.retention',
       'claim.expiry',
       'db.vacuum',
+      'email.retention',
+      'email.send',
       'estimate.refit',
       'heartbeat.retention',
       'hr.sync',
@@ -129,6 +131,16 @@ describe('the jobs §11.6 names', () => {
       'task.stale',
       'time.retention',
     ]);
+  });
+
+  it('sends email every 30 seconds, not at boot, and prunes it daily and at boot (LAI-1312)', () => {
+    const jobs = buildJobs(deps());
+    const send = jobs.find((j) => j.name === 'email.send');
+    const retention = jobs.find((j) => j.name === 'email.retention');
+    expect(send?.everyMs).toBe(30_000);
+    expect(send?.atStart).toBeUndefined();
+    expect(retention?.everyMs).toBe(24 * 60 * 60 * 1000);
+    expect(retention?.atStart).toBe(true);
   });
 
   it('runs time retention daily and once at boot (D-088 item 11, LAI-787)', () => {

@@ -81,8 +81,10 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  // The same for `orgs` and 0031's `developer_insights` (LAI-751).
-  if (hasColumn(db, 'orgs', 'developer_insights')) {
+  // The same for `orgs`, keyed on its newest column: 0083's `email_enabled`
+  // (LAI-1312), which came with `smtp_settings` — 0031's `developer_insights`
+  // (LAI-751) was the key before them.
+  if (hasColumn(db, 'orgs', 'email_enabled')) {
     db.insert(orgs)
       .values({ id: orgId, name: 'Laika', ownerUserId: userId, createdAt: now, updatedAt: now })
       .run();

@@ -178,6 +178,9 @@ const ORG_MATRIX: OrgRow[] = [
   // | Change a space's icon | ✓ | ✓ | — | — |
   // D-152 (LAI-1311): the owner's two roles, and no grant moves it.
   ['project.icon.write', true, true, false, false],
+  // | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
+  // D-153 (LAI-1312 review): the same grant; a token is refused in `can.test.ts`.
+  ['org.email.configure', true, true, false, false],
   // | Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
   // D-157 (LAI-1316): the same grant as the HR connection; a token is
   // refused in `can.test.ts`.
@@ -521,6 +524,8 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.hr.sync', {}],
     ['system.calendar.sync', {}],
     ['system.attachment.prune', {}],
+    ['system.email.send', {}],
+    ['system.email.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

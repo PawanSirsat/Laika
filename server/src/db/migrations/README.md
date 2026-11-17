@@ -91,8 +91,8 @@ either. So is `task_estimates` (§4.32, LAI-771), with the same three triggers
 rebuild drops `time_entries` and then renames `__new_time_entries` into its
 place, and **SQLite refuses that `RENAME` while any trigger names a table that
 does not exist** — `error in trigger …: no such table: main.time_entries`.
-`0084_calendar_sync` therefore carries one hand-added line before the rebuild,
+`0085_calendar_sync` therefore carries one hand-added line before the rebuild,
 `DROP TRIGGER IF EXISTS` for that trigger; `ensureActivityTriggers` creates it
 again after the migrations, as it does on every boot. The next rebuild of
 `time_entries` needs the same line, and so does a rebuild of any table that
-another table's trigger names. `migrate.test.ts`'s 0084 case fails without it.
+another table's trigger names. `migrate.test.ts`'s 0085 case fails without it.

@@ -141,7 +141,7 @@ organisation's grants for exactly these actions and no others.
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
 | *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
-| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.calendar.configure` (D-157) |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.email.configure` (D-153), `org.calendar.configure` (D-157) |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
@@ -261,6 +261,7 @@ be obvious because someone will be asking for it.
 | Read and set own plan limit | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
 | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
+| Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
 | Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
 | Read own time settings | ✓ | ✓ | ✓ | ✓ |
 | Set own Draft my time | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
@@ -402,6 +403,18 @@ themselves are the organisation's Time setting** — adding or removing one is
 holiday is not private. **Leave is read with the person's availability**
 (D-137), its type only by the person, owners, admins and *See everyone's
 analytics* (D-149 item 5).
+
+**"Configure the organisation's email" is `org.email.configure`** (D-153,
+LAI-1312 review), behind §6.4's `/org/email` routes and `PATCH /org`'s
+`email_enabled`: the SMTP settings, *Send test email* and the *Email on* switch.
+**Session only**, because every invite and reset link goes wherever it points:
+a token that could set the relay or turn email on could have them all mailed to
+a server it chose, which is the reason *Issue a password-reset link* is session
+only, reached another way. Saving without the key keeps the stored one **only
+for the same host, port and login** — a new one is `422 key_required`, so the
+stored key is never sent to a server it was not given for. §3.1's *Org settings
+(AI provider, SMTP, signup mode)* row still names SMTP; this is the narrower row
+that guards it.
 
 **"Connect the organisation's Outlook calendar" is `org.calendar.configure`**
 (D-157, LAI-1316), behind §6.4's `/org/calendar` routes: save the Entra app's
@@ -759,7 +772,9 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 | `system.hr.sync` | §11.6: holidays and leave from the organisation's HR system, every 30 minutes and once at boot (§4.88 – §4.91, D-149, LAI-1181) |
 | `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
-| `system.calendar.sync` | §11.6: members' accepted and organised Outlook meetings logged as their time, every 15 minutes while the switch is on (§4.93, §4.94, D-157, LAI-1316) |
+| `system.email.send` | §11.6: every 30 seconds, the outbox's queued email sent — or recorded `suppressed` when the switch is off or nothing is configured (§4.93, D-153, LAI-1312) |
+| `system.email.prune` | §11.6: outbox rows 90 days after they were written (§4.93, D-153, LAI-1312) |
+| `system.calendar.sync` | §11.6: members' accepted and organised Outlook meetings logged as their time, every 15 minutes while the switch is on (§4.94, §4.95, D-157, LAI-1316) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -835,7 +850,9 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `ai_base_url` | **nullable** — for Ollama / vLLM; null means the provider's own default endpoint |
 | `ai_api_key_enc` | **nullable** — AES-256-GCM, key derived from `LAIKA_SECRET` (§12). **Null is how "no provider configured" is recorded**; there is no separate flag, so §10.2 and the Assistant both read this column to decide whether they can run at all |
 | `ai_key_last4` | the key's last four characters, **stored at set time, never derived** — building a response must not require decrypting the key (LAI-447) |
-| `smtp_json_enc` | nullable, same encryption |
+| `smtp_json_enc` | nullable, same encryption — `{"password": …}`, the SMTP key (D-153, LAI-1312). **Only the sender and the test send decrypt it**; nothing a screen reads is built from it |
+| `smtp_settings` | **nullable** — plain JSON of what the Email card shows: `host`, `port`, `username`, `from_address`, `from_name` and the key's `key_last4`, stored when the key is set (LAI-447's rule, as `ai_key_last4`). **Never the key.** Null until an owner or admin saves the card (D-153) |
+| `email_enabled` | integer, default **0** — the organisation's *Email on* switch (D-153, LAI-1312). Off: nothing is mailed, and every message that would have been is recorded `suppressed` / `email_off` (§4.93); only *Send test email* sends. Turning it on needs `smtp_settings` and `smtp_json_enc` both set. Readable by everyone as `OrgView.email`, for `attachments`' reason |
 | `github_webhook_secret_enc` | nullable, same encryption |
 | `transcript_webhook_secret_enc` | nullable, same encryption — **its own secret, not GitHub's** (D-052). One secret for two integrations means revoking either breaks both, and a leak of one hands over the other. |
 
@@ -1293,6 +1310,12 @@ the agents that send no heartbeat. Nothing about that path is stored here.
 `accepted_by` (**nullable**), `accepted_at` (**nullable** — the pair is null
 exactly while the invite is still pending, and **that is the only record of
 pending there is**; there is no `status` column), `created_at`.
+
+**The link is the inviter's to hand on, and also mailed when email is on**
+(D-153, LAI-1312): creating or re-issuing an invite with an `email` queues the
+accept link to it through the outbox (§4.93), keyed `invite:<id>`. Off, the row
+says `email_off` and nothing is sent; the copy-link flow is the same either way.
+`email_sent` on the invite's view is true only once that message has been sent.
 
 ### 4.12 `meeting_reviews`
 
@@ -2347,7 +2370,7 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.94, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
+| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.95, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
 | `source_ref` | nullable — the draft it came from, an import's own id (LAI-788), or a calendar meeting's Graph event id (D-157); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `kind` | nullable — what the person said it was (D-108, LAI-897; the design's eight since LAI-516): `work` \| `meeting` \| `thinking` \| `research` \| `pairing` \| `review` \| `support` \| `admin` — validated by the API on every path (no CHECK here: SQLite cannot add one without rebuilding a table that carries retention triggers; `time_timers.kind` carries it). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it. Migration 0060 mapped the first eight: call → meeting, planning → thinking, learning → research, other → work |
@@ -2628,9 +2651,11 @@ Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
 ### 4.60 `password_resets`
 
 One-time password-reset links an admin issued for somebody (D-104 item 4,
-LAI-983). Laika sends no email, so whoever holds *Deactivate people and reset
-access* issues a link (§3.1 *Issue a password-reset link*), shown once, and
-hands it over. **The rows
+LAI-983). Whoever holds *Deactivate people and reset access* issues a link
+(§3.1 *Issue a password-reset link*), shown once, and hands it over — and when
+the organisation's email is on (D-153, LAI-1312) it is also queued to the
+person's address through the outbox (§4.93), keyed `password_reset:<id>`.
+There is still no self-serve *Forgot password* (§14 q11). **The rows
 are the log** of who issued a link for whom and whether it was used, as
 `analytics_views` is for reads: §4.8 gains no verb. Issuing a link revokes the
 person's earlier unused ones.
@@ -3967,7 +3992,50 @@ what the object claims.
 **Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
 these rows and not the files (D-150 item 8).
 
-### 4.93 `org_calendar_source`
+### 4.93 `email_outbox`
+
+Every email Laika sends, and every one it decided not to (D-153, LAI-1312). A
+request writes a row and returns; §11.6's `email.send` sends what is queued, so
+**nothing on the board waits on a mail host**. KSage's delivery design, ported
+(LAI-1310).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `kind` | `test` \| `invite` \| `password_reset` (CHECK) |
+| `idempotency_key` | unique — one message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. **Enqueueing the same key again writes nothing** |
+| `recipient_user_id` | nullable, FK `users`, set null — the person it is for, when they have an account |
+| `to_address` | nullable — where it goes; null only when there was nobody to send to (`no_address`) |
+| `subject` | |
+| `body_enc` | nullable — §12's `email_body` ciphertext of `{text, html}`, **present only while `queued` or `sending`**: an invite or a reset carries a working link, and §13.1 stores no token in the clear. Cleared the moment the row is final; a suppressed row never has one |
+| `state` | `queued` \| `sending` \| `sent` \| `failed` \| `unconfirmed` \| `suppressed` (CHECK) |
+| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` \| `superseded` (CHECK), **set exactly when `suppressed`** (CHECK). `superseded`: the link it carries stopped working before it went — the invite was revoked, re-issued or accepted, or the reset link was replaced or used (LAI-1312 review) |
+| `attempts` | default 0 |
+| `next_attempt_at` | nullable — when a `queued` row is next due |
+| `send_before` | the horizon: the earlier of seven days and the link's own expiry. Past it, `too_old` |
+| `claimed_at` | nullable — when a run took it |
+| `sent_at` | nullable — when the server accepted it |
+| `last_error` | nullable, ≤ 300 (CHECK) — the SMTP reply code or the transport's, and a short reason; never a credential |
+| `created_by` | nullable, FK `users`, set null — the inviter, or the admin who issued a reset or pressed *Send test email* |
+| `created_at`, `updated_at` | |
+
+Indexes: unique `(idempotency_key)`, `(state, next_attempt_at)` — the sender's —
+`(created_at)`, `(recipient_user_id)`.
+
+**Silence is a row.** A message that is not sent is written `suppressed` with
+its reason, at enqueue and **again at send time**: the switch is asked first
+(off means off, whatever else is true), then the settings, the address and the
+public URL — a link in an email must be absolute, so with no `LAIKA_PUBLIC_URL`
+it is `no_public_url`. **The outcomes** (`services/email-transport.ts`): a 5xx
+is `failed`; a 4xx, or a failure where nothing could have left — DNS, a refused
+connection, a connect, greeting or TLS-upgrade timeout — is tried again after
+1, 5, 15 and 60 minutes, five attempts in all, and `failed` after; a timeout or
+a dropped connection once the session was underway is `unconfirmed`, **final
+and never retried**, because an email sent twice cannot be unsent. A row left
+`sending` ten minutes is `unconfirmed` too. *Send test email* writes its row
+already final, with no body. Retention: 90 days (§11.6).
+
+### 4.94 `org_calendar_source`
 
 The organisation's connection to Microsoft 365 calendars (D-157, LAI-1316) — one
 row, or none when it is not set up. Its own table, as `org_hr_source` is. Written
@@ -3998,7 +4066,7 @@ member's calendar as the app, once an admin has granted it `Calendars.Read`.
 Disconnecting deletes the row; the meetings already logged stay, as the people's
 time they are.
 
-### 4.94 `calendar_events`
+### 4.95 `calendar_events`
 
 Which of a person's time entries holds which of their Outlook meetings (D-157,
 LAI-1316) — the `solidtime_entries` pattern, so a re-read can tell a changed
@@ -4439,6 +4507,7 @@ PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects } 
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
                                              every read carries attachments: { max_bytes } | null — null when the board has no store (D-150)
+                                             and email: { enabled, configured } — the *Email on* switch and whether SMTP is set, read by everyone (D-153); PATCH takes email_enabled — org.email.configure, session only — true refused 422 reason email_not_configured until a key is saved
                                              the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
                                              and owner_invites_pending: [{ id, email, expires_at }] — owner invites from before D-104 still unaccepted and unexpired, to revoke (LAI-982)
 POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged; only the owner orgs.owner_user_id names may — another owner from before D-104 is 403 reason not_recorded_owner   (owner only; session only; LAI-982)
@@ -4450,6 +4519,10 @@ POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes 
 POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } (1–500) — map a person, or null for not on Laika → the connection; 422 reasons duplicate_person, duplicate_user, unknown_user; 409 conflict reason user_mapped_elsewhere when another owner mapping holds that member (an email match gives way); a remap stamps that person's live leave removed at once   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
+GET    /api/v1/org/email                     the Email card → { enabled, configured, host, port, username, from_address, from_name, key_last4, defaults: { host, port, from_address, from_name }, public_url, last_test: { at, ok, to, code } | null, last_7_days: { queued, sending, sent, failed, unconfirmed, suppressed } } — never the key   (Configure the organisation's email: owner, admin; session only; D-153, LAI-1312)
+PUT    /api/v1/org/email                     body { host, port, username, password?, from_address, from_name } — the key (`password`) is write-only, absent keeps the stored one **for the same host, port and username only** (a change without it is 422 field password reason key_required); host a host name, port 1–65535, from_address an address, no line breaks anywhere → the card; 422 naming the field   (same)
+DELETE /api/v1/org/email                     forget the settings and the key and turn the switch off (204)   (same)
+POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, meetings, created, updated, removed, unchanged, kept_edits, skipped } | null }   (owner, admin; session only; D-157, LAI-1316)
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured, 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable   (owner, admin; session only; its own rate-limit bucket)
@@ -4468,7 +4541,7 @@ PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owne
                                              org_role 'owner' → 422 reason use_transfer; so is demoting or deactivating the owner orgs.owner_user_id names (LAI-982)
                                              deactivating takes open_tasks: "unassign" | { reassign_to } — 409 without it while they hold open tasks (LAI-986)
                                              deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
-POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at } — a one-time password-reset link, shown once, ≤ 24 h; revokes their earlier unused links; recorded in §4.60   (owner, and admin by default; never for the owner unless the caller is the owner; session only; LAI-983)
+POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at, email: { queued, reason } } — a one-time password-reset link, shown once, ≤ 24 h; revokes their earlier unused links; recorded in §4.60; also queued to the person's address while email is on (D-153)   (owner, and admin by default; never for the owner unless the caller is the owner; session only; LAI-983)
 POST   /api/v1/password-resets/consume       body { token, new_password } → { user_id, sessions_ended } — public; new_password as setup's (12–512); ends every session of theirs; refusals 404 unknown, 409 used / revoked / expired, 403 inactive, 429 throttled like sign-in (§6.1)
 POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
@@ -4503,6 +4576,7 @@ GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v
                                              POST takes optional expires_in_days: 1 | 7 | 30, default 7 (LAI-984)
                                              an invite never grants org_role 'owner' → 422 reason use_transfer (LAI-982)
                                              accepting a pending owner invite from before D-104 is refused the same and the invite stays unaccepted (sign-up: 422 auth_code use_transfer)
+                                             POST and /:id/reissue answer email: { queued, reason } — the link was also queued to the address (§4.93), or why not (email_off, no_address, …); an invite's email_sent is true once that mail was sent (D-153)
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 POST   /api/v1/invites/:id/reissue           body { expires_in_days? } — revoke a pending or expired invite and issue a new link for the same address, role and project, in one step → 201, POST /invites' answer; 409 if accepted   (as creating it: Invite people, and only the owner for an admin invite; LAI-984)
@@ -7165,7 +7239,7 @@ the decision currently governing it rather than the table naming one for all.
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
 | Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept, the hand-offs needing approval at its head and the whole Hand-offs list at `?view=handoffs` — D-146; `?tab=handoffs` is an alias to it, LAI-1169) and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`), `/work` → `/organisation?tab=work` (keeping its `person`, `status`, `space`, `sprint` and `size`) | **LAI-796**; **LAI-507**; **D-147** |
-| Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*, *Holidays*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider, HR system), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
+| Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*, *Holidays*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider, HR system, Email — D-153), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
@@ -7478,6 +7552,17 @@ anything missing sends the task back.
   member: this year's and next year's holidays by day, synced ones tagged, a
   holiday that covers only some people saying so; owners and admins add one
   (a day and a name) and remove their own, never a synced one.
+  An **Email** section on *Integrations* for owners and admins (D-153,
+  LAI-1312): a badge — *not set up*, *off · ready* or *on* — and the *Email on*
+  switch with the step the organisation is on beside it (paste the key, send a
+  test, turn it on; the switch cannot turn on before a key is saved); the SMTP
+  form pre-filled with Brevo's relay, `587` and Kvell's sender — host, port,
+  login, key (write-only, *leave empty to keep it*, its last four shown), From
+  address and From name — with *Save*, *Send test email* (its result in words
+  with the code) and *Clear*; a warning when the server has no
+  `LAIKA_PUBLIC_URL`; and the last seven days' sent, failed, unconfirmed and
+  not-sent counts. The invite dialog and a person's reset link say when the
+  link was also emailed; the copy link is the same either way.
 - **Connect** (`/developer?tab=connect`; `?agent=` sets the agent and
   `?step=2` opens on the token) — the four-step wizard: choose the agent, mint
   a token, add Laika to the agent, check it connected. **Everything in it is
@@ -8140,7 +8225,7 @@ One interval-driven scheduler in the same process:
   `system.hr.sync`. **A run never overlaps another** — *Sync now* joins one
   already running. No `activity` row: the connection carries its time, counts
   and last error
-- **calendar sync** (§4.93, §4.94, D-157, LAI-1316) — every 15 minutes, **never
+- **calendar sync** (§4.94, §4.95, D-157, LAI-1316) — every 15 minutes, **never
   at boot**, and only while the Outlook connection is saved, **its switch is
   on** and the organisation's Time is not off: each active member's calendar
   from the start of yesterday to the end of tomorrow in their zone, every
@@ -8202,6 +8287,18 @@ One interval-driven scheduler in the same process:
   from its history and every open task recomputed against it, daily **and once
   at boot**, so a deploy starts with every task estimated. It writes no
   `activity` row: the figures are derived, as `ready` is
+- **email send** (§4.93, D-153, LAI-1312) — every 30 seconds, not at boot,
+  under §3.4's `system.email.send`: a `sending` row older than ten minutes is
+  `unconfirmed`, a queued row past `send_before` is `suppressed` / `too_old`,
+  and — the switch and the settings asked again — every queued row is
+  `suppressed` (`email_off`, `email_not_configured`) or up to 50 are sent, each
+  outcome recorded as §4.93 says — **the switch asked again before each one**,
+  so turning email off mid-run stops it at the next message. **A run never overlaps another**; a tick joins
+  the one going. No `activity` row. Nothing without a transport, and nothing
+  mailed while the organisation's switch is off — the default
+- **email retention** (§4.93) — daily **and once at boot**, under
+  `system.email.prune`: outbox rows written more than 90 days ago, never a
+  `queued` or `sending` one. No `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.
@@ -8275,7 +8372,11 @@ Secrets are encrypted at rest with AES-256-GCM under a key derived from
 characters** — a shorter value is a hard startup failure and the value is
 redacted from the error message (§11.7, D-018). Ciphertext lives in `orgs.*_enc`; plaintext is never logged,
 never returned by the API (the UI sees `{ configured: true, provider, key_last4 }`),
-and never written to `activity`.
+and never written to `activity`. Each column has its own key, by purpose:
+`ai_api_key`, `smtp_json` (the SMTP key, D-153), `github_webhook_secret`,
+`transcript_webhook_secret`, `clan_api_token`, and `email_body` — a queued
+email's body in `email_outbox.body_enc` (§4.93), which carries a one-time link
+and is cleared once the row is final.
 
 ---
 
@@ -8454,7 +8555,9 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
     and "Email me a sign-in link". Neither exists in §6.1 or §6.4, and both need
     working SMTP. Either specify them (endpoints, token lifetimes, SMTP as a hard
     dependency) or cut them from the design. Currently listed as artifacts in
-    `docs/design/README.md` and **not** to be built.
+    `docs/design/README.md` and **not** to be built. **SMTP now exists** (D-153,
+    LAI-1312) and an admin-issued reset link (§4.60) is mailed while email is on;
+    a self-serve *Forgot password* is still unspecified and still not built.
 
 *(Questions about a Timeline date model and the sprints non-goal were resolved on
 2026-08-24 — see D-013 and D-014.)*

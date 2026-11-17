@@ -22,7 +22,7 @@ import { CALENDARS_READ, graphClient, isClientId, isTenantId } from './microsoft
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 
 /**
- * The organisation's Outlook calendar connection (§4.93, D-157, LAI-1316):
+ * The organisation's Outlook calendar connection (§4.94, D-157, LAI-1316):
  * the Entra app's tenant, client id and secret, the rules that send a meeting
  * to a space, the switch, a test of the grant, sync now, and disconnect.
  *

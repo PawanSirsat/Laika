@@ -111,6 +111,8 @@ describe('migrations', () => {
     'device_pairing_requests',
     // LAI-1045, D-122: the devices an owner's agents run on.
     'devices',
+    // LAI-1312, D-153: every email sent, and every one suppressed with its reason.
+    'email_outbox',
     // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
     'github_checks',
     'github_commits',

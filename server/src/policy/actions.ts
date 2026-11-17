@@ -111,6 +111,9 @@ export const ORG_ACTIONS = [
   'org.hr.configure',
   // D-152 (LAI-1311): a space's icon — its image or its emoji.
   'project.icon.write',
+  // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
+  // *Email on* switch.
+  'org.email.configure',
   // D-157 (LAI-1316): the Outlook calendar connection — its app credentials,
   // mapping rules and switch, a test of the grant, sync now, disconnect.
   'org.calendar.configure',
@@ -215,6 +218,10 @@ export const SYSTEM_ACTIONS = [
   // §11.6: uploads nobody finished, files nothing linked, and the objects of
   // removed files, swept from the store hourly (D-150 item 6, LAI-1300).
   'system.attachment.prune',
+  // §11.6: the outbox's queued mail sent, and its rows deleted after 90 days
+  // (D-153, LAI-1312) — nobody sends a queued email, so nobody is the actor.
+  'system.email.send',
+  'system.email.prune',
   // §11.6: members' Outlook meetings logged as their time every 15 minutes,
   // while the switch is on (D-157, LAI-1316).
   'system.calendar.sync',
@@ -439,6 +446,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // must neither connect one, nor point the organisation's at another account,
   // nor say whose leave is whose.
   'org.hr.configure',
+  // **Email is where every invite and reset link goes** (D-153, LAI-1312
+  // review): a token that could set the relay, or turn email on, could have
+  // every one of them mailed to a server it chose — the reason
+  // `user.reset_password` is session only, reached another way.
+  'org.email.configure',
   // **The calendar connection holds an app secret that reads every member's
   // calendar** (D-157, LAI-1316): an agent's token must neither set it, nor
   // turn the sync on, nor send a meeting's time to a space.

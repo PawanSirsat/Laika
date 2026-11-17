@@ -2,6 +2,7 @@ import { request } from './client.ts';
 import type { ProjectRole } from './members.ts';
 import type { OpenTasksChoice } from './offboarding.ts';
 import type { Page } from './tasks.ts';
+import type { EmailDispatch } from './email.ts';
 
 /**
  * The organisation's people (SPEC §6.4, LAI-060).
@@ -158,6 +159,8 @@ export function signOutEverywhere(id: string): Promise<SignOutView> {
 export interface ResetLinkView {
   readonly url: string;
   readonly expires_at: number;
+  /** Whether the link was also queued to the person's address (D-153), and if not, why. */
+  readonly email: EmailDispatch;
 }
 
 export function issueResetLink(id: string): Promise<ResetLinkView> {
