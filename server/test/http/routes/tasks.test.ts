@@ -909,6 +909,9 @@ describe('patch', () => {
       'task_checkpoints.task_id': {
         not_shown: 'read by GET /tasks/:id/checkpoints, not by the task view (LAI-545)',
       },
+      'attachments.task_id': {
+        not_shown: 'read by GET /tasks/:id/attachments, not by the task view (LAI-1300)',
+      },
       'token_usage_days.task_id': { not_shown: 'usage figures have their own endpoints' },
       'token_session_tasks.task_id': { not_shown: 'usage figures have their own endpoints' },
       'token_alerts.task_id': { not_shown: 'usage figures have their own endpoints' },

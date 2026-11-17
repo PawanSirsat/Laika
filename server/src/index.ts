@@ -71,6 +71,8 @@ function main(): void {
     publicUrl: env.publicUrl,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
     warmStaticCache: true,
+    // The operator's store, or null — off (D-150, LAI-1300).
+    attachments: { config: env.attachments },
   });
 
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
@@ -124,6 +126,8 @@ function main(): void {
     backupDir,
     // The HR sync reads the stored token with it (D-149, LAI-1181).
     serverSecret: env.serverSecret,
+    // The attachments sweep deletes from the store with it (D-150, LAI-1300).
+    attachments: { config: env.attachments },
   });
 
   const shutdown = createRuntimeShutdown({

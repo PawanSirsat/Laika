@@ -15,6 +15,7 @@ import { orgs } from '../db/schema.ts';
 import { encryptSecret } from '../secrets.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { type OrgAttachmentsView } from './attachments.ts';
 import { pendingOwnerInvites } from './invites.ts';
 import { extraOwners } from './users.ts';
 
@@ -136,6 +137,13 @@ export interface OrgView {
    * them, to revoke. Same gate as `extra_owners`; absent, not null.
    */
   owner_invites_pending?: { id: string; email: string | null; expires_at: number }[];
+  /**
+   * Attachments on this board (D-150, LAI-1300): the largest file it takes,
+   * or `null` when no store is configured — and the SPA then offers no attach
+   * control. **Readable by everyone**: whoever may attach needs to know the
+   * limit before choosing a file.
+   */
+  attachments: OrgAttachmentsView | null;
 }
 
 /**
@@ -150,7 +158,12 @@ export interface OrgView {
  * response would inherit a grant nobody reviewed. In a permission matrix that is
  * the worst place for a contingent fact (D-037).
  */
-export function getOrg(db: Db, actor: ResolvedActor, publicUrl = ''): OrgView {
+export function getOrg(
+  db: Db,
+  actor: ResolvedActor,
+  publicUrl = '',
+  attachments: OrgAttachmentsView | null = null,
+): OrgView {
   assertCan(actor, 'org.read');
 
   const row = db
@@ -167,6 +180,7 @@ export function getOrg(db: Db, actor: ResolvedActor, publicUrl = ''): OrgView {
     developer_insights: row.developerInsights === 1,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
+    attachments,
   };
 
   // Field-level, and the only gate on it. A Viewer gets the org and no `ai` key
@@ -415,6 +429,7 @@ export function updateOrg(
   serverSecret: string,
   now: number = Date.now(),
   publicUrl = '',
+  attachments: OrgAttachmentsView | null = null,
 ): OrgView {
   assertCan(actor, 'org.settings.edit');
   // Asked before anything is written, so a token's request that also carries
@@ -485,5 +500,5 @@ export function updateOrg(
     }
   });
 
-  return getOrg(db, actor, publicUrl);
+  return getOrg(db, actor, publicUrl, attachments);
 }

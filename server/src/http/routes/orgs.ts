@@ -20,6 +20,8 @@ import {
 } from '../../services/org-model-prices.ts';
 import { type OwnershipTransferView, transferOwnership } from '../../services/users.ts';
 import { getOrgOverview, type OrgOverviewView } from '../../services/org-overview.ts';
+import { type AttachmentsEnv } from '../../env.ts';
+import { orgAttachmentsView } from '../../services/attachments.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
@@ -95,6 +97,8 @@ export interface OrgRouteOptions {
    * the URL from the address it was opened at.
    */
   publicUrl?: string | undefined;
+  /** Attachments' settings (D-150), for `GET /org`'s `attachments`; null is off. */
+  attachments?: AttachmentsEnv | null | undefined;
 }
 
 const TransferBody = strictObject({
@@ -107,6 +111,7 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
   const publicUrl = options.publicUrl ?? '';
+  const files = orgAttachmentsView(options.attachments ?? null);
 
   /**
    * `GET /api/v1/org/overview` (LAI-986): people seen this week and the open /
@@ -122,7 +127,7 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
 
-    return c.json(getOrg(db, actor, publicUrl));
+    return c.json(getOrg(db, actor, publicUrl, files));
   });
 
   /**
@@ -228,7 +233,7 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
       throw new ApiError('internal', 'This server cannot store secrets');
     }
 
-    return c.json(updateOrg(db, actor, body, serverSecret, Date.now(), publicUrl));
+    return c.json(updateOrg(db, actor, body, serverSecret, Date.now(), publicUrl, files));
   });
 
   return app;
