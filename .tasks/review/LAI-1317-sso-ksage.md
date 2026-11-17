@@ -76,3 +76,35 @@ untouched.
   would otherwise reject the feature at review.
 - **Outside the criteria.** `web/src/api/sso.ts`: `token_unreachable` told the admin to check
   the client secret; it now says Microsoft could not be reached.
+
+## Fix round 1 (review-1317, via CHIEF, 2026-11-17)
+
+All nine items, on `LAI-1317-sso-ksage`, then `origin/integration-ksage` (9879a5db0) merged in.
+
+1. **One identity per person.** `databaseHooks.account.create.before` refuses a `microsoft`
+   account for a user who has one: `account_already_linked`. A second oid asserting the same
+   email is refused and the user keeps exactly one row; the first identity still signs in.
+2. **Id-token sign-in off.** `disableIdTokenSignIn: true`. `sign-in/social` and `link-social`
+   with an `idToken` answer 404, `details.auth_code: ID_TOKEN_NOT_SUPPORTED`, and the fake saw
+   no request (no JWKS fetch).
+3. **Claims.** `idTokenProblem` (`auth/sso.ts`) runs in the provider's `getUserInfo` before
+   the stock decoder: `tid` (`wrong_tenant`), exact v2.0 `iss` (`wrong_issuer`), `aud` this
+   client alone (`wrong_audience`, two audiences included), and no `idp` other than `iss`
+   (`guest_account`). The refusal is a 302 to the sign-in's error URL with `?error=<code>`.
+4. **Tenants.** GUID only, stored lowercased; a domain and the personal-account tenant
+   `9188040d-…` fail at boot. `docker/env.example` says so.
+5. **Scopes.** The `before` hook empties `scopes` on `/sign-in/social` and `/link-social`; the
+   authorize URL carries `openid profile email User.Read offline_access` whatever is sent.
+6. **Password paths.** `/forget-password` and `/set-password` dropped (not routes in 1.7.1).
+   `sso_only` tests for `/users/:id/reset-link`, `request-password-reset`, `reset-password`,
+   `change-password` (and sign-in, sign-up).
+7. **The fake** checks the code (single use), S256 `code_verifier`, `redirect_uri` and
+   `client_id`/`client_secret`. Each broken in turn (client secret in `auth.ts`, the stored
+   challenge, the stored redirect URI): 16 of 18 callback tests red, `error=invalid_code`.
+8. **Invite-join and the deactivated refusal** run through the real callback.
+9. **§13.4** names the token endpoint's refreshes via `get-access-token` / `refresh-token`,
+   and that no signing keys are fetched.
+
+Every new guard was broken once and its own test went red (tid, iss, aud, guest, the
+one-identity hook, `disableIdTokenSignIn`, the scopes hook, the deactivated check,
+`change-password` in the list, spending the invite).
