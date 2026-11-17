@@ -259,6 +259,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.notices.prune',
   'system.hr.sync',
   'system.attachment.prune',
+  'system.teams.post',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -680,6 +681,16 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // because the connection is signed in with a person's HR password and its
     // token reads everyone's leave.
     case 'org.hr.configure':
+      return granted(actor, action);
+
+    // | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-154 (LAI-1314): the organisation's *Teams posting on* switch, and each
+    // space's Power Automate address — set, cleared and tested. Carried by
+    // *Change organisation settings, Time and breaks*, as the HR connection
+    // is; session only, because the address decides where a space's work is
+    // read out to.
+    case 'org.teams.configure':
       return granted(actor, action);
 
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |

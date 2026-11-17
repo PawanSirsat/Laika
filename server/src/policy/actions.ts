@@ -109,6 +109,9 @@ export const ORG_ACTIONS = [
   // D-149 (LAI-1181): connect, sync and disconnect the organisation's HR
   // system, and map its people to Laika's.
   'org.hr.configure',
+  // D-154 (LAI-1314): turn Teams posting on or off, and set, clear and test a
+  // space's Teams channel.
+  'org.teams.configure',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -210,6 +213,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: uploads nobody finished, files nothing linked, and the objects of
   // removed files, swept from the store hourly (D-150 item 6, LAI-1300).
   'system.attachment.prune',
+  // §11.6: each space's Teams stand-ups, digest and notices, every minute,
+  // and the posts' record kept 90 days (D-154, LAI-1314).
+  'system.teams.post',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -431,6 +437,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // must neither connect one, nor point the organisation's at another account,
   // nor say whose leave is whose.
   'org.hr.configure',
+  // **A space's Teams address is where its work is read out to** (D-154,
+  // LAI-1314): an agent's token that could set one could send every
+  // stand-up, title and comment to an address of its own choosing, and one
+  // that could turn posting on would speak for the organisation.
+  'org.teams.configure',
 ]);
 
 /**

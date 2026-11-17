@@ -134,6 +134,8 @@ describe('migrations', () => {
     'org_model_prices',
     // LAI-958, D-102: what the owner granted each org role.
     'org_role_grants',
+    // LAI-1314, D-154: the Teams posting switch and its notice cursor.
+    'org_teams_settings',
     // LAI-787, D-088: the organisation's Time.
     'org_time_settings',
     'orgs',
@@ -148,6 +150,8 @@ describe('migrations', () => {
     // LAI-1066: what is known about a repository's Laika block; evidence only.
     'project_repo_setups',
     'project_statuses',
+    // LAI-1314, D-154: a space's Teams channel, its address encrypted.
+    'project_teams_channels',
     'projects',
     'pushed_commit_keys',
     // LAI-590: the owner's confirmed device labels.
@@ -176,6 +180,8 @@ describe('migrations', () => {
     'task_tags',
     'task_watchers',
     'tasks',
+    // LAI-1314, D-154: each post to a space's Teams channel, or why it was held back.
+    'teams_posts',
     // LAI-831: a gap a person waved away; SPEC §4 is LAI-836.
     'time_breaks',
     // LAI-501, D-110: a person's note on a day (§4.62).

@@ -330,6 +330,14 @@ const NOT_SERVED = new Map<string, string>([
   ['OpenDbResult', 'the `{ db, sqlite }` pair `openDb` hands back inside the process'],
   ['SetupResult', 'first-boot wiring returned to the route, which serves its own shape'],
   [
+    'TeamsSendResult',
+    'what one post to a Teams flow came to (D-154): recorded as a `teams_posts` row, served as TeamsPostView',
+  ],
+  [
+    'TeamsTickResult',
+    '§11.6 cron bookkeeping for the Teams posting job (D-154) — counted into the log, never served',
+  ],
+  [
     'BacktestResult',
     'the size model replaying a project’s history (D-085). Kept on the fitted model; the ' +
       'accuracy endpoint serves its figures inside EstimateAccuracyView, which is paired',

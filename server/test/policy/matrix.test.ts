@@ -175,6 +175,9 @@ const ORG_MATRIX: OrgRow[] = [
   // D-149 (LAI-1181): *Change organisation settings, Time and breaks*; a token
   // is refused in `can.test.ts`.
   ['org.hr.configure', true, true, false, false],
+  // | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
+  // D-154 (LAI-1314): the same grant; a token is refused in `can.test.ts`.
+  ['org.teams.configure', true, true, false, false],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -513,6 +516,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.notices.prune', {}],
     ['system.hr.sync', {}],
     ['system.attachment.prune', {}],
+    ['system.teams.post', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

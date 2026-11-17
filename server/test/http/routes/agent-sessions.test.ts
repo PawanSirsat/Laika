@@ -787,6 +787,12 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/org/hr/sync': 'session only (org.hr.configure)',
   'PUT /api/v1/org/hr/people': 'session only (org.hr.configure)',
   'DELETE /api/v1/org/hr': 'session only (org.hr.configure)',
+  // D-154 (LAI-1314): Teams posting, session only; a channel is a space setting.
+  'PUT /api/v1/org/teams': 'session only (org.teams.configure)',
+  'PUT /api/v1/projects/:slug/teams': 'session only (org.teams.configure); a space setting',
+  'DELETE /api/v1/projects/:slug/teams': 'session only (org.teams.configure); a space setting',
+  'POST /api/v1/projects/:slug/teams/test':
+    'session only (org.teams.configure); a post to Teams, no task row changes',
   'POST /api/v1/org/holidays': 'session only (org.time.set); a holiday, not a task',
   'DELETE /api/v1/org/holidays/:id': 'session only (org.time.set); a holiday, not a task',
   'POST /api/v1/otlp/v1/logs': 'telemetry, not a task',

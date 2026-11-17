@@ -128,6 +128,9 @@ function main(): void {
     serverSecret: env.serverSecret,
     // The attachments sweep deletes from the store with it (D-150, LAI-1300).
     attachments: { config: env.attachments },
+    // Teams posts link back to this Laika (D-154, LAI-1314); the address
+    // each is posted to is decrypted with `serverSecret` above.
+    publicUrl: env.publicUrl,
   });
 
   const shutdown = createRuntimeShutdown({

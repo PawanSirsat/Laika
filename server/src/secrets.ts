@@ -78,7 +78,10 @@ export type SecretPurpose =
   | 'github_webhook_secret'
   | 'transcript_webhook_secret'
   // D-149 (LAI-1181): the HR system's API token, in `org_hr_source.token_enc`.
-  | 'clan_api_token';
+  | 'clan_api_token'
+  // D-154 (LAI-1314): a space's Power Automate webhook address, whose `sig=`
+  // is the credential, in `project_teams_channels.webhook_url_enc`.
+  | 'teams_webhook_url';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.

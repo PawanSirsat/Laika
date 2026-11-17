@@ -48,6 +48,7 @@ import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
+import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -103,6 +104,7 @@ import { setEstimateLogger } from './services/estimates.ts';
 import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
+import { type TeamsPostingDeps } from './services/teams-posting.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 
 /**
@@ -198,6 +200,12 @@ export interface CreateAppOptions {
    * real `fetch` is used.
    */
   hrSync?: HrSyncDeps;
+  /**
+   * Teams posting's `fetch` and clock (D-154, LAI-1314), for the test post an
+   * owner sends. Injected by the tests so **none of them calls Teams**;
+   * `index.ts` passes nothing and the real `fetch` is used.
+   */
+  teams?: TeamsPostingDeps;
   /**
    * Attachments (D-150, LAI-1300): the operator's store from `LAIKA_S3_*`,
    * and the `fetch` and clock the tests inject so **none of them calls a
@@ -449,6 +457,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       `${API_BASE}/org`,
       hrRoutes({ db, serverSecret: options.serverSecret ?? '', hrSync: options.hrSync }),
     );
+    // Teams posting (D-154, LAI-1314): the switch on `/org/teams`, and each
+    // space's channel on `/projects/:slug/teams` — paths nothing else has.
+    const teams = {
+      db,
+      serverSecret: options.serverSecret ?? '',
+      teams: { ...options.teams, publicUrl: options.teams?.publicUrl ?? options.publicUrl ?? null },
+    };
+    app.route(`${API_BASE}/org`, orgTeamsRoutes(teams));
+    app.route(`${API_BASE}/projects`, projectTeamsRoutes(teams));
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
     // `/webhooks/*`, outside `/api/v1`, no user session."* It still passes

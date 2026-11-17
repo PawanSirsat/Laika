@@ -142,6 +142,9 @@ export const HR_CALL_PATHS: ReadonlySet<string> = new Set([
   '/api/v1/org/hr/sync',
 ]);
 
+/** A space's Teams test post (D-154, LAI-1314): `/projects/:slug/teams/test`. */
+export const TEAMS_TEST_PATH = /^\/api\/v1\/projects\/[^/]+\/teams\/test$/;
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -187,6 +190,12 @@ export function classify(
   // small bucket per person, and never spend the session's.
   if (HR_CALL_PATHS.has(path) && method === 'POST') {
     return { key: `hr:${who}`, policy: LIMITS.hr };
+  }
+
+  // A Teams test post (LAI-1314) calls a Power Automate flow, so it has a
+  // small bucket per person of its own, as the HR calls do.
+  if (TEAMS_TEST_PATH.test(path) && method === 'POST') {
+    return { key: `teams-test:${who}`, policy: LIMITS.teamsTest };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.

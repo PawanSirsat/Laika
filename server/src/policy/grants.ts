@@ -59,12 +59,14 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     'agent.revoke_any',
     'device.revoke_any',
   ],
-  // D-149 (LAI-1181): the HR connection, beside the Time setting.
+  // D-149 (LAI-1181): the HR connection, beside the Time setting; D-154
+  // (LAI-1314): Teams posting, beside it.
   change_org_settings: [
     'org.settings.edit',
     'org.time.set',
     'org.developer_insights.set',
     'org.hr.configure',
+    'org.teams.configure',
   ],
 };
 

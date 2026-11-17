@@ -12,6 +12,7 @@ import {
   type HrSyncDeps,
   runHrSync,
 } from '../services/hr-sync.ts';
+import { runTeamsTick, TEAMS_TICK_MS, type TeamsPostingDeps } from '../services/teams-posting.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
@@ -73,6 +74,13 @@ export interface SchedulerDeps {
    * nothing.
    */
   attachments?: AttachmentsDeps;
+  /**
+   * Teams posting's `fetch` and waits (D-154, LAI-1314) — injected by the
+   * tests, which never call Teams.
+   */
+  teams?: TeamsPostingDeps;
+  /** `LAIKA_PUBLIC_URL`, for the links back a Teams post carries. */
+  publicUrl?: string;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
   clearTimer?: (handle: unknown) => void;
@@ -172,6 +180,28 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       everyMs: DAY,
       run: (now) => refitEstimates(db, now),
       atStart: true,
+    },
+    // Each space's Teams stand-ups, digest and notices (D-154, LAI-1314),
+    // every minute: a notice is instant to within one tick, and a scheduled
+    // run goes the first tick after its time. Posting is off until an owner
+    // turns it on, and then this still sends nothing for a space with no
+    // channel. Not `atStart`: it waits on the network, and the next minute
+    // comes round. A tick still going when the next comes is joined, never
+    // doubled (`runTeamsTick`).
+    {
+      name: 'teams.post',
+      everyMs: TEAMS_TICK_MS,
+      run: async (now) => {
+        const ticked = await runTeamsTick(db, deps.serverSecret ?? '', {
+          ...deps.teams,
+          publicUrl: deps.teams?.publicUrl ?? deps.publicUrl ?? null,
+          log: deps.teams?.log ?? deps.log,
+          now: () => now,
+        });
+        return {
+          changed: ticked.sent + ticked.failed + ticked.suppressed + ticked.pruned,
+        };
+      },
     },
     // Holidays and leave from the organisation's HR system (D-149 item 7,
     // LAI-1181), every 30 minutes and at boot; nothing without a connected
