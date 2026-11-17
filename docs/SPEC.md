@@ -275,6 +275,7 @@ be obvious because someone will be asking for it.
 | Set own availability | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Read and set own email preferences | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Change a space's icon | ✓ | ✓ | — | — |
 
@@ -472,6 +473,13 @@ addressed to the person — an adder's message among them — not to an agent
 acting for them, and marking one read is the person having seen it. The
 service reads and marks the caller's own rows only; no path names anybody
 else's.
+
+**"Read and set own email preferences" is `email_prefs.own`** (D-153,
+LAI-1313), behind §6.4's `GET` and `PUT /me/email-prefs`: whether a person is
+mailed at once when assigned or @mentioned, and whether they get the daily
+digest. Every role holds it, **session only**: whether a person hears from
+Laika is theirs to decide, not an agent's acting for them. The service reads
+and writes the caller's own row only.
 
 **"View a member's developer setup" is `developer_setup.read_any`** (D-132,
 LAI-1137), behind §6.4's `GET /people/:id/developer-setup`: a member's
@@ -765,6 +773,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
 | `system.email.send` | §11.6: every 30 seconds, the outbox's queued email sent — or recorded `suppressed` when the switch is off or nothing is configured (§4.93, D-153, LAI-1312) |
 | `system.email.prune` | §11.6: outbox rows 90 days after they were written (§4.93, D-153, LAI-1312) |
+| `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.94 – §4.97, D-153, LAI-1313) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -3992,14 +4001,14 @@ request writes a row and returns; §11.6's `email.send` sends what is queued, so
 | field | notes |
 | --- | --- |
 | `id` | ULID |
-| `kind` | `test` \| `invite` \| `password_reset` (CHECK) |
+| `kind` | `test` \| `invite` \| `password_reset` \| `assignment` \| `mention` \| `digest` (CHECK) — the last three a person's notification mail (LAI-1313) |
 | `idempotency_key` | unique — one message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. **Enqueueing the same key again writes nothing** |
 | `recipient_user_id` | nullable, FK `users`, set null — the person it is for, when they have an account |
 | `to_address` | nullable — where it goes; null only when there was nobody to send to (`no_address`) |
 | `subject` | |
 | `body_enc` | nullable — §12's `email_body` ciphertext of `{text, html}`, **present only while `queued` or `sending`**: an invite or a reset carries a working link, and §13.1 stores no token in the clear. Cleared the moment the row is final; a suppressed row never has one |
 | `state` | `queued` \| `sending` \| `sent` \| `failed` \| `unconfirmed` \| `suppressed` (CHECK) |
-| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` \| `superseded` (CHECK), **set exactly when `suppressed`** (CHECK). `superseded`: the link it carries stopped working before it went — the invite was revoked, re-issued or accepted, or the reset link was replaced or used (LAI-1312 review) |
+| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` \| `superseded` \| `pref_off` \| `no_access` (CHECK), **set exactly when `suppressed`** (CHECK). `superseded`: the link it carries stopped working before it went — the invite was revoked, re-issued or accepted, or the reset link was replaced or used (LAI-1312 review) |
 | `attempts` | default 0 |
 | `next_attempt_at` | nullable — when a `queued` row is next due |
 | `send_before` | the horizon: the earlier of seven days and the link's own expiry. Past it, `too_old` |
@@ -4024,6 +4033,90 @@ a dropped connection once the session was underway is `unconfirmed`, **final
 and never retried**, because an email sent twice cannot be unsent. A row left
 `sending` ten minutes is `unconfirmed` too. *Send test email* writes its row
 already final, with no body. Retention: 90 days (§11.6).
+
+`pref_off` (LAI-1313): the person turned that mail off in their profile (§4.94).
+`no_access`: the person may no longer read the task's project, or is inactive —
+asked when an instant mail is written and again for each item before a digest
+goes.
+
+### 4.94 `user_email_prefs`
+
+A person's own email switches (D-153, LAI-1313). **No row is both on** — the
+defaults — so a person who never opens the section is mailed as the
+organisation intends. Nothing is mailed at all while `orgs.email_enabled` is 0.
+Read and set only by the person, signed in (§3.1 *Read and set own email
+preferences*).
+
+| field | notes |
+| --- | --- |
+| `user_id` | PK, FK `users`, cascade |
+| `instant` | 0/1 (CHECK), default 1 — mail at once when assigned a task or @mentioned |
+| `digest` | 0/1 (CHECK), default 1 — the daily digest |
+| `updated_at` | |
+
+### 4.95 `email_digests`
+
+A person's daily digest (D-153, LAI-1313). **One open per person** — KSage's
+rule, a partial unique index on `(user_id) WHERE state = 'open'`: forty things
+at once are forty items in one digest, never forty emails.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `state` | `open` \| `closed` (CHECK) |
+| `opened_at` | when the first item came |
+| `closed_at` | nullable — **set exactly when `closed`** (CHECK) |
+| `outbox_id` | nullable — the `email_outbox` row it went as; null when it closed with nothing left to say. No FK: a pointer |
+
+**It goes** at the first `email.notify` run at or after 07:00 in the person's
+own zone (`user_time_settings.place`, UTC when unset), once it was opened
+before that morning: its items from the last seven days that the person may
+still read, grouped by task and worded on the server, as one message keyed
+`digest:<id>`. None left, and it closes without one. Closed digests are
+deleted 90 days after they closed, with their items (§11.6).
+
+### 4.96 `email_digest_items`
+
+What a digest will say (LAI-1313): one `activity` row or one `member_notices`
+row, **once per person** — unique by person, not by digest, so the notify
+job's re-read never puts one event in two digests.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `digest_id` | FK `email_digests`, cascade |
+| `user_id` | FK `users`, cascade |
+| `activity_id` | nullable — the activity row; append-only, so no FK |
+| `notice_id` | nullable, FK `member_notices`, cascade — **exactly one of the two** (CHECK) |
+| `occurred_at` | when it happened — the seven-day horizon and the order |
+| `created_at` | |
+
+Indexes: unique `(user_id, activity_id)` and `(user_id, notice_id)`,
+`(digest_id)`.
+
+**What is collected**, while `orgs.email_enabled` is 1 and the person's digest
+is on:
+- `task.status_changed`, `task.assigned` (to someone else), `task.updated`
+  (not a claim), `comment.added`, `attachment.added` and `task.stale_flagged`,
+  on a task the person watches (§4.18), done by someone else, that they were
+  not already mailed at once;
+- and their member notices (§4.87).
+
+### 4.97 `email_watermarks`
+
+How far the notify job has read (LAI-1313): one row per source, `activity`
+and `member_notices`. **A time, not `rowid`** — `activity` has a text key, so a
+VACUUM may renumber its rowids, and a stored rowid would then skip rows. Each
+run re-reads two minutes before the watermark, and every effect is idempotent,
+so a row written late is still seen and one seen twice changes nothing. The
+first run records "now" and reads nothing: history is never mailed.
+
+| field | notes |
+| --- | --- |
+| `source` | PK — `activity` \| `member_notices` |
+| `read_to` | the newest `created_at` handled |
+| `updated_at` | |
 
 ## 5. Task lifecycle
 
@@ -4417,6 +4510,7 @@ PUT    /api/v1/me/local-activity             a collector's report, look-back or 
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
 GET    /api/v1/me/notices                    ?unread=&limit=&cursor= → { data, next_cursor, unread_count }, newest first   POST .../:id/read  POST .../read-all → 204   (session only; D-134)
+GET    /api/v1/me/email-prefs                → { instant, digest } — your own email switches, both true until you change them   PUT body { instant?, digest? } (at least one) → the same   (every role; session only; D-153, LAI-1313)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
@@ -7889,6 +7983,11 @@ anything missing sends the task back.
     manage anyone's developer setup* (D-132). **"N to fix"** sits on your own
     Developer access tab only; on someone else's it appears once their tab is
     opened, never read to draw the head (D-139 item 5).
+  - **Email** (D-153, LAI-1313), **on your own profile only**, below the
+    Overview: two switches, *Email me when I'm assigned or mentioned* and
+    *Send me a daily digest*, both on until changed, saved as they flip
+    (`/me/email-prefs`); and, while the organisation's email is off, one line
+    saying nothing is sent until an owner or admin turns it on.
   - **Overview** is **rows of cards that share a height**, so nothing leaves
     a hole, folding to one column on a phone, **the same for both kinds**
     (D-139 item 2): Work + This week · Projects + Agents · Activity · Review
@@ -8219,9 +8318,19 @@ One interval-driven scheduler in the same process:
   so turning email off mid-run stops it at the next message. **A run never overlaps another**; a tick joins
   the one going. No `activity` row. Nothing without a transport, and nothing
   mailed while the organisation's switch is off — the default
-- **email retention** (§4.93) — daily **and once at boot**, under
+- **email retention** (§4.93, §4.95) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
-  `queued` or `sending` one. No `activity` row
+  `queued` or `sending` one, and closed digests 90 days after they closed,
+  with their items. No `activity` row
+- **email notify** (§4.94 – §4.97, D-153, LAI-1313) — every 30 seconds, not at
+  boot, under `system.email.notify`: reads `activity` and `member_notices` past
+  their watermarks (two minutes' overlap), writes an `assignment` mail for
+  `task.assigned` — and for `task.created` with an assignee, unless it was
+  reassigned since — and a `mention` mail for each person a comment
+  @mentions, never to the actor, each through the outbox (`pref_off` and
+  `no_access` recorded there); collects digest items (§4.96); and closes every
+  digest whose morning has come (§4.95). Only writes to the outbox — `email.send`
+  sends. No `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.
