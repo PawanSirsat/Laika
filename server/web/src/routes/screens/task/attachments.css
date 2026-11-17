@@ -1,0 +1,238 @@
+/*
+ * The task panel's Attachments section (D-150, LAI-1301): a row per file —
+ * its glyph, its name as the link that opens it, size · who · when, and
+ * Remove — then the files on their way, then where to drop more. Tokens only,
+ * so both themes come from `theme.css`; the glyph colours are the chip
+ * colours the reading view's file chips wear (`task-markdown.css`).
+ */
+
+.att-section {
+  border-radius: var(--radius-card);
+  transition: var(--transition);
+}
+
+.att-dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: var(--space-1);
+  background: var(--accent-bg);
+}
+
+.att-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.att-head .panel-fold {
+  margin: 0;
+}
+
+.att-body {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.att-list,
+.att-sending {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.att-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.att-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-column);
+}
+
+.att-main {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.att-name {
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-name:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.att-name:focus-visible,
+.att-remove:focus-visible,
+.att-retry:focus-visible,
+.att-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-chip);
+}
+
+.att-meta {
+  overflow: hidden;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.att-remove:hover:not(:disabled) {
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+  color: var(--overdue);
+}
+
+.att-remove:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.att-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+}
+
+.att-send-name {
+  min-width: 0;
+  max-width: 16rem;
+  overflow: hidden;
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.att-bar {
+  flex: 1 1 6rem;
+  max-width: 12rem;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+}
+
+.att-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 120ms ease;
+}
+
+.att-send-error,
+.att-note-error {
+  font-weight: var(--weight-semibold);
+  color: var(--overdue);
+}
+
+.att-send-error {
+  flex: 1 1 12rem;
+}
+
+.att-dismiss,
+.att-retry {
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.att-dismiss {
+  font-size: var(--text-reading);
+}
+
+.att-retry {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.att-note {
+  margin: 0;
+  font-size: var(--text-body);
+}
+
+.att-drop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+.att-dragging .att-drop {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A phone: the meta line wraps under the name rather than running off. */
+@media (max-width: 480px) {
+  .att-row {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .att-meta {
+    white-space: normal;
+  }
+}
