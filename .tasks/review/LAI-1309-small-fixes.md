@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-1306
-status: in-progress
+status: review
 started: 2026-11-17T13:48:38Z
+finished: 2026-11-17T14:26:11Z
 ---
 
 ## Goal
@@ -18,7 +19,7 @@ time they fire.
 
 ## Acceptance criteria
 
-- [ ] `server/web/test/browser/availability.test.ts:107` ("the pill says it in words and a glyph;
+- [x] `server/web/test/browser/availability.test.ts:107` ("the pill says it in words and a glyph;
       Save sends one PUT of the edit") waits for the availability read to land before it reads the
       pill. It read "Reading your availability…" on master runs 44073558010, 44082070357 and
       44092507851. The wait is on the condition the assertion needs (the pill's loaded text, or
@@ -33,13 +34,13 @@ time they fire.
       comment of `index.html`. A test with a comment mentioning `<style>` and `</style>` proves it,
       and a real `<style>` element is still hashed. The web-serve drift guard (LAI-1308) still
       passes: the server's CSP for the built `index.html` now equals the nginx one exactly.
-- [ ] `server/src/services/attachments.ts` ~line 547: the comment saying Ksage's SPA is on
+- [x] `server/src/services/attachments.ts` ~line 547: the comment saying Ksage's SPA is on
       Netlify is corrected (Ksage now serves SPA and API on one domain; the any-origin match stays
       justified because a deployment can still be reached at more than one address, e.g. during a
       domain move). Comment only; behaviour unchanged.
-- [ ] Each fixed test is shown to fail when its fix is reverted (the CSP test), or to have failed
+- [x] Each fixed test is shown to fail when its fix is reverted (the CSP test), or to have failed
       for the stated reason (the two browser tests: quote the CI log line).
-- [ ] CI gate green on the PR: test, lint, format each exit 0.
+- [x] CI gate green on the PR: test, lint, format each exit 0.
 
 ## Notes / context
 
@@ -47,3 +48,34 @@ time they fire.
   two record files (LAI-1308's task and log). Merging this PR merges #356.
 - The other flaky tests (agents-tab, review-dialog, setup before `try` hanging a shard) stay in
   LAI-1307.
+
+## Builder notes (2026-11-17, PR #357)
+
+Two criteria are left unticked because what they say is not what was measured.
+Both are for CHIEF to decide. The full measurements are in
+`logs/chief-2026-11-17-LAI-1309.md`.
+
+- **slim-list (unticked; the outcome is met by a different means).**
+  - The 0.87 px was the drawer's 12px rise (`drawer-slidein`, 280ms), not the
+    fonts. `page.goto` already waits for the faces in use.
+  - With the animation clock at 0.5×, a `document.fonts.ready` wait still went
+    red (`y 133.566 → 132.406`), and the drawer wait went green.
+  - The test now waits for `.drawer`'s animations before the first position
+    measurement. No tolerance was added.
+- **CSP (unticked; its premise was wrong).**
+  - `'sha256-SvAMs7oo…'` is the real `<style>` in `server/src/static/fallback.html`.
+    `app.ts` always hashes that file, never `index.html`, and `index.html` has
+    no `</style>`.
+  - The comment strip and its three tests are in. Reverting the strip turns
+    two of them red. The web-serve guard passes, 16/16.
+  - The server's CSP still carries the fallback's hash, so it is **not** equal
+    to nginx's. Making it equal is a CSP behaviour change in `app.ts`, not done
+    here.
+- **Run ids.** `44073558010` failed the 390 on-leave test
+  (`availability.test.ts:400`), not :107. That test is fixed here too: it
+  waits for the phone bar's pill. The slim-list failure was `44082070357`
+  attempt 1.
+- **Proof for :107.** CI quoted `'My availability\n\nReading your
+  availability…'` at line 130 (44092507851; 44082070357 attempt 2). Locally,
+  the panel recorded `["reading","form"]` on every open.
+
