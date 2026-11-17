@@ -205,7 +205,7 @@ void describe('the header at 390', () => {
 
   /*
    * **~20%, not ~15%** (LAI-1227): the space's title row — name, key, live,
-   * Agents, ⋯ — was drawn in the 48px app header from LAI-1188 and is the
+   * ⋯ (Agents until LAI-1233) — was drawn in the 48px app header from LAI-1188 and is the
    * page's own row now, under Jira's top bar, which names no page. That row
    * is the whole of the difference (the *Spaces /* breadcrumb is not drawn on
    * a phone); the content still starts in the top fifth.

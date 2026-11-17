@@ -1,6 +1,4 @@
 import { PRIORITIES, type TaskPriority } from '../../api/tasks.ts';
-import type { AgentClient } from '../../api/agent-clients.ts';
-import { agentsOf, type PresenceEntry } from '../../api/presence.ts';
 
 /**
  * The pure parts of the space top bar (LAI-251).
@@ -52,29 +50,6 @@ export function nextPriority(current: TaskPriority | undefined): TaskPriority | 
 /** `Any priority` / `P1` — what the cycler reads right now. */
 export function priorityLabel(current: TaskPriority | undefined): string {
   return current === undefined ? 'Any priority' : current.toUpperCase();
-}
-
-/**
- * How many **agent** sessions are live in this space.
- *
- * The design's `Agents 2`. Counted from presence rather than from tasks: the
- * question is who is working now, not what was authored by an agent, and
- * `is_agent` is the server's own answer (§4.2).
- */
-export function agentCount(present: readonly PresenceEntry[] | undefined): number {
-  return present === undefined ? 0 : present.filter((entry) => entry.is_agent).length;
-}
-
-/**
- * Every distinct coding agent live in this space, for the `Agents` chip's
- * marks and its title (LAI-737). Unknown slugs are dropped by `agentsOf`.
- */
-export function agentsLive(present: readonly PresenceEntry[] | undefined): AgentClient[] {
-  const out: AgentClient[] = [];
-  for (const entry of present ?? []) {
-    for (const client of agentsOf(entry)) if (!out.includes(client)) out.push(client);
-  }
-  return out;
 }
 
 /**

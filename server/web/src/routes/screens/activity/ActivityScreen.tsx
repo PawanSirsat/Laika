@@ -3,7 +3,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
-import { useLive } from '../../../components/space/SpaceLive.tsx';
+import { usePresence } from '../../../components/space/SpaceLive.tsx';
 import { useEvents } from '../../../api/use-events.ts';
 import { listMembers, type Member } from '../../../api/tasks.ts';
 import { useTaskSummaries } from '../../../api/use-task-summaries.ts';
@@ -41,11 +41,11 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
   const tasks = read.status === 'ok' ? read.tasks : undefined;
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   /**
-   * The space's presence (LAI-724) — the same answer the frame already holds
-   * and refreshes on live frames, where this screen used to ask for its own.
+   * The space's presence — read here, the one screen that draws it, rather
+   * than by the frame for every tab (LAI-1233). Refreshed on live frames.
    * `undefined` while the first read is in flight (LAI-440).
    */
-  const { presence } = useLive();
+  const presence = usePresence();
 
   useEffect(() => {
     if (slug === undefined) return;

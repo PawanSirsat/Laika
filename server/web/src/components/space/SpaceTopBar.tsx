@@ -1,16 +1,7 @@
 import { useLive } from './SpaceLive.tsx';
-import { agentCount, agentsLive } from './top-bar-derive.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
-import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
-import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { SpaceMenu } from './SpaceMenu.tsx';
-
-export interface SpaceTopBarProps {
-  /** Whether only agent-authored work is shown — the Agents chip's state. */
-  readonly agentOnly: boolean;
-  readonly onAgentOnly: (value: boolean) => void;
-}
 
 /**
  * Row one of a space: **who and what, and nothing else** (LAI-1198) — in the
@@ -24,13 +15,14 @@ export interface SpaceTopBarProps {
  * review — the tabs dropped ~35px and Create moved from tab to tab (visual
  * audit, findings 3 and 4). Those controls now live in `SpaceToolbar`, the row
  * under the tabs, and Create with them, so this row is the same on every tab:
- * the space's name and key, the live indicator, the Agents presence chip and
- * the space menu.
+ * the space's name and key, the live indicator and the space menu.
  *
- * The Agents chip stays here although it can filter: it is the space's live
- * presence — the same on every tab — not a control belonging to one view.
+ * **No Agents chip** (LAI-1233, the owner): it repeated the board Filter's
+ * *Agent-created only* and cost a `/presence` read on every tab of every
+ * space. The filter stays in the board's Filter panel; presence is read only
+ * where it is shown, on Activity.
  */
-export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
+export function SpaceTopBar() {
   /*
    * From the shell, not a prop: the rail reads the same value and one project
    * name should be one request (LAI-299). `slug` is the fallback while the
@@ -40,16 +32,7 @@ export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
   const spacesHref = '/projects';
   const slug = route.params.get('project') ?? undefined;
 
-  const { stream, presence } = useLive();
-  /*
-   * `undefined` while presence is in flight, **not `0`** (LAI-295).
-   * `agentCount(presence?.present)` returned 0 for "not asked yet" and 0 for
-   * "asked, none there", so the chip stated a count it did not have and then
-   * changed it. §5.1: every number in the shipped UI comes from a response.
-   */
-  const agents = presence === undefined ? undefined : agentCount(presence.present);
-  /** Which coding agents those are (LAI-737) — marks on the chip, names in its title. */
-  const live = agentsLive(presence?.present);
+  const { stream } = useLive();
 
   return (
     <>
@@ -127,65 +110,7 @@ export function SpaceTopBar({ agentOnly, onAgentOnly }: SpaceTopBarProps) {
         </span>
       </div>
 
-      <div className="space-bar-right">
-        <Tooltip content={`Show only agent-authored work${agentSummary(agents, live)}`}>
-          <button
-            type="button"
-            className={
-              agentOnly
-                ? 'space-chip space-chip-on space-agents-start'
-                : 'space-chip space-agents-start'
-            }
-            aria-pressed={agentOnly}
-            onClick={() => {
-              onAgentOnly(!agentOnly);
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              aria-hidden="true"
-            >
-              <rect x="4" y="8" width="16" height="12" rx="3" />
-              <path d="M12 4v4M9 14h.01M15 14h.01" />
-            </svg>
-            {/*
-              **Nothing until presence lands** (LAI-606): the word stays, the
-              number arrives when it arrives.
-            */}
-            <span className="space-agents-label">
-              <span className="space-agents-word">Agents</span> {agents}
-            </span>
-            {/*
-              **The number counts people, the marks count agents** — what the
-              number means, and which agents the marks are, is said in words for
-              a screen reader and in the title for a pointer.
-          */}
-            {agents !== undefined && (
-              <span className="visually-hidden">{agentSummary(agents, live)}</span>
-            )}
-            {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
-            {live.slice(0, 3).map((client) => (
-              <AgentMark key={client} client={client} size="sm" />
-            ))}
-          </button>
-        </Tooltip>
-
-        {slug !== undefined && <SpaceMenu slug={slug} />}
-      </div>
+      <div className="space-bar-right">{slug !== undefined && <SpaceMenu slug={slug} />}</div>
     </>
   );
-}
-
-/** ` — 2 people with agent sessions, using Claude Code, Codex`, or nothing before presence lands. */
-function agentSummary(people: number | undefined, live: readonly AgentClient[]): string {
-  if (people === undefined) return '';
-  const who = `${String(people)} ${people === 1 ? 'person' : 'people'} with agent sessions`;
-  return live.length === 0
-    ? ` — ${who}`
-    : ` — ${who}, using ${live.map(agentClientName).join(', ')}`;
 }

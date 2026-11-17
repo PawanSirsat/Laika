@@ -7,7 +7,7 @@ import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 /**
  * The space's `⋯` (D-103, LAI-977): the prototype's button, now that there is
- * a page behind it. One item, *Space settings* — a link, so middle-click and
+ * a page behind it. One item, a gear and *Space settings* (LAI-1233) — a link, so middle-click and
  * copy-link work — open to every reader of the space: the page itself shows a
  * reader the values and withholds the controls.
  *
@@ -89,7 +89,8 @@ export function SpaceMenu({ slug }: { readonly slug: string }) {
                     navigate(href);
                   }}
                 >
-                  Space settings
+                  <Icon name="gear" size="small" className="space-menu-icon" />
+                  <span>Space settings</span>
                 </a>
               </li>
             </ul>
