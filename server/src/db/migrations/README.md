@@ -83,3 +83,16 @@ either. So is `task_estimates` (§4.32, LAI-771), with the same three triggers
   rebuild preserves it (LAI-110).
 - **The verb vocabulary is a `CHECK` constraint**, so growing it is a rebuild,
   which is what makes the point above recur.
+
+## A rebuild of a table another table's trigger reads (LAI-1316)
+
+`time_entry_revisions_is_append_only_no_delete` is a trigger **on
+`time_entry_revisions`** whose `WHEN` clause reads `time_entries`. drizzle-kit's
+rebuild drops `time_entries` and then renames `__new_time_entries` into its
+place, and **SQLite refuses that `RENAME` while any trigger names a table that
+does not exist** — `error in trigger …: no such table: main.time_entries`.
+`0084_calendar_sync` therefore carries one hand-added line before the rebuild,
+`DROP TRIGGER IF EXISTS` for that trigger; `ensureActivityTriggers` creates it
+again after the migrations, as it does on every boot. The next rebuild of
+`time_entries` needs the same line, and so does a rebuild of any table that
+another table's trigger names. `migrate.test.ts`'s 0084 case fails without it.
