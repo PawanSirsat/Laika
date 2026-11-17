@@ -8151,7 +8151,7 @@ compose file or systemd unit.
 | `LAIKA_CLI_SOURCE_URL` | `https://github.com/PawanSirsat/Laika.git` | the git repository a developer's `laika` is cloned from, served as `cli.source.url` (§6.4). `https://` only, and refused at startup if it carries a user, password, query or fragment, since it is served to anyone (LAI-1043) |
 | `LAIKA_MICROSOFT_CLIENT_ID` | unset | Microsoft SSO (LAI-1238): the Entra ID app's *Application (client) ID*. **Set with the other two `LAIKA_MICROSOFT_*` variables or not at all** — a partial set is a startup failure. All three set makes Microsoft the **only** way to sign in: email-and-password sign-in, sign-up, password invite acceptance and password-reset links are refused `sso_only`. Unsetting all three and restarting restores passwords — the recovery path when the identity provider is unreachable |
 | `LAIKA_MICROSOFT_CLIENT_SECRET` | unset | the app's client secret. Redacted from every startup error |
-| `LAIKA_MICROSOFT_TENANT_ID` | unset | **one directory**: the tenant's GUID or one of its verified domains. `common`, `organizations` and `consumers` are a startup failure — each would let accounts from any tenant, or personal accounts, sign in. The app's redirect URI is `LAIKA_PUBLIC_URL` + `/api/v1/auth/callback/microsoft` |
+| `LAIKA_MICROSOFT_TENANT_ID` | unset | **one directory, by its GUID** (Entra → Overview → Tenant ID). A domain name is a startup failure (LAI-1317): every sign-in checks the id token's `tid` and issuer against this GUID, and a domain leaves nothing to compare. `common`, `organizations`, `consumers` and Microsoft's personal-account tenant `9188040d-6c67-4c5b-b112-36a304b66dad` are startup failures too — each would let accounts from any tenant, or personal accounts, sign in. The app's redirect URI is `LAIKA_PUBLIC_URL` + `/api/v1/auth/callback/microsoft` |
 | `LAIKA_MICROSOFT_DIRECTORY_SYNC` | `false` | `true` adds every **enabled Member** account of the Microsoft directory (no guests, no disabled accounts) as a Laika `member`, read through Microsoft Graph every 15 minutes and at boot (LAI-1239). Needs the three `LAIKA_MICROSOFT_*` variables and Graph's **`User.Read.All` application permission** with admin consent on the same app — without the grant the job fails with `graph_forbidden_grant_user_read_all` and adds nobody. Additive only: nobody already here is changed, and nobody is deactivated. Any value but `true`/`false` is a startup failure |
 | `LAIKA_S3_ENDPOINT` | unset | attachments' store (D-150): its origin, path-style — `https://files.example.com`, no path, user, query or fragment; `http://` only for a loopback host. **The five `LAIKA_S3_*` all set turn attachments on, none leaves them off, and some but not all is a startup failure** naming the ones missing |
 | `LAIKA_S3_REGION` | unset | the store's region as it signs — `garage` for Garage, `us-east-1` for AWS |
@@ -8270,11 +8270,14 @@ when an owner connects it that way — and, when the operator configures one,
 the objects Laika itself names, nothing else. Browsers reach that store too,
 through the short-lived URLs Laika signs; it is the operator's own, beside
 Laika, not a third party's. When the operator sets the `LAIKA_MICROSOFT_*`
-variables (D-158), **the organisation's own Microsoft Entra ID tenant**: the
-tenant's token endpoint, once per sign-in to exchange its code, and — only
-with directory sync on — the app's own token and Graph's `/users`, every 15
-minutes (§11.6). No profile photo is fetched, and nothing else of Graph's is
-read. Any task proposing otherwise is rejected at review.
+variables (D-158), **the organisation's own Microsoft Entra ID tenant's token
+endpoint**: to exchange the code at each sign-in, and to refresh a signed-in
+person's Microsoft token when better-auth's `get-access-token` or
+`refresh-token` is called for it — and, only with directory sync on, for the
+app's own token, beside Graph's `/users`, every 15 minutes (§11.6). No profile
+photo is fetched, nothing else of Graph's is read, and no signing keys are
+fetched: id-token sign-in is off, so nothing asks for them. Any task proposing
+otherwise is rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day

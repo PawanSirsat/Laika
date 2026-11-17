@@ -7592,40 +7592,59 @@ ourselves. Recorded by CHIEF (Belka); built and hardened by LAI-1317. Amends §1
 are all lowercase `@kvelld.co.za` addresses. PR #354 adds Microsoft sign-in through
 better-auth's `microsoft` provider (callback `/api/v1/auth/callback/microsoft`), an optional
 directory sync through Microsoft Graph, and a read-only Sign-in card under Organisation →
-Security. Its review found three things to harden before it ran anywhere: Microsoft's refresh
-token stored in clear, a scheduled write that asked `can()` nothing, and no test of a sign-in
-whose email case differs from the stored one.
+Security. Its reviews found what to harden before it ran anywhere: Microsoft's refresh token
+stored in clear, a scheduled write that asked `can()` nothing, no test of a sign-in whose
+email case differs from the stored one; then, in LAI-1317's own review, a reused address
+taking over an account, a replayable id-token sign-in, id tokens whose tenant and audience
+nobody checked, and a client able to widen the scopes.
 
 **Decision.**
 
-1. **Env-gated, one tenant.** Microsoft sign-in exists only when `LAIKA_MICROSOFT_CLIENT_ID`,
-   `LAIKA_MICROSOFT_CLIENT_SECRET` and `LAIKA_MICROSOFT_TENANT_ID` are all set (§11.7). A
-   partial set, or the multi-tenant `common`, `organizations` or `consumers`, is a startup
-   failure. Nothing in the app switches it: unsetting the three and restarting brings
-   passwords back, which is the recovery when Microsoft is unreachable or misconfigured.
+1. **Env-gated, one tenant, named by its GUID.** Microsoft sign-in exists only when
+   `LAIKA_MICROSOFT_CLIENT_ID`, `LAIKA_MICROSOFT_CLIENT_SECRET` and `LAIKA_MICROSOFT_TENANT_ID`
+   are all set (§11.7). A partial set is a startup failure, and so is any tenant id but a
+   directory's GUID: a domain name, the multi-tenant `common`, `organizations` or `consumers`,
+   and Microsoft's personal-account tenant. Nothing in the app switches it: unsetting the
+   three and restarting brings passwords back, which is the recovery when Microsoft is
+   unreachable or misconfigured.
 2. **With the variables set, Microsoft is the only way in.** Email-and-password sign-in and
    sign-up, accepting an invite with a password, issuing a reset link and using one all
    answer `403 sso_only`. First boot makes the owner with no password and no session; they
    sign in with Microsoft next.
 3. **A way to sign in, never a way to join (D-004).** An existing person is **linked** by
    email the first time they use Microsoft, whatever case Microsoft spells it in — the same
-   user id, no second account. A new person needs an unexpired invite **addressed to the
-   email Microsoft asserts**; a link invite does not count, and anyone else is refused
-   `invite_required`. Directory sync (item 5) is the only other way to arrive.
-4. **Microsoft's access and refresh tokens are encrypted at rest** with `LAIKA_SECRET`
+   user id, no second account — **and only ever to that one Microsoft identity**. The email
+   Microsoft asserts is the directory's `mail` attribute, which an admin can change or give
+   to someone new; any other Microsoft identity asserting the same address is refused
+   `account_already_linked`. A person whose Entra user was re-created is recovered by an
+   operator, who deletes their old `microsoft` row in `accounts` so the next sign-in links
+   the new one. A new person needs an unexpired invite **addressed to the email Microsoft
+   asserts**; a link invite does not count, and anyone else is refused `invite_required`.
+   Directory sync (item 6) is the only other way to arrive.
+4. **Only the code flow, and only this directory's members.** Sign-in is the authorization
+   code flow through the callback, with PKCE, and nothing else: better-auth's id-token
+   sign-in (`POST /sign-in/social` or `/link-social` with an `idToken`) is off and answers
+   `ID_TOKEN_NOT_SUPPORTED`. Before anything is read from the id token, its `tid` must be the
+   configured GUID (`wrong_tenant`), its `iss` that directory's v2.0 issuer
+   (`wrong_issuer`), its `aud` this app alone (`wrong_audience`), and it must carry no `idp`
+   other than its issuer — a guest's (`guest_account`). Each refusal is sent back to the
+   sign-in page as its code. The scopes are better-auth's fixed Microsoft set, `openid
+   profile email User.Read offline_access`; any `scopes` a request names are ignored.
+5. **Microsoft's access and refresh tokens are encrypted at rest** with `LAIKA_SECRET`
    (better-auth's `account.encryptOAuthTokens`). Sign-in asks for `offline_access`, so the
    refresh token is a long-lived credential; nothing in Laika reads either token. A row
    written in clear before this still reads, and the next sign-in rewrites it encrypted.
-5. **Directory sync is opt-in** (`LAIKA_MICROSOFT_DIRECTORY_SYNC=true`, Graph's
+6. **Directory sync is opt-in** (`LAIKA_MICROSOFT_DIRECTORY_SYNC=true`, Graph's
    `User.Read.All` application permission with admin consent): every 15 minutes and at boot,
    every enabled Member of the tenant that Laika has no account for is added as a `member`
    with no password. Additive only — nobody is changed or deactivated. It runs as the system
    principal under the new `system.directory.sync` (§3.4); *Sync now* is for owners and
    admins (`org.settings.edit`). Its last run is held in memory, not stored.
-6. **Two more outbound destinations (§13.4)**, only when configured: the tenant's token
-   endpoint at each sign-in, and — with directory sync on — the app's token and Graph's
-   `/users`. No profile photo is fetched.
-7. **Ksage only.** This ships on the Ksage line (D-156): `integration-ksage`, mirrored to
+7. **Two more outbound destinations (§13.4)**, only when configured: the tenant's token
+   endpoint — at each sign-in, and when better-auth's `get-access-token` or `refresh-token`
+   refreshes a person's Microsoft token — and, with directory sync on, the app's token and
+   Graph's `/users`. No profile photo and no signing keys are fetched.
+8. **Ksage only.** This ships on the Ksage line (D-156): `integration-ksage`, mirrored to
    ksage-2.0 `laika` for https://ksage.kvelld.com. It does not go to PawanSirsat/Laika
    master, and the AWS board sets none of the variables. Taking it to master is a decision of
    its own. The Ksage line takes no migration, and this needs none.
@@ -7645,5 +7664,8 @@ whose email case differs from the stored one.
 - **Offboarding is still Laika's.** Disabling someone in Entra stops their next Microsoft
   sign-in; it does not end a Laika session already issued (30 days idle, §13.1) or revoke a
   token. Deactivate them in Laika too.
-- better-auth also stores Microsoft's **id token** in `accounts.id_token`, in clear. It
-  carries the person's name, email and tenant claims and grants nothing; it is not encrypted.
+- better-auth also stores Microsoft's **id token** in `accounts.id_token`, in clear: the
+  person's name, email and tenant claims, signed by Microsoft and good for an hour. It is
+  not harmless — until item 4 turned id-token sign-in off, a copy under an hour old bought a
+  30-day session — and it is still personal data in clear. It can no longer be presented to
+  sign in.
