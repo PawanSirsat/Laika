@@ -234,6 +234,7 @@ export function saveCalendarSource(
     throw new ApiError('unprocessable', `At most ${String(CALENDAR_RULES_MAX)} rules`, {
       field: 'rules',
       reason: 'too_many_rules',
+      max: CALENDAR_RULES_MAX,
     });
   }
   const rules: StoredRule[] = input.rules.map((r) => {

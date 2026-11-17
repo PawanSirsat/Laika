@@ -256,6 +256,16 @@ describe('the connection', () => {
       rules: [{ kind: 'attendee', text: 'x', project: 'laika' }],
     });
     expect(kind.status).toBe(422);
+    // The service's own limit reaches the wire, saying what it is.
+    const many = await call('PUT', '/calendar', {
+      ...SAVE,
+      rules: Array.from({ length: 51 }, () => ({ kind: 'title', text: 'x', project: 'laika' })),
+    });
+    expect((await errorOf(many)).details).toEqual({
+      field: 'rules',
+      reason: 'too_many_rules',
+      max: 50,
+    });
 
     expect((await call('PUT', '/calendar', { ...SAVE, client_secret: 'wrong' })).status).toBe(200);
     const refused = await call('POST', '/calendar/test');

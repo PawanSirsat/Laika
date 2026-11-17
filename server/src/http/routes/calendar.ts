@@ -9,11 +9,7 @@ import {
   syncCalendarNow,
   testCalendarSource,
 } from '../../services/calendar-source.ts';
-import {
-  CALENDAR_RULE_KINDS,
-  CALENDAR_RULES_MAX,
-  type CalendarSyncDeps,
-} from '../../services/calendar-sync.ts';
+import { CALENDAR_RULE_KINDS, type CalendarSyncDeps } from '../../services/calendar-sync.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -44,7 +40,9 @@ const SaveBody = strictObject({
         project: z.string().min(1).max(100),
       }),
     )
-    .max(CALENDAR_RULES_MAX),
+    // A sanity bound, looser than the service's own `too_many_rules`, which
+    // says the limit (LAI-159: never as tight as the service's).
+    .max(500),
 });
 
 export interface CalendarRouteOptions {
