@@ -166,8 +166,14 @@ export interface StandupBlocked {
   readonly key: string;
   readonly title: string;
   readonly assignee: string;
-  /** The open blockers' keys, oldest dependency first. */
+  /**
+   * What it waits on, as a post may say it: this space's keys, oldest
+   * dependency first, then any in other spaces as one entry
+   * ({@link OTHER_SPACE_BLOCKER}, or `N tasks in other spaces`) — last.
+   */
   readonly waitingOn: readonly string[];
+  /** How many open blockers there are — the entries above may stand for more than one each. */
+  readonly waitingTotal: number;
   /** Days since its oldest open dependency was added. */
   readonly days: number;
 }
@@ -316,8 +322,12 @@ export function buildStandup(
 
   {
     const rows: string[][] = blocked.slice(0, BLOCKED_SHOWN).map((b) => {
+      // The first entry is one of this space's keys whenever there is more
+      // than one entry (another space's are folded into the last), so it
+      // stands for one blocker and the rest are counted from the true total;
+      // a single entry already says everything it waits on.
       const first = b.waitingOn[0] ?? '';
-      const others = b.waitingOn.length - 1;
+      const others = b.waitingOn.length > 1 ? b.waitingTotal - 1 : 0;
       const on = others > 0 ? `${first} and ${String(others)} more` : first;
       return [b.key, b.title, b.assignee, `${waited(b.days)} · waiting on ${on}`];
     });
