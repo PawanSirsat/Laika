@@ -48,6 +48,7 @@ import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
+import { calendarRoutes } from './http/routes/calendar.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -103,6 +104,7 @@ import { setEstimateLogger } from './services/estimates.ts';
 import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
+import { type CalendarSyncDeps } from './services/calendar-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 
 /**
@@ -205,6 +207,12 @@ export interface CreateAppOptions {
    * answer `503 attachments_off`, and `GET /org` says `attachments: null`.
    */
   attachments?: AttachmentsDeps;
+  /**
+   * The Outlook calendar sync's `fetch`, clock and waits (D-157, LAI-1316).
+   * Injected by the tests so **none of them calls Microsoft**; `index.ts`
+   * passes nothing and the real `fetch` is used.
+   */
+  calendarSync?: CalendarSyncDeps;
 }
 
 /**
@@ -448,6 +456,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(
       `${API_BASE}/org`,
       hrRoutes({ db, serverSecret: options.serverSecret ?? '', hrSync: options.hrSync }),
+    );
+    // The Outlook calendar connection (D-157, LAI-1316): `/calendar*`, a path
+    // `orgRoutes` does not have.
+    app.route(
+      `${API_BASE}/org`,
+      calendarRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        calendarSync: options.calendarSync,
+      }),
     );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at

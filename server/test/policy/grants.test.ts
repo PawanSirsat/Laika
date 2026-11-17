@@ -81,6 +81,7 @@ describe('the mapping', () => {
         'org.time.set',
         'org.developer_insights.set',
         'org.hr.configure',
+        'org.calendar.configure',
       ],
     });
     expect(CAPABILITIES).not.toContain('manage_people');

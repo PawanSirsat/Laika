@@ -259,6 +259,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.notices.prune',
   'system.hr.sync',
   'system.attachment.prune',
+  'system.calendar.sync',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -680,6 +681,16 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // because the connection is signed in with a person's HR password and its
     // token reads everyone's leave.
     case 'org.hr.configure':
+      return granted(actor, action);
+
+    // | Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-157 (LAI-1316): the Entra app's credentials, the mapping rules, the
+    // switch, a test of the grant, sync now and disconnect. Carried by
+    // *Change organisation settings, Time and breaks*, beside the HR
+    // connection; session only, because its secret reads every member's
+    // calendar.
+    case 'org.calendar.configure':
       return granted(actor, action);
 
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |

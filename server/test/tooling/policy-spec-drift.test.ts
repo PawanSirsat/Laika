@@ -142,6 +142,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['View own developer setup', ['developer_setup.read_own']],
   // D-149 (LAI-1181): Clan, connected once, synced, and its people mapped.
   ["Connect the organisation's HR system", ['org.hr.configure']],
+  // D-157 (LAI-1316): the Entra app's credentials, rules and switch.
+  ["Connect the organisation's Outlook calendar", ['org.calendar.configure']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

@@ -1088,7 +1088,7 @@ const PAIRS: readonly Pair[] = [
   },
   {
     server: 'CalendarSyncResultView',
-    serverFile: 'services/calendar-source.ts',
+    serverFile: 'services/calendar-sync.ts',
     client: 'CalendarSyncResult',
     clientFile: 'calendar.ts',
   },

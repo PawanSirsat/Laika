@@ -98,6 +98,12 @@ export const LIMITS = {
    * Clan's sign-in on somebody's behalf.
    */
   hr: { perMinute: 6 },
+  /**
+   * Testing the Outlook calendar connection and syncing it now (D-157,
+   * LAI-1316): each calls Microsoft, so 6 a minute per person on its own
+   * bucket, as the HR system's.
+   */
+  calendar: { perMinute: 6 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;

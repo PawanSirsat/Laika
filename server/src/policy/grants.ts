@@ -65,6 +65,8 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     'org.time.set',
     'org.developer_insights.set',
     'org.hr.configure',
+    // D-157 (LAI-1316): the Outlook calendar connection, beside the HR one.
+    'org.calendar.configure',
   ],
 };
 

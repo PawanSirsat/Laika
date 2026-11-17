@@ -142,6 +142,12 @@ export const HR_CALL_PATHS: ReadonlySet<string> = new Set([
   '/api/v1/org/hr/sync',
 ]);
 
+/** The calls to Microsoft a person makes (D-157, LAI-1316): test the connection, sync now. */
+export const CALENDAR_CALL_PATHS: ReadonlySet<string> = new Set([
+  '/api/v1/org/calendar/test',
+  '/api/v1/org/calendar/sync',
+]);
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -187,6 +193,11 @@ export function classify(
   // small bucket per person, and never spend the session's.
   if (HR_CALL_PATHS.has(path) && method === 'POST') {
     return { key: `hr:${who}`, policy: LIMITS.hr };
+  }
+
+  // The Outlook calendar (LAI-1316): each of these calls Microsoft, the same way.
+  if (CALENDAR_CALL_PATHS.has(path) && method === 'POST') {
+    return { key: `calendar:${who}`, policy: LIMITS.calendar };
   }
 
   // OpenTelemetry has its own budget (LAI-773), per token as reports are.
