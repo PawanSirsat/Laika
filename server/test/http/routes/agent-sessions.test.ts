@@ -661,6 +661,10 @@ const NOT_FENCED: Record<string, string> = {
     'a file, attached as a comment is — changes no field of a task (§6.3)',
   'POST /api/v1/attachments/:id/complete': 'the upload’s own state; changes no field of a task',
   'DELETE /api/v1/attachments/:id': 'removes a file, as deleting a comment does — never fenced',
+  // D-152 (LAI-1311): a space's icon image — a project field, as `PATCH /projects/:slug` is.
+  'POST /api/v1/projects/:slug/icon': 'asks to upload a space’s icon; no task row changes',
+  'POST /api/v1/projects/:slug/icon/complete': 'sets a space’s icon; no task row changes',
+  'DELETE /api/v1/projects/:slug/icon': 'clears a space’s icon; no task row changes',
   'POST /api/v1/projects/:slug/tasks': 'creates a task — nothing holds it yet',
   'POST /api/v1/unlisted/:id/promote': 'creates a task — nothing holds it yet',
   'POST /api/v1/meeting-reviews/:id/apply':
@@ -774,6 +778,9 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/org/transfer-ownership': 'session only (org.transfer_ownership)',
   'POST /api/v1/org/github-webhook': 'a webhook secret, not a task',
   'DELETE /api/v1/org/github-webhook': 'a webhook secret, not a task',
+  'PUT /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
+  'DELETE /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
+  'POST /api/v1/org/email/test': 'a test email to the caller, not a task',
   'PUT /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
   'DELETE /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
   'PUT /api/v1/org/time': 'session only (org.time.set)',

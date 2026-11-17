@@ -245,8 +245,8 @@
   outline-offset: -2px;
 }
 
-/* A space's letter sits where a route's icon sits. */
-.sidebar-link .space-badge {
+/* A space's mark (D-152) sits where a route's icon sits. */
+.sidebar-link .project-mark {
   margin: 0 0.0625rem;
 }
 
@@ -494,20 +494,6 @@
 .spaces-pop-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-}
-
-.spaces-pop-key {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
 }
 
 .spaces-pop-text {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import {
   OffboardingDialog,
   type ReassignCandidate,
@@ -44,6 +45,7 @@ import { mayActOnSetupOf, OWNER_SETUP_NOTE, revokeRefusal } from '../../../api/o
 import { orgRoleLabel } from '../invite-roles.ts';
 import { InfoTip } from './InfoTip.tsx';
 import { adminControls, manageSections, type AdminSubject } from './manage-controls.ts';
+import { dispatchLine, dispatchOf } from '../organisation/email-derive.ts';
 import {
   TOKENS_SHOWN,
   groupTokens,
@@ -704,12 +706,21 @@ function ResetLinkBox({
   readonly link: ResetLinkView;
   readonly onDone: () => void;
 }) {
+  // D-153: with the organisation's email on, the link is also mailed to them.
+  const mail = dispatchOf(link);
+  const mailLine = dispatchLine(mail, null);
   return (
     <div className="prof-admin-secret" data-reset-link>
       <p className="prof-admin-secret-head">
-        <b>Reset link for {user.name}</b> — shown once. Send it to them directly; it expires{' '}
+        <b>Reset link for {user.name}</b> — shown once.{' '}
+        {mail.queued ? 'It was also emailed to them' : 'Send it to them directly'}; it expires{' '}
         {dateTime(link.expires_at, Date.now())} and works one time.
       </p>
+      {mailLine !== null && !mail.queued && (
+        <p className="prof-admin-secret-note" data-reset-mail>
+          {mailLine}
+        </p>
+      )}
       <div className="prof-admin-secret-row">
         <code className="prof-admin-secret-text" data-reset-url>
           {link.url}
@@ -1055,6 +1066,7 @@ function SpacesBlock({
               <li key={m.project_id} className="prof-admin-item" data-membership={m.slug}>
                 <span className="prof-admin-item-main">
                   <span className="prof-admin-item-name">
+                    <ProjectMark project={{ slug: m.slug, name: m.name }} size="sm" />
                     {m.name}
                     {m.archived && <span className="prof-admin-chip">ARCHIVED</span>}
                   </span>
@@ -1191,7 +1203,12 @@ function AddToSpace({
           value={slug}
           disabled={busy}
           onChange={setSlug}
-          options={spaces.map((s) => ({ value: s.slug, label: s.name, keywords: s.prefix }))}
+          options={spaces.map((s) => ({
+            value: s.slug,
+            label: s.name,
+            keywords: s.prefix,
+            icon: <ProjectMark project={s} size="sm" />,
+          }))}
         />
         <Dropdown
           aria-label="Role in the space"

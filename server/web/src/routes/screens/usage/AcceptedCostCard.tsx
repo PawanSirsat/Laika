@@ -9,6 +9,7 @@ import {
   type Usage,
 } from '../../../api/usage.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { AcceptedSide } from './AcceptedSide.tsx';
 import { CostCaveats } from './CostCaveats.tsx';
@@ -61,7 +62,9 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
               <tbody>
                 {accepted.by_project.map((p) => (
                   <tr key={p.project.slug}>
-                    <th scope="row">{p.project.name}</th>
+                    <th scope="row">
+                      <ProjectMark project={p.project} /> {p.project.name}
+                    </th>
                     <td>{p.tasks}</td>
                     <td className="usage-money">{perTaskText(p.cost, p.cost_per_task)}</td>
                     <Tooltip content={`${compactTokens(p.tokens)} tokens`}>

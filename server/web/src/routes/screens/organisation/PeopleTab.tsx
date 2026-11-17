@@ -4,6 +4,7 @@ import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { OverflowMenu, type OverflowMenuItem } from '../../../components/wizard/OverflowMenu.tsx';
 import {
@@ -465,7 +466,11 @@ export function PeopleTab({
             }}
             options={[
               { value: '', label: 'All spaces' },
-              ...spaceOptions.map((p) => ({ value: p.slug, label: p.name })),
+              ...spaceOptions.map((p) => ({
+                value: p.slug,
+                label: p.name,
+                icon: <ProjectMark project={p} size="sm" />,
+              })),
             ]}
           />
         )}

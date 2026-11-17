@@ -10,6 +10,7 @@ import { listStatuses } from './statuses.ts';
 import { resetUnreadNotices } from './notices.ts';
 import { createTaskStore } from './task-store.ts';
 import { listTasks } from './tasks.ts';
+import { forgetLooks } from './project-looks.ts';
 
 /**
  * The client store, wired (LAI-724, D-075).
@@ -137,4 +138,7 @@ export function setStoreUser(userId: string | undefined): void {
   // the next person's pill, form or badge, nor what a Save would send.
   resetSharedAvailability();
   resetUnreadNotices();
+  // Every space's name, colour and icon the last person could read (D-152):
+  // the next person's marks come from their own reads.
+  forgetLooks();
 }

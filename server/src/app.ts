@@ -48,6 +48,7 @@ import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
+import { emailRoutes } from './http/routes/email.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
@@ -67,6 +68,7 @@ import {
   projectAttachmentRoutes,
   taskAttachmentRoutes,
 } from './http/routes/attachments.ts';
+import { projectIconRoutes } from './http/routes/project-icons.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
 import { capacityPingRoutes } from './http/routes/capacity-pings.ts';
@@ -106,6 +108,7 @@ import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type TeamsPostingDeps } from './services/teams-posting.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
+import { type MailTransport, noTransport } from './services/email-transport.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -213,6 +216,13 @@ export interface CreateAppOptions {
    * answer `503 attachments_off`, and `GET /org` says `attachments: null`.
    */
   attachments?: AttachmentsDeps;
+  /**
+   * How email leaves (D-153, LAI-1312): `smtpTransport()` from `index.ts`.
+   * **Absent is a transport that refuses everything**, so a test that forgets
+   * to inject its recorder can never reach a mail server — it gets
+   * `ENOTRANSPORT` instead.
+   */
+  emailTransport?: MailTransport;
 }
 
 /**
@@ -441,7 +451,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meDeveloperSetupRoutes({ db }));
     // A person's own availability (D-131, LAI-1130); the people reads are above.
     app.route(`${API_BASE}/me`, meAvailabilityRoutes({ db }));
-    app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));
+    app.route(
+      `${API_BASE}/users`,
+      userRoutes({ db, publicUrl: options.publicUrl, serverSecret: options.serverSecret ?? '' }),
+    );
     app.route(
       `${API_BASE}/org`,
       orgRoutes({
@@ -456,6 +469,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(
       `${API_BASE}/org`,
       hrRoutes({ db, serverSecret: options.serverSecret ?? '', hrSync: options.hrSync }),
+    );
+    // Outbound email (D-153, LAI-1312): `/email*`, paths neither has.
+    app.route(
+      `${API_BASE}/org`,
+      emailRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        publicUrl: options.publicUrl,
+        transport: options.emailTransport ?? noTransport,
+      }),
     );
     // Teams posting (D-154, LAI-1314): the switch on `/org/teams`, and each
     // space's channel on `/projects/:slug/teams` — paths nothing else has.
@@ -499,7 +522,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,
-      inviteRoutes({ db, auth: options.auth, publicUrl: options.publicUrl }),
+      inviteRoutes({
+        db,
+        auth: options.auth,
+        publicUrl: options.publicUrl,
+        serverSecret: options.serverSecret ?? '',
+      }),
     );
     // Public, like `/invites/accept`: the link's token is the authority (LAI-983).
     app.route(
@@ -510,13 +538,20 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
         throttle: options.passwordResetThrottle ?? new SignInThrottle(),
       }),
     );
-    app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
+    // The store is passed for D-152: an emoji set on `PATCH` deletes the icon
+    // image it replaces.
+    app.route(
+      `${API_BASE}/projects`,
+      projectRoutes({ db, sqlite: options.sqlite, attachments: options.attachments }),
+    );
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     // Files (§4.92, D-150, LAI-1300): asked for in a project, listed on a
     // task, completed, read and removed by their own id. Always mounted; off,
     // each answers `503 attachments_off`.
     const files = { db, attachments: options.attachments };
     app.route(`${API_BASE}/projects`, projectAttachmentRoutes(files));
+    // A space's icon image (D-152, LAI-1311), in the same store; off, `503`.
+    app.route(`${API_BASE}/projects`, projectIconRoutes(files));
     app.route(`${API_BASE}/tasks`, taskAttachmentRoutes(files));
     app.route(`${API_BASE}/attachments`, attachmentRoutes(files));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));

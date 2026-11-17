@@ -1011,6 +1011,14 @@ const PAIRS: readonly Pair[] = [
     client: 'AttachmentUploadTicket',
     clientFile: 'attachments.ts',
   },
+  // D-152 (LAI-1311): a space's icon upload — the attachments' ticket, named
+  // on both sides, so the guard reads its fields as its own and not the parent's.
+  {
+    server: 'ProjectIconUploadView',
+    serverFile: 'services/project-icons.ts',
+    client: 'ProjectIconUpload',
+    clientFile: 'project-icons.ts',
+  },
   {
     server: 'AttachmentListView',
     serverFile: 'services/attachments.ts',
@@ -1028,6 +1036,50 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/hr-source.ts',
     client: 'HrSource',
     clientFile: 'hr.ts',
+  },
+  // D-153 (LAI-1312): the Email card, its test send, and what an invite or a
+  // reset link says about its email.
+  {
+    server: 'OrgEmailView',
+    serverFile: 'services/email-settings.ts',
+    client: 'OrgEmail',
+    clientFile: 'org.ts',
+  },
+  {
+    server: 'EmailSettingsView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailSettings',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailDefaultsView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailDefaults',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailLastTestView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailLastTest',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailCountsView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailCounts',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailTestView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailTestResult',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailDispatchView',
+    serverFile: 'services/email-outbox.ts',
+    client: 'EmailDispatch',
+    clientFile: 'email.ts',
   },
   {
     server: 'HrSyncErrorView',

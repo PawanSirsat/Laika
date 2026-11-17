@@ -6,6 +6,7 @@ import {
   percent,
   type Usage,
 } from '../../../api/usage.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { spaceSeries } from '../../../theme/avatar-color.ts';
 import { BarRows, type BarRow } from './BarRows.tsx';
 import { spaceRow, spaceUsageHref } from './usage-derive.ts';
@@ -39,17 +40,21 @@ export function BySpaceRows({
     const kind = spaceRow(p.project.slug, offered);
     return {
       key: p.project.slug,
-      name:
-        kind === 'link' ? (
-          <a className="usage-space-link" href={to} onClick={link(to)}>
-            {p.project.name}
-          </a>
-        ) : (
-          <>
-            <span className="usage-space-name">{p.project.name}</span>
-            {kind === 'archived' && <span className="usage-space-archived">archived</span>}
-          </>
-        ),
+      name: (
+        <>
+          <ProjectMark project={p.project} />
+          {kind === 'link' ? (
+            <a className="usage-space-link" href={to} onClick={link(to)}>
+              {p.project.name}
+            </a>
+          ) : (
+            <>
+              <span className="usage-space-name">{p.project.name}</span>
+              {kind === 'archived' && <span className="usage-space-archived">archived</span>}
+            </>
+          )}
+        </>
+      ),
       tokens: p.tokens,
       cacheRead: p.cache_read,
       note: `${percent(p.share)} · ${costText(p.cost)}`,

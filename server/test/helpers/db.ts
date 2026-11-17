@@ -81,8 +81,10 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  // The same for `orgs` and 0031's `developer_insights` (LAI-751).
-  if (hasColumn(db, 'orgs', 'developer_insights')) {
+  // The same for `orgs`, keyed on its newest column: 0083's `email_enabled`
+  // (LAI-1312), which came with `smtp_settings` — 0031's `developer_insights`
+  // (LAI-751) was the key before them.
+  if (hasColumn(db, 'orgs', 'email_enabled')) {
     db.insert(orgs)
       .values({ id: orgId, name: 'Laika', ownerUserId: userId, createdAt: now, updatedAt: now })
       .run();
@@ -93,10 +95,11 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  // The same for `projects`: keyed on its newest column, 0066's
-  // `context_revision` (LAI-555), since a whole-row insert names every column
-  // the schema has — 0051's space settings (LAI-976) included.
-  if (hasColumn(db, 'projects', 'context_revision')) {
+  // The same for `projects`: keyed on its newest column, 0083's `icon_emoji`
+  // (LAI-1311), since a whole-row insert names every column the schema has —
+  // 0051's space settings (LAI-976) and 0066's `context_revision` (LAI-555)
+  // included.
+  if (hasColumn(db, 'projects', 'icon_emoji')) {
     db.insert(projects)
       .values({
         id: projectId,

@@ -7,6 +7,7 @@ import {
   type ReviewQueueItem,
 } from '../../../api/review.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { typingIn } from '../../../components/typing-in.ts';
@@ -176,7 +177,10 @@ export function ReviewDialog({
             </h2>
             {item !== undefined && (
               <p className="rd-sub">
-                <span className="rd-space">{item.project.name}</span>
+                <span className="rd-space">
+                  <ProjectMark project={item.project} size="xs" />
+                  {item.project.name}
+                </span>
                 <span>{item.assignee_name ?? 'Unassigned'}</span>
                 {agent !== null && <span className="rd-agent">{agent}</span>}
                 {item.round !== null && <span>round {item.round.number}</span>}

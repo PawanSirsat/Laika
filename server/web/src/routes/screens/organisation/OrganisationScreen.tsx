@@ -31,6 +31,8 @@ import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
+import { EmailSection } from './EmailSection.tsx';
+import { emailOn } from './email-derive.ts';
 import { TeamsPostingSection } from './TeamsPostingSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
@@ -145,6 +147,8 @@ export function OrganisationScreen({
   const canSetTime = gates.org('org.time.set');
   /** D-149 (LAI-1182): connecting Clan is its own §3.1 row, owners and admins by default. */
   const canConfigureHr = gates.org('org.hr.configure');
+  // D-153 (LAI-1312 review): email is its own session-only grant.
+  const canConfigureEmail = gates.org('org.email.configure');
   /** D-154 (LAI-1314): Teams posting, owners and admins by default. */
   const canConfigureTeams = gates.org('org.teams.configure');
   const canListTokens = gates.org('token.list_any');
@@ -709,6 +713,7 @@ export function OrganisationScreen({
                 }}
                 onIssued={reload}
                 restore={() => inviteButton.current}
+                emailOn={org !== undefined && emailOn(org)}
               />
             )}
           </>
@@ -743,6 +748,16 @@ export function OrganisationScreen({
                 beside the other connection GitHub is — its holder's alone. */}
             {canConfigureHr && (
               <HrSourceSection members={state.people.filter((p) => p.is_active)} />
+            )}
+
+            {/* D-153 (LAI-1312): outbound email — `org.email.configure`,
+                signed in only, as the server asks. */}
+            {canConfigureEmail && (
+              <EmailSection
+                onChanged={(email) => {
+                  setOrg((current) => (current === undefined ? current : { ...current, email }));
+                }}
+              />
             )}
 
             {/* D-154 (LAI-1314): each space's Teams channel, and the one

@@ -11,7 +11,7 @@ import { useGates } from '../../../api/permissions.ts';
 import { useMembers } from '../../../api/use-members.ts';
 import { SPACE_SETTINGS_TABS, currentTab } from '../../page-tabs.ts';
 import { spaceSettingsHref } from '../../space-settings-url.ts';
-import { spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { readerLine } from './space-settings-model.ts';
 import { GeneralTab } from './GeneralTab.tsx';
 import { MembersTab } from './MembersTab.tsx';
@@ -153,7 +153,6 @@ export function SpaceSettingsScreen({
   const summary = spaces?.find((space) => space.id === project.id);
   const current = currentTab(SPACE_SETTINGS_TABS, new URLSearchParams({ tab: tab ?? '' }));
   const path = spaceSettingsHref(project.slug);
-  const colour = spaceColor(project);
   const archived = project.archived_at !== null;
 
   const saved = (next: Project): void => {
@@ -174,16 +173,7 @@ export function SpaceSettingsScreen({
       <ScreenHeader
         variant="page"
         title={project.name}
-        lead={
-          <span
-            className="ss-avatar"
-            style={{ background: spaceColorVar(colour) }}
-            data-color={colour}
-            aria-hidden="true"
-          >
-            {(project.name.trim()[0] ?? '?').toUpperCase()}
-          </span>
-        }
+        lead={<ProjectMark project={project} size="2xl" className="ss-avatar" />}
         context={
           <>
             <span className={`ss-badge ss-badge-${project.visibility}`}>
@@ -269,6 +259,7 @@ export function SpaceSettingsScreen({
               project={project}
               counts={summary?.task_counts}
               mayEdit={mayEdit}
+              mayChangeIcon={gates.org('project.icon.write')}
               onSaved={saved}
               onDirtyChange={setGeneralDirty}
             />

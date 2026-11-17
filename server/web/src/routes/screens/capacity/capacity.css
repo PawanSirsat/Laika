@@ -546,14 +546,6 @@
   color: var(--accent);
 }
 
-/* The space's colour — the sidebar badge's, keyed by slug — as a small square. */
-.cap-space-swatch {
-  flex: none;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--radius-hairline);
-}
-
 .cap-space-n {
   font-family: var(--font-mono);
   padding: 0 0.3125rem;

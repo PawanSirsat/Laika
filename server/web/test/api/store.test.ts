@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 import { freshFor } from '../../src/api/client.ts';
 import { getOrg } from '../../src/api/org.ts';
+import { lookOf, rememberProjects } from '../../src/api/project-looks.ts';
 import { getProject, setHideDoneAfter } from '../../src/api/projects.ts';
 import { setStoreUser, taskStore } from '../../src/api/store.ts';
 import { listMembers, listTasks } from '../../src/api/tasks.ts';
@@ -124,6 +125,23 @@ void describe('request reads through the cache once a user is known', () => {
     setStoreUser(undefined);
     assert.equal(taskStore.peek('laika-core'), undefined, 'the task set survived sign-out');
     stop();
+  });
+
+  void test('a change of user forgets every space’s look — sign-out keeps no names or icons (D-152)', () => {
+    setStoreUser('u1');
+    rememberProjects([{ slug: 'secret', name: 'Secret', color: 'teal', icon: { emoji: '🔒' } }]);
+    assert.equal(lookOf('secret')?.name, 'Secret');
+    setStoreUser(undefined);
+    assert.equal(lookOf('secret'), undefined, 'a look survived sign-out');
+
+    setStoreUser('u1');
+    rememberProjects([{ slug: 'secret', name: 'Secret', color: 'teal' }]);
+    setStoreUser('u2');
+    assert.equal(lookOf('secret'), undefined, 'a look survived a change of user');
+    // The same user again keeps what they read.
+    rememberProjects([{ slug: 'mine', name: 'Mine', color: null }]);
+    setStoreUser('u2');
+    assert.equal(lookOf('mine')?.name, 'Mine');
   });
 });
 

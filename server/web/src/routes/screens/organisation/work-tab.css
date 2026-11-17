@@ -483,6 +483,18 @@ button.work-person-chip:hover {
   color: var(--text-secondary);
 }
 
+/* A group's heading, after its space's mark when grouped by space (LAI-1311). */
+.work-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.work-group-head .work-group-title {
+  margin: 0;
+}
+
 .work-group-count {
   font-family: var(--font-mono);
   font-weight: var(--weight-medium);

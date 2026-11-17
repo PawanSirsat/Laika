@@ -7581,12 +7581,150 @@ it dispatches file from `LAI-1300` – `LAI-1399`, lowest unused first, checked 
 Measured on 2026-11-17 across every local and `origin` branch and all history: 100 of
 `LAI-1100` – `LAI-1199` taken, 38 ids in the `LAI-12xx` range taken, none in `LAI-13xx`.
 
+## D-152 — Projects carry an icon: an image in the operator's store or an emoji, else their initial on their colour; org owners and admins set it
+
+**Date:** 2026-11-17 · **Decided by:** Pawan (owner): "add the project icons, show that
+everywhere of that project as highlight; if no logo show the first letter … in space
+settings". Storage, icon kind and rights answered in chat the same day: **the attachment
+store (Garage, D-150), only Ksage matters**; **an image or an emoji, else the first letter**;
+**org owners and admins only**. Recorded by the builder CHIEF dispatched (laika-c4, Belka).
+Task LAI-1311, card LAIKA-1079. Amends D-103 item 4 (a space's colour is now the ground of
+its letter, which an icon replaces).
+
+**Context.** A space was told apart only by its name and, in a few places, a coloured letter
+— in three colour schemes: the stored colour (D-103 item 4) on the Spaces page and in
+settings, a hash of the slug in the sidebar, the space header and Capacity, and a second hash
+in the More-spaces popover. So one space could wear two colours on one screen, and nowhere
+could it wear a logo.
+
+**Decision.**
+
+1. **A space's icon is an image, else an emoji, else its first letter on its colour.** It
+   holds one or the other, never both: setting either clears the other, and an image that is
+   replaced or cleared has its object deleted from the store. `ProjectView.icon` is
+   `{ emoji }`, `{ url, updated_at }` or `null`; the store key and type never leave the
+   server (§4.3, §6.4).
+2. **The image lives in the attachments store (D-150) and reuses its client.** Ask
+   (`POST /projects/:slug/icon`) → a presigned `PUT` for a new key
+   `p/<project_id>/icon/<ulid>`; complete (`…/icon/complete`) → `HEAD` for the size and the
+   first bytes for the type. **png, jpeg or webp only, at most 1 MiB** (or the board's
+   attachment limit, if smaller); **never SVG**, which can carry script. A file whose bytes
+   are not its declared type is refused and deleted.
+3. **Read through Laika, not redirected.** `GET /projects/:slug/icon?v=<icon_updated_at>`
+   answers the bytes itself, so `img-src 'self'` covers it and a page of thirty marks makes
+   thirty cacheable requests, not thirty redirects to URLs that change every time.
+   `Cache-Control: private, max-age=31536000, immutable` when `v` is the current version;
+   anything else `private, no-cache`.
+4. **The emoji is one grapheme** (`Intl.Segmenter`) drawn as a picture, set through
+   `PATCH /projects/:slug` (`icon_emoji`). The SPA offers a curated grid of forty-eight and
+   a field for any other; **no emoji library ships**.
+5. **Rights (§3.1): *Change a space's icon*, `project.icon.write`, owner ✓ admin ✓.** An org
+   action carried by no capability — the owner named the two roles — and asked on top of
+   `project.settings.edit` on `PATCH`, so a space lead who is a member cannot change it.
+   Reading follows `project.read`. No new activity verb: `project.updated` with
+   `changed: ['icon']`.
+6. **A board with no store** (the AWS board) answers asking, completing and reading an
+   image `503 unavailable` (`reason: attachments_off`); removing still clears the icon, and
+   its spaces take an emoji or keep their letter.
+7. **One mark, everywhere.** The SPA draws every space through one `ProjectMark` — the
+   sidebar, the space header, the Spaces page, pickers, the palette, the task drawer, My day,
+   Insights, Usage, Capacity, review, notifications, the organisation and profile screens —
+   always on the **stored** colour; the two slug-hash schemes are retired. A site whose
+   endpoint sends only a slug and a name draws the right mark from what the app last read for
+   that slug, so no view had to grow the field.
+
+**Known limit, recorded rather than built:** nothing is stored between ask and complete, so an
+image put to the store and never completed stays there — at most 1 MiB, and only an owner or
+admin can make one. A sweep can find them by the `p/<project_id>/icon/` prefix if it is ever
+worth it.
+
+## D-153 — Laika sends email: SMTP in organisation settings, an outbox, and a switch that ships off
+
+**Date:** 2026-11-18 · **Decided by:** Pawan (owner), after the LAI-1310 research. He chose
+all four options, saying: "implement everything and workable but I don't want to enable this
+email thing on ksage 2.0 right now, will do that later at one click". Recorded by the builder
+CHIEF dispatched for LAI-1312 (Belka). Tasks LAI-1312 (part A) and LAI-1313 (part B). Amends
+§4.11 and §4.60 ("Laika sends no email") and the note in §14 q11. **It amends nothing in §1.1.**
+
+**Context.** `orgs.smtp_json_enc` has existed since the first schema and nothing wrote it. Three
+places waited on it:
+- §13.4 and D-009 already list "an SMTP server the org configured" among Laika's outbound
+  destinations.
+- D-039 item 2 sequenced email rather than refusing it: "When SMTP exists for invites it can
+  carry mentions too".
+- D-053 named invite mail as what would reopen its refusal design.
+
+The old KSage built a full email pipeline that never sent a message: no provider was ever
+configured (LAI-1310). Kvell's SolidTime already sends through Brevo, and port 587 to Brevo is
+open from the Ksage server (measured 2026-11-18).
+
+**Decision.**
+
+1. **SMTP, set in organisation settings rather than the environment, signed in only.** It sits
+   on an *Email* card on Organisation › Integrations: host, port, login, key, From address and
+   From name.
+   - **Configuring email is session only.** It uses a new §3.1 row, *Configure the
+     organisation's email* (`org.email.configure`), carried by *Change organisation settings*.
+     No token may hold it, whatever its scope. Every invite and reset link goes wherever these
+     settings point, so a token that could set the relay or flip the switch could have them
+     all mailed to a server it chose. That's the reason `user.reset_password` is session only,
+     reached another way. (CHIEF's LAI-1312 review; it narrows the older *Org settings (AI
+     provider, SMTP, signup mode)* row for email.)
+   - **A new host needs the key again.** Saving without the key keeps the stored one only for
+     the same host, port and login; otherwise it's `422 key_required`. The stored key is never
+     sent, in a test or otherwise, to a server it wasn't given for.
+   - **The key** is stored in `smtp_json_enc` under `LAIKA_SECRET` (§12).
+   - **Everything a screen shows**, plus the key's last four characters, is in a plain
+     `smtp_settings` column, so building a view never decrypts anything. This is LAI-447's rule.
+   - **Pre-filled** with Brevo's relay, `587` and Kvell's sender `ksage@kvelld.com` / *Ksage*.
+   - **Transport:** SMTP through `nodemailer`. Port 465 is implicit TLS, and every other port
+     requires STARTTLS.
+2. **One switch, `orgs.email_enabled`, which defaults off.**
+   - Off: nothing is mailed, and every message that would have been is recorded as suppressed
+     with the reason `email_off`.
+   - The switch cannot turn on before a key is saved.
+   - *Send test email* is the only send that works while the switch is off. It goes to whoever
+     pressed it, and its answer carries the server's code.
+   - `OrgView.email = { enabled, configured }` is readable by everyone.
+3. **Every message goes through an outbox (`email_outbox`, §4.93).** This is KSage's delivery
+   design, ported rather than its code:
+   - nothing is sent inside the request that caused it;
+   - enqueueing is idempotent, by key;
+   - a message that isn't sent is a row with a reason, checked at enqueue and again at send
+     time;
+   - the body is encrypted (`email_body`) and cleared once the row is final, because it
+     carries a one-time link;
+   - a 5xx fails, a 4xx or a failure where nothing could have left is retried, and a timeout
+     once the session was underway is `unconfirmed` and **never retried**;
+   - a 7-day horizon, or the link's own expiry if sooner;
+   - a message whose link stops working before it goes — the invite revoked, re-issued or
+     accepted, or the reset link replaced or used — is `superseded` and never sent.
+
+   The sender runs every 30 seconds under §3.4's `system.email.send` and asks the switch again
+   before each message. Rows are deleted after 90 days under `system.email.prune`, daily and
+   once at boot.
+4. **What is mailed.**
+   - **Transactional mail (LAI-1312):** an invite's link, to its address, on create and
+     re-issue; and an admin-issued reset link, to the person it's for. The copy-link flow
+     stays the same whether email is on or off. Links are built from `LAIKA_PUBLIC_URL`; with
+     none set, a message is suppressed as `no_public_url`.
+   - **Notification mail (LAI-1313):** assignments and @mentions instantly, the rest in one
+     daily digest per person, with each person's own preferences. All of it goes through the
+     same outbox and switch.
+5. **Email stays a delivery channel, not an interface.** §1.1's non-goal, email as a
+   *primary* interface, stands. Inbound email-to-task is its own decision (D-155, LAI-1315).
+   There is still no self-serve *Forgot password* (§14 q11).
+
+**Turning it on** is in `docs/OPERATIONS.md` (*Email: turning it on*): paste a key made for
+Laika alone, send a test, then flip the switch. The release ships with the switch off on every
+board.
+
 ## D-154 — Teams posting: each space's stand-ups, digest and notices to its own Power Automate flow, KSage's flows reused, off until switched on
 
 **Date:** 2026-11-18 · **Decided by:** Pawan (owner), choosing *"D: Teams posting"* from the
 LAI-1310 research, then: *"implement everything and workable but I don't want to enable this …
 right now, will do that later at one click"*, and *"reuse KSage's flows"*. Recorded by CHIEF
-(Belka). Task LAI-1314. Amends §13.4; adds §4.93 – §4.95, §3.1's *Configure Teams posting*,
+(Belka). Task LAI-1314. Amends §13.4; adds §4.94 – §4.96, §3.1's *Configure Teams posting*,
 §3.4's `system.teams.post`, §6.4's Teams routes and an §11.6 job.
 
 **Context.** The old KSage posts to Microsoft Teams through Power Automate flows: a stand-up per
@@ -7597,14 +7735,14 @@ exist, so what Laika sends has to be what they already accept.
 **Decision.**
 
 1. **Each space may have one Teams channel**: a Power Automate (or Teams *Incoming Webhook*)
-   address, stored per space (§4.94). **A space with none is told nothing** — never another
+   address, stored per space (§4.95). **A space with none is told nothing** — never another
    space's channel; KSage once fell back to an organisation-wide address and posted every
    project's digest into one client's chat. **And a space's posts never name another space's
    work**: a dependency may cross spaces, so a blocker elsewhere is said as *a task in another
    space*, never by its key or title (review of LAI-1314).
-2. **Off is how it ships.** An organisation switch, *Teams posting on* (§4.93), on Organisation
+2. **Off is how it ships.** An organisation switch, *Teams posting on* (§4.94), on Organisation
    → Integrations, defaults off. While off nothing is posted, and every post that would have
-   gone is recorded in §4.95 as `suppressed`, reason `posting_off`. Turning it on is one click;
+   gone is recorded in §4.96 as `suppressed`, reason `posting_off`. Turning it on is one click;
    the changes made while it was off are never posted afterwards. **The test post** on a space's
    card works while it is off — the only way to know a flow accepts posts is to post to it.
 3. **Owners and admins, signed in.** `org.teams.configure` (§3.1), carried by *Change

@@ -175,9 +175,13 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'notices.own': 'YYYY',
   // D-149 (LAI-1181): the HR connection, under *Change organisation settings*.
   'org.hr.configure': 'YYNN',
+  // D-153 (LAI-1312 review): outbound email, under the same grant.
+  'org.email.configure': 'YYNN',
   // D-154 (LAI-1314): Teams posting, under the same grant.
   'org.teams.configure': 'YYNN',
   'developer_setup.read_own': 'YYYY',
+  // D-152 (LAI-1311): a space's icon, owners and admins.
+  'project.icon.write': 'YYNN',
 
   'project.members.manage': 'YNN',
   'project.settings.edit': 'YNN',
@@ -422,6 +426,7 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'org.time.set')).toBe('YNNN');
     // D-149 (LAI-1181): carried by the same grant as the Time setting.
     expect(cells(view, 'org.hr.configure')).toBe('YNNN');
+    expect(cells(view, 'org.email.configure')).toBe('YNNN');
     // D-154 (LAI-1314): and Teams posting.
     expect(cells(view, 'org.teams.configure')).toBe('YNNN');
     // Grantable since LAI-985: *Create and archive spaces*, *Manage anyone's tokens*.
@@ -429,6 +434,8 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'token.revoke_any')).toBe('YNNN');
     // Not a capability's, so not the grant's to withdraw.
     expect(cells(view, 'webhook.configure')).toBe('YYNN');
+    // D-152 (LAI-1311): nor is a space's icon.
+    expect(cells(view, 'project.icon.write')).toBe('YYNN');
   });
 
   it('changes the caller’s own actions with their role’s grant', () => {

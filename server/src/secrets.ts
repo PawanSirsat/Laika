@@ -79,6 +79,9 @@ export type SecretPurpose =
   | 'transcript_webhook_secret'
   // D-149 (LAI-1181): the HR system's API token, in `org_hr_source.token_enc`.
   | 'clan_api_token'
+  // D-153 (LAI-1312): a queued email's body, in `email_outbox.body_enc` — it
+  // carries a one-time link, so it is never stored in the clear.
+  | 'email_body'
   // D-154 (LAI-1314): a space's Power Automate webhook address, whose `sig=`
   // is the credential, in `project_teams_channels.webhook_url_enc`.
   | 'teams_webhook_url';

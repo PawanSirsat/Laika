@@ -16,6 +16,7 @@ import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx'
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import { plainClick, taskHref } from '../my-day/task-link.ts';
@@ -116,7 +117,12 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
   ];
   const spaceOptions: DropdownOption[] = [
     { value: ANY, label: 'Every space', pinned: true },
-    ...projects.map((p) => ({ value: p.slug, label: p.name, detail: p.prefix })),
+    ...projects.map((p) => ({
+      value: p.slug,
+      label: p.name,
+      detail: p.prefix,
+      icon: <ProjectMark project={p} size="sm" />,
+    })),
   ];
   const typeOptions: DropdownOption[] = [
     { value: ANY, label: 'Anything', pinned: true },
@@ -313,15 +319,18 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
                               'A space'
                             ) : (
                               <>
-                                <a
-                                  className="oh-space"
-                                  href={`/board?project=${encodeURIComponent(space.slug)}`}
-                                  onClick={follow(
-                                    `/board?project=${encodeURIComponent(space.slug)}`,
-                                  )}
-                                >
-                                  {space.name}
-                                </a>
+                                <span className="oh-space-name">
+                                  <ProjectMark project={space} size="xs" />
+                                  <a
+                                    className="oh-space"
+                                    href={`/board?project=${encodeURIComponent(space.slug)}`}
+                                    onClick={follow(
+                                      `/board?project=${encodeURIComponent(space.slug)}`,
+                                    )}
+                                  >
+                                    {space.name}
+                                  </a>
+                                </span>
                                 {event.task_id !== null && (
                                   <a
                                     className="oh-task"

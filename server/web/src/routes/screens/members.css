@@ -8,6 +8,13 @@
   margin-bottom: var(--space-4);
 }
 
+/* The space's mark before its name, in the page header (LAI-1311). */
+.members-context {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
 .members-sub {
   font-size: var(--text-body);
   color: var(--text-secondary);

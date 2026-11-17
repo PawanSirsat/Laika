@@ -8,6 +8,7 @@ import { accounts, passwordResets, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { endEverySession } from './users.ts';
+import { resetEmailKey, supersedeEmail } from './email-outbox.ts';
 
 /**
  * Admin-issued one-time password-reset links (§4.60, §6.4, D-104 item 4,
@@ -48,6 +49,10 @@ export interface IssuedResetLink {
   /** The plaintext token. Returned once, here; only its hash is stored. */
   token: string;
   expiresAt: number;
+  /** The `password_resets` row: the email it may be sent in is keyed by it (D-153). */
+  id: string;
+  /** Whose password it resets — who the email goes to, when email is on (D-153). */
+  user: { id: string; name: string; email: string };
 }
 
 /**
@@ -68,7 +73,13 @@ export function issueResetLink(
   now: number = Date.now(),
 ): IssuedResetLink {
   const target = db
-    .select({ id: users.id, orgRole: users.orgRole, isActive: users.isActive })
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      orgRole: users.orgRole,
+      isActive: users.isActive,
+    })
     .from(users)
     .where(eq(users.id, userId))
     .get();
@@ -85,9 +96,11 @@ export function issueResetLink(
 
   const token = randomBytes(RESET_TOKEN_BYTES).toString('base64url');
   const expiresAt = now + RESET_LINK_TTL_MS;
+  const id = newId();
 
   db.transaction(() => {
-    db.update(passwordResets)
+    const replaced = db
+      .update(passwordResets)
       .set({ revokedAt: now })
       .where(
         and(
@@ -97,11 +110,18 @@ export function issueResetLink(
           gt(passwordResets.expiresAt, now),
         ),
       )
-      .run();
+      .returning({ id: passwordResets.id })
+      .all();
+    // Their mails, if still waiting, would carry dead links (D-153, LAI-1312 review).
+    supersedeEmail(
+      db,
+      replaced.map((r) => resetEmailKey(r.id)),
+      now,
+    );
 
     db.insert(passwordResets)
       .values({
-        id: newId(),
+        id,
         userId,
         tokenHash: hashResetToken(token),
         createdBy: actor.userId,
@@ -111,7 +131,7 @@ export function issueResetLink(
       .run();
   });
 
-  return { token, expiresAt };
+  return { token, expiresAt, id, user: { id: target.id, name: target.name, email: target.email } };
 }
 
 export interface ConsumeResetLinkInput {
@@ -231,6 +251,8 @@ export async function consumeResetLink(
       )
       .run().changes;
     if (claimed === 0) return null;
+    // Used: a mail still waiting would carry a link that no longer works (D-153).
+    supersedeEmail(db, [resetEmailKey(link.id)], now);
 
     const updated = db
       .update(accounts)

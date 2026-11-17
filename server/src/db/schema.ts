@@ -62,6 +62,7 @@ import {
   PROFILE_KINDS,
   PROJECT_ROLES,
   PROJECT_COLORS,
+  PROJECT_ICON_TYPES,
   PROJECT_VISIBILITIES,
   TASK_CREATE_MIN_ROLES,
   REVIEW_DECISIONS,
@@ -86,6 +87,9 @@ import {
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   ATTACHMENT_STATES,
+  EMAIL_KINDS,
+  EMAIL_STATES,
+  EMAIL_SUPPRESSED_REASONS,
   TEAMS_POST_EVENTS,
   TEAMS_POST_KINDS,
   TEAMS_POST_OUTCOMES,
@@ -260,7 +264,27 @@ export const orgs = sqliteTable(
      * which is the whole job §12 gives it: `{ configured, provider, key_last4 }`.
      */
     aiKeyLast4: text('ai_key_last4'),
+    /**
+     * The SMTP key, as AES-256-GCM ciphertext of `{"password": …}` under §12's
+     * `smtp_json` purpose (D-153, LAI-1312). Only the sender decrypts it; the
+     * settings a screen shows are `smtp_settings`, so building a view never
+     * reaches plaintext (LAI-447's rule, as for `ai_key_last4`).
+     */
     smtpJsonEnc: text('smtp_json_enc'),
+    /**
+     * What a screen may show of the SMTP configuration (D-153, LAI-1312): JSON
+     * of `host`, `port`, `username`, `from_address`, `from_name` and the key's
+     * `key_last4`. **Never the key.** Null until an admin saves the Email card.
+     */
+    smtpSettings: text('smtp_settings'),
+    /**
+     * The organisation's *Email on* switch (D-153, LAI-1312). Default **0**:
+     * nothing is mailed until an owner or admin turns it on, and every message
+     * that would have gone out is recorded `suppressed` / `email_off`. No CHECK:
+     * adding one would make drizzle-kit rebuild `orgs`, which every table refers
+     * to — `presence_enabled` and `developer_insights` have none for the same reason.
+     */
+    emailEnabled: integer('email_enabled').notNull().default(0),
     githubWebhookSecretEnc: text('github_webhook_secret_enc'),
     /**
      * §10.2's shared secret, encrypted (§12, D-052, LAI-450).
@@ -354,6 +378,26 @@ export const projects = sqliteTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'`),
+    /**
+     * The space's icon (D-152, LAI-1311). An image wins over an emoji, an
+     * emoji over the first letter on `color`, which is what a space with
+     * neither shows.
+     *
+     * `icon_emoji` is one grapheme, checked by the service with
+     * `Intl.Segmenter` — the CHECK only bounds its length, as SQLite cannot
+     * count graphemes.
+     */
+    iconEmoji: text('icon_emoji'),
+    /**
+     * The image's key in the operator's store, `p/<project_id>/icon/<ulid>`
+     * (D-150's store): a new key for every upload, so a cached copy of the old
+     * one can never be served as the new. Null with no image.
+     */
+    iconKey: text('icon_key'),
+    /** The image's type, as its first bytes proved it; null exactly when `icon_key` is. */
+    iconType: text('icon_type', { enum: PROJECT_ICON_TYPES }),
+    /** When the icon last changed — the `?v=` that keeps a cached image honest. */
+    iconUpdatedAt: integer('icon_updated_at'),
     createdAt,
     updatedAt,
   },
@@ -371,6 +415,11 @@ export const projects = sqliteTable(
       oneOf('task_create_min_role', TASK_CREATE_MIN_ROLES),
     ),
     check('projects_agents_allowed_check', sql.raw('agents_allowed IN (0, 1)')),
+    check(
+      'projects_icon_emoji_check',
+      sql.raw('icon_emoji IS NULL OR length(icon_emoji) BETWEEN 1 AND 32'),
+    ),
+    check('projects_icon_type_check', oneOfOrNull('icon_type', PROJECT_ICON_TYPES)),
   ],
 );
 
@@ -1756,10 +1805,82 @@ export const attachments = sqliteTable(
   ],
 );
 
-// -------------------------------------------------- §4.93 org_teams_settings
+// ------------------------------------------------------ §4.93 email_outbox
 
 /**
- * The organisation's Teams posting switch (§4.93, D-154, LAI-1314). **No row,
+ * Every email Laika sends or decided not to send (§4.93, D-153, LAI-1312). A
+ * request writes a row and stops; the `email.send` job reads the queued ones and
+ * sends them, so nothing on a board waits on a mail host.
+ *
+ * **The body is ciphertext and short-lived.** An invite or a reset carries a
+ * one-time link, and §13.1 never stores a token in the clear — so the body is
+ * AES-256-GCM under §12's `email_body` purpose, written only for a `queued` row
+ * and set to null the moment the row is final. A suppressed row never had one.
+ *
+ * **Silence is a row.** A message that was not sent says why in
+ * `suppressed_reason`, so "nobody was emailed" can be told apart from "nobody
+ * was emailed because the switch was off".
+ */
+export const emailOutbox = sqliteTable(
+  'email_outbox',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind', { enum: EMAIL_KINDS }).notNull(),
+    /** One message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. */
+    idempotencyKey: text('idempotency_key').notNull(),
+    /** The person it is for, when they have an account (a reset, a test). */
+    recipientUserId: text('recipient_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    /** Where it goes. Null when there was nobody to send to (`no_address`). */
+    toAddress: text('to_address'),
+    subject: text('subject').notNull(),
+    /** §12 `email_body` ciphertext of `{text, html}` while `queued` or `sending`; null otherwise. */
+    bodyEnc: text('body_enc'),
+    state: text('state', { enum: EMAIL_STATES }).notNull(),
+    suppressedReason: text('suppressed_reason', { enum: EMAIL_SUPPRESSED_REASONS }),
+    attempts: integer('attempts').notNull().default(0),
+    /** When a `queued` row is next due; a retry moves it on. */
+    nextAttemptAt: integer('next_attempt_at'),
+    /** The horizon: the earlier of seven days and the link's own expiry. Past it, `too_old`. */
+    sendBefore: integer('send_before').notNull(),
+    /** When a worker took it; a `sending` row older than ten minutes becomes `unconfirmed`. */
+    claimedAt: integer('claimed_at'),
+    sentAt: integer('sent_at'),
+    /** The transport's code and a short reason, never a credential (≤ 300 characters). */
+    lastError: text('last_error'),
+    /** Who caused it — the inviter, the admin who issued a reset or pressed *Send test email*. */
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('email_outbox_idempotency_key_unique').on(t.idempotencyKey),
+    index('email_outbox_due_idx').on(t.state, t.nextAttemptAt),
+    index('email_outbox_created_at_idx').on(t.createdAt),
+    index('email_outbox_recipient_idx').on(t.recipientUserId),
+    check('email_outbox_kind_check', oneOf('kind', EMAIL_KINDS)),
+    check('email_outbox_state_check', oneOf('state', EMAIL_STATES)),
+    check(
+      'email_outbox_suppressed_reason_check',
+      oneOfOrNull('suppressed_reason', EMAIL_SUPPRESSED_REASONS),
+    ),
+    // A reason exactly when suppressed, so the two can never disagree.
+    check(
+      'email_outbox_suppressed_check',
+      sql.raw("(state = 'suppressed') = (suppressed_reason IS NOT NULL)"),
+    ),
+    check(
+      'email_outbox_last_error_check',
+      sql.raw('last_error IS NULL OR length(last_error) <= 300'),
+    ),
+  ],
+);
+
+// -------------------------------------------------- §4.94 org_teams_settings
+
+/**
+ * The organisation's Teams posting switch (§4.94, D-154, LAI-1314). **No row,
  * or `posting_enabled` 0, is off** — and off is how it ships: nothing is
  * posted, and each post that would have gone is recorded in `teams_posts` as
  * suppressed. Turned on and off by an owner or admin, signed in.
@@ -1790,10 +1911,10 @@ export const orgTeamsSettings = sqliteTable(
   ],
 );
 
-// ---------------------------------------------- §4.94 project_teams_channels
+// ---------------------------------------------- §4.95 project_teams_channels
 
 /**
- * A space's Teams channel (§4.94, D-154, LAI-1314): the Power Automate
+ * A space's Teams channel (§4.95, D-154, LAI-1314): the Power Automate
  * webhook its stand-ups, digest and notices are posted to. **No row is no
  * channel**, and a space with none is told nothing — never another space's
  * channel (KSage's `notify::webhook_for`, which had a fallback once, and
@@ -1826,10 +1947,10 @@ export const projectTeamsChannels = sqliteTable(
   ],
 );
 
-// --------------------------------------------------------- §4.95 teams_posts
+// --------------------------------------------------------- §4.96 teams_posts
 
 /**
- * One post to a space's Teams channel, or one that would have been (§4.95,
+ * One post to a space's Teams channel, or one that would have been (§4.96,
  * D-154, LAI-1314) — the record of what went, what Teams said, and what was
  * held back and why. **Never the message's body and never Teams' answer**:
  * the headline, the outcome, a closed reason and the HTTP status.

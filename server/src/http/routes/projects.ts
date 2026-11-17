@@ -22,11 +22,13 @@ import {
   projectSummaryView,
   removeMember,
   TASK_CREATE_MIN_ROLES,
-  updateProject,
   updateProjectContext,
+  updateProjectDropping,
   type ProjectSummary,
 } from '../../services/projects.ts';
 import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
+import { type AttachmentsDeps } from '../../services/attachments.ts';
+import { discardIconObject } from '../../services/project-icons.ts';
 import { getEstimateAccuracy, type EstimateAccuracyView } from '../../services/estimates.ts';
 import { mentionableUsers } from '../../services/mentions.ts';
 import { NOTICE_MESSAGE_MAX } from '../../services/notices.ts';
@@ -103,6 +105,10 @@ const UpdateBody = strictObject({
   prefix: Prefix.optional(),
   task_create_min_role: z.enum(TASK_CREATE_MIN_ROLES).optional(),
   agents_allowed: z.boolean().optional(),
+  // D-152 (LAI-1311): one emoji as the space's icon, or `null` to clear it.
+  // Whether it is one emoji is the service's to say (`invalid_icon_emoji`);
+  // the bound here only keeps a paste of a page out.
+  icon_emoji: z.string().max(64).nullable().optional(),
   // `context_md` is **not** here since LAI-404. It has its own pair below, so
   // there is one writer of the column, one place enforcing the size bound, and
   // one shape of audit row. `.strict()` means a client still sending it here
@@ -208,6 +214,11 @@ function parseArchived(raw: string | undefined): (typeof ARCHIVED_FILTERS)[numbe
 export interface ProjectRouteOptions {
   db: Db;
   sqlite: Database.Database;
+  /**
+   * The attachments store (D-150), where an icon image an emoji replaces is
+   * deleted from (D-152). Absent is off: there is no image to delete.
+   */
+  attachments?: AttachmentsDeps | undefined;
 }
 
 export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
@@ -267,7 +278,10 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     const actor = requireActor(c);
     const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
 
-    return c.json(updateProject(db, actor, c.req.param('slug'), body));
+    const { view, droppedIconKey } = updateProjectDropping(db, actor, c.req.param('slug'), body);
+    // An emoji took the place of an icon image: its object goes, best effort.
+    if (droppedIconKey !== null) await discardIconObject(options.attachments, droppedIconKey);
+    return c.json(view);
   });
 
   // §6.4's dedicated pair. `GET` follows project read — a viewer sees it (§7.3);

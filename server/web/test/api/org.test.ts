@@ -114,6 +114,8 @@ void describe('the AI settings are absent, not null', () => {
       updated_at: 2,
       // Always sent, `null` on a board with no store (D-150).
       attachments: null,
+      // Always sent, to everyone (D-153); off until an owner turns it on.
+      email: { enabled: false, configured: false },
     };
     assert.equal('ai' in withheld, false);
     assert.equal(withheld.ai, undefined);

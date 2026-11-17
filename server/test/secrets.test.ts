@@ -110,6 +110,7 @@ describe('the key', () => {
       github_webhook_secret: encryptSecret('ghp_0123', SECRET, 'github_webhook_secret'),
       transcript_webhook_secret: encryptSecret('tr_0123', SECRET, 'transcript_webhook_secret'),
       clan_api_token: encryptSecret('7|clan0123', SECRET, 'clan_api_token'),
+      email_body: encryptSecret('{"text":"t","html":"h"}', SECRET, 'email_body'),
       teams_webhook_url: encryptSecret('https://x.example/0123', SECRET, 'teams_webhook_url'),
     } as const;
 

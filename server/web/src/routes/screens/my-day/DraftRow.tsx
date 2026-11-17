@@ -1,5 +1,6 @@
 import type { ChangeEvent } from 'react';
 import type { TimeDraft } from '../../../api/time.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { CardLink } from './CardLink.tsx';
 import { folderOf, needsACard } from './folder.ts';
 import { duration, span } from './format.ts';
@@ -149,6 +150,7 @@ export function DraftRow({
         <span className="myday-row-minutes">{duration(draft.minutes)}</span>
       </button>
       <span className="myday-row-target">
+        {draft.task === null && draft.project !== null && <ProjectMark project={draft.project} />}
         <span
           className={[
             'myday-row-key',

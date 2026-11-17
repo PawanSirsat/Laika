@@ -4,6 +4,7 @@ import { Button } from '../../../components/forms/Button.tsx';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import {
   createInvite,
   INVITE_EXPIRY_DAYS,
@@ -17,6 +18,8 @@ import { orgRoleLabel } from '../invite-roles.ts';
 import { inviteButtonLabel, parseEmails, rejectedEmails, spaceRolesFor } from './people-derive.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import type { EmailDispatch } from '../../../api/email.ts';
+import { dispatchLine, dispatchOf } from './email-derive.ts';
 
 export interface InviteDialogProps {
   /** Where the invite is to: the organisation's name. */
@@ -32,11 +35,13 @@ export interface InviteDialogProps {
   readonly onIssued: () => void;
   /** Where focus goes when it closes — the control that opened it. */
   readonly restore?: () => HTMLElement | null | undefined;
+  /** The organisation's *Email on* switch (D-153): invites with an address are also mailed. */
+  readonly emailOn?: boolean;
 }
 
 /** One line of a send: its link, or the server's refusal for that address (LAI-999). */
 type Issued =
-  | { readonly email: string | null; readonly url: string; readonly emailed: boolean }
+  | { readonly email: string | null; readonly url: string; readonly mail: EmailDispatch }
   | { readonly email: string | null; readonly error: string };
 
 /** The server's default lifetime; sent only when another is chosen. */
@@ -61,6 +66,7 @@ export function InviteDialog({
   onClose,
   onIssued,
   restore,
+  emailOn = false,
 }: InviteDialogProps) {
   const box = useRef<HTMLDivElement | null>(null);
   useDialogFocus(box, { restore });
@@ -96,7 +102,7 @@ export function InviteDialog({
           made.push({
             email: created.invite.email,
             url: created.accept_url,
-            emailed: created.invite.email_sent,
+            mail: dispatchOf(created),
           });
         } catch (cause: unknown) {
           made.push({
@@ -215,7 +221,11 @@ export function InviteDialog({
                     onChange={setSpace}
                     options={[
                       { value: '', label: 'No space' },
-                      ...projects.map((p) => ({ value: p.id, label: p.name })),
+                      ...projects.map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                        icon: <ProjectMark project={p} size="sm" />,
+                      })),
                     ]}
                   />
                   {space !== '' && (
@@ -257,7 +267,9 @@ export function InviteDialog({
                 </div>
               </div>
               <p className="org-dialog-note">
-                Laika sends no email: each link is shown once, to send yourself.
+                {emailOn
+                  ? 'Each invite with an address is also emailed, and every link is shown once here to copy.'
+                  : 'Email is off: each link is shown once, to send yourself.'}
               </p>
             </div>
             <footer className="org-dialog-foot">
@@ -291,9 +303,11 @@ export function InviteDialog({
               </p>
               {links.length > 0 && (
                 <p className="org-issued-body">
-                  {links.every((i) => i.emailed)
-                    ? 'Each link is shown once — the server stores only a hash of it.'
-                    : 'Nothing was emailed: send each link yourself. It is shown once — the server stores only a hash of it. If it is lost, Re-issue it from Pending.'}
+                  {links.every((i) => i.mail.queued)
+                    ? 'Each link was also emailed, and is shown here once — the server stores only a hash of it.'
+                    : links.some((i) => i.mail.queued)
+                      ? 'Links marked emailed were also mailed; send the others yourself. Each is shown once — the server stores only a hash of it.'
+                      : 'Nothing was emailed: send each link yourself. It is shown once — the server stores only a hash of it. If it is lost, Re-issue it from Pending.'}
                 </p>
               )}
               <ul className="org-issued-list">
@@ -305,6 +319,11 @@ export function InviteDialog({
                     {i.email !== null && <span className="org-issued-to">{i.email}</span>}
                     {'url' in i ? (
                       <>
+                        {dispatchLine(i.mail, i.email) !== null && (
+                          <span className="org-issued-mail" data-issued-mail={i.mail.queued}>
+                            {dispatchLine(i.mail, i.email)}
+                          </span>
+                        )}
                         <code className="org-issued-url">{i.url}</code>
                         <CopyButton
                           text={i.url}

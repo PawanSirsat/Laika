@@ -109,6 +109,11 @@ export const ORG_ACTIONS = [
   // D-149 (LAI-1181): connect, sync and disconnect the organisation's HR
   // system, and map its people to Laika's.
   'org.hr.configure',
+  // D-152 (LAI-1311): a space's icon — its image or its emoji.
+  'project.icon.write',
+  // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
+  // *Email on* switch.
+  'org.email.configure',
   // D-154 (LAI-1314): turn Teams posting on or off, and set, clear and test a
   // space's Teams channel.
   'org.teams.configure',
@@ -213,6 +218,10 @@ export const SYSTEM_ACTIONS = [
   // §11.6: uploads nobody finished, files nothing linked, and the objects of
   // removed files, swept from the store hourly (D-150 item 6, LAI-1300).
   'system.attachment.prune',
+  // §11.6: the outbox's queued mail sent, and its rows deleted after 90 days
+  // (D-153, LAI-1312) — nobody sends a queued email, so nobody is the actor.
+  'system.email.send',
+  'system.email.prune',
   // §11.6: each space's Teams stand-ups, digest and notices, every minute,
   // and the posts' record kept 90 days (D-154, LAI-1314).
   'system.teams.post',
@@ -437,6 +446,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // must neither connect one, nor point the organisation's at another account,
   // nor say whose leave is whose.
   'org.hr.configure',
+  // **Email is where every invite and reset link goes** (D-153, LAI-1312
+  // review): a token that could set the relay, or turn email on, could have
+  // every one of them mailed to a server it chose — the reason
+  // `user.reset_password` is session only, reached another way.
+  'org.email.configure',
   // **A space's Teams address is where its work is read out to** (D-154,
   // LAI-1314): an agent's token that could set one could send every
   // stand-up, title and comment to an address of its own choosing, and one

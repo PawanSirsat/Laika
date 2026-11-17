@@ -336,7 +336,7 @@ void describe('the grid card', () => {
         );
       assert.ok(Math.abs(share - 358 / 720) < 0.01, `done fills ${share.toFixed(3)} of the bar`);
       assert.equal(await card.locator('.space-avatar').getAttribute('data-color'), 'violet');
-      assert.equal(await card.locator('.space-avatar').innerText(), 'L');
+      assert.equal(await card.locator('.space-avatar').getAttribute('data-glyph'), 'L');
       assert.equal(await card.locator('.space-face').count(), 5, 'four faces and a +n');
       assert.equal(await card.locator('.space-face-more').innerText(), '+3');
 

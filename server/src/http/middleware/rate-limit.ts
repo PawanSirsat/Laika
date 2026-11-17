@@ -142,6 +142,9 @@ export const HR_CALL_PATHS: ReadonlySet<string> = new Set([
   '/api/v1/org/hr/sync',
 ]);
 
+/** *Send test email* (D-153, LAI-1312): each one opens a connection to the mail server. */
+export const EMAIL_TEST_PATH = '/api/v1/org/email/test';
+
 /** A space's Teams test post (D-154, LAI-1314): `/projects/:slug/teams/test`. */
 export const TEAMS_TEST_PATH = /^\/api\/v1\/projects\/[^/]+\/teams\/test$/;
 
@@ -190,6 +193,12 @@ export function classify(
   // small bucket per person, and never spend the session's.
   if (HR_CALL_PATHS.has(path) && method === 'POST') {
     return { key: `hr:${who}`, policy: LIMITS.hr };
+  }
+
+  // *Send test email* (LAI-1312): every press reaches the mail server, so a
+  // small bucket per person — the HR calls' size — and never the session's.
+  if (path === EMAIL_TEST_PATH && method === 'POST') {
+    return { key: `email-test:${who}`, policy: LIMITS.hr };
   }
 
   // A Teams test post (LAI-1314) calls a Power Automate flow, so it has a

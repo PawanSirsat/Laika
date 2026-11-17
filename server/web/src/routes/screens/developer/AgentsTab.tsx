@@ -4,6 +4,7 @@ import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { AgentReadiness } from '../../../components/agent/AgentReadiness.tsx';
@@ -1296,6 +1297,7 @@ function GrantEditor({
             <li key={project.id} className="agents-grant">
               <fieldset className="agents-grant-set" disabled={disabled}>
                 <legend className="agents-grant-name">
+                  <ProjectMark project={project} size="sm" />
                   <span className="agents-grant-prefix">{project.prefix}</span> {project.name}
                 </legend>
                 <div className="agents-grant-options">
