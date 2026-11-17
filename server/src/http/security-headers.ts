@@ -64,8 +64,23 @@ export function extractStyleHashes(html: string): string[] {
  * Modern engines therefore get the real tightening via `style-src-elem`, and old
  * ones are left no worse than before.
  */
-export function buildContentSecurityPolicy(styleHashes: readonly string[]): string {
+export interface ContentSecurityPolicyOptions {
+  /**
+   * The attachments store's origin (D-150, LAI-1300), or `null` when
+   * attachments are off. On, it joins `img-src` — a file is shown through a
+   * 302 to it — and `connect-src`, where the browser uploads; **nothing
+   * else**: no script, style, frame or object may come from it.
+   */
+  storageOrigin?: string | null;
+}
+
+export function buildContentSecurityPolicy(
+  styleHashes: readonly string[],
+  options: ContentSecurityPolicyOptions = {},
+): string {
   const elemSources = ["'self'", ...styleHashes].join(' ');
+  const store = options.storageOrigin ?? null;
+  const fromStore = store === null ? '' : ` ${store}`;
 
   return [
     "default-src 'self'",
@@ -78,10 +93,11 @@ export function buildContentSecurityPolicy(styleHashes: readonly string[]): stri
     `style-src-elem ${elemSources}`,
     "style-src-attr 'unsafe-inline'",
 
-    "img-src 'self' data:",
+    `img-src 'self' data:${fromStore}`,
     "font-src 'self'",
-    // The SPA talks to its own origin only; SSE (§11.5) is same-origin too.
-    "connect-src 'self'",
+    // The SPA talks to its own origin only — SSE (§11.5) is same-origin too —
+    // and, with attachments on, uploads to the store.
+    `connect-src 'self'${fromStore}`,
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",

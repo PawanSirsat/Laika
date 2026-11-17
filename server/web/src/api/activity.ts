@@ -232,6 +232,11 @@ const LABELS: Readonly<Record<string, string>> = {
   'comment.edited': 'edited a comment',
   'comment.deleted': 'deleted a comment',
 
+  // D-150 (LAI-1300): written when a file first belongs to the task, and
+  // when one is removed — by a person or with the comment that carried it.
+  'attachment.added': 'attached a file',
+  'attachment.removed': 'removed a file',
+
   'project.created': 'created this space',
   'project.updated': 'changed space settings',
   'project.archived': 'archived this space',

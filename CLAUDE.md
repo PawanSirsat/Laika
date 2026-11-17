@@ -385,7 +385,7 @@ one:
 
 | Session | Range | Second block (D-036) | Third block (D-068) |
 | --- | --- | --- | --- |
-| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) — **full**; then `LAI-950` – `LAI-999` (D-100) — **full**; then `LAI-500` – `LAI-599` (D-109) — **full**; then `LAI-1000` – `LAI-1099` (D-120) — **full**; then `LAI-1100` – `LAI-1199` (D-127) |
+| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) — **full**; then `LAI-950` – `LAI-999` (D-100) — **full**; then `LAI-500` – `LAI-599` (D-109) — **full**; then `LAI-1000` – `LAI-1099` (D-120) — **full**; then `LAI-1100` – `LAI-1199` (D-127) — **full**; then `LAI-1300` – `LAI-1399` (D-151) |
 | CORE | `LAI-100` – `LAI-199` | — (given to CHIEF, D-109: CORE never filed from it) | — (given to CHIEF, D-089) |
 | SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-949` (D-100 gave `950`–`999` to CHIEF) |
 
@@ -395,7 +395,8 @@ file); nobody else takes from it. Move to your second block only when your first
 number left, and to the third when the second has none (D-068). CHIEF's
 first three are full, and so are `LAI-800` – `LAI-899` (D-089) and `LAI-950` –
 `LAI-999` (D-100) and `LAI-500` – `LAI-599` (D-109) and `LAI-1000` – `LAI-1099`
-(D-120), so CHIEF files from `LAI-1100` (D-127). A builder CHIEF dispatches files
+(D-120) and `LAI-1100` – `LAI-1199` (D-127), so CHIEF files from `LAI-1300` (D-151;
+`LAI-1200` onwards is the UI refine branches'). A builder CHIEF dispatches files
 from CHIEF's block.
 
 Use the lowest unused number **in your own range**, checked across every branch:

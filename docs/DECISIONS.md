@@ -7507,3 +7507,76 @@ runs to the last day of the person's leave **across their non-working days and t
 holidays that cover them**, so two weeks off with a weekend between read as one stretch;
 and *Open to more work* (`open_only`) **leaves out anyone on approved whole-day leave
 today**. Both are CHIEF's, from build-1183's open questions.
+
+## D-150 — Files attach to tasks and comments, kept in an operator-configured S3-compatible store
+
+**Date:** 2026-11-17 · **Decided by:** Pawan (owner): "we can upload the attachment in task
+also in comments … image or the excel sheet or pdf or any other thing … we can setup the
+minio to store this in coolify". Storage engine, AWS and size answered in chat the same day:
+**Garage**, **off on the AWS board**, **25 MB**. Recorded by CHIEF (Belka). Tasks LAI-1300 –
+LAI-1301. Amends §1.1, D-066 ("attachments stay out"), §13.4 and §14 q5; reaffirms D-002.
+
+**Context.** §1.1 listed *file uploads* as a v1 non-goal and §14 q5 deferred them ("the
+`/data` volume anticipates them"). People now paste screenshots, spreadsheets and PDFs into
+other tools and link them from cards, so the evidence for a task lives somewhere Laika cannot
+see or permission. The Ksage deployment (Coolify backend, Netlify frontend, LAIKA-1065) puts a
+hard ceiling on bytes through the app: every request is capped at 1 MiB (§13.1), the Netlify
+proxy cuts at ~26 s and an edge function at 60 s (LAIKA-1066). MinIO, the store the owner
+first named, archived its open-source repository in April 2026 and its image is gone from
+Docker Hub; Garage is maintained, light, single-node friendly and S3-compatible.
+
+**Decision.**
+
+1. **Attachments are in, and opt-in per deployment.** Six env vars (§11.7): `LAIKA_S3_ENDPOINT`,
+   `LAIKA_S3_REGION`, `LAIKA_S3_BUCKET`, `LAIKA_S3_ACCESS_KEY_ID`, `LAIKA_S3_SECRET_ACCESS_KEY`
+   and `LAIKA_ATTACHMENT_MAX_BYTES` (default 25 MiB). The five `LAIKA_S3_*` all set turns the
+   feature on; none set leaves it off — the routes answer `503 unavailable`
+   (`reason: attachments_off`) and the SPA shows no attach control; **some but not all is a
+   startup failure**. The default install stays one image and one volume (D-002): the store
+   is the operator's, outside Laika, like SMTP.
+2. **A fifth outbound destination (§13.4): the configured object store** — signed `PUT`,
+   `GET`, `HEAD` and `DELETE` of the objects Laika itself names, nothing else. Browsers talk
+   to it too, through short-lived presigned URLs Laika issues; it is the operator's own
+   store, not a third party.
+3. **Bytes never pass through Laika.** The browser asks Laika for an upload, gets a SigV4
+   presigned `PUT` (10 minutes) that signs the key, `content-type`, `content-length` and
+   `content-disposition` — so the store itself refuses a bigger or different file — uploads
+   straight to the store, then tells Laika it is done; Laika `HEAD`s the object and reads its
+   first bytes before marking it ready. Reading is `GET /api/v1/attachments/:id/content`,
+   which answers a 302 to a presigned `GET` valid for 5 minutes. **No SDK**: SigV4 is a small
+   hand-written signer on `node:crypto` with an injectable `fetch`, as `provider.ts` and
+   `clan-client.ts` are.
+4. **Any file type, at most 25 MiB.** Shown inline only when it is a png, jpeg, gif, webp or
+   pdf **and its first bytes say so**; everything else — SVG and HTML included — is served
+   `application/octet-stream` as a download. Markdown stores only Laika's own relative URL,
+   `/api/v1/attachments/<id>/content`, never a store URL, so a stored body never expires.
+5. **Rights (§3.2).** `attachment.create` as *Add comment* (member and up, agents and tokens
+   alike, never a read-only token); `attachment.delete` as editing a comment — a lead any,
+   a member their own. Reading is `project.read`. The sweep runs as the system principal
+   (`system.attachment.prune`, §3.4).
+6. **Files belong to a project, then to a task and a comment.** An upload names its project
+   and optionally its task; text that embeds it links it on save — the server scans the
+   markdown of a task's description and acceptance and of a comment for attachment URLs of
+   the same project, as `syncMentions` scans for handles, so REST and MCP link alike with no
+   new request field. Deleting a comment deletes the files only it carries. Uploads nobody
+   finished, and files never linked to anything, are swept after 24 hours.
+7. **Activity gets two verbs**, `attachment.added` (when a file first belongs to a task) and
+   `attachment.removed`; the sweep writes none.
+8. **Backing up the store is the operator's job.** The nightly SQLite snapshot (§11.6) does
+   not contain files. Next steps, filed rather than built: MCP access for agents, attach on
+   the plain-text fields, per-organisation usage, off-host database backups into the store.
+
+**The Ksage deployment** runs Garage `v2.5.0` single-node as the Coolify resource
+`ksage-files` (project Ksage), bucket `laika-attachments`, region `garage`, path-style, CORS
+for the Netlify origin only. The AWS board sets none of the variables and so has no
+attachments.
+
+## D-151 — CHIEF files from LAI-1300 – LAI-1399
+
+**Date:** 2026-11-17 · **Decided by:** CHIEF, under the owner's standing instruction to continue.
+
+**In one line:** D-127's `LAI-1100` – `LAI-1199` is full, and `LAI-1200` onwards is in use by
+the UI refine branches (`LAI-1200-calendar-refine` and the 37 after it); CHIEF and the builders
+it dispatches file from `LAI-1300` – `LAI-1399`, lowest unused first, checked with §3's sweep.
+Measured on 2026-11-17 across every local and `origin` branch and all history: 100 of
+`LAI-1100` – `LAI-1199` taken, 38 ids in the `LAI-12xx` range taken, none in `LAI-13xx`.

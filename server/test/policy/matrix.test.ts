@@ -379,6 +379,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['task.assign_other', true, true, false],
   // | Add comment | ✓ | ✓ | — |
   ['comment.create', true, true, false],
+  // | Attach a file | ✓ | ✓ | — |
+  // D-150 item 5 (LAI-1300): *Add comment*'s right.
+  ['attachment.create', true, true, false],
   // | Add / remove dependencies | ✓ | ✓ | — |
   ['task.dependency.write', true, true, false],
   // | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
@@ -442,6 +445,16 @@ describe('SPEC §3.2 — the `own` cells', () => {
     }
   });
 
+  it('| Remove an attachment | own + any | own | — |', () => {
+    // D-150 item 5 (LAI-1300): `ownerId` is who uploaded the file.
+    expect(can(projectActor('lead'), 'attachment.delete', THEIRS)).toBe(true);
+    expect(can(projectActor('lead'), 'attachment.delete', OWN)).toBe(true);
+    expect(can(projectActor('member'), 'attachment.delete', OWN)).toBe(true);
+    expect(can(projectActor('member'), 'attachment.delete', THEIRS)).toBe(false);
+    expect(can(projectActor('viewer'), 'attachment.delete', OWN)).toBe(false);
+    expect(can(projectActor('member'), 'attachment.delete', { projectId: 'p1' })).toBe(false);
+  });
+
   it('| Cancel / delete task | ✓ | own-created | — |', () => {
     expect(can(projectActor('lead'), 'task.delete', THEIRS)).toBe(true);
     expect(can(projectActor('member'), 'task.delete', OWN)).toBe(true);
@@ -499,6 +512,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.checkpoint.prune', {}],
     ['system.notices.prune', {}],
     ['system.hr.sync', {}],
+    ['system.attachment.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],
@@ -569,6 +583,7 @@ describe('completeness', () => {
       'token.revoke_own',
       'comment.edit',
       'comment.delete',
+      'attachment.delete',
       'task.delete',
       'task.handoff.approve',
       'task.handoff.cancel',

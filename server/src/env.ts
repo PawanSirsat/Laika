@@ -68,7 +68,38 @@ export interface Env {
    * checkout is cloned from, served by `GET /developer/compatibility`.
    */
   readonly cliSourceUrl: string;
+  /**
+   * Attachments (D-150, LAI-1300): the operator's S3-compatible store and the
+   * largest file, or `null` — off — when no `LAIKA_S3_*` variable is set.
+   */
+  readonly attachments: AttachmentsEnv | null;
 }
+
+/**
+ * The store attachments live in (D-150 item 2): **the operator's**, outside
+ * Laika, like SMTP. Path-style: objects are `<endpoint>/<bucket>/<key>`.
+ */
+export interface AttachmentStoreEnv {
+  /** An `http(s)` origin with no path — `https://files.example.com`. */
+  readonly endpoint: string;
+  readonly region: string;
+  readonly bucket: string;
+  readonly accessKeyId: string;
+  /** Signs every URL Laika issues. Never logged, never served. */
+  readonly secretAccessKey: string;
+}
+
+export interface AttachmentsEnv {
+  readonly store: AttachmentStoreEnv;
+  /** `LAIKA_ATTACHMENT_MAX_BYTES`: the largest file, in bytes. */
+  readonly maxBytes: number;
+}
+
+/** 25 MiB (D-150 item 4). */
+export const DEFAULT_ATTACHMENT_MAX_BYTES = 26_214_400;
+
+/** 5 GiB: one S3 `PUT`'s own ceiling, so nothing larger can be presigned. */
+const MAX_ATTACHMENT_MAX_BYTES = 5_368_709_120;
 
 /**
  * `classic` is today's five tabs, `preview` adds the V3 tabs beside them, `v3`
@@ -408,6 +439,129 @@ function parseCliSourceUrl(raw: string | undefined): string {
   return raw;
 }
 
+/** The six variables of D-150, read before any of them — or anything else — is judged. */
+interface AttachmentsRaw {
+  endpoint: string | undefined;
+  region: string | undefined;
+  bucket: string | undefined;
+  accessKeyId: string | undefined;
+  secretAccessKey: string | undefined;
+  maxBytes: string | undefined;
+}
+
+/** A loopback host, where plain `http` is allowed: a store on the same machine. */
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '[::1]' ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
+
+/**
+ * `LAIKA_S3_ENDPOINT`: an origin and nothing else. `https` unless the host is
+ * loopback — the store signs with a key Laika holds, and a browser uploads
+ * to it. The value is redacted from the error: an endpoint pasted with
+ * credentials in it would otherwise reach the log.
+ */
+function parseStoreEndpoint(raw: string): string {
+  const refuse = (): never => {
+    throw new EnvError(
+      'LAIKA_S3_ENDPOINT',
+      '<redacted>',
+      'an https:// origin with no path, user, query or fragment (http:// only for a loopback host)',
+    );
+  };
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return refuse();
+  }
+  const secure = url.protocol === 'https:';
+  const loopback = url.protocol === 'http:' && isLoopbackHost(url.hostname);
+  if (
+    (!secure && !loopback) ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    raw.includes('?') ||
+    raw.includes('#') ||
+    (url.pathname !== '/' && url.pathname !== '')
+  ) {
+    return refuse();
+  }
+  return url.origin;
+}
+
+/**
+ * The six `LAIKA_S3_*` and `LAIKA_ATTACHMENT_MAX_BYTES` (§11.7, D-150 item 1).
+ * All five store variables set is on; none is off; **some is a startup
+ * failure** naming the ones missing — a half-configured store would fail
+ * only when somebody first attached a file. The size is judged either way.
+ */
+function parseAttachments(raw: AttachmentsRaw): AttachmentsEnv | null {
+  const maxBytes = parseWhole(
+    'LAIKA_ATTACHMENT_MAX_BYTES',
+    raw.maxBytes,
+    DEFAULT_ATTACHMENT_MAX_BYTES,
+    'bytes',
+    MAX_ATTACHMENT_MAX_BYTES,
+  );
+  const named: [string, string | undefined][] = [
+    ['LAIKA_S3_ENDPOINT', raw.endpoint],
+    ['LAIKA_S3_REGION', raw.region],
+    ['LAIKA_S3_BUCKET', raw.bucket],
+    ['LAIKA_S3_ACCESS_KEY_ID', raw.accessKeyId],
+    ['LAIKA_S3_SECRET_ACCESS_KEY', raw.secretAccessKey],
+  ];
+  const missing = named.filter(([, value]) => value === undefined || value === '');
+  if (missing.length === named.length) return null;
+  if (missing.length > 0) {
+    throw new EnvError(
+      missing[0]![0],
+      '<unset>',
+      `a value: attachments need all five LAIKA_S3_ variables or none, and ${missing
+        .map(([name]) => name)
+        .join(', ')} ${missing.length === 1 ? 'is' : 'are'} missing`,
+    );
+  }
+
+  const region = raw.region!;
+  // It is a segment of every signature's credential scope, so no `/`.
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(region)) {
+    throw new EnvError('LAIKA_S3_REGION', region, 'letters, digits, - and _ (us-east-1, garage)');
+  }
+  const bucket = raw.bucket!;
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
+    throw new EnvError('LAIKA_S3_BUCKET', bucket, 'an S3 bucket name: 3–63 of a-z, 0-9, . and -');
+  }
+  const accessKeyId = raw.accessKeyId!;
+  if (!/^[A-Za-z0-9._~-]{1,128}$/.test(accessKeyId)) {
+    throw new EnvError(
+      'LAIKA_S3_ACCESS_KEY_ID',
+      '<redacted>',
+      'an access key id: letters, digits, ., _, ~ and -',
+    );
+  }
+  const secretAccessKey = raw.secretAccessKey!;
+  if (!/^\S+$/.test(secretAccessKey)) {
+    throw new EnvError('LAIKA_S3_SECRET_ACCESS_KEY', '<redacted>', 'a secret with no spaces in it');
+  }
+
+  return {
+    store: {
+      endpoint: parseStoreEndpoint(raw.endpoint!),
+      region,
+      bucket,
+      accessKeyId,
+      secretAccessKey,
+    },
+    maxBytes,
+  };
+}
+
 export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
   const port = parsePort(source.PORT);
@@ -422,6 +576,15 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     commit: source.LAIKA_BUILD_COMMIT,
     developerAccess: source.LAIKA_DEVELOPER_ACCESS,
     cliSourceUrl: source.LAIKA_CLI_SOURCE_URL,
+  };
+  // All six, before any of them or the claim timings is judged (D-150).
+  const attachmentsRaw: AttachmentsRaw = {
+    endpoint: source.LAIKA_S3_ENDPOINT,
+    region: source.LAIKA_S3_REGION,
+    bucket: source.LAIKA_S3_BUCKET,
+    accessKeyId: source.LAIKA_S3_ACCESS_KEY_ID,
+    secretAccessKey: source.LAIKA_S3_SECRET_ACCESS_KEY,
+    maxBytes: source.LAIKA_ATTACHMENT_MAX_BYTES,
   };
 
   return {
@@ -441,5 +604,6 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     buildCommit: parseBuildCommit(buildRaw.commit),
     developerAccess: parseDeveloperAccess(buildRaw.developerAccess),
     cliSourceUrl: parseCliSourceUrl(buildRaw.cliSourceUrl),
+    attachments: parseAttachments(attachmentsRaw),
   };
 }

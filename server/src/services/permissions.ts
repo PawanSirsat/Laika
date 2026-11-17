@@ -144,6 +144,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'comment.create': 'Add comment',
   'comment.edit': 'Edit / delete comment',
   'comment.delete': 'Edit / delete comment',
+  'attachment.create': 'Attach a file',
+  'attachment.delete': 'Remove an attachment',
   'task.delete': 'Cancel / delete task',
   'task.dependency.write': 'Add / remove dependencies',
   'task.watch': 'Watch / unwatch a task',
@@ -192,6 +194,7 @@ const SOMEONE_ELSE = 'someone-else';
  *  - `time_entries.write_member` — an Admin anybody but the Owner, the Owner
  *    anybody; never themselves (D-143, LAI-1165).
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
+ *  - `attachment.delete` — a Lead any file, a Member one they uploaded (D-150).
  *  - `task.delete` — a Lead any task, a Member one they created.
  *  - `task.handoff.approve` — a Lead any, a Member a task assigned to them.
  *  - `task.handoff.cancel` — a Lead any offer, a Member one their agent sent.
@@ -269,6 +272,11 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
   },
   'comment.delete': {
     text: 'Their own comments only',
+    holds: (userId) => ({ ownerId: userId }),
+    fails: () => ({ ownerId: SOMEONE_ELSE }),
+  },
+  'attachment.delete': {
+    text: 'Files they uploaded only',
     holds: (userId) => ({ ownerId: userId }),
     fails: () => ({ ownerId: SOMEONE_ELSE }),
   },

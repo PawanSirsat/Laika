@@ -197,6 +197,9 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'comment.create': 'YYN',
   'comment.edit': 'YCN',
   'comment.delete': 'YCN',
+  // D-150 (LAI-1300): *Add comment*'s and *Edit / delete comment*'s rights.
+  'attachment.create': 'YYN',
+  'attachment.delete': 'YCN',
   'task.delete': 'YCN',
   'task.dependency.write': 'YYN',
   'task.watch': 'YYY',

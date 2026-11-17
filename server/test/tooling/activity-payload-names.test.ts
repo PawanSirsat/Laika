@@ -21,6 +21,12 @@ import {
 } from '../../src/db/schema.ts';
 import { BLIND_ACTIVITY_LENS, eventView } from '../../src/services/events.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
+import {
+  completeAttachment,
+  createAttachment,
+  deleteAttachment,
+} from '../../src/services/attachments.ts';
+import { browserPut, fakeAttachments, fakeS3 } from '../helpers/fake-s3.ts';
 import { createInvite, consumeInvite } from '../../src/services/invites.ts';
 import {
   addMember,
@@ -499,7 +505,7 @@ describe('rows written before LAI-045 still read correctly', () => {
 });
 
 describe('no mutating path writes a Drizzle property into a payload', () => {
-  it('holds across every activity type the services can emit', () => {
+  it('holds across every activity type the services can emit', async () => {
     const t = freshDb();
 
     try {
@@ -658,6 +664,21 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       const comment = addComment(t.db, owner(), task.id, 'A remark');
       editComment(t.db, owner(), comment.id, 'A better remark');
       deleteComment(t.db, owner(), comment.id);
+
+      // --- attachments.ts: attachment.added, attachment.removed (LAI-1300) --
+      // Through the real upload, completion and removal over a fake store —
+      // the payload is what is under test, so no row is appended by hand.
+      const store = fakeS3();
+      const files = { config: fakeAttachments(), fetchImpl: store.fetchImpl };
+      const asked = createAttachment(t.db, owner(), files, 'core', {
+        filename: 'shot.png',
+        content_type: 'image/png',
+        size_bytes: 4,
+        task_id: task.id,
+      });
+      expect((await browserPut(store, asked.upload, 'abcd')).status).toBe(200);
+      await completeAttachment(t.db, owner(), files, asked.attachment.id);
+      await deleteAttachment(t.db, owner(), files, asked.attachment.id);
 
       // --- sprints.ts: project.updated (sprint), task.updated (sprint_id) --
       const sprint = createSprint(t.sqlite, t.db, owner(), 'core', {

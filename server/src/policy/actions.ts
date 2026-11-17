@@ -139,6 +139,10 @@ export const PROJECT_ACTIONS = [
   'comment.create',
   'comment.edit',
   'comment.delete',
+  // D-150 item 5 (LAI-1300): attaching a file is adding a comment's right,
+  // and removing one is editing a comment's — a lead any, a member their own.
+  'attachment.create',
+  'attachment.delete',
   'task.delete',
   'task.dependency.write',
   'task.watch',
@@ -203,6 +207,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: holidays and leave read from the organisation's HR system every
   // 30 minutes (D-149 item 7, LAI-1181).
   'system.hr.sync',
+  // §11.6: uploads nobody finished, files nothing linked, and the objects of
+  // removed files, swept from the store hourly (D-150 item 6, LAI-1300).
+  'system.attachment.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
