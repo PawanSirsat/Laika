@@ -4014,7 +4014,7 @@ request writes a row and returns; §11.6's `email.send` sends what is queued, so
 | --- | --- |
 | `id` | ULID |
 | `kind` | `test` \| `invite` \| `password_reset` \| `assignment` \| `mention` \| `digest` (CHECK) — the last three a person's notification mail (LAI-1313) |
-| `idempotency_key` | unique — one message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. **Enqueueing the same key again writes nothing** |
+| `idempotency_key` | unique — one message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`, and LAI-1313's `assignment:<activity id>`, `mention:<comment id>:<user id>` and `digest:<digest id>`. **Enqueueing the same key again writes nothing** |
 | `recipient_user_id` | nullable, FK `users`, set null — the person it is for, when they have an account |
 | `to_address` | nullable — where it goes; null only when there was nobody to send to (`no_address`) |
 | `subject` | |
@@ -4028,6 +4028,7 @@ request writes a row and returns; §11.6's `email.send` sends what is queued, so
 | `sent_at` | nullable — when the server accepted it |
 | `last_error` | nullable, ≤ 300 (CHECK) — the SMTP reply code or the transport's, and a short reason; never a credential |
 | `created_by` | nullable, FK `users`, set null — the inviter, or the admin who issued a reset or pressed *Send test email* |
+| `task_id` | nullable, FK `tasks`, set null — the task an `assignment` or `mention` mail is about (LAI-1313), so `email.send` can ask again whether its person may still read it; null for every other kind, and on one of those two it means the task is gone and the mail does not go |
 | `created_at`, `updated_at` | |
 
 Indexes: unique `(idempotency_key)`, `(state, next_attempt_at)` — the sender's —
@@ -4048,8 +4049,16 @@ already final, with no body. Retention: 90 days (§11.6).
 
 `pref_off` (LAI-1313): the person turned that mail off in their profile (§4.97).
 `no_access`: the person may no longer read the task's project, or is inactive —
-asked when an instant mail is written and again for each item before a digest
-goes.
+asked when an instant mail is written, **again by `email.send` just before an
+`assignment` or `mention` mail goes**, and again for each item before a digest
+goes. `too_old` is also what an instant mail is written as when the notify job
+first reads its activity more than an hour after it happened — the board or the
+job was down — so nobody is mailed a backlog at once; the digest still carries
+it (§4.99).
+
+Every notification mail ends by saying why it came and linking the reader's own
+profile (`/people?user=<id>`, *Change what … emails you*), where their two
+switches are (§4.97); without a public URL it names the profile instead.
 
 ### 4.94 `org_teams_settings`
 
@@ -4171,22 +4180,32 @@ is on:
 - `task.status_changed`, `task.assigned` (to someone else), `task.updated`
   (not a claim), `comment.added`, `attachment.added` and `task.stale_flagged`,
   on a task the person watches (§4.18), done by someone else, that they were
-  not already mailed at once;
+  not already mailed at once — **mailed means the mail is queued or sent**, so
+  one recorded `pref_off` or `too_old` does not count;
+- an assignment or an @mention the person was **not** mailed at once for one of
+  those two reasons, watching the task or not — instant off is "tell me in the
+  digest", not "never tell me";
 - and their member notices (§4.87).
 
 ### 4.100 `email_watermarks`
 
 How far the notify job has read (LAI-1313): one row per source, `activity`
-and `member_notices`. **A time, not `rowid`** — `activity` has a text key, so a
-VACUUM may renumber its rowids, and a stored rowid would then skip rows. Each
-run re-reads two minutes before the watermark, and every effect is idempotent,
-so a row written late is still seen and one seen twice changes nothing. The
-first run records "now" and reads nothing: history is never mailed.
+and `member_notices`. **A keyset cursor, `(read_to, read_to_id)`** — the last
+row handled — and each run reads up to 2,000 rows after it in `(created_at, id)`
+order, so it always moves on, however many rows share one millisecond. **Not
+`rowid`**: `activity` has a text key, so a VACUUM may renumber its rowids, and
+a stored rowid would then skip rows. **Not a time alone**: more rows at one
+instant than a run reads would hold it still for good (LAI-1313 review). Each
+run also re-reads up to 2,000 rows from the two minutes behind the cursor, for
+a row written late; every effect is idempotent, so one seen twice changes
+nothing. The first run records "now" and reads nothing: history is never
+mailed.
 
 | field | notes |
 | --- | --- |
 | `source` | PK — `activity` \| `member_notices` |
-| `read_to` | the newest `created_at` handled |
+| `read_to` | the `created_at` of the last row handled |
+| `read_to_id` | its `id` — `''` before the first, which sorts before every id |
 | `updated_at` | |
 
 ## 5. Task lifecycle
@@ -8415,22 +8434,26 @@ One interval-driven scheduler in the same process:
   and — the switch and the settings asked again — every queued row is
   `suppressed` (`email_off`, `email_not_configured`) or up to 50 are sent, each
   outcome recorded as §4.93 says — **the switch asked again before each one**,
-  so turning email off mid-run stops it at the next message. **A run never overlaps another**; a tick joins
-  the one going. No `activity` row. Nothing without a transport, and nothing
-  mailed while the organisation's switch is off — the default
+  so turning email off mid-run stops it at the next message, and for an
+  `assignment` or `mention` mail **whether its person may still read the task**
+  (`no_access` if not, body gone; LAI-1313). **A run never overlaps
+  another**; a tick joins the one going. No `activity` row. Nothing without a
+  transport, and nothing mailed while the organisation's switch is off — the
+  default
 - **email retention** (§4.93, §4.98) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
   `queued` or `sending` one, and closed digests 90 days after they closed,
   with their items. No `activity` row
 - **email notify** (§4.97 – §4.100, D-153, LAI-1313) — every 30 seconds, not at
   boot, under `system.email.notify`: reads `activity` and `member_notices` past
-  their watermarks (two minutes' overlap), writes an `assignment` mail for
-  `task.assigned` — and for `task.created` with an assignee, unless it was
-  reassigned since — and a `mention` mail for each person a comment
-  @mentions, never to the actor, each through the outbox (`pref_off` and
-  `no_access` recorded there); collects digest items (§4.99); and closes every
-  digest whose morning has come (§4.98). Only writes to the outbox —
-  `email.send` sends. No `activity` row
+  their keyset cursors (§4.100; two minutes re-read behind them), writes an
+  `assignment` mail for `task.assigned` — and for `task.created` with an
+  assignee, unless it was reassigned since — and a `mention` mail for each
+  person a comment @mentions, never to the actor, each through the outbox
+  (`pref_off`, `no_access`, and `too_old` for activity first read over an hour
+  late, recorded there) and each written once — a re-read renders nothing;
+  collects digest items (§4.99); and closes every digest whose morning has come
+  (§4.98). Only writes to the outbox — `email.send` sends. No `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.
