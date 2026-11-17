@@ -6,8 +6,9 @@ Laika.
 
 ```
 docker/
-  Dockerfile                  multi-stage: deps → web → server → prod-deps → runtime
+  Dockerfile                  multi-stage: deps → web → server → prod-deps → web-serve → runtime
   Dockerfile.dockerignore     build-context ignore list (see "Why not .dockerignore")
+  web/                        nginx config for the web-serve image (see "The frontend on its own")
   docker-compose.yml          the service, the volume, the port
   entrypoint.sh               refuses to start without a server secret
   env.example                 copy to .env
@@ -139,6 +140,47 @@ is SSE (D-003), a response that never ends, and a buffering proxy silently stops
 the board updating rather than producing an error. Caddy does not buffer by
 default; the example sets `flush_interval -1` so that stays true if someone adds
 a global directive later.
+
+## The frontend on its own: `--target web-serve`
+
+The default build is unchanged: one image serves the API and the SPA. A
+deployment that wants the frontend as a **separate resource on the same
+domain** (LAI-1308) builds the SPA alone into nginx:
+
+```bash
+docker build -f docker/Dockerfile --target web-serve -t laika-web:local .
+docker run --rm -p 8080:8080 laika-web:local    # GET /healthz answers "ok"
+```
+
+It listens on **8080** as nginx's unprivileged user, serves the `web` stage's
+build with the SPA fallback, caches `/assets/` for a year and revalidates
+everything else, and answers **404** for `/api`, `/mcp` and `/webhooks`, so a
+routing mistake shows up as an error and not as the app. Every response,
+404s included, carries the server's security headers and CSP.
+
+**Route by path on one domain.** The proxy sends `/api`, `/mcp` and
+`/webhooks`, and everything under them, to the server (the `runtime` image),
+and everything else to `web-serve`. **Strip-prefix must be off**: the server
+expects the full `/api/v1/…` path. One origin is what keeps sign-in, the
+session cookie, the event stream and the CSP's `'self'` working as they do
+today, and `LAIKA_PUBLIC_URL` stays that domain. The proxy must still not
+buffer `/api/v1/events` (see TLS above).
+
+**`LAIKA_STORAGE_ORIGIN`** — the attachment store's origin, the same origin as
+the server's `LAIKA_S3_ENDPOINT`; empty (the default) with attachments off.
+The page's CSP now comes from this image, so with attachments on and this
+unset the browser refuses the uploads and the images. nginx reads it at start,
+not the server, so it is not a row in SPEC §11.7, which lists only what the
+server reads.
+
+**Deploy both from the same commit.** The SPA and the API are one release; a
+build of one against the other's older or newer commit is untested.
+
+`docker/web/` holds the config: `default.conf.template` (rendered by the nginx
+image at start) and `security-headers.conf`. Their headers, CSP, cache rules
+and reserved paths are checked against the server's own code by
+`server/test/tooling/web-serve.test.ts`. CI never builds this stage, so that
+test is what stands between a change on either side and a silent difference.
 
 ## What the image does and does not contain
 
