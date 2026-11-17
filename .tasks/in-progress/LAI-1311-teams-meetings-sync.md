@@ -37,3 +37,48 @@ the SSO branch (PR #354).
 - [ ] Policy: `meeting.read_own` + §3.1 row; review/log-time reuse existing rules.
 - [ ] SPEC §13.4 names Microsoft identity + Graph; §6.4 endpoints; §11.6 job.
 - [ ] Tests with a fake Graph (`fetch` injected); all server guards green.
+
+## Named crossings
+
+This task is `server+docs`; each edit outside `server/` (except `server/web/`)
+is named here, by section or entry, so the reviewer sees exactly what was
+touched (D-033, D-034):
+
+- `docs/SPEC.md` §3.1 — one row, *Read own meetings and their transcripts*
+  (`meeting.read_own`, every role, session only).
+- `docs/SPEC.md` §4.93 `meetings` and §4.94 `meeting_attendance` — two new
+  sections (no transcript column).
+- `docs/SPEC.md` §6.4 — `GET /me/meetings`, `GET/PATCH /meetings/:id`,
+  `GET /meetings/:id/transcript`, `POST /meetings/:id/review`,
+  `POST /meetings/:id/log-time`, `POST /org/sso/meetings-sync`.
+- `docs/SPEC.md` §11.6 — the `meetings sync` job.
+- `docs/SPEC.md` §11.7 — the `LAIKA_MICROSOFT_MEETINGS_SYNC` row.
+- `docs/SPEC.md` §13.4 — Microsoft identity (Entra ID) and Microsoft Graph
+  as outbound destinations, only when SSO / a sync is configured.
+- `docker/docker-compose.yml` — the one `LAIKA_MICROSOFT_MEETINGS_SYNC` line
+  (the env-contract guard reads compose).
+- `docker/env.example` — the `LAIKA_MICROSOFT_MEETINGS_SYNC` block.
+- `server/web/src/api/sso.ts` — `SsoSettings.microsoft.meetings_sync`, the
+  client mirror of the new `SsoSettingsView` field (view-type-drift pairing).
+- `server/web/test/api/endpoint-coverage.test.ts` — six `NO_BROWSER_CALLER`
+  entries for the new endpoints (`LAI-1312 builds the page`, and
+  `LAI-1313` for `org/sso/meetings-sync`); they go when the callers exist.
+
+## Proposed decision (for Belka to record in `docs/DECISIONS.md`)
+
+**Meetings from Teams; transcripts read, never stored; time only by the
+person's click.** With Microsoft SSO and `LAIKA_MICROSOFT_MEETINGS_SYNC=true`,
+Laika reads each active member's Outlook/Teams meetings through Microsoft
+Graph with application permissions (`Calendars.Read`,
+`OnlineMeetings.Read.All`, `OnlineMeetingArtifact.Read.All`,
+`OnlineMeetingTranscript.Read.All`, `User.Read.All`, plus a Teams application
+access policy): scheduled times, real join/leave from Teams' attendance
+report, and whether a transcript exists. A meeting is visible only to the
+people Graph lists on it (invited or attended) — not to owners or admins —
+and is `not_found` to anyone else. **A transcript is never stored** (D-005,
+D-056 hold): it is fetched live from Graph when someone who joined (or the
+organiser) opens it or asks for a review, and a review keeps only its hash.
+*Review with AI* uses the transcript webhook's pipeline, cap and provider.
+**Time is never drafted from a meeting** (D-088 holds): *Add to My day* is the
+person's own click, making one confirmed `meeting` entry of their attended
+minutes, with Undo. No new activity verb.
