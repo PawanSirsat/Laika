@@ -6,6 +6,7 @@
  * shape — client credentials, the advanced-query header, the filter — is
  * asserted, not assumed.
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { type MicrosoftSso } from '../../src/auth/sso.ts';
@@ -208,6 +209,49 @@ describe('adding the directory’s members to Laika', () => {
 
     const result = await runDirectorySync(t.db, SSO, { fetch: fetchImpl, now: () => NOW });
     expect(result.added).toBe(1);
+  });
+});
+
+describe('the sync asks can() as the system principal (§3.3 rule 1, §3.4, LAI-1317)', () => {
+  /**
+   * **Read from the source, because the behaviour cannot show it** — the
+   * `jobs.test.ts` guard, for a job that lives in a service. The system
+   * principal holds `system.directory.sync`, so the call always passes, and
+   * deleting it changes nothing any test above can see.
+   *
+   * Comments are stripped first: this file's docblocks mention `assertCan`,
+   * and a check that reads prose as code reports its own documentation.
+   */
+  const code = readFileSync(
+    new URL('../../src/services/microsoft-directory.ts', import.meta.url),
+    'utf8',
+  )
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  const ASK = "assertCan(SYSTEM, 'system.directory.sync')";
+
+  /** One exported function's body: from its signature to the next export. */
+  function body(name: string): string {
+    const from = code.search(new RegExp(`export (async )?function ${name}\\(`));
+    expect(from, `${name} not found`).toBeGreaterThanOrEqual(0);
+    const to = code.indexOf('\nexport ', from + 1);
+    return code.slice(from, to === -1 ? undefined : to);
+  }
+
+  it('runDirectorySync asks before Microsoft is called', () => {
+    const run = body('runDirectorySync');
+    expect(run).toContain(ASK);
+    expect(run.indexOf(ASK)).toBeLessThan(run.indexOf('readDirectory('));
+  });
+
+  it('addDirectoryMembers, the half that writes users, asks before it reads a row', () => {
+    const add = body('addDirectoryMembers');
+    expect(add).toContain(ASK);
+    expect(add.indexOf(ASK)).toBeLessThan(add.indexOf('db.select('));
+  });
+
+  it('the principal is the system one, not a person', () => {
+    expect(code).toMatch(/const SYSTEM = systemPrincipal\(\);/);
   });
 });
 

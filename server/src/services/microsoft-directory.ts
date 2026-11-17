@@ -4,6 +4,7 @@ import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { orgs, users } from '../db/schema.ts';
+import { assertCan, systemPrincipal } from '../policy/can.ts';
 
 /**
  * **Every member of the Microsoft directory is a Laika member** (LAI-1239,
@@ -23,6 +24,13 @@ import { orgs, users } from '../db/schema.ts';
  * - **Opt-in**: `LAIKA_MICROSOFT_DIRECTORY_SYNC=true`, on top of Microsoft SSO.
  *   Adding a whole tenant should never switch itself on.
  */
+
+/**
+ * Nobody runs the sync: the cron does, and *Sync now* hands it to the same
+ * code after asking the person `org.settings.edit`. So it acts as §3.4's
+ * system principal, as the HR sync does (LAI-1317).
+ */
+const SYSTEM = systemPrincipal();
 
 /** One directory account, as Laika needs it. */
 export interface DirectoryMember {
@@ -171,6 +179,9 @@ export function addDirectoryMembers(
   members: readonly DirectoryMember[],
   now: number,
 ): DirectorySyncCounts {
+  // Asked here as well as in `runDirectorySync`: this is exported, and it is
+  // the half that writes `users` (§3.3 rule 1).
+  assertCan(SYSTEM, 'system.directory.sync');
   const org = db.select({ id: orgs.id }).from(orgs).limit(1).get();
   if (org === undefined) return { added: 0, existing: 0 };
 
@@ -252,6 +263,8 @@ export async function runDirectorySync(
   sso: MicrosoftSso | null,
   deps: DirectoryDeps = {},
 ): Promise<DirectorySyncCounts> {
+  // Before Microsoft is asked anything (§3.3 rule 1, §3.4).
+  assertCan(SYSTEM, 'system.directory.sync');
   if (sso?.directorySync !== true) return { added: 0, existing: 0 };
   const now = (deps.now ?? Date.now)();
   try {

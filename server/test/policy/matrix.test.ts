@@ -513,6 +513,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.notices.prune', {}],
     ['system.hr.sync', {}],
     ['system.attachment.prune', {}],
+    ['system.directory.sync', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],
