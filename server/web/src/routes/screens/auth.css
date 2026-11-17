@@ -744,3 +744,40 @@
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
+
+/* ------------------------------ the Microsoft card, centred (2026-11-17) */
+
+.auth-sso {
+  text-align: center;
+}
+
+.auth-sso .auth-brand {
+  margin-inline: auto;
+}
+
+.auth-sso .auth-head {
+  align-items: center;
+}
+
+/* Messages read better ranged left, whatever the card around them does. */
+.auth-sso .auth-summary {
+  text-align: start;
+}
+
+.auth-sso .auth-sso-lead {
+  max-width: 30ch;
+  margin-inline: auto;
+}
+
+.auth-sso-rule {
+  width: 100%;
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.auth-sso-note {
+  margin: 0;
+  text-align: center;
+}

@@ -31,7 +31,7 @@ export function LoginRoute() {
  * which is said in words — a silent return reads as the button being broken.
  */
 function MicrosoftLoginRoute() {
-  const { host, route } = useShell();
+  const { route } = useShell();
   const [busy, setBusy] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
   const returned = route.params.get('error');
@@ -41,9 +41,8 @@ function MicrosoftLoginRoute() {
 
   return (
     <MicrosoftSignInScreen
-      host={host}
-      title="Sign in to your instance"
-      lead="Use your Microsoft work account — there is no separate Laika password."
+      title="Sign in to Laika"
+      lead="Use your Microsoft work account. There’s no separate Laika password."
       busy={busy}
       error={error}
       notice={

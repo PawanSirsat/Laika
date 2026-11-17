@@ -7,8 +7,6 @@ import { Button } from '../../components/forms/Button.tsx';
 import './auth.css';
 
 export interface MicrosoftSignInScreenProps {
-  /** The instance this signs into, always visible, as on the password form. */
-  readonly host: string;
   readonly title: string;
   /** Under the heading: what this step is for. */
   readonly lead?: ReactNode;
@@ -47,9 +45,16 @@ export interface MicrosoftSignInScreenProps {
  *
  * **No email or password field**: the instance has no password to check, and
  * a field that cannot work is a door drawn on a wall.
+ *
+ * **No host line** (the owner, 2026-11-17), unlike the password form's: the
+ * address bar already says which instance this is, and here the only thing
+ * typed is on Microsoft's page, which names the organisation itself.
+ *
+ * Centred, because there is one thing to do: the lockup, the heading, a line,
+ * the button. A message in the summary stays left-aligned — a centred
+ * paragraph of error text is harder to read than it is pretty.
  */
 export function MicrosoftSignInScreen({
-  host,
   title,
   lead,
   action = 'Sign in with Microsoft',
@@ -71,21 +76,6 @@ export function MicrosoftSignInScreen({
             <h1 className="auth-title" id="sso-title">
               {title}
             </h1>
-            <p className="auth-host">
-              <svg
-                className="auth-lock"
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                strokeWidth="2.4"
-                aria-hidden="true"
-              >
-                <rect x="4" y="11" width="16" height="10" rx="2" />
-                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-              </svg>
-              <span>{host}</span>
-            </p>
             {lead !== undefined && <p className="auth-sso-lead">{lead}</p>}
           </header>
 
@@ -122,7 +112,12 @@ export function MicrosoftSignInScreen({
             )}
           </div>
 
-          {note !== undefined && <p className="auth-note">{note}</p>}
+          {note !== undefined && (
+            <>
+              <hr className="auth-sso-rule" />
+              <p className="auth-note auth-sso-note">{note}</p>
+            </>
+          )}
         </div>
       </AuthCard>
     </div>

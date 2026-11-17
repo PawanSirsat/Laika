@@ -89,12 +89,7 @@ export function InviteRoute() {
     !state.refused
   ) {
     return (
-      <MicrosoftInvite
-        host={host}
-        invite={state.invite}
-        returned={params.get('error')}
-        token={token ?? ''}
-      />
+      <MicrosoftInvite invite={state.invite} returned={params.get('error')} token={token ?? ''} />
     );
   }
 
@@ -125,12 +120,10 @@ function inviteLead(invite: InvitePreview): string {
 }
 
 function MicrosoftInvite({
-  host,
   invite,
   returned,
   token,
 }: {
-  readonly host: string;
   readonly invite: InvitePreview;
   readonly returned: string | null;
   readonly token: string;
@@ -147,7 +140,6 @@ function MicrosoftInvite({
   if (invite.email === null) {
     return (
       <MicrosoftSignInScreen
-        host={host}
         title={`Join ${invite.org_name}`}
         lead={inviteLead(invite)}
         error="This Laika signs in with Microsoft, and that needs an invite to your own email address. Ask the person who invited you to invite your work address instead of sending a link."
@@ -165,7 +157,6 @@ function MicrosoftInvite({
 
   return (
     <MicrosoftSignInScreen
-      host={host}
       title={`Join ${invite.org_name}`}
       lead={inviteLead(invite)}
       action="Accept with Microsoft"
