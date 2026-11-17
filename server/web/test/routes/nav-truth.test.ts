@@ -24,6 +24,11 @@ import {
   routesInGroup,
   type Route,
 } from '../../src/routes/route-table.ts';
+import {
+  MEETINGS_ACTION,
+  meetingsHolder,
+  permissionHolder,
+} from '../../src/routes/nav-permissions.ts';
 import { code } from '../helpers/code.ts';
 
 /**
@@ -171,9 +176,10 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // permissions sees the heading with something under it.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
     assert.deepEqual(empty, [], 'a group is empty');
-    // **Since LAI-796 every grouped entry is ungated**, so a reader with no
-    // permission at all is offered the same rail as an owner — the gates are
-    // inside the pages, on tabs and sections.
+    // **Since LAI-796 every grouped `ORG` entry is ungated**, so a reader with
+    // no permission at all is offered the same rail as an owner — the gates
+    // are inside the pages, on tabs and sections. (HOME's Meetings is gated,
+    // LAI-1312 — asserted with the gated entries below.)
     assert.deepEqual(
       routesInGroup('ORG').map((r) => r.path),
       routesInGroup('ORG', () => true).map((r) => r.path),
@@ -265,6 +271,26 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     for (const label of ['My day', 'Inbox', 'Insights', 'Organisation', 'Developer access']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
+  });
+
+  void test('Meetings is offered only where the instance syncs Teams meetings (LAI-1312)', () => {
+    // Every signed-in person holds `meeting.read_own`, so the permission alone
+    // would draw it in every rail; the composed holder also needs `enabled`.
+    const route = ROUTES.find((r) => r.path === '/meetings');
+    assert.equal(route?.requires, MEETINGS_ACTION);
+    assert.equal(route?.group, 'HOME');
+    const member = permissionHolder([MEETINGS_ACTION]);
+    const shown = (on: boolean) =>
+      navRoutes(meetingsHolder(member, on)).some((r) => r.path === '/meetings');
+    assert.equal(shown(true), true, 'synced, and the reader may read their meetings');
+    assert.equal(shown(false), false, 'drawn on an instance that does not sync meetings');
+    // Sync on is not a permission: a credential without the action still gets none.
+    assert.equal(
+      navRoutes(meetingsHolder(permissionHolder([]), true)).some((r) => r.path === '/meetings'),
+      false,
+    );
+    // And it narrows nothing else.
+    assert.equal(meetingsHolder(holdsAll, false)('audit_log.export'), true);
   });
 
   void test('Unlisted work left the sidebar for Inbox’s tab, gate and all (LAI-796)', () => {

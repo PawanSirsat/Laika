@@ -7,7 +7,9 @@ import {
   routesInGroup,
   type NavGroup,
 } from '../../routes/route-table.ts';
-import { permissionHolder } from '../../routes/nav-permissions.ts';
+import { meetingsHolder, permissionHolder } from '../../routes/nav-permissions.ts';
+import { useMeetingsEnabled } from '../../api/meetings.ts';
+import { useShell } from '../shell/shell-context.ts';
 import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
 import { NavIcon } from './NavIcon.tsx';
@@ -108,11 +110,15 @@ export function Sidebar({
   user,
 }: SidebarProps) {
   const { permissions } = usePermissions(user !== undefined);
+  const { signInMethod } = useShell();
+  // Meetings exist only behind Microsoft SSO, so nothing is asked elsewhere.
+  const meetingsOn = useMeetingsEnabled(user !== undefined && signInMethod === 'microsoft');
   /**
    * The reader's permissions, mirrored from `policy/can.ts` at one remove — the
-   * one predicate every gated entry and tab asks.
+   * one predicate every gated entry and tab asks — with Meetings offered only
+   * where the instance syncs them (LAI-1312).
    */
-  const holds = permissionHolder(permissions?.me.actions);
+  const holds = meetingsHolder(permissionHolder(permissions?.me.actions), meetingsOn);
   // The Connect wizard lights Developer access, the page it is opened from.
   const section = navSection(currentPath);
 
@@ -131,7 +137,7 @@ export function Sidebar({
   };
 
   /*
-   * The destinations' keys (LAI-1221, `nav-shortcuts.ts`): ⌥1 – ⌥5, only for
+   * The destinations' keys (LAI-1221, `nav-shortcuts.ts`): ⌥1 – ⌥6, only for
    * the destinations drawn here, never while typing, never over a modal.
    * Kept in a ref so the listener is added once and reads the current rail.
    */

@@ -235,8 +235,8 @@ void describe('the search bar', () => {
       await option.waitFor({ timeout: 10_000 });
       assert.equal(await option.locator('mark.cmdk-mark').innerText(), 'Inb');
       assert.equal(await option.locator('.cmdk-item-label').innerText(), 'Inbox');
-      // Its Alt key is on the row.
-      assert.match(await option.locator('[data-palette-shortcut]').innerText(), /^(⌥2|Alt\+2)$/);
+      // Its Alt key is on the row — ⌥3 since Meetings took ⌥2 (LAI-1312).
+      assert.match(await option.locator('[data-palette-shortcut]').innerText(), /^(⌥3|Alt\+3)$/);
       await h.page.keyboard.press('Enter');
       await until(() => pathOf(h.page) === '/inbox');
 
@@ -622,11 +622,13 @@ void describe('keyboard shortcuts', () => {
       await ready(h.page);
       await h.page.locator('#sidebar .sidebar-link').first().waitFor({ timeout: 10_000 });
       for (const [digit, path] of [
+        // ⌥2 is Meetings (LAI-1312), offered only where Teams meetings sync —
+        // not on this password instance, so it is checked in meetings.test.ts.
         ['1', '/my-day'],
-        ['2', '/inbox'],
-        ['3', '/insights'],
-        ['5', '/developer'],
-        ['4', '/organisation'],
+        ['3', '/inbox'],
+        ['4', '/insights'],
+        ['6', '/developer'],
+        ['5', '/organisation'],
       ] as const) {
         await h.page.locator('#main').focus();
         await h.page.keyboard.press(`Alt+Digit${digit}`);
@@ -638,7 +640,7 @@ void describe('keyboard shortcuts', () => {
         await h.page
           .locator('#sidebar a.sidebar-link[href^="/inbox"]')
           .getAttribute('aria-keyshortcuts'),
-        'Alt+2',
+        'Alt+3',
       );
     } finally {
       await h.close();
@@ -654,16 +656,17 @@ void describe('keyboard shortcuts', () => {
         field.id = 'probe';
         document.getElementById('main')?.append(field);
       });
+      // ⌥3, Inbox: ⌥2 is Meetings, absent here, and would pass by doing nothing (LAI-1312).
       await h.page.locator('#probe').focus();
-      await h.page.keyboard.press('Alt+Digit2');
+      await h.page.keyboard.press('Alt+Digit3');
       await h.page.waitForTimeout(600);
-      assert.equal(pathOf(h.page), '/organisation', 'Alt+2 in a field left the page');
+      assert.equal(pathOf(h.page), '/organisation', 'Alt+3 in a field left the page');
 
       await h.page.locator('[data-header-help]').click();
       await h.page.locator('[data-shortcuts-sheet]').waitFor({ timeout: 10_000 });
-      await h.page.keyboard.press('Alt+Digit2');
+      await h.page.keyboard.press('Alt+Digit3');
       await h.page.waitForTimeout(600);
-      assert.equal(pathOf(h.page), '/organisation', 'Alt+2 left from under a dialog');
+      assert.equal(pathOf(h.page), '/organisation', 'Alt+3 left from under a dialog');
     } finally {
       await h.close();
     }
@@ -681,7 +684,7 @@ void describe('keyboard shortcuts', () => {
       assert.equal(pathOf(h.page), '/my-day');
       await h.page.keyboard.press('Escape');
       await h.page.locator('#main').focus();
-      await h.page.keyboard.press('Alt+Digit2');
+      await h.page.keyboard.press('Alt+Digit3');
       await until(() => pathOf(h.page) === '/inbox', 10_000);
       assert.equal(pathOf(h.page), '/inbox');
     } finally {

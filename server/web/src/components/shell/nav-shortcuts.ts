@@ -1,8 +1,8 @@
 import { typingIn, type TypingTarget } from '../typing-in.ts';
 
 /**
- * The sidebar's keyboard shortcuts (LAI-1221): **⌥1 – ⌥5 on a Mac, Alt+1 –
- * Alt+5 elsewhere**, one per sidebar destination, in the rail's own order.
+ * The sidebar's keyboard shortcuts (LAI-1221): **⌥1 – ⌥6 on a Mac, Alt+1 –
+ * Alt+6 elsewhere**, one per sidebar destination, in the rail's own order.
  *
  * ## Why Alt + a digit, and not *G then a letter*
  *
@@ -24,10 +24,11 @@ import { typingIn, type TypingTarget } from '../typing-in.ts';
  */
 export const NAV_SHORTCUT_DIGITS: Readonly<Record<string, string>> = {
   '/my-day': '1',
-  '/inbox': '2',
-  '/insights': '3',
-  '/organisation': '4',
-  '/developer': '5',
+  '/meetings': '2',
+  '/inbox': '3',
+  '/insights': '4',
+  '/organisation': '5',
+  '/developer': '6',
 };
 
 /** A destination's shortcut in `shortcut.ts`'s spelling (`Alt+2`), or none. */

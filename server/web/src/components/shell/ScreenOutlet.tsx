@@ -63,6 +63,7 @@ const ActivityScreen = lazyScreen('activity', (m) => m.ActivityScreen);
 const MeetingReviewScreen = lazyScreen('meeting-review', (m) => m.MeetingReviewScreen);
 const ProjectsScreen = lazyScreen('projects', (m) => m.ProjectsScreen);
 const MyDayScreen = lazyScreen('my-day', (m) => m.MyDayScreen);
+const MeetingsScreen = lazyScreen('meetings', (m) => m.MeetingsScreen);
 const InboxScreen = lazyScreen('inbox', (m) => m.InboxScreen);
 const ReviewScreen = lazyScreen('inbox', (m) => m.ReviewScreen);
 const UnlistedScreen = lazyScreen('inbox', (m) => m.UnlistedScreen);
@@ -360,6 +361,27 @@ function MyDayRoute() {
         else next.set('user', userId);
         setParams(next, { push: true });
       }}
+    />
+  );
+}
+
+/**
+ * Meetings (LAI-1312): the reader's own Teams meetings. `?filter=`, `?q=` and
+ * `?meeting=` are the page's state, so a meeting is a link and Back walks the
+ * selection. Whether the reader owns the organisation decides only which
+ * words the *not turned on* state uses.
+ */
+function MeetingsRoute() {
+  const {
+    route: { params, setParams, navigate },
+    me,
+  } = useShell();
+  return (
+    <MeetingsScreen
+      params={params}
+      setParams={setParams}
+      onNavigate={navigate}
+      isOwner={me?.org_role === 'owner'}
     />
   );
 }
@@ -669,6 +691,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
+  '/meetings': { Component: MeetingsRoute, layout: 'plain' },
   '/inbox': { Component: InboxRoute, layout: 'plain' },
   '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },

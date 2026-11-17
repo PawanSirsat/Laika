@@ -49,6 +49,7 @@ const meetingReviewScreen = retryable(
 );
 const projectsScreen = retryable(() => import('./screens/ProjectsScreen.tsx'));
 const myDayScreen = retryable(() => import('./screens/my-day/MyDayScreen.tsx'));
+const meetingsScreen = retryable(() => import('./screens/meetings/MeetingsScreen.tsx'));
 const inboxScreen = retryable(() => import('./screens/inbox/InboxScreen.tsx'));
 const reviewScreen = retryable(() => import('./screens/review/ReviewScreen.tsx'));
 const unlistedScreen = retryable(() => import('./screens/unlisted/UnlistedScreen.tsx'));
@@ -96,6 +97,7 @@ const LOADERS = {
   'meeting-review': meetingReviewScreen,
   projects: projectsScreen,
   'my-day': myDayScreen,
+  meetings: meetingsScreen,
   inbox: async () => {
     const [inbox, review, unlisted] = await Promise.all([
       inboxScreen(),

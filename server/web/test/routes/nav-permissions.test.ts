@@ -13,7 +13,11 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { permissionHolder } from '../../src/routes/nav-permissions.ts';
+import {
+  MEETINGS_ACTION,
+  meetingsHolder,
+  permissionHolder,
+} from '../../src/routes/nav-permissions.ts';
 
 void describe('who holds a nav permission', () => {
   void test('it is exactly the server’s list of actions', () => {
@@ -41,5 +45,20 @@ void describe('who holds a nav permission', () => {
     assert.equal(permissionHolder(undefined)('audit_log.export'), false);
     assert.equal(permissionHolder()('profile.read'), false);
     assert.equal(permissionHolder([])('token.list_any'), false);
+  });
+});
+
+void describe('Meetings narrows one action and no other (LAI-1312)', () => {
+  void test('meeting.read_own needs the permission and the sync both', () => {
+    const holds = permissionHolder([MEETINGS_ACTION, 'audit_log.export']);
+    assert.equal(meetingsHolder(holds, true)(MEETINGS_ACTION), true);
+    assert.equal(meetingsHolder(holds, false)(MEETINGS_ACTION), false);
+    assert.equal(meetingsHolder(permissionHolder([]), true)(MEETINGS_ACTION), false);
+  });
+
+  void test('every other action is answered as before', () => {
+    const holds = permissionHolder(['audit_log.export']);
+    assert.equal(meetingsHolder(holds, false)('audit_log.export'), true);
+    assert.equal(meetingsHolder(holds, false)('profile.read'), false);
   });
 });

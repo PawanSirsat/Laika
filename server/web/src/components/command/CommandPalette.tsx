@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { useGates, usePermissions } from '../../api/permissions.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { listAllTasks, type TaskSummary } from '../../api/tasks.ts';
-import { permissionHolder } from '../../routes/nav-permissions.ts';
+import { meetingsHolder, permissionHolder } from '../../routes/nav-permissions.ts';
+import { useMeetingsEnabled } from '../../api/meetings.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
 import { CREATE_SPACE_HREF } from '../../routes/nav-url.ts';
 import { useCreateTask } from '../create-task/use-create-task.ts';
@@ -182,7 +183,10 @@ export function CommandPalette() {
     signOut,
     signingOut,
     spaceName,
+    signInMethod,
   } = useShell();
+  // *Go to Meetings* only where the rail offers it (LAI-1312).
+  const meetingsOn = useMeetingsEnabled(me !== undefined && signInMethod === 'microsoft');
   const projectSlug = params.get('project') ?? undefined;
   const { permissions } = usePermissions(true);
   const gates = useGates(true);
@@ -239,9 +243,10 @@ export function CommandPalette() {
   // stays hidden, as the sidebar's do.
   const granted = permissions?.me.actions;
   const allPages = useMemo(() => {
-    const holds = granted === undefined ? undefined : permissionHolder(granted);
+    const holds =
+      granted === undefined ? undefined : meetingsHolder(permissionHolder(granted), meetingsOn);
     return goToItems(holds, projectSlug, spaceName);
-  }, [granted, projectSlug, spaceName]);
+  }, [granted, meetingsOn, projectSlug, spaceName]);
   const goTo = useMemo(() => filterItems(allPages, query), [allPages, query]);
   const blank = query.trim() === '' && person === undefined;
   const recentRows = useMemo(

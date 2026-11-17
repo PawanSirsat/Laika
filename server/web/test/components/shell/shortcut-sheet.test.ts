@@ -23,7 +23,8 @@ void describe('the shortcuts sheet', () => {
       member.map((r) => r.label),
       navRoutes((p) => p !== 'audit_log.export').map((r) => r.label),
     );
-    assert.deepEqual(navShortcutRows(() => true)[1], { keys: ['Alt+2'], label: 'Inbox' });
+    assert.deepEqual(navShortcutRows(() => true)[1], { keys: ['Alt+2'], label: 'Meetings' });
+    assert.deepEqual(navShortcutRows(() => true)[2], { keys: ['Alt+3'], label: 'Inbox' });
   });
 
   void test('every letter My day binds is in the sheet', () => {

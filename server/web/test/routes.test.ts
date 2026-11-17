@@ -80,8 +80,9 @@ void describe('sidebar groups (AC1)', () => {
     assert.deepEqual(
       routesInGroup('HOME', () => true).map((r) => r.label),
       // Work (LAI-952) sat here until D-147 (LAI-1170) made it the
-      // Organisation page's tab; `page-tabs.test.ts` pins it there.
-      ['My day', 'Inbox'],
+      // Organisation page's tab; `page-tabs.test.ts` pins it there. Meetings
+      // (LAI-1312) sits beside My day; it is gated, and asserted below.
+      ['My day', 'Meetings', 'Inbox'],
     );
     assert.deepEqual(
       routesInGroup('ORG', () => true).map((r) => r.label),
