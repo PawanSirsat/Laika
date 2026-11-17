@@ -173,7 +173,7 @@ export function presignQuery(credentials: SigningCredentials, input: PresignInpu
   const amz = amzDate(input.now);
   const headers = { host: input.host, ...input.headers };
   const { signed } = canonicalHeaders(headers);
-  const query: [string, string][] = [
+  const query: (readonly [string, string])[] = [
     ...(input.query ?? []),
     ['X-Amz-Algorithm', ALGORITHM],
     [
@@ -300,7 +300,7 @@ export interface StoreClientOptions {
 
 /** At most `limit` bytes of a body, and the rest left unread. */
 async function readUpTo(res: Response, limit: number): Promise<Uint8Array> {
-  const reader = res.body?.getReader();
+  const reader: ReadableStreamDefaultReader<Uint8Array> | undefined = res.body?.getReader();
   if (reader === undefined) return new Uint8Array();
   const out = new Uint8Array(limit);
   let filled = 0;

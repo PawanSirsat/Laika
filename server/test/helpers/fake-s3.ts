@@ -90,7 +90,7 @@ function parseAmzDate(value: string | null): number | null {
   return Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!);
 }
 
-function bodyBytes(body: BodyInit | null | undefined): Uint8Array {
+function bodyBytes(body: RequestInit['body']): Uint8Array {
   if (body === undefined || body === null) return new Uint8Array();
   if (typeof body === 'string') return new TextEncoder().encode(body);
   if (body instanceof Uint8Array) return body;
