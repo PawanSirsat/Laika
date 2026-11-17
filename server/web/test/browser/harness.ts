@@ -250,6 +250,9 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'meeting_proposal.apply',
     'usage.read_project',
     'budget.set',
+    // D-150 (LAI-1300): files — as a comment, and removing one as editing one.
+    'attachment.create',
+    'attachment.delete',
   ],
   member: [
     'task.assign_sprint',
@@ -266,6 +269,8 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'project.read',
     'meeting_proposal.apply',
     'usage.read_project',
+    'attachment.create',
+    'attachment.delete',
   ],
   viewer: ['task.watch', 'project.read', 'usage.read_project'],
 };
