@@ -7,24 +7,21 @@ import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { Icon } from '../icon/Icon.tsx';
 import { Spinner } from '../Spinner.tsx';
-import { menuStep } from './menu-keys.ts';
+import { menuStep } from '../sidebar/menu-keys.ts';
+import { useShell } from './shell-context.ts';
 import type { MeProfile } from '../../api/me.ts';
 
-export interface SidebarFooterProps {
+export interface PersonMenuProps {
   readonly user: MeProfile;
-  readonly collapsed: boolean;
-  readonly onSignOut: () => void;
-  readonly signingOut: boolean;
-  /** Follow an in-app link; absent renders the links as plain hrefs. */
-  readonly onNavigate?: ((to: string) => void) | undefined;
-  readonly onClose?: (() => void) | undefined;
 }
 
 /**
- * The person at the foot of the sidebar, and their menu (LAI-796, the owner's
- * reference): **My profile**, **Switch to dark / light**, **Developer access**
- * and **Sign out**. The theme row and the sign-out button that sat here
- * (LAI-064, LAI-249) moved into it, so the rail ends in one control.
+ * The person, at the right end of the app's top bar, and their menu (LAI-796,
+ * the owner's reference; in the top bar since LAI-1227, Jira's place for it —
+ * it was the sidebar's foot until then): **My profile**, **Switch to dark /
+ * light**, **Appearance**, **Developer access** and **Sign out**. The avatar
+ * alone is drawn; the name is the button's accessible name, and the menu's
+ * head says it in full.
  *
  * *Appearance* opens the Appearance page — every theme, System's dark
  * variant and the interface font (LAI-1212; a side panel until then,
@@ -43,14 +40,12 @@ export interface SidebarFooterProps {
  * `useTheme()` is read here, not passed in, so the avatar palette follows a
  * theme flip live — the staleness trap `use-theme.ts` documents.
  */
-export function SidebarFooter({
-  user,
-  collapsed,
-  onSignOut,
-  signingOut,
-  onNavigate,
-  onClose,
-}: SidebarFooterProps) {
+export function PersonMenu({ user }: PersonMenuProps) {
+  const {
+    signOut: onSignOut,
+    signingOut,
+    route: { navigate: onNavigate },
+  } = useShell();
   const { theme, setPreference, darkVariant } = useTheme();
   const colour = avatarColor(user.id, theme);
   // From any dark theme to light; from light to the reader's dark variant (LAI-1212).
@@ -97,7 +92,7 @@ export function SidebarFooter({
   const onMenuKey = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      // The sidebar's own Escape closes the off-canvas nav; this one is the menu's.
+      // The shell's own Escape closes the off-canvas nav; this one is the menu's.
       event.stopPropagation();
       close(true);
       return;
@@ -118,17 +113,15 @@ export function SidebarFooter({
   };
 
   const follow = (to: string) => (event: MouseEvent) => {
-    if (onNavigate === undefined) return;
     // Modified clicks stay the browser's — new tab, new window.
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     setOpen(false);
     onNavigate(to);
-    onClose?.();
   };
 
   return (
-    <div className="sidebar-footer" ref={rootRef}>
+    <div className="hdr-anchor hdr-person" ref={rootRef} data-header-person>
       {open && (
         <div
           ref={menuRef}
@@ -200,10 +193,14 @@ export function SidebarFooter({
         </div>
       )}
 
+      {/* No tooltip: the menu opens on the press and names the person at its
+          head, and a tooltip raised as the menu hands focus back would sit
+          over the bar's own popovers. The name is the button's label. */}
       <button
         ref={triggerRef}
         type="button"
         className={open ? 'user-menu-trigger user-menu-trigger-open' : 'user-menu-trigger'}
+        aria-label={`${user.name} — your profile, theme and sign out`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? 'user-menu' : undefined}
@@ -224,11 +221,8 @@ export function SidebarFooter({
         >
           {initials(user.name)}
         </span>
-        <span className={collapsed ? 'sidebar-user-text sidebar-tip' : 'sidebar-user-text'}>
-          <span className="sidebar-user-name">{user.name}</span>
-          <span className="sidebar-user-role">{user.org_role}</span>
-        </span>
-        {!collapsed && <Icon name="chevron" size="tiny" className="user-menu-caret" />}
+        {/* The name, for whoever reads the text rather than the label. */}
+        <span className="visually-hidden">{user.name}</span>
       </button>
     </div>
   );

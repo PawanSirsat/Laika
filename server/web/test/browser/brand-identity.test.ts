@@ -220,26 +220,46 @@ void describe('the icon loader', () => {
   });
 });
 
-void describe('the sidebar head', () => {
-  void test('shows mark and wordmark expanded, the mark alone collapsed', async () => {
+/*
+ * The brand was the sidebar head's from LAI-1126; LAI-1227 moved it to the
+ * top bar, which spans the sidebar as Jira's does, so it is the same whether
+ * the rail is open or folded — and on a phone, the mark alone.
+ */
+void describe('the top bar’s brand', () => {
+  void test('mark and wordmark, the same with the rail open or folded; it goes home', async () => {
     const h = await open('/board?project=laika-core', SIGNED_IN);
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      const head = h.page.locator('.sidebar-head');
-      await head.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+      const brand = h.page.locator('[data-app-header] [data-header-brand]');
+      await brand.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
 
-      assert.ok(await head.locator('.brand-mark').isVisible(), 'no mark in the expanded head');
-      assert.ok(
-        await head.locator('.sidebar-wordmark .brand-wordmark svg').isVisible(),
-        'no drawn wordmark in the expanded head',
-      );
+      const drawn = async (): Promise<readonly boolean[]> => [
+        await brand.locator('.brand-mark').isVisible(),
+        await brand.locator('.sidebar-wordmark .brand-wordmark svg').isVisible(),
+      ];
+      assert.deepEqual(await drawn(), [true, true], 'the mark or the wordmark is missing');
       // The name is still text, which is what the rest of the suite reads.
-      assert.equal(await head.locator('.sidebar-wordmark').textContent(), 'Laika');
+      assert.equal(await brand.locator('.sidebar-wordmark').textContent(), 'Laika');
+      assert.equal(await brand.getAttribute('href'), '/my-day');
 
       await h.page.locator('.sidebar-toggle').click();
       await h.page.locator('.sidebar-collapsed').waitFor({ timeout: 10_000 });
-      assert.equal(await head.locator('.sidebar-wordmark').count(), 0, 'wordmark in the rail');
-      assert.ok(await head.locator('.brand-mark').isVisible(), 'the rail lost the mark');
+      assert.deepEqual(await drawn(), [true, true], 'folding the rail took the brand with it');
+
+      await brand.click();
+      await h.page.waitForURL((url) => url.pathname === '/my-day', { timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('on a phone, the mark alone', async () => {
+    const h = await open('/board?project=laika-core', SIGNED_IN);
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      const brand = h.page.locator('[data-app-header] [data-header-brand]');
+      await brand.locator('.brand-mark').waitFor({ timeout: 20_000 });
+      assert.equal(await brand.locator('.sidebar-wordmark').isVisible(), false);
     } finally {
       await h.close();
     }

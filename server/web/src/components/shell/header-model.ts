@@ -1,93 +1,13 @@
-import { matchRoute, SPACE_TAB_PATHS } from '../../routes/route-table.ts';
-
 /**
  * What the one app header says (LAI-1188), kept apart from the component so
- * `node --test` can drive every rule: where the reader is, whether they are
- * looking at somebody else, and where each view of a person is.
- */
-
-/** One step of the header's breadcrumb; the last is where the reader is. */
-export interface HeaderCrumb {
-  readonly label: string;
-  /** An in-app address for every step but the last. */
-  readonly href?: string | undefined;
-}
-
-export interface HeaderPlace {
-  readonly spaceName?: string | undefined;
-  readonly orgName?: string | undefined;
-}
-
-/** The spaces index, which every space-scoped page sits under. */
-const SPACES: HeaderCrumb = { label: 'Spaces', href: '/projects' };
-
-/**
- * The header's breadcrumb for a path. Labels come from the route table, the
- * open space's name from the shell's read of it, and nothing is invented: an
- * address no route claims is *Page not found*, as the screen says.
+ * `node --test` can drive every rule: whether the reader is looking at
+ * somebody else, and where each view of a person is.
  *
- * A space's views and the profile replace this with their own title
- * (`HeaderTitle`), which knows the space's key and the person's name; this is
- * what shows before they land and on every other screen.
+ * **No breadcrumb here since LAI-1227**: the top bar is Jira's and names no
+ * page. Each page names itself once, in its own `h1`; a space's views add
+ * *Spaces /* above the space's name (`SpaceTopBar`), a member's profile its
+ * *People /* trail (`ScreenHeader`'s crumbs variant).
  */
-export function headerCrumbs(path: string, place: HeaderPlace): readonly HeaderCrumb[] {
-  const route = matchRoute(path);
-  if (route === undefined) return [{ label: 'Page not found' }];
-  if (SPACE_TAB_PATHS.includes(route.path)) {
-    return [SPACES, { label: place.spaceName ?? route.label }];
-  }
-  if (route.path === '/projects') return [{ label: 'Spaces' }];
-  if (route.path === '/members' || route.path === '/spaces/:slug/settings') {
-    return [SPACES, { label: route.label }];
-  }
-  if (route.path === '/people') {
-    return [{ label: 'Organisation', href: '/organisation?tab=people' }, { label: route.label }];
-  }
-  if (route.path.startsWith('/design/')) {
-    return [{ label: 'Design reference' }, { label: route.label }];
-  }
-  const parent = route.section === undefined ? undefined : matchRoute(route.section);
-  if (parent !== undefined) {
-    return [{ label: parent.label, href: parent.path }, { label: route.label }];
-  }
-  return [{ label: route.label }];
-}
-
-/** The header's left side: the steps to where the reader is, and whether the last is the page. */
-export interface HeaderTrail {
-  readonly steps: readonly HeaderCrumb[];
-  /** The last step names the page itself — drawn as `aria-current`. */
-  readonly endsAtPage: boolean;
-}
-
-/**
- * **The title rule** (LAI-1221). The header's left is the way to the page,
- * rooted at the organisation: *Borealis Labs / Insights* on Insights' Time
- * tab… and on a page that draws its own `h1` (`pageTitle`), the page's own
- * name is left out — and any step that would say what that heading says — the page says it once, in its heading, and the header
- * says where that heading sits. Inbox reads *Borealis Labs* above an `Inbox`
- * heading, not *Inbox* above *Inbox*. A screen with no heading of its own
- * keeps its name at the end of the trail, as the page step.
- */
-export function headerTrail(
-  path: string,
-  place: HeaderPlace,
-  pageTitle: string | undefined,
-): HeaderTrail {
-  const crumbs = headerCrumbs(path, place);
-  const titled = pageTitle !== undefined;
-  const ancestors = titled ? crumbs.slice(0, -1) : crumbs;
-  const root: HeaderCrumb[] =
-    place.orgName === undefined || place.orgName.trim() === '' ? [] : [{ label: place.orgName }];
-  // Never a step that says what the heading says: Organisation's heading *is*
-  // the organisation's name, so there the header leaves its root out too.
-  const same = (label: string): boolean =>
-    titled && label.trim().toLowerCase() === pageTitle.trim().toLowerCase();
-  return {
-    steps: [...root, ...ancestors].filter((step) => !same(step.label)),
-    endsAtPage: !titled && crumbs.length > 0,
-  };
-}
 
 /** The screens that already show another person's data (LAI-959, LAI-1138, LAI-1170). */
 export type PersonViewKind = 'my-day' | 'work' | 'time';

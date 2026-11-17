@@ -7,8 +7,8 @@
  *
  * - **a modal dialog** that closes on Escape — Escape must close only the
  *   dropdown, and its portalled panel must draw above the dialog;
- * - **a composer inside a lane** that closes on Escape and posts what was
- *   chosen;
+ * - **the Create task dialog a lane’s + opens** (a composer until LAI-1227),
+ *   which stays open on Escape and posts what was chosen;
  * - **a board card**, whose keyboard-only move control is clipped until
  *   focused, and whose own click opens the task — an option's click must not;
  * - **a form field** (`Select`), named and opened by its `<label>`.
@@ -20,7 +20,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator } from 'playwright';
-import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 import { pick, valueOf } from './dropdown.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
@@ -251,8 +251,13 @@ void describe('the dropdown in a modal dialog (LAI-726)', () => {
   });
 });
 
-void describe('the dropdown in a lane’s composer (LAI-726)', () => {
-  void test('Escape keeps the composer, and the chosen priority is the one posted', async () => {
+/*
+ * A lane's + opened an inline composer with its own priority dropdown until
+ * LAI-1227; it opens the app's one Create task dialog now, in that column, so
+ * the dropdown this guards is the dialog's Priority — reached from the lane.
+ */
+void describe('the dropdown in the dialog a lane’s + opens (LAI-726, LAI-1227)', () => {
+  void test('Escape keeps the dialog, and the chosen priority is the one posted', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.lane-title').first().waitFor({ timeout: 20_000 });
@@ -260,29 +265,26 @@ void describe('the dropdown in a lane’s composer (LAI-726)', () => {
         .locator('.lane', { has: h.page.locator('.lane-title', { hasText: 'Done' }) })
         .locator('.lane-add')
         .click();
-      await h.page.locator('.composer-title').fill('A finished thing');
+      const dialog = h.page.locator('[data-dialog="create-task"]');
+      await dialog.locator('.ct-title-input').fill('A finished thing');
 
-      const priority = h.page.locator('.composer-prio').getByRole('combobox');
+      const priority = dialog.getByLabel('Priority', { exact: true });
       await priority.click();
-      await assertOnTop(h, 'over the board');
+      await assertOnTop(h, 'over the dialog');
       await h.page.keyboard.press('Escape');
       assert.equal(await panel(h).count(), 0, 'Escape left the dropdown open');
-      assert.equal(
-        await h.page.locator('.composer-title').count(),
-        1,
-        'Escape closed the composer',
-      );
+      assert.equal(await dialog.count(), 1, 'Escape closed the dialog with the dropdown');
 
       await pick(priority, 'p1');
-      await h.page.locator('.composer-submit').click();
-      await h.page
-        .waitForFunction(() => document.querySelector('.composer-title') === null, undefined, {
-          timeout: 5_000,
-        })
-        .catch(() => undefined);
+      const create = dialog.getByRole('button', { name: 'Create', exact: true });
+      await until(async () => (await create.getAttribute('aria-disabled')) !== 'true', 10_000);
+      await create.click();
+      await dialog.waitFor({ state: 'detached', timeout: 5_000 });
       const sent = h.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/tasks'));
       assert.equal(sent.length, 1, 'no create was sent');
-      assert.equal((sent[0]?.body as { priority?: string }).priority, 'p1');
+      const body = sent[0]?.body as { priority?: string; status_id?: string };
+      assert.equal(body.priority, 'p1');
+      assert.equal(body.status_id, 'st-done', 'not created in the column whose + opened it');
     } finally {
       await h.close();
     }

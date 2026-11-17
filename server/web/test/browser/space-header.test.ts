@@ -8,6 +8,9 @@
  * clipped tab bar with no cue), a board toolbar of eleven controls with five
  * bare icons, and a board that opened on one sprint with only a chip to say
  * so. Each describe below is one of those, measured in a browser.
+ *
+ * Since LAI-1227 the space bar has no + Create — the app's one Create is the
+ * top bar's — and a *Spaces /* breadcrumb sits above the space's name.
  */
 
 import assert from 'node:assert/strict';
@@ -41,7 +44,8 @@ const header = (page: Page) =>
     return {
       rows: [...(bar?.children ?? [])].map((c) => c.className),
       name: document.querySelector('.space-name')?.textContent ?? '',
-      create: box('.space-create'),
+      crumbs: box('[data-space-crumbs]'),
+      title: box('.space-name'),
       tabs: box('.view-tabs'),
       toolbar: box('.space-toolbar'),
       bar: box('.space-bar'),
@@ -49,12 +53,17 @@ const header = (page: Page) =>
       filtersInTitle: document.querySelectorAll(
         '.space-bar-top .space-search, .space-bar-top .space-select, .space-bar-top .space-members, .space-bar-top .bt',
       ).length,
-      createInToolbar: document.querySelectorAll('.space-toolbar > .space-create').length,
+      // Any Create in the space bar, by class or by its words: there must be none.
+      createInBar: [...(bar?.querySelectorAll('button, a') ?? [])].filter(
+        (el) =>
+          el.classList.contains('space-create') ||
+          /^\+?\s*Create( task)?$/.test(el.textContent?.trim() ?? ''),
+      ).length,
     };
   });
 
 void describe('one header on every tab', () => {
-  void test('title, tabs, one toolbar — and Create in the same place on all eight', async () => {
+  void test('breadcrumb, title, tabs, one toolbar — the same on all eight, and no Create in it', async () => {
     const seen: { tab: string; m: Awaited<ReturnType<typeof header>> }[] = [];
     for (const tab of SPACE_TABS) {
       const h = await open(`${tab}?${Q}`, spaceStub(), {
@@ -62,7 +71,7 @@ void describe('one header on every tab', () => {
       });
       try {
         await until(async () => (await header(h.page)).name === PROJECT.name, 20_000);
-        await h.page.locator('.space-create').waitFor({ timeout: 20_000 });
+        await h.page.locator('.space-toolbar').waitFor({ timeout: 20_000 });
         // The view's own controls arrive through a portal a frame later.
         await h.page.waitForTimeout(400);
         seen.push({ tab, m: await header(h.page) });
@@ -73,7 +82,7 @@ void describe('one header on every tab', () => {
 
     assert.equal(seen.length, 8, 'not every tab was measured');
     const first = seen[0]?.m;
-    assert.ok(first?.create && first.tabs && first.toolbar, 'the board has no header to compare');
+    assert.ok(first?.crumbs && first.tabs && first.toolbar, 'the board has no header to compare');
     for (const { tab, m } of seen) {
       assert.deepEqual(
         m.rows,
@@ -81,37 +90,36 @@ void describe('one header on every tab', () => {
         `${tab}: the header is not title+tabs, then one toolbar`,
       );
       assert.equal(m.filtersInTitle, 0, `${tab}: a filter is in the title row`);
-      assert.equal(m.createInToolbar, 1, `${tab}: Create is not in the toolbar row`);
-      assert.deepEqual(
-        m.create,
-        first.create,
-        `${tab}: Create moved (board: ${JSON.stringify(first.create)})`,
+      assert.equal(m.createInBar, 0, `${tab}: a Create in the space bar (LAI-1227)`);
+      assert.ok(
+        m.crumbs !== null && m.title !== null && m.crumbs.b <= m.title.y,
+        `${tab}: the Spaces / breadcrumb is not above the space's name`,
       );
+      assert.deepEqual(m.crumbs, first.crumbs, `${tab}: the breadcrumb moved`);
       assert.deepEqual(m.tabs, first.tabs, `${tab}: the tab row moved`);
       assert.equal(m.toolbar?.y, first.toolbar.y, `${tab}: the toolbar row moved`);
       assert.equal(m.bar?.b, first.bar?.b, `${tab}: the header is a different height`);
     }
   });
 
-  void test('Create is the toolbar’s last control and ends where the content ends', async () => {
+  void test('the app has one Create, in the top bar, straight after the search', async () => {
     const h = await open(`/calendar?${Q}`, spaceStub(), {
       before: (page) => page.setViewportSize({ width: 1440, height: 900 }),
     });
     try {
-      await h.page.locator('.space-create').waitFor({ timeout: 20_000 });
-      const m = await h.page.evaluate(() => {
-        const bar = document.querySelector('.space-toolbar');
-        const kids = [...(bar?.children ?? [])].filter((c) => c.getClientRects().length > 0);
-        return {
-          last: kids.at(-1)?.className ?? '',
-          createRight: Math.round(
-            document.querySelector('.space-create')?.getBoundingClientRect().right ?? 0,
-          ),
-          toolbarRight: Math.round(bar?.getBoundingClientRect().right ?? -1),
-        };
-      });
-      assert.equal(m.last, 'space-create', 'something sits after Create');
-      assert.equal(m.createRight, m.toolbarRight, 'Create does not end the row');
+      await h.page.locator('.space-toolbar').waitFor({ timeout: 20_000 });
+      const create = h.page.getByRole('button', { name: /^Create\b/ });
+      await until(async () => (await create.count()) === 1);
+      assert.equal(await create.count(), 1, 'more than one Create on the page');
+      assert.equal(
+        await create.evaluate((el) => el.closest('[data-app-header]') !== null),
+        true,
+        'the one Create is not the top bar’s',
+      );
+      const next = await h.page
+        .locator('[data-palette-trigger="header"]')
+        .evaluate((el) => el.nextElementSibling?.hasAttribute('data-header-create') === true);
+      assert.equal(next, true, 'Create is not straight after the search');
     } finally {
       await h.close();
     }
@@ -195,7 +203,14 @@ void describe('the header at 390', () => {
     }
   });
 
-  void test('the content starts within ~15% of the screen, and nothing scrolls sideways', async () => {
+  /*
+   * **~20%, not ~15%** (LAI-1227): the space's title row — name, key, live,
+   * Agents, ⋯ — was drawn in the 48px app header from LAI-1188 and is the
+   * page's own row now, under Jira's top bar, which names no page. That row
+   * is the whole of the difference (the *Spaces /* breadcrumb is not drawn on
+   * a phone); the content still starts in the top fifth.
+   */
+  void test('the content starts within ~20% of the screen, and nothing scrolls sideways', async () => {
     for (const tab of ['/board', '/calendar', '/sprints', '/list'] as const) {
       const h = await open(`${tab}?${Q}`, spaceStub(), {
         before: (page) => page.setViewportSize(PHONE),
@@ -212,7 +227,7 @@ void describe('the header at 390', () => {
             document.querySelector('.space-menu-trigger')?.getBoundingClientRect().top ?? -99,
         }));
         assert.ok(
-          m.bottom <= PHONE.height * 0.155,
+          m.bottom <= PHONE.height * 0.2,
           `${tab}: the header ends at ${String(Math.round(m.bottom))}px of ${String(PHONE.height)} (${String(Math.round((m.bottom / PHONE.height) * 100))}%)`,
         );
         assert.equal(m.overflow, 0, `${tab}: the page scrolls sideways`);

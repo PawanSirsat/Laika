@@ -533,8 +533,6 @@ export function BoardScreen({
   const [settingsAt, setSettingsAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
   );
-  /** Which column's inline composer is open (LAI-290). */
-  const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
   const [insightsOpen, setInsightsOpen] = useState(false);
   /**
    * Labels to offer in the filter: every label in use **in the project**.
@@ -1723,7 +1721,7 @@ export function BoardScreen({
               // The space's one Create task dialog (LAI-1167); the List's
               // inline banner of a form (LAI-290) went with it.
               onAdd={() => {
-                createTask.open();
+                createTask.open({ slug });
               }}
               movingId={board.movingId}
               onMove={(id, to) => {
@@ -1791,17 +1789,14 @@ export function BoardScreen({
               onOpen={openTaskInUrl}
               canAdd={mayCreate}
               {...(slug === undefined ? {} : { slug })}
-              {...(composingIn === undefined ? {} : { composingIn })}
               onAdd={(statusId) => {
-                // A column is one status: the composer opens in it, and the
-                // task is created in that status.
-                setComposingIn(statusId);
+                // A column is one status: the app's one Create task dialog
+                // (LAI-1227) opens in this space and that status — the same
+                // dialog as the header's + Create, not a second form.
+                createTask.open({ slug, statusId });
               }}
               statuses={statuses.all}
               onCreated={refresh}
-              onCloseComposer={() => {
-                setComposingIn(undefined);
-              }}
               {...(mayAddColumn
                 ? {
                     onReorder: (ids: readonly string[]) => {

@@ -152,9 +152,10 @@ export function StateGallery() {
 
   return (
     <section className="gallery" aria-labelledby="gallery-heading">
-      <h2 id="gallery-heading" className="gallery-heading">
+      {/* The page's one heading (LAI-1227): the top bar names no page. */}
+      <h1 id="gallery-heading" className="gallery-heading">
         States
-      </h2>
+      </h1>
       <p className="gallery-sub">
         Empty, loading, error, permission-denied and connection-lost. Switch the theme above — all
         five are rendered from tokens. Actions fired: {clicks}

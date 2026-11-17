@@ -608,6 +608,49 @@
  * The tabs take the full width, which is what forces them onto their own row;
  * `order` keeps them last so the wrap lands between the two groups.
  */
+/*
+ * *Spaces /* above the space's name (LAI-1227, Jira's project header): its
+ * own line, first, small and quiet — the way back, not a heading.
+ */
+.space-crumbs {
+  flex: 1 1 100%;
+  order: 0;
+  min-width: 0;
+  margin-bottom: calc(var(--space-1) * -1);
+}
+
+.space-crumbs-list {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-small);
+  line-height: 1.4;
+}
+
+.space-crumb::after {
+  content: '/';
+  margin-inline-start: var(--space-1-5);
+  color: var(--text-muted);
+}
+
+.space-crumb-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: var(--radius-xs);
+}
+
+.space-crumb-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.space-crumb-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .space-bar-top > .space-bar-row {
   flex: 0 1 auto;
   min-width: 0;
@@ -882,38 +925,11 @@
   height: 40px;
 }
 
-/*
- * Below 900px the space bar's identity used to make room for the shell's
- * floating menu button. Since LAI-1188 the identity is in the app header,
- * beside that button, so the bar only tightens its gutter.
- */
+/* Below 900px the bar only tightens its gutter. */
 @media (max-width: 900px) {
   .space-bar {
     padding: var(--space-2-5) var(--space-4) 0;
   }
-}
-
-/*
- * The identity in the app header (LAI-1188): the header is one height on
- * every screen, so the name is the header's size, not the old bar's.
- */
-.shell-head .space-bar-row {
-  min-width: 0;
-}
-
-.shell-head .space-identity {
-  flex: 0 1 auto;
-}
-
-.shell-head .space-icon {
-  width: 24px;
-  height: 24px;
-}
-
-.shell-head .space-name {
-  flex: 0 1 auto;
-  min-width: 0;
-  font-size: var(--text-heading-sm);
 }
 
 /* A phone: a compact title, and Create keeps its word but loses its width. */
@@ -944,8 +960,8 @@
 
   /*
    * The word goes, the coloured dot stays and the word is still read
-   * (LAI-1221): the bar carries the header's bell now, and the space's name
-   * is worth more of 390px than OFFLINE spelled out.
+   * (LAI-1221): the space's name is worth more of 390px than OFFLINE
+   * spelled out.
    */
   .space-live-word {
     position: absolute;
@@ -981,9 +997,9 @@
   }
 
   /*
-   * Flush under the app header (LAI-1188): the header is the space's title
-   * row now, so the tabs start at its edge and the toolbar keeps its 40px
-   * without padding around it — the content still starts in the top 15%.
+   * The toolbar keeps its 40px without padding around it, and the bar a
+   * small top gutter above the space's name, which is the page's since
+   * LAI-1227 rather than the top bar's.
    */
   .space-toolbar {
     gap: var(--space-1-5);
@@ -992,7 +1008,7 @@
   }
 
   .space-bar {
-    padding-top: 0;
+    padding-top: var(--space-2);
   }
 
   .space-toolbar .space-search {
@@ -1030,6 +1046,12 @@
 
   .space-bar-top > nav {
     grid-column: 1 / -1;
+  }
+
+  /* The way back is the menu's on a phone (LAI-1227): the space's name
+     starts the page, and the content stays high. */
+  .space-crumbs {
+    display: none;
   }
 
   .space-name {

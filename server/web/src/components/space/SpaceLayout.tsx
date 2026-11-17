@@ -7,8 +7,6 @@ import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { TaskDrawerHost } from '../drawer/TaskDrawerHost.tsx';
 import { TaskSourceProvider, type TaskSource } from '../drawer/TaskSourceProvider.tsx';
-import { CreateTaskProvider } from '../create-task/CreateTaskProvider.tsx';
-import { useCreateTask } from '../create-task/use-create-task.ts';
 import { SpaceLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
 import { SpaceFilterClaim } from './SpaceSlot.tsx';
@@ -18,7 +16,7 @@ import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
 import './space.css';
-import { useGates, usePermissions } from '../../api/permissions.ts';
+import { usePermissions } from '../../api/permissions.ts';
 
 /**
  * The bar shows only values the board applies (LAI-724): a refused
@@ -94,9 +92,6 @@ function SpaceFrame({
   children: view,
 }: SpaceFrameProps) {
   const { permissions } = usePermissions(signedIn);
-  // Whether Create is drawn: this space's `task.create`, as the server says (LAI-178).
-  const gates = useGates(signedIn);
-  const { spaceId } = useShell();
   /**
    * The space's display name.
    *
@@ -199,35 +194,23 @@ function SpaceFrame({
     [setParams],
   );
 
-  const mayCreate = spaceId !== undefined && gates.project(spaceId, 'task.create');
-
   return (
     <TaskSourceProvider onSource={setTaskSource}>
-      <CreateTaskProvider
+      <SpaceFrameBody
+        path={path}
         slug={slug}
-        spaceId={spaceId}
-        mayCreate={mayCreate}
-        settled={gates.settled}
+        params={params}
+        navigate={navigate}
+        setParam={setParam}
         members={members}
         tags={tags}
+        pendingReviews={pendingReviews}
+        holds={permissionHolder(permissions?.me.actions)}
+        taskSource={taskSource}
+        onResolveTask={resolveTask}
       >
-        <SpaceFrameBody
-          path={path}
-          slug={slug}
-          params={params}
-          navigate={navigate}
-          setParam={setParam}
-          members={members}
-          tags={tags}
-          pendingReviews={pendingReviews}
-          mayCreate={mayCreate}
-          holds={permissionHolder(permissions?.me.actions)}
-          taskSource={taskSource}
-          onResolveTask={resolveTask}
-        >
-          {view}
-        </SpaceFrameBody>
-      </CreateTaskProvider>
+        {view}
+      </SpaceFrameBody>
     </TaskSourceProvider>
   );
 }
@@ -245,7 +228,6 @@ interface SpaceFrameBodyProps {
   readonly members: readonly Member[];
   readonly tags: readonly ProjectTag[];
   readonly pendingReviews: number | undefined;
-  readonly mayCreate: boolean;
   readonly holds: ReturnType<typeof permissionHolder>;
   readonly taskSource: TaskSource | undefined;
   readonly onResolveTask: (taskId: string) => void;
@@ -253,10 +235,9 @@ interface SpaceFrameBodyProps {
 }
 
 /**
- * The frame's markup, under the Create task provider so the bar's *+ Create*
- * can open the dialog (LAI-1167) — the same dialog the List's row and the
- * `c` key open, rather than a navigation to the board with a form the board
- * never had.
+ * The frame's markup. Creating a task is the app's (LAI-1227): the header's
+ * *+ Create*, a lane's +, the List's row and the `c` key all open the one
+ * dialog the shell mounts, in this space.
  */
 function SpaceFrameBody({
   path,
@@ -267,25 +248,21 @@ function SpaceFrameBody({
   members,
   tags,
   pendingReviews,
-  mayCreate,
   holds,
   taskSource,
   onResolveTask,
   children,
 }: SpaceFrameBodyProps) {
-  const createTask = useCreateTask();
-
   return (
     <SpaceFilterClaim>
       <div className="space">
         <div className="space-bar">
           {/*
             **One header, three rows, the same on every tab** (LAI-1198): who
-            and what (`SpaceTopBar`), the views (`ViewTabs`), then the one
-            toolbar (`SpaceToolbar`) — search and filters, the view's own
-            controls, and + Create always last. Before this the filters rode in
-            the title row on four of the eight tabs and pushed Create onto a
-            line of its own there.
+            and what (`SpaceTopBar` — since LAI-1227 in the page, under a
+            *Spaces /* breadcrumb, as Jira's project header), the views
+            (`ViewTabs`), then the one toolbar (`SpaceToolbar`) — search and
+            filters and the view's own controls. Create is the top bar's.
           */}
           <div className="space-bar-top">
             <SpaceTopBar
@@ -328,13 +305,6 @@ function SpaceFrameBody({
             onReady={(value) => {
               setParam('ready', value ? 'true' : undefined);
             }}
-            {...(mayCreate
-              ? {
-                  onCreate: () => {
-                    createTask.open();
-                  },
-                }
-              : {})}
           />
         </div>
 

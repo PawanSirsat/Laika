@@ -294,7 +294,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
     }
   });
 
-  void test('a lane’s scroll and an unsent draft survive a refresh', async () => {
+  void test('a lane’s scroll survives a refresh', async () => {
     const server: Server = { version: 1, extra: 30, fail: 'none' };
     const h = await open('/board?project=laika-core', stub(server));
     try {
@@ -308,21 +308,44 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
       const before = await todo.locator('.lane-body').evaluate((el) => el.scrollTop);
       assert.ok(before > 0, 'the lane did not scroll — the fixture is too short');
 
-      await h.page
-        .locator('.lane', { has: h.page.locator('.lane-title', { hasText: /backlog/i }) })
-        .getByRole('button', { name: /add task/i })
-        .click();
-      const draft = h.page.getByPlaceholder('What needs to be done?');
-      await draft.fill('Half a thought');
-
       await boardAction(h.page, 'Refresh');
       await h.page.waitForTimeout(800);
 
       assert.equal(await todo.locator('.lane-body').evaluate((el) => el.scrollTop), before);
-      assert.equal(
-        await h.page.getByPlaceholder('What needs to be done?').inputValue(),
-        'Half a thought',
-      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * The unsent draft was the lane's inline composer's until LAI-1227; a
+   * lane's + now opens the app's one Create task dialog, which the shell
+   * holds above the screen. A live refresh — the only kind that can happen
+   * under a modal — must not cost what was typed in it.
+   */
+  void test('an unsent draft in the Create task dialog survives a live refresh', async () => {
+    const server: Server = { version: 1, extra: 30, fail: 'none' };
+    const h = await open('/board?project=laika-core', stub(server), { before: fakeStream });
+    try {
+      await ready(h.page);
+      await h.page
+        .locator('.lane', { has: h.page.locator('.lane-title', { hasText: /backlog/i }) })
+        .getByRole('button', { name: /add task/i })
+        .click();
+      const draft = h.page.locator('[data-dialog="create-task"] .ct-title-input');
+      await draft.fill('Half a thought');
+
+      const reads = (): number =>
+        h.calls.filter((c) => c.method === 'GET' && c.path.endsWith('/projects/laika-core/tasks'))
+          .length;
+      const before = reads();
+      server.version = 2;
+      await frame(h.page, 't3', 1);
+      // The refresh ran: the task set was read again under the open dialog.
+      await until(() => reads() > before, 10_000);
+      await h.page.waitForTimeout(400);
+
+      assert.equal(await draft.inputValue(), 'Half a thought');
     } finally {
       await h.close();
     }

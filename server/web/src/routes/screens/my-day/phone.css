@@ -30,14 +30,23 @@
 }
 
 /*
- * The app header's title and Viewing chip give way to My day's own bar
- * (LAI-1188): the bar names the product and carries the *Viewing* switch, so
- * the header's breadcrumb and chip would say both twice. The search stays, at
- * the end of the row.
+ * The top bar's *Viewing* chip gives way to My day's own switch (LAI-1188),
+ * and My day's own mark, name and avatar to the top bar's (LAI-1227): the bar
+ * carries the brand and the person on every screen now, so My day's copies
+ * would say both twice. Its controls sit at the end, before the search.
  */
-.shell-head[data-myday-bar] .shell-head-title,
-.shell-head[data-myday-bar] .shell-viewing {
+.shell-head[data-myday-bar] .shell-viewing,
+.shell-head[data-myday-bar] .myday-bar-brand,
+.shell-head[data-myday-bar] .myday-bar-avatar {
   display: none;
+}
+
+.shell-head[data-myday-bar] .myday-bar {
+  justify-content: flex-end;
+}
+
+.shell-head[data-myday-bar] .shell-head-start {
+  flex: none;
 }
 
 .shell-head[data-myday-bar] .shell-head-tools {
@@ -1230,12 +1239,13 @@
  * menu is in the drawer), *Viewing*'s word — and the pill ellipsises.
  */
 @media (max-width: 479px) {
+  /* Tighter since LAI-1227: the top bar's search, Create and person share it. */
   .shell-head[data-myday-bar] {
-    gap: var(--space-1-5);
+    gap: var(--space-1);
   }
 
   .myday-bar {
-    gap: var(--space-1-5);
+    gap: var(--space-1);
   }
 
   .myday-bar-mark,
@@ -1245,9 +1255,16 @@
     display: none;
   }
 
+  /* The top bar's mark and bell give way to My day's controls (LAI-1227);
+     the menu, the search, Create and the person stay. */
+  .shell-head[data-myday-bar] .shell-brand,
+  .shell-head[data-myday-bar] .hdr-anchor-bell {
+    display: none;
+  }
+
   .shell-head[data-myday-bar] .avail-trigger {
     min-width: 0;
-    max-width: 7.5rem;
+    max-width: 5rem;
     flex: 0 1 auto;
     overflow: hidden;
   }

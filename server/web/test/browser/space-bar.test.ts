@@ -552,11 +552,15 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       const box = rail?.getBoundingClientRect();
       // Off-canvas counts as absent: it is in the DOM and nobody can read it.
       const railOnScreen = box !== undefined && box.left >= 0 && box.width > 0;
-      const wordmark = document.querySelector('.sidebar-wordmark');
+      // The product's name is the top bar's since LAI-1227 (the rail's head
+      // until then), so it no longer comes and goes with the rail.
+      const wordmark = document.querySelector('[data-app-header] .sidebar-wordmark');
       const barName = document.querySelector('.space-name');
 
       return {
-        rail: railOnScreen && visible(wordmark) ? (wordmark?.textContent ?? null) : null,
+        railOnScreen,
+        railWidth: Math.round(box?.width ?? 0),
+        product: visible(wordmark) ? (wordmark?.textContent ?? null) : null,
         bar: visible(barName) ? (barName?.textContent ?? null) : null,
       };
     });
@@ -580,7 +584,8 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       );
 
       const m = await naming(h);
-      assert.equal(m.rail, 'Laika', 'the rail must name the product');
+      assert.equal(m.railOnScreen, true);
+      assert.equal(m.product, 'Laika', 'the top bar must name the product');
       assert.equal(m.bar, 'Laika Core', 'the bar stopped naming the project');
     } finally {
       await h.close();
@@ -598,12 +603,13 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       await h.page.waitForTimeout(500);
       await until(async () => {
         const now = await naming(h);
-        return now.rail === null && now.bar === 'Laika Core';
+        return !now.railOnScreen && now.bar === 'Laika Core';
       });
 
       const m = await naming(h);
-      assert.equal(m.rail, null, 'the rail is on screen — this test is measuring the wrong state');
+      assert.equal(m.railOnScreen, false, 'the rail is on screen — measuring the wrong state');
       assert.equal(m.bar, 'Laika Core', 'nothing names the project at this width');
+      assert.equal(m.product, 'Laika', 'the top bar keeps the product without the rail');
     } finally {
       await h.close();
     }
@@ -616,7 +622,7 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       await h.page.setViewportSize({ width: 1600, height: 900 });
       await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
 
-      // The toggle in the rail's head is what collapses it (LAI-796).
+      // The toggle in the top bar is what collapses it (LAI-796; LAI-1227).
       await h.page.locator('.sidebar-toggle').click();
       await h.page.waitForSelector('.shell-rail-mini', { timeout: 10_000 });
       await h.page.waitForFunction(
@@ -627,8 +633,9 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       );
 
       const m = await naming(h);
-      assert.equal(m.rail, null, 'the wordmark survived the collapse — wrong state');
+      assert.equal(m.railWidth, 60, 'not the icon rail — wrong state');
       assert.equal(m.bar, 'Laika Core', 'nothing names the project while the rail is collapsed');
+      assert.equal(m.product, 'Laika', 'the top bar’s brand went with the rail');
     } finally {
       await h.close();
     }

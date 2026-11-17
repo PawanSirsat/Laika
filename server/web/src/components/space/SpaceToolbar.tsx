@@ -33,12 +33,6 @@ export interface SpaceToolbarProps {
   readonly onTag: (value: string | undefined) => void;
   readonly onAssignee: (value: string | undefined) => void;
   readonly onReady: (value: boolean) => void;
-  /**
-   * Opens the Create task dialog. Absent unless the server says the reader may
-   * create a task in this space — `task.create` (LAI-178) — so Create is not
-   * drawn rather than drawn to answer `403`.
-   */
-  readonly onCreate?: (() => void) | undefined;
 }
 
 /**
@@ -53,9 +47,10 @@ export interface SpaceToolbarProps {
  *    Dashboard and Timeline read none of them (LAI-711, LAI-725).
  * 2. **The view's own controls** — `SpaceBarSlot` (the board's toolbar) and
  *    `SpaceSlot` (a view's context line and actions, such as *New sprint*).
- * 3. **+ Create**, always last and always here, so it does not move between
- *    tabs. Before LAI-1198 it sat in the title row and wrapped onto a second
- *    line wherever the filters crowded it.
+ *
+ * **No + Create here** (LAI-1227). LAI-1198 put it last in this row; the
+ * owner asked for one Create, in the app's top bar, as Jira has it — the
+ * header's filled *+ Create* opens the dialog in this space from any tab.
  *
  * **On a narrow toolbar the filters fold into one `Filters` button**
  * (`useFold`, below) that opens a sheet with the same controls, writing the
@@ -76,7 +71,6 @@ export function SpaceToolbar({
   onTag,
   onAssignee,
   onReady,
-  onCreate,
 }: SpaceToolbarProps) {
   const ownFilters = !useSpaceFiltersClaimed();
   const bar = useRef<HTMLDivElement>(null);
@@ -214,30 +208,12 @@ export function SpaceToolbar({
 
       {/*
         The view's own controls (`SpaceBarSlot`), then its context line and
-        actions (`SpaceSlot`). Both collapse when empty, so a view with
-        nothing of its own still has Create in the same place.
+        actions (`SpaceSlot`). Both collapse when empty.
       */}
       <div className="space-toolbar-view">
         <div id={BAR_SLOT_ID} className="space-bar-actions" />
         <div id={SLOT_ID} className="space-slot" />
       </div>
-
-      {onCreate !== undefined && (
-        <button type="button" className="space-create" onClick={onCreate}>
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.6"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Create
-        </button>
-      )}
 
       {ownFilters && narrow && sheetOpen && (
         <FilterSheet

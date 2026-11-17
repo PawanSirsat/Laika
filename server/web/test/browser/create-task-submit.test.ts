@@ -37,8 +37,8 @@ async function openDialog(path = '/board?project=laika-core', extra = {}): Promi
     stub(ADA, { '/api/v1/projects/laika-core/tasks': tasksRoute(reply(201, NEW_TASK)), ...extra }),
   );
   await h.page.setViewportSize({ width: 1440, height: 900 });
-  await h.page.locator('.space-create').waitFor({ timeout: 20_000 });
-  await h.page.locator('.space-create').click();
+  await h.page.locator('[data-header-create]').waitFor({ timeout: 20_000 });
+  await h.page.locator('[data-header-create]').click();
   await h.page.locator(DIALOG).waitFor({ timeout: 5_000 });
   await h.page.locator(`${DIALOG} .ct-title-input`).waitFor({ timeout: 5_000 });
   return h;

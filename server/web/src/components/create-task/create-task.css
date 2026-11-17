@@ -59,12 +59,6 @@
   color: var(--text-primary);
 }
 
-.ct-sub {
-  margin: var(--space-0-5) 0 0;
-  font-size: var(--text-body);
-  color: var(--text-secondary);
-}
-
 .ct-space {
   font-weight: var(--weight-semibold);
   color: var(--text-primary);

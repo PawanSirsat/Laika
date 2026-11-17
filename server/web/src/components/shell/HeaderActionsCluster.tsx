@@ -1,14 +1,15 @@
 import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { useGates, usePermissions } from '../../api/permissions.ts';
+import { usePermissions } from '../../api/permissions.ts';
 import { formatCount } from '../chip/chip-model.ts';
-import { SPACE_TAB_PATHS } from '../../routes/route-table.ts';
-import { CREATE_SPACE_HREF, navHref } from '../../routes/nav-url.ts';
-import { useSpaces } from '../../routes/use-spaces.ts';
+import { APPEARANCE_PATH, navRoutes } from '../../routes/route-table.ts';
+import { permissionHolder } from '../../routes/nav-permissions.ts';
+import { useCreateTask } from '../create-task/use-create-task.ts';
 import { Icon } from '../icon/Icon.tsx';
 import { menuStep } from '../sidebar/menu-keys.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { useDismiss } from '../use-dismiss.ts';
 import { bellLabel } from './notifications-model.ts';
+import { PersonMenu } from './PersonMenu.tsx';
 import { useShell } from './shell-context.ts';
 import { openShortcuts } from './shortcuts-store.ts';
 import { useNotifications } from './use-notifications.ts';
@@ -21,30 +22,27 @@ const NotificationsPopover = lazy(async () => {
 });
 
 /**
- * **The header's own actions** (LAI-1221), the same on every signed-in
- * screen, after whatever the screen hands up: the bell, + Create and the
- * keyboard shortcuts.
- *
- * The theme and the person live in the sidebar's person menu and nowhere
- * else (decided here, recorded in the log): the menu already holds the
- * profile, every theme, Appearance and signing out, and a second avatar or
- * theme switch in this bar would be two doors to one room — the reason
- * LAI-1188 removed the sidebar's second search. The palette offers the theme
- * switch too, from the keyboard.
+ * **The top bar's own controls** (LAI-1221; Jira's order since LAI-1227).
+ * `HeaderCreate` sits beside the search; this is the right-hand cluster:
+ * the bell, keyboard shortcuts, settings, then the person (`PersonMenu`),
+ * whose menu holds the profile, every theme, Appearance and signing out — the
+ * one place for them now that the sidebar has no foot.
  */
 export function HeaderActionsCluster() {
+  const { me } = useShell();
   return (
     <div className="hdr-actions" data-header-cluster>
-      <HeaderCreate />
       <HeaderBell />
       <HeaderHelp />
+      <HeaderSettings />
+      {me !== undefined && <PersonMenu user={me} />}
     </div>
   );
 }
 
 // ------------------------------------------------------------------- bell
 
-function HeaderBell() {
+export function HeaderBell() {
   const {
     me,
     route: { navigate },
@@ -63,7 +61,7 @@ function HeaderBell() {
 
   if (me === undefined) return null;
   return (
-    <div className="hdr-anchor" ref={box}>
+    <div className="hdr-anchor hdr-anchor-bell" ref={box}>
       <Tooltip content={label}>
         <button
           ref={button}
@@ -109,45 +107,63 @@ function HeaderBell() {
 
 // ----------------------------------------------------------------- create
 
-/** Whether the reader may create a task in some space, as the server's grants say. */
-function createsTasksSomewhere(
-  me:
-    | {
-        readonly implicit_project_role: string | null;
-        readonly projects: readonly { readonly actions: readonly string[] }[];
-      }
-    | undefined,
-): boolean {
-  if (me === undefined) return false;
-  if (me.implicit_project_role === 'lead') return true;
-  return me.projects.some((p) => p.actions.includes('task.create'));
+/**
+ * **+ Create** (LAI-1227): the app's one Create, filled in the accent beside
+ * the search as Jira's is, and it **opens the Create task dialog directly** —
+ * LAI-1221's menu of spaces is gone; the space is a field of the dialog.
+ * Unavailable, it stays in its place with the reason in its tooltip rather
+ * than vanishing (`aria-disabled`, so the tooltip still has a pointer and a
+ * focus to answer). *Create space* is the palette's and the Spaces page's.
+ */
+export function HeaderCreate() {
+  const create = useCreateTask();
+  const unavailable = create.whyNot !== undefined;
+  return (
+    <Tooltip
+      content={create.whyNot ?? 'Create a task'}
+      shortcut={create.mayCreateHere ? 'c' : undefined}
+    >
+      <button
+        type="button"
+        className="hdr-create"
+        aria-disabled={unavailable || undefined}
+        aria-haspopup="dialog"
+        data-header-create
+        onClick={() => {
+          if (unavailable) return;
+          create.open();
+        }}
+      >
+        <Icon name="plus" size="small" />
+        <span className="hdr-create-text">Create</span>
+        {unavailable && <span className="visually-hidden"> — {create.whyNot}</span>}
+      </button>
+    </Tooltip>
+  );
 }
 
-interface CreateEntry {
-  readonly id: string;
-  readonly label: string;
-  readonly hint?: string;
+// --------------------------------------------------------------- settings
+
+interface SettingsEntry {
   readonly href: string;
+  readonly label: string;
 }
 
-/** How many spaces the menu offers: the rail's pinned and recent ones. */
-const CREATE_SPACES = 6;
-
-function HeaderCreate() {
+/**
+ * The gear (LAI-1227): the settings the reader can reach and nothing else —
+ * Appearance for everyone, then Organisation and Developer access exactly
+ * when the rail would draw them (`navRoutes`, the server's grants). A space's
+ * own settings stay in that space's ⋯ menu, beside the space they configure.
+ */
+export function HeaderSettings() {
   const {
-    route: { path, params, navigate },
-    spaceId,
-    spaceName,
+    me,
+    route: { navigate },
   } = useShell();
-  const { permissions } = usePermissions(true);
-  const gates = useGates(true);
+  const { permissions } = usePermissions(me !== undefined);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
-  const slug = params.get('project') ?? undefined;
-  // The list is read when the menu opens, not on every page (one request, once wanted).
-  const { spaces, all } = useSpaces(open, slug);
-
   const close = (refocus: boolean): void => {
     setOpen(false);
     if (refocus) button.current?.focus();
@@ -156,48 +172,23 @@ function HeaderCreate() {
     close(reason === 'escape');
   });
 
-  const mayCreateSpace = gates.org('project.create');
-  const mayCreateTask = createsTasksSomewhere(permissions?.me);
+  const holds = permissionHolder(permissions?.me.actions);
+  const reachable = new Set(navRoutes(holds).map((r) => r.path));
+  const entries: SettingsEntry[] = [
+    { href: APPEARANCE_PATH, label: 'Appearance' },
+    ...(['/organisation', '/developer'] as const)
+      .filter((path) => reachable.has(path))
+      .map((path) => ({
+        href: path,
+        label: path === '/organisation' ? 'Organisation settings' : 'Developer access',
+      })),
+  ];
 
-  /** The Create task dialog, through the space's own `?new=task` (LAI-1167). */
-  const taskHref = (target: string): string => {
-    const view = SPACE_TAB_PATHS.includes(path) && target === slug ? path : '/board';
-    return `${navHref(view, target)}&new=task`;
-  };
-
-  const entries: CreateEntry[] = [];
-  if (slug !== undefined && spaceId !== undefined && gates.project(spaceId, 'task.create')) {
-    entries.push({
-      id: `task:${slug}`,
-      label: 'Task',
-      hint: spaceName ?? slug,
-      href: taskHref(slug),
-    });
-  }
-  const rail = spaces.length > 0 ? spaces : all;
-  for (const space of rail) {
-    if (entries.length >= CREATE_SPACES) break;
-    if (space.slug === slug || !gates.project(space.id, 'task.create')) continue;
-    entries.push({
-      id: `task:${space.slug}`,
-      label: 'Task',
-      hint: space.name,
-      href: taskHref(space.slug),
-    });
-  }
-  if (mayCreateSpace) {
-    entries.push({ id: 'space', label: 'Space', href: CREATE_SPACE_HREF });
-  }
-
-  // The first item takes focus as the menu opens, or as the first arrives.
-  const hasEntries = entries.length > 0;
   useEffect(() => {
-    if (!open || !hasEntries) return;
-    if (menu.current?.contains(document.activeElement) === true) return;
-    menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-  }, [open, hasEntries]);
+    if (open) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [open]);
 
-  if (!mayCreateTask && !mayCreateSpace) return null;
+  if (me === undefined) return null;
 
   const onMenuKey = (event: KeyboardEvent): void => {
     if (event.key === 'Tab') {
@@ -215,19 +206,18 @@ function HeaderCreate() {
     items[to]?.focus();
   };
 
-  const loadingSpaces = mayCreateTask && all.length === 0;
-
   return (
-    <div className="hdr-anchor hdr-anchor-create" ref={box}>
-      <Tooltip content="Create a task or a space">
+    <div className="hdr-anchor hdr-anchor-settings" ref={box}>
+      <Tooltip content="Settings">
         <button
           ref={button}
           type="button"
-          className={open ? 'hdr-create hdr-button-open' : 'hdr-create'}
+          className={open ? 'hdr-button hdr-button-open' : 'hdr-button'}
+          aria-label="Settings"
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-controls={open ? 'hdr-create-menu' : undefined}
-          data-header-create
+          aria-controls={open ? 'hdr-settings-menu' : undefined}
+          data-header-settings
           onClick={() => {
             setOpen((v) => !v);
           }}
@@ -238,27 +228,25 @@ function HeaderCreate() {
             }
           }}
         >
-          <Icon name="plus" size="small" />
-          <span className="hdr-create-text">Create</span>
+          <Icon name="gear" size="small" />
         </button>
       </Tooltip>
       {open && (
         <div
           ref={menu}
-          id="hdr-create-menu"
+          id="hdr-settings-menu"
           className="hdr-popover hdr-menu"
           role="menu"
-          aria-label="Create"
+          aria-label="Settings"
           onKeyDown={onMenuKey}
         >
-          {entries.length > 0 && <p className="hdr-menu-heading">New</p>}
           {entries.map((entry) => (
             <a
-              key={entry.id}
+              key={entry.href}
               role="menuitem"
               href={entry.href}
               className="hdr-menu-item"
-              data-create={entry.id}
+              data-settings={entry.href}
               onClick={(event) => {
                 if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 event.preventDefault();
@@ -266,24 +254,9 @@ function HeaderCreate() {
                 navigate(entry.href);
               }}
             >
-              <Icon name={entry.id === 'space' ? 'spaces-more' : 'checklist'} size="small" />
               <span className="hdr-menu-label">{entry.label}</span>
-              {entry.hint !== undefined && (
-                <span className="hdr-menu-hint">
-                  <span className="visually-hidden"> in </span>
-                  {entry.hint}
-                </span>
-              )}
             </a>
           ))}
-          {loadingSpaces && entries.length <= (mayCreateSpace ? 1 : 0) && (
-            <p className="hdr-popover-note" role="status">
-              Finding spaces you can create in…
-            </p>
-          )}
-          {!loadingSpaces && !hasEntries && (
-            <p className="hdr-popover-note">No space lets you create a task yet.</p>
-          )}
         </div>
       )}
     </div>
@@ -292,7 +265,7 @@ function HeaderCreate() {
 
 // ------------------------------------------------------------------- help
 
-function HeaderHelp() {
+export function HeaderHelp() {
   return (
     <Tooltip content="Keyboard shortcuts">
       <button

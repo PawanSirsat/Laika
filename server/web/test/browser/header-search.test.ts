@@ -178,7 +178,12 @@ void describe('one header on every screen', () => {
     });
   }
 
-  void test('a space’s name, key, Agents and menu are the bar’s, not a second bar', async () => {
+  /*
+   * LAI-1188 drew a space's title row and a profile's breadcrumb in the app
+   * header. LAI-1227 (the owner's Jira header) moved both back into the page:
+   * the top bar names no page, and each is still drawn exactly once.
+   */
+  void test('a space’s name, key, Agents and menu are the page’s, once, and not the top bar’s', async () => {
     for (const tab of ['/board', '/calendar', '/activity']) {
       const h = await open(`${tab}?project=laika-core`, stub('owner'));
       try {
@@ -188,23 +193,17 @@ void describe('one header on every screen', () => {
           () =>
             h.page.evaluate(
               (sel) => document.querySelector(sel)?.textContent?.trim() === 'Laika Core',
-              `${HEADER} .space-name`,
+              '.space-bar .space-name',
             ),
           20_000,
         );
+        assert.match(await h.page.locator('.space-bar .space-key').innerText(), /LC/);
         assert.equal(
-          (await h.page.locator(`${HEADER} .space-name`).innerText()).trim(),
-          'Laika Core',
-        );
-        assert.match(await h.page.locator(`${HEADER} .space-key`).innerText(), /LC/);
-        assert.equal(
-          await h.page.locator(`${HEADER} .space-bar-right .space-menu-trigger`).count(),
+          await h.page.locator('.space-bar .space-bar-right .space-menu-trigger').count(),
           1,
         );
-        // The route's own breadcrumb gives way, and nothing names the space twice.
-        assert.equal(await h.page.locator(`${HEADER} [data-header-crumbs]`).count(), 0);
+        assert.equal(await h.page.locator(`${HEADER} .space-name, ${HEADER} nav`).count(), 0);
         assert.equal(await h.page.locator('.space-name').count(), 1, `${tab}: two names`);
-        assert.equal(await h.page.locator('.space-bar .space-bar-row').count(), 0);
         assert.equal((await bar(h.page)).count, 1);
       } finally {
         await h.close();
@@ -212,14 +211,15 @@ void describe('one header on every screen', () => {
     }
   });
 
-  void test('a profile’s breadcrumb is the bar’s, and there is one breadcrumb', async () => {
+  void test('a profile’s breadcrumb is the page’s, and there is one breadcrumb', async () => {
     const h = await open('/people?user=u2', stub('owner'));
     try {
       await ready(h.page);
       await until(
-        async () => (await h.page.locator(`${HEADER} .screen-crumbs-trail`).count()) === 1,
+        async () => (await h.page.locator('#main .screen-crumbs-trail').count()) === 1,
         20_000,
       );
+      assert.equal(await h.page.locator(`${HEADER} .screen-crumbs-trail`).count(), 0);
       assert.equal(await h.page.getByRole('navigation', { name: 'Breadcrumb' }).count(), 1);
     } finally {
       await h.close();

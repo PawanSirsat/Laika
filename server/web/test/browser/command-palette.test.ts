@@ -490,8 +490,8 @@ void describe('the groups', () => {
       await h.page.locator(INPUT).fill('create');
       await until(async () => (await options(h.page)).includes('Create task'));
       await h.page.keyboard.press('Enter');
-      // `?new=task` is the board's contract (LAI-1167): the space opens its
-      // Create task dialog and takes the parameter back out of the address.
+      // The app's one Create task dialog opens directly (LAI-1227): no
+      // navigation through `?new=task`, the space on screen in its Space field.
       const dialog = h.page.locator('[data-dialog="create-task"]');
       await dialog.waitFor({ timeout: 10_000 });
       assert.equal(await dialog.getAttribute('aria-modal'), 'true');

@@ -9,7 +9,6 @@ export interface ShellSidebarProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly collapsed: boolean;
-  readonly onToggleCollapse: () => void;
 }
 
 /**
@@ -22,15 +21,12 @@ export interface ShellSidebarProps {
  * The open/collapsed pair stays with the frame: they are chrome state, and the
  * nav toggle and the scrim need them too.
  */
-export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: ShellSidebarProps) {
+export function ShellSidebar({ open, onClose, collapsed }: ShellSidebarProps) {
   const {
     spaceName,
     route: { path, navigate, params },
     session,
     me,
-    signOut,
-    signingOut,
-    orgName,
     unlistedOpen,
     reviewDecidable,
     tokenAlerts,
@@ -61,13 +57,11 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       open={open}
       onClose={onClose}
       collapsed={collapsed}
-      onToggleCollapse={onToggleCollapse}
       projectSlug={projectSlug}
       spaces={spaces}
       allSpaces={allSpaces}
       onOpenSpace={openSpace}
       onTogglePin={togglePinnedSpace}
-      orgName={orgName}
       spaceName={spaceName}
       // Inbox is what waits on its tabs (LAI-796): the review queue — only
       // what this person may decide (D-082, D-146) — the hand-offs waiting on this person (LAI-550, the server's live
@@ -85,8 +79,6 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
         '/insights': { tab: 'usage', one: 'token alert', many: 'token alerts' },
       }}
       user={me}
-      onSignOut={signOut}
-      signingOut={signingOut}
     />
   );
 }

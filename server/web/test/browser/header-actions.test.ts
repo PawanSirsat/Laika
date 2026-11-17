@@ -178,17 +178,20 @@ void describe('the search bar', () => {
     }
   });
 
-  void test('is centred and wide on a desktop, and its focus and open states read', async () => {
+  void test('is wide and, with Create beside it, centred on a desktop; its focus and open states read', async () => {
     const h = await open('/inbox', stub(), {
       before: (page) => page.setViewportSize({ width: 1440, height: 900 }),
     });
     try {
       await ready(h.page);
       const box = await h.page.locator(FIELD).boundingBox();
+      // The search and + Create are the bar's centre together (LAI-1227).
+      const group = await h.page.locator(`${HEADER} .shell-head-search`).boundingBox();
       const main = await h.page.locator(HEADER).boundingBox();
-      assert.ok(box !== null && main !== null);
+      assert.ok(box !== null && group !== null && main !== null);
       assert.ok(box.width >= 400, `the field is ${String(box.width)}px wide`);
-      const centre = box.x + box.width / 2;
+      assert.ok(group.width <= 720, `the centre is ${String(group.width)}px wide`);
+      const centre = group.x + group.width / 2;
       const barCentre = main.x + main.width / 2;
       assert.ok(Math.abs(centre - barCentre) < 24, `off centre by ${String(centre - barCentre)}`);
 
@@ -268,50 +271,51 @@ const SCREENS: readonly (readonly [string, string])[] = [
   ['/projects', 'Spaces'],
 ];
 
-void describe('the title rule: each screen is named once', () => {
-  void test('a page with its own heading: the header says where it sits, not its name', async () => {
+void describe('the title rule: each screen is named once, by the page (LAI-1227)', () => {
+  void test('the top bar names no page; the page’s own heading names it, once', async () => {
     for (const [path, name] of SCREENS) {
       const h = await open(path, stub());
       try {
         await ready(h.page);
-        const crumbs = h.page.locator(`${HEADER} [data-header-crumbs]`);
-        // The page's heading names it…
         const h1 = h.page.locator('#main h1').first();
         await h1.waitFor({ timeout: 10_000 });
         assert.equal((await h1.innerText()).trim(), name, `${path}: the page's own heading`);
         assert.equal(await h.page.locator('h1').count(), 1, `${path}: more than one h1`);
-        // …and the header says where it sits — the organisation — never the name again.
-        if (name !== 'Borealis Labs') {
-          await until(async () => (await crumbs.count()) === 1, 10_000);
-          assert.match(await crumbs.innerText(), /Borealis Labs/, `${path}: no organisation`);
-        }
-        const said = (await crumbs.count()) === 0 ? '' : await crumbs.innerText();
-        assert.ok(
-          !said.split(/\s*\/\s*|\n/).includes(name),
-          `${path}: the header repeats "${name}": ${said}`,
-        );
+        // Jira's top bar: brand, search, Create, the reader's tools — no trail.
         assert.equal(
-          await h.page.locator(`${HEADER} [data-header-crumbs] [aria-current="page"]`).count(),
+          await h.page.locator(`${HEADER} nav, ${HEADER} h1, ${HEADER} [aria-current]`).count(),
           0,
-          `${path}: the header names the page as well as its heading`,
+          `${path}: the top bar carries a breadcrumb or a page name`,
         );
+        const bar = (await h.page.locator(HEADER).innerText()).split('\n').map((t) => t.trim());
+        if (name !== 'Borealis Labs') {
+          assert.ok(!bar.includes(name), `${path}: the top bar repeats "${name}"`);
+        }
       } finally {
         await h.close();
       }
     }
   });
 
-  void test('a space: the header carries its name, once, and no breadcrumb besides', async () => {
+  void test('a space: its name is the page’s, under Spaces /, and the top bar has neither', async () => {
     const h = await open('/board?project=laika-core', stub());
     try {
       await ready(h.page);
-      await until(
-        async () =>
-          (await h.page.locator(`${HEADER} .space-name`).innerText()).trim() === 'Laika Core',
-        20_000,
-      );
+      const name = h.page.locator('#main .space-name');
+      await until(async () => (await name.innerText()).trim() === 'Laika Core', 20_000);
       assert.equal(await h.page.locator('.space-name').count(), 1);
-      assert.equal(await h.page.locator(`${HEADER} [data-header-crumbs]`).count(), 0);
+      assert.equal(await h.page.locator(`${HEADER} .space-name`).count(), 0);
+      const crumb = h.page.locator('#main [data-space-crumbs] a');
+      assert.equal((await crumb.innerText()).trim(), 'Spaces');
+      assert.equal(await crumb.getAttribute('href'), '/projects');
+      const above = await h.page.evaluate(() => {
+        const c = document.querySelector('[data-space-crumbs]')?.getBoundingClientRect();
+        const n = document.querySelector('.space-name')?.getBoundingClientRect();
+        return c !== undefined && n !== undefined && c.bottom <= n.top;
+      });
+      assert.equal(above, true, 'the breadcrumb is not above the name');
+      await crumb.click();
+      await until(() => pathOf(h.page) === '/projects');
     } finally {
       await h.close();
     }
@@ -516,32 +520,53 @@ void describe('the notifications bell', () => {
 
 // ----------------------------------------------------------------- create
 
-void describe('+ Create', () => {
-  void test('offers a task in each space the reader may create in, and opens its dialog', async () => {
+void describe('+ Create (LAI-1227)', () => {
+  void test('is filled in the accent and opens the Create task dialog itself — no menu of spaces', async () => {
     const h = await open('/inbox', stub());
     try {
       await ready(h.page);
-      await h.page.locator('[data-header-create]').click();
-      const task = h.page.locator('[data-create="task:laika-core"]');
-      await task.waitFor({ timeout: 10_000 });
-      assert.match(await task.innerText(), /Task\s*in\s*Laika Core/);
-      assert.equal(await h.page.locator('[data-create="space"]').count(), 1);
-      await task.click();
+      const create = h.page.locator('[data-header-create]');
+      await until(async () => (await create.getAttribute('aria-disabled')) === null, 10_000);
+      const paint = await create.evaluate((el) => {
+        const probe = document.createElement('i');
+        probe.style.color = 'var(--accent)';
+        document.body.append(probe);
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        return { fill: getComputedStyle(el).backgroundColor, accent };
+      });
+      assert.equal(paint.fill, paint.accent, 'Create is not filled with the accent');
+
+      await create.click();
       const dialog = h.page.locator('[data-dialog="create-task"]');
       await dialog.waitFor({ timeout: 15_000 });
-      assert.equal(new URL(h.page.url()).searchParams.get('project'), 'laika-core');
+      assert.equal(await h.page.locator('#hdr-create-menu, [data-create]').count(), 0, 'a menu');
+      // On a page that is not a space, the field starts on a space the reader
+      // may create in — here the only one.
+      const space = dialog.getByRole('combobox', { name: /^Space/ });
+      await until(async () => (await space.innerText()).includes('Laika Core'), 10_000);
+      assert.equal(new URL(h.page.url()).pathname, '/inbox', 'Create navigated');
     } finally {
       await h.close();
     }
   });
 
-  void test('a reader who may create nothing gets no Create at all', async () => {
+  void test('a reader who may create nowhere sees it unavailable, with the reason, and it opens nothing', async () => {
     const h = await open('/inbox', stub({ me: VIEWER }));
     try {
       await ready(h.page);
-      await h.page.locator('[data-header-bell]').waitFor({ timeout: 10_000 });
-      await h.page.waitForTimeout(500);
-      assert.equal(await h.page.locator('[data-header-create]').count(), 0);
+      const create = h.page.locator('[data-header-create]');
+      await until(async () =>
+        (await create.innerText()).includes('No space lets you create a task'),
+      );
+      assert.equal(await create.getAttribute('aria-disabled'), 'true');
+      await create.hover();
+      const tip = h.page.locator('[role="tooltip"]').filter({ hasText: 'No space lets you' });
+      await tip.first().waitFor({ state: 'visible', timeout: 5_000 });
+      // A press, past the tooltip it raised: it does nothing.
+      await create.dispatchEvent('click');
+      await h.page.waitForTimeout(400);
+      assert.equal(await h.page.locator('[data-dialog="create-task"]').count(), 0);
     } finally {
       await h.close();
     }
