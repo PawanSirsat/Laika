@@ -65,6 +65,7 @@ import {
 import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
+import { useAction } from '../../components/toast/use-action.ts';
 import { spaceSettingsHref } from '../space-settings-url.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
@@ -529,6 +530,7 @@ export function BoardScreen({
   const [deletingColumn, setDeletingColumn] = useState<string | undefined>(undefined);
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const prefs = useViewPreferences(slug);
+  const action = useAction();
   const [settingsAt, setSettingsAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
   );
@@ -1239,8 +1241,13 @@ export function BoardScreen({
                 onHideDoneChange: (days: number | null) => {
                   // Take the server's project back rather than patching the
                   // field locally: the same reason moves are not optimistic.
-                  void setHideDoneAfter(slug, days).then((updated) => {
-                    setProject(updated);
+                  void action.run({
+                    do: () => setHideDoneAfter(slug, days),
+                    success: (updated) => {
+                      setProject(updated);
+                      return hideDoneLine(days);
+                    },
+                    failure: 'Couldn’t change when done work hides',
                   });
                 },
               }
@@ -1746,4 +1753,10 @@ export function BoardScreen({
       )}
     </div>
   );
+}
+
+/** The toast after the space's hide-done setting changes (LAI-1310). */
+function hideDoneLine(days: number | null): string {
+  if (days === null) return 'Done work now stays on the board';
+  return `Done work now hides after ${String(days)} ${days === 1 ? 'day' : 'days'}`;
 }

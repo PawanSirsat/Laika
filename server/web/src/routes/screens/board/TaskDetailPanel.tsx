@@ -66,6 +66,7 @@ import type { HandoffOffer } from '../../../api/handoffs.ts';
 import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
@@ -394,6 +395,7 @@ export function TaskDetailPanel({
     if (reason === 'escape') overflowButton.current?.focus();
   });
   const confirm = useConfirm();
+  const action = useAction();
   /** Why the last detach was refused (B4): it used to fail in silence. */
   const [detachError, setDetachError] = useState<string | undefined>(undefined);
   const detach = async (): Promise<void> => {
@@ -458,20 +460,24 @@ export function TaskDetailPanel({
 
   const toggleWatch = async (): Promise<void> => {
     setWatchBusy(true);
-    try {
-      await (watching ? unwatchTask(task.id) : watchTask(task.id));
-      /*
-       * Re-read rather than patch locally. Watching is **implicit as well as
-       * explicit** — commenting makes you a watcher — so the server's list is
-       * not always ours plus or minus one.
-       */
-      const list = await listWatchers(task.id);
-      setWatchers(list.watchers);
-    } catch {
-      // The button returns to its previous label; nothing claims to have changed.
-    } finally {
-      setWatchBusy(false);
-    }
+    const stopping = watching;
+    // On failure the button keeps its previous label and the toast says why
+    // (LAI-1310) — it used to fail in silence.
+    await action.run({
+      do: async () => {
+        await (stopping ? unwatchTask(task.id) : watchTask(task.id));
+        /*
+         * Re-read rather than patch locally. Watching is **implicit as well as
+         * explicit** — commenting makes you a watcher — so the server's list is
+         * not always ours plus or minus one.
+         */
+        const list = await listWatchers(task.id);
+        setWatchers(list.watchers);
+      },
+      success: stopping ? `Stopped watching ${task.key}` : `Watching ${task.key}`,
+      failure: stopping ? `Couldn’t stop watching ${task.key}` : `Couldn’t watch ${task.key}`,
+    });
+    setWatchBusy(false);
   };
   /*
    * **Changes are commits**, filtered out of the activity this panel already
