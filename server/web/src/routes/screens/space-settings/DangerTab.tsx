@@ -87,6 +87,7 @@ export function DangerTab({ project, mayArchive, onSaved, onNavigate }: DangerTa
           }
         : {}),
       failure: next ? 'Couldn’t archive the space' : 'Couldn’t restore the space',
+      retry: () => set(next),
       mark: 'space-archive',
     });
   };

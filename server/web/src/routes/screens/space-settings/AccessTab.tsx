@@ -80,6 +80,7 @@ export function AccessTab({
         }),
       success: null,
       failure: 'Couldn’t save the access setting',
+      retry: () => save(setting, patch),
       mark: 'space-access',
     });
   };

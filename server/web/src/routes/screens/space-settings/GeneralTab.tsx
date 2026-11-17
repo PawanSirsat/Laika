@@ -159,6 +159,7 @@ export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }:
         }),
       success: null,
       failure: 'Couldn’t save the space',
+      retry: save,
       mark: 'space-general',
     });
   };

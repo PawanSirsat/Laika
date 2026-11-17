@@ -123,6 +123,22 @@ void describe('action toast: failure', () => {
     assert.equal(namesFields(cause), false);
   });
 
+  void test('a retry rides on the error toast as Retry, and runs the same action', () => {
+    let ran = 0;
+    const said = failureToast(
+      { success: 'x', failure: 'Couldn’t save', retry: () => (ran += 1) },
+      new ApiError('internal', 'Busy', 500),
+    );
+    assert.equal(said?.action?.label, 'Retry');
+    said?.action?.run();
+    assert.equal(ran, 1);
+  });
+
+  void test('no Retry for a 422 naming a field — the same values would be refused again', () => {
+    const cause = new ApiError('unprocessable', 'Too long', 422, { field: 'name' });
+    assert.equal(failureToast({ success: 'x', retry: () => undefined }, cause)?.action, undefined);
+  });
+
   void test('an abort is not a failure and says nothing', () => {
     const abort = new DOMException('The operation was aborted.', 'AbortError');
     assert.equal(isAbort(abort), true);

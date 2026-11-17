@@ -48,6 +48,13 @@ export interface ActionWords<T> {
   readonly failure?: string | undefined;
   /** A way on from the success toast — *Open*. */
   readonly action?: ToastAction | undefined;
+  /**
+   * Sends the same action again, offered as *Retry* on the error toast. A
+   * persistent toast sits at the window's bottom centre and can cover the
+   * form's own Retry (LAI-1310), so the toast carries one too. Not offered
+   * for a 422 that names a field: sending the same values again cannot help.
+   */
+  readonly retry?: (() => void) | undefined;
   /** A `data-*` mark on the toast, for tests and screens that look for it. */
   readonly mark?: string | undefined;
 }
@@ -124,6 +131,7 @@ export function failureToast(words: ActionWords<never>, cause: unknown): ToastIn
     text: words.failure ?? DEFAULT_FAILURE,
     tone: 'error',
     ...(detail === undefined ? {} : { detail }),
+    ...(words.retry === undefined ? {} : { action: { label: 'Retry', run: words.retry } }),
     ...(words.mark === undefined ? {} : { mark: words.mark }),
   };
 }

@@ -40,26 +40,33 @@ export function OrgNameFact({ org, canEdit, onSaved }: OrgNameFactProps) {
               event.preventDefault();
               if (!changed || trimmed === '' || busy) return;
               const name = trimmed;
-              // The whole save — its answer handled too — is what Retry runs again.
-              void run({
-                do: () =>
-                  status.run(() => {
-                    setError(undefined);
-                    return updateOrg({ name }).then(
-                      (saved) => {
-                        setDraft(saved.name);
-                        onSaved(saved);
-                      },
-                      (cause: unknown) => {
-                        setError(cause instanceof Error ? cause.message : 'That name was refused.');
-                        throw cause;
-                      },
-                    );
-                  }),
-                // *Saved* beside the button says it; a toast as well would be twice.
-                success: null,
-                failure: 'Couldn’t rename the organisation',
-              });
+              // The whole save — its answer handled too — is what Retry runs again,
+              // the toast's Retry included, so a second refusal toasts as well.
+              const save = (): void => {
+                void run({
+                  do: () =>
+                    status.run(() => {
+                      setError(undefined);
+                      return updateOrg({ name }).then(
+                        (saved) => {
+                          setDraft(saved.name);
+                          onSaved(saved);
+                        },
+                        (cause: unknown) => {
+                          setError(
+                            cause instanceof Error ? cause.message : 'That name was refused.',
+                          );
+                          throw cause;
+                        },
+                      );
+                    }),
+                  // *Saved* beside the button says it; a toast as well would be twice.
+                  success: null,
+                  failure: 'Couldn’t rename the organisation',
+                  retry: save,
+                });
+              };
+              save();
             }}
           >
             <input
