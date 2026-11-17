@@ -347,15 +347,19 @@ void describe('Spaces: the page is its URL (LAI-1196)', () => {
       assert.deepEqual(await cardNames(h.page), ['Middle', 'Alpha', 'Zeta'], 'the order was lost');
 
       await h.page.goto(`${h.origin}/projects?sort=open&view=list`);
-      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      // The table's rows (LAI-1306): the sidebar's spaces are `.space-row` too,
+      // and drawn first, so an unscoped wait ended before the table was there.
+      await h.page.locator('.spaces-table .space-row').first().waitFor({ timeout: 20_000 });
       const listed = async () =>
-        (await h.page.locator('.space-row .space-cell-name').allInnerTexts()).map((t) => t.trim());
+        (await h.page.locator('.spaces-table .space-row .space-cell-name').allInnerTexts()).map(
+          (t) => t.trim(),
+        );
       assert.deepEqual(await listed(), ['Alpha', 'Zeta', 'Middle'], 'most open work first');
 
       await h.page.getByRole('searchbox', { name: 'Search spaces' }).fill('l');
       await until(() => new URL(h.page.url()).searchParams.get('q') === 'l');
       await h.page.reload();
-      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.spaces-table .space-row').first().waitFor({ timeout: 20_000 });
       assert.deepEqual(await listed(), ['Alpha', 'Middle'], 'the search or the order was lost');
       assert.equal(
         await h.page.getByRole('searchbox', { name: 'Search spaces' }).inputValue(),
@@ -389,7 +393,7 @@ void describe('Spaces: the page is its URL (LAI-1196)', () => {
       },
     });
     try {
-      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.spaces-table .space-row').first().waitFor({ timeout: 20_000 });
       for (const theme of ['light', 'dark']) {
         await setTheme(h.page, theme);
         const wrap = cueOf(h.page, '.spaces-table-wrap');

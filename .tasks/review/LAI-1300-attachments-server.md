@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 status: review
 started: 2026-11-17T09:37:55Z
-finished: 2026-11-17T10:20:48Z
+finished: 2026-11-17T10:49:10Z
 ---
 
 ## Goal
@@ -171,4 +171,97 @@ the PR body and the log:
 - **`markOneTimeSecret` is not independently tested**: while the route is off
   `CACHEABLE_ROUTES` (which the route test asserts), removing the call changes
   nothing observable. Said in the test rather than implied.
+
+## Review notes (CHIEF, 2026-11-17)
+
+Sent back from review of PR #352 at `78dc9eb78`. The criterion on rights and
+deletes (the route tests' *member deletes own, not another's*) is unticked:
+the blocker below breaks it.
+
+**MUST FIX (CONFIRMED): a comment delete removes files the deleter may not delete.**
+- Where: `services/attachments.ts:601-604` (`fillComment`), `:638-695`
+  (`removeCommentAttachments`, which calls no `can()`), called from
+  `services/comments.ts:363`.
+- `linkAttachmentRefs` fills a null `comment_id` on any ready file of the same
+  task, including one that came to the task through the upload itself
+  (`task_id` named at create, which is what the panel's Attach files and drop
+  zone do).
+- Failing case: Alice (member) uploads `spec.pdf` to task T; Bob (member)
+  embeds it in his comment, so its `comment_id` becomes Bob's comment; Bob
+  deletes his comment, and Alice's file is soft-deleted and purged.
+- This bypasses §3.2 "Remove an attachment | own" and contradicts §4.92:
+  "`comment_id` — the comment whose text first linked it".
+- Fix both parts: **(a)** set `comment_id` only when the same save also fills
+  `task_id` (`fillComment = commentId !== null && row.commentId === null &&
+  fillTask`), so a comment owns only files it was first to link; **(b)** in
+  `removeCommentAttachments`, skip a row unless `can(withProject(actor,
+  projectId), 'attachment.delete', {projectId, ownerId: row.uploadedBy})`.
+- Add the missing test with two members: A uploads with `task_id`; B embeds
+  A's file in a comment, then deletes the comment; assert A's file still has
+  `deletedAt` null and no `attachment.removed` row was written. Also keep a
+  case proving B's own comment-first-linked file is still removed with the
+  comment.
+- Update §4.92 / D-150 item 6 wording if needed: "deleting a comment deletes
+  the files it first linked and the deleter may remove".
+
+**FOLLOW-UPS (same round):**
+1. **Sweep overlap** (`attachments.ts:731-741`, `:763-771`): stop the run at
+   the first `StoreUnavailableError`. Otherwise a hung store makes it run for
+   hours (15 s × up to 500 rows × 2) while the scheduler starts another run
+   every hour (`scheduler.ts:244` has no guard against a run still in
+   progress).
+2. **Complete racing the sweep:** refuse `complete` once the row is older than
+   1 h (`409`, a new reason such as `upload_expired`; the PUT only lives 10
+   min). Measure case 2 of the sweep (never-linked) from `ready_at`, not
+   `created_at`.
+3. **HEAD with no Content-Length** (`s3-client.ts:432`): `Number(null) === 0`,
+   so that case answers `size_mismatch` instead of store-unavailable, and the
+   comment there claims otherwise. Check null and `/^\d+$/` first, and add a
+   test.
+4. **Filename whitespace** (`attachments.ts:193`): collapse runs of whitespace
+   in the ASCII fallback, so SigV4's folding cannot desync it from what the
+   browser sends. Add a test with "a  b.png".
+5. **`docs/OPERATIONS.md`:** one line that the bucket must stay private (no
+   public-read, no website mode), because objects keep their declared type and
+   only the presigned GET override makes them safe.
+
+**Record only, no code** (a sentence in §4.92 or the log): the presigned PUT
+stays usable for the rest of its 10 minutes after a complete or delete. That is
+bounded, and the forced `response-content-type` keeps it safe. The 403-versus-
+404 difference on complete, delete and list matches the comment routes'
+convention.
+
+## Review response (round 1)
+
+Every item fixed at `e9b8e819a`, `096c00dd2` and `e51507464`; the PR's CI passed
+every check at `e51507464`. Each fix has a test that fails without it, checked
+by reverting the fix alone.
+
+- **Blocker (a):** `linkAttachmentRefs` acts only on a file no task has yet,
+  and sets `comment_id` in that same save — so a comment owns only the files it
+  was first to link. Test: Alice uploads with `task_id`, Bob quotes it in a
+  comment (its `comment_id` stays null) and deletes the comment; her file keeps
+  `deleted_at` null and no `attachment.removed` is written — at the service and
+  end to end through the routes.
+- **Blocker (b):** `removeCommentAttachments` asks `can(attachment.delete,
+  { ownerId: uploaded_by })` per file. Test: Bob's comment first-links Alice's
+  task-less upload, Bob deletes it, her file stays; and Bob's own
+  comment-first-linked file is still removed with `attachment.removed`.
+- **1:** the sweep's store part ends at the first `StoreUnavailableError`, and a
+  run in progress is joined, never doubled (a per-db in-flight map, as
+  `runHrSync`).
+- **2:** `complete` answers `409 upload_expired` once the ask is over an hour
+  old; the sweep's never-linked case is measured from `ready_at`.
+- **3:** a HEAD with no `content-length`, or one that is not digits, is
+  `StoreUnavailableError('HEAD answered no size')`.
+- **4:** the ASCII `filename` folds runs of spaces (`a  b.png` →
+  `filename="a b.png"`).
+- **5:** `docs/OPERATIONS.md` says the bucket stays private — no public read,
+  no website mode.
+- **Recorded:** §4.92 says a presigned `PUT` stays usable for the rest of its
+  ten minutes after complete or remove, and why that is safe; the log records
+  the 403-versus-404 convention.
+- **Not edited:** `docs/DECISIONS.md`. D-150 item 6's *"Deleting a comment
+  deletes the files only it carries"* stays true of the new rule read narrowly,
+  and a decision is a record; §4.7 and §4.92 carry the exact wording.
 

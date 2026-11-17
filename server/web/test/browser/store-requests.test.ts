@@ -421,16 +421,25 @@ void describe('a live change (LAI-724, keeping LAI-707 and LAI-708)', () => {
  * 1.5 s after a burst, but `/presence` was reused for 2 s and frames did not
  * make it stale — so a burst landing just after a read was answered from the
  * cache, and the strip stayed as it was.
+ *
+ * **On Activity since LAI-1233**: the board reads no presence now — its one
+ * reader there, the space bar's Agents chip, is gone — and Activity, the one
+ * screen that draws presence, reads it through `usePresence` "mount, then one
+ * read per burst of live frames, as before". The property is the same; it is
+ * measured where the reads still happen.
  */
 void describe('presence follows every burst', () => {
   void test('a burst just after a presence read still reads presence again', async () => {
     const server: Server = { t3: 'todo', events: [] };
-    const h = await open('/board?project=laika-core', stub(server), { before: fakeStream });
+    const h = await open('/activity?project=laika-core', stub(server), { before: fakeStream });
     const seen = record(h);
     try {
-      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
-      await settle(seen, h.page);
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
       const presence = (): number => seen.filter((u) => u === '/api/v1/presence').length;
+      // Activity's own read on mount, before any frame.
+      await until(() => presence() >= 1);
+      assert.ok(presence() >= 1, 'Activity did not read presence on mount');
+      await settle(seen, h.page);
       const start = presence();
 
       await emit(h.page, event(20, Date.now()), 20);

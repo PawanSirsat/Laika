@@ -395,6 +395,49 @@ describe('a file, from asking to removing', () => {
     await must(call('DELETE', `/attachments/${mine.id}`, undefined, lead), 204);
   });
 
+  it('keeps a member’s file when another member deletes the comment that quoted it (LAI-1300 review)', async () => {
+    const alice = { Cookie: await join('alice@example.test', 'member') };
+    const bob = { Cookie: await join('bob@example.test', 'member') };
+    // Alice attaches to the task itself, as the panel's Attach files does.
+    const spec = await attach(PNG, { task_id: taskId }, alice);
+
+    const comment = await must<{ id: string }>(
+      call('POST', `/tasks/${taskId}/comments`, { body_md: `See ${spec.url}` }, bob),
+      201,
+    );
+    await must(call('DELETE', `/comments/${comment.id}`, undefined, bob), 204);
+
+    expect(h.db.select().from(attachments).get()).toMatchObject({
+      deletedAt: null,
+      commentId: null,
+    });
+    expect(verbs()).toEqual(['attachment.added']);
+    expect((await call('GET', `/attachments/${spec.id}/content`, undefined, alice)).status).toBe(
+      302,
+    );
+  });
+
+  it('409s a complete asked for more than an hour ago: the sweep may be about to take it', async () => {
+    const asked = await must<Upload>(
+      ask({ filename: 'a.png', content_type: 'image/png', size_bytes: PNG.length }),
+      201,
+    );
+    expect((await browserPut(fake, asked.upload, PNG)).status).toBe(200);
+    h.db
+      .update(attachments)
+      .set({ createdAt: Date.now() - 61 * 60 * 1000 })
+      .where(eq(attachments.id, asked.attachment.id))
+      .run();
+
+    expect(
+      await errorOf(call('POST', `/attachments/${asked.attachment.id}/complete`)),
+    ).toMatchObject({
+      code: 'conflict',
+      details: { reason: 'upload_expired' },
+    });
+    expect(h.db.select().from(attachments).get()?.state).toBe('pending');
+  });
+
   it('hides a file from someone who cannot read its project, as a missing one', async () => {
     const file = await attach();
     // An org member with no membership in `laika`.

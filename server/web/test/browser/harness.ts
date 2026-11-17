@@ -1001,7 +1001,8 @@ export async function open(
  *     await h.page.evaluate(() => window.__laikaStream.emit('task.status_changed', {...}, '7'));
  *
  * Every source the app opened receives the frame, as the shared connection
- * would.
+ * would. `count()` is the sources open now; `created()` is every one the app
+ * ever constructed, closed or not, so a test can tell sharing from churn.
  */
 export async function fakeStream(page: Page): Promise<void> {
   await page.addInitScript({
@@ -1052,6 +1053,9 @@ export async function fakeStream(page: Page): Promise<void> {
           },
           count() {
             return sources.filter((source) => source.readyState === 1).length;
+          },
+          created() {
+            return sources.length;
           },
         };
       })();

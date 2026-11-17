@@ -311,6 +311,8 @@ const AVAILABILITY = [
       note: 'Happy to pick up front-end work',
       tags: ['Front-end'],
       away: null,
+      // Always sent since LAI-1185 (master), null when the HR system has none.
+      on_leave: null,
       hours_per_week: 10,
       away_periods: [],
       work_week: null,

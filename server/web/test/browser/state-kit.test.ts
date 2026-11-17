@@ -399,27 +399,37 @@ void describe('Meeting review on the kit', () => {
     }
   });
 
+  /*
+   * **Failing until Retry, not for the first ask only** (LAI-1306). The space
+   * reads the same list for its pending badge (`SpaceLayout`), and the client
+   * shares a read only while it is in flight. Since the screen loads as a
+   * chunk (LAI-1219), on CI the badge's read could finish first and take the
+   * one failure, so the screen's own read succeeded and no error was ever
+   * drawn. The stub now answers 500 to every ask until the test turns it, so
+   * only an ask Retry makes can bring the good answer.
+   */
   void test('Retry asks again, and a good answer replaces the error', async () => {
     let asked = 0;
+    let failing = true;
     const h = await open(
       '/meeting-review?project=laika-core',
       meetingStub(() => {
         asked += 1;
-        return asked === 1
-          ? refuse(500, 'internal', 'SQLITE_BUSY')
-          : { data: [], next_cursor: null };
+        return failing ? refuse(500, 'internal', 'SQLITE_BUSY') : { data: [], next_cursor: null };
       }),
     );
     try {
       const retry = h.page.locator('.error-panel').getByRole('button', { name: 'Try again' });
       await retry.waitFor({ timeout: 20_000 });
-      assert.equal(asked, 1);
+      const before = asked;
+      assert.ok(before >= 1);
+      failing = false;
       await retry.click();
       const empty = h.page.locator('.empty-panel-title', {
         hasText: 'No meeting has been submitted',
       });
       await empty.waitFor({ timeout: 10_000 });
-      assert.equal(asked, 2, 'Retry did not ask again');
+      assert.ok(asked > before, 'Retry did not ask again');
       assert.equal(await h.page.locator('.error-panel').count(), 0, 'the error outlived the retry');
     } finally {
       await h.close();

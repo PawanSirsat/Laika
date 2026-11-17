@@ -268,6 +268,22 @@ describe('the client, against the fake store', () => {
     }
   });
 
+  it('calls a HEAD with no length, or a length that is not digits, the store failing — not an empty file', async () => {
+    const { fake, store } = client();
+    for (const headers of [{}, { 'content-length': 'twelve' }] as Record<string, string>[]) {
+      fake.intercept = (req) =>
+        req.method === 'HEAD' ? new Response(null, { status: 200, headers }) : undefined;
+      const err = await store.head(KEY).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err, JSON.stringify(headers)).toBeInstanceOf(StoreUnavailableError);
+      expect((err as StoreUnavailableError).details).toMatchObject({
+        why: 'HEAD answered no size',
+      });
+    }
+  });
+
   it('gives up on a hung store after its timeout', async () => {
     const fake = fakeS3();
     fake.intercept = () => 'hang';

@@ -593,9 +593,18 @@ const intersect = (a: Box, b: Box): boolean =>
   b.top < a.bottom - 0.5;
 
 /**
- * The top bar and its controls — ☰, the mark, and each of My day's items after
- * the brand — with what each draws: words a control is too narrow for spill
- * past its own box, which the box alone does not show.
+ * The top bar and its controls — ☰, each of My day's items after the brand,
+ * and the top bar's own search, Create and person — with what each draws:
+ * words a control is too narrow for spill past its own box, which the box
+ * alone does not show.
+ *
+ * **The top bar's, since LAI-1227**: it carries the brand and the person on
+ * every screen, so My day's mark and avatar are not drawn in it (`phone.css`:
+ * "My day's own mark, name and avatar to the top bar's"), and under 480px the
+ * top bar's mark and bell give way to My day's controls. A control the bar
+ * does not display is not one of its controls; one it displays and squeezes
+ * to nothing still fails "has no width" below. The search, Create and person
+ * share the bar now, so they are measured against My day's controls too.
  */
 const barControls = (page: Page): Promise<{ bar: Box; items: Box[]; contents: Box[] }> =>
   page.evaluate(() => {
@@ -605,13 +614,18 @@ const barControls = (page: Page): Promise<{ bar: Box; items: Box[]; contents: Bo
     };
     const head = document.querySelector('.shell-head[data-myday-bar]');
     if (head === null) throw new Error('no My day bar');
+    /** Displayed at all: `display: none` on it or an ancestor leaves no box. */
+    const drawn = (el: Element): boolean => el.getClientRects().length > 0;
     const items: Element[] = [];
     const toggle = head.querySelector('.shell-navtoggle');
     if (toggle !== null) items.push(toggle);
-    const mark = head.querySelector('.myday-bar-mark');
-    if (mark !== null) items.push(mark);
     for (const el of head.querySelector('[data-myday-bar-items]')?.children ?? []) {
-      if (!el.classList.contains('myday-bar-brand')) items.push(el);
+      if (!el.classList.contains('myday-bar-brand') && drawn(el)) items.push(el);
+    }
+    for (const el of head.querySelectorAll(
+      '.shell-head-search > *, .shell-head-tools .hdr-anchor, .shell-head-tools .shell-viewing',
+    )) {
+      if (drawn(el)) items.push(el);
     }
     const nameOf = (el: Element): string =>
       el.className === '' ? el.tagName : String(el.className);

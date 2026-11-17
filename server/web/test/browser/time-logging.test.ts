@@ -31,6 +31,7 @@ import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './har
 import { LAIKA, ONROUTE } from './capacity-org.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import { addDays } from './my-day-week.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -555,10 +556,12 @@ void describe('holidays and leave (D-149 item 6)', () => {
               .replace(/\s+/g, ' ')
               .trim(),
           ];
+          // A dash's words are its Tooltip since LAI-1214 ("bare `title=`
+          // replaced by the Tooltip" across Insights), not a `title`.
           const words = async (user: string, day: string) =>
             (await c(user, day).locator('a').count()) > 0
               ? await c(user, day).locator('a').getAttribute('aria-label')
-              : await c(user, day).locator('.tlg-dash').getAttribute('title');
+              : await tipText(c(user, day).locator('.tlg-dash'));
 
           // A holiday: not due, with or without time on it.
           assert.deepEqual(await drawn('u2', '2026-10-06'), ['holiday', 'holiday', '✱ 8h']);
@@ -616,10 +619,7 @@ void describe('holidays and leave (D-149 item 6)', () => {
           // The holiday every person shown shares is in its head; Cleo's alone is not.
           const head = g.locator('th[data-tlg-day="2026-10-06"]');
           assert.equal(await head.getAttribute('data-holiday'), 'Founders Day');
-          assert.equal(
-            await head.locator('abbr').getAttribute('title'),
-            'Tue 6 Oct · Founders Day',
-          );
+          assert.equal(await tipText(head.locator('abbr')), 'Tue 6 Oct · Founders Day');
           assert.match(await head.innerText(), /Founders Day/);
           assert.equal(
             await g.locator('th[data-tlg-day="2026-10-14"]').getAttribute('data-holiday'),

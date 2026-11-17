@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  fakeStream,
   open,
   setTheme,
   until,
@@ -328,20 +329,39 @@ void describe('the space bar', () => {
     }
   });
 
+  /*
+   * **Measured on a live stream** (LAI-1306). This counted `/events` requests
+   * against the stub, which refuses the stream; a refused stream is forgotten
+   * at once so a later subscriber tries afresh (`event-stream.ts`, by design).
+   * Since the screens load as chunks (LAI-1219) and the header subscribes for
+   * its notifications (LAI-1221), the board's consumers mount after the
+   * shell's, and whether the refusal landed between them decided 1 or 3 — CI
+   * saw 3, a laptop 1. Sharing is a promise about a stream that is up, so the
+   * stream here stays up, and every source the app ever made is counted.
+   *
+   * **And the pill says LIVE on it.** On a shared stream the pill is a late
+   * joiner too, and `open` and `ready` are said once per connection: before
+   * `event-stream.ts` told late joiners, this read CONNECTING with one healthy
+   * stream open — the positive control below is that defect's test.
+   */
   void test('one stream for the space, not one per consumer', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+    const h = await open('/board?project=laika-core', STUB, { before: fakeStream });
     try {
-      await h.page.locator('.space-live').waitFor({ timeout: 20_000 });
+      // Positive controls: the board — whose lanes, motion and rail are the
+      // late subscribers — has drawn, and the stream reached the pill.
+      await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-live', { hasText: 'LIVE' }).waitFor({ timeout: 10_000 });
       await h.page.waitForTimeout(1200);
 
-      // The pill, the presence strip, the board's cards and its rail all want
-      // these frames. Opening a stream each would be four connections and four
-      // replay windows per project.
-      const streams = h.calls.filter((c: StubCall) => c.path === '/api/v1/events');
-      assert.ok(
-        streams.length <= 1,
-        `the space opened ${String(streams.length)} event streams, not one`,
+      // The pill, the header's notifications, the board's cards and its rail
+      // all want these frames. Opening a stream each would be four
+      // connections and four replay windows per project.
+      const created = await h.page.evaluate(() =>
+        (window as unknown as { __laikaStream: { created: () => number } }).__laikaStream.created(),
       );
+      assert.equal(created, 1, `the space opened ${String(created)} event streams, not one`);
+      // The fake replaced the real stream, so nothing reached the server.
+      assert.equal(h.calls.filter((c: StubCall) => c.path === '/api/v1/events').length, 0);
     } finally {
       await h.close();
     }
