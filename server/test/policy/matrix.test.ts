@@ -171,6 +171,9 @@ const ORG_MATRIX: OrgRow[] = [
   // | View own developer setup | ✓ (session only) | … | ✓ (session only) |
   // D-139 (LAI-1151): the person's own, every role.
   ['developer_setup.read_own', true, true, true, true],
+  // | Read own meetings and their transcripts | ✓ (session only) | … | ✓ (session only) |
+  // LAI-1311: the person's own meetings, every role.
+  ['meeting.read_own', true, true, true, true],
   // | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
   // D-149 (LAI-1181): *Change organisation settings, Time and breaks*; a token
   // is refused in `can.test.ts`.

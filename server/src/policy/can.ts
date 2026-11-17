@@ -663,6 +663,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'developer_setup.read_own':
       return true;
 
+    // | Read own meetings and their transcripts | ✓ (session only) | … | ✓ (session only) |
+    //
+    // LAI-1311: every role, and only meetings the person was in — the service
+    // asks for meetings with an attendance row carrying the caller's id or
+    // address, and answers `not_found` for any other, so no row names
+    // anybody else's.
+    case 'meeting.read_own':
+      return true;
+
     // | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
     //
     // D-088 item 5's organisation switch (LAI-787): its own row, not

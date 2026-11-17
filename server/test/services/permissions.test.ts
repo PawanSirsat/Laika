@@ -176,6 +176,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   // D-149 (LAI-1181): the HR connection, under *Change organisation settings*.
   'org.hr.configure': 'YYNN',
   'developer_setup.read_own': 'YYYY',
+  'meeting.read_own': 'YYYY',
 
   'project.members.manage': 'YNN',
   'project.settings.edit': 'YNN',
