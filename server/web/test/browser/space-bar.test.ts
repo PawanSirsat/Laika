@@ -177,8 +177,10 @@ void describe('the space bar', () => {
        */
       assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
       // The icon came back with the name in LAI-299 — the owner's reference
-      // has both on the bar's first line.
-      assert.equal(await h.page.locator('.space-icon').count(), 1);
+      // has both on the bar's first line. Since LAI-1234 it is the space's own
+      // letter, the same badge the rail draws for it.
+      assert.equal(await h.page.locator('.space-icon .space-badge').count(), 1);
+      assert.equal((await h.page.locator('.space-icon .space-badge').innerText()).trim(), 'L');
 
       /*
        * Four avatars and `+2`, from six real members — never the design's four
@@ -256,7 +258,7 @@ void describe('the space bar', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       // The positive control: the space bar did render, with its menu.
-      await h.page.locator('.space-bar .space-menu-trigger').waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-bar .space-settings-link').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.locator('.space-bar .space-chip', { hasText: /^Agents/ }).count(),
         0,

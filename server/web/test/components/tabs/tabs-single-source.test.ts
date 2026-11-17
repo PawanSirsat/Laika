@@ -79,11 +79,9 @@ void describe('one tab strip (LAI-1193)', () => {
 });
 
 void describe('one tooltip on the board toolbar and the space bar (LAI-1193)', () => {
-  for (const rel of [
-    'routes/screens/board/BoardToolbar.tsx',
-    'components/space/SpaceTopBar.tsx',
-    'components/space/SpaceMenu.tsx',
-  ]) {
+  // The space bar has no <button> since LAI-1234 (Space settings is a link), so
+  // it left this list: a scan of a file with none would pass by vacancy.
+  for (const rel of ['routes/screens/board/BoardToolbar.tsx']) {
     void test(`${rel}: no button carries a bare title=`, () => {
       const buttons = read(rel).match(/<button\b[^>]*>/gs) ?? [];
       assert.ok(buttons.length > 0, `${rel}: no <button> found — the check would be vacuous`);

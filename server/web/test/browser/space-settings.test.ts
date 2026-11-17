@@ -938,7 +938,7 @@ void describe('readers who may not change the space never see a control', () => 
 });
 
 void describe('ways in', () => {
-  void test('the space bar’s ⋯ opens Space settings, and View settings links there instead of Visibility', async () => {
+  void test('the space bar’s Space settings opens it, and View settings links there instead of Visibility', async () => {
     const h = await open(`/board?project=${SLUG}`, {
       ...stub(ME),
       [`/api/v1/projects/${SLUG}/tasks`]: { data: [], next_cursor: null },
@@ -961,11 +961,11 @@ void describe('ways in', () => {
       assert.equal(await link.getAttribute('href'), SETTINGS);
       await h.page.keyboard.press('Escape');
 
-      await h.page.getByRole('button', { name: 'Space menu' }).click();
-      const item = h.page.getByRole('menuitem', { name: 'Space settings' });
+      // In front, not behind a ⋯ (LAI-1234): a gear and the words, one press.
+      assert.equal(await h.page.getByRole('button', { name: 'Space menu' }).count(), 0);
+      const item = h.page.locator('.space-bar').getByRole('link', { name: 'Space settings' });
       assert.equal(await item.getAttribute('href'), SETTINGS);
-      // A gear before the words (LAI-1233), decoration beside its label.
-      assert.equal(await item.locator('.space-menu-icon').count(), 1, 'the gear is missing');
+      assert.equal(await item.locator('svg[data-icon="gear"]').count(), 1, 'the gear is missing');
       assert.equal((await item.innerText()).trim(), 'Space settings');
       await item.click();
       await until(() => new URL(h.page.url()).pathname === SETTINGS);
