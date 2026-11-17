@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, attachments } from '../../src/db/schema.ts';
+import { activity, attachments, users } from '../../src/db/schema.ts';
 import {
   ATTACHMENT_GRACE_MS,
   contentDisposition,
@@ -11,7 +11,7 @@ import {
   sniffInlineType,
 } from '../../src/services/attachments.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
-import { createProject } from '../../src/services/projects.ts';
+import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask, updateTask } from '../../src/services/tasks.ts';
 import { fakeAttachments, fakeS3, type FakeS3 } from '../helpers/fake-s3.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
@@ -56,6 +56,12 @@ describe('contentDisposition — RFC 6266, ASCII on the wire', () => {
       `inline; filename="R_sum_ _final_ (2).png"; filename*=UTF-8''R%C3%A9sum%C3%A9%20%22final%22%20%282%29.png`,
     );
     expect(/^[\x20-\x7e]+$/.test(odd)).toBe(true);
+  });
+
+  it('folds a run of spaces in the fallback, as SigV4 folds the header it signs', () => {
+    const spaced = contentDisposition('attachment', 'a  b.png');
+    expect(spaced).toBe(`attachment; filename="a b.png"; filename*=UTF-8''a%20%20b.png`);
+    expect(spaced).not.toContain('  ');
   });
 });
 
@@ -229,6 +235,115 @@ describe('linking from text, and a deleted comment’s files', () => {
   });
 });
 
+describe('a comment delete takes only what the deleter may remove (LAI-1300 review)', () => {
+  let t: TestDb;
+  let s: Seed;
+  let alice: string;
+  let bob: string;
+  let taskId: string;
+
+  /** A member of `laika`, as the API would make one. */
+  function member(name: string): string {
+    const id = newId();
+    t.db
+      .insert(users)
+      .values({
+        id,
+        email: `${name}@example.test`,
+        name,
+        orgRole: 'member',
+        createdAt: new Date(1000),
+        updatedAt: new Date(1000),
+      })
+      .run();
+    addMember(t.db, loadActor(t.db, s.userId)!, 'laika', id, 'member');
+    return id;
+  }
+  const as = (id: string) => loadActor(t.db, id)!;
+
+  beforeEach(() => {
+    t = freshDb();
+    s = seed(t.db);
+    alice = member('alice');
+    bob = member('bob');
+    taskId = createTask(t.sqlite, t.db, as(alice), 'laika', { title: 'T' }).id;
+  });
+  afterEach(() => {
+    t.close();
+  });
+
+  function file(uploadedBy: string, taskIdAtUpload: string | null): string {
+    const id = newId();
+    t.db
+      .insert(attachments)
+      .values({
+        id,
+        projectId: s.projectId,
+        taskId: taskIdAtUpload,
+        uploadedBy,
+        filename: 'spec.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 20,
+        storageKey: `p/${s.projectId}/${id}`,
+        state: 'ready',
+        inline: 1,
+        createdAt: 1000,
+        readyAt: 1000,
+      })
+      .run();
+    return id;
+  }
+  const ref = (id: string) => `[spec](/api/v1/attachments/${id}/content)`;
+  const row = (id: string) => t.db.select().from(attachments).where(eq(attachments.id, id)).get()!;
+  const removedRows = () =>
+    t.db
+      .select()
+      .from(activity)
+      .all()
+      .filter((a) => a.type === 'attachment.removed');
+
+  it('keeps a file that came to the task by its upload when another member deletes the comment quoting it', () => {
+    // Alice attaches to the task itself — the panel's Attach files, `task_id` named.
+    const alices = file(alice, taskId);
+
+    const comment = addComment(t.db, as(bob), taskId, `See ${ref(alices)}`);
+    // The comment was not first to link it, so it is not the comment's.
+    expect(row(alices).commentId).toBeNull();
+    deleteComment(t.db, as(bob), comment.id);
+
+    expect(row(alices).deletedAt).toBeNull();
+    expect(removedRows()).toEqual([]);
+  });
+
+  it('keeps another member’s file even when the deleter’s comment was first to link it', () => {
+    // Alice uploaded without a task; Bob's comment is what put it on the task.
+    const alices = file(alice, null);
+    const comment = addComment(t.db, as(bob), taskId, `See ${ref(alices)}`);
+    expect(row(alices)).toMatchObject({ taskId, commentId: comment.id });
+
+    deleteComment(t.db, as(bob), comment.id);
+
+    // `attachment.delete` is own-only for a member: the file stays.
+    expect(row(alices).deletedAt).toBeNull();
+    expect(removedRows()).toEqual([]);
+  });
+
+  it('still takes the deleter’s own file their comment first linked', () => {
+    const bobs = file(bob, null);
+    const comment = addComment(t.db, as(bob), taskId, `See ${ref(bobs)}`);
+
+    deleteComment(t.db, as(bob), comment.id);
+
+    expect(row(bobs)).toMatchObject({ deletedBy: bob });
+    expect(row(bobs).deletedAt).not.toBeNull();
+    expect(
+      removedRows().map(
+        (a) => (JSON.parse(a.payloadJson) as { attachment_id: string }).attachment_id,
+      ),
+    ).toEqual([bobs]);
+  });
+});
+
 describe('the sweep (§11.6, attachment.prune)', () => {
   const NOW = 10 * ATTACHMENT_GRACE_MS;
   const OLD = NOW - ATTACHMENT_GRACE_MS - 1;
@@ -323,17 +438,42 @@ describe('the sweep (§11.6, attachment.prune)', () => {
     expect(fake.of('DELETE')).toEqual([]);
   });
 
-  it('leaves a row for the next run when the store is down', async () => {
-    const abandoned = file({ state: 'pending', readyAt: null });
+  it('stops asking the store at its first failure, and leaves the rows for the next run', async () => {
+    const abandoned = [1, 2, 3].map(() => file({ state: 'pending', readyAt: null }));
     const removed = file({ taskId, deletedAt: OLD, deletedBy: s.userId });
+    const unlinked = file({});
     fake.intercept = () => new Response('STORE-SECRET-WORDS', { status: 500 });
 
-    expect(await pruneAttachments(t.db, deps(), NOW)).toEqual({ changed: 0 });
-    expect(row(abandoned)).toBeDefined();
+    // Only the unlinked file's stamp — the database's part — changes.
+    expect(await pruneAttachments(t.db, deps(), NOW)).toEqual({ changed: 1 });
+    // One request: the first failure ended the store's part of the run.
+    expect(fake.of('DELETE')).toHaveLength(1);
+    for (const id of abandoned) expect(row(id)).toBeDefined();
     expect(row(removed)?.purgedAt).toBeNull();
+    expect(row(unlinked)).toMatchObject({ deletedAt: NOW, purgedAt: null });
 
     fake.intercept = null;
-    expect(await pruneAttachments(t.db, deps(), NOW)).toEqual({ changed: 2 });
+    expect(await pruneAttachments(t.db, deps(), NOW)).toEqual({ changed: 5 });
+  });
+
+  it('joins a run still going rather than starting a second', async () => {
+    file({ state: 'pending', readyAt: null });
+    fake.intercept = () => 'hang';
+    const slow = { ...deps(), timeoutMs: 50 };
+
+    const first = pruneAttachments(t.db, slow, NOW);
+    const second = pruneAttachments(t.db, slow, NOW);
+    expect(second).toBe(first);
+    expect(await first).toEqual({ changed: 0 });
+    expect(fake.of('DELETE')).toHaveLength(1);
+  });
+
+  it('measures a file nothing linked from when it became ready, not from when it was asked for', async () => {
+    // Asked for long ago, completed within the hour it may be: a day from ready.
+    const lateReady = file({ createdAt: OLD, readyAt: RECENT });
+
+    expect(await pruneAttachments(t.db, deps(), NOW)).toEqual({ changed: 0 });
+    expect(row(lateReady)?.deletedAt).toBeNull();
   });
 
   it('does nothing, and asks no store, when attachments are off', async () => {

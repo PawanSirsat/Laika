@@ -13,7 +13,7 @@ import { type AttachmentsEnv } from '../env.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can, systemPrincipal } from '../policy/can.ts';
 import { requireProjectBySlug } from './projects.ts';
-import { type StoreClient, storeClient } from './s3-client.ts';
+import { type StoreClient, storeClient, StoreUnavailableError } from './s3-client.ts';
 
 /**
  * Attachments (§4.92, §6.4, D-150, LAI-1300): files on a project, a task and
@@ -64,6 +64,13 @@ export interface AttachmentsDeps {
 
 /** How long an upload nobody finished, or a file nothing linked, is kept (§11.6). */
 export const ATTACHMENT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long after asking an upload may still be completed. The presigned `PUT`
+ * lives ten minutes; an hour is well past it and far short of the sweep's 24,
+ * so a completion can never race the sweep deleting the same row.
+ */
+export const COMPLETE_WITHIN_MS = 60 * 60 * 1000;
 
 /** The most a sweep does in one run, per case, so an hourly run stays short. */
 const SWEEP_BATCH = 500;
@@ -190,7 +197,9 @@ function rfc5987(value: string): string {
  * ASCII, so a browser can send it as a header.
  */
 export function contentDisposition(kind: 'inline' | 'attachment', filename: string): string {
-  const fallback = filename.replace(/[^\x20-\x7e]|["\\%]/g, '_');
+  // Runs of spaces are one: SigV4 folds them when it signs a header, so a
+  // fallback that kept two would be signed as other bytes than it is sent as.
+  const fallback = filename.replace(/[^\x20-\x7e]|["\\%]/g, '_').replace(/ {2,}/g, ' ');
   return `${kind}; filename="${fallback}"; filename*=UTF-8''${rfc5987(filename)}`;
 }
 
@@ -330,7 +339,8 @@ function attachmentPayload(row: AttachmentRow) {
 
 /**
  * The upload is done (`POST /attachments/:id/complete`). Only its uploader
- * says so, and only of a `pending` one — `409` otherwise. Laika `HEAD`s the
+ * says so, only of a `pending` one, and only within an hour of asking
+ * (`upload_expired`) — `409` otherwise. Laika `HEAD`s the
  * object: missing, or another size than was asked for, is `409` and the row
  * stays `pending` for the sweep. The first sixteen bytes decide `inline`.
  * A file that named its task belongs to it from here: `attachment.added`.
@@ -353,6 +363,11 @@ export async function completeAttachment(
   }
   if (row.state !== 'pending') {
     throw new ApiError('conflict', 'That upload is already complete', { reason: 'not_pending' });
+  }
+  if (clockOf(deps) - row.createdAt > COMPLETE_WITHIN_MS) {
+    throw new ApiError('conflict', 'That upload was asked for too long ago — attach it again', {
+      reason: 'upload_expired',
+    });
   }
 
   const found = await store.head(row.storageKey);
@@ -564,10 +579,14 @@ export interface AttachmentLinkContext {
 /**
  * Link the files a task's or a comment's text embeds (D-150 item 6), on every
  * save — the shape of `syncMentions`. Only a file of **the same project**,
- * `ready` and not removed: a null `task_id` is filled — the file now belongs
- * to the task, `attachment.added` — and a null `comment_id` with the comment.
+ * `ready` and not removed, **and only one no task has yet**: its `task_id` is
+ * filled — the file now belongs to the task, `attachment.added` — and, when
+ * the text is a comment, its `comment_id` with it. A comment therefore owns
+ * only the files **it was first to link**: a file that reached the task by
+ * its upload naming the task, or by the task's own text, is never the
+ * comment's, so deleting the comment cannot take it (LAI-1300 review).
  * **A file is never relinked**: one already on another task is left as it
- * is, comment and all. Returns the ids it changed.
+ * is. Returns the ids it changed.
  *
  * Call it inside the write that saved the text, so a rolled-back save links
  * nothing.
@@ -598,42 +617,42 @@ export function linkAttachmentRefs(
   const changed: string[] = [];
   let orgId: string | null = null;
   for (const row of rows) {
-    if (row.taskId !== null && row.taskId !== context.taskId) continue;
-    const fillTask = row.taskId === null;
+    // Only a file no task has yet: one this task already has was linked by
+    // something else first, and one another task has is never relinked.
+    if (row.taskId !== null) continue;
     const fillComment = commentId !== null && row.commentId === null;
-    if (!fillTask && !fillComment) continue;
 
     db.update(attachments)
-      .set({
-        ...(fillTask ? { taskId: context.taskId } : {}),
-        ...(fillComment ? { commentId } : {}),
-      })
+      .set({ taskId: context.taskId, ...(fillComment ? { commentId } : {}) })
       .where(eq(attachments.id, row.id))
       .run();
     changed.push(row.id);
 
-    if (fillTask) {
-      orgId ??= orgOf(db, context.projectId);
-      appendActivity(db, {
-        orgId,
-        projectId: context.projectId,
-        taskId: context.taskId,
-        ...activityActor(context.actor),
-        type: 'attachment.added',
-        payload: attachmentPayload(row),
-        now,
-      });
-    }
+    orgId ??= orgOf(db, context.projectId);
+    appendActivity(db, {
+      orgId,
+      projectId: context.projectId,
+      taskId: context.taskId,
+      ...activityActor(context.actor),
+      type: 'attachment.added',
+      payload: attachmentPayload(row),
+      now,
+    });
   }
   return changed;
 }
 
 /**
- * A deleted comment's files go with it (D-150 item 6) — **the files only it
- * carries**: one the task's description or acceptance, or another live
- * comment on the task, still embeds stays. Each is stamped removed by whoever
- * deleted the comment, with `attachment.removed`; §11.6's sweep deletes the
- * objects, since this runs inside the comment's own write.
+ * A deleted comment's files go with it (D-150 item 6) — **the files it first
+ * linked and the deleter may remove**: `comment_id` names only those
+ * (`linkAttachmentRefs`), and each is asked of `can()` as
+ * `DELETE /attachments/:id` asks it, `attachment.delete` with the uploader as
+ * `ownerId` — so a member deleting their own comment never takes a file
+ * somebody else uploaded (LAI-1300 review). One the task's description or
+ * acceptance, or another live comment on the task, still embeds stays too.
+ * Each is stamped removed by whoever deleted the comment, with
+ * `attachment.removed`; §11.6's sweep deletes the objects, since this runs
+ * inside the comment's own write.
  */
 export function removeCommentAttachments(
   db: Db,
@@ -672,8 +691,14 @@ export function removeCommentAttachments(
 
   const removed: string[] = [];
   const orgId = orgOf(db, context.projectId);
+  const scoped = withProject(actor, context.projectId);
   for (const row of rows) {
     if (stillEmbedded.has(row.id)) continue;
+    if (
+      !can(scoped, 'attachment.delete', { projectId: context.projectId, ownerId: row.uploadedBy })
+    ) {
+      continue;
+    }
     db.update(attachments)
       .set({ deletedAt: now, deletedBy: actor.userId })
       .where(eq(attachments.id, row.id))
@@ -698,20 +723,41 @@ export function removeCommentAttachments(
 
 const SYSTEM = systemPrincipal();
 
+/** The run going now, per database, so a tick joins it rather than starting a second. */
+const pruning = new WeakMap<Db, Promise<{ changed: number }>>();
+
 /**
  * §11.6's hourly sweep (`attachment.prune`), as the system principal:
  *
  * 1. a `pending` row older than 24 hours — an upload nobody finished — has
  *    its object deleted, if there is one, and then the row;
- * 2. a `ready` file no task took in 24 hours is stamped removed;
+ * 2. a `ready` file no task took in the 24 hours since it became ready is
+ *    stamped removed;
  * 3. a removed file whose object is still stored has it deleted, and
  *    `purged_at` set — which is how a removal the store missed is retried.
  *
  * **It never touches a ready, linked, live file**, and writes no activity:
- * nobody did it. A store that cannot be reached leaves a row for the next
- * run. Off, it does nothing.
+ * nobody did it. **The first store failure ends the store's part of the run**
+ * — a hung store costs one timeout, not one per row — and the rows wait for
+ * the next. **A run never overlaps another**: a tick while one is still going
+ * joins it, as the HR sync does. Off, it does nothing.
  */
-export async function pruneAttachments(
+export function pruneAttachments(
+  db: Db,
+  deps: AttachmentsDeps | undefined,
+  now: number,
+): Promise<{ changed: number }> {
+  const running = pruning.get(db);
+  if (running !== undefined) return running;
+  const run = sweep(db, deps, now).finally(() => {
+    pruning.delete(db);
+  });
+  pruning.set(db, run);
+  return run;
+}
+
+/** One run of {@link pruneAttachments}, which keeps two from overlapping. */
+async function sweep(
   db: Db,
   deps: AttachmentsDeps | undefined,
   now: number,
@@ -721,6 +767,19 @@ export async function pruneAttachments(
   const store = storeFor(deps);
   const cutoff = now - ATTACHMENT_GRACE_MS;
   let changed = 0;
+  let storeDown = false;
+
+  /** Delete one object; false, and the store's part of the run over, when it cannot. */
+  const removeObject = async (key: string): Promise<boolean> => {
+    try {
+      await store.remove(key);
+      return true;
+    } catch (err) {
+      if (!(err instanceof StoreUnavailableError)) throw err;
+      storeDown = true;
+      return false;
+    }
+  };
 
   const abandoned = db
     .select({ id: attachments.id, storageKey: attachments.storageKey })
@@ -729,11 +788,7 @@ export async function pruneAttachments(
     .limit(SWEEP_BATCH)
     .all();
   for (const row of abandoned) {
-    try {
-      await store.remove(row.storageKey);
-    } catch {
-      continue;
-    }
+    if (!(await removeObject(row.storageKey))) break;
     db.delete(attachments)
       .where(and(eq(attachments.id, row.id), eq(attachments.state, 'pending')))
       .run();
@@ -748,11 +803,13 @@ export async function pruneAttachments(
         eq(attachments.state, 'ready'),
         isNull(attachments.taskId),
         isNull(attachments.deletedAt),
-        lt(attachments.createdAt, cutoff),
+        lt(attachments.readyAt, cutoff),
       ),
     )
     .run();
   changed += unlinked.changes;
+  // The store said no once already: nothing more is asked of it this run.
+  if (storeDown) return { changed };
 
   const removed = db
     .select({ id: attachments.id, storageKey: attachments.storageKey })
@@ -761,11 +818,7 @@ export async function pruneAttachments(
     .limit(SWEEP_BATCH)
     .all();
   for (const row of removed) {
-    try {
-      await store.remove(row.storageKey);
-    } catch {
-      continue;
-    }
+    if (!(await removeObject(row.storageKey))) break;
     db.update(attachments).set({ purgedAt: now }).where(eq(attachments.id, row.id)).run();
     changed += 1;
   }
