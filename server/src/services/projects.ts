@@ -86,8 +86,28 @@ export interface ProjectView {
    * under one of them still resolves to the same task (D-103 item 3).
    */
   former_prefixes: string[];
+  /**
+   * The space's icon (D-152, LAI-1311): an image, else an emoji, else `null`,
+   * where the client draws the first letter on `color`.
+   */
+  icon: ProjectEmojiIcon | ProjectImageIcon | null;
   archived_at: number | null;
   created_at: number;
+  updated_at: number;
+}
+
+/** A space whose icon is an emoji (D-152). */
+export interface ProjectEmojiIcon {
+  emoji: string;
+}
+
+/**
+ * A space whose icon is an image (D-152): where Laika answers its bytes, and
+ * the version that URL names — a new one every time the icon changes, so a
+ * browser may keep each for a year.
+ */
+export interface ProjectImageIcon {
+  url: string;
   updated_at: number;
 }
 
@@ -158,10 +178,62 @@ export function projectView(row: typeof projects.$inferSelect): ProjectView {
     task_create_min_role: row.taskCreateMinRole,
     agents_allowed: row.agentsAllowed,
     former_prefixes: row.formerPrefixes,
+    icon: projectIconView(row),
     archived_at: row.archivedAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
+}
+
+/** The path an icon image is read at, with the version that keeps a cached copy honest. */
+export function projectIconPath(slug: string, updatedAt: number): string {
+  return `/api/v1/projects/${slug}/icon?v=${String(updatedAt)}`;
+}
+
+/**
+ * `ProjectView.icon` (D-152): the image, else the emoji, else `null`. A space
+ * holds one or the other — `services/project-icons.ts` and `updateProject`
+ * clear one when the other is set — and the image ranks first regardless.
+ */
+export function projectIconView(
+  row: Pick<typeof projects.$inferSelect, 'slug' | 'iconKey' | 'iconEmoji' | 'iconUpdatedAt'>,
+): ProjectEmojiIcon | ProjectImageIcon | null {
+  if (row.iconKey !== null) {
+    const updatedAt = row.iconUpdatedAt ?? 0;
+    return { url: projectIconPath(row.slug, updatedAt), updated_at: updatedAt };
+  }
+  if (row.iconEmoji !== null) return { emoji: row.iconEmoji };
+  return null;
+}
+
+const graphemes = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
+/** A character drawn as a picture, half a flag, or a keycap's mark. */
+const PICTOGRAPH = /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u{20e3}/u;
+
+/** Whitespace and control characters: never part of an emoji a person picked. */
+const NOT_EMOJI = /[\s\p{Cc}]/u;
+
+/** The most code points one emoji may be — a family or a subdivision flag fits. */
+const EMOJI_MAX_CODE_POINTS = 32;
+
+/**
+ * The one emoji `value` is, trimmed, or `422 invalid_icon_emoji` (D-152):
+ * exactly one grapheme, `Intl.Segmenter`'s, and one drawn as a picture.
+ * Letters, a bare digit, words and two emoji side by side are all refused.
+ */
+export function parseIconEmoji(value: string): string {
+  const emoji = value.trim();
+  const refuse = () =>
+    new ApiError('unprocessable', 'An icon is one emoji, such as 🚀', {
+      field: 'icon_emoji',
+      reason: 'invalid_icon_emoji',
+    });
+  if (emoji === '' || NOT_EMOJI.test(emoji)) throw refuse();
+  if ([...emoji].length > EMOJI_MAX_CODE_POINTS) throw refuse();
+  if ([...graphemes.segment(emoji)].length !== 1) throw refuse();
+  if (!PICTOGRAPH.test(emoji)) throw refuse();
+  return emoji;
 }
 
 /** The org this actor belongs to. Single-org deployment (§4.2), so there is one. */
@@ -664,6 +736,12 @@ export interface UpdateProjectInput {
   prefix?: string | undefined;
   task_create_min_role?: TaskCreateMinRole | undefined;
   agents_allowed?: boolean | undefined;
+  /**
+   * One emoji as the space's icon, or `null` to clear it (D-152). Org owners
+   * and admins only (`project.icon.write`). Setting one takes the place of an
+   * image, whose object the caller then deletes (`droppedIconKey`).
+   */
+  icon_emoji?: string | null | undefined;
   now?: number;
 }
 
@@ -673,6 +751,27 @@ export function updateProject(
   slug: string,
   input: UpdateProjectInput,
 ): ProjectView {
+  return updateProjectDropping(db, actor, slug, input).view;
+}
+
+/** What `updateProject` did, and the icon image it left nothing pointing at. */
+export interface ProjectUpdate {
+  view: ProjectView;
+  /**
+   * The store key of an icon image an emoji just replaced (D-152), for the
+   * caller holding the store to delete — `null` when none was dropped. The
+   * write is synchronous and the store is not, so the deletion happens after.
+   */
+  droppedIconKey: string | null;
+}
+
+/** `updateProject`, saying which icon image it dropped (`PATCH /projects/:slug`). */
+export function updateProjectDropping(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  input: UpdateProjectInput,
+): ProjectUpdate {
   const row = requireProjectBySlug(db, slug);
   const scoped = withProject(actor, row.id);
   assertCan(scoped, 'project.settings.edit', { projectId: row.id });
@@ -702,6 +801,23 @@ export function updateProject(
   }
   if (input.agents_allowed !== undefined) changes.agentsAllowed = input.agents_allowed;
 
+  // D-152: owners and admins only, whoever leads the space. An emoji takes
+  // the place of an image; clearing the emoji leaves an image alone.
+  let droppedIconKey: string | null = null;
+  if (input.icon_emoji !== undefined) {
+    assertCan(scoped, 'project.icon.write');
+    const emoji = input.icon_emoji === null ? null : parseIconEmoji(input.icon_emoji);
+    if (emoji !== row.iconEmoji || (emoji !== null && row.iconKey !== null)) {
+      changes.iconEmoji = emoji;
+      changes.iconUpdatedAt = now;
+      if (emoji !== null && row.iconKey !== null) {
+        changes.iconKey = null;
+        changes.iconType = null;
+        droppedIconKey = row.iconKey;
+      }
+    }
+  }
+
   if (input.prefix !== undefined) {
     const prefix = input.prefix.toUpperCase();
     if (prefix !== row.prefix) {
@@ -728,7 +844,7 @@ export function updateProject(
     changes.archivedAt = null;
   }
 
-  if (Object.keys(changes).length === 0) return projectView(row);
+  if (Object.keys(changes).length === 0) return { view: projectView(row), droppedIconKey: null };
 
   db.update(projects)
     .set({ ...changes, updatedAt: now })
@@ -743,11 +859,36 @@ export function updateProject(
     // active view, and an audit reader should not have to diff a payload to
     // discover that is what happened.
     type: archiving ? 'project.archived' : 'project.updated',
-    payload: { changed: apiFieldNames(projects, Object.keys(changes)) },
+    payload: { changed: changedFields(Object.keys(changes)) },
     now,
   });
 
-  return projectView(db.select().from(projects).where(eq(projects.id, row.id)).get()!);
+  return {
+    view: projectView(db.select().from(projects).where(eq(projects.id, row.id)).get()!),
+    droppedIconKey,
+  };
+}
+
+/** The icon's four columns, which `ProjectView` shows as one field. */
+const ICON_COLUMNS: ReadonlySet<string> = new Set([
+  'iconEmoji',
+  'iconKey',
+  'iconType',
+  'iconUpdatedAt',
+]);
+
+/**
+ * `payload.changed` for `project.updated`: the API's field names, with the
+ * icon's columns as the one `icon` field `ProjectView` shows (D-152) — the
+ * same word the image routes write.
+ */
+function changedFields(columns: string[]): string[] {
+  const icon = columns.some((column) => ICON_COLUMNS.has(column));
+  const rest = apiFieldNames(
+    projects,
+    columns.filter((column) => !ICON_COLUMNS.has(column)),
+  );
+  return icon ? [...rest, 'icon'] : rest;
 }
 
 // ------------------------------------------- the shared context document (§7.3)
