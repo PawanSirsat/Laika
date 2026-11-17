@@ -268,20 +268,22 @@ async function capture(page: Page, origin: string): Promise<Capture> {
 /** The port and React's generated ids differ between runs; nothing else may. */
 function normalise(text: string, origin: string): string {
   const ids = new Map<string, string>();
-  return text
-    .split(origin)
-    .join('ORIGIN')
-    // React 18 spelled `useId`s `:r1:` (and `«r1»`); React 19 spells them
-    // `_r_1_`, and the shared Tooltip names its box `tip-r1` from one — both
-    // mapped since LAI-1227, so a golden no longer depends on how many ids
-    // the shell happened to take before the page.
-    .replace(/«[^»]+»|:r[0-9a-z]+:|_r_[0-9a-z]+_|\btip-r[0-9a-z]+\b/g, (id) => {
-      const seen = ids.get(id);
-      if (seen !== undefined) return seen;
-      const named = `«id${String(ids.size)}»`;
-      ids.set(id, named);
-      return named;
-    });
+  return (
+    text
+      .split(origin)
+      .join('ORIGIN')
+      // React 18 spelled `useId`s `:r1:` (and `«r1»`); React 19 spells them
+      // `_r_1_`, and the shared Tooltip names its box `tip-r1` from one — both
+      // mapped since LAI-1227, so a golden no longer depends on how many ids
+      // the shell happened to take before the page.
+      .replace(/«[^»]+»|:r[0-9a-z]+:|_r_[0-9a-z]+_|\btip-r[0-9a-z]+\b/g, (id) => {
+        const seen = ids.get(id);
+        if (seen !== undefined) return seen;
+        const named = `«id${String(ids.size)}»`;
+        ids.set(id, named);
+        return named;
+      })
+  );
 }
 
 type H = Awaited<ReturnType<typeof open>>;

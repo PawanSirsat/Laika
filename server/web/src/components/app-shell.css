@@ -292,7 +292,7 @@
 .sidebar-identity {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 

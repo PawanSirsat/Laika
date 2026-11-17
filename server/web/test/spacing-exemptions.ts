@@ -141,8 +141,6 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
   'components/sidebar/sidebar.css': [
     'gap: 1px',
     'gap: 3px',
-    'gap: 3px',
-    'gap: 3px',
     'gap: 5px',
     'gap: 9px',
     'margin: 0 0.0625rem',

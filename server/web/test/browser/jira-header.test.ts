@@ -420,6 +420,24 @@ void describe('the Create task dialog’s Space field (LAI-1227)', () => {
     }
   });
 
+  void test('a space’s c opens it in that space, as the top bar’s Create does', async () => {
+    const h = await open('/calendar?project=laika-shell', stub());
+    try {
+      await at(h, 1440);
+      await until(
+        async () =>
+          (await h.page.locator('[data-header-create]').getAttribute('aria-disabled')) === null,
+        15_000,
+      );
+      await h.page.locator('body').click({ position: { x: 600, y: 500 } });
+      await h.page.keyboard.press('c');
+      await dialog(h.page).locator('.ct-title-input').waitFor({ timeout: 15_000 });
+      assert.match(await spaceField(h.page).innerText(), /Laika Shell/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a change of space reads its statuses, sprints and members, clears what it cannot take, and creates there', async () => {
     const h = await open(
       '/board?project=laika-core',
@@ -511,11 +529,22 @@ void describe('the Create task dialog’s Space field (LAI-1227)', () => {
       );
       await choose(h.page, spaceField(h.page), 'laika-shell');
 
-      await until(
-        async () => (await createButton(h.page).getAttribute('aria-disabled')) === 'true',
+      // Everything but the held members has answered: statuses and sprints.
+      const read = (suffix: string): boolean =>
+        h.calls.some(
+          (c) => c.method === 'GET' && c.path === `/api/v1/projects/laika-shell${suffix}`,
+        );
+      await until(() => read('/statuses') && read('/sprints'), 10_000);
+      await h.page.waitForTimeout(300);
+      assert.equal(
+        await createButton(h.page).getAttribute('aria-disabled'),
+        'true',
+        'Create is available before the new space’s members have answered',
       );
       assert.match(await d.locator('.ct-foot').innerText(), /Loading Laika Shell/);
+      // Neither the Title's Enter nor ⌘/Ctrl+Enter gets past it.
       await d.locator('.ct-title-input').press('Enter');
+      await d.locator('.ct-title-input').press('ControlOrMeta+Enter');
       await h.page.waitForTimeout(300);
       assert.equal(
         h.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/tasks')).length,
