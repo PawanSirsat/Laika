@@ -5,8 +5,9 @@ area: web
 assignee: shell
 priority: p1
 depends-on: [LAI-1221]
-status: in-progress
+status: review
 started: 2026-11-16T23:30:00Z
+finished: 2026-11-17T05:50:00Z
 ---
 
 ## Goal
@@ -23,35 +24,49 @@ commits only, not pushed.
 ## Acceptance criteria
 
 ### Top bar
-- [ ] One full-width bar above both the sidebar and the content: left the
+- [x] One full-width bar above both the sidebar and the content: left the
       sidebar toggle and the Laika mark + wordmark (home = My day); centre the
       search (wide, max ~720px); a filled primary *+ Create* right of search;
       right the bell, keyboard shortcuts, settings (only reachable
       destinations) and the avatar opening the person menu.
-- [ ] The avatar/person menu and theme are not duplicated in the sidebar
+- [x] The avatar/person menu and theme are not duplicated in the sidebar
       footer; what stays there is documented.
-- [ ] The page's breadcrumb moves into the page area (space screens:
+- [x] The page's breadcrumb moves into the page area (space screens:
       *Spaces /* above the space title row); the title rule is documented.
       The *Viewing* chip stays visible.
-- [ ] Phones (390): menu toggle, mark, search icon, icon-only +, avatar.
+- [x] Phones (390): menu toggle, mark, search icon, icon-only +, avatar.
       Dark, light and black themes; `--app-head-height` consumers fit.
 
 ### Create
-- [ ] No + Create on any space toolbar; in-column add opens the same dialog
+- [x] No + Create on any space toolbar; in-column add opens the same dialog
       preset to that space and status.
-- [ ] Header Create (and the palette's *Create task*, and a space's `c`)
+- [x] Header Create (and the palette's *Create task*, and a space's `c`)
       opens the Create task dialog directly — no spaces menu. *Create space*
       stays reachable from the palette and the Spaces page.
-- [ ] The dialog has a **Space** field listing only spaces the reader may
+- [x] The dialog has a **Space** field listing only spaces the reader may
       create tasks in (server grants), each with colour, name and key.
       Default: the current space; else the last used (if still allowed);
       else the first allowed.
-- [ ] Changing space reloads statuses, sprints, members, labels and agents,
+- [x] Changing space reloads statuses, sprints, members, labels and agents,
       resets values invalid in the new space, and cannot submit stale.
-- [ ] No creatable space: Create disabled with a reason. *Create another*
+- [x] No creatable space: Create disabled with a reason. *Create another*
       keeps the chosen space; the toast opens the task in its space.
 
 ### Proof
-- [ ] Browser tests for each behaviour above; LAI-1198/1221 Create tests
+- [x] Browser tests for each behaviour above; LAI-1198/1221 Create tests
       re-aimed; each key behaviour broken once and seen red.
-- [ ] Gates green; screenshots before/after in `.polly/screenshots/jira-header/`.
+- [x] Gates green; screenshots before/after in `.polly/screenshots/jira-header/`.
+
+## Notes for the reviewer
+
+- Lane +: opens the dialog in its space and column (the brief), so the inline
+  composer is unreachable — LAI-1229 removes it once the owner confirms.
+- Phone space header: the *Spaces /* breadcrumb is not drawn ≤640px, and
+  `space-header.test.ts`'s content budget moved from ~15% to ~20% of the
+  screen, because the space's title row left the 48px top bar for the page.
+- `connect-golden`: `normalise` now maps React 19 `_r_…_` and Tooltip
+  `tip-r…` ids; regenerated (two html digests; aria and styles unchanged).
+- `b06b0dc2` (its message is `fix(web): sidebar identity gap…`) was committed
+  and amended by a process other than this session, from files this session
+  had staged; it also carries this file's pure move to review/. Not rewritten.
+
