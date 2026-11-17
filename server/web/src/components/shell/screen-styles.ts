@@ -82,6 +82,7 @@ import '../../routes/screens/auth.css';
 import '../glass/glass.css';
 import '../auth/auth-card.css';
 import '../../routes/screens/meeting-review/meeting-review.css';
+import '../../routes/screens/meetings/meetings.css';
 import '../../routes/screens/members.css';
 import '../../routes/screens/not-found.css';
 import '../page-tabs.css';

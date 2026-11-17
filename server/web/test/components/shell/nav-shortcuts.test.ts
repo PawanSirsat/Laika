@@ -20,7 +20,7 @@ import { shortcutFor } from '../../../src/routes/screens/my-day/shortcuts.ts';
 import { dialogCommand } from '../../../src/routes/screens/review/review-derive.ts';
 import { isPaletteShortcut } from '../../../src/components/command/palette-model.ts';
 
-const ALL = ['/my-day', '/inbox', '/insights', '/organisation', '/developer'];
+const ALL = ['/my-day', '/meetings', '/inbox', '/insights', '/organisation', '/developer'];
 const key = (over: Partial<NavKey>): NavKey => ({
   code: 'Digit2',
   altKey: true,
@@ -40,13 +40,18 @@ void describe('Alt + a digit', () => {
   });
 
   void test('goes to the destination, by code — ⌥2 types ™ on a Mac, the code is still Digit2', () => {
-    assert.equal(navShortcutTarget(key({}), ALL), '/inbox');
+    // Meetings took ⌥2 beside My day (LAI-1312); Inbox and the ORG entries
+    // each moved one along.
+    assert.equal(navShortcutTarget(key({}), ALL), '/meetings');
     assert.equal(navShortcutTarget(key({ code: 'Digit1' }), ALL), '/my-day');
-    assert.equal(navShortcutTarget(key({ code: 'Numpad5' }), ALL), '/developer');
+    assert.equal(navShortcutTarget(key({ code: 'Digit3' }), ALL), '/inbox');
+    assert.equal(navShortcutTarget(key({ code: 'Numpad6' }), ALL), '/developer');
   });
 
   void test('only for a destination the reader can see', () => {
-    assert.equal(navShortcutTarget(key({ code: 'Digit3' }), ['/my-day', '/inbox']), undefined);
+    // An instance without Teams meetings draws no Meetings entry, so its ⌥2 is silent.
+    assert.equal(navShortcutTarget(key({ code: 'Digit2' }), ['/my-day', '/inbox']), undefined);
+    assert.equal(navShortcutTarget(key({ code: 'Digit4' }), ['/my-day', '/inbox']), undefined);
   });
 
   void test('never from a field, and never with ⌘, Ctrl or Shift, or without Alt', () => {

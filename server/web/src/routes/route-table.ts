@@ -20,8 +20,9 @@
 /**
  * The sidebar's groups, top to bottom (LAI-796, the owner's reference).
  *
- * - **`HOME`** — the reader's own places: *My day* and *Inbox*. No heading;
- *   they lead the rail because they are where a day starts.
+ * - **`HOME`** — the reader's own places: *My day*, *Meetings* (LAI-1312,
+ *   only where Teams meetings are synced) and *Inbox*. No heading; they lead
+ *   the rail because they are where a day starts.
  * - **`SPACES`** sits between, and is deliberately not here: its rows are the
  *   projects you opened, built from the project list rather than from routes.
  * - **`ORG`** — what reads across every space or belongs to the organisation:
@@ -45,7 +46,14 @@ export const GROUP_TITLES: Readonly<Record<NavGroup, string | null>> = {
 };
 
 /** The glyph a sidebar entry wears, in the rail and beside its label. */
-export const NAV_ICONS = ['day', 'inbox', 'insights', 'organisation', 'developer'] as const;
+export const NAV_ICONS = [
+  'day',
+  'meetings',
+  'inbox',
+  'insights',
+  'organisation',
+  'developer',
+] as const;
 export type NavIconName = (typeof NAV_ICONS)[number];
 
 export interface Route {
@@ -101,7 +109,7 @@ export interface Route {
    * `policy/can.ts` at one remove instead of hard-coding "admin" beside a rule
    * that could change.
    */
-  readonly requires?: 'audit_log.export' | 'profile.read';
+  readonly requires?: 'audit_log.export' | 'profile.read' | 'meeting.read_own';
   /**
    * How far this route actually is, which is what decides whether it appears in
    * the nav (LAI-082).
@@ -231,6 +239,28 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 8',
     icon: 'day',
+  },
+  /*
+   * **Meetings** (LAI-1312): the reader's own Teams meetings — attendance,
+   * the transcript read live from Graph, a Meeting review, *Add to My day*.
+   * Beside My day because it is about the same person's same day.
+   *
+   * **Gated on `meeting.read_own`, and that gate also asks whether the
+   * instance syncs meetings at all**: every signed-in person holds the action,
+   * so on its own it would advertise a page that can only say *not turned on*.
+   * `meetingsHolder` (`nav-permissions.ts`) answers it `false` unless
+   * Microsoft SSO and meetings sync are both on. The route still opens by its
+   * address, where the page explains how to turn it on.
+   */
+  {
+    orgLevel: true,
+    requires: 'meeting.read_own',
+    path: '/meetings',
+    label: 'Meetings',
+    group: 'HOME',
+    status: 'ready',
+    phase: 'Phase 8',
+    icon: 'meetings',
   },
   /*
    * **Inbox** (LAI-796): the two queues a person works through, as tabs —
@@ -569,6 +599,7 @@ export const SCREEN_CHUNKS = [
   'meeting-review',
   'projects',
   'my-day',
+  'meetings',
   'inbox',
   'insights',
   'organisation',
@@ -594,6 +625,7 @@ export const ROUTE_CHUNKS: Readonly<Record<string, Exclude<ScreenChunk, 'space-f
   '/meeting-review': 'meeting-review',
   '/projects': 'projects',
   '/my-day': 'my-day',
+  '/meetings': 'meetings',
   '/inbox': 'inbox',
   '/insights': 'insights',
   '/organisation': 'organisation',

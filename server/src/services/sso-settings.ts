@@ -9,6 +9,14 @@ import {
   lastDirectoryRun,
   runDirectorySync,
 } from './microsoft-directory.ts';
+import { GraphError } from './microsoft-graph.ts';
+import {
+  lastMeetingsRun,
+  MEETINGS_GRAPH_PERMISSIONS,
+  MEETINGS_SYNC_EVERY_MINUTES,
+  type MeetingsDeps,
+  runMeetingsSync,
+} from './meetings-sync.ts';
 
 /** How often the scheduled directory sync runs (`jobs/scheduler.ts`). */
 export const DIRECTORY_SYNC_EVERY_MINUTES = 15;
@@ -44,6 +52,19 @@ export interface SsoSettingsView {
         readonly error: string | null;
       } | null;
     };
+    /** Teams meetings through Graph (LAI-1311), for the Meetings page. */
+    readonly meetings_sync: {
+      readonly enabled: boolean;
+      readonly every_minutes: number;
+      /** The Graph application permissions the Entra app needs, admin-consented. */
+      readonly permissions: readonly string[];
+      readonly last_run: {
+        readonly at: number;
+        readonly ok: boolean;
+        readonly meetings: number;
+        readonly error: string | null;
+      } | null;
+    };
   } | null;
 }
 
@@ -65,6 +86,12 @@ export function getSsoSettings(
         enabled: sso.directorySync,
         every_minutes: DIRECTORY_SYNC_EVERY_MINUTES,
         last_run: lastDirectoryRun(),
+      },
+      meetings_sync: {
+        enabled: sso.meetingsSync,
+        every_minutes: MEETINGS_SYNC_EVERY_MINUTES,
+        permissions: [...MEETINGS_GRAPH_PERMISSIONS],
+        last_run: lastMeetingsRun(),
       },
     },
   };
@@ -91,6 +118,32 @@ export async function syncDirectoryNow(
     // The run is recorded either way; the page shows the code. Anything but a
     // directory failure is a bug and is left to the error handler.
     if (!(err instanceof DirectoryError)) throw err;
+  }
+  return getSsoSettings(actor, sso, publicUrl);
+}
+
+/** `POST /api/v1/org/sso/meetings-sync`: run the meetings sync now (LAI-1311). */
+export async function syncMeetingsNow(
+  db: Db,
+  actor: ResolvedActor,
+  sso: MicrosoftSso | null,
+  publicUrl: string,
+  deps: MeetingsDeps = {},
+): Promise<SsoSettingsView> {
+  assertCan(actor, 'org.settings.edit');
+  if (sso?.meetingsSync !== true) {
+    throw new ApiError(
+      'conflict',
+      'Meetings sync is off. Set LAIKA_MICROSOFT_MEETINGS_SYNC=true and restart to turn it on.',
+      { reason: 'meetings_sync_off' },
+    );
+  }
+  try {
+    await runMeetingsSync(db, sso, deps);
+  } catch (err) {
+    // Recorded either way; the page shows the code. Anything but a Graph
+    // failure is a bug and is left to the error handler.
+    if (!(err instanceof GraphError)) throw err;
   }
   return getSsoSettings(actor, sso, publicUrl);
 }

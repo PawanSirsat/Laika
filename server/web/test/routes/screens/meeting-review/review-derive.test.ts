@@ -18,6 +18,8 @@ import {
   KIND_LABEL,
   KIND_MEANING,
   landedState,
+  originLabel,
+  teamsMeetingId,
   whyNotActionable,
 } from '../../../../src/routes/screens/meeting-review/review-derive.ts';
 import {
@@ -189,5 +191,21 @@ void describe('actionability comes from status, not the clock', () => {
       assert.ok((why ?? '').length > 20, `${status} has no explanation`);
     }
     assert.match(whyNotActionable(review({ status: 'expired' })) ?? '', /seven days/);
+  });
+});
+
+void describe('a review made from a Teams meeting says so (LAI-1313)', () => {
+  void test('the meeting id is read from teams:<id>, and nothing else is one', () => {
+    assert.equal(teamsMeetingId('teams:01JMEETING'), '01JMEETING');
+    assert.equal(teamsMeetingId('teams:'), undefined);
+    assert.equal(teamsMeetingId('standup-2026-09-16.txt'), undefined);
+    assert.equal(teamsMeetingId('my teams:notes.txt'), undefined);
+  });
+
+  void test('From Teams · the title, From Teams without one, other sources as they are', () => {
+    assert.equal(originLabel('teams:m1', 'Daily stand-up'), 'From Teams · Daily stand-up');
+    assert.equal(originLabel('teams:m1', undefined), 'From Teams');
+    assert.equal(originLabel('teams:m1', '  '), 'From Teams');
+    assert.equal(originLabel('retro.txt', 'ignored'), 'retro.txt');
   });
 });

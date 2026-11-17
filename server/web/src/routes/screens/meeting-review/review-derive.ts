@@ -141,3 +141,28 @@ export function whyNotActionable(review: MeetingReview): string | undefined {
       return 'This review was discarded. The whole set was thrown away and cannot be applied.';
   }
 }
+
+/**
+ * The Teams meeting a review was made from (LAI-1313), or `undefined`. The
+ * server stores a review started on the Meetings page with the source
+ * `teams:<meetingId>` (`meetingReviewSource` in `services/meetings.ts`);
+ * anything else — a webhook's file name, a script's label — is not a meeting
+ * Laika knows.
+ */
+export function teamsMeetingId(source: string): string | undefined {
+  if (!source.startsWith('teams:')) return undefined;
+  const id = source.slice('teams:'.length).trim();
+  return id === '' ? undefined : id;
+}
+
+/**
+ * What a review is called where its source would be: *From Teams · Daily
+ * stand-up*, *From Teams* while the title is unknown or the reader is not on
+ * the meeting, and the source itself for a review that did not come from
+ * Teams — `teams:01J…` is an id, not something to read.
+ */
+export function originLabel(source: string, title: string | undefined): string {
+  if (teamsMeetingId(source) === undefined) return source;
+  const named = title?.trim() ?? '';
+  return named === '' ? 'From Teams' : `From Teams · ${named}`;
+}

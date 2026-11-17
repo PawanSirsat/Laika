@@ -78,6 +78,11 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
     'M8 3v4M16 3v4M3.5 10h17',
     'm8.75 14.75 2.25 2.25 4.5-4.5',
   ],
+  // A video camera: a Teams meeting, joined or missed (LAI-1312).
+  meetings: [
+    'M5 6.5h8.5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z',
+    'm15.5 10.5 4.2-2.6a.8.8 0 0 1 1.3.7v6.8a.8.8 0 0 1-1.3.7l-4.2-2.6',
+  ],
   // A tray: things arrive here and wait.
   inbox: [
     'M3.5 13 6 5.8A2 2 0 0 1 7.9 4.5h8.2A2 2 0 0 1 18 5.8l2.5 7.2v5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z',

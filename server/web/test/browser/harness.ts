@@ -197,6 +197,9 @@ const EVERY_ROLE_ORG = [
   'agent.manage_own',
   // Your own profile and heatmap (D-139 item 1, LAI-1150): every role, on a session.
   'profile.read_own',
+  // Your own Teams meetings (LAI-1311): every role, on a session. The sidebar
+  // draws Meetings only where the instance syncs them too (LAI-1312).
+  'meeting.read_own',
 ] as const;
 const ADMIN_UP_ORG = [
   'org.settings.edit',

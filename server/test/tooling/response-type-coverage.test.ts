@@ -292,6 +292,8 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
+  // LAI-1311's Teams meeting views left this group in LAI-1312, whose
+  // `web/src/api/meetings.ts` mirrors and pairs every one.
 ]);
 
 /**
@@ -328,6 +330,10 @@ const NOT_SERVED = new Map<string, string>([
   ['LookupResult', 'the idempotency middleware asking whether it has seen this key'],
   ['StoredResponse', 'the idempotency cache entry — a stored response, not a served type'],
   ['OpenDbResult', 'the `{ db, sqlite }` pair `openDb` hands back inside the process'],
+  [
+    'ReadMeetingsResult',
+    'what the meetings sync read from Graph before writing it (LAI-1311) — never served',
+  ],
   ['SetupResult', 'first-boot wiring returned to the route, which serves its own shape'],
   [
     'BacktestResult',

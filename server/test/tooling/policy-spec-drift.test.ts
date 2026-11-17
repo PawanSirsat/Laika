@@ -140,6 +140,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Read and dismiss own notices', ['notices.own']],
   // D-139 (LAI-1151): a person's own pairing requests and setup activity.
   ['View own developer setup', ['developer_setup.read_own']],
+  // LAI-1311: the Teams meetings a person was in.
+  ['Read own meetings and their transcripts', ['meeting.read_own']],
   // D-149 (LAI-1181): Clan, connected once, synced, and its people mapped.
   ["Connect the organisation's HR system", ['org.hr.configure']],
 ]);

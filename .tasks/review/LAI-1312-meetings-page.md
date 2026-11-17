@@ -1,0 +1,27 @@
+---
+id: LAI-1312
+title: 'The Meetings page: list, attendance, transcript, Review with AI, Add to My day'
+area: web
+assignee: shell
+priority: p1
+depends-on: [LAI-1311]
+status: review
+started: 2026-11-17T09:00:00+02:00
+finished: 2026-11-18T01:30:54+05:30
+---
+
+## Goal
+
+Plan `/Users/kvelld/.claude/plans/async-plotting-sketch.md` §B. Sidebar HOME:
+My day · Meetings · Inbox (Alt+2; later shortcuts shift). Two panes: grouped
+list with filters and search; detail with Attendance, Transcript (fetched on
+open), Review tabs; actions toasted.
+
+## Acceptance criteria
+
+- [x] Route, nav, icon, shortcut, chunk, screen registry, copy — pinned tests updated.
+- [x] List grouped Today/Yesterday/Earlier this week/Upcoming; filters All/Attended/With transcript; search.
+- [x] Detail: scheduled vs actual, organiser, space link picker; tabs Attendance, Transcript, Review.
+- [x] Actions with toasts: Review with AI (Open), Add to My day (Undo), Open in Teams.
+- [x] Hidden from nav unless SSO and meetings sync are on; empty state explains how.
+- [x] Type pairing, endpoint coverage; browser test; both themes; 390px.

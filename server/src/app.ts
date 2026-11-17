@@ -49,6 +49,7 @@ import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
 import { ssoRoutes } from './http/routes/sso.ts';
+import { meetingRoutes, meMeetingRoutes } from './http/routes/meetings.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -481,6 +482,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       `${API_BASE}/org`,
       ssoRoutes({ db, sso: options.sso ?? null, publicUrl: options.publicUrl ?? '' }),
     );
+    // Teams meetings (LAI-1311): the reader's own, read from what
+    // `meetings.sync` stored, and their transcript read live from Graph.
+    const meetingOptions = {
+      db,
+      sso: options.sso ?? null,
+      serverSecret: options.serverSecret ?? '',
+    };
+    app.route(`${API_BASE}/me`, meMeetingRoutes(meetingOptions));
+    app.route(`${API_BASE}/meetings`, meetingRoutes(meetingOptions));
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
     // `/webhooks/*`, outside `/api/v1`, no user session."* It still passes

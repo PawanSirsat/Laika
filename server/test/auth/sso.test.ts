@@ -32,6 +32,7 @@ const SSO: MicrosoftSso = {
   clientSecret: 'a-client-secret-value',
   tenantId: TENANT,
   directorySync: false,
+  meetingsSync: false,
 };
 const ENV_BASE = {
   NODE_ENV: 'test',

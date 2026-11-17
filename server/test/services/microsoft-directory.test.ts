@@ -28,6 +28,7 @@ const SSO: MicrosoftSso = {
   clientSecret: 'the-client-secret',
   tenantId: TENANT,
   directorySync: true,
+  meetingsSync: false,
 };
 const NOW = 1_800_000_000_000;
 const GRAPH = 'https://graph.microsoft.com/v1.0';

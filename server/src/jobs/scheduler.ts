@@ -1,6 +1,11 @@
 import type Database from 'better-sqlite3';
 import { type MicrosoftSso } from '../auth/sso.ts';
 import { runDirectorySync, type DirectoryDeps } from '../services/microsoft-directory.ts';
+import {
+  MEETINGS_SYNC_EVERY_MINUTES,
+  type MeetingsDeps,
+  runMeetingsSync,
+} from '../services/meetings-sync.ts';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { type AttachmentsDeps, pruneAttachments } from '../services/attachments.ts';
@@ -73,6 +78,8 @@ export interface SchedulerDeps {
   sso?: MicrosoftSso | null;
   /** The directory sync's `fetch` — injected by the tests, which never call Graph. */
   directory?: DirectoryDeps;
+  /** The meetings sync's `fetch` — injected by the tests, which never call Graph (LAI-1311). */
+  meetings?: MeetingsDeps;
   /**
    * The attachments store (D-150, LAI-1300), and the `fetch` the tests inject
    * so none of them calls a store. Absent, or `config: null`, the sweep does
@@ -191,6 +198,24 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       run: async (now) => {
         const result = await runDirectorySync(db, deps.sso ?? null, {
           ...deps.directory,
+          now: () => now,
+        });
+        return { changed: result.added };
+      },
+    },
+    // Teams meetings — calendars, attendance, whether a transcript exists —
+    // through Graph (LAI-1311), every 15 minutes and at boot; nothing unless
+    // `LAIKA_MICROSOFT_MEETINGS_SYNC` is on. After the directory sync, so a
+    // member it just added has their calendar read in the same boot; before
+    // the HR sync, which stays last. Never a transcript's words. A failure
+    // throws its Graph code alone, never a token or Graph's body.
+    {
+      name: 'meetings.sync',
+      everyMs: MEETINGS_SYNC_EVERY_MINUTES * 60 * 1000,
+      atStart: true,
+      run: async (now) => {
+        const result = await runMeetingsSync(db, deps.sso ?? null, {
+          ...deps.meetings,
           now: () => now,
         });
         return { changed: result.added };

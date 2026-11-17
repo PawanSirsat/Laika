@@ -3,12 +3,17 @@ import { ApiError } from '../../../api/errors.ts';
 import {
   directoryErrorWords,
   getSsoSettings,
+  meetingsCount,
+  meetingsErrorWords,
   syncDirectoryNow,
+  syncMeetingsNow,
+  type SsoMicrosoft,
   type SsoSettings,
 } from '../../../api/sso.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 
 /**
  * **Sign-in**, at the top of Organisation → Security (LAI-1239): how this
@@ -176,6 +181,126 @@ export function SsoSection() {
           </p>
         )}
       </div>
+
+      <MeetingsSync
+        sync={ms.meetings_sync}
+        now={now}
+        onSynced={(next) => {
+          setView(next);
+        }}
+      />
     </section>
+  );
+}
+
+interface MeetingsSyncProps {
+  readonly sync: SsoMicrosoft['meetings_sync'];
+  readonly now: number;
+  readonly onSynced: (view: SsoSettings) => void;
+}
+
+/**
+ * The card's **Meetings sync** block (LAI-1313): Teams meetings read through
+ * Graph (LAI-1311) — on or off, how the last run went and what to fix if it
+ * did not, the Graph permissions the Entra app needs (the server's list, so
+ * this never drifts from what the sync asks for), and *Sync now*.
+ *
+ * *Sync now* ends in a toast: the server answers `200` with the run recorded
+ * even when Graph refused, so the toast reads the run it answers with, not
+ * the status — a refused grant is a persistent error toast with the fix.
+ */
+function MeetingsSync({ sync, now, onSynced }: MeetingsSyncProps) {
+  const toast = useToast();
+  const [syncing, setSyncing] = useState(false);
+  const run = sync.last_run;
+
+  const syncNow = (): void => {
+    setSyncing(true);
+    syncMeetingsNow()
+      .then((next) => {
+        onSynced(next);
+        const ran = next.microsoft?.meetings_sync.last_run ?? null;
+        if (ran?.ok === true) {
+          toast.show({ text: `Meetings synced — ${meetingsCount(ran.meetings)}`, tone: 'success' });
+          return;
+        }
+        toast.show({
+          text: 'Meetings sync failed',
+          tone: 'error',
+          detail: meetingsErrorWords(ran?.error ?? 'sync_failed'),
+        });
+      })
+      .catch((cause: unknown) => {
+        toast.show({
+          text: 'Couldn’t sync meetings',
+          tone: 'error',
+          detail: cause instanceof ApiError ? cause.message : undefined,
+        });
+      })
+      .finally(() => {
+        setSyncing(false);
+      });
+  };
+
+  const permissions = (
+    <ul className="org-sso-perms" data-meetings-permissions>
+      {sync.permissions.map((permission) => (
+        <li key={permission}>
+          <code>{permission}</code>
+        </li>
+      ))}
+    </ul>
+  );
+
+  return (
+    <div className="org-sso-sync" data-meetings-sync={sync.enabled ? 'on' : 'off'}>
+      <h3 className="org-sso-sub">Meetings sync</h3>
+      {sync.enabled ? (
+        <>
+          <p className="org-note org-sso-lead">
+            Every {String(sync.every_minutes)} minutes, Laika reads the Teams meetings in each
+            person’s calendar from two weeks back to one ahead: who joined, for how long, and
+            whether there is a transcript. Each person sees only the meetings they were in, and a
+            transcript is read from Teams when opened — never stored.
+          </p>
+          {run === null ? (
+            <p className="org-sso-run" data-meetings-run="none">
+              Not run since the server started.
+            </p>
+          ) : run.ok ? (
+            <p className="org-sso-run" data-meetings-run="ok">
+              Last synced {timeLabel(run.at, now).text}: {meetingsCount(run.meetings)}.
+            </p>
+          ) : (
+            <p className="org-sso-run org-sso-run-failed" data-meetings-run="failed" role="alert">
+              {run.meetings > 0
+                ? `Last sync ${timeLabel(run.at, now).text} read ${meetingsCount(run.meetings)} but was incomplete.`
+                : `Last sync failed ${timeLabel(run.at, now).text}.`}{' '}
+              {meetingsErrorWords(run.error ?? 'sync_failed')}
+            </p>
+          )}
+          <p className="org-note org-sso-hint">
+            The app needs these Microsoft Graph application permissions, with admin consent, and a
+            Teams application access policy that includes it:
+          </p>
+          {permissions}
+          <span className="org-break-actions">
+            <Button variant="secondary" busy={syncing} onClick={syncNow}>
+              Sync now
+            </Button>
+          </span>
+        </>
+      ) : (
+        <>
+          <p className="org-note org-sso-lead">
+            Off. Set <code>LAIKA_MICROSOFT_MEETINGS_SYNC=true</code> and restart to bring everyone’s
+            Teams meetings into Laika — who joined, and their transcripts — and to add them to My
+            day in a click. The app then needs these Microsoft Graph application permissions, with
+            admin consent, and a Teams application access policy that includes it:
+          </p>
+          {permissions}
+        </>
+      )}
+    </div>
   );
 }

@@ -3204,6 +3204,28 @@
   color: var(--overdue);
 }
 
+/* The Graph permissions the meetings sync needs (LAI-1313): chips that wrap, as Entra names them. */
+.org-sso-perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.org-sso-perms code {
+  display: inline-block;
+  padding: var(--space-0-5) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 599px) {
   .org-sso-fact {
     grid-template-columns: minmax(0, 1fr);

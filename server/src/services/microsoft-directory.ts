@@ -4,6 +4,7 @@ import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { orgs, users } from '../db/schema.ts';
+import { type GraphDeps, GraphError, graphClient } from './microsoft-graph.ts';
 
 /**
  * **Every member of the Microsoft directory is a Laika member** (LAI-1239,
@@ -32,47 +33,19 @@ export interface DirectoryMember {
   readonly email: string;
 }
 
-export interface DirectoryDeps {
-  /** Injected by the tests, which never call Microsoft. */
-  readonly fetch?: typeof fetch;
-  readonly now?: () => number;
-}
+/** The Graph client's `fetch`, clock and waits — the tests inject them. */
+export type DirectoryDeps = GraphDeps;
 
-/** A failure said by its code alone — never a token, a secret or Graph's body. */
-export class DirectoryError extends Error {
-  constructor(readonly code: string) {
-    super(`microsoft directory: ${code}`);
+/** A directory failure said by its code alone — never a token, a secret or Graph's body. */
+export class DirectoryError extends GraphError {
+  constructor(code: string) {
+    super(code, 'microsoft directory');
     this.name = 'DirectoryError';
   }
 }
 
-const LOGIN = 'https://login.microsoftonline.com';
-const GRAPH = 'https://graph.microsoft.com/v1.0';
 /** Graph's page cap for `/users`: the fewest round trips a large tenant can take. */
 const PAGE = 999;
-
-/** The app's own Graph token (client credentials, `.default` scope). */
-async function appToken(sso: MicrosoftSso, fetchImpl: typeof fetch): Promise<string> {
-  const response = await fetchImpl(
-    `${LOGIN}/${encodeURIComponent(sso.tenantId)}/oauth2/v2.0/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: sso.clientId,
-        client_secret: sso.clientSecret,
-        scope: 'https://graph.microsoft.com/.default',
-        grant_type: 'client_credentials',
-      }).toString(),
-    },
-  ).catch(() => {
-    throw new DirectoryError('token_unreachable');
-  });
-  if (!response.ok) throw new DirectoryError(`token_${String(response.status)}`);
-  const body = (await response.json().catch(() => null)) as { access_token?: unknown } | null;
-  if (typeof body?.access_token !== 'string') throw new DirectoryError('token_malformed');
-  return body.access_token;
-}
 
 interface GraphUser {
   readonly id?: unknown;
@@ -113,42 +86,36 @@ export async function readDirectory(
   sso: MicrosoftSso,
   deps: DirectoryDeps = {},
 ): Promise<DirectoryMember[]> {
-  const fetchImpl = deps.fetch ?? fetch;
-  const token = await appToken(sso, fetchImpl);
   const query = new URLSearchParams({
     $select: 'id,displayName,mail,userPrincipalName,accountEnabled,userType',
     $filter: "accountEnabled eq true and userType eq 'Member'",
     $count: 'true',
     $top: String(PAGE),
   });
-  let next: string | null = `${GRAPH}/users?${query.toString()}`;
+  let users: unknown[];
+  try {
+    const graph = await graphClient(sso, deps);
+    users = await graph.list(`/users?${query.toString()}`, {
+      // 403 is the one an operator can fix: User.Read.All not granted.
+      forbidden: 'graph_forbidden_grant_user_read_all',
+      headers: { ConsistencyLevel: 'eventual' },
+    });
+  } catch (err) {
+    // Said as a directory failure, so the settings page and the log read the
+    // same codes they always have.
+    if (err instanceof GraphError && !(err instanceof DirectoryError)) {
+      throw new DirectoryError(err.code);
+    }
+    throw err;
+  }
   const members: DirectoryMember[] = [];
   const seen = new Set<string>();
-
-  // A bound, so a Graph that keeps answering a nextLink cannot loop for ever.
-  for (let page = 0; next !== null && page < 500; page++) {
-    const response: Response = await fetchImpl(next, {
-      headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' },
-    }).catch(() => {
-      throw new DirectoryError('graph_unreachable');
-    });
-    // 403 is the one an operator can fix: User.Read.All not granted.
-    if (response.status === 403) throw new DirectoryError('graph_forbidden_grant_user_read_all');
-    if (!response.ok) throw new DirectoryError(`graph_${String(response.status)}`);
-    const body = (await response.json().catch(() => null)) as {
-      value?: unknown;
-      '@odata.nextLink'?: unknown;
-    } | null;
-    if (body === null || !Array.isArray(body.value)) throw new DirectoryError('graph_malformed');
-    for (const user of body.value as GraphUser[]) {
-      const member = memberOf(user);
-      if (member !== null && !seen.has(member.email)) {
-        seen.add(member.email);
-        members.push(member);
-      }
+  for (const user of users as GraphUser[]) {
+    const member = memberOf(user);
+    if (member !== null && !seen.has(member.email)) {
+      seen.add(member.email);
+      members.push(member);
     }
-    const link = body['@odata.nextLink'];
-    next = typeof link === 'string' && link.startsWith(`${GRAPH}/`) ? link : null;
   }
   return members;
 }

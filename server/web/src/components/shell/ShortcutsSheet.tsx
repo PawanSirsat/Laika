@@ -1,5 +1,7 @@
 import { usePermissions } from '../../api/permissions.ts';
-import { permissionHolder } from '../../routes/nav-permissions.ts';
+import { useMeetingsEnabled } from '../../api/meetings.ts';
+import { meetingsHolder, permissionHolder } from '../../routes/nav-permissions.ts';
+import { useShell } from './shell-context.ts';
 import { Dialog } from '../overlay/Dialog.tsx';
 import { formatShortcut, onMac } from '../tooltip/shortcut.ts';
 import { shortcutGroups } from './shortcut-sheet.ts';
@@ -24,7 +26,12 @@ function keycap(key: string): string {
  */
 export function ShortcutsSheet() {
   const { permissions } = usePermissions(true);
-  const holds = permissionHolder(permissions?.me.actions);
+  const { signInMethod } = useShell();
+  // The rail's own predicate, Meetings' narrowing included (LAI-1312).
+  const holds = meetingsHolder(
+    permissionHolder(permissions?.me.actions),
+    useMeetingsEnabled(signInMethod === 'microsoft'),
+  );
   const groups = shortcutGroups(holds);
   return (
     <Dialog

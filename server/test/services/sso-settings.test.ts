@@ -9,7 +9,14 @@ import { newId } from '../../src/db/ids.ts';
 import { users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { resetDirectoryRun } from '../../src/services/microsoft-directory.ts';
-import { getSsoSettings, syncDirectoryNow } from '../../src/services/sso-settings.ts';
+import { resetMeetingsRun } from '../../src/services/meetings-sync.ts';
+import {
+  getSsoSettings,
+  syncDirectoryNow,
+  syncMeetingsNow,
+} from '../../src/services/sso-settings.ts';
+import { fakeGraph } from '../helpers/fake-graph.ts';
+import { ALL, USER_IDS } from '../helpers/meetings-fixture.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 const NOW = 1_800_000_000_000;
@@ -20,6 +27,7 @@ const SSO: MicrosoftSso = {
   clientSecret: 'never-in-a-response',
   tenantId: '72f988bf-86f1-41af-91ab-2d7cd011db47',
   directorySync: true,
+  meetingsSync: false,
 };
 
 let t: TestDb;
@@ -28,6 +36,7 @@ beforeEach(() => {
   t = freshDb();
   s = seed(t.db, NOW);
   resetDirectoryRun();
+  resetMeetingsRun();
 });
 afterEach(() => {
   t.close();
@@ -159,6 +168,59 @@ describe('Sync now', () => {
     expect(view.microsoft?.directory_sync.last_run).toMatchObject({
       ok: false,
       error: 'graph_forbidden_grant_user_read_all',
+    });
+  });
+});
+
+describe('the meetings sync block (LAI-1311)', () => {
+  const ON: MicrosoftSso = { ...SSO, meetingsSync: true };
+
+  it('says whether it is on, how often, and which Graph permissions it needs', () => {
+    expect(getSsoSettings(load(s.userId), ON, PUBLIC).microsoft?.meetings_sync).toEqual({
+      enabled: true,
+      every_minutes: 15,
+      permissions: [
+        'Calendars.Read',
+        'OnlineMeetings.Read.All',
+        'OnlineMeetingArtifact.Read.All',
+        'OnlineMeetingTranscript.Read.All',
+        'User.Read.All',
+      ],
+      last_run: null,
+    });
+    expect(getSsoSettings(load(s.userId), SSO, PUBLIC).microsoft?.meetings_sync.enabled).toBe(
+      false,
+    );
+  });
+
+  it('Sync now refuses a member, and says how to turn it on when off', async () => {
+    const graph = fakeGraph(ALL, { userIds: USER_IDS });
+    const denied = await refusal(() =>
+      syncMeetingsNow(t.db, member(), ON, PUBLIC, { fetch: graph.fetchImpl }),
+    );
+    expect(denied.code).toBe('forbidden');
+    expect(graph.calls).toEqual([]);
+
+    const off = await refusal(() => syncMeetingsNow(t.db, load(s.userId), SSO, PUBLIC));
+    expect(off.code).toBe('conflict');
+    expect(off.message).toMatch(/LAIKA_MICROSOFT_MEETINGS_SYNC=true/);
+  });
+
+  it('runs, and the card reads the run — a refused grant as its code', async () => {
+    const ok = await syncMeetingsNow(t.db, load(s.userId), ON, PUBLIC, {
+      fetch: fakeGraph(ALL, { userIds: USER_IDS }).fetchImpl,
+      now: () => NOW,
+    });
+    expect(ok.microsoft?.meetings_sync.last_run).toMatchObject({ at: NOW, ok: true, error: null });
+
+    resetMeetingsRun();
+    const refused = await syncMeetingsNow(t.db, load(s.userId), ON, PUBLIC, {
+      fetch: fakeGraph(ALL, { userIds: USER_IDS, status: { calendar: 403 } }).fetchImpl,
+      now: () => NOW,
+    });
+    expect(refused.microsoft?.meetings_sync.last_run).toMatchObject({
+      ok: false,
+      error: 'graph_forbidden_grant_calendars_read',
     });
   });
 });
