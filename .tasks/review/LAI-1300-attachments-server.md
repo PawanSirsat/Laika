@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T09:37:55Z
+finished: 2026-11-17T10:20:48Z
 ---
 
 ## Goal
@@ -111,27 +112,27 @@ running Garage beside Laika (bucket, key, `PutBucketCors`, the env).
 
 ## Acceptance criteria
 
-- [ ] Env: on / off / partial behave as above; `env-contract` green with the §11.7 rows.
-- [ ] `s3-client.ts` reproduces AWS's published SigV4 examples byte for byte: the presigned
+- [x] Env: on / off / partial behave as above; `env-contract` green with the §11.7 rows.
+- [x] `s3-client.ts` reproduces AWS's published SigV4 examples byte for byte: the presigned
       GET example (`AKIAIOSFODNN7EXAMPLE`, `examplebucket`, `test.txt`, `20130524T000000Z`,
       86400 s → `aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404`, virtual-
       host style, so host and path are inputs) and the header-signed GET Object example.
-- [ ] Route tests over a fake store (`test/helpers/fake-s3.ts`, the `fake-clan.ts` shape):
+- [x] Route tests over a fake store (`test/helpers/fake-s3.ts`, the `fake-clan.ts` shape):
       ask → PUT → complete → content 302 → list → delete; 413 at max + 1; 409 on a size
       mismatch and on another person's complete; 503 `attachments_off` when off; 403 for a
       viewer and a read-only token; member deletes own, not another's; lead deletes any.
-- [ ] Magic-byte sniff: a `.png` that is really HTML is not `inline`.
-- [ ] Linking: same project links, another project does not, an already linked file is not
+- [x] Magic-byte sniff: a `.png` that is really HTML is not `inline`.
+- [x] Linking: same project links, another project does not, an already linked file is not
       relinked, `attachment.added` written once; comment delete removes its files.
-- [ ] Sweep: the three cases, and it never touches a ready, linked, live file.
-- [ ] CSP: unchanged when off; the store origin in `img-src` and `connect-src` when on.
-- [ ] Guards updated, not loosened: `schema.test.ts` `EXPECTED_TABLES`, `schema-spec-drift`,
+- [x] Sweep: the three cases, and it never touches a ready, linked, live file.
+- [x] CSP: unchanged when off; the store origin in `img-src` and `connect-src` when on.
+- [x] Guards updated, not loosened: `schema.test.ts` `EXPECTED_TABLES`, `schema-spec-drift`,
       `schema-migration-drift`, `migration-files`, `policy-spec-drift` (+ `PROJECT_ROWS`),
       `policy/matrix.test.ts`, `permissions.test.ts`, `activity-payload-names`,
       `response-type-coverage`, `jobs`/`scheduler` tests, `security-headers.test.ts`,
       `orgs`/`comments`/`tasks` service tests, web `view-type-drift`, `use-events`,
       `activity-labels`, `dashboard-derive`.
-- [ ] CI gate green on the PR: test, lint and format each exit 0.
+- [x] CI gate green on the PR: test, lint and format each exit 0.
 
 ## Notes / context
 
@@ -145,3 +146,29 @@ running Garage beside Laika (bucket, key, `PutBucketCors`, the env).
   what keeps active content from rendering.
 - Migration 0082 rebuilds `activity` (the CHECK) — the same shape as 0074; read the generated
   `INSERT … SELECT` (memory: the Drizzle migrator and foreign keys).
+
+## Build notes (LAI-1300, CHIEF builder, Belka)
+
+PR #352, branch `LAI-1300-attachments-server`. Every criterion above holds; the
+CI gate on the PR passed every check on its first run. Deviations, each also in
+the PR body and the log:
+
+- **`linkAttachmentRefs`' context carries `actor`** —
+  `linkAttachmentRefs(db, { actor, projectId, taskId, commentId? }, md, now)`:
+  the `attachment.added` row it writes needs an actor, and the person who saved
+  the text is the one who linked the file.
+- **A reference is matched relative or on any origin**, not only the instance
+  origin: one deployment is reached at two origins on Ksage (Netlify SPA,
+  Coolify API), so an origin check would miss a pasted absolute link. The id,
+  the same project, `ready` and *never relinks* are what keep it safe. §4.92
+  says so.
+- **A deleted comment keeps a file something else still embeds** — the task's
+  description or acceptance, or another live comment — which is D-150 item 6's
+  *"the files only it carries"*; the task file's sentence alone would have
+  removed a file the description shows.
+- **Two more indexes**, `uploaded_by` and `deleted_by`: §4's preamble indexes
+  every foreign key.
+- **`markOneTimeSecret` is not independently tested**: while the route is off
+  `CACHEABLE_ROUTES` (which the route test asserts), removing the call changes
+  nothing observable. Said in the test rather than implied.
+
