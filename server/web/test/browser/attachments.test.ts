@@ -642,6 +642,38 @@ void describe('every markdown view draws Laika’s own image and a file chip', (
   });
 });
 
+void describe('a comment owns the files it attaches (LAI-1300 review)', () => {
+  void test('the comment editor asks with no task, and the comment it posts embeds the file', async () => {
+    const b = board();
+    const h = await panel(b);
+    try {
+      await h.page.locator('.cmt-composer-start').click();
+      const editor = h.page.locator('.cmt-composer .rich-editor');
+      await editor.locator('.ProseMirror').waitFor({ timeout: 10_000 });
+      await editor.locator('input[type="file"]').setInputFiles({
+        name: 'trace.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('a trace'),
+      });
+      await editor.locator(`.ProseMirror a[href="${url(ID_SHOT)}"]`).waitFor({ timeout: 10_000 });
+      const asked = asks(h)[0]?.body as Record<string, unknown> | undefined;
+      assert.ok(asked !== undefined, 'nothing was asked');
+      assert.equal(Object.hasOwn(asked, 'task_id'), false, 'a comment’s file named the task');
+
+      await editor.getByRole('button', { name: 'Comment' }).click();
+      await until(() =>
+        h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/comments'),
+      );
+      const posted = h.calls.find(
+        (c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/comments',
+      )?.body as { body_md?: string } | undefined;
+      assert.equal(posted?.body_md, `[trace.txt](${url(ID_SHOT)})`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the Attachments section', () => {
   void test('sits after the proof and before the activity, and lists each file', async () => {
     const b = board({
@@ -748,6 +780,29 @@ void describe('the Attachments section', () => {
         await section(h).locator('.att-row').nth(1).locator('.att-name').innerText(),
         'numbers.csv',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a phone has no drop zone, only Attach files; a wide window has both', async () => {
+    const b = board();
+    const h = await panel(b);
+    try {
+      await section(h).getByRole('button', { name: 'Attach files' }).waitFor({ timeout: 10_000 });
+      assert.equal(await section(h).locator('.att-drop').isVisible(), true, 'no drop zone at 1280');
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await until(async () => !(await section(h).locator('.att-drop').isVisible()));
+      assert.equal(
+        await section(h).locator('.att-drop').isVisible(),
+        false,
+        'a drop zone on a phone',
+      );
+      assert.equal(
+        await section(h).getByRole('button', { name: 'Attach files' }).isVisible(),
+        true,
+      );
+      assert.equal(await section(h).locator('.att-empty').innerText(), 'No files yet.');
     } finally {
       await h.close();
     }

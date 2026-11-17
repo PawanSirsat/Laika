@@ -225,6 +225,20 @@
   color: var(--accent);
 }
 
+/*
+ * A touch screen or a phone has nothing to drop: no drop hint, and Attach
+ * files is the way in (CHIEF, 2026-11-17). A mouse keeps the drop zone.
+ */
+@media (pointer: coarse), (max-width: 600px) {
+  .att-drop {
+    display: none;
+  }
+}
+
+.att-empty {
+  color: var(--text-secondary);
+}
+
 /* A phone: the meta line wraps under the name rather than running off. */
 @media (max-width: 480px) {
   .att-row {

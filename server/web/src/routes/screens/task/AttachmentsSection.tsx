@@ -352,14 +352,21 @@ export function AttachmentsSection({
             </ul>
           )}
 
+          {listing.status === 'ready' && rows.length === 0 && sending.length === 0 && (
+            <p className="att-note att-empty">No files yet.</p>
+          )}
+
+          {/*
+            Where to drop more — for a mouse or a trackpad. A phone or a
+            tablet has nothing to drop (the coarse pointer, and the phone's
+            width, hide it in attachments.css): Attach files is the way in.
+          */}
           {mayAttach && (
             <p className="att-drop">
               <FileGlyph kind="paperclip" size={14} />
               {dragging
                 ? 'Drop to attach to this task'
-                : rows.length === 0
-                  ? 'No files yet. Drop files here, or paste a screenshot into the description.'
-                  : 'Drop files here to attach them.'}
+                : 'Drop files here to attach them, or paste a screenshot into the description.'}
             </p>
           )}
         </div>
