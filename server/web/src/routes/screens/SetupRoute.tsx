@@ -22,7 +22,9 @@ export function SetupRoute() {
     recheck,
     retry,
     route: { navigate },
+    signInMethod,
   } = useShell();
+  const microsoft = signInMethod === 'microsoft';
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -39,10 +41,16 @@ export function SetupRoute() {
           orgName: values.orgName,
           ownerName: values.ownerName,
           ownerEmail: values.ownerEmail,
-          ownerPassword: values.password,
+          ...(microsoft ? {} : { ownerPassword: values.password }),
           projectName: values.projectName,
         });
         markComplete();
+        if (microsoft) {
+          // No session on an SSO-only instance (LAI-1238): Laika cannot vouch
+          // that whoever typed the address holds it. Microsoft does, next.
+          navigate('/login');
+          return;
+        }
         retry();
         navigate('/board');
       } catch (cause) {
@@ -64,7 +72,7 @@ export function SetupRoute() {
         setSubmitting(false);
       }
     },
-    [markComplete, recheck, retry, navigate],
+    [markComplete, recheck, retry, navigate, microsoft],
   );
 
   return (
@@ -78,6 +86,7 @@ export function SetupRoute() {
       submitting={submitting}
       serverError={error}
       fieldErrors={fields}
+      microsoft={microsoft}
     />
   );
 }

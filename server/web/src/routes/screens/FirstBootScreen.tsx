@@ -57,6 +57,12 @@ export interface FirstBootScreenProps {
    * that gets abandoned.
    */
   readonly fieldErrors?: Readonly<Record<string, string>> | undefined;
+  /**
+   * An SSO-only instance (LAI-1238): **no password fields**. The owner signs in
+   * with Microsoft once the instance exists, and the email asked for here is
+   * the one their Microsoft account must carry — the help text says so.
+   */
+  readonly microsoft?: boolean;
 }
 
 /**
@@ -102,6 +108,7 @@ export function FirstBootScreen({
   submitting = false,
   serverError,
   fieldErrors = {},
+  microsoft = false,
 }: FirstBootScreenProps) {
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
@@ -117,7 +124,8 @@ export function FirstBootScreen({
   const passwordCheck = validatePassword(password);
   const matchCheck = passwordsMatch(password, confirm);
   const orgCheck = required(orgName, 'Org name');
-  const ownerDone = nameCheck.ok && emailCheck.ok && passwordCheck.ok && matchCheck.ok;
+  const ownerDone =
+    nameCheck.ok && emailCheck.ok && (microsoft || (passwordCheck.ok && matchCheck.ok));
   const orgDone = orgCheck.ok;
   const valid = ownerDone && orgDone;
 
@@ -256,36 +264,46 @@ export function FirstBootScreen({
                   autoComplete="username"
                   required
                   disabled={submitting}
-                  help="Used for sign-in and agent attribution."
+                  help={
+                    microsoft
+                      ? 'Your Microsoft work address — you sign in with that account next.'
+                      : 'Used for sign-in and agent attribution.'
+                  }
                   error={form.shown('owner_email', emailCheck) ?? fieldErrors.owner_email}
                 />
-                <PasswordInput
-                  label="Password"
-                  value={password}
-                  onChange={setPassword}
-                  onBlur={() => {
-                    form.blur('owner_password', password);
-                  }}
-                  autoComplete="new-password"
-                  help={PASSWORD_RULE}
-                  showStrength
-                  required
-                  disabled={submitting}
-                  error={form.shown('owner_password', passwordCheck) ?? fieldErrors.owner_password}
-                />
-                <PasswordInput
-                  label="Confirm password"
-                  value={confirm}
-                  onChange={setConfirm}
-                  onBlur={() => {
-                    form.blur('confirm', confirm);
-                  }}
-                  autoComplete="new-password"
-                  required
-                  disabled={submitting}
-                  {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
-                  error={form.shown('confirm', matchCheck)}
-                />
+                {!microsoft && (
+                  <>
+                    <PasswordInput
+                      label="Password"
+                      value={password}
+                      onChange={setPassword}
+                      onBlur={() => {
+                        form.blur('owner_password', password);
+                      }}
+                      autoComplete="new-password"
+                      help={PASSWORD_RULE}
+                      showStrength
+                      required
+                      disabled={submitting}
+                      error={
+                        form.shown('owner_password', passwordCheck) ?? fieldErrors.owner_password
+                      }
+                    />
+                    <PasswordInput
+                      label="Confirm password"
+                      value={confirm}
+                      onChange={setConfirm}
+                      onBlur={() => {
+                        form.blur('confirm', confirm);
+                      }}
+                      autoComplete="new-password"
+                      required
+                      disabled={submitting}
+                      {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
+                      error={form.shown('confirm', matchCheck)}
+                    />
+                  </>
+                )}
               </div>
             </fieldset>
 

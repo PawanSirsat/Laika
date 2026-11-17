@@ -5,6 +5,9 @@ import { acceptInvite } from '../../api/invites.ts';
 import { useInvite } from '../../api/use-invite.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
+import { microsoftErrorWords, SignInError, signInWithMicrosoft } from '../../api/auth.ts';
+import { MicrosoftSignInScreen } from './MicrosoftSignInScreen.tsx';
+import type { InvitePreview } from '../../api/invites.ts';
 
 /**
  * Accepting an invite (LAI-250), lifted out of `AppShell`.
@@ -22,6 +25,7 @@ export function InviteRoute() {
     host,
     route: { params, navigate },
     retry,
+    signInMethod,
   } = useShell();
   const token = params.get('token') ?? undefined;
   const state = useInvite(token);
@@ -72,6 +76,28 @@ export function InviteRoute() {
     [token, retry, navigate],
   );
 
+  /*
+   * **On an SSO-only instance an invite is accepted by signing in with
+   * Microsoft as the invited address** (LAI-1238). The server spends it on that
+   * first sign-in; there is no password to set. Loading and a refused token are
+   * the same screen as ever, so only a usable invite takes this branch.
+   */
+  if (
+    signInMethod === 'microsoft' &&
+    state.invite !== undefined &&
+    !state.loading &&
+    !state.refused
+  ) {
+    return (
+      <MicrosoftInvite
+        host={host}
+        invite={state.invite}
+        returned={params.get('error')}
+        token={token ?? ''}
+      />
+    );
+  }
+
   return (
     <InviteScreen
       host={host}
@@ -87,6 +113,74 @@ export function InviteRoute() {
       submitting={submitting}
       serverError={error}
       fieldErrors={fields}
+    />
+  );
+}
+
+/** Who invited whom to what, in one sentence, from the invite's own preview. */
+function inviteLead(invite: InvitePreview): string {
+  const to =
+    invite.project_name === null ? invite.org_name : `${invite.project_name} in ${invite.org_name}`;
+  return `${invite.inviter_name} invited ${invite.email ?? 'you'} to ${to} as ${invite.org_role}.`;
+}
+
+function MicrosoftInvite({
+  host,
+  invite,
+  returned,
+  token,
+}: {
+  readonly host: string;
+  readonly invite: InvitePreview;
+  readonly returned: string | null;
+  readonly token: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [startError, setStartError] = useState<string | undefined>(undefined);
+
+  /*
+   * **A link invite cannot be spent here.** It is a bearer token for whoever
+   * holds it, and the Microsoft sign-in presents no token — the server spends
+   * only an invite addressed to the email Microsoft asserts. Said up front,
+   * rather than after a round trip to Microsoft that was always going to fail.
+   */
+  if (invite.email === null) {
+    return (
+      <MicrosoftSignInScreen
+        host={host}
+        title={`Join ${invite.org_name}`}
+        lead={inviteLead(invite)}
+        error="This Laika signs in with Microsoft, and that needs an invite to your own email address. Ask the person who invited you to invite your work address instead of sending a link."
+        action="Back to sign-in"
+        onSignIn={() => {
+          window.location.assign('/login');
+        }}
+      />
+    );
+  }
+
+  const here = `/invite?token=${encodeURIComponent(token)}`;
+  const error = startError ?? (returned === null ? undefined : microsoftErrorWords(returned));
+
+  return (
+    <MicrosoftSignInScreen
+      host={host}
+      title={`Join ${invite.org_name}`}
+      lead={inviteLead(invite)}
+      action="Accept with Microsoft"
+      busy={busy}
+      error={error}
+      onSignIn={() => {
+        setBusy(true);
+        setStartError(undefined);
+        signInWithMicrosoft('/board', here).catch((cause: unknown) => {
+          setBusy(false);
+          setStartError(
+            cause instanceof SignInError ? cause.message : 'Could not reach the instance.',
+          );
+        });
+      }}
+      note={`Sign in with the Microsoft account for ${invite.email}. Any other account is refused.`}
     />
   );
 }

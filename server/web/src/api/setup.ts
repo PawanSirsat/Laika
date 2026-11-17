@@ -24,8 +24,16 @@ export interface SetupSystemStatus {
   readonly smtp_configured: boolean;
 }
 
+/**
+ * How people sign in to this instance (LAI-1238): `email` and password, or
+ * `microsoft` — Microsoft SSO only, when the operator configured it.
+ */
+export type SignInMethod = 'email' | 'microsoft';
+
 export interface SetupStatus {
   readonly setup_required: boolean;
+  /** Read before anyone is signed in, to draw the right sign-in screen. */
+  readonly sign_in: SignInMethod;
   /**
    * **Declared because it is served; rendered by LAI-158.**
    *
@@ -44,7 +52,11 @@ export interface SetupInput {
   readonly orgName: string;
   readonly ownerName: string;
   readonly ownerEmail: string;
-  readonly ownerPassword: string;
+  /**
+   * Absent on an SSO-only instance (LAI-1238): the server refuses a password
+   * there, since nothing could ever check it. The owner signs in with Microsoft.
+   */
+  readonly ownerPassword?: string;
   /** Optional. Omitted entirely when blank — the schema rejects an empty string. */
   readonly projectName?: string;
 }
@@ -70,8 +82,9 @@ export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
 /**
  * Complete setup.
  *
- * **The response sets the session cookie**, so there is no separate sign-in
- * afterwards — submit, then navigate.
+ * **On a password instance the response sets the session cookie**, so there
+ * is no separate sign-in afterwards — submit, then navigate. On an SSO-only one
+ * (LAI-1238) it does not: the owner signs in with Microsoft next.
  */
 export function completeSetup(input: SetupInput): Promise<SetupResult> {
   return request<SetupResult>('/setup', {
@@ -80,7 +93,7 @@ export function completeSetup(input: SetupInput): Promise<SetupResult> {
       org_name: input.orgName,
       owner_name: input.ownerName,
       owner_email: input.ownerEmail,
-      owner_password: input.ownerPassword,
+      ...(input.ownerPassword === undefined ? {} : { owner_password: input.ownerPassword }),
       // Sent only when non-empty: the schema rejects unknown *and* empty values,
       // and `project_prefix` is deliberately not sent at all — the server derives
       // it from the name, and the form does not offer an override.

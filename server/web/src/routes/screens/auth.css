@@ -686,3 +686,19 @@
   border-radius: var(--radius-card);
   text-wrap: pretty;
 }
+
+/* ---------------------------------------- Sign in with Microsoft (LAI-1238) */
+
+.auth-sso-lead {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* The four-square mark, in the text colour: the theme owns every colour. */
+.auth-sso-mark {
+  display: flex;
+  justify-content: center;
+  color: var(--text-secondary);
+}

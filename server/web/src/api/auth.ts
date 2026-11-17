@@ -91,3 +91,60 @@ export async function signIn(credentials: Credentials): Promise<void> {
 export function signOut(): Promise<void> {
   return request(`${AUTH_BASE}/sign-out`, { method: 'POST', body: {} });
 }
+
+/** What better-auth answers to `POST /sign-in/social`: where to send the browser. */
+interface SocialRedirect {
+  readonly url?: string;
+  readonly redirect?: boolean;
+}
+
+/**
+ * **Sign in with Microsoft** (LAI-1238): ask better-auth for Microsoft's
+ * authorise URL and send the browser there. Microsoft comes back to
+ * `/api/v1/auth/callback/microsoft`, which sets the session and redirects to
+ * `returnTo` — or to `errorTo?error=<code>` when it could not sign anyone in
+ * (no invite for that address, a deactivated account, a cancelled consent).
+ *
+ * Both are **paths on this instance**, never full URLs: better-auth refuses a
+ * callback outside the trusted origins, and a path cannot be one.
+ */
+export async function signInWithMicrosoft(returnTo: string, errorTo: string): Promise<void> {
+  // Untyped at the call, as `signIn` is: better-auth's routes are not Hono's,
+  // and `endpoint-coverage.test.ts` scans only typed calls, so it skips both.
+  const answer: SocialRedirect = await request(`${AUTH_BASE}/sign-in/social`, {
+    method: 'POST',
+    body: { provider: 'microsoft', callbackURL: returnTo, errorCallbackURL: errorTo },
+  });
+  if (typeof answer.url !== 'string' || answer.url === '') {
+    throw new SignInError('Microsoft sign-in did not start. Try again.', undefined, 0);
+  }
+  window.location.assign(answer.url);
+}
+
+/**
+ * The words for an `?error=` Microsoft sign-in came back with (LAI-1238).
+ *
+ * The codes are better-auth's and the server's; anything unknown still says
+ * that sign-in did not finish, with the code, rather than nothing — a silent
+ * return to the sign-in page reads as the button being broken.
+ */
+export function microsoftErrorWords(code: string): string {
+  switch (code) {
+    case 'invite_required':
+    case 'unable_to_create_user':
+    case 'signup_disabled':
+      return 'That Microsoft account has no invite to this Laika. Ask an admin to invite the address you signed in with.';
+    case 'invite_invalid':
+      return 'Your invite could not be used — it may have expired or been used already. Ask an admin for a new one.';
+    case 'use_transfer':
+      return 'That invite would make a second owner. Ownership changes only by transfer — ask the owner.';
+    case 'forbidden':
+    case 'account_deactivated':
+      return 'This account has been deactivated. Ask an admin if you think that is a mistake.';
+    case 'access_denied':
+    case 'consent_required':
+      return 'Microsoft sign-in was cancelled.';
+    default:
+      return `Microsoft sign-in did not finish (${code}). Try again, or ask an admin.`;
+  }
+}
