@@ -292,3 +292,255 @@ export function sprintSegments(
   }
   return out.sort((a, b) => a.from - b.from);
 }
+
+// ---------------------------------------------------------------- LAI-1218
+
+/*
+ * The week view and the keyboard grid, from LAI-1200 (PR #324), on the
+ * LAI-1178 calendar. Day arithmetic is by the calendar, never by `DAY`
+ * milliseconds: across a daylight-saving change a day is 23 or 25 hours, and
+ * adding 24 lands on 23:00 the day before.
+ */
+
+/** `at` moved by whole calendar days, as a local midnight. */
+export function addDays(at: number, days: number): number {
+  const d = new Date(startOfDay(at));
+  d.setDate(d.getDate() + days);
+  return startOfDay(d.getTime());
+}
+
+/**
+ * `at` moved by whole months, keeping the day of the month where the target
+ * month has it and clamping where it does not — 31 January forward is 28 or
+ * 29 February, never 3 March.
+ */
+export function addMonths(at: number, months: number): number {
+  const d = new Date(startOfDay(at));
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, last));
+  return startOfDay(d.getTime());
+}
+
+/** The Monday on or before `at` — the week starts Monday, as the grid does. */
+export function weekStart(at: number): number {
+  const d = new Date(startOfDay(at));
+  return addDays(d.getTime(), -((d.getDay() + 6) % 7));
+}
+
+/** The one week containing `anchor`, as a row the grid can draw. */
+export function weekOf(anchor: number, todayAt: number): CalendarWeek {
+  const start = weekStart(anchor);
+  const today = startOfDay(todayAt);
+  const days = Array.from({ length: 7 }, (_, i): CalendarDay => {
+    const at = addDays(start, i);
+    const d = new Date(at);
+    const dow = d.getDay();
+    return {
+      at,
+      dayOfMonth: d.getDate(),
+      // A week has no month of its own: every day of it is shown as in it.
+      inMonth: true,
+      isToday: at === today,
+      isWeekend: dow === 0 || dow === 6,
+    };
+  });
+  return { label: `W${String(isoWeek(start))}`, days };
+}
+
+/** Which period the calendar draws. */
+export type CalendarView = 'month' | 'week';
+
+/**
+ * The week a `?week=YYYY-MM-DD` names, as its Monday's local midnight; anything
+ * else is the week holding `now`. Any day of the week names it, so a link
+ * written with a Wednesday still lands on that week.
+ */
+export function weekParamOf(param: string | null | undefined, now: number): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(param ?? '');
+  if (m !== null) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    // `new Date` rolls 2026-02-31 into March: only a real date is read.
+    if (d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3])) {
+      return weekStart(d.getTime());
+    }
+  }
+  return weekStart(now);
+}
+
+/** `2026-11-09`, as the address writes a week: its Monday. */
+export function weekParam(at: number): string {
+  const d = new Date(weekStart(at));
+  return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`;
+}
+
+/**
+ * The address for a period, with every default dropped: month view, this
+ * month and this week are no parameter at all, so today's calendar stays a
+ * plain link. `undefined` deletes the key.
+ */
+export function periodParams(
+  view: CalendarView,
+  at: number,
+  now: number,
+): {
+  readonly view: string | undefined;
+  readonly month: string | undefined;
+  readonly week: string | undefined;
+} {
+  if (view === 'week') {
+    return {
+      view: 'week',
+      month: undefined,
+      week: weekStart(at) === weekStart(now) ? undefined : weekParam(at),
+    };
+  }
+  return {
+    view: undefined,
+    month: sameMonth(at, now) ? undefined : monthParam(at),
+    week: undefined,
+  };
+}
+
+/** The keys that move day focus on the grid (WAI-ARIA grid pattern). */
+export type GridKey =
+  'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' | 'Home' | 'End' | 'PageUp' | 'PageDown';
+
+const GRID_KEYS: ReadonlySet<string> = new Set<GridKey>([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
+
+export function isGridKey(key: string): key is GridKey {
+  return GRID_KEYS.has(key);
+}
+
+/**
+ * Where day focus goes for a key: a day either way, a week up or down, the
+ * week's Monday or Sunday, or one period on — the same day a month away in
+ * Month view, a week away in Week view (LAI-1218: PageUp and PageDown step
+ * what is on screen).
+ *
+ * The view follows the focused day, so moving past the grid's edge pages it
+ * rather than stopping.
+ */
+export function moveDay(at: number, key: GridKey, view: CalendarView = 'month'): number {
+  switch (key) {
+    case 'ArrowLeft':
+      return addDays(at, -1);
+    case 'ArrowRight':
+      return addDays(at, 1);
+    case 'ArrowUp':
+      return addDays(at, -7);
+    case 'ArrowDown':
+      return addDays(at, 7);
+    case 'Home':
+      return weekStart(at);
+    case 'End':
+      return addDays(weekStart(at), 6);
+    case 'PageUp':
+      return view === 'week' ? addDays(at, -7) : addMonths(at, -1);
+    case 'PageDown':
+      return view === 'week' ? addDays(at, 7) : addMonths(at, 1);
+  }
+}
+
+/**
+ * The name a screen reader reads for a day: *"Tuesday 10 November, today,
+ * 3 tasks, S2 Receipts"*. The order is fixed, so the date always reads before
+ * what is on it. **No overdue count** (LAI-1218): overdue work lives in the
+ * Overdue lane only, so a day never holds any.
+ */
+export function dayLabel(
+  at: number,
+  facts: {
+    readonly tasks: number;
+    readonly today: boolean;
+    /** The sprint the day is in, read last: the band itself is not read. */
+    readonly sprint?: string | undefined;
+  },
+  locale?: string,
+): string {
+  const d = new Date(at);
+  const weekday = d.toLocaleDateString(locale, { weekday: 'long' });
+  const month = d.toLocaleDateString(locale, { month: 'long' });
+  const parts = [`${weekday} ${String(d.getDate())} ${month}`];
+  if (facts.today) parts.push('today');
+  parts.push(
+    facts.tasks === 0
+      ? 'no tasks'
+      : `${String(facts.tasks)} ${facts.tasks === 1 ? 'task' : 'tasks'}`,
+  );
+  if (facts.sprint !== undefined) parts.push(facts.sprint);
+  return parts.join(', ');
+}
+
+/**
+ * The sprint covering a day, as the day names it: `S2 Receipts`, its place in
+ * the space's list and its name, with `, running` for the active one.
+ * Sprint dates are date-only UTC midnights (D-066), read as the local days
+ * they name (LAI-819).
+ */
+export function sprintOnDay<
+  S extends {
+    readonly name: string;
+    readonly starts_on: number;
+    readonly ends_on: number;
+    readonly status: string;
+  },
+>(
+  at: number,
+  sprints: readonly S[],
+):
+  | {
+      readonly sprint: S;
+      readonly tag: string;
+      readonly running: boolean;
+      /** Its first day, and its last. */
+      readonly first: boolean;
+      readonly last: boolean;
+    }
+  | undefined {
+  const index = sprints.findIndex((s) => at >= localDay(s.starts_on) && at <= localDay(s.ends_on));
+  const sprint = sprints[index];
+  if (sprint === undefined) return undefined;
+  return {
+    sprint,
+    tag: `S${String(index + 1)}`,
+    running: sprint.status === 'active',
+    first: at === localDay(sprint.starts_on),
+    last: at === localDay(sprint.ends_on),
+  };
+}
+
+/**
+ * Where the nearest open, dated task outside the period is — an empty
+ * period's way on. Later work first, because a reader looking at an empty
+ * month is planning ahead; earlier only when nothing is ahead. Callers pass
+ * the work that is **not** overdue: overdue work is in its lane already.
+ */
+export function nearestDueOutside<T extends Pick<TaskSummary, 'due_on' | 'status'>>(
+  tasks: readonly T[],
+  from: number,
+  to: number,
+): number | undefined {
+  let ahead: number | undefined;
+  let behind: number | undefined;
+  for (const t of tasks) {
+    if (t.due_on === null || t.status === 'done' || t.status === 'cancelled') continue;
+    const at = localDay(t.due_on);
+    if (at > to && (ahead === undefined || at < ahead)) ahead = at;
+    if (at < from && (behind === undefined || at > behind)) behind = at;
+  }
+  return ahead ?? behind;
+}

@@ -372,6 +372,8 @@ export function Inspector({
               text: `${String(position.index + 1)} of ${String(position.total)}`,
               prevLabel: 'Previous to review (K)',
               nextLabel: 'Next to review (J)',
+              prevShortcut: 'K',
+              nextShortcut: 'J',
               onPrev,
               onNext,
             };

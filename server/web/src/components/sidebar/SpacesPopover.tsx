@@ -4,6 +4,9 @@ import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import type { Space } from '../../routes/spaces.ts';
 import { PinButton } from './PinButton.tsx';
+import { useLayer } from '../overlay/layer-stack.ts';
+import { Icon } from '../icon/Icon.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 export interface SpacesPopoverProps {
   /** Spaces not already pinned in the sidebar — the prototype's `popSpaces`. */
@@ -43,6 +46,8 @@ export function SpacesPopover({
 }: SpacesPopoverProps) {
   const { theme } = useTheme();
   const [query, setQuery] = useState('');
+  // On the overlay stack (LAI-1205): a dialog above it keeps Escape.
+  const { isTop } = useLayer('popover');
   const list = useRef<HTMLUListElement>(null);
 
   /*
@@ -85,25 +90,16 @@ export function SpacesPopover({
         // A custom property, so the CSS can keep the panel inside a phone.
         style={{ '--spaces-pop-left': `${String(left)}px` } as CSSProperties}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') onClose();
+          if (event.key === 'Escape' && !event.defaultPrevented && isTop()) onClose();
         }}
       >
         <div className="spaces-pop-head">
           <span className="spaces-pop-title">Spaces</span>
-          <button type="button" className="spaces-pop-close" onClick={onClose}>
-            <span className="visually-hidden">Close</span>
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              aria-hidden="true"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="spaces-pop-close" aria-label="Close" onClick={onClose}>
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </div>
 
         <div className="spaces-pop-search">

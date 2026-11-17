@@ -1,5 +1,13 @@
+import { useId, useState } from 'react';
 import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
-import type { ActivitySplit, CapacityEntry, CapacitySpace } from '../../../api/presence.ts';
+import type {
+  ActivitySplit,
+  CapacityEntry,
+  CapacitySpace,
+  LoadLevel,
+} from '../../../api/presence.ts';
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
@@ -15,6 +23,7 @@ import {
   statusText,
   workloadIn,
 } from './capacity-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export const ROLE_LABEL: Readonly<Record<CapacityEntry['org_role'], string>> = {
   owner: 'Owner',
@@ -92,6 +101,8 @@ export interface CapacityCardProps {
  * (`aria-hidden`) beside a line of words that says the same thing.
  */
 export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
+  const [details, setDetails] = useState(false);
+  const detailsId = useId();
   const ink = avatarColor(person.user_id, theme);
   const status = statusText(person, now);
   const ring = person.status ?? 'off';
@@ -101,13 +112,14 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
   const segments = barSegments(work, work.committed);
   const age = oldestAge(person.oldest_in_progress_ms);
   const agents = person.agents.filter((a) => asAgentClient(a.client) !== null);
-  const running = runningAgents(person).filter((a) => asAgentClient(a.client) !== null).length;
+  const live = runningAgents(person).filter((a) => asAgentClient(a.client) !== null);
+  const running = live.length;
   const statusTitle =
     status.title ??
     (person.status === null ? HOVER.presence_off : person.status === 'never' ? HOVER.never : '');
 
   return (
-    <li className="cap-card" data-status={person.status ?? 'off'}>
+    <li className="cap-card" data-status={person.status ?? 'off'} data-load={load}>
       <div className="cap-card-head">
         <span className={`cap-avatar-wrap cap-ring-${ring}`} aria-hidden="true">
           <span
@@ -129,6 +141,12 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
             </PersonLink>
           </span>
           <span className="cap-meta">
+            <Tooltip content={statusTitle}>
+              <span className={`cap-status cap-status-${ring}`}>{status.text}</span>
+            </Tooltip>
+            <span className="cap-meta-sep" aria-hidden="true">
+              {' · '}
+            </span>
             <span className="cap-role">
               {ROLE_LABEL[person.org_role]}
               {person.profile_kind !== undefined && (
@@ -138,53 +156,33 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
                 </span>
               )}
             </span>
-            <span className="cap-meta-sep" aria-hidden="true">
-              {' · '}
-            </span>
-            <span className={`cap-status cap-status-${ring}`} title={statusTitle}>
-              {status.text}
-            </span>
           </span>
         </span>
-        <span className="cap-badges">
-          <span className={`cap-load cap-load-${load}`} title={LOAD_RULE}>
-            <span className="visually-hidden">Load: </span>
-            {LOAD_LABEL[load]}
-          </span>
-          {/* Its own badge, never a load trigger (D-092 item 3). */}
-          {work.overdue > 0 && (
-            <span className="cap-overdue" title={HOVER.overdue}>
-              {count(work.overdue)} overdue
-            </span>
-          )}
-        </span>
+        <LoadBadges load={load} overdue={work.overdue} />
       </div>
 
-      <div className="cap-block">
-        <span className="cap-label">
-          Workload
-          <span className="cap-label-note">
+      {/* What matters at a glance (LAI-1222): one bar of committed work, its
+          two figures, and how long the oldest has been going. */}
+      <div className="cap-block cap-load-block">
+        <div className="cap-load-line">
+          <ul className="cap-counts">
+            {(
+              [
+                ['in progress', work.in_progress, HOVER.in_progress],
+                ['to do', work.todo, HOVER.todo],
+              ] as const
+            ).map(([label, n, title]) => (
+              <Tooltip key={label} content={title}>
+                <li className={n === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+                  <span className="cap-count-n">{count(n)}</span> {label}
+                </li>
+              </Tooltip>
+            ))}
+          </ul>
+          <span className="cap-oldest">
             {age === undefined ? 'nothing in progress' : `oldest in progress ${age}`}
           </span>
-        </span>
-        {/* Committed work, then the pipeline: in progress · to do · backlog. */}
-        <ul className="cap-counts">
-          {(
-            [
-              ['in progress', work.in_progress, HOVER.in_progress],
-              ['to do', work.todo, HOVER.todo],
-              ['backlog', work.backlog, HOVER.backlog],
-            ] as const
-          ).map(([label, n, title]) => (
-            <li
-              key={label}
-              className={n === 0 ? 'cap-count cap-count-zero' : 'cap-count'}
-              title={title}
-            >
-              <span className="cap-count-n">{count(n)}</span> {label}
-            </li>
-          ))}
-        </ul>
+        </div>
         <div
           className="cap-bar"
           role="img"
@@ -202,85 +200,194 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
             />
           ))}
         </div>
-        {/* Apart from the load: review waits on the reviewer (D-092 item 2). */}
-        <ul className="cap-waits">
-          <li
-            className={work.in_review === 0 ? 'cap-count cap-count-zero' : 'cap-count'}
-            title={HOVER.in_review}
-          >
-            <span className="cap-count-n">{count(work.in_review)}</span> waiting on reviewers
-          </li>
-          <li
-            className={work.due_soon === 0 ? 'cap-count cap-count-zero' : 'cap-count'}
-            title={HOVER.due_soon}
-          >
-            <span className="cap-count-n">{count(work.due_soon)}</span> due in 7 days
-          </li>
-        </ul>
-      </div>
-
-      <div className="cap-block cap-agents-block">
-        <span className="cap-label">
-          Agents
-          <span
-            className={running === 0 ? 'cap-label-note' : 'cap-label-note cap-label-note-on'}
-            title={HOVER.running}
-          >
-            {count(running)} running
-          </span>
-        </span>
-        {agents.length === 0 ? (
-          <span className="cap-quiet" title={person.status === null ? HOVER.presence_off : ''}>
-            {person.status === null ? 'Presence is off' : 'No agents running'}
-          </span>
-        ) : (
-          <ul className="cap-agents">
-            {agents.map((agent) => (
-              <li
-                key={agent.client}
-                className={agent.running ? 'cap-agent cap-agent-running' : 'cap-agent'}
-                title={
-                  agent.last_at === null
-                    ? agent.running
-                      ? 'Running now'
-                      : 'Not running'
-                    : `${agent.running ? 'Running now · last signal' : 'Last used'} ${timeLabel(agent.last_at, now).text}`
-                }
-              >
-                <span className="cap-agent-mark">
-                  <AgentMark client={agent.client} size="sm" />
-                  {agent.running && <span className="cap-agent-dot" aria-hidden="true" />}
+        <div className="cap-keys">
+          <Tooltip content={HOVER.running}>
+            <span className={running === 0 ? 'cap-key cap-key-zero' : 'cap-key cap-key-on'}>
+              {live.length > 0 && (
+                <span className="cap-key-marks" aria-hidden="true">
+                  {live.map((agent) => (
+                    <AgentMark key={agent.client} client={agent.client} size="sm" />
+                  ))}
                 </span>
-                {agentClientName(agent.client)}
-                {agent.running && <span className="visually-hidden"> (running now)</span>}
-              </li>
-            ))}
-          </ul>
-        )}
+              )}
+              <span className="cap-count-n">{count(running)}</span>{' '}
+              {running === 1 ? 'agent running' : 'agents running'}
+            </span>
+          </Tooltip>
+          <Tooltip content={HOVER.in_review}>
+            <span className={work.in_review === 0 ? 'cap-key cap-key-zero' : 'cap-key'}>
+              <span className="cap-count-n">{count(work.in_review)}</span> in review
+            </span>
+          </Tooltip>
+          <button
+            type="button"
+            className="cap-details-toggle"
+            aria-expanded={details}
+            aria-controls={detailsId}
+            aria-label={`${details ? 'Hide' : 'Show'} details for ${person.name}`}
+            onClick={() => {
+              setDetails((was) => !was);
+            }}
+          >
+            Details
+            <Icon name="chevron-down" size="tiny" />
+          </button>
+        </div>
       </div>
 
-      {person.activity_14d_split !== undefined && (
-        <ActivityFigures split={person.activity_14d_split} />
-      )}
+      {/* The rest, one press away (LAI-1222): the pipeline, every agent, the
+          fortnight's activity and the spaces. */}
+      <div className="cap-details" id={detailsId} hidden={!details}>
+        {details && (
+          <>
+            <div className="cap-block">
+              <span className="cap-label">Pipeline</span>
+              {/* Apart from the load: review waits on the reviewer (D-092 item 2). */}
+              <ul className="cap-waits">
+                <Tooltip content={HOVER.in_review}>
+                  <li className={work.in_review === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+                    <span className="cap-count-n">{count(work.in_review)}</span> waiting on
+                    reviewers
+                  </li>
+                </Tooltip>
+                <Tooltip content={HOVER.due_soon}>
+                  <li className={work.due_soon === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+                    <span className="cap-count-n">{count(work.due_soon)}</span> due in 7 days
+                  </li>
+                </Tooltip>
+                <Tooltip content={HOVER.backlog}>
+                  <li className={work.backlog === 0 ? 'cap-count cap-count-zero' : 'cap-count'}>
+                    <span className="cap-count-n">{count(work.backlog)}</span> backlog
+                  </li>
+                </Tooltip>
+              </ul>
+            </div>
 
-      <div className="cap-block cap-spaces-block">
-        <span className="cap-label">
-          Spaces
-          <span className="cap-label-note">
-            {count(person.spaces.length)} {person.spaces.length === 1 ? 'space' : 'spaces'}
-          </span>
-        </span>
-        {person.spaces.length === 0 ? (
-          <span className="cap-quiet">No spaces</span>
-        ) : (
-          <ul className="cap-spaces">
-            {person.spaces.map((s) => (
-              <SpaceChip key={s.project_id} space={s} on={s.project_id === space} theme={theme} />
-            ))}
-          </ul>
+            <div className="cap-block cap-agents-block">
+              <span className="cap-label">
+                Agents
+                <Tooltip content={HOVER.running}>
+                  <span
+                    className={
+                      running === 0 ? 'cap-label-note' : 'cap-label-note cap-label-note-on'
+                    }
+                  >
+                    {count(running)} running
+                  </span>
+                </Tooltip>
+              </span>
+              {agents.length === 0 ? (
+                person.status === null ? (
+                  <Tooltip content={HOVER.presence_off}>
+                    <span className="cap-quiet">Presence is off</span>
+                  </Tooltip>
+                ) : (
+                  <span className="cap-quiet">No agents running</span>
+                )
+              ) : (
+                <ul className="cap-agents">
+                  {agents.map((agent) => (
+                    <Tooltip
+                      key={agent.client}
+                      content={
+                        agent.last_at === null
+                          ? agent.running
+                            ? 'Running now'
+                            : 'Not running'
+                          : `${agent.running ? 'Running now · last signal' : 'Last used'} ${timeLabel(agent.last_at, now).text}`
+                      }
+                    >
+                      <li className={agent.running ? 'cap-agent cap-agent-running' : 'cap-agent'}>
+                        <span className="cap-agent-mark">
+                          <AgentMark client={agent.client} size="sm" />
+                          {agent.running && <span className="cap-agent-dot" aria-hidden="true" />}
+                        </span>
+                        {agentClientName(agent.client)}
+                        {agent.running && <span className="visually-hidden"> (running now)</span>}
+                      </li>
+                    </Tooltip>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {person.activity_14d_split !== undefined && (
+              <ActivityFigures split={person.activity_14d_split} />
+            )}
+
+            <div className="cap-block cap-spaces-block">
+              <span className="cap-label">
+                Spaces
+                <span className="cap-label-note">
+                  {count(person.spaces.length)} {person.spaces.length === 1 ? 'space' : 'spaces'}
+                </span>
+              </span>
+              {person.spaces.length === 0 ? (
+                <span className="cap-quiet">No spaces</span>
+              ) : (
+                <ul className="cap-spaces">
+                  {person.spaces.map((s) => (
+                    <SpaceChip
+                      key={s.project_id}
+                      space={s}
+                      on={s.project_id === space}
+                      theme={theme}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
         )}
       </div>
     </li>
+  );
+}
+
+/** The tone each load badge wears: colour only where it asks for attention. */
+const LOAD_TONE: Readonly<Record<LoadLevel, 'neutral' | 'green' | 'blue' | 'orange'>> = {
+  none: 'neutral',
+  light: 'green',
+  normal: 'blue',
+  heavy: 'orange',
+};
+
+/**
+ * The load badge and, apart from it, the overdue badge (D-092 item 3) — the
+ * shared status Chip, one semantics on the cards and in the list (LAI-1222):
+ * *No load*, *Light*, *Normal*, *Heavy*, and *N overdue* with the warning
+ * mark, each with its rule on hover.
+ */
+export function LoadBadges({
+  load,
+  overdue,
+}: {
+  readonly load: LoadLevel;
+  readonly overdue: number;
+}) {
+  return (
+    <span className="cap-badges">
+      <Chip
+        variant="status"
+        tone={LOAD_TONE[load]}
+        className={`cap-load cap-load-${load}`}
+        glyphLabel="Load"
+        title={LOAD_RULE}
+      >
+        {LOAD_LABEL[load]}
+      </Chip>
+      {overdue > 0 && (
+        <Chip
+          variant="status"
+          tone="danger"
+          mark="alert"
+          className="cap-overdue"
+          title={HOVER.overdue}
+        >
+          {`${count(overdue)} overdue`}
+        </Chip>
+      )}
+    </span>
   );
 }
 
@@ -301,16 +408,18 @@ export function SpaceChip({
   const colour = avatarColor(`space:${space.slug}`, theme);
   const aside = `${count(space.backlog)} in backlog, ${count(space.in_review)} waiting on reviewers`;
   return (
-    <li className={on ? 'cap-space cap-space-on' : 'cap-space'} title={spaceTitle(space)}>
-      <span
-        className="cap-space-swatch"
-        aria-hidden="true"
-        style={{ background: colour.background }}
-      />
-      {space.name}
-      <span className="cap-space-n">{count(space.committed)}</span>
-      <span className="visually-hidden"> committed, {aside}</span>
-    </li>
+    <Tooltip content={spaceTitle(space)}>
+      <li className={on ? 'cap-space cap-space-on' : 'cap-space'}>
+        <span
+          className="cap-space-swatch"
+          aria-hidden="true"
+          style={{ background: colour.background }}
+        />
+        {space.name}
+        <span className="cap-space-n">{count(space.committed)}</span>
+        <span className="visually-hidden"> committed, {aside}</span>
+      </li>
+    </Tooltip>
   );
 }
 
@@ -323,24 +432,47 @@ export function SpaceChip({
  */
 function ActivityFigures({ split }: { readonly split: ActivitySplit }) {
   const total = split.by_self + split.by_agents + split.bookkeeping;
+  const parts = [
+    ['self', 'by hand', split.by_self, HOVER.by_self],
+    ['agents', 'by agents', split.by_agents, HOVER.by_agents],
+    ['bookkeeping', 'bookkeeping', split.bookkeeping, HOVER.bookkeeping],
+  ] as const;
   return (
     <div className="cap-block cap-activity-block">
       <span className="cap-label">
         Activity
         <span className="cap-label-note">14 days · {count(total)}</span>
       </span>
+      {/* One stacked bar of the fortnight (LAI-1222), read aloud as the three
+          figures it is drawn from; the legend below carries the numbers. */}
+      <div
+        className="cap-act"
+        role="img"
+        aria-label={
+          total === 0
+            ? 'No board actions in 14 days'
+            : `${count(total)} board actions in 14 days: ${parts.map(([, label, n]) => `${count(n)} ${label}`).join(', ')}`
+        }
+      >
+        {parts
+          .filter(([, , n]) => n > 0)
+          .map(([key, , n]) => (
+            <span
+              key={key}
+              className={`cap-act-part cap-act-${key}`}
+              style={{ width: `${String((n / Math.max(total, 1)) * 100)}%` }}
+            />
+          ))}
+      </div>
       <ul className="cap-figs">
-        {(
-          [
-            ['by hand', split.by_self, HOVER.by_self],
-            ['by agents', split.by_agents, HOVER.by_agents],
-            ['bookkeeping', split.bookkeeping, HOVER.bookkeeping],
-          ] as const
-        ).map(([label, n, title]) => (
-          <li key={label} className={n === 0 ? 'cap-fig cap-fig-zero' : 'cap-fig'} title={title}>
-            <span className="cap-count-n">{count(n)}</span>
-            <span className="cap-fig-label">{label}</span>
-          </li>
+        {parts.map(([key, label, n, title]) => (
+          <Tooltip key={label} content={title}>
+            <li className={n === 0 ? 'cap-fig cap-fig-zero' : 'cap-fig'}>
+              <span className={`cap-act-swatch cap-act-${key}`} aria-hidden="true" />
+              <span className="cap-count-n">{count(n)}</span>
+              <span className="cap-fig-label">{label}</span>
+            </li>
+          </Tooltip>
         ))}
       </ul>
     </div>

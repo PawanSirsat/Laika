@@ -21,6 +21,7 @@ import {
   type Harness,
 } from './harness.ts';
 import { optionsOf, pick, valueOf } from './dropdown.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -357,13 +358,10 @@ void describe('the effort chip on a card', () => {
         'no mark for a person’s effort',
       );
       assert.equal(
-        await chip('LC-2').getAttribute('title'),
+        await tipText(chip('LC-2')),
         'Effort: Extra large, set by a person · Laika’s estimate: Medium · about 25 to 50 min',
       );
-      assert.equal(
-        await chip('LC-1').getAttribute('title'),
-        'Effort: Extra small · about 10 to 20 min',
-      );
+      assert.equal(await tipText(chip('LC-1')), 'Effort: Extra small · about 10 to 20 min');
       assert.equal(await chip('LC-1').locator('.size-chip-dot').count(), 0);
       // Positive control above; the absence is the card with no effort yet.
       assert.equal(await chip('LC-4').count(), 0, 'a card with no effort drew a chip');
@@ -379,10 +377,10 @@ void describe('the List’s Effort column', () => {
     try {
       await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
       const keys = async () => h.page.locator('.list-row .list-key').allInnerTexts();
-      const header = h.page.locator('button.list-sort[title="Sort by Effort"]');
+      const header = h.page.locator('button.list-sort', { hasText: /^Effort/ });
       // `textContent`: the header is upper-cased by CSS, and the word is what counts.
       assert.equal((await header.textContent())?.trim(), 'Effort');
-      assert.equal(await h.page.locator('button.list-sort[title="Sort by Size"]').count(), 0);
+      assert.equal(await h.page.locator('button.list-sort', { hasText: /^Size/ }).count(), 0);
       // The longer word fits its column at a laptop's width: it once read `EFFOR`.
       await h.page.setViewportSize({ width: 1366, height: 900 });
       const clipped = await header.evaluate((el) => {
@@ -479,7 +477,7 @@ void describe('the List’s Effort column', () => {
         (await keys()).map((k) => k.slice(0, 4)),
         ['LC-2', 'LC-3', 'LC-5', 'LC-1', 'LC-4'],
       );
-      const header = h.page.locator('button.list-sort[title="Sort by Effort"]');
+      const header = h.page.locator('button.list-sort', { hasText: /^Effort/ });
       assert.equal(
         await h.page.locator('th', { has: header }).getAttribute('aria-sort'),
         'descending',

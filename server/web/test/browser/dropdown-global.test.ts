@@ -7,8 +7,8 @@
  *
  * - **a modal dialog** that closes on Escape — Escape must close only the
  *   dropdown, and its portalled panel must draw above the dialog;
- * - **a composer inside a lane** that closes on Escape and posts what was
- *   chosen;
+ * - **the Create task dialog a lane’s + opens** (a composer until LAI-1227),
+ *   which stays open on Escape and posts what was chosen;
  * - **a board card**, whose keyboard-only move control is clipped until
  *   focused, and whose own click opens the task — an option's click must not;
  * - **a form field** (`Select`), named and opened by its `<label>`.
@@ -20,7 +20,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator } from 'playwright';
-import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 import { pick, valueOf } from './dropdown.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
@@ -251,8 +251,13 @@ void describe('the dropdown in a modal dialog (LAI-726)', () => {
   });
 });
 
-void describe('the dropdown in a lane’s composer (LAI-726)', () => {
-  void test('Escape keeps the composer, and the chosen priority is the one posted', async () => {
+/*
+ * A lane's + opened an inline composer with its own priority dropdown until
+ * LAI-1227; it opens the app's one Create task dialog now, in that column, so
+ * the dropdown this guards is the dialog's Priority — reached from the lane.
+ */
+void describe('the dropdown in the dialog a lane’s + opens (LAI-726, LAI-1227)', () => {
+  void test('Escape keeps the dialog, and the chosen priority is the one posted', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.lane-title').first().waitFor({ timeout: 20_000 });
@@ -260,29 +265,26 @@ void describe('the dropdown in a lane’s composer (LAI-726)', () => {
         .locator('.lane', { has: h.page.locator('.lane-title', { hasText: 'Done' }) })
         .locator('.lane-add')
         .click();
-      await h.page.locator('.composer-title').fill('A finished thing');
+      const dialog = h.page.locator('[data-dialog="create-task"]');
+      await dialog.locator('.ct-title-input').fill('A finished thing');
 
-      const priority = h.page.locator('.composer-prio').getByRole('combobox');
+      const priority = dialog.getByLabel('Priority', { exact: true });
       await priority.click();
-      await assertOnTop(h, 'over the board');
+      await assertOnTop(h, 'over the dialog');
       await h.page.keyboard.press('Escape');
       assert.equal(await panel(h).count(), 0, 'Escape left the dropdown open');
-      assert.equal(
-        await h.page.locator('.composer-title').count(),
-        1,
-        'Escape closed the composer',
-      );
+      assert.equal(await dialog.count(), 1, 'Escape closed the dialog with the dropdown');
 
       await pick(priority, 'p1');
-      await h.page.locator('.composer-submit').click();
-      await h.page
-        .waitForFunction(() => document.querySelector('.composer-title') === null, undefined, {
-          timeout: 5_000,
-        })
-        .catch(() => undefined);
+      const create = dialog.getByRole('button', { name: 'Create', exact: true });
+      await until(async () => (await create.getAttribute('aria-disabled')) !== 'true', 10_000);
+      await create.click();
+      await dialog.waitFor({ state: 'detached', timeout: 5_000 });
       const sent = h.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/tasks'));
       assert.equal(sent.length, 1, 'no create was sent');
-      assert.equal((sent[0]?.body as { priority?: string }).priority, 'p1');
+      const body = sent[0]?.body as { priority?: string; status_id?: string };
+      assert.equal(body.priority, 'p1');
+      assert.equal(body.status_id, 'st-done', 'not created in the column whose + opened it');
     } finally {
       await h.close();
     }
@@ -341,7 +343,7 @@ void describe('the dropdown as a form field (LAI-726)', () => {
       assert.match(await visibility.innerText(), /Public/);
 
       await h.page.getByRole('textbox', { name: 'Name', exact: true }).fill('Routing');
-      await h.page.getByRole('button', { name: 'Create project' }).click();
+      await h.page.getByRole('button', { name: 'Create space' }).click();
       await h.page
         .waitForFunction(() => document.querySelector('[aria-busy="true"]') === null)
         .catch(() => undefined);
@@ -445,6 +447,9 @@ void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
  * `margin: auto` — so the add-column dialog sat against the left edge (x=18 at
  * 1366, where ec1281a had 492) and its scrim left undimmed strips at both
  * sides. Measured at a laptop, a 900px window and a phone.
+ *
+ * Since LAI-1205 both are the shared Dialog: centred down to a phone, where
+ * they are a bottom sheet the width of the screen instead.
  */
 void describe('the column dialogs (LAI-726 round 2)', () => {
   const DIALOGS = [
@@ -482,7 +487,7 @@ void describe('the column dialogs (LAI-726 round 2)', () => {
           const g = await box.evaluate((el) => {
             const r = el.getBoundingClientRect();
             // The scrim drawn with this dialog: its sibling.
-            const scrim = el.parentElement?.querySelector('.column-dialog-scrim');
+            const scrim = el.parentElement?.querySelector('.overlay-scrim');
             const s = scrim?.getBoundingClientRect();
             return {
               left: r.left,
@@ -503,10 +508,16 @@ void describe('the column dialogs (LAI-726 round 2)', () => {
             Math.abs(g.left - g.right) <= 1,
             `${at}: not centred across — ${String(g.left)}px left, ${String(g.right)}px right`,
           );
-          assert.ok(
-            Math.abs(g.top - g.bottom) <= 1,
-            `${at}: not centred down — ${String(g.top)}px above, ${String(g.bottom)}px below`,
-          );
+          if (width <= 544) {
+            // A phone (34rem and under): a sheet on the bottom edge.
+            assert.equal(g.bottom, 0, `${at}: the sheet is not on the bottom edge`);
+            assert.equal(g.left, 0, `${at}: the sheet is not the width of the screen`);
+          } else {
+            assert.ok(
+              Math.abs(g.top - g.bottom) <= 1,
+              `${at}: not centred down — ${String(g.top)}px above, ${String(g.bottom)}px below`,
+            );
+          }
           assert.ok(g.scrim !== null, `${at}: no scrim beside the dialog`);
           assert.deepEqual(
             g.scrim,

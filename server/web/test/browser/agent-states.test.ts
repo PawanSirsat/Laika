@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, open, setTheme, until, type Harness } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -158,7 +159,7 @@ void describe('agent states on /design/states (LAI-536)', () => {
       const card = specimen(h.page, 'chip-and-badge');
       const badge = card.locator('[data-mcp-badge]');
       assert.equal(await badge.count(), 1);
-      assert.equal(await badge.getAttribute('title'), "Written by Ada Okafor's agent");
+      assert.equal(await tipText(badge), "Written by Ada Okafor's agent");
       assert.equal(await card.locator('[data-agent-chip]').count(), 1);
       assert.equal(await specimen(h.page, 'chip').locator('[data-mcp-badge]').count(), 0);
     } finally {

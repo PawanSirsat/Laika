@@ -34,6 +34,12 @@
   margin-bottom: var(--space-4);
 }
 
+.tr-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+}
+
 .tr-panel-title {
   font-size: var(--text-heading-sm);
   font-weight: var(--weight-heavy);

@@ -294,27 +294,28 @@ void describe('pinned spaces (LAI-989)', () => {
   });
 });
 
-void describe('the rail ends in the person (LAI-796)', () => {
-  void test('the user block sits at the foot, below every entry', async () => {
+void describe('the person is the top bar’s, not the rail’s (LAI-1227)', () => {
+  void test('the rail ends in its last entry; the person is at the top bar’s right end', async () => {
+    // The rail ended in the person from LAI-796; the owner's Jira header put
+    // the person in the top bar, and two would be two doors to one room.
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       await h.page.setViewportSize({ width: 1280, height: 900 });
+      await h.page.locator('[data-app-header] .user-menu-trigger').waitFor({ timeout: 10_000 });
       const m = await h.page.evaluate(() => {
-        const rail = document.querySelector('#sidebar');
-        const footer = document.querySelector('.sidebar-footer');
-        const links = [...document.querySelectorAll('#sidebar .sidebar-nav .sidebar-link')];
-        if (rail === null || footer === null || links.length === 0) return null;
+        const head = document.querySelector('[data-app-header]')?.getBoundingClientRect();
+        const person = document
+          .querySelector('[data-app-header] .user-menu-trigger')
+          ?.getBoundingClientRect();
         return {
-          railBottom: rail.getBoundingClientRect().bottom,
-          footerBottom: footer.getBoundingClientRect().bottom,
-          footerTop: footer.getBoundingClientRect().top,
-          lastLink: Math.max(...links.map((l) => l.getBoundingClientRect().bottom)),
+          inRail: document.querySelectorAll('#sidebar .user-menu-trigger, .sidebar-footer').length,
+          personRight: Math.round(person?.right ?? 0),
+          headRight: Math.round(head?.right ?? 0),
         };
       });
-      assert.ok(m !== null, 'no footer to measure');
-      assert.ok(Math.abs(m.railBottom - m.footerBottom) <= 1, 'the person is not at the foot');
-      assert.ok(m.footerTop >= m.lastLink, 'the person overlaps the entries');
+      assert.equal(m.inRail, 0, 'the rail still carries a person');
+      assert.ok(m.headRight - m.personRight <= 24, 'the person is not at the bar’s right end');
     } finally {
       await h.close();
     }
@@ -582,7 +583,9 @@ void describe('the new chrome fits', () => {
         await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
         const state = await h.page.evaluate(() => ({
           attr: document.documentElement.getAttribute('data-theme'),
-          canvas: getComputedStyle(document.body).backgroundColor,
+          // `html`, not `body`: the body is transparent since LAI-1132 so
+          // the ambient layer shows, and the canvas colour moved up a level.
+          canvas: getComputedStyle(document.documentElement).backgroundColor,
         }));
         assert.equal(
           state.attr,
@@ -660,6 +663,14 @@ void describe('the prototype geometry (LAI-249)', () => {
       const inbox = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
       assert.ok(await inbox.locator('.nav-icon').isVisible(), 'the icon went with the label');
       const opacity = (el: Element) => getComputedStyle(el).opacity;
+      // The collapse is instant now (LAI-1208), so the tip's own short fade can
+      // still be running: wait it out, asserted, before reading.
+      const tipStill = () =>
+        inbox
+          .locator('.sidebar-tip')
+          .evaluate((el) => el.getAnimations().every((a) => a.playState !== 'running'));
+      await until(tipStill);
+      assert.equal(await tipStill(), true, 'the tip never stopped fading');
       assert.equal(await inbox.locator('.sidebar-tip').evaluate(opacity), '0');
       assert.match(await inbox.locator('.sidebar-count').innerText(), /^2/);
       assert.equal(await h.page.locator('.space-row .space-badge').first().innerText(), 'L');
@@ -678,12 +689,15 @@ void describe('the prototype geometry (LAI-249)', () => {
         undefined,
         { timeout: 5000 },
       );
-      // …and on keyboard focus: the toggle, then Tab, is My day.
+      // …and on keyboard focus: the top bar's last control, the person
+      // (LAI-1227 — the toggle was the rail's own head until then), then Tab,
+      // is the first entry — My day — and its name shows as a tooltip the
+      // same way.
       await h.page.mouse.move(900, 500);
-      await toggle.focus();
+      await h.page.locator('[data-app-header] .user-menu-trigger').focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.match(focused, /My day/, 'Tab from the toggle does not reach the first entry');
+      assert.match(focused, /^My day/, 'Tab from the top bar does not reach the first entry');
       await h.page.waitForFunction(
         () => {
           const tip = document.activeElement?.querySelector('.sidebar-tip');
@@ -846,32 +860,32 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('the user menu: profile, theme, Developer access, sign out — and its keys', async () => {
+  void test('the user menu: profile, theme, sign out — Appearance and Developer access are the gear’s (LAI-1231) — and its keys', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/auth/sign-out': {},
       '/api/v1/tokens': { data: [], next_cursor: null },
     });
     try {
-      const trigger = h.page.locator('.user-menu-trigger');
+      // The top bar's avatar since LAI-1227: the name is its label, and the
+      // menu's head says it in full.
+      const trigger = h.page.locator('[data-app-header] .user-menu-trigger');
       await trigger.waitFor({ timeout: 20_000 });
-      assert.match(await trigger.innerText(), /Ada Lovelace/);
-      assert.match(await trigger.innerText(), /owner/i, 'the role renders under the name');
+      assert.match((await trigger.getAttribute('aria-label')) ?? '', /^Ada Lovelace/);
       assert.equal(await trigger.getAttribute('aria-haspopup'), 'menu');
       assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
 
       await trigger.click();
       const menu = h.page.locator('[role="menu"]');
       await menu.waitFor({ timeout: 5000 });
+      assert.match(await menu.locator('.user-menu-who').innerText(), /Ada Lovelace/);
       const items = menu.locator('[role="menuitem"]');
       const firstLines = async () =>
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|');
-      await until(
-        async () => (await firstLines()) === 'My profile|Switch to dark|Developer access|Sign out',
-      );
+      await until(async () => (await firstLines()) === 'My profile|Switch to dark|Sign out');
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Sign out'],
       );
       assert.equal(
         await menu.locator('a', { hasText: 'My profile' }).getAttribute('href'),
@@ -922,10 +936,16 @@ void describe('the prototype geometry (LAI-249)', () => {
       await h.page.mouse.click(900, 400);
       assert.equal(await menu.count(), 0, 'a click outside must close the menu');
 
-      // Developer access.
+      // Not here: the gear holds them, and two menus side by side in the bar
+      // listing the same pages is what the owner reported (LAI-1231).
       await trigger.click();
-      await menu.locator('a', { hasText: 'Developer access' }).click();
-      await h.page.waitForURL((url) => url.pathname === '/developer', { timeout: 10_000 });
+      await menu.waitFor({ timeout: 5000 });
+      assert.equal(await menu.locator('[role="menuitem"]', { hasText: 'Appearance' }).count(), 0);
+      assert.equal(
+        await menu.locator('[role="menuitem"]', { hasText: 'Developer access' }).count(),
+        0,
+      );
+      await h.page.keyboard.press('Escape');
       assert.equal(await menu.count(), 0);
 
       // Sign out, and the browser goes to sign-in.
@@ -955,11 +975,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await until(
         async () =>
           (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
-          'My profile|Switch to dark|Developer access|Sign out',
+          'My profile|Switch to dark|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Sign out'],
       );
     } finally {
       await h.close();

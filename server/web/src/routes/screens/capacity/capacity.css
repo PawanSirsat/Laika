@@ -21,11 +21,11 @@
 
 .cap {
   container: cap / inline-size;
-  padding: 0.875rem 1.125rem 1.5rem;
+  padding: var(--space-3-5) 1.125rem var(--space-5);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
 }
 
 .cap-quiet {
@@ -36,7 +36,7 @@
 
 .cap-off {
   margin: 0;
-  padding: 0.75rem 0.875rem;
+  padding: var(--space-3) var(--space-3-5);
   border: 1px solid var(--chip-orange-border);
   background: var(--chip-orange-bg);
   border-radius: var(--radius-card);
@@ -49,105 +49,21 @@
   color: var(--text-primary);
 }
 
-/* ----------------------------------------------------------------- tiles */
-
-.cap-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
-  gap: 0.625rem;
-}
-
-.cap-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.125rem;
-  min-width: 0;
-  margin: 0;
-  padding: 0.6875rem 0.8125rem 0.75rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
-  color: inherit;
-}
-
-button.cap-tile,
-a.cap-tile {
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-button.cap-tile:hover,
-a.cap-tile:hover {
-  border-color: var(--accent-border);
-  background: var(--bg-card-hover);
-}
-
-.cap-tile:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.cap-tile[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.cap-tile-label {
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  color: var(--text-muted);
-}
-
-.cap-tile-value {
-  font-family: var(--font-mono);
-  font-size: var(--text-heading-lg);
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-.cap-tile-sub {
-  font-size: var(--text-small);
-  color: var(--text-muted);
-}
-
-.cap-tile-online .cap-tile-value {
-  color: var(--chip-green);
-}
-
-.cap-tile-overdue .cap-tile-value {
-  color: var(--overdue);
-}
-
-.cap-tile-unlisted .cap-tile-value {
-  color: var(--chip-orange);
-}
-
-.cap-tile-link .cap-tile-sub::after {
-  content: ' →';
-}
-
-/* --------------------------------------------------------------- toolbar */
-
+/* The skeleton's stand-in for the bar. */
 .cap-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    'search selects'
-    'chips chips';
-  gap: 0.625rem 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2-5) var(--space-3);
   align-items: center;
 }
 
+/* The search is the bar's first group, and takes what room is left. */
+.cap .fbar-primary {
+  flex: 1 1 18rem;
+}
+
 .cap-search {
-  grid-area: search;
+  flex: 1 1 auto;
   position: relative;
   display: flex;
   align-items: center;
@@ -171,7 +87,7 @@ a.cap-tile:hover {
   min-width: 0;
   box-sizing: border-box;
   height: 2.25rem;
-  padding: 0 0.75rem 0 2.125rem;
+  padding: 0 var(--space-3) 0 2.125rem;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-input);
@@ -190,66 +106,47 @@ a.cap-tile:hover {
   border-color: var(--accent-border);
 }
 
-.cap-chips {
-  grid-area: chips;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  min-width: 0;
+/* The summary's links to the queues it counts (LAI-1222). */
+.cap-out {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-.cap-chip {
-  height: 1.875rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-pill);
-  background: var(--bg-card);
-  color: var(--text-secondary);
+.cap-out::after {
+  content: ' →';
+}
+
+.cap-out:hover {
+  text-decoration: underline;
+}
+
+.cap-out:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.cap .cap-dropdown {
+  width: 12rem;
+  max-width: 100%;
+}
+
+.cap-clear {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-1);
   font: inherit;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.cap-chip:hover {
-  border-color: var(--accent-border);
-  color: var(--text-primary);
-}
-
-.cap-chip:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.cap-chip[aria-pressed='true'] {
-  background: var(--accent-bg);
-  border-color: var(--accent);
   color: var(--accent);
+  cursor: pointer;
 }
 
-.cap-selects {
-  grid-area: selects;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.cap-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: var(--text-body);
-  font-weight: var(--weight-bold);
-  color: var(--text-muted);
-}
-
-/* The dropdown's field is full-width by default; here it sits beside the
-   search as a control of its own width (Review's filters do the same). */
-.cap-select .cap-dropdown {
-  width: 10.5rem;
-  max-width: 100%;
+.cap-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ------------------------------------------------------------------ grid */
@@ -260,7 +157,7 @@ a.cap-tile:hover {
   padding: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   /* Stretch: every card in a row is the row's height (LAI-991). */
   align-items: stretch;
 }
@@ -279,14 +176,15 @@ a.cap-tile:hover {
 
 .cap-card {
   min-width: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
+  /* Level-2 glass tint (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-2);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-column);
-  box-shadow: var(--shadow-card);
-  padding: 0.75rem 0.875rem 0.625rem;
+  box-shadow: var(--glass-highlight), var(--shadow-card);
+  padding: var(--space-3) var(--space-3-5) var(--space-2-5);
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .cap-card[data-status='online'] {
@@ -300,7 +198,7 @@ a.cap-tile:hover {
 .cap-card-head {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -310,8 +208,8 @@ a.cap-tile:hover {
   position: relative;
   flex: none;
   display: inline-flex;
-  padding: 2px;
-  border-radius: 50%;
+  padding: var(--space-0-5);
+  border-radius: var(--radius-round);
   border: 2px solid transparent;
 }
 
@@ -335,7 +233,7 @@ a.cap-tile:hover {
 .cap-avatar {
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -349,7 +247,7 @@ a.cap-tile:hover {
   flex: none;
   width: 0.6875rem;
   height: 0.6875rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   box-sizing: border-box;
   border: 2px solid var(--bg-card);
   background: var(--text-muted);
@@ -381,7 +279,7 @@ a.cap-tile:hover {
 .cap-who {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -410,7 +308,7 @@ a.cap-tile:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0 0.125rem;
+  gap: 0 var(--space-0-5);
   min-width: 0;
   font-size: var(--text-small);
 }
@@ -451,7 +349,7 @@ a.cap-tile:hover {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 /* In a table row the two badges sit side by side. */
@@ -462,63 +360,19 @@ a.cap-tile:hover {
   justify-content: flex-start;
 }
 
-.cap-load {
-  flex: none;
-  padding: 0.125rem 0.5rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--chip-neutral-border);
-  background: var(--chip-neutral-bg);
-  color: var(--chip-neutral);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: help;
-}
-
-.cap-load-light {
-  border-color: var(--chip-green-border);
-  background: var(--chip-green-bg);
-  color: var(--chip-green);
-}
-
-.cap-load-normal {
-  border-color: var(--chip-blue-border);
-  background: var(--chip-blue-bg);
-  color: var(--chip-blue);
-}
-
-.cap-load-heavy {
-  border-color: var(--overdue-border);
-  background: var(--blocked-bg);
-  color: var(--overdue);
-}
-
-.cap-overdue {
-  padding: 0.125rem 0.5rem;
-  border: 1px dashed var(--overdue-border);
-  border-radius: var(--radius-pill);
-  color: var(--overdue);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: help;
-}
-
 /* --- blocks inside a card --- */
 
 .cap-block {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 
 .cap-label {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   letter-spacing: 0.04em;
@@ -553,13 +407,13 @@ a.cap-tile:hover {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem 0.75rem;
+  gap: var(--space-1-5) var(--space-3);
 }
 
 .cap-agent {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -584,7 +438,7 @@ a.cap-tile:hover {
   bottom: -3px;
   width: 0.5625rem;
   height: 0.5625rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--chip-green);
   border: 2px solid var(--bg-card);
   box-sizing: border-box;
@@ -598,7 +452,7 @@ a.cap-tile:hover {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.875rem;
+  gap: var(--space-1) var(--space-3-5);
 }
 
 /* Waiting on reviewers and due soon: beside the load, not part of it. */
@@ -608,7 +462,7 @@ a.cap-tile:hover {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.875rem;
+  gap: var(--space-1) var(--space-3-5);
 }
 
 /* "7 in progress": the figure first, read as one phrase. */
@@ -639,7 +493,7 @@ a.cap-tile:hover {
 .cap-bar {
   display: flex;
   height: 0.5rem;
-  gap: 2px;
+  gap: var(--space-0-5);
   border-radius: var(--radius-pill);
   background: var(--bg-column);
   overflow: hidden;
@@ -672,9 +526,9 @@ a.cap-tile:hover {
 .cap-space {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   max-width: 100%;
-  padding: 0.0625rem 0.25rem 0.0625rem 0.5rem;
+  padding: 0.0625rem var(--space-1) 0.0625rem var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   background: var(--chip-neutral-bg);
@@ -697,7 +551,7 @@ a.cap-tile:hover {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 .cap-space-n {
@@ -710,32 +564,54 @@ a.cap-tile:hover {
 
 /* --- the fortnight as three figures (LAI-818; back without the chart, LAI-996) --- */
 
+/* One stacked bar (LAI-1222), its legend under it carrying the numbers. A
+   hairline gap of card between the parts, so neighbours never merge. */
+.cap-act {
+  display: flex;
+  gap: var(--space-0-5);
+  height: 0.5rem;
+  border-radius: var(--radius-hairline);
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.cap-act-part {
+  min-width: 2px;
+}
+
+.cap-act-self {
+  background: var(--chip-blue);
+}
+
+.cap-act-agents {
+  background: var(--chip-pink);
+}
+
+.cap-act-bookkeeping {
+  background: var(--text-muted);
+}
+
 .cap-figs {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.375rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
 }
 
 .cap-fig {
-  display: flex;
-  flex-direction: column;
-  gap: 0.0625rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
-  padding: 0.375rem 0.5rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
-  background: var(--bg-column);
+  font-size: var(--text-small);
 }
 
-.cap-fig:hover {
-  border-color: var(--accent-border);
-}
-
-.cap-fig .cap-count-n {
-  font-size: var(--text-body);
+.cap-act-swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-xs);
 }
 
 .cap-fig-zero .cap-count-n {
@@ -744,12 +620,92 @@ a.cap-tile:hover {
 }
 
 .cap-fig-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* --- the card's glance line and its disclosure (LAI-1222) --- */
+
+.cap-load-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cap-oldest {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cap-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.cap-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cap-key-zero {
+  color: var(--text-muted);
+}
+
+.cap-key-on .cap-count-n {
+  color: var(--chip-green);
+}
+
+.cap-key-marks {
+  display: inline-flex;
+  gap: var(--space-0-5);
+}
+
+.cap-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding: var(--space-0-5) var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: none;
+  color: var(--accent);
+  font: inherit;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cap-details-toggle:hover {
+  background: var(--accent-bg);
+}
+
+.cap-details-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cap-details-toggle svg {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.cap-details-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.cap-details:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2-5);
+  padding-top: var(--space-2-5);
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* ------------------------------------------------------------ never seen */
@@ -758,8 +714,8 @@ a.cap-tile:hover {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.625rem 0.875rem;
+  gap: var(--space-2);
+  padding: var(--space-2-5) var(--space-3-5);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-card);
   font-size: var(--text-small);
@@ -776,7 +732,7 @@ a.cap-tile:hover {
 }
 
 .cap-never-show {
-  padding: 0.125rem 0.625rem;
+  padding: var(--space-0-5) var(--space-2-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -792,43 +748,6 @@ a.cap-tile:hover {
 }
 
 /* ------------------------------------------------------------ view toggle */
-
-.cap-view {
-  display: inline-flex;
-  padding: 2px;
-  gap: 2px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  background: var(--bg-card);
-}
-
-.cap-view-button {
-  height: 1.75rem;
-  padding: 0 0.75rem;
-  border: 0;
-  border-radius: calc(var(--radius-control) - 2px);
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.cap-view-button:hover {
-  color: var(--text-primary);
-}
-
-.cap-view-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.cap-view-button[aria-pressed='true'] {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
 
 /* ------------------------------------------------------------------ list */
 
@@ -850,7 +769,7 @@ a.cap-tile:hover {
 
 .cap-list th,
 .cap-list td {
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   vertical-align: middle;
   border-bottom: 1px solid var(--border-subtle);
@@ -898,7 +817,7 @@ a.cap-tile:hover {
 }
 
 .cap-list-person .cap-avatar-wrap {
-  margin-right: 0.5rem;
+  margin-right: var(--space-2);
 }
 
 .cap-list-person .cap-who {
@@ -942,13 +861,13 @@ a.cap-tile:hover {
 .cap-list-running {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .cap-run-dot {
   width: 0.4375rem;
   height: 0.4375rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--border-default);
 }
 
@@ -962,7 +881,7 @@ a.cap-tile:hover {
 
 .cap-list-split {
   display: inline-flex;
-  gap: 0.75rem;
+  gap: var(--space-3);
   font-family: var(--font-mono);
   font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
@@ -978,7 +897,7 @@ a.cap-tile:hover {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
 }
 
 .cap-list-spaces-n {
@@ -996,7 +915,7 @@ a.cap-tile:hover {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem 0.875rem;
+  gap: var(--space-1-5) var(--space-3-5);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -1004,7 +923,7 @@ a.cap-tile:hover {
 .cap-legend li {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .cap-legend-note {
@@ -1014,7 +933,7 @@ a.cap-tile:hover {
 .cap-swatch {
   width: 0.625rem;
   height: 0.625rem;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 /* -------------------------------------------------------------- skeleton */
@@ -1024,20 +943,14 @@ a.cap-tile:hover {
 }
 
 .cap-skeleton-search {
-  grid-area: search;
+  flex: 1 1 18rem;
   height: 2.25rem;
-}
-
-.cap-skeleton-chips {
-  width: min(32rem, 100%);
-  height: 1.875rem;
-  border-radius: var(--radius-pill);
 }
 
 .cap-skeleton-avatar {
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   flex: none;
 }
 
@@ -1046,21 +959,13 @@ a.cap-tile:hover {
 }
 
 .cap-card-skeleton {
-  min-height: 17rem;
+  min-height: 11rem;
 }
 
 /* ----------------------------------------------------------------- phone */
 
 @container cap (max-width: 34rem) {
-  .cap-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'search'
-      'selects'
-      'chips';
-  }
-
-  .cap-view {
-    align-self: flex-start;
+  .cap .cap-dropdown {
+    width: 100%;
   }
 }

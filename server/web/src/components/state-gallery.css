@@ -62,3 +62,12 @@
   flex-direction: column;
   justify-content: center;
 }
+
+/* The brand loader's three sizes side by side (LAI-1126). */
+.gallery-brand-spinners {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-4) 0;
+}

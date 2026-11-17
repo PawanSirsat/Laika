@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  formatAgeCompact,
   formatDuration,
   formatDurationMs,
   formatHours,
@@ -143,5 +144,21 @@ void describe('formatHours — a person’s tracked time, hours however long (LA
       assert.doesNotMatch(formatHours(minutes), / d\b/, `${String(minutes)} printed in days`);
       assert.doesNotMatch(formatHours(minutes), /\d:\d/, `${String(minutes)} printed as h:mm`);
     }
+  });
+});
+
+void describe('formatAgeCompact (LAI-1222)', () => {
+  void test('a column-sized age: minutes, hours with minutes, days with hours', () => {
+    assert.equal(formatAgeCompact(30_000), 'just now');
+    assert.equal(formatAgeCompact(45 * MIN), '45m');
+    assert.equal(formatAgeCompact(5 * HOUR), '5h');
+    assert.equal(formatAgeCompact(5 * HOUR + 20 * MIN), '5h 20m');
+    assert.equal(formatAgeCompact(2 * DAY), '2d');
+    assert.equal(formatAgeCompact(12 * DAY + 2 * HOUR + 59 * MIN), '12d 2h');
+  });
+
+  void test('a future stamp or no number reads just now, never a negative', () => {
+    assert.equal(formatAgeCompact(-5 * HOUR), 'just now');
+    assert.equal(formatAgeCompact(Number.NaN), 'just now');
   });
 });

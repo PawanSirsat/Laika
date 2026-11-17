@@ -13,6 +13,7 @@
  * who asks for less motion, a hidden tab, or a browser without
  * `Element.animate` gets a 200 ms fade or nothing — never a half-run zoom.
  */
+import { prefersReducedMotion } from '../../../theme/motion.ts';
 
 export const ZOOM_MS = 520;
 export const FADE_MS = 200;
@@ -32,7 +33,8 @@ export function motionAllowed(win: Window = window): boolean {
     return false;
   }
   if (win.document.hidden) return false;
-  return !win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Asked once, through theme/motion.ts (LAI-1208, merge train).
+  return !prefersReducedMotion();
 }
 
 /**

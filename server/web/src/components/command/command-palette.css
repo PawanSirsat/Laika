@@ -1,0 +1,403 @@
+/*
+ * The command palette (LAI-1192) and its triggers. Theme tokens only, so dark
+ * and light follow `data-theme`. Above the drawer and the sheet (60–61),
+ * below a confirmation (80), which may be asked from an action here.
+ * cmdk ships no styles; its `[cmdk-*]` attributes are ours to dress.
+ */
+
+/* ── The header's search bar (LAI-1188) ─────────────────────────────── */
+
+/* A field to look at, a button to press: it opens the palette. */
+.cmdk-trigger-header {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  /* The centre column's width (app-shell.css): up to 36rem on a wide desktop. */
+  width: 100%;
+  max-width: 36rem;
+  height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-1-5) 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-body);
+  cursor: text;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cmdk-trigger-header:hover {
+  border-color: var(--accent-border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+/* Pressed: it gives a little, as a field taking the click does. */
+.cmdk-trigger-header:active {
+  background: var(--bg-card-hover);
+}
+
+/* Focus reads as a field's: the accent edge and a soft ring, not only the outline. */
+.cmdk-trigger-header:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+  color: var(--text-secondary);
+}
+
+/* While the palette it opened is up, the field stays lit. */
+.cmdk-trigger-header[aria-expanded='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.cmdk-trigger-icon {
+  flex: none;
+}
+
+.cmdk-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.cmdk-trigger-kbd {
+  flex: none;
+}
+
+/* A tablet keeps the field, at a field's width beside the title. */
+@media (max-width: 900px) {
+  .cmdk-trigger-header {
+    width: 12rem;
+  }
+}
+
+/* A phone folds it to its icon; the palette opens as a full-width sheet. */
+@media (max-width: 600px) {
+  .cmdk-trigger-header {
+    width: 2.25rem;
+    padding: 0;
+    justify-content: center;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .cmdk-trigger-header .cmdk-trigger-text,
+  .cmdk-trigger-header .cmdk-trigger-kbd {
+    display: none;
+  }
+}
+
+.cmdk-trigger:focus-visible,
+.cmdk-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cmdk-kbd {
+  display: inline-flex;
+  align-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-pill);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1;
+  justify-content: center;
+}
+
+/* ── The layer ────────────────────────────────────────────────────────── */
+
+.cmdk-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh var(--space-4) var(--space-4);
+}
+
+.cmdk-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  animation: cmdk-fade var(--duration-fast) var(--ease-enter);
+}
+
+.cmdk-panel {
+  position: relative;
+  width: min(40rem, 100%);
+  max-height: min(34rem, 76vh);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  animation: cmdk-in var(--duration-base) var(--ease-enter);
+}
+
+.cmdk-panel-loading {
+  margin: 0;
+  padding: var(--space-4) var(--space-4-5);
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+}
+
+.cmdk-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.cmdk-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cmdk-input-icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.cmdk-input {
+  flex: 1;
+  min-width: 0;
+  height: 3.25rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-reading);
+}
+
+.cmdk-input::placeholder {
+  color: var(--text-muted);
+}
+
+.cmdk-close {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-pill);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.cmdk-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1-5);
+}
+
+.cmdk-group [cmdk-group-heading] {
+  padding: var(--space-2-5) var(--space-2-5) var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  min-height: 2.5rem;
+  padding: 0 var(--space-2-5);
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cmdk-item[data-selected='true'] {
+  background: var(--accent-bg);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.cmdk-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmdk-item-hint {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.cmdk-space-key,
+.cmdk-task-key {
+  flex: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.cmdk-space-key {
+  min-width: 2rem;
+}
+
+.cmdk-status {
+  flex: none;
+  padding: var(--space-0-5) 0.4375rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-chip);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.cmdk-status-todo {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+}
+
+.cmdk-status-in_progress {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}
+
+.cmdk-status-review {
+  border-color: var(--chip-purple-border);
+  background: var(--chip-purple-bg);
+  color: var(--chip-purple);
+}
+
+.cmdk-status-done {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.cmdk-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-2-5);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.cmdk-note-error {
+  color: var(--overdue);
+}
+
+.cmdk-empty {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.cmdk-empty-title {
+  margin: 0 0 var(--space-1-5);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.cmdk-empty-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+}
+
+.cmdk-foot {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.cmdk-foot .cmdk-kbd {
+  margin-right: var(--space-0-5);
+}
+
+/* ── Phone: a full-screen sheet ───────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .cmdk-layer {
+    padding: 0;
+  }
+
+  .cmdk-panel {
+    width: 100%;
+    max-height: none;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+
+  .cmdk-item {
+    min-height: 2.75rem;
+  }
+
+  /* No keyboard to hint at on a touch screen. */
+  .cmdk-foot {
+    display: none;
+  }
+}
+
+/* What the query matched (LAI-1221): the accent's tint, the label's own ink. */
+.cmdk-mark {
+  border-radius: var(--radius-xs);
+  background: var(--accent-bg);
+  color: inherit;
+  font-weight: var(--weight-semibold);
+  box-shadow: 0 0 0 1px var(--accent-bg);
+}
+
+/* A destination's Alt key, at the row's end (LAI-1221). */
+.cmdk-item-kbd {
+  margin-left: auto;
+  flex: none;
+}
+
+@keyframes cmdk-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cmdk-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.375rem) scale(0.99);
+  }
+}

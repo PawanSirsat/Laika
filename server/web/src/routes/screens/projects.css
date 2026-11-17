@@ -66,7 +66,7 @@
   flex: none;
   max-width: 100%;
   overflow-x: auto;
-  gap: 2px;
+  gap: var(--space-0-5);
   padding: 3px;
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
@@ -80,7 +80,7 @@
 .spaces-seg-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   flex: none;
   padding: 0.3125rem 0.6875rem;
   border: 1px solid transparent;
@@ -214,14 +214,14 @@
 .space-avatar-lg {
   width: 3.5rem;
   height: 3.5rem;
-  border-radius: 0.875rem;
+  border-radius: var(--radius-column);
   font-size: var(--text-heading-md);
 }
 
 .space-avatar-md {
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 0.5625rem;
+  border-radius: var(--radius-card);
   font-size: var(--text-body);
 }
 
@@ -230,8 +230,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding-top: 0.25rem;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
 }
 
 .project-card-name {
@@ -293,8 +293,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.375rem;
-  padding-top: 0.25rem;
+  gap: var(--space-1-5);
+  padding-top: var(--space-1);
 }
 
 .project-card-updated {
@@ -306,7 +306,7 @@
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.06em;
-  padding: 0.1875rem 0.375rem;
+  padding: 0.1875rem var(--space-1-5);
   border-radius: var(--radius-chip);
   background: var(--chip-neutral-bg);
   border: 1px solid var(--chip-neutral-border);
@@ -387,6 +387,7 @@
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);
   min-height: 2.25rem;
+  flex-wrap: wrap;
 }
 
 .space-card-actions,
@@ -415,7 +416,7 @@
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   box-shadow: 0 0 0 2px var(--bg-card);
-  margin-left: -6px;
+  margin-left: calc(var(--space-1-5) * -1);
 }
 
 .space-face:first-child {
@@ -431,7 +432,7 @@
 .space-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   padding: 0;
   border: 0;
   background: none;
@@ -455,8 +456,8 @@
 .space-join {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.3125rem 0.75rem;
+  gap: var(--space-1-5);
+  padding: 0.3125rem var(--space-3);
   border: 1px solid var(--accent);
   border-radius: var(--radius-control);
   background: var(--accent);
@@ -490,11 +491,16 @@
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  overflow: hidden;
+  /* The scroller ScrollCue fades and labels (LAI-1201, LAI-1196). */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 
+/* Never squeezed below its columns: past this it scrolls, with the cue
+   (LAI-1196), rather than crushing the Space column to an ellipsis. */
 .spaces-table {
   width: 100%;
+  min-width: 72rem;
   table-layout: fixed;
   border-collapse: collapse;
 }
@@ -517,7 +523,7 @@
   width: 6rem;
 }
 .spaces-col-actions {
-  width: 14.5rem;
+  width: 18rem;
 }
 
 .spaces-table th {
@@ -560,7 +566,7 @@
 .space-cell-names {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -585,7 +591,7 @@
 }
 
 .space-cell-progress .spaces-progress {
-  margin-bottom: 0.375rem;
+  margin-bottom: var(--space-1-5);
 }
 
 .space-cell-blocked {
@@ -603,8 +609,20 @@
   justify-content: flex-end;
 }
 
+/* Already scrolling here, so the Space column gets room for a name rather
+   than whatever the fixed columns leave. */
+@media (max-width: 1100px) {
+  .spaces-table {
+    min-width: 80rem;
+  }
+}
+
 /* Phone: each row becomes a block of labelled lines. */
-@media (max-width: 760px) {
+@media (max-width: 600px) {
+  .spaces-table {
+    min-width: 0;
+  }
+
   .spaces-table,
   .spaces-table tbody,
   .spaces-table tr,
@@ -631,7 +649,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: 0.25rem 0;
+    padding: var(--space-1) 0;
     border-bottom: 0;
   }
 
@@ -664,6 +682,42 @@
 
 /* ------------------------------------------------------------------ form */
 
+.projects-form-lead {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+/* What the last join, archive or restore did — kept in the DOM, so a screen
+   reader hears each new sentence. */
+.projects-notice {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-control);
+  background: var(--chip-green-bg);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+}
+
+.projects-notice[data-empty='true'] {
+  display: none;
+}
+
+/* Sized to its longest choice, the height of the search beside it. */
+.spaces-toolbar .spaces-sort {
+  flex: 0 0 auto;
+  width: 13.5rem;
+  height: 2.375rem;
+}
+
+@media (max-width: 600px) {
+  .spaces-toolbar .spaces-sort {
+    flex: 1 1 10rem;
+    width: auto;
+  }
+}
+
 .projects-form {
   margin: 0 1.125rem var(--space-4);
   padding: var(--space-4);
@@ -682,4 +736,8 @@
 
 .projects-more {
   margin: var(--space-4) 1.125rem var(--space-6);
+}
+
+.projects-form-error {
+  margin: 0 0 var(--space-3);
 }

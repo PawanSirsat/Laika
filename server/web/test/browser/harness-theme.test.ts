@@ -14,9 +14,11 @@
  *
  * ## This file tests the harness, not a screen
  *
- * The first test pins down that the phone layout is right: the user menu is
- * off-canvas until the navigation opens, then reachable, in both themes. So
- * the failure was the helper, and the fix belongs to the helper.
+ * The first test pins down that the phone layout is right: the user menu was
+ * off-canvas until the navigation opened, then reachable, in both themes —
+ * and since LAI-1227 it is the top bar's, on screen at 390 without opening
+ * anything. Either way the failure was the helper, and the fix belongs to
+ * the helper.
  *
  * The second forces the swap into the window the CI run hit. `/me` is held
  * and the header's switch is kept moving, so a pointed click cannot land
@@ -61,20 +63,14 @@ void after(async () => {
 
 void describe('a phone', () => {
   for (const theme of ['light', 'dark']) {
-    void test(`390px, ${theme}: the user menu is off-canvas until the navigation opens`, async () => {
+    void test(`390px, ${theme}: the user menu is in the top bar, on screen with the navigation closed`, async () => {
       const h = await open('/organisation', STUB);
       try {
         await h.page.setViewportSize({ width: 390, height: 900 });
         await setTheme(h.page, theme);
-        const trigger = h.page.locator('.user-menu-trigger');
-        const closed = await trigger.boundingBox();
-        assert.ok(closed !== null, 'no user menu');
-        assert.ok(closed.x + closed.width <= 0, `on screen while closed: x=${String(closed.x)}`);
-
-        await h.page.locator('.shell-navtoggle').click();
-        await h.page.locator('.sidebar-open').waitFor({ timeout: 5_000 });
-        // A pointed click: it waits until the slide-in has finished and the
-        // button is in the viewport, which is what a thumb needs.
+        const trigger = h.page.locator('[data-app-header] .user-menu-trigger');
+        assert.equal(await h.page.locator('.sidebar-open').count(), 0, 'the navigation is open');
+        // A pointed click, which is what a thumb needs: no slide-in first.
         await trigger.click({ timeout: 5_000 });
         const box = await trigger.boundingBox();
         assert.ok(box !== null && box.x >= 0 && box.x + box.width <= 390, 'off screen when open');

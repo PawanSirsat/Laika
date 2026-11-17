@@ -336,6 +336,35 @@ void describe('the header (LAI-502)', () => {
     }
   });
 
+  /*
+   * LAI-1205. Day settings listens for Escape on the capture phase, so it
+   * heard the key before the Where-you-are picker inside it and closed itself
+   * — list and all — on the Escape that was the picker's. On the overlay stack
+   * the open picker is the top layer and the popover lets that Escape pass.
+   */
+  void test('Escape with Where you are open closes the picker, then Day settings', async () => {
+    const h = await myDay();
+    try {
+      await h.page.locator('[data-day-settings] > button').click();
+      const panel = h.page.locator('[data-day-settings] .myday-pop-panel');
+      await panel.waitFor({ timeout: 5_000 });
+      await panel.locator('[data-where-you-are] [role="combobox"]').click();
+      const list = h.page.locator('[data-dropdown-panel]');
+      await list.waitFor({ timeout: 5_000 });
+
+      await h.page.keyboard.press('Escape');
+      await list.waitFor({ state: 'detached', timeout: 5_000 });
+      await h.page.waitForTimeout(200);
+      assert.equal(await panel.count(), 1, 'the picker’s Escape closed Day settings too');
+
+      await h.page.keyboard.press('Escape');
+      await until(async () => (await panel.count()) === 0);
+      assert.equal(await panel.count(), 0, 'a second Escape left Day settings open');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('Draft my time off says so in a banner, and Turn on turns it on', async () => {
     const writes: StubCall[] = [];
     const h = await myDay({ writes, draftOff: true });

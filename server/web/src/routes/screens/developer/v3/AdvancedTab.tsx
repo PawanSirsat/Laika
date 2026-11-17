@@ -33,6 +33,7 @@ import {
 } from './advanced.ts';
 import '../../tokens/tokens.css';
 import '../../../../components/token-row.css';
+import { ResultNote, useResult } from './ResultNote.tsx';
 import './advanced.css';
 
 export interface AdvancedTabProps {
@@ -70,6 +71,8 @@ const TOOLS_HREF = '/developer?tab=tools';
 export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   const confirm = useConfirm();
   const [message, announce] = useLiveRegion();
+  // What a revoke or a saved secret just did, on screen too (LAI-1197).
+  const [result, notify, clearResult] = useResult(announce);
   const formId = useId();
   const [tokens, setTokens] = useState<readonly TokenView[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -137,6 +140,20 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
     if (revealed !== undefined && revealed.secret !== '') doneRef.current?.focus();
   }, [revealed]);
 
+  // While a secret is on screen, reloading or leaving the page asks first:
+  // it is the only copy (LAI-1197, as Tool details does for a tool's).
+  const showingSecret = revealed !== undefined && revealed.secret !== '';
+  useEffect(() => {
+    if (!showingSecret) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, [showingSecret]);
+
   useEffect(() => {
     if (!minting && revealed === undefined && returnFocus.current) {
       returnFocus.current = false;
@@ -156,6 +173,7 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   const mint = (): void => {
     setPending(true);
     setMintError(undefined);
+    clearResult();
     const expiresAt = expiresAtFor(expiry, Date.now());
     createToken({
       name: name.trim(),
@@ -191,9 +209,10 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
     }).then((yes) => {
       if (!yes) return;
       setActionError(undefined);
+      clearResult();
       revokeToken(token.id)
         .then(() => {
-          announce(`Revoked ${token.name}.`);
+          notify(`Revoked “${token.name}”. Anything using it has stopped working.`);
           listTitleRef.current?.focus();
           reload();
         })
@@ -247,6 +266,8 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
           )}
         </div>
 
+        {result !== undefined && <ResultNote message={result} onDismiss={clearResult} />}
+
         {actionError !== undefined && (
           <p className="tok-error dev-adv-error" role="alert">
             {actionError}
@@ -270,11 +291,15 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
                 ref={doneRef}
                 className="tok-dismiss"
                 onClick={() => {
+                  const name = revealed.token.name;
                   returnFocus.current = true;
                   forget();
+                  notify(
+                    `“${name}” is ready to use. Its secret is hidden now and cannot be shown again.`,
+                  );
                 }}
               >
-                Done
+                I’ve saved it
               </button>
             </div>
           </section>
@@ -407,7 +432,17 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
         )}
 
         {loadError !== null ? (
-          <ApiErrorState error={loadError} resource="your credentials" scope="organisation" />
+          <ApiErrorState
+            error={loadError}
+            resource="your credentials"
+            scope="organisation"
+            onRetry={() => {
+              // Back to the loading rows while asking, so the press shows (LAI-1128).
+              setLoadError(null);
+              setTokens(undefined);
+              reload();
+            }}
+          />
         ) : tokens === undefined ? (
           <LoadingState shape="row" count={3} label="Loading your credentials" />
         ) : tokens.length === 0 ? (

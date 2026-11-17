@@ -19,9 +19,10 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { capacityFor, NOW, orgStub, PRESENCE } from './capacity-org.ts';
+import { capacityFor, NOW, orgStub } from './capacity-org.ts';
 import { pick, valueOf } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tipText, tipTexts } from './tooltip-probe.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -45,6 +46,22 @@ async function ready(page: Page): Promise<void> {
 const card = (page: Page, name: string) =>
   page.locator('.cap-grid > .cap-card', { has: page.locator('.cap-name', { hasText: name }) });
 
+/**
+ * Open a card's Details (LAI-1222): the pipeline, every agent, the activity
+ * and the spaces sit behind it, and are not in the page until it is pressed.
+ */
+async function expand(page: Page, name: string): Promise<void> {
+  const button = page.getByRole('button', { name: `Show details for ${name}` });
+  await button.click();
+  await card(page, name).locator('.cap-details:not([hidden])').waitFor({ timeout: 5_000 });
+}
+
+/** A figure at the top of the page, by its `data-kpi` (LAI-1222). */
+const kpi = (page: Page, id: string) => page.locator(`.cap-kpis [data-kpi="${id}"]`);
+
+/** The summary line's link to a queue this page counts (LAI-1222). */
+const out = (page: Page, id: 'review' | 'unlisted') => page.locator(`a.cap-out[data-out="${id}"]`);
+
 void describe('who is here', () => {
   void test('online first, with a green ring and dot, and the status in words', async () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
@@ -66,10 +83,7 @@ void describe('who is here', () => {
       assert.equal(await bea.locator('.cap-dot-away').count(), 1);
       assert.match(await bea.locator('.cap-status').innerText(), /^Away · 2[34] min$/);
       // The absolute time is one hover away.
-      assert.match(
-        (await bea.locator('.cap-status').getAttribute('title')) ?? '',
-        /a board action/,
-      );
+      assert.match(await tipText(bea.locator('.cap-status')), /a board action/);
 
       // The green is a real colour of its own, in both themes.
       for (const theme of ['Light', 'Dark']) {
@@ -138,22 +152,24 @@ void describe('finding people', () => {
     }
   });
 
-  void test('each filter chip shows exactly its people', async () => {
+  void test('each figure is the filter for exactly its people (LAI-1222)', async () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const expected: readonly (readonly [string, readonly string[], number])[] = [
-        // chip, the cards, how many fold into the never-seen line
-        ['Online now', ['Pawan Sirsat'], 0],
-        ['Agents running', ['Pawan Sirsat'], 0],
-        ['Heavy load', ['Pawan Sirsat'], 0],
-        ['Overdue', ['Pawan Sirsat'], 0],
-        ['No load', [], 2],
-        ['Never seen', ['Dee Pillay', 'Cal Mokoena', 'Eli van Wyk'], 0],
-        ['All', ['Pawan Sirsat', 'Bea Nkosi'], 3],
+        // figure, the cards, how many fold into the never-seen line
+        ['online', ['Pawan Sirsat'], 0],
+        ['agents', ['Pawan Sirsat'], 0],
+        ['heavy', ['Pawan Sirsat'], 0],
+        ['overdue', ['Pawan Sirsat'], 0],
+        ['none', [], 2],
+        ['never', ['Dee Pillay', 'Cal Mokoena', 'Eli van Wyk'], 0],
+        ['all', ['Pawan Sirsat', 'Bea Nkosi'], 3],
       ];
+      // The chip row is gone: the figures are the only filters.
+      assert.equal(await h.page.locator('.cap-chip').count(), 0, 'a chip row is still drawn');
       for (const [chip, names, folded] of expected) {
-        const button = h.page.locator('.cap-chip', { hasText: chip });
+        const button = kpi(h.page, chip);
         await button.click();
         assert.equal(await button.getAttribute('aria-pressed'), 'true', `${chip} is not pressed`);
         await until(async () => (await cardNames(h.page)).join() === names.join());
@@ -174,7 +190,7 @@ void describe('finding people', () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
-      const tile = h.page.locator('.cap-tile', { hasText: 'Online now' });
+      const tile = kpi(h.page, 'online');
       assert.match(await tile.innerText(), /Online now\s*1\s*of 5 people/);
       await tile.click();
       await until(async () => (await cardNames(h.page)).length === 1);
@@ -243,10 +259,8 @@ void describe('finding people', () => {
         /2\s*in progress/.test(await pawan.locator('.cap-counts').innerText()),
       );
       assert.match(await pawan.locator('.cap-counts').innerText(), /2\s*in progress/);
-      assert.match(
-        await h.page.locator('.cap-tile', { hasText: 'In progress' }).innerText(),
-        /In progress\s*2/,
-      );
+      // The total is the summary line's now, in the chosen space.
+      assert.match(await h.page.locator('.screen-embedded-context').innerText(), /2 in progress/);
     } finally {
       await h.close();
     }
@@ -267,11 +281,20 @@ void describe('finding people', () => {
       await pick(space, 'p1');
       await until(async () => (await badge()).endsWith('Normal'));
       assert.match(await badge(), /Normal$/);
+      // Nobody is heavy in Laika, so the figure that would show nobody is gone.
+      await until(async () => (await kpi(h.page, 'heavy').count()) === 0);
+      assert.equal(await kpi(h.page, 'heavy').count(), 0, 'a zero Heavy load tile is drawn');
 
-      const heavy = h.page.locator('.cap-chip', { hasText: 'Heavy load' });
+      // Switched on first, it stays — at 0 — so the reader can see and undo it.
+      await pick(space, '');
+      await until(async () => (await badge()).endsWith('Heavy'));
+      const heavy = kpi(h.page, 'heavy');
       await heavy.click();
+      await pick(space, 'p1');
       await until(async () => (await cardNames(h.page)).length === 0);
       assert.deepEqual(await cardNames(h.page), [], 'nobody is heavy in Laika');
+      assert.equal(await heavy.getAttribute('aria-pressed'), 'true');
+      assert.match(await heavy.innerText(), /Heavy load\s*0/);
 
       await pick(space, '');
       await until(async () => (await cardNames(h.page)).join() === 'Pawan Sirsat');
@@ -288,18 +311,25 @@ void describe('finding people', () => {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
       const counts = (await pawan.locator('.cap-counts').innerText()).replace(/\s+/g, ' ').trim();
-      assert.equal(counts, '7 in progress 3 to do 12 backlog');
-      assert.match(await pawan.locator('.cap-waits').innerText(), /2\s*waiting on reviewers/);
+      assert.equal(counts, '7 in progress 3 to do');
+      // The glance line: agents running and work in review, before any press.
+      assert.match(
+        await pawan.locator('.cap-keys').innerText(),
+        /2\s*agents running\s*2\s*in review/,
+      );
+      assert.equal(await pawan.locator('.cap-waits').count(), 0, 'the pipeline is drawn closed');
+      await expand(h.page, 'Pawan Sirsat');
+      assert.equal(
+        (await pawan.locator('.cap-waits').innerText()).replace(/\s+/g, ' ').trim(),
+        '2 waiting on reviewers 2 due in 7 days 12 backlog',
+      );
       // Overdue is its own badge beside the load, not a count inside it.
       assert.equal((await pawan.locator('.cap-overdue').innerText()).trim(), '1 overdue');
       assert.equal(await card(h.page, 'Bea Nkosi').locator('.cap-overdue').count(), 0);
       // A space chip's figure is committed work; backlog is on hover.
       const laika = pawan.locator('.cap-space', { hasText: 'Laika' });
       assert.match(await laika.innerText(), /^Laika\s*8\b/);
-      assert.match(
-        (await laika.getAttribute('title')) ?? '',
-        /8 committed in Laika.*12 in backlog/,
-      );
+      assert.match(await tipText(laika), /8 committed in Laika.*12 in backlog/);
     } finally {
       await h.close();
     }
@@ -313,13 +343,24 @@ void describe('what an owner sees and a member does not', () => {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
       assert.match(await pawan.locator('.cap-role').innerText(), /Owner · Builder/);
+      await expand(h.page, 'Pawan Sirsat');
       // Who did the fortnight's 79 (LAI-818): bookkeeping apart from both —
-      // three figures and no bar chart (LAI-992, LAI-996).
+      // three figures under one stacked bar (LAI-1222).
       assert.match(await pawan.locator('.cap-activity-block .cap-label-note').innerText(), /· 79$/);
       assert.equal(
         (await pawan.locator('.cap-figs').innerText()).replace(/\s+/g, ' ').trim(),
         '21 by hand 40 by agents 18 bookkeeping',
       );
+      assert.equal(
+        await pawan.locator('.cap-act').getAttribute('aria-label'),
+        '79 board actions in 14 days: 21 by hand, 40 by agents, 18 bookkeeping',
+      );
+      const parts = await pawan
+        .locator('.cap-act-part')
+        .evaluateAll((els) =>
+          els.map((el) => Math.round(parseFloat((el as HTMLElement).style.width))),
+        );
+      assert.deepEqual(parts, [27, 51, 23], 'the bar is not drawn from the three figures');
       assert.equal(await h.page.locator('.cap-spark').count(), 0, 'a sparkline is drawn');
       // The link waits on the shell's `/me` as well as the cards, so wait for
       // it before counting (LAI-765's rule: wait for what you read).
@@ -340,8 +381,9 @@ void describe('what an owner sees and a member does not', () => {
       );
       await until(async () => (await pawan.locator('.cap-agent-dot').count()) === 2);
       assert.equal(await pawan.locator('.cap-agent-dot').count(), 2, 'a running dot each');
-      const unlisted = h.page.locator('.cap-tile-unlisted');
-      assert.match(await unlisted.innerText(), /Unlisted work\s*1/);
+      const unlisted = out(h.page, 'unlisted');
+      await unlisted.waitFor({ timeout: 10_000 });
+      assert.equal((await unlisted.innerText()).trim(), '1 unlisted to triage');
       assert.equal(await unlisted.getAttribute('href'), '/inbox?tab=unlisted');
     } finally {
       await h.close();
@@ -357,6 +399,7 @@ void describe('what an owner sees and a member does not', () => {
       assert.equal((await pawan.locator('.cap-status').innerText()).trim(), 'Online now');
       assert.equal((await pawan.locator('.cap-role').innerText()).trim(), 'Owner');
       assert.match(await pawan.locator('.cap-counts').innerText(), /7\s*in progress/);
+      await expand(h.page, 'Pawan Sirsat');
       assert.equal(await pawan.locator('.cap-agent-dot').count(), 2);
 
       assert.equal(await h.page.locator('.cap-kind').count(), 0, 'a profile kind is drawn');
@@ -364,7 +407,7 @@ void describe('what an owner sees and a member does not', () => {
       assert.equal(await h.page.locator('.cap-spark').count(), 0, 'a sparkline is drawn');
       assert.equal(await h.page.locator('a.cap-name-link').count(), 0, 'a profile link is drawn');
       assert.equal(await pawan.locator('.cap-agent', { hasText: 'Cursor' }).count(), 0);
-      assert.equal(await h.page.locator('.cap-tile-unlisted').count(), 0);
+      assert.equal(await out(h.page, 'unlisted').count(), 0);
       assert.deepEqual(
         h.calls.filter((c) => c.path === '/api/v1/unlisted'),
         [],
@@ -411,9 +454,12 @@ void describe('states', () => {
         (await card(h.page, 'Bea Nkosi').locator('.cap-status').innerText()).trim(),
         'Presence is off',
       );
-      for (const chip of ['Online now', 'Agents running', 'Never seen']) {
-        assert.equal(await h.page.locator('.cap-chip', { hasText: chip }).count(), 0, chip);
+      // The figures that read presence are not drawn; the rest are.
+      await kpi(h.page, 'overdue').waitFor({ timeout: 5_000 });
+      for (const id of ['online', 'agents', 'never']) {
+        assert.equal(await kpi(h.page, id).count(), 0, id);
       }
+      assert.match(await kpi(h.page, 'all').innerText(), /People\s*5\s*presence is off/);
       assert.equal(await h.page.locator('.cap input[type="checkbox"]').count(), 0);
       // "Online first" reads presence, so the sort falls back to load.
       assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Sort' })), 'load');
@@ -438,10 +484,10 @@ void describe('states', () => {
     try {
       await h.page.locator('.cap-card-skeleton').first().waitFor({ timeout: 20_000 });
       await until(async () => (await h.page.locator('.cap-card-skeleton').count()) === 3);
-      await until(async () => (await h.page.locator('.cap-tile-skeleton').count()) === 6);
+      await until(async () => (await h.page.locator('.cap-tile-skeleton').count()) === 7);
       await until(async () => (await h.page.locator('.cap[aria-busy="true"]').count()) === 1);
       assert.equal(await h.page.locator('.cap-card-skeleton').count(), 3);
-      assert.equal(await h.page.locator('.cap-tile-skeleton').count(), 6);
+      assert.equal(await h.page.locator('.cap-tile-skeleton').count(), 7);
       assert.equal(await h.page.locator('.cap[aria-busy="true"]').count(), 1);
       const before = await h.page.locator('.cap-grid').boundingBox();
 
@@ -469,13 +515,13 @@ void describe('states', () => {
       // card, the review and unlisted counts (the shell's reads), and the
       // self-hosted font's widths, not the fallback's.
       await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
-      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
-      await until(async () => /Waiting for review\s*3/.test(await review.innerText()), 10_000);
-      await h.page.locator('.cap-tile-unlisted').waitFor({ timeout: 10_000 });
+      const review = out(h.page, 'review');
+      await until(async () => (await review.innerText()).includes('3 waiting for review'), 10_000);
+      await out(h.page, 'unlisted').waitFor({ timeout: 10_000 });
       await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
       const wide = await h.page.evaluate(() => ({
         page: document.documentElement.scrollWidth > window.innerWidth,
-        cut: [...document.querySelectorAll('.cap-card, .cap-card *, .cap-tiles *, .cap-toolbar *')]
+        cut: [...document.querySelectorAll('.cap-card, .cap-card *, .kpi-row .kpi *, .fbar *')]
           .filter(
             (el) =>
               el.scrollWidth > el.clientWidth + 1 &&
@@ -571,9 +617,13 @@ void describe('links out', () => {
     });
     try {
       await ready(h.page);
-      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
-      await until(async () => /Waiting for review\s*200\+/.test(await review.innerText()), 10_000);
-      assert.match(await review.innerText(), /Waiting for review\s*200\+/);
+      const review = out(h.page, 'review');
+      await review.waitFor({ timeout: 10_000 });
+      await until(
+        async () => (await review.innerText()).includes('200+ waiting for review'),
+        10_000,
+      );
+      assert.match(await review.innerText(), /^200\+ waiting for review$/);
     } finally {
       await h.close();
     }
@@ -583,9 +633,10 @@ void describe('links out', () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
-      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
-      await until(async () => /Waiting for review\s*3/.test(await review.innerText()));
-      assert.match(await review.innerText(), /Waiting for review\s*3/);
+      const review = out(h.page, 'review');
+      await review.waitFor({ timeout: 10_000 });
+      await until(async () => (await review.innerText()).includes('3 waiting for review'));
+      assert.match(await review.innerText(), /^3 waiting for review$/);
       assert.equal(await review.getAttribute('href'), '/inbox?tab=review');
 
       // The sidebar's Inbox carries both counts added (LAI-796): 3 waiting for
@@ -596,7 +647,7 @@ void describe('links out', () => {
       await until(async () => /Inbox\s*4/.test(await entry.innerText()), 10_000);
       assert.match(await entry.innerText(), /Inbox\s*4/);
 
-      await h.page.locator('.cap-tile-unlisted').click();
+      await out(h.page, 'unlisted').click();
       await h.page.waitForURL(
         (url) => url.pathname === '/inbox' && url.search === '?tab=unlisted',
         { timeout: 10_000 },
@@ -627,37 +678,26 @@ void describe('links out', () => {
 });
 
 /*
- * The chip is the space bar's, not Capacity's: since LAI-754 Capacity has no
- * space frame, so this is asserted on a space tab with presence like Capacity's.
+ * **The space bar has no Agents chip** (LAI-1233, the owner): it repeated the
+ * board Filter's *Agent-created only* and read `/presence` on every tab.
+ * Presence is now read only by Activity, the screen that draws it.
  */
-void describe('the space bar’s Agents chip (LAI-737)', () => {
-  void test('says what its number counts, and which agents', async () => {
-    const stub: ApiStub = {
-      ...orgStub('owner'),
-      '/api/v1/presence': {
-        enabled: true,
-        present: [
-          ...PRESENCE.present,
-          {
-            user_id: 'u3',
-            name: 'Cal Mokoena',
-            matched_task_id: null,
-            project_ids: [],
-            is_agent: true,
-            client: 'cursor',
-            clients: ['cursor'],
-            last_seen: NOW - 30_000,
-          },
-        ],
-      },
-    };
-    const h = await open('/activity?project=laika', stub);
+void describe('presence is read where it is drawn (LAI-1233)', () => {
+  void test('no Agents chip on a space; Activity still asks for presence', async () => {
+    const h = await open('/activity?project=laika', orgStub('owner'));
     try {
-      const chip = h.page.locator('.space-agents-start');
-      await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
-      const text = (await chip.textContent()) ?? '';
-      assert.match(text, /2 people with agent sessions/, text);
-      assert.match(text, /Claude Code, Codex, Cursor/, text);
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await until(() => h.calls.some((c) => c.path === '/api/v1/presence'));
+      assert.ok(
+        h.calls.some((c) => c.path === '/api/v1/presence'),
+        'Activity drew presence without asking for it',
+      );
+      assert.equal(await h.page.locator('.space-agents-start').count(), 0);
+      assert.equal(
+        await h.page.locator('.space-bar .space-chip', { hasText: /^Agents/ }).count(),
+        0,
+        'the Agents chip is back in the space bar',
+      );
     } finally {
       await h.close();
     }
@@ -674,12 +714,19 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       // Cal has no agents, no spaces, no tasks and no activity — and still
       // every block, each saying so with a figure.
       const cal = card(h.page, 'Cal Mokoena');
+      // The glance line says nothing is going, in figures, before any press.
+      assert.equal((await cal.locator('.cap-oldest').innerText()).trim(), 'nothing in progress');
+      assert.equal(
+        (await cal.locator('.cap-keys').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 agents running 0 in review Details',
+      );
+      await expand(h.page, 'Cal Mokoena');
       // Labels are drawn in capitals by CSS, and innerText reports them so.
       const labels = (await cal.locator('.cap-label').allInnerTexts()).map((t) =>
         t.replace(/\s+/g, ' ').trim().toLowerCase(),
       );
       assert.deepEqual(labels, [
-        'workload nothing in progress',
+        'pipeline',
         'agents 0 running',
         'activity 14 days · 0',
         'spaces 0 spaces',
@@ -690,11 +737,11 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       );
       assert.equal(
         (await cal.locator('.cap-counts').innerText()).replace(/\s+/g, ' ').trim(),
-        '0 in progress 0 to do 0 backlog',
+        '0 in progress 0 to do',
       );
       assert.equal(
         (await cal.locator('.cap-waits').innerText()).replace(/\s+/g, ' ').trim(),
-        '0 waiting on reviewers 0 due in 7 days',
+        '0 waiting on reviewers 0 due in 7 days 0 backlog',
       );
       assert.equal(
         (await cal.locator('.cap-agents-block .cap-quiet').innerText()).trim(),
@@ -706,10 +753,11 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       );
       // Every card has the same blocks in the same order; only the figures differ.
       for (const name of ['Pawan Sirsat', 'Bea Nkosi', 'Dee Pillay', 'Eli van Wyk']) {
+        await expand(h.page, name);
         const got = (await card(h.page, name).locator('.cap-label').allInnerTexts()).map((t) =>
           t.replace(/\s+/g, ' ').trim().split(' ')[0]?.toLowerCase(),
         );
-        assert.deepEqual(got, ['workload', 'agents', 'activity', 'spaces'], name);
+        assert.deepEqual(got, ['pipeline', 'agents', 'activity', 'spaces'], name);
         assert.equal(await card(h.page, name).locator('.cap-tasks').count(), 0, `${name}: footer`);
       }
     } finally {
@@ -724,10 +772,11 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
       await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
       for (const name of ['Pawan Sirsat', 'Cal Mokoena']) {
+        await expand(h.page, name);
         const got = (await card(h.page, name).locator('.cap-label').allInnerTexts()).map((t) =>
           t.replace(/\s+/g, ' ').trim().split(' ')[0]?.toLowerCase(),
         );
-        assert.deepEqual(got, ['workload', 'agents', 'spaces'], name);
+        assert.deepEqual(got, ['pipeline', 'agents', 'spaces'], name);
       }
       assert.equal(await h.page.locator('.cap-activity-block').count(), 0);
       assert.equal(await h.page.locator('.cap-tasks').count(), 0);
@@ -770,22 +819,18 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
-      const titleOf = async (sel: string) =>
-        (await pawan.locator(sel).first().getAttribute('title')) ?? '';
+      const titleOf = async (sel: string) => await tipText(pawan.locator(sel).first());
       assert.match(await titleOf('.cap-load'), /^Load is committed work/);
       assert.match(await titleOf('.cap-overdue'), /past their due date/);
       assert.match(await titleOf('.cap-status'), /an agent session/);
-      const counts = await pawan
-        .locator('.cap-counts .cap-count, .cap-waits .cap-count')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      await expand(h.page, 'Pawan Sirsat');
+      const counts = await tipTexts(pawan.locator('.cap-counts .cap-count, .cap-waits .cap-count'));
       assert.equal(counts.length, 5);
       assert.ok(
         counts.every((t) => t.length > 20),
         `a count has no rule: ${counts.join(' | ')}`,
       );
-      const figs = await pawan
-        .locator('.cap-fig')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      const figs = await tipTexts(pawan.locator('.cap-fig'));
       assert.deepEqual(
         figs.map((t) => t.split(' ').slice(0, 3).join(' ')),
         ['Board actions they', 'Board actions made', 'Sprint moves and'],
@@ -797,17 +842,9 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       await h.page.getByRole('button', { name: 'List', exact: true }).click();
       const row = h.page.locator('.cap-list tbody tr', { hasText: 'Pawan Sirsat' });
       await row.waitFor();
-      assert.match(
-        (await row.locator('.cap-load').getAttribute('title')) ?? '',
-        /^Load is committed work/,
-      );
-      assert.match(
-        (await row.locator('.cap-overdue').getAttribute('title')) ?? '',
-        /past their due date/,
-      );
-      const cells = await row
-        .locator('td.cap-list-num')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      assert.match(await tipText(row.locator('.cap-load')), /^Load is committed work/);
+      assert.match(await tipText(row.locator('.cap-overdue')), /past their due date/);
+      const cells = await tipTexts(row.locator('td.cap-list-num'));
       assert.ok(
         cells.every((t) => t.length > 20),
         `a column has no rule: ${cells.join(' | ')}`,
@@ -859,7 +896,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       const pawan = await cellsOf('Pawan Sirsat');
       assert.equal(pawan.length, 9);
       assert.deepEqual(pawan.slice(1), [
-        'Load: Heavy 1 overdue',
+        'Heavy 1 overdue',
         '',
         '7',
         '3',
@@ -869,16 +906,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         '2 Laika 8 committed, 12 in backlog, 1 waiting on reviewers Onroute 2 committed, 0 in backlog, 1 waiting on reviewers',
       ]);
       const cal = await cellsOf('Cal Mokoena');
-      assert.deepEqual(cal.slice(1), [
-        'Load: No load',
-        '',
-        '0',
-        '0',
-        '0',
-        '0',
-        '0 0 0',
-        '0 No spaces',
-      ]);
+      assert.deepEqual(cal.slice(1), ['No load', '', '0', '0', '0', '0', '0 0 0', '0 No spaces']);
 
       // One scale: Pawan's 10 committed fill the bar; Bea's 3 are three tenths of it.
       const widths = await h.page.locator('.cap-list tbody tr .cap-bar').evaluateAll((bars) =>
@@ -973,6 +1001,114 @@ void describe('no task is read (LAI-992)', () => {
         h.calls.map((c) => c.path).filter((p) => p.startsWith('/api/v1/tasks')),
         [],
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the view lives in the address (LAI-1201)', () => {
+  const param = (page: Page, key: string) => new URL(page.url()).searchParams.get(key);
+
+  void test('search, chip, space and sort are written to the URL and survive a reload', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const search = h.page.getByRole('searchbox', { name: 'Search people' });
+      await search.fill('bea');
+      await until(() => param(h.page, 'q') === 'bea');
+      await pick(h.page.getByRole('combobox', { name: 'Sort' }), 'name');
+      await until(() => param(h.page, 'sort') === 'name');
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), 'p1');
+      await until(() => param(h.page, 'space') === 'p1');
+      await kpi(h.page, 'online').click();
+      await until(() => param(h.page, 'show') === 'online');
+
+      await h.page.reload();
+      await h.page.getByRole('searchbox', { name: 'Search people' }).waitFor({ timeout: 20_000 });
+      const again = h.page.getByRole('searchbox', { name: 'Search people' });
+      assert.equal(await again.inputValue(), 'bea', 'the reload forgot the search');
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Sort' })), 'name');
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Space' })), 'p1');
+      assert.equal(await kpi(h.page, 'online').getAttribute('aria-pressed'), 'true');
+
+      // Clearing empties the address of every filter it wrote.
+      await again.fill('nobody-here');
+      await h.page.getByRole('button', { name: 'Clear search and filters' }).click();
+      await until(() => param(h.page, 'q') === null && param(h.page, 'show') === null);
+      assert.equal(param(h.page, 'q'), null);
+      assert.equal(param(h.page, 'show'), null);
+      assert.equal(param(h.page, 'space'), null);
+      assert.equal(param(h.page, 'sort'), 'name', 'clearing filters is not resetting the sort');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a pasted link opens the filter it names; one it does not know is ignored', async () => {
+    const h = await open('/insights?tab=capacity&show=never&sort=bogus', orgStub('owner'));
+    try {
+      await kpi(h.page, 'never').waitFor({ timeout: 20_000 });
+      await until(async () => (await kpi(h.page, 'never').getAttribute('aria-pressed')) === 'true');
+      assert.equal(
+        await kpi(h.page, 'never').getAttribute('aria-pressed'),
+        'true',
+        '?show=never did not open the Never seen figure',
+      );
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Sort' })), 'online');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the list on a phone (LAI-1201)', () => {
+  void test('at 390 the table scrolls inside its card with a fade and a hint; at 768 and 1440 the page never scrolls sideways', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      await h.page.getByRole('button', { name: 'List', exact: true }).click();
+      await h.page.locator('.cap-list').waitFor({ timeout: 10_000 });
+      for (const theme of ['Light', 'Dark']) {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
+        await setTheme(h.page, theme);
+        for (const width of [1440, 768, 390]) {
+          await h.page.setViewportSize({ width, height: 900 });
+          const overflow = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          );
+          assert.ok(overflow <= 0, `${theme} at ${String(width)}: ${String(overflow)} px sideways`);
+        }
+        const cue = h.page.locator('.scroll-cue');
+        await until(async () => (await cue.getAttribute('data-more-end')) === 'true');
+        assert.equal(await cue.getAttribute('data-more-end'), 'true', `${theme}: no edge cue`);
+        const hint = h.page.locator('.scroll-cue-hint');
+        assert.ok(await hint.isVisible(), `${theme}: no hint to scroll`);
+        const fade = cue.locator('.scroll-cue-edge-end');
+        await until(
+          async () => (await fade.evaluate((el) => getComputedStyle(el).opacity)) === '1',
+        );
+        assert.equal(await fade.evaluate((el) => getComputedStyle(el).opacity), '1');
+        const region = h.page.getByRole('region', { name: 'People and their load' });
+        assert.equal(await region.getAttribute('tabindex'), '0', 'the scroller is not focusable');
+        // Scrolled to its end, the cue turns round.
+        await region.evaluate((el) => {
+          el.scrollLeft = el.scrollWidth;
+        });
+        await until(async () => (await cue.getAttribute('data-more-start')) === 'true');
+        assert.equal(await cue.getAttribute('data-more-start'), 'true', `${theme}: no start cue`);
+        assert.equal(await cue.getAttribute('data-more-end'), null);
+        await region.evaluate((el) => {
+          el.scrollLeft = 0;
+        });
+        await until(async () => (await cue.getAttribute('data-more-start')) === null);
+        assert.equal(await cue.getAttribute('data-more-start'), null);
+      }
+      // Wide enough for every column (an owner's table, with its activity
+      // column, is wider than a 1440 screen's content): no cue, no hint.
+      await h.page.setViewportSize({ width: 1920, height: 1000 });
+      await until(async () => (await h.page.locator('.scroll-cue-hint').count()) === 0);
+      assert.equal(await h.page.locator('.scroll-cue-hint').count(), 0);
     } finally {
       await h.close();
     }

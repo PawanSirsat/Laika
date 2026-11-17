@@ -1,7 +1,10 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
 import { ALWAYS_ON, FIELD_ICONS, FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
 import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './view-settings.css';
 
 export interface ViewSettingsProps {
@@ -50,7 +53,7 @@ const WIDTHS: readonly { value: ColumnWidth; label: string }[] = [
 
 const HIDE_DONE: readonly { value: number | null; label: string }[] = [
   { value: null, label: 'Never' },
-  { value: 1, label: 'After 1 day' },
+  { value: 1, label: '1 day' },
   { value: 3, label: '3 days' },
   { value: 7, label: '1 week' },
   { value: 14, label: '2 weeks' },
@@ -104,6 +107,8 @@ export function ViewSettings({
 }: ViewSettingsProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
+  // On the overlay stack (LAI-1205): a picker open inside it keeps Escape.
+  const { isTop } = useLayer('popover');
 
   const shown = FIELD_KEYS.filter((key) => preferences.fields[key]);
   const needle = query.trim().toLowerCase();
@@ -137,7 +142,7 @@ export function ViewSettings({
           } as CSSProperties
         }
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
+          if (event.key === 'Escape' && !event.defaultPrevented && isTop()) {
             event.stopPropagation();
             onClose();
           }
@@ -148,273 +153,355 @@ export function ViewSettings({
           if (!event.currentTarget.contains(event.relatedTarget)) onClose();
         }}
       >
+        {/*
+          **Head and foot stay put; only the body scrolls** (LAI-1232). The
+          panel scrolled as one, so Close went off the top and Reset sat out
+          of sight under every section until you scrolled to it.
+        */}
         <header className="vs-head">
           <h2 className="vs-title">View settings</h2>
-          <button type="button" className="vs-close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="vs-close" onClick={onClose} aria-label="Close">
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </header>
 
-        {!forList && (
+        <div className="vs-body">
+          {!forList && (
+            <section className="vs-section">
+              <h3 className="vs-label">Group by</h3>
+              <Segmented
+                name="vs-group"
+                label="Group by"
+                options={GROUPS}
+                value={group}
+                onChange={onGroupChange}
+              />
+              {group !== 'column' && (
+                <p className="vs-note">
+                  Grouped views are read-only — drag is off, and columns cannot be edited.
+                </p>
+              )}
+            </section>
+          )}
+
           <section className="vs-section">
-            <h3 className="vs-label">Group by</h3>
-            <div className="vs-radios">
-              {GROUPS.map((option) => (
-                <label key={option.value} className="vs-radio">
-                  <input
-                    type="radio"
-                    name="vs-group"
-                    checked={group === option.value}
-                    onChange={() => {
-                      onGroupChange(option.value);
-                    }}
-                  />
-                  {option.label}
-                </label>
-              ))}
+            <div className="vs-section-head">
+              <h3 className="vs-label">Filter</h3>
+              {filters.length > 0 && (
+                <button type="button" className="vs-clear" onClick={onClearFilters}>
+                  Clear all
+                </button>
+              )}
             </div>
-            {group !== 'column' && (
-              <p className="vs-note">
-                Grouped views are read-only — drag is off, and columns cannot be edited.
-              </p>
+            {/*
+              **A summary, not a second set of pickers.** The space bar already
+              renders Priority, Tag, Assignee and Ready-only. Repeating them here
+              would put two controls on one value — which is what Jira does, and
+              it is genuinely confusing. These chips read the same URL params the
+              bar writes.
+            */}
+            {filters.length === 0 ? (
+              <p className="vs-note vs-note-flush">No filters on. Add one from the bar above.</p>
+            ) : (
+              <div className="vs-chips">
+                {filters.map((filter) => (
+                  <Tooltip key={filter.key} content={`Remove ${filter.label}`}>
+                    <button
+                      type="button"
+                      className="vs-chip"
+                      onClick={() => {
+                        onClearFilter(filter.key);
+                      }}
+                    >
+                      {filter.label} <Icon name="close" size="tiny" />
+                      <span className="visually-hidden"> — remove this filter</span>
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
             )}
           </section>
-        )}
 
-        <section className="vs-section">
-          <h3 className="vs-label">Filter</h3>
-          {/*
-            **A summary, not a second set of pickers.** The space bar already
-            renders Priority, Tag, Assignee and Ready-only. Repeating them here
-            would put two controls on one value — which is what Jira does, and
-            it is genuinely confusing. These chips read the same URL params the
-            bar writes.
-          */}
-          {filters.length === 0 ? (
-            <p className="vs-note">Nothing filtered. Use the controls in the bar above.</p>
-          ) : (
-            <div className="vs-chips">
-              {filters.map((filter) => (
-                <button
-                  key={filter.key}
-                  type="button"
-                  className="vs-chip"
-                  onClick={() => {
-                    onClearFilter(filter.key);
-                  }}
-                >
-                  {filter.label} <span aria-hidden="true">×</span>
-                  <span className="visually-hidden"> — remove this filter</span>
-                </button>
-              ))}
-              <button type="button" className="vs-clear" onClick={onClearFilters}>
-                Clear all
-              </button>
-            </div>
-          )}
-        </section>
+          {!forList && (
+            <>
+              <section className="vs-section">
+                <h3 className="vs-label">Show fields</h3>
 
-        <section className="vs-section">
-          <h3 className="vs-label">Hide done work items</h3>
-          {onHideDoneChange === undefined ? (
-            <p className="vs-note">Only a space admin can change this.</p>
-          ) : (
-            <div className="vs-radios">
-              {HIDE_DONE.map((option) => (
-                <label key={String(option.value)} className="vs-radio">
+                {/*
+                  **A search and a removable list**, which is the reference's
+                  shape — it was a column of checkboxes. The point is that adding
+                  a tenth field does not make the panel longer, because unselected
+                  fields live behind the search.
+                */}
+                <label className="vs-search-box">
+                  <Icon name="search" size="tiny" />
                   <input
-                    type="radio"
-                    name="vs-hide-done"
-                    checked={hideDoneAfterDays === option.value}
-                    onChange={() => {
-                      onHideDoneChange(option.value);
+                    type="search"
+                    className="vs-search"
+                    placeholder="Search fields to add"
+                    aria-label="Search fields"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
                     }}
                   />
-                  {option.label}
                 </label>
-              ))}
-            </div>
-          )}
-          {/*
-            Said out loud because this is the one setting here that is shared.
-            It removes work from the board, so as a personal preference two
-            people would disagree about whether a task exists.
-          */}
-          <p className="vs-note">
-            This is a setting for the whole space, so everyone sees the same board. Nothing is
-            deleted.
-          </p>
-        </section>
 
-        {spaceSettingsHref !== undefined && (
-          <section className="vs-section vs-space-settings">
-            {/*
-              **A link, not the controls** (D-103): visibility, who may create
-              tasks, agents and members are the space's settings, and they live
-              on its settings page — this panel is how *this board* looks.
-            */}
-            <a
-              className="vs-settings-link"
-              href={spaceSettingsHref}
-              onClick={(event) => {
-                if (onOpenSpaceSettings === undefined) return;
-                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                event.preventDefault();
-                onOpenSpaceSettings(spaceSettingsHref);
-              }}
-            >
-              Visibility, members and access <span aria-hidden="true">→</span>
-              <span className="visually-hidden"> — open Space settings</span>
-            </a>
-            <p className="vs-note">These are the space&rsquo;s settings, on its own page.</p>
-          </section>
-        )}
+                {hidden.length > 0 && (
+                  <>
+                    <h4 className="vs-sub">{needle === '' ? 'Not shown' : 'Matching fields'}</h4>
+                    <ul className="vs-available">
+                      {hidden.map((key) => (
+                        <li key={key}>
+                          <button
+                            type="button"
+                            className="vs-add"
+                            onClick={() => {
+                              setField(key, true);
+                              setQuery('');
+                            }}
+                          >
+                            <span className="vs-icon" aria-hidden="true">
+                              <Icon name={FIELD_ICONS[key]} size="small" />
+                            </span>
+                            {FIELD_LABELS[key]}
+                            <span className="vs-plus" aria-hidden="true">
+                              <Icon name="plus" size="tiny" />
+                            </span>
+                            <span className="visually-hidden"> — add this field</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {hidden.length === 0 && needle !== '' && (
+                  <p className="vs-note">No hidden field matches “{query.trim()}”.</p>
+                )}
 
-        {!forList && (
-          <>
-            <section className="vs-section">
-              <h3 className="vs-label">Show fields</h3>
+                <h4 className="vs-sub">
+                  On cards <span className="vs-count">{ALWAYS_ON.length + shown.length}</span>
+                </h4>
+                <ul className="vs-selected">
+                  {ALWAYS_ON.map((field) => (
+                    <li key={field.key} className="vs-row vs-row-locked">
+                      <span className="vs-icon" aria-hidden="true">
+                        <Icon name={field.icon} size="small" />
+                      </span>
+                      <span className="vs-row-name">{field.label}</span>
+                      {/* Disabled rather than absent — the reference greys `Summary`
+                      the same way, and a field simply missing reads as a bug. */}
+                      {/*
+                        `aria-disabled`, not `disabled` (LAI-1213): a natively
+                        disabled button takes no focus and no hover, so its reason
+                        could never be shown. It has no click to stop.
+                      */}
+                      <Tooltip content={field.why}>
+                        <button
+                          type="button"
+                          className="vs-remove"
+                          data-field={field.key}
+                          aria-disabled="true"
+                          aria-label={`${field.label} cannot be removed — ${field.why}`}
+                        >
+                          <Icon name="close" size="tiny" />
+                        </button>
+                      </Tooltip>
+                    </li>
+                  ))}
 
-              {/*
-            **A search and a removable list**, which is the reference's shape —
-            it was a column of checkboxes. With this many fields the difference is
-            cosmetic; the point is that adding a tenth does not make the panel
-            longer, because unselected fields live behind the search.
-          */}
-              <input
-                type="search"
-                className="vs-search"
-                placeholder="Search fields"
-                aria-label="Search fields"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                }}
-              />
-
-              {hidden.length > 0 && (
-                <ul className="vs-available">
-                  {hidden.map((key) => (
-                    <li key={key}>
-                      <button
-                        type="button"
-                        className="vs-add"
-                        onClick={() => {
-                          setField(key, true);
-                          setQuery('');
-                        }}
-                      >
-                        <span className="vs-icon" aria-hidden="true">
-                          {FIELD_ICONS[key]}
-                        </span>
-                        {FIELD_LABELS[key]}
-                        <span className="vs-plus" aria-hidden="true">
-                          +
-                        </span>
-                        <span className="visually-hidden"> — add this field</span>
-                      </button>
+                  {shown.map((key) => (
+                    <li key={key} className="vs-row">
+                      <span className="vs-icon" aria-hidden="true">
+                        <Icon name={FIELD_ICONS[key]} size="small" />
+                      </span>
+                      <span className="vs-row-name">{FIELD_LABELS[key]}</span>
+                      <Tooltip content={`Remove ${FIELD_LABELS[key]}`}>
+                        <button
+                          type="button"
+                          className="vs-remove"
+                          data-field={key}
+                          aria-label={`Remove ${FIELD_LABELS[key]}`}
+                          onClick={() => {
+                            setField(key, false);
+                          }}
+                        >
+                          <Icon name="close" size="tiny" />
+                        </button>
+                      </Tooltip>
                     </li>
                   ))}
                 </ul>
+              </section>
+
+              <section className="vs-section">
+                <h3 className="vs-label">Card density</h3>
+                <Segmented
+                  name="vs-density"
+                  label="Card density"
+                  options={DENSITIES}
+                  value={preferences.density}
+                  onChange={(density) => {
+                    onChange({ ...preferences, density });
+                  }}
+                />
+              </section>
+
+              <section className="vs-section">
+                <h3 className="vs-label">Column width</h3>
+                <Segmented
+                  name="vs-width"
+                  label="Column width"
+                  options={WIDTHS}
+                  value={preferences.columnWidth}
+                  onChange={(columnWidth) => {
+                    onChange({ ...preferences, columnWidth });
+                  }}
+                />
+              </section>
+            </>
+          )}
+
+          {/*
+            **The shared settings, set apart** (LAI-1232). Hide done changes the
+            board for everyone and the space's settings are the space's, so they
+            sit in their own block, said once, rather than mixed in with
+            settings that are yours alone — each with its own disclaimer.
+          */}
+          <div className="vs-shared">
+            <p className="vs-eyebrow">
+              <Icon name="eye" size="tiny" />
+              For everyone in this space
+            </p>
+
+            <section className="vs-section vs-section-shared">
+              <h3 className="vs-label">Hide done work items</h3>
+              {onHideDoneChange === undefined ? (
+                <p className="vs-note vs-note-flush">
+                  {hideDoneSummary(hideDoneAfterDays)} Only a space admin can change this.
+                </p>
+              ) : (
+                <Segmented
+                  name="vs-hide-done"
+                  label="Hide done work items"
+                  options={HIDE_DONE}
+                  value={hideDoneAfterDays}
+                  onChange={onHideDoneChange}
+                  columns={3}
+                />
               )}
-
-              <h4 className="vs-sub">Selected fields</h4>
-              <ul className="vs-selected">
-                {ALWAYS_ON.map((field) => (
-                  <li key={field.key} className="vs-row vs-row-locked">
-                    <span className="vs-icon" aria-hidden="true">
-                      {field.icon}
-                    </span>
-                    <span className="vs-row-name">{field.label}</span>
-                    {/* Disabled rather than absent — the reference greys `Summary`
-                    the same way, and a field simply missing reads as a bug. */}
-                    <button
-                      type="button"
-                      className="vs-remove"
-                      data-field={field.key}
-                      disabled
-                      title={field.why}
-                      aria-label={`${field.label} cannot be removed — ${field.why}`}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-
-                {shown.map((key) => (
-                  <li key={key} className="vs-row">
-                    <span className="vs-icon" aria-hidden="true">
-                      {FIELD_ICONS[key]}
-                    </span>
-                    <span className="vs-row-name">{FIELD_LABELS[key]}</span>
-                    <button
-                      type="button"
-                      className="vs-remove"
-                      data-field={key}
-                      aria-label={`Remove ${FIELD_LABELS[key]}`}
-                      onClick={() => {
-                        setField(key, false);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {/*
+                Said out loud because this is the one setting here that is
+                shared. It removes work from the board, so as a personal
+                preference two people would disagree about whether a task exists.
+              */}
+              <p className="vs-note">Everyone sees the same board. Nothing is deleted.</p>
             </section>
 
-            <section className="vs-section">
-              <h3 className="vs-label">Card density</h3>
-              <div className="vs-radios">
-                {DENSITIES.map((option) => (
-                  <label key={option.value} className="vs-radio">
-                    <input
-                      type="radio"
-                      name="vs-density"
-                      checked={preferences.density === option.value}
-                      onChange={() => {
-                        onChange({ ...preferences, density: option.value });
-                      }}
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </div>
-            </section>
-
-            <section className="vs-section">
-              <h3 className="vs-label">Column width</h3>
-              <div className="vs-radios">
-                {WIDTHS.map((option) => (
-                  <label key={option.value} className="vs-radio">
-                    <input
-                      type="radio"
-                      name="vs-width"
-                      checked={preferences.columnWidth === option.value}
-                      onChange={() => {
-                        onChange({ ...preferences, columnWidth: option.value });
-                      }}
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
+            {spaceSettingsHref !== undefined && (
+              /*
+                **A link, not the controls** (D-103): visibility, who may create
+                tasks, agents and members are the space's settings, and they live
+                on its settings page — this panel is how *this board* looks.
+              */
+              <a
+                className="vs-settings-link"
+                href={spaceSettingsHref}
+                onClick={(event) => {
+                  if (onOpenSpaceSettings === undefined) return;
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  onOpenSpaceSettings(spaceSettingsHref);
+                }}
+              >
+                <span className="vs-settings-icon" aria-hidden="true">
+                  <Icon name="gear" size="small" />
+                </span>
+                <span className="vs-settings-text">
+                  <span className="vs-settings-title">Visibility, members and access</span>
+                  <span className="vs-settings-sub">Space settings</span>
+                </span>
+                <Icon name="arrow-right" size="tiny" className="vs-settings-arrow" />
+                <span className="visually-hidden"> — open Space settings</span>
+              </a>
+            )}
+          </div>
+        </div>
 
         {!forList && (
           <footer className="vs-foot">
-            <button type="button" className="vs-reset" onClick={onReset}>
-              Reset to defaults
-            </button>
-            <p className="vs-note vs-note-quiet">
-              Fields, density and width are yours alone and stay in this browser.
+            <p className="vs-note vs-note-flush">
+              Fields, density and width are just for you, in this browser.
             </p>
+            <button type="button" className="vs-reset" onClick={onReset}>
+              Reset
+              <span className="visually-hidden"> to defaults</span>
+            </button>
           </footer>
         )}
       </div>
     </>,
     document.body,
+  );
+}
+
+/** What a reader who cannot change Hide done is told it is set to. */
+function hideDoneSummary(days: number | null): string {
+  if (days === null) return 'Done work stays on the board.';
+  const option = HIDE_DONE.find((o) => o.value === days);
+  return `Done work hides after ${option?.label ?? `${String(days)} days`}.`;
+}
+
+interface SegmentedProps<T extends string | number | null> {
+  readonly name: string;
+  readonly label: string;
+  readonly options: readonly { readonly value: T; readonly label: string }[];
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  /** Per row; defaults to every option on one row. */
+  readonly columns?: number;
+}
+
+/**
+ * **One choice from a few, as a segmented control** (LAI-1232). These were
+ * loose radio rows that wrapped wherever the width ran out — *Sprint* alone
+ * on a second line under Group by, Hide done split three and three by accident.
+ *
+ * Still native radios underneath, one `name` per group: the arrow keys, the
+ * form semantics and every test that checks one by `name` keep working. The
+ * input covers its segment, transparent, so a press anywhere on it is a press
+ * on the radio.
+ */
+function Segmented<T extends string | number | null>({
+  name,
+  label,
+  options,
+  value,
+  onChange,
+  columns,
+}: SegmentedProps<T>) {
+  return (
+    <div
+      className="vs-seg"
+      role="radiogroup"
+      aria-label={label}
+      style={{ '--vs-cols': String(columns ?? options.length) } as CSSProperties}
+    >
+      {options.map((option) => (
+        <label key={String(option.value)} className="vs-seg-option">
+          <input
+            type="radio"
+            name={name}
+            checked={value === option.value}
+            onChange={() => {
+              onChange(option.value);
+            }}
+          />
+          <span className="vs-seg-text">{option.label}</span>
+        </label>
+      ))}
+    </div>
   );
 }

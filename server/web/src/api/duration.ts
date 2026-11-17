@@ -94,3 +94,27 @@ export function formatHours(minutes: number): string {
 export function formatDurationMs(ms: number, options: DurationOptions = {}): string {
   return formatDuration(ms / 60_000, options);
 }
+
+/**
+ * An age compact enough to scan down a column (LAI-1222): `just now`, `45m`,
+ * `5h`, `5h 20m`, `2d`, `12d 2h` — where {@link formatDuration} spaces every
+ * unit (`12 d 2 h`) for a sentence. Whatever shows it puts the exact moment
+ * on a tooltip, so nothing is lost by the rounding. A clock skewed into the
+ * future, or no number at all, reads `just now`, never a negative.
+ */
+export function formatAgeCompact(ms: number): string {
+  const age = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (age < minute) return 'just now';
+  if (age < hour) return `${String(Math.floor(age / minute))}m`;
+  if (age < day) {
+    const hours = Math.floor(age / hour);
+    const minutes = Math.floor((age % hour) / minute);
+    return minutes === 0 ? `${String(hours)}h` : `${String(hours)}h ${String(minutes)}m`;
+  }
+  const days = Math.floor(age / day);
+  const hours = Math.floor((age % day) / hour);
+  return hours === 0 ? `${String(days)}d` : `${String(days)}d ${String(hours)}h`;
+}

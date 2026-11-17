@@ -8,6 +8,9 @@ import {
   MAX_TAGS_PER_TASK,
 } from '../../../api/tags.ts';
 import type { ProjectTag } from '../../../api/tags.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 import './tag-picker.css';
 
 interface TagPickerBase {
@@ -176,17 +179,19 @@ export function TagPicker(props: TagPickerProps) {
         {tags.map((tag) => (
           <li key={tag} className="tagp-chip">
             {tag}
-            <button
-              type="button"
-              className="tagp-remove"
-              disabled={locked}
-              aria-label={`Remove ${tag}`}
-              onClick={() => {
-                save(tags.filter((t) => t !== tag));
-              }}
-            >
-              ×
-            </button>
+            <Tooltip content={`Remove ${tag}`}>
+              <button
+                type="button"
+                className="tagp-remove"
+                disabled={locked}
+                aria-label={`Remove ${tag}`}
+                onClick={() => {
+                  save(tags.filter((t) => t !== tag));
+                }}
+              >
+                <Icon name="close" size="tiny" />
+              </button>
+            </Tooltip>
           </li>
         ))}
         {tags.length === 0 && !adding && <li className="tagp-none">None</li>}
@@ -235,17 +240,23 @@ export function TagPicker(props: TagPickerProps) {
                 add(draft);
               }}
             />
-            <button
-              type="button"
-              className="tagp-apply"
-              disabled={locked || normaliseTagInput(draft) === ''}
-              onClick={() => {
-                add(draft);
-              }}
+            <DisabledReason
+              reason={!locked && normaliseTagInput(draft) === '' ? 'Type a tag first' : undefined}
             >
-              {busy && <Spinner size="sm" />}
-              Add
-            </button>
+              <button
+                type="button"
+                className="tagp-apply"
+                disabled={locked}
+                aria-disabled={normaliseTagInput(draft) === '' ? true : undefined}
+                onClick={() => {
+                  if (normaliseTagInput(draft) === '') return;
+                  add(draft);
+                }}
+              >
+                {busy && <Spinner size="sm" />}
+                Add
+              </button>
+            </DisabledReason>
           </div>
 
           {suggestions.length > 0 && (

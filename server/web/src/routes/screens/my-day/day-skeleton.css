@@ -8,7 +8,7 @@
 .dsk {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-4-5);
   min-width: 0;
 }
 
@@ -16,7 +16,7 @@
   display: block;
   flex: none;
   height: 0.75rem;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-sm);
   background-color: var(--bg-column);
   background-image: linear-gradient(
     100deg,
@@ -27,7 +27,7 @@
   background-repeat: no-repeat;
   background-size: 40vw 100%;
   background-attachment: fixed;
-  animation: dsk-sheen 1.8s ease-in-out infinite;
+  animation: dsk-sheen var(--duration-shimmer) var(--ease-standard) infinite;
 }
 
 /* A hint of the accent where the day's colour will be. */
@@ -46,8 +46,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Stood still by `styles/motion.css`; a still sheen is a stripe, so drop it. */
   .dsk-bone {
-    animation: none;
     background-image: none;
   }
 }
@@ -62,7 +62,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -80,7 +80,7 @@
 .dsk-week {
   display: flex;
   align-items: stretch;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -94,7 +94,7 @@
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .dsk-tile {
@@ -103,9 +103,9 @@
   justify-content: center;
   gap: 0.4375rem;
   min-width: 0;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--border-card);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-card);
   background: var(--bg-card);
 }
 
@@ -116,7 +116,7 @@
 .dsk-tile-track {
   display: block;
   height: 0.25rem;
-  border-radius: 0.125rem;
+  border-radius: var(--radius-hairline);
   background: var(--bg-column);
   overflow: hidden;
 }
@@ -124,15 +124,15 @@
 /* ----------------------------------------------------------- the cards */
 
 .dsk .dsk-card {
-  padding: 1rem 1.25rem;
-  gap: 1rem;
+  padding: var(--space-4) var(--space-4-5);
+  gap: var(--space-4);
 }
 
 .dsk-tl-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: var(--space-2) var(--space-4);
 }
 
 .dsk-tl-title {
@@ -146,15 +146,15 @@
 .dsk-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .dsk-legend {
-  gap: 0.875rem;
+  gap: var(--space-3-5);
 }
 
 .dsk-controls {
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* The lane column, then the track: the Timeline's own grid. */
@@ -162,7 +162,7 @@
   display: grid;
   grid-template-columns: 9.25rem minmax(0, 1fr);
   border-top: 1px solid var(--border-subtle);
-  margin: 0 -1.25rem -1rem;
+  margin: 0 calc(var(--space-4-5) * -1) calc(var(--space-4) * -1);
 }
 
 .dsk-lanes {
@@ -175,8 +175,8 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.375rem;
-  padding: 0 1rem 0 1.25rem;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-4) 0 var(--space-4-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -201,7 +201,7 @@
 .dsk-lane-row {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .dsk-lane-agents {
@@ -220,7 +220,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1rem;
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-column) 45%, transparent);
 }
@@ -228,8 +228,8 @@
 .dsk-signals {
   display: flex;
   align-items: flex-end;
-  gap: 0.25rem;
-  padding: 0.75rem 1rem;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -243,7 +243,7 @@
 }
 
 .dsk-signal .dsk-bone {
-  border-radius: 1px;
+  border-radius: var(--radius-hairline);
 }
 
 .dsk-you,
@@ -278,7 +278,7 @@
   position: absolute;
   top: 50%;
   height: 1.25rem;
-  margin-top: -0.625rem;
+  margin-top: calc(var(--space-2-5) * -1);
   border-radius: var(--radius-chip);
 }
 
@@ -289,14 +289,14 @@
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 0.75rem 1rem;
+  gap: var(--space-3) var(--space-4);
 }
 
 .dsk-tray-words {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  margin-right: 0.5rem;
+  gap: var(--space-1-5);
+  margin-right: var(--space-2);
 }
 
 .dsk-pill {
@@ -306,7 +306,7 @@
 .dsk-tabs {
   display: flex;
   gap: 1.75rem;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -333,8 +333,8 @@
 .dsk-group {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0 1rem;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
 }
 
 .dsk-list-head {
@@ -357,7 +357,7 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .dsk-row-target .dsk-bone:last-child {
@@ -390,7 +390,7 @@
   }
 
   .dsk-tile {
-    padding: 0.375rem;
+    padding: var(--space-1-5);
   }
 
   .dsk-tile-line {
@@ -398,6 +398,6 @@
   }
 
   .dsk-tabs {
-    gap: 1rem;
+    gap: var(--space-4);
   }
 }

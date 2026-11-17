@@ -28,6 +28,7 @@ import { agentLabel, twinNames } from '../../../api/selected-agent.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { goToAgent } from './go-to-agent.ts';
 import './devices.css';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface DevicesSectionProps {
   /** §3.1 `agent.manage_own`, as the server reports it: confirm and revoke need it. */
@@ -462,15 +463,16 @@ function LastSeen({ at, now }: { readonly at: number | null; readonly now: numbe
   return (
     <span className="devices-seen">
       Last seen{' '}
-      <time
-        dateTime={label.iso}
-        title={label.full}
-        tabIndex={0}
-        aria-label={`${label.text}, ${label.full}`}
-        className="devices-seen-time"
-      >
-        {label.text}
-      </time>
+      <Tooltip content={label.full}>
+        <time
+          dateTime={label.iso}
+          tabIndex={0}
+          aria-label={`${label.text}, ${label.full}`}
+          className="devices-seen-time"
+        >
+          {label.text}
+        </time>
+      </Tooltip>
       <span className="devices-seen-exact" aria-hidden="true">
         {label.full}
       </span>

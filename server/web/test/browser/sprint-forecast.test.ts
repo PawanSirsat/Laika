@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, until, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -176,7 +177,7 @@ void describe('the sprint forecast', () => {
         '87% likely to finish 18–23 of 26',
       );
       assert.match(
-        (await active.locator('.sprint-forecast').getAttribute('title')) ?? '',
+        await tipText(active.locator('.sprint-forecast')),
         /last 42 days \(31 tasks\) and the effort left — not story points/,
       );
       // A planned sprint with nothing in it says nothing; completed ones are never asked.

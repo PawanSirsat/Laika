@@ -696,7 +696,7 @@ void describe('Inbox → Hand-offs', () => {
       assert.equal(await section.getByLabel('Show closed and expired').count(), 0);
       await eventually(async () => (await section.locator('.handoff-row').count()) === 2);
       assert.equal(
-        await section.getByRole('link', { name: 'All hand-offs →' }).getAttribute('href'),
+        await section.getByRole('link', { name: 'All hand-offs' }).getAttribute('href'),
         '/inbox?tab=review&view=handoffs',
       );
       // The sidebar's badge is the same two.
@@ -719,7 +719,7 @@ void describe('Inbox → Hand-offs', () => {
       assert.match(await section.locator('h3').innerText(), /Needs your approval\s*\(1\)/);
 
       // The link opens the whole tab.
-      await section.getByRole('link', { name: 'All hand-offs →' }).click();
+      await section.getByRole('link', { name: 'All hand-offs' }).click();
       await h.page.waitForURL((u) => u.search === '?tab=review&view=handoffs', { timeout: 10_000 });
       assert.equal(await tab(h.page).getByRole('tab').count(), 4);
     } finally {

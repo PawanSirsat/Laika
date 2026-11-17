@@ -283,7 +283,8 @@ void describe('the Calendar, reworked (LAI-1178)', () => {
       await until(() => writes.length === 1);
       assert.deepEqual(writes[0]?.body, { due_on: dueIn(1) });
       await dayCell(h.page, 1).locator('.cal-task', { hasText: 'LC-9' }).waitFor();
-      const toast = h.page.locator('.cal-toast');
+      // The app's one toast (LAI-1129); the calendar's own retired in the merge train.
+      const toast = h.page.locator('[data-toast]', { hasText: 'LC-9 moved to' });
       assert.match((await toast.textContent()) ?? '', /LC-9 moved to/);
       await toast.getByRole('button', { name: 'Undo' }).click();
       await until(() => writes.length === 2);

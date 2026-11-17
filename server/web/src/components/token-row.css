@@ -80,7 +80,7 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .tok-row-meta {
     margin-left: 0;
     flex-basis: 100%;
@@ -101,4 +101,16 @@
 .tok-revoked-at {
   font-size: var(--text-small);
   color: var(--text-muted);
+}
+
+/* A screen's note about this token (LAI-1210): Security's never-used, stale
+   and expiring flags. Primary ink on a faint orange ground, from the tokens. */
+.tok-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--chip-orange) 16%, transparent);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
 }

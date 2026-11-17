@@ -32,7 +32,7 @@
   position: relative;
   display: block;
   margin: 0;
-  padding: 0 0 6px;
+  padding: 0 0 var(--space-1-5);
   border: 0;
   background: transparent;
   font-size: var(--text-body);
@@ -46,7 +46,7 @@
 }
 
 .feed-list > li:last-child {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
 }
 
 /* The rail: one line down the avatar's centre, from under it to the last item. */
@@ -94,18 +94,18 @@
 .feed-row {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
-  column-gap: 0.75rem;
+  column-gap: var(--space-3);
 }
 
 .feed-head {
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 .feed-head-line {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
   min-width: 0;
   margin: 0;
@@ -123,7 +123,7 @@
 
 .feed-name {
   font-weight: var(--weight-bold);
-  margin-right: 0.5rem;
+  margin-right: var(--space-2);
 }
 
 .feed-agent {
@@ -146,13 +146,13 @@
 }
 
 .feed-row + .feed-row {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 .feed-gutter {
   display: flex;
   justify-content: center;
-  padding-top: 2px;
+  padding-top: var(--space-0-5);
 }
 
 .feed-icon {
@@ -216,8 +216,8 @@
 
 .cmt-card,
 .cmt-finish {
-  margin: 4px 0;
-  padding: 0.625rem 0.875rem;
+  margin: var(--space-1) 0;
+  padding: var(--space-2-5) var(--space-3-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -226,7 +226,7 @@
 .cmt-card {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* An agent's progress note and a round's summary sit on the raised fill. */
@@ -247,7 +247,7 @@
 
 .cmt-finish-title {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
@@ -273,8 +273,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 2px;
+  gap: var(--space-3);
+  margin-top: var(--space-0-5);
 }
 
 .cmt-card-foot .cmt-edited {
@@ -301,7 +301,7 @@
 
 .cmt-actions {
   display: inline-flex;
-  gap: 0.75rem;
+  gap: var(--space-3);
   margin-left: auto;
 }
 
@@ -322,7 +322,7 @@
 }
 
 .cmt-editing {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 
 .cmt-editing .rich-editor {
@@ -332,8 +332,8 @@
 /* ------------------------------------------------------------ composer */
 
 .feed-empty {
-  margin: 0 0 0.75rem;
-  padding-left: calc(36px + 0.75rem);
+  margin: 0 0 var(--space-3);
+  padding-left: calc(36px + var(--space-3));
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -343,8 +343,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.625rem 0.75rem;
+  gap: var(--space-2-5);
+  padding: var(--space-2-5) var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-column);
@@ -371,7 +371,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -379,7 +379,7 @@
 .cmt-composer-send {
   flex-shrink: 0;
   height: 28px;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: transparent;
@@ -420,7 +420,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   height: 22px;
-  padding: 0 8px 0 4px;
+  padding: 0 var(--space-2) 0 var(--space-1);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   background: var(--bg-column);
@@ -442,7 +442,7 @@
   width: 14px;
   height: 14px;
   margin-right: 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: var(--chip-pink);
   color: var(--on-accent);
   line-height: 14px;
@@ -488,13 +488,13 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .who-row {
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr);
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .who-row dt {

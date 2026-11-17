@@ -23,6 +23,7 @@ import { ProjectSetupTab } from './v3/ProjectSetupTab.tsx';
 import './developer.css';
 import './v3/v3.css';
 import './v3/design.css';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 /**
  * In `preview`, Project setup's new flow is one query away from the classic
@@ -301,7 +302,6 @@ function SecondaryTab({
       href={href}
       className={active ? 'dx-tab-secondary page-tab-active' : 'dx-tab-secondary'}
       data-tab={tab.id}
-      title={tab.label}
       aria-current={active ? 'page' : undefined}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -311,7 +311,7 @@ function SecondaryTab({
     >
       <span className="dx-tab-secondary-word">{tab.label}</span>
       <span className="dx-tab-secondary-mark" aria-hidden="true">
-        ›
+        <Icon name="chevron" size="tiny" />
       </span>
       <span className="dx-tab-secondary-more" aria-hidden="true">
         ⋯

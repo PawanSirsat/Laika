@@ -13,15 +13,12 @@ export type StreamState = 'connecting' | 'live' | 'catching-up' | 'down';
 
 export interface LiveValue {
   readonly stream: StreamState;
-  /** `undefined` while the first request is in flight; `enabled: false` is a fact. */
-  readonly presence: PresenceView | undefined;
   /** Bumped whenever an activity frame arrives, for screens that refetch on change. */
   readonly generation: number;
 }
 
 const LiveContext = createContext<LiveValue>({
   stream: 'connecting',
-  presence: undefined,
   generation: 0,
 });
 
@@ -55,16 +52,13 @@ export const PRESENCE_SETTLE_MS = 1_500;
  * same connection (`api/event-stream.ts`). A stream each would cost a
  * long-lived connection per consumer, and a replay window each.
  *
- * Presence is fetched rather than streamed: §4.8 has no presence verb, so a
- * count driven by the event types alone would never update. Its one reader
- * here is the space bar's `Agents N` — the WORKING NOW strip that also read it
- * was removed in LAI-727. It refetches when the stream says something
- * happened, which is cheaper than a timer and more current than a mount-time
- * read.
+ * **Presence is not read here** (LAI-1233). It was, for the space bar's
+ * `Agents N`, which cost a `/presence` request on every tab of every space;
+ * the chip is gone, so the read moved to `usePresence`, which only Activity —
+ * the one screen that draws presence — calls.
  */
 export function SpaceLive({ slug, enabled, children }: SpaceLiveProps) {
   const [stream, setStream] = useState<StreamState>('connecting');
-  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
   const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
@@ -105,8 +99,24 @@ export function SpaceLive({ slug, enabled, children }: SpaceLiveProps) {
     });
   }, [slug, enabled]);
 
-  /** Re-reads presence; aborted with the space. */
+  return <LiveContext.Provider value={{ stream, generation }}>{children}</LiveContext.Provider>;
+}
+
+/**
+ * **The space's presence, read only where it is drawn** (LAI-1233).
+ *
+ * Once on mount, then **one read per burst** of live frames (LAI-724): a
+ * frame inside the wait does not restart it, so frames that never stop still
+ * re-read once per window instead of starving the read. `undefined` while the
+ * first read is in flight; a failure leaves the last answer standing, because
+ * a list that empties on one bad request reads as "everyone left".
+ */
+export function usePresence(): PresenceView | undefined {
+  const { generation } = useLive();
+  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
   const reading = useRef<AbortController | undefined>(undefined);
+  const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   const read = (): void => {
     reading.current?.abort();
     const controller = new AbortController();
@@ -116,44 +126,26 @@ export function SpaceLive({ slug, enabled, children }: SpaceLiveProps) {
         if (!controller.signal.aborted) setPresence(view);
       })
       .catch(() => {
-        // A failure leaves the last answer standing rather than clearing it: a
-        // strip that empties on one bad request reads as "everyone left".
+        // The last answer stands; see above.
       });
   };
 
   useEffect(() => {
-    if (!enabled) {
-      setPresence(undefined);
-      return;
-    }
     read();
     return () => {
       reading.current?.abort();
+      if (settling.current !== undefined) clearTimeout(settling.current);
+      settling.current = undefined;
     };
-  }, [enabled]);
+  }, []);
 
-  /*
-   * After live frames: **one read per burst** (LAI-724). A frame inside the
-   * wait does not restart it, so frames that never stop still re-read once per
-   * window instead of starving the read.
-   */
-  const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
-    if (!enabled || generation === 0 || settling.current !== undefined) return;
+    if (generation === 0 || settling.current !== undefined) return;
     settling.current = setTimeout(() => {
       settling.current = undefined;
       read();
     }, PRESENCE_SETTLE_MS);
-  }, [enabled, generation]);
-  useEffect(
-    () => () => {
-      if (settling.current !== undefined) clearTimeout(settling.current);
-      settling.current = undefined;
-    },
-    [enabled],
-  );
+  }, [generation]);
 
-  return (
-    <LiveContext.Provider value={{ stream, presence, generation }}>{children}</LiveContext.Provider>
-  );
+  return presence;
 }

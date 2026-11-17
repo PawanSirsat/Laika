@@ -725,14 +725,16 @@ void describe('rich options (LAI-726)', () => {
             d.remove();
             return c;
           };
+          // Level-3 glass since LAI-1132: the host is transparent and its
+          // `::before` pane carries the fill.
           return [
-            getComputedStyle(p).backgroundColor,
+            getComputedStyle(p, '::before').backgroundColor,
             getComputedStyle(p.querySelector('.dd-option-active')!).backgroundColor,
-            probe('--bg-card'),
+            probe('--glass-3'),
             probe('--bg-column'),
           ];
         });
-        assert.equal(panelBg, card, `${theme}: the panel is not on --bg-card`);
+        assert.equal(panelBg, card, `${theme}: the panel's pane is not on --glass-3`);
         assert.equal(activeBg, column, `${theme}: the active option is not on --bg-column`);
         await h.page.keyboard.press('Escape');
         await h.page.keyboard.press('Escape');

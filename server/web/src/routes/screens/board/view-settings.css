@@ -28,13 +28,15 @@
   --vs-right: 0.5rem;
   right: clamp(0.5rem, var(--vs-right), calc(100vw - min(21.875rem, 100vw - 1rem) - 0.5rem));
   width: min(21.875rem, calc(100vw - 1rem));
-  max-height: min(34rem, calc(100vh - 5rem));
-  overflow-y: auto;
+  max-height: min(36rem, calc(100vh - 5rem));
+  /* Head and foot fixed, the body between them scrolls (LAI-1232). */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: 0.75rem 0.875rem 0.875rem;
+  box-shadow: var(--shadow-popover);
 }
 
 .view-settings:focus {
@@ -42,10 +44,12 @@
 }
 
 .vs-head {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2) var(--space-3-5);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .vs-title {
@@ -57,14 +61,18 @@
 
 .vs-close {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
   border: 0;
   background: none;
   color: var(--text-muted);
-  font-size: var(--text-heading-sm);
   line-height: 1;
   cursor: pointer;
-  padding: 0 0.25rem;
-  border-radius: var(--radius-chip);
+  padding: 0;
+  border-radius: var(--radius-control);
 }
 
 .vs-close:hover {
@@ -72,73 +80,137 @@
   background: var(--bg-column);
 }
 
+.vs-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.vs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--space-3-5) var(--space-3);
+}
+
 .vs-section {
-  padding: 0.5rem 0;
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--border-subtle);
 }
 
-.vs-section:first-of-type {
+.vs-section:first-child {
   border-top: 0;
-  padding-top: 0;
+}
+
+.vs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .vs-label {
-  margin: 0 0 0.375rem;
+  margin: 0 0 var(--space-2);
   font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  letter-spacing: 0.07em;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
 
-.vs-radios,
-.vs-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-}
-
-.vs-fields {
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.vs-radio,
-.vs-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: var(--text-body);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.vs-radio input,
-.vs-check input {
-  accent-color: var(--accent);
+.vs-section-head .vs-label {
+  margin: 0;
 }
 
 .vs-note {
-  margin: 0.375rem 0 0;
+  margin: var(--space-2) 0 0;
   font-size: var(--text-small);
   line-height: 1.45;
   color: var(--text-muted);
 }
 
-.vs-note-quiet {
+.vs-note-flush {
   margin-top: 0;
+}
+
+/* ------------------------- One of a few, as a segmented control (LAI-1232) */
+
+.vs-seg {
+  /* How many segments to a row. `Segmented` sets it inline; this is the default. */
+  --vs-cols: 3;
+  display: grid;
+  grid-template-columns: repeat(var(--vs-cols), minmax(0, 1fr));
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.vs-seg-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.75rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+/* The radio covers its segment, so a press anywhere on it is a press on it. */
+.vs-seg-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.vs-seg-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-seg-option:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.vs-seg-option:has(input:checked) {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  background: var(--bg-card);
+  box-shadow:
+    inset 0 0 0 1px var(--accent-border),
+    var(--shadow-card);
+}
+
+.vs-seg-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .vs-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .vs-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: var(--text-small);
   color: var(--text-secondary);
   background: var(--bg-column);
@@ -155,32 +227,39 @@
 }
 
 .vs-clear {
-  font-size: var(--text-body);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--accent);
   background: none;
   border: 0;
   cursor: pointer;
-  padding: 0 0.25rem;
+  padding: 0;
+}
+
+.vs-clear:hover {
+  text-decoration: underline;
 }
 
 .vs-foot {
+  flex: none;
   display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding-top: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3-5);
   border-top: 1px solid var(--border-subtle);
+  background: var(--bg-card);
 }
 
 .vs-reset {
-  align-self: flex-start;
-  font-size: var(--text-body);
+  flex: none;
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: 0.1875rem 0.5rem;
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2-5);
   cursor: pointer;
 }
 
@@ -189,51 +268,157 @@
   border-color: var(--border-default);
 }
 
+.vs-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------------------- The shared block: Hide done and the space's settings */
+
+.vs-shared {
+  margin-top: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.vs-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.vs-section-shared {
+  padding: 0;
+  border-top: 0;
+}
+
+/* Inside the shared block the track sits on the card colour, not the column's. */
+.vs-shared .vs-seg {
+  background: var(--bg-card);
+}
+
+.vs-shared .vs-seg-option:has(input:checked) {
+  background: var(--bg-column);
+}
+
 /* ---------------------- The space's own settings, a link (LAI-977) */
 
 .vs-settings-link {
-  display: inline-flex;
-  gap: 0.375rem;
-  color: var(--accent);
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-2-5);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
   text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .vs-settings-link:hover {
-  text-decoration: underline;
+  border-color: var(--accent-border);
 }
 
 .vs-settings-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: var(--radius-chip);
+}
+
+.vs-settings-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-control);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.vs-settings-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.vs-settings-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.vs-settings-sub {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.vs-settings-arrow {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.vs-settings-link:hover .vs-settings-arrow {
+  color: var(--accent);
+  transform: translateX(2px);
 }
 
 /* ------------------------------------ Show fields, as a list (LAI-290) */
 
-.vs-search {
-  font: inherit;
-  font-size: var(--text-body);
-  color: var(--text-primary);
-  background: var(--bg-column);
+.vs-search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-2);
+  color: var(--text-muted);
+  background: var(--bg-input);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  padding: 0.25rem 0.4375rem;
-  width: 100%;
-  margin-bottom: 0.375rem;
+  border-radius: var(--radius-control);
 }
 
-.vs-search:focus-visible {
+.vs-search-box:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
+.vs-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  padding: var(--space-1-5) 0;
+}
+
+.vs-search:focus {
+  outline: none;
+}
+
 .vs-sub {
-  margin: 0.5rem 0 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin: var(--space-3) 0 var(--space-1);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
+}
+
+.vs-count {
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .vs-available,
@@ -249,7 +434,7 @@
 .vs-available {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  padding: 0.125rem;
+  padding: var(--space-0-5);
   max-height: 9rem;
   overflow-y: auto;
 }
@@ -266,7 +451,7 @@
   background: none;
   border: 0;
   border-radius: var(--radius-chip);
-  padding: 0.25rem 0.3125rem;
+  padding: var(--space-1) 0.3125rem;
   text-align: left;
 }
 
@@ -322,12 +507,13 @@
   border-radius: var(--radius-chip);
 }
 
-.vs-remove:hover:not(:disabled) {
+.vs-remove:hover:not(:disabled, [aria-disabled='true']) {
   color: var(--overdue);
   background: var(--blocked-bg);
 }
 
-.vs-remove:disabled {
+.vs-remove:disabled,
+.vs-remove[aria-disabled='true'] {
   opacity: 0.35;
   cursor: not-allowed;
 }

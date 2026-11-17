@@ -10,9 +10,9 @@
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   max-width: 100%;
-  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  padding: 0.1875rem var(--space-2-5) 0.1875rem var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-pill);
   background: var(--chip-neutral-bg);
@@ -83,7 +83,7 @@
   display: inline-flex;
   align-items: center;
   height: 1.625rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-pill);
   color: var(--text-secondary);
@@ -93,7 +93,7 @@
 
 .avail-pop {
   align-self: center;
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
 }
 
 /* ----------------------------------------------------- shared small parts */
@@ -117,7 +117,7 @@
 .avail-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   padding: 0;
   border: none;
   background: none;
@@ -155,7 +155,7 @@
 .avail-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
   max-height: min(36rem, calc(100vh - 8rem));
   overflow-y: auto;
 }
@@ -177,7 +177,7 @@
 .avail-head-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .avail-chevron {
@@ -236,14 +236,14 @@
 .avail-status {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .avail-radio {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4375rem 0.625rem;
+  gap: var(--space-2);
+  padding: 0.4375rem var(--space-2-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   font-size: var(--text-small);
@@ -276,7 +276,7 @@
 .avail-field {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
 }
 
@@ -285,7 +285,7 @@
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .avail-form input[type='text'],
@@ -295,7 +295,7 @@
 .avail-dialog textarea {
   min-width: 0;
   height: 2rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-input, var(--bg-card));
@@ -316,7 +316,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   padding: 0.3125rem;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
@@ -325,8 +325,8 @@
 .avail-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  gap: var(--space-1);
+  padding: var(--space-0-5) var(--space-1) var(--space-0-5) var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   background: var(--chip-neutral-bg);
@@ -362,7 +362,7 @@
 
 .avail-days {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .avail-day {
@@ -388,7 +388,7 @@
 .avail-periods {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -397,7 +397,7 @@
 .avail-periods li {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .avail-periods li > span:first-child {
@@ -412,8 +412,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.5rem 0 0.125rem;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-0-5);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-card);
 }
@@ -448,9 +448,9 @@
 .foryou {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
-  margin-bottom: 0.75rem;
-  padding: 0.875rem 1rem;
+  gap: var(--space-2-5);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3-5) var(--space-4);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   background: var(--bg-card);
@@ -460,7 +460,7 @@
 .foryou-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .foryou-title {
@@ -471,7 +471,7 @@
 
 .foryou-count {
   min-width: 1.25rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--on-accent);
@@ -496,8 +496,8 @@
 .foryou-row {
   display: flex;
   align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.5rem 0;
+  gap: var(--space-2-5);
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -509,7 +509,7 @@
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  margin-top: 0.375rem;
+  margin-top: var(--space-1-5);
   border-radius: var(--radius-pill);
   background: transparent;
   border: 1px solid var(--border-default);
@@ -524,7 +524,7 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -561,9 +561,9 @@
 .avail-view {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-4);
   min-width: 0;
-  padding: 1rem 1.125rem 1.125rem;
+  padding: var(--space-4) 1.125rem 1.125rem;
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   background: var(--bg-card);
@@ -573,14 +573,14 @@
 .avail-view-head {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .avail-view-title {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.25rem 0.625rem;
+  gap: var(--space-1) var(--space-2-5);
   margin: 0;
   font-size: var(--text-body);
   font-weight: var(--weight-heavy);
@@ -596,8 +596,8 @@
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.1875rem 0.625rem;
+  gap: var(--space-1-5);
+  padding: 0.1875rem var(--space-2-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   background: var(--chip-neutral-bg);
@@ -610,14 +610,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
+  gap: var(--space-2) var(--space-3);
 }
 
 .avail-filter {
   display: inline-flex;
   white-space: nowrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
@@ -640,7 +640,7 @@
 }
 
 .avail-table th {
-  padding: 0.5rem;
+  padding: var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: var(--text-small);
@@ -652,7 +652,7 @@
 }
 
 .avail-table td {
-  padding: 0.625rem 0.5rem;
+  padding: var(--space-2-5) var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: top;
 }
@@ -667,7 +667,7 @@
 .avail-person {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -683,19 +683,19 @@
 .avail-tagrow {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .avail-spaces {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .avail-chip {
   display: inline-flex;
   align-items: center;
-  padding: 0.0625rem 0.5rem;
+  padding: 0.0625rem var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   background: var(--chip-neutral-bg);
@@ -713,7 +713,7 @@
 
 .avail-add {
   height: 1.875rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -732,7 +732,7 @@
 .avail-cards {
   display: none;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -741,8 +741,8 @@
 .avail-card {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.75rem;
+  gap: var(--space-1-5);
+  padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
 }
@@ -750,7 +750,7 @@
 .avail-card-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
+  gap: var(--space-1) var(--space-4);
   color: var(--text-secondary);
   font-size: var(--text-small);
 }
@@ -759,8 +759,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.5rem;
-  padding: 1.5rem 0.5rem;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-2);
 }
 
 .avail-empty-title {
@@ -780,7 +780,7 @@
   }
 
   .avail-view {
-    padding: 0.875rem;
+    padding: var(--space-3-5);
   }
 }
 
@@ -799,7 +799,7 @@
   z-index: 91;
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
   width: min(32rem, calc(100% - 2rem));
   max-height: calc(100% - 2rem);
   margin: auto;
@@ -822,7 +822,7 @@
 .avail-dialog fieldset {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
   padding: 0;
   border: none;
@@ -832,15 +832,15 @@
 .avail-dialog textarea {
   height: auto;
   min-height: 4.5rem;
-  padding: 0.5rem;
+  padding: var(--space-2);
   resize: vertical;
 }
 
 .avail-option {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.625rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   font-size: var(--text-small);
@@ -882,7 +882,7 @@
 .avail-dialog-foot {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 @media (max-width: 600px) {
@@ -900,7 +900,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
   margin: 0;
   font-size: var(--text-small);
   line-height: var(--leading-small);

@@ -54,9 +54,12 @@ void describe('the drawer beside the page (LAI-511)', () => {
         const box = await drawer.boundingBox();
         assert.ok(column !== null && box !== null);
         assert.ok(box.x >= column.x + column.width - 1, 'the drawer is not beside the page');
+        // The window under the app header, which every screen wears (LAI-1188).
+        const head = (await h.page.locator('[data-app-header]').boundingBox())?.height ?? 0;
+        assert.ok(head > 0, 'no app header');
         assert.ok(
-          box.height >= 880,
-          `the drawer is not the height of the window: ${String(box.height)}`,
+          box.height >= 900 - head - 20,
+          `the drawer is not the height of the window under the header: ${String(box.height)}`,
         );
         assert.equal(await h.page.locator('.myday-main [data-inspector]').count(), 0);
 

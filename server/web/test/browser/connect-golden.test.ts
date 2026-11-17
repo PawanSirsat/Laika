@@ -33,6 +33,29 @@
  * reports an `auto` margin as px (see `capture`). Each regeneration was run
  * against the same pre-extraction source (`35ad1314`, in a temporary
  * worktree), never against the refactored page.
+ *
+ * It was regenerated a third time for **a rendering change on purpose**:
+ * LAI-1126 put the brand palette into the theme, so every colour in both style
+ * dumps moved, and the sidebar's brand mark takes a React `useId` before the
+ * page does, which shifts the agent logos' gradient ids by the same count in
+ * the markup digest. The accessibility tree did not change. Diffed against
+ * the dumps of `9ac3be1f` (`LAIKA_GOLDEN_DUMP`) before regenerating: the html
+ * differed only in those ids, the styles only in colour values.
+ *
+ * And a fourth time for the same cause (LAI-1221): the app header's new
+ * actions and the sidebar's shortcut tooltips take `useId`s before the page
+ * does, and React 19 spells those ids `_r_k_`, which `normalise` does not map,
+ * so the agent logos' gradient ids moved in the two picker scenarios. Only
+ * those two `html_sha256` values changed; every accessibility tree and every
+ * style digest stayed byte-for-byte the same.
+ *
+ * And a fifth time, for the instrument (LAI-1227): with the top bar's controls
+ * mounting as `/me` and `/permissions` land, the number of `useId`s taken
+ * before the page stopped being fixed, and the two pickers' markup digest
+ * changed from run to run. `normalise` now maps React 19's `_r_…_` ids as it
+ * mapped React 18's, which ends that whole class (the third, fourth and this
+ * regeneration were all it). Before regenerating, the failing runs differed
+ * in `html_sha256` alone — every accessibility tree and style digest matched.
  */
 
 import assert from 'node:assert/strict';
@@ -245,16 +268,22 @@ async function capture(page: Page, origin: string): Promise<Capture> {
 /** The port and React's generated ids differ between runs; nothing else may. */
 function normalise(text: string, origin: string): string {
   const ids = new Map<string, string>();
-  return text
-    .split(origin)
-    .join('ORIGIN')
-    .replace(/«[^»]+»|:r[0-9a-z]+:/g, (id) => {
-      const seen = ids.get(id);
-      if (seen !== undefined) return seen;
-      const named = `«id${String(ids.size)}»`;
-      ids.set(id, named);
-      return named;
-    });
+  return (
+    text
+      .split(origin)
+      .join('ORIGIN')
+      // React 18 spelled `useId`s `:r1:` (and `«r1»`); React 19 spells them
+      // `_r_1_`, and the shared Tooltip names its box `tip-r1` from one — both
+      // mapped since LAI-1227, so a golden no longer depends on how many ids
+      // the shell happened to take before the page.
+      .replace(/«[^»]+»|:r[0-9a-z]+:|_r_[0-9a-z]+_|\btip-r[0-9a-z]+\b/g, (id) => {
+        const seen = ids.get(id);
+        if (seen !== undefined) return seen;
+        const named = `«id${String(ids.size)}»`;
+        ids.set(id, named);
+        return named;
+      })
+  );
 }
 
 type H = Awaited<ReturnType<typeof open>>;

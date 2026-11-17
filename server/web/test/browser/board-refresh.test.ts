@@ -14,6 +14,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, fakeStream, open, refuse, until, type ApiStub } from './harness.ts';
 import { pick } from './dropdown.ts';
+import { boardAction } from './board-menu.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -232,7 +233,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
         await new Promise((done) => setTimeout(done, 800));
         await route.continue();
       });
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await boardAction(h.page, 'Refresh');
       await h.page.waitForTimeout(400);
 
       const mid = await h.page.evaluate(() => {
@@ -268,7 +269,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
         );
       });
       server.version = 2;
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await boardAction(h.page, 'Refresh');
       await h.page.getByText('Task 2, renamed').waitFor({ timeout: 10_000 });
 
       const same = await h.page.evaluate(() => {
@@ -293,7 +294,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
     }
   });
 
-  void test('a lane’s scroll and an unsent draft survive a refresh', async () => {
+  void test('a lane’s scroll survives a refresh', async () => {
     const server: Server = { version: 1, extra: 30, fail: 'none' };
     const h = await open('/board?project=laika-core', stub(server));
     try {
@@ -307,21 +308,44 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
       const before = await todo.locator('.lane-body').evaluate((el) => el.scrollTop);
       assert.ok(before > 0, 'the lane did not scroll — the fixture is too short');
 
+      await boardAction(h.page, 'Refresh');
+      await h.page.waitForTimeout(800);
+
+      assert.equal(await todo.locator('.lane-body').evaluate((el) => el.scrollTop), before);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * The unsent draft was the lane's inline composer's until LAI-1227; a
+   * lane's + now opens the app's one Create task dialog, which the shell
+   * holds above the screen. A live refresh — the only kind that can happen
+   * under a modal — must not cost what was typed in it.
+   */
+  void test('an unsent draft in the Create task dialog survives a live refresh', async () => {
+    const server: Server = { version: 1, extra: 30, fail: 'none' };
+    const h = await open('/board?project=laika-core', stub(server), { before: fakeStream });
+    try {
+      await ready(h.page);
       await h.page
         .locator('.lane', { has: h.page.locator('.lane-title', { hasText: /backlog/i }) })
         .getByRole('button', { name: /add task/i })
         .click();
-      const draft = h.page.getByPlaceholder('What needs to be done?');
+      const draft = h.page.locator('[data-dialog="create-task"] .ct-title-input');
       await draft.fill('Half a thought');
 
-      await h.page.locator('button[title="Refresh the board"]').click();
-      await h.page.waitForTimeout(800);
+      const reads = (): number =>
+        h.calls.filter((c) => c.method === 'GET' && c.path.endsWith('/projects/laika-core/tasks'))
+          .length;
+      const before = reads();
+      server.version = 2;
+      await frame(h.page, 't3', 1);
+      // The refresh ran: the task set was read again under the open dialog.
+      await until(() => reads() > before, 10_000);
+      await h.page.waitForTimeout(400);
 
-      assert.equal(await todo.locator('.lane-body').evaluate((el) => el.scrollTop), before);
-      assert.equal(
-        await h.page.getByPlaceholder('What needs to be done?').inputValue(),
-        'Half a thought',
-      );
+      assert.equal(await draft.inputValue(), 'Half a thought');
     } finally {
       await h.close();
     }
@@ -333,7 +357,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
     try {
       await ready(h.page);
       server.fail = '500';
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await boardAction(h.page, 'Refresh');
       const notice = h.page.getByRole('status').filter({ hasText: /could not refresh/i });
       await notice.waitFor({ timeout: 10_000 });
       assert.equal(await h.page.locator('.card').count(), 4, 'a failed refresh wiped the board');
@@ -354,7 +378,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
     try {
       await ready(h.page);
       server.fail = '403';
-      await h.page.locator('button[title="Refresh the board"]').click();
+      await boardAction(h.page, 'Refresh');
       await h.page.locator('.kanban').waitFor({ state: 'detached', timeout: 10_000 });
       assert.equal(await h.page.locator('.card').count(), 0);
     } finally {

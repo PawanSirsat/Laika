@@ -83,23 +83,39 @@ void describe('board motion, the stylesheet (LAI-708)', () => {
     ),
     'utf8',
   );
+  const motion = readFileSync(
+    fileURLToPath(new URL('../../../../src/styles/motion.css', import.meta.url)),
+    'utf8',
+  );
   const reduced =
     /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*)\}\s*$/.exec(css)?.[1] ?? '';
 
   void test('the glide is 200ms, scoped to the board, and takes no clicks', () => {
     assert.match(css, /:root\.board-motion \{\s*view-transition-name: none;/);
     assert.match(css, /::view-transition \{\s*pointer-events: none;/);
-    assert.match(css, /animation-duration: 200ms;/);
+    // 200ms is D-071's, held by `--duration-glide` in styles/motion.css.
+    assert.match(css, /animation-duration: var\(--duration-glide\);/);
+    assert.match(motion, /--duration-glide: 200ms;/);
   });
 
   void test('reduced motion stops the glide and keeps the glow as a still mark', () => {
     assert.ok(reduced.length > 0, 'no reduced-motion block — the scan is blind');
-    assert.match(reduced, /::view-transition-group\(\*\)[\s\S]*animation: none;/);
-    assert.match(reduced, /\.card\[data-flash\] \{\s*animation: card-flash 3\.6s steps\(1, end\);/);
+    // The glide stops through the global rule (LAI-1208): the glide token is
+    // zero under reduced motion; motion-tokens.test.ts asserts the whole set.
+    assert.match(
+      motion,
+      /prefers-reduced-motion: reduce\)\s*\{\s*:root\s*\{[^}]*--duration-glide: 0ms;/,
+    );
     assert.match(
       reduced,
-      /\.list-row\[data-flash\] > td \{\s*animation: row-flash 3\.6s steps\(1, end\);/,
+      /\.card\[data-flash\] \{\s*animation: card-flash var\(--duration-flash\) steps\(1, end\);/,
     );
+    assert.match(
+      reduced,
+      /\.list-row\[data-flash\] > td \{\s*animation: row-flash var\(--duration-flash\) steps\(1, end\);/,
+    );
+    // …and the hold stays 3.6s, because the flash token is not zeroed.
+    assert.match(motion, /--duration-flash: 3\.6s;/);
   });
 
   void test('colours come from the theme, never written here', () => {

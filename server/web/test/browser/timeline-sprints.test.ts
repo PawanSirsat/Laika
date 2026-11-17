@@ -23,6 +23,7 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 /** Midday today, UTC, so no assertion depends on the hour the suite runs. */
@@ -780,7 +781,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
       assert.ok(titleWidth >= 100, `the title was squeezed to ${String(titleWidth)}px`);
       assert.ok(labelWidth <= 40, `the label kept ${String(labelWidth)}px`);
       assert.ok(
-        ((await row.locator('.tlx-task-blocked').getAttribute('title')) ?? '').length > 10,
+        (await tipText(row.locator('.tlx-task-blocked'))).length > 10,
         'the shrunk label lost its tooltip',
       );
     } finally {

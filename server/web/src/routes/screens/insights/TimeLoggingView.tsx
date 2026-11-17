@@ -8,6 +8,7 @@ import {
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { hoursCompact } from '../../../components/time-report/time-report-derive.ts';
 import '../../../components/time-report/time-report.css';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
@@ -142,17 +143,19 @@ export function TimeLoggingView({
 
       <div className="trep-bar" role="toolbar" aria-label="Month">
         <div className="trep-stepper">
-          <a
-            className="trep-step"
-            href={monthHref(stepMonth(key, -1), current)}
-            aria-label="Previous month"
-            data-tlg-prev
-            onClick={go(monthHref(stepMonth(key, -1), current))}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m15 6-6 6 6 6" />
-            </svg>
-          </a>
+          <Tooltip content="Previous month">
+            <a
+              className="trep-step"
+              href={monthHref(stepMonth(key, -1), current)}
+              aria-label="Previous month"
+              data-tlg-prev
+              onClick={go(monthHref(stepMonth(key, -1), current))}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 6-6 6 6 6" />
+              </svg>
+            </a>
+          </Tooltip>
           <span className="trep-range-label" aria-live="polite" data-tlg-label>
             {label}
           </span>
@@ -163,17 +166,19 @@ export function TimeLoggingView({
               </svg>
             </span>
           ) : (
-            <a
-              className="trep-step"
-              href={monthHref(stepMonth(key, 1), current)}
-              aria-label="Next month"
-              data-tlg-next
-              onClick={go(monthHref(stepMonth(key, 1), current))}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m9 6 6 6-6 6" />
-              </svg>
-            </a>
+            <Tooltip content="Next month">
+              <a
+                className="trep-step"
+                href={monthHref(stepMonth(key, 1), current)}
+                aria-label="Next month"
+                data-tlg-next
+                onClick={go(monthHref(stepMonth(key, 1), current))}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 6 6 6-6 6" />
+                </svg>
+              </a>
+            </Tooltip>
           )}
         </div>
         {threshold !== undefined && (
@@ -291,22 +296,24 @@ export function TimeLoggingView({
                         data-holiday={holiday ?? undefined}
                         data-tlg-day={d.day}
                       >
-                        <abbr
-                          title={
+                        <Tooltip
+                          content={
                             holiday === null ? dayWords(d.day) : `${dayWords(d.day)} · ${holiday}`
                           }
-                          className="tlg-head"
+                          lazy
                         >
-                          <span className="tlg-date">
-                            {d.date}
-                            {holiday !== null && (
-                              <span className="tlg-head-off" aria-hidden="true">
-                                {CELL_GLYPHS.holiday}
-                              </span>
-                            )}
-                          </span>
-                          <span className="tlg-dow">{weekdayShort(d.day)}</span>
-                        </abbr>
+                          <abbr className="tlg-head">
+                            <span className="tlg-date">
+                              {d.date}
+                              {holiday !== null && (
+                                <span className="tlg-head-off" aria-hidden="true">
+                                  {CELL_GLYPHS.holiday}
+                                </span>
+                              )}
+                            </span>
+                            <span className="tlg-dow">{weekdayShort(d.day)}</span>
+                          </abbr>
+                        </Tooltip>
                         {holiday !== null && <span className="visually-hidden">{holiday}</span>}
                       </th>
                     );
@@ -370,23 +377,21 @@ function Row({
         return (
           <td key={d.day} data-state={cell.state} data-off={cell.off ?? undefined} data-day={d.day}>
             {isDoor(cell) ? (
-              <a
-                className="tlg-cell"
-                href={href}
-                aria-label={cell.aria}
-                title={cell.aria}
-                onClick={go(href)}
-              >
-                <span className="tlg-glyph" aria-hidden="true">
-                  {cell.glyph}
-                </span>
-                {cell.figure !== '' && <span className="tlg-figure">{cell.figure}</span>}
-              </a>
+              <Tooltip content={cell.aria} lazy>
+                <a className="tlg-cell" href={href} aria-label={cell.aria} onClick={go(href)}>
+                  <span className="tlg-glyph" aria-hidden="true">
+                    {cell.glyph}
+                  </span>
+                  {cell.figure !== '' && <span className="tlg-figure">{cell.figure}</span>}
+                </a>
+              </Tooltip>
             ) : (
-              <span className="tlg-dash" title={cell.aria}>
-                <span aria-hidden="true">{cell.glyph}</span>
-                <span className="visually-hidden">{cell.aria}</span>
-              </span>
+              <Tooltip content={cell.aria} lazy>
+                <span className="tlg-dash">
+                  <span aria-hidden="true">{cell.glyph}</span>
+                  <span className="visually-hidden">{cell.aria}</span>
+                </span>
+              </Tooltip>
             )}
           </td>
         );

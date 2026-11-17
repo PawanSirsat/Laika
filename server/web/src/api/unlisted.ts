@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import type { Page, Task, TaskPriority } from './tasks.ts';
+import type { Project } from './projects.ts';
 
 /**
  * Unlisted work (SPEC §4.14, API by LAI-405, screen by LAI-413).
@@ -126,4 +127,68 @@ export function firstLine(note: string): string {
       .map((line) => line.trim())
       .find((line) => line !== '') ?? ''
   );
+}
+
+/** The spaces a promote may land in: `undefined` while read, `null` if the read failed. */
+export type PromoteSpaces = readonly Pick<Project, 'slug'>[] | null | undefined;
+
+/**
+ * Why *Create task* cannot be pressed yet, in a few words — or `undefined`
+ * when it can (LAI-1128). A disabled button that does not say why is a
+ * control that looks broken.
+ */
+export function promoteBlocker(
+  spaces: PromoteSpaces,
+  slug: string,
+  title: string,
+): string | undefined {
+  if (spaces === undefined) return 'Loading the spaces you can add tasks to.';
+  if (spaces === null) return 'Could not load your spaces.';
+  if (spaces.length === 0)
+    return 'You cannot create tasks in any space. A space lead can give you access.';
+  if (slug === '' || !spaces.some((space) => space.slug === slug)) return 'Choose a space.';
+  if (title.trim() === '') return 'Give the task a title.';
+  return undefined;
+}
+
+/**
+ * What the Unlisted page narrows to (LAI-1222): a state — the figures at the
+ * top are these filters — who logged it, and which repository. Page state,
+ * not the address, as the page's only toggle (*Show dismissed*) always was.
+ */
+export interface UnlistedView {
+  readonly state: 'all' | UnlistedState;
+  readonly source: 'any' | 'agent' | 'person';
+  readonly repo: string | null;
+}
+
+export const ALL_UNLISTED: UnlistedView = { state: 'all', source: 'any', repo: null };
+
+/** An agent's note carries the token it was logged with (§4.14); a person's does not. */
+export function fromAgent(row: UnlistedWork): boolean {
+  return row.token_id !== null;
+}
+
+/** The rows `view` leaves, in the order they came. */
+export function filterUnlisted(rows: readonly UnlistedWork[], view: UnlistedView): UnlistedWork[] {
+  return rows.filter(
+    (row) =>
+      (view.state === 'all' || unlistedState(row) === view.state) &&
+      (view.source === 'any' || fromAgent(row) === (view.source === 'agent')) &&
+      (view.repo === null || row.repo === view.repo),
+  );
+}
+
+/** How many rows of each state, for the figures that filter by it. */
+export function unlistedCounts(
+  rows: readonly UnlistedWork[],
+): Readonly<Record<'all' | UnlistedState, number>> {
+  const counts = { all: rows.length, pending: 0, promoted: 0, dismissed: 0 };
+  for (const row of rows) counts[unlistedState(row)] += 1;
+  return counts;
+}
+
+/** Every repository the rows name, A–Z, for the filter. */
+export function unlistedRepos(rows: readonly UnlistedWork[]): string[] {
+  return [...new Set(rows.map((row) => row.repo))].sort((a, b) => a.localeCompare(b));
 }

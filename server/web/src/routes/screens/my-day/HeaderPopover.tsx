@@ -1,10 +1,21 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayer } from '../../../components/overlay/layer-stack.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface HeaderPopoverProps {
   /** The trigger's content. */
   readonly trigger: ReactNode;
   readonly label: string;
-  readonly title?: string | undefined;
+  /**
+   * The trigger's tooltip (LAI-1214) — the shared Tooltip, on hover and on
+   * keyboard focus; the label when absent. It was a bare `title=`, which a
+   * keyboard and a touch screen never show. `false` for a trigger whose own
+   * words already say everything (LAI-1223): a tooltip that only repeats them
+   * covers whatever sits beside it, and says nothing new.
+   */
+  readonly tooltip?: string | false | undefined;
+  /** The trigger's key, as `T`: a keycap in the tooltip and `aria-keyshortcuts`. */
+  readonly shortcut?: string | undefined;
   readonly className?: string | undefined;
   readonly triggerClassName?: string | undefined;
   readonly disabled?: boolean | undefined;
@@ -44,7 +55,8 @@ const FOCUSABLE =
 export function HeaderPopover({
   trigger,
   label,
-  title,
+  tooltip,
+  shortcut,
   className,
   triggerClassName,
   disabled = false,
@@ -59,6 +71,8 @@ export function HeaderPopover({
 }: HeaderPopoverProps) {
   const [own, setOwn] = useState(false);
   const open = controlled ?? own;
+  // On the overlay stack while open (LAI-1205).
+  const { isTop } = useLayer('popover', open);
   const setOpen = (next: boolean): void => {
     setOwn(next);
     onOpenChange?.(next);
@@ -98,8 +112,18 @@ export function HeaderPopover({
         return;
       if (root.current !== null && !root.current.contains(target)) close();
     };
+    /*
+     * Escape on the capture phase reaches here before anything else on the
+     * page, so it must ask whether it is this popover's (LAI-1205): not while
+     * a picker or menu is open above it, and not while a modal a control
+     * inside opened (Draft my time's question) holds the focus.
+     */
+    const theirs = (target: EventTarget | null): boolean =>
+      target instanceof Element &&
+      target.closest('[aria-modal="true"]') !== null &&
+      panel.current?.contains(target) !== true;
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && isTop() && !theirs(event.target)) {
         event.stopPropagation();
         close();
         root.current?.querySelector<HTMLElement>('button')?.focus();
@@ -130,7 +154,7 @@ export function HeaderPopover({
       document.removeEventListener('keydown', key, true);
       document.removeEventListener('keydown', trap);
     };
-  }, [open, onOpenChange, dialog]);
+  }, [open, onOpenChange, dialog, isTop]);
 
   // A dialog takes focus when it opens, on its first control.
   useEffect(() => {
@@ -138,27 +162,37 @@ export function HeaderPopover({
     panel.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
   }, [open, dialog]);
 
+  const button = (
+    <button
+      type="button"
+      className={triggerClassName ?? 'myday-chip'}
+      aria-label={label}
+      aria-expanded={open}
+      aria-controls={id}
+      {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
+      {...(tooltip === false && shortcut !== undefined ? { 'aria-keyshortcuts': shortcut } : {})}
+      disabled={disabled}
+      onClick={() => {
+        setOpen(!open);
+      }}
+    >
+      {trigger}
+    </button>
+  );
+
   return (
     <div
       ref={root}
       className={['myday-pop', className ?? ''].filter((c) => c !== '').join(' ')}
       {...(dataAttr === undefined ? {} : { [dataAttr]: '' })}
     >
-      <button
-        type="button"
-        className={triggerClassName ?? 'myday-chip'}
-        aria-label={label}
-        title={title ?? label}
-        aria-expanded={open}
-        aria-controls={id}
-        {...(dialog ? { 'aria-haspopup': 'dialog' as const } : {})}
-        disabled={disabled}
-        onClick={() => {
-          setOpen(!open);
-        }}
-      >
-        {trigger}
-      </button>
+      {tooltip === false ? (
+        button
+      ) : (
+        <Tooltip content={tooltip ?? label} shortcut={shortcut}>
+          {button}
+        </Tooltip>
+      )}
       {open && (
         <div
           ref={panel}

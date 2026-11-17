@@ -1,6 +1,7 @@
 /**
  * The Create task dialog's ways in and its shape (LAI-1167, D-145): the
- * bar's *+ Create*, the List's *Create task* row and the `c` key each open
+ * top bar's *+ Create* (LAI-1227; the space toolbar's until then), the List's
+ * *Create task* row and the `c` key each open
  * one labelled modal; the key defers to typing and to the gate; `?new=task`
  * is honoured and then taken out of the address; Tab stays inside; Escape
  * gives focus back; on a phone the box is the screen.
@@ -48,10 +49,10 @@ async function titleFocused(h: Harness): Promise<boolean> {
 }
 
 void describe('the Create task dialog opens from', () => {
-  void test('the bar’s + Create: a labelled modal, focus on the Title', async () => {
+  void test('the top bar’s + Create: a labelled modal, focus on the Title', async () => {
     const h = await at('/board?project=laika-core', stub(ADA));
     try {
-      await h.page.locator('.space-create').click();
+      await h.page.locator('[data-header-create]').click();
       const box = dialog(h);
       await box.waitFor({ timeout: 5_000 });
       assert.equal(await box.getAttribute('role'), 'dialog');
@@ -88,7 +89,7 @@ void describe('the Create task dialog opens from', () => {
     // filters for itself, as the board and the List do (LAI-293).
     const h = await at('/calendar?project=laika-core', stub(ADA));
     try {
-      await h.page.locator('.space-create').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-header-create]').waitFor({ timeout: 5_000 });
       await h.page.locator('.space-search input').waitFor({ timeout: 5_000 });
       await h.page.locator('body').click({ position: { x: 5, y: 5 } });
 
@@ -154,7 +155,10 @@ void describe('who may create (task_create_min_role: lead)', () => {
       await until(() => !new URL(h.page.url()).searchParams.has('new'));
       assert.equal(new URL(h.page.url()).searchParams.get('new'), null);
       assert.equal(await dialog(h).count(), 0, '?new=task opened the dialog for a member');
-      assert.equal(await h.page.locator('.space-create').count(), 0, 'Create is drawn');
+      // The top bar's Create stays, unavailable, and says why (LAI-1227).
+      const create = h.page.locator('[data-header-create]');
+      await until(async () => (await create.getAttribute('aria-disabled')) === 'true');
+      assert.match(await create.innerText(), /No space lets you create a task/);
 
       await h.page.locator('body').click({ position: { x: 5, y: 5 } });
       await h.page.keyboard.press('c');
@@ -181,7 +185,7 @@ void describe('the dialog’s keyboard and shape', () => {
   void test('Tab stays inside, forty times each way; Escape closes and gives focus back to + Create', async () => {
     const h = await at('/board?project=laika-core', stub(ADA));
     try {
-      await h.page.locator('.space-create').focus();
+      await h.page.locator('[data-header-create]').focus();
       await h.page.keyboard.press('Enter');
       const box = dialog(h);
       await box.waitFor({ timeout: 5_000 });
@@ -203,7 +207,7 @@ void describe('the dialog’s keyboard and shape', () => {
       await h.page.keyboard.press('Escape');
       await box.waitFor({ state: 'detached' });
       await h.page.waitForFunction(
-        () => document.querySelector('.space-create') === document.activeElement,
+        () => document.querySelector('[data-header-create]') === document.activeElement,
         undefined,
         { timeout: 5_000 },
       );
@@ -215,7 +219,7 @@ void describe('the dialog’s keyboard and shape', () => {
   void test('Escape from inside the Description editor asks before discarding what was typed; Keep editing keeps it, Discard closes', async () => {
     const h = await at('/board?project=laika-core', stub(ADA));
     try {
-      await h.page.locator('.space-create').click();
+      await h.page.locator('[data-header-create]').click();
       const box = dialog(h);
       await box.waitFor({ timeout: 5_000 });
       const doc = box.locator('.rich-editor-doc').first();
@@ -245,7 +249,7 @@ void describe('the dialog’s keyboard and shape', () => {
   void test('the scrim asks too when something is typed, and an empty draft closes at once', async () => {
     const h = await at('/board?project=laika-core', stub(ADA));
     try {
-      await h.page.locator('.space-create').click();
+      await h.page.locator('[data-header-create]').click();
       const box = dialog(h);
       await box.waitFor({ timeout: 5_000 });
       await h.page.locator('.ct-title-input').fill('Typed');
@@ -263,7 +267,7 @@ void describe('the dialog’s keyboard and shape', () => {
     }
   });
 
-  void test('a change of space closes it: the draft belonged to the space it opened in', async () => {
+  void test('a change of the page’s space closes it: the column it opened with was that page’s', async () => {
     const SHELL = {
       ...CORE,
       id: 'laika-shell',
@@ -313,15 +317,15 @@ void describe('the dialog’s keyboard and shape', () => {
     };
     const h = await at('/board?project=laika-core', stub(ADA, extra));
     try {
-      await h.page.locator('.space-create').click();
+      await h.page.locator('[data-header-create]').click();
       const box = dialog(h);
       await box.waitFor({ timeout: 5_000 });
       await h.page.locator('.ct-title-input').fill('For Core');
       await navigateInApp(h.page, '/board?project=laika-shell');
       await box.waitFor({ state: 'detached', timeout: 5_000 });
       // And the next one is the new space's, from nothing.
-      await h.page.locator('.space-create').waitFor({ timeout: 10_000 });
-      await h.page.locator('.space-create').click();
+      await h.page.locator('[data-header-create]').waitFor({ timeout: 10_000 });
+      await h.page.locator('[data-header-create]').click();
       await box.waitFor({ timeout: 5_000 });
       assert.equal(await h.page.locator('.ct-title-input').inputValue(), '');
     } finally {
@@ -332,7 +336,7 @@ void describe('the dialog’s keyboard and shape', () => {
   void test('on a phone the box is the whole screen; both themes paint it from tokens', async () => {
     const h = await at('/board?project=laika-core', stub(ADA), 390, 800);
     try {
-      await h.page.locator('.space-create').click();
+      await h.page.locator('[data-header-create]').click();
       const box = dialog(h);
       await box.waitFor({ timeout: 5_000 });
       const size = await box.evaluate((el) => {
@@ -378,7 +382,7 @@ if (SHOTS !== undefined) {
       void test(`the open dialog, More unfolded, at ${String(width)}`, async () => {
         const h = await at('/board?project=laika-core', stub(ADA), width, height);
         try {
-          await h.page.locator('.space-create').click();
+          await h.page.locator('[data-header-create]').click();
           const box = dialog(h);
           await box.waitFor({ timeout: 5_000 });
           await box.locator('.rich-editor').first().waitFor({ timeout: 10_000 });

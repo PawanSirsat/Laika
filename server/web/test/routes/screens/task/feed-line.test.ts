@@ -2,12 +2,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { ICON_PATHS } from '../../../../src/components/icon/icon-paths.ts';
 import type { ActivityEvent } from '../../../../src/api/activity.ts';
 import { describeEvent } from '../../../../src/api/activity.ts';
 import type { AgentNaming } from '../../../../src/api/selected-agent.ts';
 import {
   createdVia,
-  FEED_GLYPHS,
+  FEED_ICONS,
   feedLines,
   feedMeta,
   sessionMeta,
@@ -42,11 +43,26 @@ const SESSION = {
 
 const TASK = { created_via: 'mcp', created_by_client: 'Polly' };
 
+/**
+ * Each kind's mark, as a character, so a line reads as one string. The feed
+ * draws a registry icon (`FEED_ICONS`, LAI-1213); this pins which kind it is.
+ */
+const MARK: Readonly<Record<keyof typeof FEED_ICONS, string>> = {
+  created: '+',
+  request: '⇄',
+  moved: '→',
+  started: '▶',
+  sent_back: '↩',
+  finished: '✓',
+  edited: '✎',
+  other: '•',
+};
+
 /** A line as one string, the way a reader sees it. */
 function said(event: ActivityEvent): string[] {
   return feedLines(event, AGENTS).map((line) =>
     [
-      FEED_GLYPHS[line.icon],
+      MARK[line.icon],
       line.text,
       line.object,
       line.tail,
@@ -206,5 +222,14 @@ void describe('feedMeta', () => {
       undefined,
     );
     assert.equal(sessionMeta(null), undefined);
+  });
+});
+
+void describe('FEED_ICONS (LAI-1213)', () => {
+  void test('each kind draws its own registry icon, never a typed character', () => {
+    const names = Object.values(FEED_ICONS);
+    assert.equal(new Set(names).size, names.length, 'two kinds draw the same icon');
+    for (const name of names)
+      assert.ok(ICON_PATHS[name].length > 0, `${name} is not in the registry`);
   });
 });

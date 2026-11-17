@@ -42,6 +42,7 @@ import {
   WAITING_DETAIL,
 } from './agent-state-fixtures.ts';
 import './agent-state-gallery.css';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 
 /**
  * The **proposed** agent UI as reviewable states (LAI-536, proposal §6 and
@@ -398,16 +399,18 @@ function GalleryCard({
         <span className="card-spacer" />
         <AgentChip {...agent} />
         <span className="card-who">
-          <span className="card-avatar t-avatar agent-gallery-avatar" title={OWNER}>
-            AO
-          </span>
+          <Tooltip content={OWNER} lazy>
+            <span className="card-avatar t-avatar agent-gallery-avatar">AO</span>
+          </Tooltip>
           {byAgent && (
-            <span className="card-bot" title={`Written by ${OWNER}'s agent`} data-mcp-badge>
-              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
-                <rect x="4" y="8" width="16" height="12" rx="3" />
-                <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
-              </svg>
-            </span>
+            <Tooltip content={`Written by ${OWNER}'s agent`} lazy>
+              <span className="card-bot" data-mcp-badge>
+                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+                  <rect x="4" y="8" width="16" height="12" rx="3" />
+                  <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
+                </svg>
+              </span>
+            </Tooltip>
           )}
         </span>
       </div>

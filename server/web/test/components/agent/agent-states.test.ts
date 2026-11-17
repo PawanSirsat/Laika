@@ -182,7 +182,11 @@ void describe('the gallery stays the gallery', () => {
   void test('the existing agent badge keeps its meaning on the live card', async () => {
     const card = await readFile(`${SRC}routes/screens/board/TaskCard.tsx`, 'utf8');
     assert.match(card, /const byAgent = task\.created_via === 'mcp';/);
-    assert.match(card, /title=\{`Written by \$\{assignee\.name\}'s agent`\}/);
+    // LAI-1206: *created through* an agent, by its creator — it said the
+    // assignee's agent, which named the wrong person when the two differ.
+    // Its words are the shared tooltip's since LAI-1213 (a bare title before).
+    assert.match(card, /content=\{createdThroughAgentTitle\(creator\)\}/);
+    assert.match(card, /const creator = members\.get\(task\.created_by\)\?\.name;/);
   });
 });
 

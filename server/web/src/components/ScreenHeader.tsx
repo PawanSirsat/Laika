@@ -15,7 +15,8 @@ export interface ScreenHeaderProps {
    * title, a line under it, and a row below for its tabs.
    * `crumbs` — a breadcrumb whose last step is the title, and the context at
    * the right; the member profile's chrome (LAI-1152). No band of its own:
-   * the card under it is the page's head.
+   * the card under it is the page's head. The breadcrumb is drawn in the app
+   * header's title slot (LAI-1188).
    */
   readonly variant?: 'band' | 'page' | 'crumbs';
   /** Crumbs only: the steps before the title, each with its own separator. */
@@ -95,6 +96,8 @@ export function ScreenHeader({
   trail,
 }: ScreenHeaderProps) {
   const embed = useContext(EmbedContext);
+  // The title rule (LAI-1227): the top bar names no page; this header's `h1`
+  // is where the page names itself, once.
 
   if (embed !== undefined && variant === 'band') {
     return (
@@ -113,14 +116,22 @@ export function ScreenHeader({
   }
 
   if (variant === 'crumbs') {
+    /*
+     * The breadcrumb is the page's (LAI-1227): the top bar is Jira's and names
+     * no page, so a member's profile says where it sits — *People / <name>* —
+     * above its context line, as a space says *Spaces /* above its name.
+     */
+    const crumbs = (
+      <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
+        {trail}
+        <h1 className="screen-crumbs-here" aria-current="page">
+          {title}
+        </h1>
+      </nav>
+    );
     return (
       <header className="screen-crumbs">
-        <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
-          {trail}
-          <h1 className="screen-crumbs-here" aria-current="page">
-            {title}
-          </h1>
-        </nav>
+        {crumbs}
         {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
       </header>
     );

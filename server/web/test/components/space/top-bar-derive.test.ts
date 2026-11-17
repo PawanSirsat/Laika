@@ -9,23 +9,11 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   CLUSTER_LIMIT,
-  agentCount,
-  agentsLive,
+  memberFilterLabel,
   cluster,
   nextPriority,
   priorityLabel,
 } from '../../../src/components/space/top-bar-derive.ts';
-
-const person = (id: string, isAgent = false) => ({
-  user_id: id,
-  name: id,
-  is_agent: isAgent,
-  matched_task_id: null,
-  project_ids: [],
-  client: null,
-  clients: [],
-  last_seen: 0,
-});
 
 void describe('the avatar cluster', () => {
   void test('shows everyone and counts nobody when the list fits', () => {
@@ -75,37 +63,12 @@ void describe('the priority cycler', () => {
   });
 });
 
-void describe('the agent count', () => {
-  void test('counts agent sessions and no one else', () => {
-    assert.equal(agentCount([person('a', true), person('b'), person('c', true)]), 2);
-  });
-
-  void test('no presence yet is zero, not a guess', () => {
-    assert.equal(agentCount(undefined), 0);
-    assert.equal(agentCount([]), 0);
-  });
-});
-
-void describe('which agents are live, for the Agents chip (LAI-737)', () => {
-  const agent = (
-    id: string,
-    client: string | null,
-    clients: string[] = client === null ? [] : [client],
-  ) => ({ ...person(id, true), client, clients }) as unknown as ReturnType<typeof person>;
-
-  void test('every distinct agent across the sessions, in order', () => {
-    assert.deepEqual(
-      agentsLive([
-        agent('a', 'codex', ['codex', 'cursor']),
-        agent('b', 'cursor'),
-        agent('c', 'claude-code'),
-      ]),
-      ['codex', 'cursor', 'claude-code'],
+void describe('memberFilterLabel (LAI-1193)', () => {
+  void test('a face that shows initials is named by what pressing it does', () => {
+    assert.equal(memberFilterLabel('Ada Lovelace', false), "Show only Ada Lovelace's work");
+    assert.equal(
+      memberFilterLabel('Ada Lovelace', true),
+      "Showing only Ada Lovelace's work — press to clear",
     );
-  });
-
-  void test('CONTROL: a person in the browser names no agent, and nor does an unknown slug', () => {
-    assert.deepEqual(agentsLive([person('a'), agent('b', 'teleporter')]), []);
-    assert.deepEqual(agentsLive(undefined), []);
   });
 });

@@ -19,6 +19,8 @@ import { statusOptions } from '../board/status-options.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './task-panel.css';
 
 export interface SubtasksSectionProps {
@@ -143,7 +145,10 @@ export function SubtasksSection({
 
   return (
     <div className="meta-row meta-row-wide meta-row-subtasks sub-section">
-      <p className="meta-label">Subtasks</p>
+      <p className="meta-label">
+        <Icon name="subtasks" size="small" className="section-mark" />
+        Subtasks
+      </p>
       <div className="meta-value meta-line">
         {progress === undefined ? (
           <span className="sub-count meta-quiet">None</span>
@@ -197,9 +202,9 @@ export function SubtasksSection({
                   }}
                 >
                   <span className="dep-chip-key">{child.key}</span>
-                  <span className="dep-chip-title" title={child.title}>
-                    {child.title}
-                  </span>
+                  <Tooltip content={child.title} lazy>
+                    <span className="dep-chip-title">{child.title}</span>
+                  </Tooltip>
                 </button>
                 {/*
                   **Status and assignee change in place** (LAI-700), as Jira's
@@ -235,84 +240,88 @@ export function SubtasksSection({
                   </span>
                 )}
                 {mayAssign ? (
-                  <label
-                    className={
-                      who === undefined
-                        ? 'dep-avatar dep-avatar-empty sub-assign'
-                        : 'dep-avatar sub-assign'
-                    }
-                    title={who?.name ?? 'Unassigned'}
-                    {...(ink === undefined
-                      ? {}
-                      : { style: { background: ink.background, color: ink.foreground } })}
-                  >
-                    <span aria-hidden="true">{who === undefined ? '—' : initials(who.name)}</span>
-                    <span className="visually-hidden" id={`sub-assign-${child.id}`}>
-                      Assignee of {child.key}
-                    </span>
-                    {/*
+                  <Tooltip content={`Assignee: ${who?.name ?? 'Unassigned'}`} lazy>
+                    <label
+                      className={
+                        who === undefined
+                          ? 'dep-avatar dep-avatar-empty sub-assign'
+                          : 'dep-avatar sub-assign'
+                      }
+                      {...(ink === undefined
+                        ? {}
+                        : { style: { background: ink.background, color: ink.foreground } })}
+                    >
+                      <span aria-hidden="true">{who === undefined ? '—' : initials(who.name)}</span>
+                      <span className="visually-hidden" id={`sub-assign-${child.id}`}>
+                        Assignee of {child.key}
+                      </span>
+                      {/*
                       The project's members, not the org's — the list
                       `AssignControl` offers, for its reason: an assignee
                       outside the project cannot open their own work.
                     */}
-                    <Dropdown
-                      variant="bare"
-                      chevron={false}
-                      aria-labelledby={`sub-assign-${child.id}`}
-                      noun="people"
-                      value={child.assignee_id ?? ''}
-                      disabled={busy}
-                      options={[
-                        { value: '', label: 'Unassigned', pinned: true },
-                        ...[...members.values()].map((member) => ({
-                          value: member.user_id,
-                          label: `${member.name}${member.user_id === meId ? ' (you)' : ''}`,
-                          keywords: member.email,
-                          icon: (
-                            <span
-                              className="dd-avatar"
-                              style={{
-                                background: avatarColor(member.user_id, theme).background,
-                                color: avatarColor(member.user_id, theme).foreground,
-                              }}
-                            >
-                              {initials(member.name)}
-                            </span>
-                          ),
-                        })),
-                      ]}
-                      onChange={(value) => {
-                        const next = value === '' ? null : value;
-                        if (next !== child.assignee_id) {
-                          void act(() => assignTask(child.id, next));
-                        }
-                      }}
-                    />
-                  </label>
+                      <Dropdown
+                        variant="bare"
+                        chevron={false}
+                        aria-labelledby={`sub-assign-${child.id}`}
+                        noun="people"
+                        value={child.assignee_id ?? ''}
+                        disabled={busy}
+                        options={[
+                          { value: '', label: 'Unassigned', pinned: true },
+                          ...[...members.values()].map((member) => ({
+                            value: member.user_id,
+                            label: `${member.name}${member.user_id === meId ? ' (you)' : ''}`,
+                            keywords: member.email,
+                            icon: (
+                              <span
+                                className="dd-avatar"
+                                style={{
+                                  background: avatarColor(member.user_id, theme).background,
+                                  color: avatarColor(member.user_id, theme).foreground,
+                                }}
+                              >
+                                {initials(member.name)}
+                              </span>
+                            ),
+                          })),
+                        ]}
+                        onChange={(value) => {
+                          const next = value === '' ? null : value;
+                          if (next !== child.assignee_id) {
+                            void act(() => assignTask(child.id, next));
+                          }
+                        }}
+                      />
+                    </label>
+                  </Tooltip>
                 ) : (
-                  <span
-                    className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
-                    title={who?.name ?? 'Unassigned'}
-                    aria-hidden="true"
-                    {...(ink === undefined
-                      ? {}
-                      : { style: { background: ink.background, color: ink.foreground } })}
-                  >
-                    {who === undefined ? '—' : initials(who.name)}
-                  </span>
+                  <Tooltip content={who?.name ?? 'Unassigned'} lazy>
+                    <span
+                      className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
+                      aria-hidden="true"
+                      {...(ink === undefined
+                        ? {}
+                        : { style: { background: ink.background, color: ink.foreground } })}
+                    >
+                      {who === undefined ? '—' : initials(who.name)}
+                    </span>
+                  </Tooltip>
                 )}
                 {mayEdit && (
-                  <button
-                    type="button"
-                    className="dep-remove"
-                    disabled={busy}
-                    aria-label={`Detach ${child.key}`}
-                    onClick={() => {
-                      void act(() => updateTask(child.id, { parent_task_id: null }));
-                    }}
-                  >
-                    <span aria-hidden="true">×</span>
-                  </button>
+                  <Tooltip content="Detach from this task">
+                    <button
+                      type="button"
+                      className="dep-remove"
+                      disabled={busy}
+                      aria-label={`Detach ${child.key}`}
+                      onClick={() => {
+                        void act(() => updateTask(child.id, { parent_task_id: null }));
+                      }}
+                    >
+                      <Icon name="close" size="tiny" />
+                    </button>
+                  </Tooltip>
                 )}
               </li>
             );

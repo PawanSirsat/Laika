@@ -174,7 +174,7 @@ void describe('the List’s empty state (LAI-717)', () => {
     try {
       // Wide enough for `board-rail.css`'s row layout, where the bug lived.
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      const headline = h.page.locator('.state-headline', {
+      const headline = h.page.locator('.empty-panel-title', {
         hasText: 'Nothing here for this filter',
       });
       await headline.waitFor({ timeout: 20_000 });
@@ -196,7 +196,7 @@ void describe('the List’s empty state (LAI-717)', () => {
           const paneContent =
             pane.width - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight);
           const card = document.querySelector('.list-scroll')!.getBoundingClientRect();
-          const state = document.querySelector('.state-empty')!;
+          const state = document.querySelector('.empty-panel')!;
           const create = document.querySelector('.list-create');
           const floor = create === null ? card.bottom : create.getBoundingClientRect().top;
           const parts = [...state.children].map((el) => el.getBoundingClientRect());

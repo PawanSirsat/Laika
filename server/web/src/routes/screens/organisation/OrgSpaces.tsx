@@ -58,7 +58,7 @@ export function OrgSpaces({ projects, onNavigate }: OrgSpacesProps) {
       )}
       {projects.status === 'ready' &&
         (projects.projects.length === 0 ? (
-          <p className="org-note">No spaces yet. Create the first one from Projects.</p>
+          <p className="org-note">No spaces yet. Create the first one from Spaces.</p>
         ) : (
           <table className="org-table">
             <thead>

@@ -33,8 +33,10 @@ void before(async () => {
   //
   // The sidebar is a component family since LAI-249; the scans below cover
   // every file in it, so a rule cannot be dodged by moving markup to a sibling.
+  // Its foot, the person menu, moved to the top bar in LAI-1227
+  // (`shell/PersonMenu.tsx`, scanned with the shell below).
   const parts = await Promise.all(
-    ['Sidebar.tsx', 'SpacesSection.tsx', 'SpacesPopover.tsx', 'SidebarFooter.tsx'].map((name) =>
+    ['Sidebar.tsx', 'SpacesSection.tsx', 'SpacesPopover.tsx'].map((name) =>
       readFile(fileURLToPath(new URL(`components/sidebar/${name}`, SRC)), 'utf8'),
     ),
   );
@@ -47,6 +49,7 @@ void before(async () => {
       'components/AppShell.tsx',
       'components/shell/ShellHeader.tsx',
       'components/shell/ShellSidebar.tsx',
+      'components/shell/PersonMenu.tsx',
       'components/shell/SessionGate.tsx',
       'components/shell/ScreenOutlet.tsx',
     ].map((name) => readFile(fileURLToPath(new URL(name, SRC)), 'utf8')),

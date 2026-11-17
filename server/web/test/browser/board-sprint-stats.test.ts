@@ -27,6 +27,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -775,7 +776,7 @@ void describe('All sprints is always named (LAI-727 review)', () => {
     try {
       await reads(h, `All sprints ${summary(undefined)}`);
       const left = h.page.locator('.bstats-left');
-      assert.equal(await left.getAttribute('title'), 'No sprint end date');
+      assert.equal(await tipText(left), 'No sprint end date');
       assert.equal(await left.locator('.visually-hidden').textContent(), 'No sprint end date');
     } finally {
       await h.close();
@@ -822,22 +823,28 @@ void describe('the group is in the toolbar row in every tier (LAI-727 review)', 
 void describe('the pill (LAI-727 review)', () => {
   for (const theme of ['Light', 'Dark']) {
     void test(`${theme}: one figure in the row; BLK and LEFT on hover, focus and click`, async () => {
+      // **440, not 670** (LAI-1227): + Create left the row for the top bar,
+      // so the group keeps its compact tier down to about 460px with this
+      // fixture; 440 is inside the pill's band (the boundary test below finds
+      // the band rather than assuming it). It was 920 until LAI-1198 moved
+      // four icons into the labelled ⋯ menu. Theme is set at 1440, where
+      // the rail and its theme control are on-canvas.
       const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS, {
-        before: async (page) => page.setViewportSize({ width: 920, height: 768 }),
+        before: async (page) => page.setViewportSize({ width: 1440, height: 768 }),
       });
       try {
         await reads(h, `S2 ${summary('s2')}`);
         await setTheme(h.page, theme);
-        // The icon rail, as 920px draws it since LAI-796: the sidebar is not
-        // opened (LAI-804). The boundary itself has its own test below.
-        await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
+        await h.page.setViewportSize({ width: 440, height: 768 });
+        // Attached, not visible: under 640px the row folds the faces away.
+        await h.page.locator('.bt-member').first().waitFor({ state: 'attached', timeout: 10_000 });
         await settled(h);
 
         const pill = h.page.locator('.bstats');
         assert.match(
           (await pill.getAttribute('class')) ?? '',
           /bstats-pill/,
-          'not the pill at 920px',
+          'not the pill at 440px',
         );
         assert.equal(await pill.getAttribute('role'), 'button');
         assert.equal(await pill.getAttribute('tabindex'), '0');
@@ -870,7 +877,7 @@ void describe('the pill (LAI-727 review)', () => {
         assert.equal(opened.sideways, false, 'the tooltip pushes the page sideways');
         const tipBox = await tip.boundingBox();
         assert.ok(
-          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 920,
+          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 440,
           'the tooltip runs off the screen',
         );
 
@@ -940,7 +947,11 @@ void describe('the pill on its boundary with compact (LAI-804)', () => {
       );
       while ((await tierAt(width)) !== 'pill') {
         width -= 8;
-        assert.ok(width > 820, 'the pill was never reached on the way down');
+        // 360, not 600 (LAI-1227): with + Create gone to the top bar the row
+        // has room for longer still, and the pill band starts near 460px. It
+        // was 820 until LAI-1198 moved four icons into the ⋯ menu. The rail
+        // stays closed, as asserted below.
+        assert.ok(width > 360, 'the pill was never reached on the way down');
       }
       const firstPill = width;
       while ((await tierAt(width)) === 'pill') {
@@ -1143,7 +1154,9 @@ const rowGeometry = (h: Harness) =>
 void describe('the board does not move after it is drawn (LAI-727 review)', () => {
   const LATE = ['/members', '/sprints', '/presence'];
   const late = async (page: Page, held: Promise<void>): Promise<void> => {
-    for (const glob of ['**/members*', '**/sprints*', '**/presence*']) {
+    // API paths only (LAI-1219): screens load as chunks now, and `**/presence*`
+    // also matched `assets/presence-*.js`, holding the board's own code.
+    for (const glob of ['**/api/v1/**/members*', '**/api/v1/**/sprints*', '**/api/v1/presence*']) {
       await page.route(glob, async (route) => {
         await held;
         await route.continue();
@@ -1277,7 +1290,7 @@ void describe('a board too long to read says its figures are partial (LAI-727)',
     });
     try {
       await h.page.locator('.bstats-partial').waitFor({ timeout: 20_000 });
-      assert.match((await h.page.locator('.bstats-partial').getAttribute('title')) ?? '', /first/i);
+      assert.match(await tipText(h.page.locator('.bstats-partial')), /first/i);
     } finally {
       await h.close();
     }

@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import { dateInputToMs } from '../../api/date-only.ts';
 import { everyPage } from '../../api/every-page.ts';
 import type { MeProfile } from '../../api/me.ts';
-import { getProject } from '../../api/projects.ts';
+import { getProject, type Project } from '../../api/projects.ts';
 import { pickerChoices } from '../../api/selected-agent.ts';
 import { addTasksToSprint, listSprints, type Sprint } from '../../api/sprints.ts';
-import type { ProjectTag } from '../../api/tags.ts';
-import { addDependency, createTask, type Member, type Task } from '../../api/tasks.ts';
+import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
+import { addDependency, createTask, listMembers, type Member, type Task } from '../../api/tasks.ts';
+import { useGates } from '../../api/permissions.ts';
+import { useSpaces } from '../../routes/use-spaces.ts';
 import { useMyAgents } from '../../api/use-my-agents.ts';
 import { reloadProjectTasks, useProjectTasks } from '../../api/use-project-tasks.ts';
 import { useProjectStatuses } from '../../api/use-statuses.ts';
@@ -16,12 +18,24 @@ import type {
   RichEditorHandle,
 } from '../../routes/screens/task/LazyRichEditor.tsx';
 import { useConfirm } from '../ConfirmProvider.tsx';
+import { Dropdown } from '../Dropdown.tsx';
+import { Field } from '../forms/Field.tsx';
 import { Button } from '../forms/Button.tsx';
-import { useShell } from '../shell/shell-context.ts';
+import { IconButton } from '../forms/IconButton.tsx';
+import { InfoHint } from '../tooltip/InfoHint.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { spaceColor } from '../../theme/space-color.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
 import { CreateTaskFields } from './CreateTaskFields.tsx';
 import {
-  defaultStatusId,
+  creatableSpaces,
+  defaultCreateSpace,
+  draftForSpace,
+  keepValidInSpace,
+  readLastCreateSpace,
+  writeLastCreateSpace,
+} from './create-space.ts';
+import {
   emptyDraft,
   errorsByField,
   keepForAnother,
@@ -30,6 +44,7 @@ import {
   type CreateTaskDraft,
 } from './create-task-form.ts';
 import './create-task.css';
+import './create-task-hints.css';
 
 /** One step after the create that did not land, in two voices. */
 export interface FailedStep {
@@ -42,13 +57,15 @@ export interface FailedStep {
 export interface CreateOutcome {
   readonly task: Task;
   readonly failed: readonly FailedStep[];
+  /** The space it was created in — the dialog's Space field, at the moment of Create. */
+  readonly slug: string;
 }
 
 export interface CreateTaskDialogProps {
-  readonly slug: string;
-  readonly spaceId: string | undefined;
-  readonly members: readonly Member[];
-  readonly tags: readonly ProjectTag[];
+  /** The space to start in, already known to be one the reader may create in. */
+  readonly initialSlug: string | undefined;
+  /** The space on screen, if any — the default when nothing was asked for. */
+  readonly currentSlug: string | undefined;
   readonly me: MeProfile | undefined;
   readonly initialStatusId: string | undefined;
   readonly onClose: () => void;
@@ -93,23 +110,51 @@ function said(cause: unknown): string {
  * goes back to whatever opened the dialog.
  */
 export function CreateTaskDialog({
-  slug,
-  spaceId,
-  members,
-  tags,
+  initialSlug,
+  currentSlug,
   me,
   initialStatusId,
   onClose,
   onCreated,
   restore,
 }: CreateTaskDialogProps) {
-  const { spaceName } = useShell();
   const confirm = useConfirm();
   const box = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const descriptionRef = useRef<RichEditorHandle | null>(null);
   const acceptanceRef = useRef<RichEditorHandle | null>(null);
   const titleId = useId();
+
+  // ------------------------------------------------------------- the space
+  /*
+   * **The Space field** (LAI-1227): every space whose `task.create` the
+   * server grants this reader, read when the dialog opens. The field starts
+   * on what the opener asked for (already checked by the provider, so the
+   * form is ready at once on a space's screen), else the space on screen, the
+   * last space created in, or the first allowed (`defaultCreateSpace`).
+   */
+  const gates = useGates(me !== undefined);
+  const { all: allSpaces, loaded: spacesLoaded } = useSpaces(true);
+  const allowed = useMemo(
+    () => creatableSpaces(allSpaces, (id) => gates.project(id, 'task.create')),
+    [allSpaces, gates],
+  );
+  const [chosen, setChosen] = useState<string | undefined>(initialSlug);
+  useEffect(() => {
+    if (chosen !== undefined || allowed.length === 0) return;
+    const storage = (() => {
+      try {
+        return window.localStorage;
+      } catch {
+        return undefined;
+      }
+    })();
+    setChosen(
+      defaultCreateSpace({ current: currentSlug, last: readLastCreateSpace(storage), allowed }),
+    );
+  }, [chosen, allowed, currentSlug]);
+  const slug = chosen;
+  const space = allowed.find((s) => s.slug === slug);
 
   const [draft, setDraft] = useState<CreateTaskDraft>(() => ({
     ...emptyDraft(),
@@ -177,23 +222,54 @@ export function CreateTaskDialog({
   };
 
   // ---------------------------------------------------------------- loading
+  /*
+   * Everything below belongs to **the chosen space** and is read again when
+   * the Space field changes: its statuses, tasks (Parent, Blocked by),
+   * sprints, members (Assignee, mentions), labels and whether it allows
+   * agents. Each read is keyed by the slug and aborted when it changes, so an
+   * answer for the old space can never land on the new one.
+   */
   const statuses = useProjectStatuses(slug);
   const snapshot = useProjectTasks(slug);
   const agents = useMyAgents();
   const [sprints, setSprints] = useState<readonly Sprint[] | undefined>(undefined);
+  const [members, setMembers] = useState<readonly Member[] | undefined>(undefined);
+  const [tags, setTags] = useState<readonly ProjectTag[]>([]);
   const [agentsAllowed, setAgentsAllowed] = useState(true);
+  /** The space's own colour and key (LAI-1209), and its id for the agent picker. */
+  const [project, setProject] = useState<Project | undefined>(undefined);
 
-  // Where it goes when nothing is chosen: shown in the control before the
-  // create, so the person can see it, rather than left to the server.
+  // A value the space cannot take is replaced, not left to a 422: a status
+  // not among its statuses becomes its default (shown in the control before
+  // the create, so the person can see where it goes), an assignee not among
+  // its members becomes nobody.
   useEffect(() => {
-    if (statuses.all.length === 0) return;
-    setDraft((d) =>
-      d.statusId === undefined ? { ...d, statusId: defaultStatusId(statuses.all) } : d,
-    );
-  }, [statuses.all]);
+    setDraft((d) => keepValidInSpace(d, { statuses: statuses.all, members }));
+  }, [statuses.all, members]);
 
   useEffect(() => {
+    if (slug === undefined) return;
     const controller = new AbortController();
+    setSprints(undefined);
+    setMembers(undefined);
+    setTags([]);
+    setProject(undefined);
+    setAgentsAllowed(true);
+    listMembers(slug, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) setMembers(list.members);
+      })
+      .catch(() => {
+        // Nobody to assign beats a wrong list; the task can still be made.
+        if (!controller.signal.aborted) setMembers([]);
+      });
+    listProjectTags(slug, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) setTags(list);
+      })
+      .catch(() => {
+        // The picker offers only what is typed.
+      });
     everyPage((cursor) =>
       listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),
     )
@@ -206,7 +282,9 @@ export function CreateTaskDialog({
       });
     getProject(slug, controller.signal)
       .then((project) => {
-        if (!controller.signal.aborted) setAgentsAllowed(project.agents_allowed);
+        if (controller.signal.aborted) return;
+        setAgentsAllowed(project.agents_allowed);
+        setProject(project);
       })
       .catch(() => {
         // Unknown is read as allowed; the server judges the pick on create.
@@ -216,8 +294,9 @@ export function CreateTaskDialog({
     };
   }, [slug]);
 
+  const spaceId = project?.id ?? space?.id;
   const people = useMemo<readonly MentionCandidate[]>(
-    () => members.map((m) => ({ id: m.user_id, name: m.name, handle: handleOf(m.email) })),
+    () => (members ?? []).map((m) => ({ id: m.user_id, name: m.name, handle: handleOf(m.email) })),
     [members],
   );
   const agentChoices = useMemo(
@@ -235,9 +314,21 @@ export function CreateTaskDialog({
     [agents, spaceId, me, agentsAllowed],
   );
 
+  /*
+   * **No stale submit**: Create waits until the chosen space's statuses,
+   * members and sprints have arrived — the reads that decide what the form
+   * may send — so a Create pressed just after a change of space cannot carry
+   * the old space's values.
+   */
+  const ready =
+    slug !== undefined &&
+    statuses.status !== 'loading' &&
+    members !== undefined &&
+    sprints !== undefined;
+
   // ----------------------------------------------------------------- submit
   const submit = async (): Promise<void> => {
-    if (busy) return;
+    if (busy || slug === undefined || !ready) return;
     const title = draft.title.trim();
     if (title === '') {
       setErrors({ fields: { title: 'Give it a title.' } });
@@ -316,8 +407,13 @@ export function CreateTaskDialog({
     // The board and the List read the project's one task set: walking it
     // again is what puts the new card on screen, whatever the steps above did.
     reloadProjectTasks(slug);
+    try {
+      writeLastCreateSpace(window.localStorage, slug);
+    } catch {
+      // Not remembered; the next Create starts where it can.
+    }
     setBusy(false);
-    onCreated({ task, failed });
+    onCreated({ task, failed, slug });
 
     if (another) {
       setDraft(keepForAnother(draft));
@@ -357,7 +453,18 @@ export function CreateTaskDialog({
     }
   };
 
-  const canCreate = draft.title.trim() !== '' && !busy;
+  const canCreate = draft.title.trim() !== '' && !busy && ready;
+  // Said beside the button, not left to a greyed shape (LAI-1209). Busy is
+  // its own state — the spinner says it — so it carries no reason.
+  const whyNot = busy
+    ? undefined
+    : slug === undefined
+      ? 'Choose a space to create in'
+      : !ready
+        ? `Loading ${space?.name ?? 'the space'}…`
+        : draft.title.trim() === ''
+          ? 'Add a title to create'
+          : undefined;
 
   return createPortal(
     <>
@@ -391,49 +498,107 @@ export function CreateTaskDialog({
               <h2 className="ct-title" id={titleId}>
                 Create task
               </h2>
-              {spaceName !== undefined && (
-                <p className="ct-sub">
-                  in <span className="ct-space">{spaceName}</span>
-                </p>
-              )}
             </div>
-            <button
-              type="button"
-              className="ct-close"
-              aria-label="Close"
+            <IconButton
+              icon="close"
+              label="Close"
+              shortcut="Escape"
+              size="sm"
               onClick={() => {
                 void requestClose();
               }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            />
           </header>
 
           <div className="ct-body">
-            <CreateTaskFields
-              slug={slug}
-              draft={draft}
-              onChange={(patch) => {
-                setDraft((d) => ({ ...d, ...patch }));
-              }}
-              errors={errors.fields}
-              busy={busy}
-              onEscape={() => {
-                void requestClose();
-              }}
-              titleRef={titleRef}
-              descriptionRef={descriptionRef}
-              acceptanceRef={acceptanceRef}
-              editorKey={editorKey}
-              people={people}
-              meId={me?.id}
-              members={members}
-              knownTags={tags}
-              statuses={statuses.all}
-              sprints={sprints}
-              agents={agentChoices}
-              tasks={snapshot?.tasks}
-            />
+            {/*
+              The Space field (LAI-1227) replaces the fixed *in <space>* line:
+              the dialog opens from the header on any screen, so where the task
+              goes is the first thing the form asks, as Jira's does.
+            */}
+            <Field label="Space" icon="spaces-more" required>
+              {({ inputId, describedBy, invalid }) => (
+                <Dropdown
+                  id={inputId}
+                  aria-describedby={describedBy}
+                  aria-invalid={invalid}
+                  className="ct-space-field"
+                  noun="spaces"
+                  value={slug ?? ''}
+                  placeholder={spacesLoaded ? 'No space' : 'Finding spaces…'}
+                  // The chosen space as its chip (LAI-1209's): colour, name — cut,
+                  // never wrapped — and key. The list draws the same three.
+                  display={
+                    space === undefined ? undefined : (
+                      <span className="ct-space-chip" data-space-chip>
+                        <span
+                          className="ct-space-mark"
+                          data-color={spaceColor({ slug: space.slug, color: space.color })}
+                          aria-hidden="true"
+                        >
+                          {(space.name.trim()[0] ?? space.slug[0] ?? '?').toUpperCase()}
+                        </span>
+                        <span className="ct-space">{space.name}</span>
+                        <span className="ct-space-key">{space.key}</span>
+                      </span>
+                    )
+                  }
+                  disabled={busy || allowed.length === 0}
+                  options={allowed.map((s) => ({
+                    value: s.slug,
+                    label: s.name,
+                    detail: s.key,
+                    keywords: `${s.key} ${s.slug}`,
+                    icon: (
+                      <span
+                        className="ct-space-mark"
+                        data-color={spaceColor({ slug: s.slug, color: s.color })}
+                        aria-hidden="true"
+                      >
+                        {(s.name.trim()[0] ?? s.slug[0] ?? '?').toUpperCase()}
+                      </span>
+                    ),
+                  }))}
+                  onChange={(next) => {
+                    if (next === slug) return;
+                    setChosen(next);
+                    setDraft((d) => draftForSpace(d));
+                    setErrors(NO_ERRORS);
+                  }}
+                />
+              )}
+            </Field>
+            {spacesLoaded && allowed.length === 0 && slug === undefined && (
+              <p className="ct-form-error" role="alert" data-create-error>
+                No space lets you create a task. Ask a space admin to add you.
+              </p>
+            )}
+            {slug !== undefined && (
+              <CreateTaskFields
+                slug={slug}
+                draft={draft}
+                onChange={(patch) => {
+                  setDraft((d) => ({ ...d, ...patch }));
+                }}
+                errors={errors.fields}
+                busy={busy}
+                onEscape={() => {
+                  void requestClose();
+                }}
+                titleRef={titleRef}
+                descriptionRef={descriptionRef}
+                acceptanceRef={acceptanceRef}
+                editorKey={editorKey}
+                people={people}
+                meId={me?.id}
+                members={members ?? []}
+                knownTags={tags}
+                statuses={statuses.all}
+                sprints={sprints}
+                agents={agentChoices}
+                tasks={snapshot?.tasks}
+              />
+            )}
             {errors.form !== undefined && (
               <p className="ct-form-error" role="alert" data-create-error>
                 {errors.form}
@@ -442,18 +607,24 @@ export function CreateTaskDialog({
           </div>
 
           <footer className="ct-foot">
-            <label className="checkbox ct-another">
-              <input
-                type="checkbox"
-                className="checkbox-input"
-                checked={another}
-                disabled={busy}
-                onChange={(event) => {
-                  setAnother(event.target.checked);
-                }}
-              />
-              <span className="checkbox-label">Create another</span>
-            </label>
+            <span className="ct-another-wrap">
+              <label className="checkbox ct-another">
+                <input
+                  type="checkbox"
+                  className="checkbox-input"
+                  checked={another}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setAnother(event.target.checked);
+                  }}
+                />
+                <span className="checkbox-label">Create another</span>
+              </label>
+              <InfoHint label="About Create another">
+                Keeps this dialog open after Create, with the same status, priority, assignee and
+                sprint, so the next task starts where this one left off.
+              </InfoHint>
+            </span>
             <span className="ct-foot-actions">
               <Button
                 variant="secondary"
@@ -464,9 +635,11 @@ export function CreateTaskDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" busy={busy} disabled={!canCreate}>
-                Create
-              </Button>
+              <Tooltip content="Create" shortcut="Mod+Enter" side="top">
+                <Button type="submit" busy={busy} disabled={!canCreate} disabledReason={whyNot}>
+                  Create
+                </Button>
+              </Tooltip>
             </span>
           </footer>
         </form>

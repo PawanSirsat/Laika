@@ -127,6 +127,25 @@ export function passesFilter(
   }
 }
 
+/**
+ * How many people each filter leaves, in the chosen space (LAI-1222): the
+ * figures at the top of the page *are* the filters, so each tile shows the
+ * count its filter would draw.
+ */
+export function filterCounts(
+  people: readonly CapacityEntry[],
+  space: string | null,
+): Readonly<Record<CapacityFilter, number>> {
+  const counts = Object.fromEntries(FILTERS.map((f) => [f.id, 0])) as Record<
+    CapacityFilter,
+    number
+  >;
+  for (const person of people) {
+    for (const f of FILTERS) if (passesFilter(person, f.id, space)) counts[f.id] += 1;
+  }
+  return counts;
+}
+
 const STATUS_RANK: Readonly<Record<PersonStatus, number>> = {
   online: 0,
   away: 1,
@@ -304,4 +323,63 @@ export function oldestAge(ms: number | null): string | undefined {
   const elapsed = Math.max(0, ms);
   if (elapsed < 60_000) return 'just now';
   return formatDurationMs(elapsed);
+}
+
+/**
+ * What the page is narrowed to (LAI-1201), as the address carries it: `?q=`
+ * the search, `?show=` the chip, `?space=` a space id and `?sort=`. A reload
+ * or a pasted link opens the same view; Back leaves the page rather than
+ * stepping through every keystroke, because a filter replaces.
+ */
+export interface CapacityParams {
+  readonly query: string;
+  readonly filter: CapacityFilter;
+  readonly space: string | null;
+  readonly sort: CapacitySort;
+}
+
+export const CAPACITY_DEFAULTS: CapacityParams = {
+  query: '',
+  filter: 'all',
+  space: null,
+  sort: 'online',
+};
+
+function isFilter(value: string | null): value is CapacityFilter {
+  return FILTERS.some((f) => f.id === value);
+}
+
+function isSort(value: string | null): value is CapacitySort {
+  return SORTS.some((s) => s.id === value);
+}
+
+/** The address read leniently: anything it does not know is the default. */
+export function capacityParams(params: URLSearchParams): CapacityParams {
+  const show = params.get('show');
+  const sort = params.get('sort');
+  const space = params.get('space');
+  return {
+    query: params.get('q') ?? '',
+    filter: isFilter(show) ? show : CAPACITY_DEFAULTS.filter,
+    space: space === null || space === '' ? null : space,
+    sort: isSort(sort) ? sort : CAPACITY_DEFAULTS.sort,
+  };
+}
+
+/** The address with `next` written into it; a default is left out, so a clean view has a clean URL. */
+export function withCapacityParams(
+  params: URLSearchParams,
+  next: Partial<CapacityParams>,
+): URLSearchParams {
+  const merged = { ...capacityParams(params), ...next };
+  const out = new URLSearchParams(params);
+  const put = (key: string, value: string, fallback: string): void => {
+    if (value === fallback) out.delete(key);
+    else out.set(key, value);
+  };
+  put('q', merged.query, '');
+  put('show', merged.filter, CAPACITY_DEFAULTS.filter);
+  put('space', merged.space ?? '', '');
+  put('sort', merged.sort, CAPACITY_DEFAULTS.sort);
+  return out;
 }

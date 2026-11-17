@@ -10,6 +10,8 @@ import type {
 } from '../../../api/tasks.ts';
 import { blocksLine, hasDelivers, linesOf, progressLine, STATE_WORDS } from './delivers-derive.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './delivers.css';
 
 export interface DeliversPanelProps {
@@ -56,9 +58,21 @@ function draftOf(task: Task): Draft {
   };
 }
 
-function Mark({ state }: { readonly state: DeliverableState }) {
-  return (
-    <span className={`dl-mark dl-mark-${state}`} title={STATE_WORDS[state]} aria-hidden="true" />
+/** The state's drawn mark. Its words are beside it for a screen reader, and in a tooltip with `tip`. */
+function Mark({
+  state,
+  tip = false,
+}: {
+  readonly state: DeliverableState;
+  readonly tip?: boolean;
+}) {
+  const mark = <span className={`dl-mark dl-mark-${state}`} aria-hidden="true" />;
+  return tip ? (
+    <Tooltip content={STATE_WORDS[state]} lazy>
+      {mark}
+    </Tooltip>
+  ) : (
+    mark
   );
 }
 
@@ -122,7 +136,10 @@ export function DeliversPanel({
     return (
       <section className="dl dl-editing" data-section="delivers" aria-label="What this delivers">
         <div className="dl-head">
-          <h3 className="dl-title">What this delivers</h3>
+          <h3 className="dl-title">
+            <Icon name="flag" size="small" className="section-mark" />
+            What this delivers
+          </h3>
         </div>
         <form
           className="dl-form"
@@ -136,21 +153,23 @@ export function DeliversPanel({
             <ol className="dl-edit-list">
               {draft.items.map((item, i) => (
                 <li key={item.key} className="dl-edit-row">
-                  <button
-                    type="button"
-                    className="dl-state-toggle"
-                    aria-label={`${item.title || 'This item'}: ${STATE_WORDS[item.state]}. Change`}
-                    onClick={() => {
-                      setDraft({
-                        ...draft,
-                        items: draft.items.map((d, j) =>
-                          j === i ? { ...d, state: NEXT[d.state] } : d,
-                        ),
-                      });
-                    }}
-                  >
-                    <Mark state={item.state} />
-                  </button>
+                  <Tooltip content={`${STATE_WORDS[item.state]} — change`}>
+                    <button
+                      type="button"
+                      className="dl-state-toggle"
+                      aria-label={`${item.title || 'This item'}: ${STATE_WORDS[item.state]}. Change`}
+                      onClick={() => {
+                        setDraft({
+                          ...draft,
+                          items: draft.items.map((d, j) =>
+                            j === i ? { ...d, state: NEXT[d.state] } : d,
+                          ),
+                        });
+                      }}
+                    >
+                      <Mark state={item.state} />
+                    </button>
+                  </Tooltip>
                   <input
                     className="dl-input"
                     aria-label="What it ships"
@@ -164,16 +183,18 @@ export function DeliversPanel({
                       });
                     }}
                   />
-                  <button
-                    type="button"
-                    className="dl-remove"
-                    aria-label={`Remove ${item.title || 'this item'}`}
-                    onClick={() => {
-                      setDraft({ ...draft, items: draft.items.filter((_, j) => j !== i) });
-                    }}
-                  >
-                    ×
-                  </button>
+                  <Tooltip content="Remove">
+                    <button
+                      type="button"
+                      className="dl-remove"
+                      aria-label={`Remove ${item.title || 'this item'}`}
+                      onClick={() => {
+                        setDraft({ ...draft, items: draft.items.filter((_, j) => j !== i) });
+                      }}
+                    >
+                      <Icon name="close" size="tiny" />
+                    </button>
+                  </Tooltip>
                 </li>
               ))}
             </ol>
@@ -181,6 +202,7 @@ export function DeliversPanel({
               type="button"
               className="dl-add"
               disabled={draft.items.length >= 20}
+              aria-describedby={draft.items.length >= 20 ? 'dl-add-reason' : undefined}
               onClick={() => {
                 newRows += 1;
                 setDraft({
@@ -194,6 +216,11 @@ export function DeliversPanel({
             >
               + Add what it ships
             </button>
+            {draft.items.length >= 20 && (
+              <span className="dl-none" id="dl-add-reason">
+                Twenty is the most this list takes here — split the rest into another task.
+              </span>
+            )}
           </fieldset>
           <label className="dl-fieldset">
             <span className="dl-col-title">Solves</span>
@@ -265,7 +292,10 @@ export function DeliversPanel({
   return (
     <section className="dl" data-section="delivers" aria-label="What this delivers">
       <div className="dl-head">
-        <h3 className="dl-title">What this delivers</h3>
+        <h3 className="dl-title">
+          <Icon name="flag" size="small" className="section-mark" />
+          What this delivers
+        </h3>
         {line !== null && <span className="dl-progress">{line}</span>}
         {mayEdit && (
           <button
@@ -288,7 +318,7 @@ export function DeliversPanel({
             <ul className="dl-items">
               {items.map((d) => (
                 <li key={d.id} className="dl-item" data-state={d.state}>
-                  <Mark state={d.state} />
+                  <Mark state={d.state} tip />
                   <span className="dl-item-text">
                     <span className="dl-item-title">{d.title}</span>
                     <span className="visually-hidden"> — {STATE_WORDS[d.state]}</span>
@@ -326,16 +356,17 @@ export function DeliversPanel({
               {blocking.tasks.map((t, i) => (
                 <span key={t.id}>
                   {i > 0 && ', '}
-                  <button
-                    type="button"
-                    className="dl-task-link"
-                    title={t.title}
-                    onClick={() => {
-                      onOpen(t.id);
-                    }}
-                  >
-                    {t.key}
-                  </button>
+                  <Tooltip content={t.title} lazy>
+                    <button
+                      type="button"
+                      className="dl-task-link"
+                      onClick={() => {
+                        onOpen(t.id);
+                      }}
+                    >
+                      {t.key}
+                    </button>
+                  </Tooltip>
                 </span>
               ))}
               {blocking.unknown > 0 &&

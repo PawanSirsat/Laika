@@ -21,6 +21,7 @@ import {
   timerState,
   TRACKED_HINTS,
 } from './tracked-time-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import './tracked-time.css';
 
 export interface TrackedTimeProps {
@@ -116,9 +117,9 @@ export function TrackedTime({ taskId, refreshKey }: TrackedTimeProps) {
   return (
     <footer className="tt" aria-label="Tracked on this task">
       <span className="tt-label">Tracked</span>
-      <span className="tt-total" title={TRACKED_HINTS.total}>
-        {shortDuration(view.total_minutes)}
-      </span>
+      <Tooltip content={TRACKED_HINTS.total} lazy>
+        <span className="tt-total">{shortDuration(view.total_minutes)}</span>
+      </Tooltip>
       <span className="tt-meta">
         {who === null ? (
           <span className="tt-item">nothing confirmed yet</span>
@@ -126,14 +127,14 @@ export function TrackedTime({ taskId, refreshKey }: TrackedTimeProps) {
           <span className="tt-item">{who}</span>
         )}
         {drafts !== null && (
-          <span className="tt-item" title={TRACKED_HINTS.drafts}>
-            {drafts}
-          </span>
+          <Tooltip content={TRACKED_HINTS.drafts} lazy>
+            <span className="tt-item">{drafts}</span>
+          </Tooltip>
         )}
         {agents !== null && (
-          <span className="tt-item" title={TRACKED_HINTS.agents}>
-            {agents}
-          </span>
+          <Tooltip content={TRACKED_HINTS.agents} lazy>
+            <span className="tt-item">{agents}</span>
+          </Tooltip>
         )}
       </span>
 

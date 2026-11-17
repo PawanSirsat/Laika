@@ -1,0 +1,34 @@
+/*
+ * Insights' header on a phone (LAI-1201): the page's name, then its tabs,
+ * then the open tab's own controls — Usage's space and period — so a control
+ * reads as belonging to the tab under which it sits, not to the whole page.
+ * On a wider screen they stay beside the title, where a period is chosen.
+ */
+@media (max-width: 600px) {
+  .insights-page .screen-page-row {
+    display: contents;
+  }
+
+  .insights-page .screen-page-titles {
+    order: 0;
+    flex: none;
+  }
+
+  .insights-page .screen-page-below {
+    order: 1;
+  }
+
+  .insights-page .screen-page-actions {
+    order: 2;
+    margin-left: 0;
+  }
+
+  /* Nothing in the slot (Capacity, Time): no empty row under the tabs. */
+  .insights-page .screen-page-actions:not(:has(.screen-page-slot > *)) {
+    display: none;
+  }
+
+  .insights-page .screen-page-tabbed:has(.screen-page-slot > *) {
+    padding-bottom: var(--space-3);
+  }
+}

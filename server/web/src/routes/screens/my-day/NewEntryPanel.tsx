@@ -10,6 +10,7 @@ import { PRESETS } from './presets.ts';
 import { TaskChips } from './TaskChips.tsx';
 import { TaskSearch } from './TaskSearch.tsx';
 import { type Span } from './timeline-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export const ENTRY_TITLE_MAX = 120;
 export const ENTRY_DESCRIPTION_MAX = 2000;
@@ -253,32 +254,38 @@ export function NewEntryPanel({
                   const future = d.day > view.today;
                   const on = d.day === day;
                   return (
-                    <button
+                    <Tooltip
                       key={d.day}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      className="editor-date"
-                      data-new-entry-day={d.day}
-                      disabled={busy || future}
-                      title={
+                      content={
                         future
                           ? 'You can’t add time ahead of the day'
                           : d.day === view.today
                             ? 'Today'
-                            : ''
+                            : dayLabel(d.day)
                       }
-                      onClick={() => {
-                        if (!on) {
-                          setDay(d.day);
-                          setError(undefined);
-                          setRefused(false);
-                        }
-                      }}
                     >
-                      <span className="editor-date-name">{weekdayShort(d.day)}</span>
-                      <span className="editor-date-number">{d.day.slice(8).replace(/^0/, '')}</span>
-                    </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        className="editor-date"
+                        data-new-entry-day={d.day}
+                        disabled={busy}
+                        aria-disabled={future || undefined}
+                        onClick={() => {
+                          if (!on && !future) {
+                            setDay(d.day);
+                            setError(undefined);
+                            setRefused(false);
+                          }
+                        }}
+                      >
+                        <span className="editor-date-name">{weekdayShort(d.day)}</span>
+                        <span className="editor-date-number">
+                          {d.day.slice(8).replace(/^0/, '')}
+                        </span>
+                      </button>
+                    </Tooltip>
                   );
                 })}
               </div>

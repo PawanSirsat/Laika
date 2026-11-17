@@ -364,12 +364,14 @@ void describe('every cell state, from the server’s facts', () => {
         await c('2026-10-12').locator('a').getAttribute('aria-label'),
         'Bea Nkosi, Mon 12 Oct: 9h, 8h or more, full day',
       );
+      // The hover is the shared Tooltip now (LAI-1214, merge train); the
+      // words are the same ones the screen reader gets.
       assert.equal(
-        await c('2026-10-02').locator('a').getAttribute('title'),
+        await c('2026-10-02').locator('a').getAttribute('aria-label'),
         'Bea Nkosi, Fri 2 Oct: 8h, before they joined',
       );
       assert.equal(
-        await c('2026-10-01').locator('.tlg-dash').getAttribute('title'),
+        await c('2026-10-01').locator('.tlg-dash .visually-hidden').textContent(),
         'Bea Nkosi, Thu 1 Oct: before they joined',
       );
       // Saturdays and Sundays are marked in the head; Friday is not.

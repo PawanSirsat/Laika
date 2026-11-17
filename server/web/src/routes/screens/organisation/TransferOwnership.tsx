@@ -84,6 +84,12 @@ export function TransferOwnership({
               Transfer ownership…
             </Button>
           </span>
+          {/* A disabled control says why (LAI-1194). */}
+          {target === undefined && (
+            <p className="org-transfer-why" data-transfer-why>
+              Choose the new owner first. You will be asked to type their email to confirm.
+            </p>
+          )}
         </div>
       )}
 

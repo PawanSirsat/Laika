@@ -26,6 +26,7 @@ import {
   SAK,
   TASKS,
 } from './onroute-dashboard.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const PEOPLE = '.dash-people';
 
@@ -150,9 +151,7 @@ void describe('Delivered says exactly what it counts', () => {
         /^Delivered: tasks moved into review, or straight into done, in the last 7 days — each task once/,
       );
       assert.equal(
-        await h.page
-          .locator(`${PEOPLE} th[scope="col"]`, { hasText: 'Delivered' })
-          .getAttribute('title'),
+        await tipText(h.page.locator(`${PEOPLE} th[scope="col"]`, { hasText: 'Delivered' })),
         'Moved into review, or straight into done',
       );
     } finally {
