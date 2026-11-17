@@ -544,8 +544,9 @@ export async function deleteAttachment(
  * `/api/v1/attachments/<ULID>/content`, relative or absolute.
  *
  * **Any origin, not only this board's** (a deviation LAI-1300 records): one
- * deployment is reached at more than one — Ksage's SPA is on Netlify and its
- * API on Coolify — and the origin decides nothing here. The id does, and the
+ * deployment can be reached at more than one — Ksage serves its SPA and API on
+ * one domain, ksage.kvelld.com, but a domain move leaves the old address live
+ * beside the new — and the origin decides nothing here. The id does, and the
  * project, the state and *never relinks* below are what make it safe. The
  * character before the path must not be one a longer path or a host could
  * end with, so `/x/api/v1/…` is not a reference.
