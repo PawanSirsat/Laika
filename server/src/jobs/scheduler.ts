@@ -24,6 +24,7 @@ import {
   pruneEmailOutbox,
   runEmailOutbox,
 } from '../services/email-outbox.ts';
+import { runTeamsTick, TEAMS_TICK_MS, type TeamsPostingDeps } from '../services/teams-posting.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
@@ -93,6 +94,13 @@ export interface SchedulerDeps {
    * test can reach a mail server by leaving it out.
    */
   email?: Omit<EmailOutboxDeps, 'now'>;
+  /**
+   * Teams posting's `fetch` and waits (D-154, LAI-1314) — injected by the
+   * tests, which never call Teams.
+   */
+  teams?: TeamsPostingDeps;
+  /** `LAIKA_PUBLIC_URL`, for the links back a Teams post carries. */
+  publicUrl?: string;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
   clearTimer?: (handle: unknown) => void;
@@ -223,6 +231,30 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       everyMs: DAY,
       run: (now) => refitEstimates(db, now),
       atStart: true,
+    },
+    // Each space's Teams stand-ups, digest and notices (D-154, LAI-1314),
+    // every minute: a notice is instant to within one tick, and a scheduled
+    // run goes the first tick after its time. Posting is off until an owner
+    // turns it on, and then this still sends nothing for a space with no
+    // channel. Not `atStart`: it waits on the network, and the next minute
+    // comes round. A tick still going when the next comes is joined, never
+    // doubled (`runTeamsTick`).
+    {
+      name: 'teams.post',
+      everyMs: TEAMS_TICK_MS,
+      run: async () => {
+        const ticked = await runTeamsTick(db, deps.serverSecret ?? '', {
+          ...deps.teams,
+          publicUrl: deps.teams?.publicUrl ?? deps.publicUrl ?? null,
+          log: deps.teams?.log ?? deps.log,
+          // The clock itself, not the tick's instant: a post's `created_at` and
+          // `finished_at` are when it was claimed and when Teams answered.
+          now: deps.now ?? Date.now,
+        });
+        return {
+          changed: ticked.sent + ticked.failed + ticked.suppressed + ticked.pruned,
+        };
+      },
     },
     // Members' Outlook meetings logged as their time (D-157, LAI-1316),
     // every 15 minutes; nothing unless the connection is saved **and its

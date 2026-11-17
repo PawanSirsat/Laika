@@ -90,6 +90,10 @@ import {
   EMAIL_KINDS,
   EMAIL_STATES,
   EMAIL_SUPPRESSED_REASONS,
+  TEAMS_POST_EVENTS,
+  TEAMS_POST_KINDS,
+  TEAMS_POST_OUTCOMES,
+  TEAMS_POST_REASONS,
   AVAILABILITY_STATUSES,
   CALENDAR_SYNC_ERROR_CODES,
   TIME_DRAFT_SOURCES,
@@ -1874,10 +1878,136 @@ export const emailOutbox = sqliteTable(
   ],
 );
 
-// ------------------------------------------------ §4.94 org_calendar_source
+// -------------------------------------------------- §4.94 org_teams_settings
 
 /**
- * The organisation's Outlook calendar connection (§4.94, D-157, LAI-1316): an
+ * The organisation's Teams posting switch (§4.94, D-154, LAI-1314). **No row,
+ * or `posting_enabled` 0, is off** — and off is how it ships: nothing is
+ * posted, and each post that would have gone is recorded in `teams_posts` as
+ * suppressed. Turned on and off by an owner or admin, signed in.
+ *
+ * `notice_cursor` is the last `activity` row (its rowid) the posting job has
+ * read for instant notices. It moves on whether the switch is on or off, so
+ * turning posting on never posts the changes made while it was off.
+ *
+ * Its own table rather than columns on `orgs`, the `org_time_settings`
+ * precedent: additive, and a CHECK on `orgs` is a rebuild of `orgs`.
+ */
+export const orgTeamsSettings = sqliteTable(
+  'org_teams_settings',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    postingEnabled: integer('posting_enabled').notNull(),
+    noticeCursor: integer('notice_cursor').notNull(),
+    /** Who last turned the switch; null when only the posting job has written the row. */
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt,
+  },
+  (t) => [
+    index('org_teams_settings_updated_by_idx').on(t.updatedBy),
+    check('org_teams_settings_enabled_check', sql.raw('posting_enabled IN (0, 1)')),
+    check('org_teams_settings_cursor_check', sql.raw('notice_cursor >= 0')),
+  ],
+);
+
+// ---------------------------------------------- §4.95 project_teams_channels
+
+/**
+ * A space's Teams channel (§4.95, D-154, LAI-1314): the Power Automate
+ * webhook its stand-ups, digest and notices are posted to. **No row is no
+ * channel**, and a space with none is told nothing — never another space's
+ * channel (KSage's `notify::webhook_for`, which had a fallback once, and
+ * posted every project's digest into one client's chat).
+ *
+ * The address is a credential — its `sig=` is what lets anybody post — so it
+ * is §12's ciphertext under its own purpose (`teams_webhook_url`), **written
+ * and never read back**: what a screen shows is the host and the last four
+ * characters.
+ */
+export const projectTeamsChannels = sqliteTable(
+  'project_teams_channels',
+  {
+    projectId: text('project_id')
+      .primaryKey()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** §12 ciphertext. Never logged, never served, never in `activity`. */
+    webhookUrlEnc: text('webhook_url_enc').notNull(),
+    /** The address's host, lower case, to show which flow it is. */
+    webhookHost: text('webhook_host').notNull(),
+    /** The address's last four characters, to tell two flows apart. */
+    webhookLast4: text('webhook_last4').notNull(),
+    setBy: text('set_by').references(() => users.id, { onDelete: 'set null' }),
+    setAt: integer('set_at').notNull(),
+  },
+  (t) => [
+    index('project_teams_channels_set_by_idx').on(t.setBy),
+    check('project_teams_channels_host_check', sql.raw('length(webhook_host) BETWEEN 1 AND 253')),
+    check('project_teams_channels_last4_check', sql.raw('length(webhook_last4) = 4')),
+  ],
+);
+
+// --------------------------------------------------------- §4.96 teams_posts
+
+/**
+ * One post to a space's Teams channel, or one that would have been (§4.96,
+ * D-154, LAI-1314) — the record of what went, what Teams said, and what was
+ * held back and why. **Never the message's body and never Teams' answer**:
+ * the headline, the outcome, a closed reason and the HTTP status.
+ *
+ * A stand-up run or a day's digest carries a `slot`
+ * (`standup:morning:2026-11-18`, `digest:2026-11-17`), and the partial unique
+ * index is KSage's `digest_runs` guard: one slot is claimed (`sending`) before
+ * it is posted, so two ticks cannot both post it. A failed attempt releases
+ * the slot by leaving the index; a suppressed one keeps it, so a slot is
+ * recorded once, not once a tick. Kept 90 days (§11.6).
+ */
+export const teamsPosts = sqliteTable(
+  'teams_posts',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: TEAMS_POST_KINDS }).notNull(),
+    event: text('event', { enum: TEAMS_POST_EVENTS }),
+    slot: text('slot'),
+    /** The message's first line — `LAI-12 is waiting for review` — as it was composed. */
+    title: text('title').notNull(),
+    outcome: text('outcome', { enum: TEAMS_POST_OUTCOMES }).notNull(),
+    reason: text('reason', { enum: TEAMS_POST_REASONS }),
+    /** Teams' status code when it answered; never its body. */
+    httpStatus: integer('http_status'),
+    /** Which attempt at its slot this was; 1 for everything else. */
+    attempt: integer('attempt').notNull(),
+    createdAt,
+    finishedAt: integer('finished_at'),
+  },
+  (t) => [
+    uniqueIndex('teams_posts_slot_unique')
+      .on(t.projectId, t.slot)
+      .where(sql`slot IS NOT NULL AND outcome IN ('sending', 'sent', 'suppressed')`),
+    index('teams_posts_project_created_at_idx').on(t.projectId, t.createdAt),
+    index('teams_posts_created_at_idx').on(t.createdAt),
+    check('teams_posts_kind_check', oneOf('kind', TEAMS_POST_KINDS)),
+    check('teams_posts_event_check', oneOfOrNull('event', TEAMS_POST_EVENTS)),
+    check('teams_posts_outcome_check', oneOf('outcome', TEAMS_POST_OUTCOMES)),
+    check('teams_posts_reason_check', oneOfOrNull('reason', TEAMS_POST_REASONS)),
+    // A post that went, or is going, has nothing to explain; any other does.
+    check(
+      'teams_posts_reason_needed_check',
+      sql.raw("(outcome IN ('sending', 'sent')) = (reason IS NULL)"),
+    ),
+    check('teams_posts_title_check', sql.raw('length(title) BETWEEN 1 AND 300')),
+    check('teams_posts_attempt_check', sql.raw('attempt >= 1')),
+  ],
+);
+
+// ------------------------------------------------ §4.97 org_calendar_source
+
+/**
+ * The organisation's Outlook calendar connection (§4.97, D-157, LAI-1316): an
  * Entra app's tenant, client id and client secret, with which the sync reads
  * each member's meetings through Microsoft Graph as the application — never
  * as a person — once an admin has granted it `Calendars.Read`. **No row is
@@ -1943,10 +2073,10 @@ export const orgCalendarSource = sqliteTable(
   ],
 );
 
-// ---------------------------------------------------- §4.95 calendar_events
+// ---------------------------------------------------- §4.98 calendar_events
 
 /**
- * A meeting the calendar sync logged (§4.95, D-157, LAI-1316): which of a
+ * A meeting the calendar sync logged (§4.98, D-157, LAI-1316): which of a
  * person's time entries holds which of their Outlook events, by Graph's
  * event id, and **the entry's revision as the sync last wrote it**. An entry
  * whose revision has moved past `entry_revision_synced` was changed by its
@@ -4677,3 +4807,6 @@ export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
+export type OrgTeamsSettings = typeof orgTeamsSettings.$inferSelect;
+export type ProjectTeamsChannel = typeof projectTeamsChannels.$inferSelect;
+export type TeamsPost = typeof teamsPosts.$inferSelect;

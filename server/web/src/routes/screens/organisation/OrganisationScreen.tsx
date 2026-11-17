@@ -33,6 +33,7 @@ import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
 import { EmailSection } from './EmailSection.tsx';
 import { emailOn } from './email-derive.ts';
+import { TeamsPostingSection } from './TeamsPostingSection.tsx';
 import { CalendarSourceSection } from './CalendarSourceSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
@@ -149,6 +150,8 @@ export function OrganisationScreen({
   const canConfigureHr = gates.org('org.hr.configure');
   // D-153 (LAI-1312 review): email is its own session-only grant.
   const canConfigureEmail = gates.org('org.email.configure');
+  /** D-154 (LAI-1314): Teams posting, owners and admins by default. */
+  const canConfigureTeams = gates.org('org.teams.configure');
   /** D-157 (LAI-1316): the Outlook calendar connection, its own §3.1 row, owners and admins. */
   const canConfigureCalendar = gates.org('org.calendar.configure');
   const canListTokens = gates.org('token.list_any');
@@ -759,6 +762,10 @@ export function OrganisationScreen({
                 }}
               />
             )}
+
+            {/* D-154 (LAI-1314): each space's Teams channel, and the one
+                switch that turns posting on — its holder's alone. */}
+            {canConfigureTeams && <TeamsPostingSection onNavigate={onNavigate} />}
 
             {/* D-157 (LAI-1316): Outlook meetings logged as time on My day,
                 after the HR card — the other connection held for everyone. */}

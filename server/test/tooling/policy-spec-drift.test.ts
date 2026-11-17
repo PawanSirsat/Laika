@@ -146,6 +146,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ["Change a space's icon", ['project.icon.write']],
   // D-153 (LAI-1312 review): SMTP, the test send and the switch.
   ["Configure the organisation's email", ['org.email.configure']],
+  // D-154 (LAI-1314): the switch, and each space's channel set, cleared and tested.
+  ['Configure Teams posting', ['org.teams.configure']],
   // D-157 (LAI-1316): the Entra app's credentials, rules and switch.
   ["Connect the organisation's Outlook calendar", ['org.calendar.configure']],
 ]);

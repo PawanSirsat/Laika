@@ -82,6 +82,9 @@ export type SecretPurpose =
   // D-153 (LAI-1312): a queued email's body, in `email_outbox.body_enc` — it
   // carries a one-time link, so it is never stored in the clear.
   | 'email_body'
+  // D-154 (LAI-1314): a space's Power Automate webhook address, whose `sig=`
+  // is the credential, in `project_teams_channels.webhook_url_enc`.
+  | 'teams_webhook_url'
   // D-157 (LAI-1316): the Entra app's client secret, in `org_calendar_source.secret_enc`.
   | 'calendar_client_secret';
 

@@ -18,6 +18,7 @@ import {
   orgHrSource,
   projects,
   taskClaims,
+  teamsPosts,
   users,
 } from '../../src/db/schema.ts';
 import { applyCheckpointDelivery, registerCheckpoint } from '../../src/services/checkpoints.ts';
@@ -37,6 +38,9 @@ import {
   leaveRow,
 } from '../helpers/fake-clan.ts';
 import { encryptSecret } from '../../src/secrets.ts';
+import { istInstant } from '../../src/services/teams-compose.ts';
+import { setProjectTeamsChannel, setTeamsPosting } from '../../src/services/teams.ts';
+import { fakeTeams, TEAMS_URL } from '../helpers/fake-teams.ts';
 import { fakeAttachments, fakeS3 } from '../helpers/fake-s3.ts';
 import {
   fakeGraph,
@@ -129,6 +133,7 @@ describe('the jobs §11.6 names', () => {
       'notices.retention',
       'offer.expiry',
       'task.stale',
+      'teams.post',
       'time.retention',
     ]);
   });
@@ -487,6 +492,81 @@ describe('hr.sync (D-149, LAI-1181)', () => {
 
     expect(ticked).toEqual({ changed: 0 });
     expect(fake.to('/employee')).toHaveLength(1);
+    scheduler.stop();
+  });
+});
+
+describe('teams.post (D-154, LAI-1314)', () => {
+  const SECRET = 'test-secret-that-is-long-enough-to-pass-validation';
+  /** Wednesday 18 November 2026, 11:01 IST: the morning stand-up is due. */
+  const MORNING = istInstant('2026-11-18', 11, 1);
+
+  function teamsDeps(fake: ReturnType<typeof fakeTeams>): Partial<SchedulerDeps> {
+    return {
+      ...fakeTimers(),
+      now: () => MORNING,
+      serverSecret: SECRET,
+      publicUrl: 'https://laika.example',
+      teams: { fetchImpl: fake.fetchImpl, timeoutMs: 50 },
+    };
+  }
+
+  function connect(): void {
+    const owner = loadActor(t.db, seeded.userId)!;
+    setProjectTeamsChannel(t.db, owner, 'laika', { webhook_url: TEAMS_URL }, SECRET, MORNING);
+  }
+
+  it('runs every minute, and not at boot', () => {
+    const job = buildJobs(deps()).find((j) => j.name === 'teams.post');
+    expect(job?.everyMs).toBe(60 * 1000);
+    // It waits on the network, and the next minute comes round.
+    expect(job?.atStart).toBeUndefined();
+  });
+
+  it('posts nothing while posting is off, and says what it held back', async () => {
+    connect();
+    const fake = fakeTeams();
+    const scheduler = startScheduler(deps(teamsDeps(fake)));
+    await scheduler.started;
+
+    expect(await scheduler.runOnce('teams.post')).toEqual({ changed: 1 });
+    expect(fake.requests).toEqual([]);
+    expect(log.records.find((r) => r.job === 'teams.post')).toMatchObject({
+      event: 'cron.job_ran',
+      changed: 1,
+    });
+    scheduler.stop();
+  });
+
+  it('stamps a post with the clock as Teams answers, not the tick’s instant', async () => {
+    connect();
+    setTeamsPosting(t.db, loadActor(t.db, seeded.userId)!, { posting_enabled: true }, MORNING);
+    const fake = fakeTeams();
+    let clock = MORNING;
+    fake.answer = () => {
+      clock += 3_000;
+      return undefined;
+    };
+    const scheduler = startScheduler(deps({ ...teamsDeps(fake), now: () => clock }));
+    await scheduler.started;
+
+    await scheduler.runOnce('teams.post');
+    const [row] = t.db.select().from(teamsPosts).all();
+    expect(row?.createdAt).toBe(MORNING);
+    expect(row?.finishedAt).toBe(MORNING + 3_000);
+    scheduler.stop();
+  });
+
+  it('posts with the scheduler’s clock, secret and public URL once it is on', async () => {
+    connect();
+    setTeamsPosting(t.db, loadActor(t.db, seeded.userId)!, { posting_enabled: true }, MORNING);
+    const fake = fakeTeams();
+    const scheduler = startScheduler(deps(teamsDeps(fake)));
+    await scheduler.started;
+
+    expect(await scheduler.runOnce('teams.post')).toEqual({ changed: 1 });
+    expect(fake.requests.map((r) => r.url)).toEqual([TEAMS_URL]);
+    expect(fake.texts()[0]).toContain('https://laika.example/board?project=laika');
     scheduler.stop();
   });
 });

@@ -177,6 +177,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'org.hr.configure': 'YYNN',
   // D-153 (LAI-1312 review): outbound email, under the same grant.
   'org.email.configure': 'YYNN',
+  // D-154 (LAI-1314): Teams posting, under the same grant.
+  'org.teams.configure': 'YYNN',
   // D-157 (LAI-1316): the Outlook calendar connection, under the same grant.
   'org.calendar.configure': 'YYNN',
   'developer_setup.read_own': 'YYYY',
@@ -427,6 +429,8 @@ describe('the catalogue follows the organisation’s grants', () => {
     // D-149 (LAI-1181): carried by the same grant as the Time setting.
     expect(cells(view, 'org.hr.configure')).toBe('YNNN');
     expect(cells(view, 'org.email.configure')).toBe('YNNN');
+    // D-154 (LAI-1314): and Teams posting.
+    expect(cells(view, 'org.teams.configure')).toBe('YNNN');
     // D-157 (LAI-1316): so is the Outlook calendar connection.
     expect(cells(view, 'org.calendar.configure')).toBe('YNNN');
     // Grantable since LAI-985: *Create and archive spaces*, *Manage anyone's tokens*.

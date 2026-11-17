@@ -114,6 +114,9 @@ export const ORG_ACTIONS = [
   // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
   // *Email on* switch.
   'org.email.configure',
+  // D-154 (LAI-1314): turn Teams posting on or off, and set, clear and test a
+  // space's Teams channel.
+  'org.teams.configure',
   // D-157 (LAI-1316): the Outlook calendar connection — its app credentials,
   // mapping rules and switch, a test of the grant, sync now, disconnect.
   'org.calendar.configure',
@@ -222,6 +225,9 @@ export const SYSTEM_ACTIONS = [
   // (D-153, LAI-1312) — nobody sends a queued email, so nobody is the actor.
   'system.email.send',
   'system.email.prune',
+  // §11.6: each space's Teams stand-ups, digest and notices, every minute,
+  // and the posts' record kept 90 days (D-154, LAI-1314).
+  'system.teams.post',
   // §11.6: members' Outlook meetings logged as their time every 15 minutes,
   // while the switch is on (D-157, LAI-1316).
   'system.calendar.sync',
@@ -451,6 +457,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // every one of them mailed to a server it chose — the reason
   // `user.reset_password` is session only, reached another way.
   'org.email.configure',
+  // **A space's Teams address is where its work is read out to** (D-154,
+  // LAI-1314): an agent's token that could set one could send every
+  // stand-up, title and comment to an address of its own choosing, and one
+  // that could turn posting on would speak for the organisation.
+  'org.teams.configure',
   // **The calendar connection holds an app secret that reads every member's
   // calendar** (D-157, LAI-1316): an agent's token must neither set it, nor
   // turn the sync on, nor send a meeting's time to a space.

@@ -1156,6 +1156,43 @@ const PAIRS: readonly Pair[] = [
     client: 'OrgHolidays',
     clientFile: 'hr.ts',
   },
+  // Teams posting (D-154, LAI-1314): each view and every named shape inside it.
+  {
+    server: 'TeamsSettingsView',
+    serverFile: 'services/teams.ts',
+    client: 'TeamsSettings',
+    clientFile: 'teams.ts',
+  },
+  {
+    server: 'TeamsScheduleView',
+    serverFile: 'services/teams.ts',
+    client: 'TeamsSchedule',
+    clientFile: 'teams.ts',
+  },
+  {
+    server: 'TeamsChannelView',
+    serverFile: 'services/teams.ts',
+    client: 'TeamsChannel',
+    clientFile: 'teams.ts',
+  },
+  {
+    server: 'TeamsPersonView',
+    serverFile: 'services/teams.ts',
+    client: 'TeamsPerson',
+    clientFile: 'teams.ts',
+  },
+  {
+    server: 'TeamsPostView',
+    serverFile: 'services/teams.ts',
+    client: 'TeamsPost',
+    clientFile: 'teams.ts',
+  },
+  {
+    server: 'ProjectTeamsView',
+    serverFile: 'services/teams.ts',
+    client: 'ProjectTeams',
+    clientFile: 'teams.ts',
+  },
   // A day off on the reads that draw days (D-149, LAI-1183's contract,
   // LAI-1184's mirror): each named shape on both sides, so the holiday and
   // the leave inside `OffDayView` are compared field by field, not read as

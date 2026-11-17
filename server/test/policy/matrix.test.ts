@@ -181,6 +181,9 @@ const ORG_MATRIX: OrgRow[] = [
   // | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
   // D-153 (LAI-1312 review): the same grant; a token is refused in `can.test.ts`.
   ['org.email.configure', true, true, false, false],
+  // | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
+  // D-154 (LAI-1314): the same grant; a token is refused in `can.test.ts`.
+  ['org.teams.configure', true, true, false, false],
   // | Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
   // D-157 (LAI-1316): the same grant as the HR connection; a token is
   // refused in `can.test.ts`.
@@ -526,6 +529,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.attachment.prune', {}],
     ['system.email.send', {}],
     ['system.email.prune', {}],
+    ['system.teams.post', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

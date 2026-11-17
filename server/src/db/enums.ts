@@ -799,3 +799,61 @@ export const EMAIL_SUPPRESSED_REASONS = [
   'superseded',
 ] as const;
 export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];
+
+/**
+ * `teams_posts`' `kind` (§4.96, D-154, LAI-1314): KSage's three things a
+ * project's Teams channel hears — the twice-a-weekday stand-up, the nightly
+ * digest and an instant notice — and the test post an owner or admin sends.
+ */
+export const TEAMS_POST_KINDS = ['standup', 'digest', 'notice', 'test'] as const;
+export type TeamsPostKind = (typeof TEAMS_POST_KINDS)[number];
+
+/**
+ * `teams_posts`' `event` (D-154): which stand-up run, or which notice. The
+ * notices are KSage's `ItemEvent`s in Laika's terms — handed work, back from
+ * review, waiting for review, done, blocked, unblocked — and its comment
+ * notice. Null for a digest and a test post.
+ */
+export const TEAMS_POST_EVENTS = [
+  'morning',
+  'evening',
+  'assigned',
+  'sent_back',
+  'in_review',
+  'done',
+  'blocked',
+  'unblocked',
+  'commented',
+] as const;
+export type TeamsPostEvent = (typeof TEAMS_POST_EVENTS)[number];
+
+/**
+ * `teams_posts`' `outcome` (D-154): claimed and on its way, accepted by Teams,
+ * not accepted, or never sent at all.
+ */
+export const TEAMS_POST_OUTCOMES = ['sending', 'sent', 'failed', 'suppressed'] as const;
+export type TeamsPostOutcome = (typeof TEAMS_POST_OUTCOMES)[number];
+
+/**
+ * `teams_posts`' `reason` (D-154): why a post was suppressed or failed.
+ *
+ * Suppressed: the organisation's switch is off (`posting_off`), the change
+ * was older than a notice is worth (`too_old`), or one tick held more
+ * notices than it posts (`burst`). Failed: Teams answered and refused
+ * (`refused`, final), answered *not now* (`unavailable`), could not be
+ * reached at all (`unreachable`) — the two a later tick may try again — or
+ * stopped answering mid-way, so it may have arrived (`no_answer`, never
+ * retried); or the stored address could not be used — it would not decrypt,
+ * or is no longer a webhook address Laika posts to (`address_unusable`).
+ */
+export const TEAMS_POST_REASONS = [
+  'posting_off',
+  'too_old',
+  'burst',
+  'refused',
+  'unavailable',
+  'unreachable',
+  'no_answer',
+  'address_unusable',
+] as const;
+export type TeamsPostReason = (typeof TEAMS_POST_REASONS)[number];
