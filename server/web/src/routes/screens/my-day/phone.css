@@ -1319,6 +1319,30 @@
     min-width: 0;
     max-width: 6rem;
   }
+
+  /*
+   * **The owner's call for 390px** (the #350 merge of LAI-1185, LAI-1187 and
+   * LAI-1227): the global top bar keeps its controls, and My day's row cannot
+   * also fit *On leave* and *Me* in words. Whose day gives way: the switch
+   * draws a person and a chevron, and *Me* stays its accessible name — hidden,
+   * never cut. That room goes to the availability pill, whose head is words.
+   */
+  .shell-head[data-myday-bar] .myday-viewing-icon {
+    display: inline-flex;
+  }
+
+  .shell-head[data-myday-bar] .myday-viewing-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .shell-head[data-myday-bar] .avail-trigger:has([data-avail-pill]) {
+    max-width: 6.5rem;
+  }
 }
 
 /* The shell bar's My availability (LAI-1223): the state and the chevron, not the word. */
