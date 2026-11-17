@@ -117,3 +117,31 @@ criterion above holds. Deviations and choices, each also in the PR body and the 
 - **The glyph is drawn from `data-glyph`, not written as text**, so no row reads
   `AAcme Billing`; four browser tests that read the letter as text now read the attribute.
 - **Chart series colours** still hash the slug — a follow-up for CHIEF to file (log).
+
+## Review round 1 (CHIEF, 2026-11-17) — response
+
+CHIEF's independent review found no security or rights problem and asked for seven
+changes, all made; the task stays in review.
+
+1. **No `title=` on the emoji grid** (`IconSection.tsx`): removed; each button keeps its
+   `aria-label`.
+2. **SPEC §6.4 / D-152 item 6 store-off wording**: ask, complete and read answer `503`;
+   `DELETE` still clears the icon. The service's own comment says the same.
+3. **Looks forgotten on a change of user**: `setStoreUser` (which the session calls on
+   sign-out and on any change of user) now calls `forgetLooks()`, so no space name, colour
+   or icon URL survives into the next person's session. Test in `test/api/store.test.ts`,
+   and removing the call turns it red.
+4. **Completing the upload that already is the icon** returns the space unchanged before
+   any store call, so a wrong declared type can no longer delete the live object. Route
+   test; red without the early return.
+5. **A missing object reads `404`, not `503`**: `readProjectIcon` `HEAD`s before the ranged
+   `GET`; the dead `body.length === 0` branch is gone. Route test; red without the `HEAD`.
+6. **`complete` joins the refusal loop** for a member, a viewer, a non-admin lead and a
+   read-only token (all `403`).
+7. **My day timeline and tray**: an `xs` mark before the label wherever the label is the
+   space's name — desktop blocks (`Timeline.tsx`), phone blocks (`TimelineMobile.tsx`) and
+   the untimed tray (`UntimedTray.tsx`). `my-day-phone`, `my-day-range`,
+   `my-day-timeline-zoom`, `my-day-v3`, `my-day-timeline-drag` and `my-day-folders` green.
+
+Left for later, as CHIEF noted: a sweep for uploads asked for and never completed; chart
+series colours. Migration `0083` is kept (CHIEF: the email and Teams branches renumber).

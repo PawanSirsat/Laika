@@ -7623,8 +7623,9 @@ could it wear a logo.
    `project.settings.edit` on `PATCH`, so a space lead who is a member cannot change it.
    Reading follows `project.read`. No new activity verb: `project.updated` with
    `changed: ['icon']`.
-6. **A board with no store** (the AWS board) answers the image routes `503 unavailable`
-   (`reason: attachments_off`); its spaces take an emoji or keep their letter.
+6. **A board with no store** (the AWS board) answers asking, completing and reading an
+   image `503 unavailable` (`reason: attachments_off`); removing still clears the icon, and
+   its spaces take an emoji or keep their letter.
 7. **One mark, everywhere.** The SPA draws every space through one `ProjectMark` — the
    sidebar, the space header, the Spaces page, pickers, the palette, the task drawer, My day,
    Insights, Usage, Capacity, review, notifications, the organisation and profile screens —

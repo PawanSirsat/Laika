@@ -4448,7 +4448,7 @@ POST   /api/v1/projects/:slug/icon           body { content_type, size_bytes } �
 POST   /api/v1/projects/:slug/icon/complete  body { upload_id, content_type, size_bytes } → the project; 409 conflict reason upload_missing or size_mismatch; 422 `type_mismatch` when the first bytes are not the declared type, and that object is deleted; clears any emoji, deletes the image it replaces, writes `project.updated` with `changed: ['icon']`   (project.icon.write)
 DELETE /api/v1/projects/:slug/icon           → the project, `icon: null`: image and emoji alike; the image's object is deleted, best effort   (project.icon.write)
 GET    /api/v1/projects/:slug/icon           ?v= → the image's bytes, answered by Laika rather than redirected, so `img-src 'self'` covers it; `Cache-Control: private, max-age=31536000, immutable` when `v` names the current `icon_updated_at`, else `private, no-cache`; no image, or a project the caller cannot read, 404   (project.read)
-       └ with no store configured (§11.7) the four image routes answer 503 unavailable, `details.reason: 'attachments_off'`; the emoji works on every board (D-152)
+       └ with no store configured (§11.7) ask, complete and read answer 503 unavailable, `details.reason: 'attachments_off'`; `DELETE` still clears the icon (there is no image to delete), and the emoji works on every board (D-152)
 POST   /api/v1/projects/:slug/join           (public projects)
 POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_access, notice }; the last lead 409 `last_lead` (D-103)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
