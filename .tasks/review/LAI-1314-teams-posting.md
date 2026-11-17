@@ -144,3 +144,26 @@ database with `SELECT` only, then for each space call
 checks the host (`*.powerplatform.com`, `*.logic.azure.com`, `*.webhook.office.com`), encrypts,
 and returns the view with host and last four only — never print the URL. Then the space's
 *Send test post* proves the flow, and the switch is turned on when the owner says.
+
+### Review round 1 (review-1314, via CHIEF, 2026-11-18)
+
+- **A blocker in another space is never named** — the *blocked* notice says
+  `Waiting on: a task in another space`, and the stand-up and digest say the
+  same (several: `N tasks in other spaces`) — never its key or title
+  (`OTHER_SPACE_BLOCKER`, `waitingWords`).
+- **The switch and the channel are read at each post** (`postAndRecord`),
+  synchronously before the claim: off by then → `suppressed`, `posting_off`;
+  channel removed → nothing posted, nothing recorded; replaced → the new
+  address. The tick no longer carries either.
+- `GET /org/teams` lists only the channels of spaces the caller can open.
+- The stale list is capped at 25 with `… and N more`; `"` is escaped as
+  `&quot;`; a long comment is cut by code point; `finished_at` is the clock
+  when Teams answered (the job now hands the posting service the clock, not
+  the tick's instant); the `dueSlots` comment says the digest goes every day.
+- Tests: mid-tick off / removed / replaced, cross-space notice and stand-up and
+  digest, the per-space filter with *Change organisation settings* without
+  *Open every project*, the WAL checkpoint before the file read (with a
+  positive control), allow-list cases (`evil-powerplatform.com`, a trailing
+  dot, upper case, IDN labels), the stale cap, the code-point cut, the quote.
+- Filed **LAI-1320** (backlog, discovered-from LAI-1314): the digest's *Moved*
+  reads `tasks.updated_at`; read status changes from `activity` instead.
