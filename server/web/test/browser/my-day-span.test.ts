@@ -32,6 +32,7 @@ import {
   stepPeriod,
 } from '../../src/routes/screens/my-day/span.ts';
 import { dayLong } from '../../src/routes/screens/my-day/week-derive.ts';
+import { tipText } from './tooltip-probe.ts';
 
 /**
  * My day's View (LAI-1174, the owner's *My Day Calendar Zoom*): Day, Week,
@@ -1126,23 +1127,21 @@ void describe('My day — days off (D-149, LAI-1184)', () => {
             ],
             ['off', 'holiday', 'tint'],
           );
-          assert.match((await tile.getAttribute('title')) ?? '', /· Heritage Day$/);
+          // A tile's words are its Tooltip since LAI-1214 (My day: bare title= replaced).
+          assert.match(await tipText(tile), /· Heritage Day$/);
           assert.equal(await styleOf(page, year(HOLIDAY), 'background-color'), holidayBg);
           assert.equal(await styleOf(page, year(HOLIDAY), 'border-top-color'), holidayBorder);
           if (inYear(LEAVE)) {
             assert.equal(await page.locator(year(LEAVE)).getAttribute('data-off'), 'leave');
             assert.equal(await styleOf(page, year(LEAVE), 'background-color'), leaveBg);
-            assert.match(
-              (await page.locator(year(LEAVE)).getAttribute('title')) ?? '',
-              /On leave · Annual/,
-            );
+            assert.match(await tipText(page.locator(year(LEAVE))), /On leave · Annual/);
           }
           if (inYear(HALF)) {
             // Half-day leave owes half: still no signal, half filled, and said as the half.
             assert.equal(await page.locator(year(HALF)).getAttribute('data-kind'), 'no_signal');
             assert.equal(await page.locator(year(HALF)).getAttribute('data-mark'), 'half');
             assert.match(
-              (await page.locator(year(HALF)).getAttribute('title')) ?? '',
+              await tipText(page.locator(year(HALF))),
               /no signal · On leave · Sick · morning$/,
             );
             assert.match(
@@ -1156,10 +1155,7 @@ void describe('My day — days off (D-149, LAI-1184)', () => {
             assert.equal(await page.locator(year(ASKED)).getAttribute('data-mark'), 'dash');
             assert.equal(await styleOf(page, year(ASKED), 'border-top-style'), 'dashed');
             assert.notEqual(await styleOf(page, year(ASKED), 'background-color'), leaveBg);
-            assert.match(
-              (await page.locator(year(ASKED)).getAttribute('title')) ?? '',
-              /Leave requested$/,
-            );
+            assert.match(await tipText(page.locator(year(ASKED))), /Leave requested$/);
           }
           if (inYear(WORKED)) {
             // With time: its heat, and a dot in the tone — an ::after, never the tile's own shadow.
