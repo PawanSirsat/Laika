@@ -207,3 +207,38 @@ names, which nothing sweeps.
 Unset all five and restart. Every attachment route then answers `503` with
 `reason: attachments_off`, the SPA shows no attach control, and the rows and
 objects stay where they are, unread, until the variables come back.
+
+---
+
+## The frontend as its own resource, on one domain
+
+The default image serves the API and the SPA together. To run the frontend as
+a separate resource — the Ksage split on Coolify, 2026-11-17 — build the same
+`docker/Dockerfile` twice from **the same commit**:
+
+| Resource | Build target | Port | Routed to it |
+| --- | --- | --- | --- |
+| the server | default (`runtime`) | 3000 | `/api`, `/mcp`, `/webhooks`, and everything under them |
+| the frontend | `web-serve` | 8080 | everything else |
+
+1. **Route by path on one domain, strip-prefix off.** The server reads the full
+   path (`/api/v1/…`), so the proxy must pass it unchanged. Keeping one origin
+   is what lets sign-in, the session cookie and the CSP's `'self'` work as
+   before; `LAIKA_PUBLIC_URL` stays that domain, and so does the store's CORS
+   `AllowedOrigins` (Attachments, step 2).
+2. **Set `LAIKA_STORAGE_ORIGIN` on the frontend** when attachments are on: the
+   origin of the server's `LAIKA_S3_ENDPOINT`. The page's CSP now comes from the
+   frontend, so without it the browser refuses uploads to the store and images
+   from it. Unset or empty is the attachments-off policy. It is read by nginx,
+   not by the server, which is why SPEC §11.7 does not list it.
+3. **Check both.** `GET /healthz` on the frontend answers `ok`, and
+   `GET /api/v1/health` through the domain answers the server's JSON. An nginx
+   404 page there means `/api` was routed to the frontend.
+
+**What backs this.** `server/test/tooling/web-serve.test.ts` renders the
+frontend's nginx config as the image does and checks its headers and CSP (with
+and without a store), its cache rules and its 404 paths against the server's
+own code. The image was built and measured locally on 2026-11-17 (LAI-1308's
+log): the SPA document on `/` and `/my-day`, a year's cache on `/assets/`, 404
+on `/api/v1/health`, and both CSPs equal to the server's. No test runs the
+proxy's path routing; step 3 is how you check it.
