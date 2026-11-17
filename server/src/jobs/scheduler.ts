@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
+import { type AttachmentsDeps, pruneAttachments } from '../services/attachments.ts';
 import { pruneCheckpoints } from '../services/checkpoints.ts';
 import { claimSettings, expireClaims } from '../services/claims.ts';
 import { expireOffers } from '../services/handoffs.ts';
@@ -66,6 +67,12 @@ export interface SchedulerDeps {
   serverSecret?: string;
   /** The HR sync's `fetch` and waits — injected by the tests, which never call Clan. */
   hr?: HrSyncDeps;
+  /**
+   * The attachments store (D-150, LAI-1300), and the `fetch` the tests inject
+   * so none of them calls a store. Absent, or `config: null`, the sweep does
+   * nothing.
+   */
+  attachments?: AttachmentsDeps;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
   clearTimer?: (handle: unknown) => void;
@@ -129,6 +136,15 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       atStart: true,
     },
     { name: 'meeting_review.expiry', everyMs: HOUR, run: (now) => expireMeetingReviews(db, now) },
+    // Uploads nobody finished and files nothing linked, after 24 hours, and
+    // the stored objects of removed files (§11.6, D-150 item 6, LAI-1300).
+    // Not `atStart`: an hour's wait costs nothing, and a boot should not wait
+    // on the store. It writes no activity — nobody did it.
+    {
+      name: 'attachment.prune',
+      everyMs: HOUR,
+      run: (now) => pruneAttachments(db, deps.attachments, now),
+    },
     { name: 'db.vacuum', everyMs: 7 * DAY, run: () => vacuum(db) },
     // Claims whose lease lapsed become `expired` (§9.1, proposal §4.2,
     // LAI-541), every `LAIKA_CLAIM_SCAN_SECONDS`. Not `atStart`: the boot
