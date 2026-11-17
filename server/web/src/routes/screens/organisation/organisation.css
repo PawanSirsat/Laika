@@ -3208,6 +3208,63 @@
   color: var(--text-secondary);
 }
 
+/*
+ * D-154's Teams posting (LAI-1314), a card on Integrations. Tokens only — no
+ * Microsoft colours. A failed last post is the overdue red; a sent one green.
+ */
+.org-teams-lead {
+  margin: 0 0 var(--space-3);
+}
+
+.org-teams-channels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.org-teams-channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-0-5) var(--space-2);
+  min-width: 0;
+}
+
+.org-teams-space {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.org-teams-space:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.org-teams-host {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.org-teams-last {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.org-teams-last[data-tone='on'] {
+  color: var(--chip-green);
+}
+
+.org-teams-last[data-tone='bad'] {
+  color: var(--overdue);
+}
+
 /* ------------------------------------------------ Sign-in / SSO (LAI-1239) */
 
 .org-sso-lead {
