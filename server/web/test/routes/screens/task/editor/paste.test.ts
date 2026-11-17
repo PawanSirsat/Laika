@@ -9,7 +9,11 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { safeHref, tagPolicy } from '../../../../../src/routes/screens/task/editor/paste.ts';
+import {
+  keptImageSrc,
+  safeHref,
+  tagPolicy,
+} from '../../../../../src/routes/screens/task/editor/paste.ts';
 
 void describe('what each pasted element becomes', () => {
   void test('text, lists, links and tables are kept', () => {
@@ -52,5 +56,37 @@ void describe('which pasted links stay links', () => {
     ]) {
       assert.equal(safeHref(href), null, String(href));
     }
+  });
+});
+
+void describe('Laika’s own attachments survive a paste, and nothing else that loads (D-150)', () => {
+  const URL = '/api/v1/attachments/01JCZ8Y3V4QK9M2N7P5R6S8T0W/content';
+  const ORIGIN = 'https://laika.example.com';
+
+  void test('an <img> is still dropped by its tag; only the walk keeps an attachment', () => {
+    assert.equal(tagPolicy('img'), 'drop');
+  });
+
+  void test('an image whose source is this board’s attachment stays an image', () => {
+    assert.equal(keptImageSrc(URL), URL);
+    assert.equal(keptImageSrc(`${ORIGIN}${URL}`, ORIGIN), `${ORIGIN}${URL}`);
+  });
+
+  void test('every other image goes: another site, a data URL, the path on another host', () => {
+    for (const src of [
+      'https://example.com/pixel.gif',
+      'data:image/png;base64,AAAA',
+      `https://evil.example${URL}`,
+      `//evil.example${URL}`,
+      `${URL}?t=1`,
+      null,
+    ]) {
+      assert.equal(keptImageSrc(src, ORIGIN), null, String(src));
+    }
+  });
+
+  void test('a link to an attachment stays a link; any other relative link still does not', () => {
+    assert.equal(safeHref(URL), URL);
+    assert.equal(safeHref('/api/v1/tasks/t1'), null);
   });
 });

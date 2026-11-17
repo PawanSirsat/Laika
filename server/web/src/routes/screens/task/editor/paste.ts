@@ -1,6 +1,9 @@
+import { boardOrigin, isAttachmentUrl } from './attach.ts';
+
 /**
  * What a paste into the task editor keeps (LAI-827): **text, lists, links and
- * tables, and nothing else.**
+ * tables, and nothing else** — and this board's own attachments (D-150), so
+ * cutting a screenshot and pasting it two lines down keeps it.
  *
  * Copying from Jira, a Google Doc or a web page puts HTML on the clipboard,
  * with styles, images, scripts, tracking pixels and whatever markup the source
@@ -12,6 +15,11 @@
  * no browsing context: nothing in it runs, and nothing in it is fetched — no
  * `<script>`, no `onerror`, no `<img src>`. Only the rebuilt string leaves this
  * file, and ProseMirror parses that into a detached document of its own.
+ *
+ * **Every `<img>` is dropped but Laika's own.** An image from a web page is a
+ * request to somebody else's server (SPEC §13.4); one whose `src` is this
+ * board's `/api/v1/attachments/<id>/content` is a file already here, rebuilt
+ * as `src` and `alt` only ({@link keptImageSrc}).
  */
 
 /** Rebuilt as themselves, with these attributes only. */
@@ -101,14 +109,27 @@ export function tagPolicy(tag: string): TagPolicy {
 
 /**
  * A pasted link's address, if it may stay a link: an absolute `http(s)` or
- * `mailto:` address. A relative one meant somewhere on the page it came from,
- * not on Laika, and anything else — `javascript:`, `data:` — is not a
- * destination. Either way the words stay; only the link goes.
+ * `mailto:` address, or this board's own attachment (D-150). Any other
+ * relative one meant somewhere on the page it came from, not on Laika, and
+ * anything else — `javascript:`, `data:` — is not a destination. Either way
+ * the words stay; only the link goes.
  */
-export function safeHref(href: string | null): string | null {
+export function safeHref(href: string | null, origin?: string): string | null {
   if (href === null) return null;
   const trimmed = href.trim();
+  if (isAttachmentUrl(trimmed, origin)) return trimmed;
   return /^(?:https?:\/\/|mailto:)/i.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * A pasted image's address, if it may stay an image: this board's own
+ * attachment (D-150), relative or on `origin`. Anything else — another site's
+ * image, a `data:` URL, a tracking pixel — is `null`, and the image goes.
+ */
+export function keptImageSrc(src: string | null, origin?: string): string | null {
+  if (src === null) return null;
+  const trimmed = src.trim();
+  return isAttachmentUrl(trimmed, origin) ? trimmed : null;
 }
 
 /** Does this element hold a block of its own somewhere inside? */
@@ -137,12 +158,22 @@ function reduceInto(from: Node, to: Element, doc: Document, preformatted: boolea
     if (!(child instanceof Element)) continue;
 
     const name = child.localName;
+    if (name === 'img') {
+      const src = keptImageSrc(child.getAttribute('src'), boardOrigin());
+      if (src !== null) {
+        const image = doc.createElement('img');
+        image.setAttribute('src', src);
+        image.setAttribute('alt', child.getAttribute('alt') ?? '');
+        to.append(image);
+      }
+      continue;
+    }
     const policy = tagPolicy(name);
     if (policy === 'drop') continue;
 
     if (policy === 'keep') {
       if (name === 'a') {
-        const href = safeHref(child.getAttribute('href'));
+        const href = safeHref(child.getAttribute('href'), boardOrigin());
         if (href === null) {
           reduceInto(child, to, doc, preformatted);
           continue;
