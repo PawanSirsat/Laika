@@ -230,27 +230,31 @@ void after(async () => {
  *
  * All three render through the one `PresencePerson`, which the row also used.
  * What is left to assert on the Board is that the row stays gone in the state
- * it used to draw in, and that the count the header still takes from
- * presence is unaffected.
+ * it used to draw in.
+ *
+ * **The header no longer counts the agents** (LAI-1233): *"remove the Agents
+ * chip, with the API call behind it"*. This test's positive control was that
+ * chip reading `Agents 1`; the board now makes no presence read at all
+ * (`space-bar.test.ts`, "the board draws no Agents chip and never asks for
+ * presence"), so the control is the board's own cards instead — the board was
+ * drawn, with the presence fixture of two people still served.
  */
 void describe('the Board has no WORKING NOW row (LAI-727)', () => {
-  void test('people present: no row, and the header still counts the agents', async () => {
+  void test('people present: no row, and no Agents count in the header (LAI-1233)', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.board').first().waitFor({ timeout: 20_000 });
-      // Positive control: presence did land — one of the two sessions is an agent.
-      await h.page.waitForFunction(
-        () =>
-          /Agents\s*1/.test(
-            [...document.querySelectorAll('.space-chip')].map((e) => e.textContent ?? '').join(' '),
-          ),
-        undefined,
-        { timeout: 20_000 },
-      );
+      // Positive control: the board drew its work, not just its frame.
+      await h.page.locator('.card', { hasText: 'Parity tests' }).waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(400);
       assert.equal(await h.page.locator('.presence').count(), 0, 'the row is drawn');
       assert.equal(await h.page.locator('.presence-chip').count(), 0, 'a presence chip is drawn');
       assert.doesNotMatch(await h.page.locator('body').innerText(), /WORKING NOW/);
+      assert.equal(
+        await h.page.locator('.space-chip', { hasText: /^Agents/ }).count(),
+        0,
+        'the Agents chip is back in the header',
+      );
     } finally {
       await h.close();
     }

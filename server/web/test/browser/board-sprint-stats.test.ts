@@ -303,17 +303,9 @@ void describe('the Board’s top rows are gone (LAI-727)', () => {
             timeout: 20_000,
           });
         await h.page.locator('.bstats').waitFor({ timeout: 10_000 });
-        // Presence still reaches the one thing that reads it: the header's count.
-        await h.page.waitForFunction(
-          () =>
-            /Agents\s*1/.test(
-              [...document.querySelectorAll('.space-chip')]
-                .map((el) => el.textContent ?? '')
-                .join(' '),
-            ),
-          undefined,
-          { timeout: 10_000 },
-        );
+        // The header's Agents count went too, with its presence read (LAI-1233:
+        // "remove the Agents chip, with the API call behind it"), so it is no
+        // longer a control here; the card and the figures above are.
         // Kept as a sleep (LAI-715 sweep): a quiet window before absences: a condition cannot show that nothing more arrives.
         await h.page.waitForTimeout(400);
 
@@ -321,6 +313,11 @@ void describe('the Board’s top rows are gone (LAI-727)', () => {
         assert.equal(await h.page.locator('.presence').count(), 0, 'WORKING NOW is drawn');
         assert.doesNotMatch(await h.page.locator('body').innerText(), /WORKING NOW/i);
         assert.doesNotMatch(await h.page.locator('body').innerText(), /agent sessions? live/);
+        assert.equal(
+          await h.page.locator('.space-chip', { hasText: /^Agents/ }).count(),
+          0,
+          'the Agents chip is back in the header',
+        );
       } finally {
         await h.close();
       }
@@ -1141,8 +1138,8 @@ const rowGeometry = (h: Harness) =>
  *
  * The LAI-297 class of defect: something arriving late pushes every lane
  * down. In round 1 the members landing crowded the row, the group left it for
- * a line above, and the board dropped ~46px under the reader. Members,
- * sprints and presence are held back here so the first card is drawn before
+ * a line above, and the board dropped ~46px under the reader. Members and
+ * sprints are held back here so the first card is drawn before
  * any of them, which is the order a slow server produces.
  *
  * **Held on a gate, not delayed by a clock** (LAI-715). A 1200ms delay is
@@ -1152,11 +1149,13 @@ const rowGeometry = (h: Harness) =>
  * measured, so the order is the test's, not the machine's.
  */
 void describe('the board does not move after it is drawn (LAI-727 review)', () => {
-  const LATE = ['/members', '/sprints', '/presence'];
+  // No `/presence` since LAI-1233: the board makes no presence read, so an
+  // answer held for it would never land and the test would wait on nothing.
+  const LATE = ['/members', '/sprints'];
   const late = async (page: Page, held: Promise<void>): Promise<void> => {
-    // API paths only (LAI-1219): screens load as chunks now, and `**/presence*`
-    // also matched `assets/presence-*.js`, holding the board's own code.
-    for (const glob of ['**/api/v1/**/members*', '**/api/v1/**/sprints*', '**/api/v1/presence*']) {
+    // API paths only (LAI-1219): screens load as chunks now, and a bare
+    // `**/presence*` matched `assets/presence-*.js`, holding the board's own code.
+    for (const glob of ['**/api/v1/**/members*', '**/api/v1/**/sprints*']) {
       await page.route(glob, async (route) => {
         await held;
         await route.continue();
