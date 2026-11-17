@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import {
   OffboardingDialog,
   type ReassignCandidate,
@@ -1065,6 +1066,7 @@ function SpacesBlock({
               <li key={m.project_id} className="prof-admin-item" data-membership={m.slug}>
                 <span className="prof-admin-item-main">
                   <span className="prof-admin-item-name">
+                    <ProjectMark project={{ slug: m.slug, name: m.name }} size="sm" />
                     {m.name}
                     {m.archived && <span className="prof-admin-chip">ARCHIVED</span>}
                   </span>
@@ -1201,7 +1203,12 @@ function AddToSpace({
           value={slug}
           disabled={busy}
           onChange={setSlug}
-          options={spaces.map((s) => ({ value: s.slug, label: s.name, keywords: s.prefix }))}
+          options={spaces.map((s) => ({
+            value: s.slug,
+            label: s.name,
+            keywords: s.prefix,
+            icon: <ProjectMark project={s} size="sm" />,
+          }))}
         />
         <Dropdown
           aria-label="Role in the space"

@@ -1,4 +1,4 @@
-import type { Project } from '../api/projects.ts';
+import type { Project, ProjectIcon } from '../api/projects.ts';
 
 /**
  * Spaces — the sidebar's model of projects you have opened (LAI-247).
@@ -26,6 +26,8 @@ export interface Space {
   readonly meta: string;
   /** The colour the space stores, if any (`spaceColor` derives one otherwise). */
   readonly color?: string | null | undefined;
+  /** The space's icon, for its mark (D-152). */
+  readonly icon?: ProjectIcon | null | undefined;
 }
 
 /**
@@ -63,6 +65,7 @@ export function toSpace(project: Project): Space {
     key: spaceKey(project),
     meta: spaceMeta(project),
     color: project.color,
+    icon: project.icon,
   };
 }
 

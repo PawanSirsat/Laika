@@ -22,7 +22,7 @@ import {
 import { avatarColorSolid } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
-import { SpaceBadge } from '../SpaceBadge.tsx';
+import { ProjectMark } from '../ProjectMark.tsx';
 import { Button } from '../forms/Button.tsx';
 import { IconButton } from '../forms/IconButton.tsx';
 import {
@@ -498,7 +498,7 @@ export function TimeReport({
                       setPop(undefined);
                     }}
                   />
-                  <SpaceBadge slug={o.space.slug} name={o.space.name} />
+                  <ProjectMark project={o.space} />
                   <span className="trep-option-label">{o.label}</span>
                 </label>
               ))}
@@ -512,7 +512,7 @@ export function TimeReport({
               options={chipOptions.space.map((o) => ({
                 value: o.value,
                 label: o.label,
-                mark: <SpaceBadge slug={o.space.slug} name={o.space.name} />,
+                mark: <ProjectMark project={o.space} />,
               }))}
               selected={filters.spaces}
               open={pop === 'space'}
@@ -896,7 +896,7 @@ function Avatar({ id, name }: { readonly id: string; readonly name: string }) {
 }
 
 function Mark({ face }: { readonly face: Face }) {
-  if (face.space !== undefined) return <SpaceBadge slug={face.space.slug} name={face.space.name} />;
+  if (face.space !== undefined) return <ProjectMark project={face.space} />;
   if (face.person !== undefined) return <Avatar id={face.person.id} name={face.person.name} />;
   if (face.kind !== undefined) {
     return <span className={`trep-dot trep-kind-${face.kind}`} aria-hidden="true" />;
@@ -1835,8 +1835,11 @@ function Weeks({ report }: { readonly report: SpaceWeeksReport }) {
       data-tr-weeks
     >
       <p className="trep-note trep-note-info" role="note" data-tr-space-banner>
-        <b>Totals for {report.project.name}.</b> One figure a week, confirmed time only, with no
-        per-person split. A week fewer than three people besides you worked in is withheld.
+        <b>
+          Totals for <ProjectMark project={report.project} size="xs" /> {report.project.name}.
+        </b>{' '}
+        One figure a week, confirmed time only, with no per-person split. A week fewer than three
+        people besides you worked in is withheld.
       </p>
       <ol className="trep-week-list">
         {lines.map((w) => (

@@ -175,6 +175,9 @@ const ORG_MATRIX: OrgRow[] = [
   // D-149 (LAI-1181): *Change organisation settings, Time and breaks*; a token
   // is refused in `can.test.ts`.
   ['org.hr.configure', true, true, false, false],
+  // | Change a space's icon | ✓ | ✓ | — | — |
+  // D-152 (LAI-1311): the owner's two roles, and no grant moves it.
+  ['project.icon.write', true, true, false, false],
   // | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
   // D-153 (LAI-1312 review): the same grant; a token is refused in `can.test.ts`.
   ['org.email.configure', true, true, false, false],

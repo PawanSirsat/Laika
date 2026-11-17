@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { avatarColor } from '../../theme/avatar-color.ts';
-import { useTheme } from '../../theme/use-theme.ts';
+import { ProjectMark } from '../ProjectMark.tsx';
 import type { Space } from '../../routes/spaces.ts';
 import { PinButton } from './PinButton.tsx';
 import { useLayer } from '../overlay/layer-stack.ts';
@@ -32,8 +31,9 @@ export interface SpacesPopoverProps {
  * prototype's empty copy ends "…Search to find archived ones", which promises
  * an archive search nobody has built, so only the true half ships.
  *
- * Colour squares are derived per slug (`avatarColor`), never stored — the
- * prototype's per-space colours are fixtures, same rule as avatars.
+ * Each row leads with the space's own mark (`ProjectMark`, D-152) — its
+ * image, emoji or letter on its stored colour, as the rail draws it; the
+ * prototype's per-space colours are fixtures, never shipped.
  */
 export function SpacesPopover({
   spaces,
@@ -44,7 +44,6 @@ export function SpacesPopover({
   onViewAll,
   onClose,
 }: SpacesPopoverProps) {
-  const { theme } = useTheme();
   const [query, setQuery] = useState('');
   // On the overlay stack (LAI-1205): a dialog above it keeps Escape.
   const { isTop } = useLayer('popover');
@@ -133,7 +132,6 @@ export function SpacesPopover({
         ) : (
           <ul ref={list} className="spaces-pop-list">
             {shown.map((space) => {
-              const colour = avatarColor(space.slug, theme);
               return (
                 <li key={space.slug} className="space-item" data-slug={space.slug}>
                   <button
@@ -144,13 +142,7 @@ export function SpacesPopover({
                       onPick(space.slug);
                     }}
                   >
-                    <span
-                      className="spaces-pop-key"
-                      style={{ background: colour.background, color: colour.foreground }}
-                      aria-hidden="true"
-                    >
-                      {space.name.trim().charAt(0).toUpperCase()}
-                    </span>
+                    <ProjectMark project={space} size="md" className="spaces-pop-key" />
                     <span className="spaces-pop-text">
                       <span className="spaces-pop-name">{space.name}</span>
                       <span className="spaces-pop-meta">{space.meta}</span>

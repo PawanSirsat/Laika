@@ -440,18 +440,6 @@
   min-width: 0;
 }
 
-.ov-letter {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  width: 1.125rem;
-  height: 1.125rem;
-  border-radius: var(--radius-chip);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  color: var(--on-space);
-}
-
 .ov-project-title {
   min-width: 0;
   overflow: hidden;

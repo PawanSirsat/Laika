@@ -42,7 +42,10 @@ export function emailFormFrom(settings: EmailSettings): EmailForm {
 }
 
 /** The saved settings a form is checked against. */
-export type EmailSaved = Pick<EmailSettings, 'host' | 'port' | 'username' | 'key_last4' | 'configured'>;
+export type EmailSaved = Pick<
+  EmailSettings,
+  'host' | 'port' | 'username' | 'key_last4' | 'configured'
+>;
 
 /** Whether a key is stored, which an empty key field then keeps. */
 export function keyIsStored(saved: EmailSaved): boolean {
@@ -63,7 +66,10 @@ export function movesTheKey(form: EmailForm, saved: EmailSaved): boolean {
 }
 
 /** What would be refused, by field — the server's rules, said before a round trip. */
-export function emailFormErrors(form: EmailForm, saved: EmailSaved): Partial<Record<EmailField, string>> {
+export function emailFormErrors(
+  form: EmailForm,
+  saved: EmailSaved,
+): Partial<Record<EmailField, string>> {
   const errors: Partial<Record<EmailField, string>> = {};
   const keyStored = keyIsStored(saved);
   if (!/^[A-Za-z0-9.:-]+$/.test(form.host.trim()) || form.host.trim().startsWith('-')) {

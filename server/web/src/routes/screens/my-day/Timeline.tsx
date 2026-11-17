@@ -60,6 +60,7 @@ import { keepBlockPx, readBlockPx } from './timeline-prefs.ts';
 import { trayDrag } from './tray-drag.ts';
 import './timeline.css';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 /** What the reader has in hand: a block, a gap they picked, or a break. */
 export type Selection =
@@ -199,12 +200,20 @@ function labelOf(
   block: LaneBlock,
   drafts: ReadonlyMap<string, TimeDraft>,
   entries: ReadonlyMap<string, TimeEntry>,
-): { readonly top: string; readonly title: string; readonly card: string | undefined } {
+): {
+  readonly top: string;
+  readonly title: string;
+  readonly card: string | undefined;
+  /** The space `top` names, when it names one — drawn with its mark (D-152). */
+  readonly space?: { readonly slug: string; readonly name: string } | undefined;
+} {
   if (block.kind === 'drafted') {
     const d = drafts.get(block.id);
     if (d === undefined) return { top: '', title: '', card: undefined };
     if (d.task !== null) return { top: d.task.key, title: d.task.title, card: d.task.key };
-    if (d.project !== null) return { top: d.project.name, title: d.folder ?? '', card: undefined };
+    if (d.project !== null) {
+      return { top: d.project.name, title: d.folder ?? '', card: undefined, space: d.project };
+    }
     return {
       top: d.general ? 'General' : needsACard(d).replace(/^Needs a card/, 'No task yet'),
       title: '',
@@ -220,8 +229,14 @@ function labelOf(
   if (e.title !== undefined && e.title !== null) {
     return { top: e.title, title: said ?? e.project?.name ?? '', card: undefined };
   }
-  if (e.project !== null)
-    return { top: e.project.name, title: said ?? e.folder ?? '', card: undefined };
+  if (e.project !== null) {
+    return {
+      top: e.project.name,
+      title: said ?? e.folder ?? '',
+      card: undefined,
+      space: e.project,
+    };
+  }
   const general = e.folder === undefined || e.folder === null ? 'General' : `General · ${e.folder}`;
   return {
     top: e.note === null ? general : `${general} · ${e.note}`,
@@ -1785,7 +1800,7 @@ export function Timeline({
                   const shape = shaped[i] ?? block;
                   const kind = block.kind === 'drafted' ? 'draft' : 'entry';
                   const selected = isSelected(kind, block.id);
-                  const { top, title, card } = labelOf(block, drafts, entries);
+                  const { top, title, card, space } = labelOf(block, drafts, entries);
                   const px = (shape.end - shape.start) * pxPerMinute;
                   const range = rangeOf(shape);
                   const draggable = canDrag(block);
@@ -1870,6 +1885,7 @@ export function Timeline({
                             <span className="dayline-icon" aria-hidden="true">
                               {icon}
                             </span>
+                            {space !== undefined && <ProjectMark project={space} size="xs" />}
                             <span className="dayline-block-top">
                               {/* A row's height changes with how many share it: try again. */}
                               <FitLabel key={rows} options={cutsOf(top)} />

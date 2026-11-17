@@ -167,7 +167,9 @@ describe('saving the settings', () => {
     setEmailSettings(t.db, actor(ownerId), SMTP_SETTINGS, SECRET);
     const { password: _drop, ...rest } = SMTP_SETTINGS;
     for (const change of [{ host: 'smtp.attacker.example' }, { port: 25 }, { username: 'x' }]) {
-      const err = refusal(() => setEmailSettings(t.db, actor(ownerId), { ...rest, ...change }, SECRET));
+      const err = refusal(() =>
+        setEmailSettings(t.db, actor(ownerId), { ...rest, ...change }, SECRET),
+      );
       expect(err.code, JSON.stringify(change)).toBe('unprocessable');
       expect(err.details).toEqual({ field: 'password', reason: 'key_required' });
     }

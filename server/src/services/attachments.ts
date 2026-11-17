@@ -155,13 +155,13 @@ function off(): ApiError {
 }
 
 /** The settings, or `503 attachments_off`. Asked first: it reads nothing. */
-function requireOn(deps: AttachmentsDeps | undefined): AttachmentsEnv {
+export function requireOn(deps: AttachmentsDeps | undefined): AttachmentsEnv {
   const config = deps?.config ?? null;
   if (config === null) throw off();
   return config;
 }
 
-function storeFor(deps: AttachmentsDeps | undefined): StoreClient {
+export function storeFor(deps: AttachmentsDeps | undefined): StoreClient {
   const config = requireOn(deps);
   return storeClient({
     store: config.store,
@@ -171,7 +171,7 @@ function storeFor(deps: AttachmentsDeps | undefined): StoreClient {
   });
 }
 
-function clockOf(deps: AttachmentsDeps | undefined): number {
+export function clockOf(deps: AttachmentsDeps | undefined): number {
   return (deps?.now ?? Date.now)();
 }
 

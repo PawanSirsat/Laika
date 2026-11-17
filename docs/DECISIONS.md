@@ -7581,6 +7581,63 @@ it dispatches file from `LAI-1300` – `LAI-1399`, lowest unused first, checked 
 Measured on 2026-11-17 across every local and `origin` branch and all history: 100 of
 `LAI-1100` – `LAI-1199` taken, 38 ids in the `LAI-12xx` range taken, none in `LAI-13xx`.
 
+## D-152 — Projects carry an icon: an image in the operator's store or an emoji, else their initial on their colour; org owners and admins set it
+
+**Date:** 2026-11-17 · **Decided by:** Pawan (owner): "add the project icons, show that
+everywhere of that project as highlight; if no logo show the first letter … in space
+settings". Storage, icon kind and rights answered in chat the same day: **the attachment
+store (Garage, D-150), only Ksage matters**; **an image or an emoji, else the first letter**;
+**org owners and admins only**. Recorded by the builder CHIEF dispatched (laika-c4, Belka).
+Task LAI-1311, card LAIKA-1079. Amends D-103 item 4 (a space's colour is now the ground of
+its letter, which an icon replaces).
+
+**Context.** A space was told apart only by its name and, in a few places, a coloured letter
+— in three colour schemes: the stored colour (D-103 item 4) on the Spaces page and in
+settings, a hash of the slug in the sidebar, the space header and Capacity, and a second hash
+in the More-spaces popover. So one space could wear two colours on one screen, and nowhere
+could it wear a logo.
+
+**Decision.**
+
+1. **A space's icon is an image, else an emoji, else its first letter on its colour.** It
+   holds one or the other, never both: setting either clears the other, and an image that is
+   replaced or cleared has its object deleted from the store. `ProjectView.icon` is
+   `{ emoji }`, `{ url, updated_at }` or `null`; the store key and type never leave the
+   server (§4.3, §6.4).
+2. **The image lives in the attachments store (D-150) and reuses its client.** Ask
+   (`POST /projects/:slug/icon`) → a presigned `PUT` for a new key
+   `p/<project_id>/icon/<ulid>`; complete (`…/icon/complete`) → `HEAD` for the size and the
+   first bytes for the type. **png, jpeg or webp only, at most 1 MiB** (or the board's
+   attachment limit, if smaller); **never SVG**, which can carry script. A file whose bytes
+   are not its declared type is refused and deleted.
+3. **Read through Laika, not redirected.** `GET /projects/:slug/icon?v=<icon_updated_at>`
+   answers the bytes itself, so `img-src 'self'` covers it and a page of thirty marks makes
+   thirty cacheable requests, not thirty redirects to URLs that change every time.
+   `Cache-Control: private, max-age=31536000, immutable` when `v` is the current version;
+   anything else `private, no-cache`.
+4. **The emoji is one grapheme** (`Intl.Segmenter`) drawn as a picture, set through
+   `PATCH /projects/:slug` (`icon_emoji`). The SPA offers a curated grid of forty-eight and
+   a field for any other; **no emoji library ships**.
+5. **Rights (§3.1): *Change a space's icon*, `project.icon.write`, owner ✓ admin ✓.** An org
+   action carried by no capability — the owner named the two roles — and asked on top of
+   `project.settings.edit` on `PATCH`, so a space lead who is a member cannot change it.
+   Reading follows `project.read`. No new activity verb: `project.updated` with
+   `changed: ['icon']`.
+6. **A board with no store** (the AWS board) answers asking, completing and reading an
+   image `503 unavailable` (`reason: attachments_off`); removing still clears the icon, and
+   its spaces take an emoji or keep their letter.
+7. **One mark, everywhere.** The SPA draws every space through one `ProjectMark` — the
+   sidebar, the space header, the Spaces page, pickers, the palette, the task drawer, My day,
+   Insights, Usage, Capacity, review, notifications, the organisation and profile screens —
+   always on the **stored** colour; the two slug-hash schemes are retired. A site whose
+   endpoint sends only a slug and a name draws the right mark from what the app last read for
+   that slug, so no view had to grow the field.
+
+**Known limit, recorded rather than built:** nothing is stored between ask and complete, so an
+image put to the store and never completed stays there — at most 1 MiB, and only an owner or
+admin can make one. A sweep can find them by the `p/<project_id>/icon/` prefix if it is ever
+worth it.
+
 ## D-153 — Laika sends email: SMTP in organisation settings, an outbox, and a switch that ships off
 
 **Date:** 2026-11-18 · **Decided by:** Pawan (owner), after the LAI-1310 research. He chose

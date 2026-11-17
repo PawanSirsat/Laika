@@ -10,6 +10,7 @@ import { Chip } from '../../../components/chip/Chip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -327,12 +328,7 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
               ) : (
                 <ul className="cap-spaces">
                   {person.spaces.map((s) => (
-                    <SpaceChip
-                      key={s.project_id}
-                      space={s}
-                      on={s.project_id === space}
-                      theme={theme}
-                    />
+                    <SpaceChip key={s.project_id} space={s} on={s.project_id === space} />
                   ))}
                 </ul>
               )}
@@ -392,29 +388,16 @@ export function LoadBadges({
 }
 
 /**
- * A space the person has open work in: its colour (the sidebar badge's,
- * keyed by slug), its name and its **committed** count. The pipeline and the
- * review queue are on hover, and read aloud (D-092).
+ * A space the person has open work in: its mark (LAI-1311), its name and its
+ * **committed** count. The pipeline and the review queue are on hover, and
+ * read aloud (D-092).
  */
-export function SpaceChip({
-  space,
-  on,
-  theme,
-}: {
-  readonly space: CapacitySpace;
-  readonly on: boolean;
-  readonly theme: Theme;
-}) {
-  const colour = avatarColor(`space:${space.slug}`, theme);
+export function SpaceChip({ space, on }: { readonly space: CapacitySpace; readonly on: boolean }) {
   const aside = `${count(space.backlog)} in backlog, ${count(space.in_review)} waiting on reviewers`;
   return (
     <Tooltip content={spaceTitle(space)}>
       <li className={on ? 'cap-space cap-space-on' : 'cap-space'}>
-        <span
-          className="cap-space-swatch"
-          aria-hidden="true"
-          style={{ background: colour.background }}
-        />
+        <ProjectMark project={space} size="xs" />
         {space.name}
         <span className="cap-space-n">{count(space.committed)}</span>
         <span className="visually-hidden"> committed, {aside}</span>

@@ -83,6 +83,13 @@ export const PROJECT_COLORS = [
 export type ProjectColor = (typeof PROJECT_COLORS)[number];
 
 /**
+ * The image types a space's icon may be (D-152, LAI-1311): what a browser
+ * draws and the first bytes can prove. Never SVG — it can carry script.
+ */
+export const PROJECT_ICON_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+export type ProjectIconType = (typeof PROJECT_ICON_TYPES)[number];
+
+/**
  * Who may create tasks in a space (D-103 item 6): its members, or its space
  * admins (`lead`) only. Viewers never may, so there is no `viewer` here.
  */

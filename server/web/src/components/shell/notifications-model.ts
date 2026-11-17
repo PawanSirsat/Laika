@@ -38,6 +38,8 @@ export interface NotificationItem {
   readonly text: string;
   /** A second, quieter line: the space, the reason, the adder's message. */
   readonly detail?: string | undefined;
+  /** The space `detail` names, when it names one — drawn with its mark (LAI-1311). */
+  readonly space?: { readonly slug: string; readonly name: string } | undefined;
   readonly href: string;
   /** When it arrived, ms. */
   readonly at: number;
@@ -90,6 +92,15 @@ function loose<T extends object>(row: T | null | undefined): Loose<T> {
   return row ?? empty;
 }
 
+/** The space a row names, when it carries both its slug and its name. */
+function namedSpace(
+  project: Loose<{ readonly slug: string; readonly name: string }>,
+): NotificationItem['space'] {
+  return project.slug == null || project.name == null
+    ? undefined
+    : { slug: project.slug, name: project.name };
+}
+
 /** One hand-off as a line: what it asks of the reader. */
 function handoffText(row: Loose<PersonHandoffView>): string {
   const what = [row.task_key, row.task_title].filter((p) => p != null && p !== '').join(' · ');
@@ -115,12 +126,14 @@ export function buildNotifications(
     if (row.can_decide !== true || task.id == null) continue;
     const at = row.waiting_since ?? 0;
     const name = [task.key, task.title].filter((p) => p != null && p !== '').join(' · ');
+    const project = loose(row.project);
     items.push({
       id: `review:${task.id}`,
       group: 'waiting',
       kind: 'review',
       text: name === '' ? 'A task waits for your review' : `Review ${name}`,
-      detail: loose(row.project).name ?? undefined,
+      detail: project.name ?? undefined,
+      space: namedSpace(project),
       href: `/inbox?tab=review&item=${encodeURIComponent(task.id)}`,
       at,
       unread: fresh(at),
@@ -171,6 +184,7 @@ export function buildNotifications(
       kind: 'budget',
       text: alertLine(alert),
       detail: row.project.name,
+      space: namedSpace(loose(row.project)),
       href: alertHref(alert),
       at,
       unread: fresh(at),

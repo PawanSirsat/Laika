@@ -252,7 +252,10 @@ export function supersedeEmail(db: Db, idempotencyKeys: readonly string[], now: 
       updatedAt: now,
     })
     .where(
-      and(eq(emailOutbox.state, 'queued'), inArray(emailOutbox.idempotencyKey, [...idempotencyKeys])),
+      and(
+        eq(emailOutbox.state, 'queued'),
+        inArray(emailOutbox.idempotencyKey, [...idempotencyKeys]),
+      ),
     )
     .run().changes;
 }

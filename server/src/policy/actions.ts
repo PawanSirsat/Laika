@@ -109,6 +109,8 @@ export const ORG_ACTIONS = [
   // D-149 (LAI-1181): connect, sync and disconnect the organisation's HR
   // system, and map its people to Laika's.
   'org.hr.configure',
+  // D-152 (LAI-1311): a space's icon — its image or its emoji.
+  'project.icon.write',
   // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
   // *Email on* switch.
   'org.email.configure',
