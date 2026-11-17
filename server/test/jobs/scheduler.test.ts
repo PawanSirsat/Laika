@@ -113,6 +113,7 @@ describe('the jobs §11.6 names', () => {
       'invite.expiry',
       'local_activity.retention',
       'meeting_review.expiry',
+      'meetings.sync',
       'notices.retention',
       'offer.expiry',
       'task.stale',
@@ -154,6 +155,32 @@ describe('the jobs §11.6 names', () => {
     expect(hr?.atStart).toBe(true);
     // It waits on the network, and the boot runs `atStart` jobs in turn.
     expect(jobs.at(-1)?.name).toBe('hr.sync');
+  });
+
+  it('syncs Teams meetings every 15 minutes and at boot, after the directory and before HR (LAI-1311)', () => {
+    const jobs = buildJobs(deps());
+    const names = jobs.map((j) => j.name);
+    const meetings = jobs.find((j) => j.name === 'meetings.sync');
+    expect(meetings?.everyMs).toBe(15 * 60 * 1000);
+    expect(meetings?.atStart).toBe(true);
+    // A member the directory sync adds at boot has their calendar read in the same boot.
+    expect(names.indexOf('meetings.sync')).toBe(names.indexOf('directory.sync') + 1);
+    expect(names.at(-1)).toBe('hr.sync');
+  });
+
+  it('the meetings job does nothing, and calls nobody, without the switch (LAI-1311)', async () => {
+    const calls: string[] = [];
+    const fetchImpl = ((url: string | URL) => {
+      calls.push(String(url));
+      return Promise.resolve(new Response('{}', { status: 500 }));
+    }) as typeof fetch;
+    const scheduler = startScheduler(
+      deps({ meetings: { fetch: fetchImpl }, setTimer: () => ({}), clearTimer: () => undefined }),
+    );
+    await scheduler.started;
+    expect(await scheduler.runOnce('meetings.sync')).toEqual({ changed: 0 });
+    expect(calls).toEqual([]);
+    scheduler.stop();
   });
 
   it('sweeps attachments hourly, not at boot (D-150, LAI-1300)', () => {
