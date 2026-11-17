@@ -16,6 +16,8 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
+import { deflateSync } from 'node:zlib';
+import type { Page } from 'playwright';
 import {
   closeBrowser,
   defaultPermissions,
@@ -24,6 +26,7 @@ import {
   open,
   refuse,
   reply,
+  setTheme,
   until,
   watchFor,
   type ApiStub,
@@ -937,51 +940,150 @@ void describe('readers who may not change the space never see a control', () => 
   });
 });
 
-void describe('the icon (D-152, LAI-1311)', () => {
-  /** A 1×1 PNG, real bytes, for the image the mark draws. */
-  const PNG = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-    'base64',
-  );
+void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
+  /**
+   * A real PNG, `width` × `height`, every pixel `pixel(x, y)` — written here
+   * so a test can pick an image larger than the frame without a fixture file.
+   */
+  function png(
+    width: number,
+    height: number,
+    pixel: (x: number, y: number) => readonly [number, number, number, number],
+  ): Buffer {
+    const table = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+    const crc = (bytes: Buffer): number => {
+      let c = 0xffffffff;
+      for (const b of bytes) c = (table[(c ^ b) & 0xff] ?? 0) ^ (c >>> 8);
+      return (c ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type: string, data: Buffer): Buffer => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(data.length, 0);
+      head.write(type, 4, 'ascii');
+      const tail = Buffer.alloc(4);
+      tail.writeUInt32BE(crc(Buffer.concat([head.subarray(4), data])), 0);
+      return Buffer.concat([head, data, tail]);
+    };
+    const raw = Buffer.alloc((width * 4 + 1) * height);
+    for (let y = 0; y < height; y += 1) {
+      raw[y * (width * 4 + 1)] = 0;
+      for (let x = 0; x < width; x += 1) {
+        const at = y * (width * 4 + 1) + 1 + x * 4;
+        const [r, g, b, a] = pixel(x, y);
+        raw[at] = r;
+        raw[at + 1] = g;
+        raw[at + 2] = b;
+        raw[at + 3] = a;
+      }
+    }
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0);
+    ihdr.writeUInt32BE(height, 4);
+    ihdr.writeUInt8(8, 8);
+    ihdr.writeUInt8(6, 9);
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', deflateSync(raw)),
+      chunk('IEND', Buffer.alloc(0)),
+    ]);
+  }
 
-  /** The space, answering `PATCH`'s `icon_emoji` and `DELETE /icon` as the server does. */
+  /** 800 × 400, red on the left half and blue on the right — wider than the frame. */
+  const WIDE = png(800, 400, (x) => (x < 400 ? [220, 30, 30, 255] : [30, 60, 220, 255]));
+  const ID = '01M7NB3PN15NBHEPSNB8VPBTZJ';
+  const IMAGE = { url: `/api/v1/projects/${SLUG}/icon?v=9`, updated_at: 9 };
+
+  /**
+   * The space as the server answers it: `PATCH`'s `icon_emoji`, `DELETE
+   * /icon`, the ask and the complete. `served` says what the server holds, so
+   * a test can show nothing changed there until Save.
+   */
   function iconStub(
     me: Record<string, unknown>,
     attachments: { max_bytes: number } | null,
-    extra: ApiStub = {},
-  ): { stub: ApiStub; current: () => Record<string, unknown> } {
+  ): { stub: ApiStub; served: () => Record<string, unknown> } {
     let current: Record<string, unknown> = { ...PROJECT, icon: null };
     const base = stub(me);
     return {
-      current: () => current,
+      served: () => current,
       stub: {
         ...base,
         '/api/v1/org': { ...(base['/api/v1/org'] as object), attachments },
         [`/api/v1/projects/${SLUG}`]: (call: StubCall) => {
           if (call.method === 'PATCH') {
-            const body = call.body as { icon_emoji?: string | null };
-            if (body.icon_emoji !== undefined) {
-              current = {
-                ...current,
-                icon: body.icon_emoji === null ? null : { emoji: body.icon_emoji },
-              };
+            const body = call.body as Record<string, unknown>;
+            current = { ...current, ...body };
+            if ('icon_emoji' in body) {
+              const emoji = body.icon_emoji as string | null;
+              current = { ...current, icon: emoji === null ? null : { emoji } };
+              delete current.icon_emoji;
             }
           }
           return current;
         },
         [`/api/v1/projects/${SLUG}/icon`]: (call: StubCall) => {
-          if (call.method === 'DELETE') current = { ...current, icon: null };
+          if (call.method === 'DELETE') {
+            current = { ...current, icon: null };
+            return current;
+          }
+          // A mark reading the saved image: these tests are about what was sent.
+          if (call.method === 'GET') return refuse(404, 'not_found', 'No image in this stub');
+          return reply(201, {
+            upload_id: ID,
+            upload: {
+              url: `/store/p/p1/icon/${ID}`,
+              method: 'PUT',
+              headers: {
+                'content-type': (call.body as { content_type: string }).content_type,
+                'content-disposition': 'inline',
+              },
+              expires_at: Date.now() + 600_000,
+            },
+            max_bytes: 1_048_576,
+          });
+        },
+        [`/api/v1/projects/${SLUG}/icon/complete`]: () => {
+          current = { ...current, icon: IMAGE };
           return current;
         },
-        ...extra,
       },
     };
   }
 
-  const header = (h: Harness) => h.page.locator('.ss-avatar');
+  /** The store, which the stub API is not: every `PUT` kept, by path. */
+  async function fakeStore(page: Page, puts: Map<string, Buffer>): Promise<void> {
+    await page.route('**/store/**', async (route) => {
+      const request = route.request();
+      if (request.method() === 'PUT') {
+        puts.set(new URL(request.url()).pathname, request.postDataBuffer() ?? Buffer.alloc(0));
+      }
+      await route.fulfill({ status: 200, body: '' });
+    });
+  }
 
-  void test('an owner picks an emoji, and every mark of the space changes; Remove takes it away', async () => {
-    const { stub: answers } = iconStub(ME, null);
+  const header = (h: Harness) => h.page.locator('.ss-avatar');
+  const preview = (h: Harness) => h.page.locator('[data-icon-section] .project-mark').first();
+  const save = (h: Harness) => h.page.getByRole('button', { name: 'Save changes' });
+  const icons = (h: Harness) =>
+    h.calls.filter(
+      (c) => c.path.includes('/icon') || (c.method === 'PATCH' && c.path.endsWith(SLUG)),
+    );
+
+  /** Whether a `beforeunload` now would ask: some listener prevented it. */
+  const leavingAsks = (h: Harness) =>
+    h.page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+
+  void test('an emoji is held until Save changes; Save sends it, and every mark changes', async () => {
+    const { stub: answers, served } = iconStub(ME, null);
     const h = await open(SETTINGS, answers);
     try {
       await settled(h);
@@ -990,115 +1092,267 @@ void describe('the icon (D-152, LAI-1311)', () => {
       // No file store on this board: no Upload, and the help says why.
       assert.equal(await h.page.locator('[data-action="icon-upload"]').count(), 0);
       assert.match(await section.innerText(), /no file store, so images are off/);
-      assert.equal(await header(h).getAttribute('data-mark'), 'letter');
-      // Nothing set yet: nothing to remove.
-      assert.equal(await h.page.locator('[data-action="icon-remove"]').count(), 0);
+      assert.equal(await save(h).isDisabled(), true);
+      assert.equal(await leavingAsks(h), false);
 
       await h.page.locator('[data-action="icon-emoji"]').click();
       await h.page.locator('[data-emoji="🚀"]').click();
+      // Held: the preview shows it, Save is on, and nothing has gone to the server.
+      await until(async () => (await preview(h).getAttribute('data-glyph')) === '🚀');
+      assert.equal(await h.page.locator('[data-icon-held]').count(), 1);
+      assert.equal(await save(h).isDisabled(), false);
+      assert.deepEqual(icons(h), []);
+      assert.equal(served().icon, null);
+      // The page's other marks still show what is saved.
+      assert.equal(await header(h).getAttribute('data-mark'), 'letter');
+      assert.equal(await leavingAsks(h), true);
+
+      await save(h).click();
       await until(() => h.calls.some((c) => c.method === 'PATCH'));
       assert.deepEqual(h.calls.find((c) => c.method === 'PATCH')?.body, { icon_emoji: '🚀' });
-      // The page header and the preview both read the remembered look.
-      await until(async () => (await header(h).getAttribute('data-mark')) === 'emoji');
-      assert.equal(await header(h).getAttribute('data-glyph'), '🚀');
-      assert.equal(
-        (await section.locator('.project-mark').first().getAttribute('aria-label')) ?? '',
-        'Laika',
-      );
-      assert.equal(await h.page.locator('[data-emoji="🚀"]').getAttribute('aria-pressed'), 'true');
+      await until(async () => (await header(h).getAttribute('data-glyph')) === '🚀');
+      assert.equal(await h.page.locator('[data-icon-held]').count(), 0);
+      assert.equal(await save(h).isDisabled(), true);
+      assert.equal(await leavingAsks(h), false);
 
-      // Anything but one emoji is held back before it is sent.
-      const typed = h.page.locator('[data-emoji-input]');
-      await typed.fill('ab');
-      assert.equal(await typed.getAttribute('aria-invalid'), 'true');
-      assert.equal(await h.page.locator('[data-action="icon-emoji-use"]').isDisabled(), true);
-      await typed.fill('🎯');
-      await h.page.locator('[data-action="icon-emoji-use"]').click();
-      await until(async () => (await header(h).getAttribute('data-glyph')) === '🎯');
-      const patches = h.calls.filter((c) => c.method === 'PATCH').map((c) => c.body);
-      assert.deepEqual(patches, [{ icon_emoji: '🚀' }, { icon_emoji: '🎯' }]);
-
+      // Remove is held the same way, and sent as DELETE on Save.
       await h.page.locator('[data-action="icon-remove"]').click();
-      await until(async () => (await header(h).getAttribute('data-mark')) === 'letter');
-      assert.equal(await header(h).getAttribute('data-glyph'), 'L');
-      assert.ok(h.calls.some((c) => c.method === 'DELETE' && c.path.endsWith('/icon')));
+      await until(async () => (await preview(h).getAttribute('data-mark')) === 'letter');
+      assert.equal(h.calls.filter((c) => c.method === 'DELETE').length, 0);
+      await save(h).click();
+      await until(() => h.calls.some((c) => c.method === 'DELETE' && c.path.endsWith('/icon')));
+      await until(async () => (await header(h).getAttribute('data-glyph')) === 'L');
     } finally {
       await h.close();
     }
   });
 
-  void test('with a file store, Upload asks, puts the bytes and completes, and the image shows', async () => {
-    const ID = '01M7NB3PN15NBHEPSNB8VPBTZJ';
-    const image = { url: `/api/v1/projects/${SLUG}/icon?v=9`, updated_at: 9 };
-    const { stub: answers } = iconStub(
-      ME,
-      { max_bytes: 26_214_400 },
-      {
-        [`/api/v1/projects/${SLUG}/icon`]: (call: StubCall) =>
-          call.method === 'POST'
-            ? reply(201, {
-                upload_id: ID,
-                upload: {
-                  url: `/store/p/p1/icon/${ID}`,
-                  method: 'PUT',
-                  headers: { 'content-type': 'image/png', 'content-disposition': 'inline' },
-                  expires_at: Date.now() + 600_000,
-                },
-                max_bytes: 1_048_576,
-              })
-            : { ...PROJECT, icon: null },
-        [`/api/v1/projects/${SLUG}/icon/complete`]: { ...PROJECT, icon: image },
-      },
-    );
-    const puts: string[] = [];
+  void test('Discard drops a held icon: nothing is sent, and leaving no longer asks', async () => {
+    const { stub: answers } = iconStub(ME, null);
+    const h = await open(SETTINGS, answers);
+    try {
+      await settled(h);
+      await h.page.locator('[data-action="icon-emoji"]').click();
+      await h.page.locator('[data-emoji="🎯"]').click();
+      await until(async () => (await save(h).isDisabled()) === false);
+      assert.equal(await leavingAsks(h), true);
+
+      await h.page.getByRole('button', { name: 'Discard' }).click();
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 0);
+      assert.equal(await preview(h).getAttribute('data-mark'), 'letter');
+      assert.equal(await save(h).isDisabled(), true);
+      assert.equal(await leavingAsks(h), false);
+      assert.deepEqual(icons(h), []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an image is framed, staged at once, completed only on Save — square, its corner the chosen background', async () => {
+    const { stub: answers, served } = iconStub(ME, { max_bytes: 26_214_400 });
+    const puts = new Map<string, Buffer>();
     const h = await open(SETTINGS, answers, {
-      before: async (page) => {
-        // The store and the image's bytes are not the stub API's to answer.
-        await page.route('**/store/**', async (route) => {
-          puts.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
-          await route.fulfill({ status: 200, body: '' });
-        });
-        await page.route(`**/api/v1/projects/${SLUG}/icon?v=9`, (route) =>
-          route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
-        );
-      },
+      before: (page) => fakeStore(page, puts),
     });
     try {
       await settled(h);
       await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
 
-      // An SVG is refused before anything is sent.
+      // An SVG is refused before any editor or request.
       await h.page.locator('[data-icon-file]').setInputFiles({
         name: 'logo.svg',
         mimeType: 'image/svg+xml',
         buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
       });
       await until(async () => (await h.page.locator('[data-icon-error]').count()) === 1);
-      assert.match(await h.page.locator('[data-icon-error]').innerText(), /PNG, JPEG or WebP/);
-      assert.equal(h.calls.filter((c) => c.path.includes('/icon')).length, 0);
+      assert.equal(await h.page.locator('[data-frame]').count(), 0);
 
       await h.page.locator('[data-icon-file]').setInputFiles({
         name: 'logo.png',
         mimeType: 'image/png',
-        buffer: PNG,
+        buffer: WIDE,
       });
-      await until(() => h.calls.some((c) => c.path.endsWith('/icon/complete')));
-      const ask = h.calls.find((c) => c.method === 'POST' && c.path.endsWith('/icon'));
-      assert.deepEqual(ask?.body, { content_type: 'image/png', size_bytes: PNG.length });
-      assert.deepEqual(puts, [`PUT /store/p/p1/icon/${ID}`]);
-      assert.deepEqual(h.calls.find((c) => c.path.endsWith('/icon/complete'))?.body, {
-        upload_id: ID,
-        content_type: 'image/png',
-        size_bytes: PNG.length,
-      });
-      await until(async () => (await header(h).getAttribute('data-mark')) === 'image');
-      assert.equal(await header(h).locator('img').getAttribute('src'), image.url);
+      const frame = h.page.locator('[data-frame]');
+      await frame.waitFor({ timeout: 5_000 });
       await until(
-        async () =>
-          (await header(h)
-            .locator('img')
-            .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)) === true,
+        async () => (await h.page.locator('[data-action="frame-use"]').isDisabled()) === false,
       );
+
+      // Zoom with the slider, then drag down and right with the pointer.
+      await h.page.locator('[data-frame-zoom]').fill('1.5');
+      await until(async () => (await frame.getAttribute('data-zoom')) === '1.50');
+      const box = await frame.boundingBox();
+      assert.ok(box !== null);
+      await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await h.page.mouse.down();
+      await h.page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 30, {
+        steps: 5,
+      });
+      await h.page.mouse.up();
+      assert.equal(await frame.getAttribute('data-x'), '20.0');
+      assert.equal(await frame.getAttribute('data-y'), '30.0');
+
+      await h.page.locator('[data-frame-background="black"]').click();
+      await h.page.locator('[data-action="frame-use"]').click();
+
+      // Staged: asked and put, previewed and held — never completed.
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1);
+      assert.equal(await h.page.locator('[data-frame]').count(), 0);
+      const ask = h.calls.find((c) => c.method === 'POST' && c.path.endsWith('/icon'));
+      assert.ok(ask !== undefined, 'nothing was asked for');
+      assert.equal(puts.size, 1);
+      assert.equal(
+        h.calls.some((c) => c.path.endsWith('/icon/complete')),
+        false,
+      );
+      assert.equal(served().icon, null, 'the icon changed before Save');
+      assert.equal(await preview(h).getAttribute('data-mark'), 'image');
+      assert.match((await preview(h).locator('img').getAttribute('src')) ?? '', /^data:image\//);
+
+      await save(h).click();
+      await until(() => h.calls.some((c) => c.path.endsWith('/icon/complete')));
+      const complete = h.calls.find((c) => c.path.endsWith('/icon/complete'));
+      const stored = puts.get(`/store/p/p1/icon/${ID}`);
+      assert.ok(stored !== undefined);
+      assert.deepEqual(complete?.body, {
+        upload_id: ID,
+        content_type: (ask.body as { content_type: string }).content_type,
+        size_bytes: stored.length,
+      });
+      assert.deepEqual(served().icon, IMAGE);
+
+      // What went to the store is a square, its top-left corner the black background.
+      const read = await h.page.evaluate(async (b64) => {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const bitmap = await createImageBitmap(new Blob([bytes]));
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext('2d');
+        if (ctx === null) return null;
+        ctx.drawImage(bitmap, 0, 0);
+        return {
+          width: bitmap.width,
+          height: bitmap.height,
+          corner: [...ctx.getImageData(0, 0, 1, 1).data],
+        };
+      }, stored.toString('base64'));
+      assert.ok(read !== null);
+      assert.equal(read.width, read.height, 'the stored icon is not square');
+      assert.ok(read.width <= 512);
+      assert.deepEqual(read.corner, [0, 0, 0, 255]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the frame works from the keyboard alone: arrows, +, the background, Use this', async () => {
+    const { stub: answers } = iconStub(ME, { max_bytes: 26_214_400 });
+    const puts = new Map<string, Buffer>();
+    const h = await open(SETTINGS, answers, { before: (page) => fakeStore(page, puts) });
+    try {
+      await settled(h);
+      await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-icon-file]').setInputFiles({
+        name: 'logo.png',
+        mimeType: 'image/png',
+        buffer: WIDE,
+      });
+      const frame = h.page.locator('[data-frame]');
+      await frame.waitFor({ timeout: 5_000 });
+      await until(
+        async () => (await h.page.locator('[data-action="frame-use"]').isDisabled()) === false,
+      );
+
+      // Into the frame by Tab, as a keyboard user reaches it.
+      for (
+        let i = 0;
+        i < 6 && !(await frame.evaluate((el) => el === document.activeElement));
+        i += 1
+      ) {
+        await h.page.keyboard.press('Tab');
+      }
+      assert.equal(await frame.evaluate((el) => el === document.activeElement), true);
+      for (const key of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown', '+', '+']) {
+        await h.page.keyboard.press(key);
+      }
+      assert.equal(await frame.getAttribute('data-zoom'), '1.20');
+      // Three steps right and one down at zoom 1, scaled ×1.2 by the two zooms.
+      assert.equal(await frame.getAttribute('data-x'), '14.4');
+      assert.equal(await frame.getAttribute('data-y'), '4.8');
+      // Focus is drawn, not just held.
+      assert.notEqual(
+        await frame.evaluate((el) => getComputedStyle(el).outlineStyle),
+        'none',
+        'the frame shows no focus',
+      );
+
+      await h.page.keyboard.press('0');
+      assert.equal(await frame.getAttribute('data-zoom'), '1.00');
+
+      // The background radio group, then Use this — by keys only.
+      await h.page.locator('[data-frame-background="transparent"]').focus();
+      await h.page.keyboard.press('ArrowRight');
+      assert.equal(
+        await h.page.locator('[data-frame-background="white"]').getAttribute('aria-checked'),
+        'true',
+      );
+      await h.page.locator('[data-action="frame-use"]').focus();
+      await h.page.keyboard.press('Enter');
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1);
+      assert.equal(puts.size, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Cancel in the frame leaves the icon as it was, with nothing sent', async () => {
+    const { stub: answers } = iconStub(ME, { max_bytes: 26_214_400 });
+    const puts = new Map<string, Buffer>();
+    const h = await open(SETTINGS, answers, { before: (page) => fakeStore(page, puts) });
+    try {
+      await settled(h);
+      await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-icon-file]').setInputFiles({
+        name: 'logo.png',
+        mimeType: 'image/png',
+        buffer: WIDE,
+      });
+      await h.page.locator('[data-frame]').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-action="frame-cancel"]').click();
+      await until(async () => (await h.page.locator('[data-frame]').count()) === 0);
+      assert.equal(await h.page.locator('[data-icon-held]').count(), 0);
+      assert.equal(await save(h).isDisabled(), true);
+      assert.deepEqual(icons(h), []);
+      assert.equal(puts.size, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a black-square logo is measured once it loads, and ringed in the dark themes only', async () => {
+    // The owner's logo: a white figure on a black square — its edge is the dark page's colour.
+    const blackSquare = png(96, 96, (x, y) =>
+      Math.abs(x - 48) < 20 && Math.abs(y - 48) < 30 ? [255, 255, 255, 255] : [0, 0, 0, 255],
+    );
+    const saved = { ...PROJECT, icon: IMAGE };
+    const h = await open(
+      SETTINGS,
+      { ...stub(ME), [`/api/v1/projects/${SLUG}`]: saved },
+      {
+        before: async (page) => {
+          await page.route(`**/api/v1/projects/${SLUG}/icon?v=9`, (route) =>
+            route.fulfill({ status: 200, contentType: 'image/png', body: blackSquare }),
+          );
+        },
+      },
+    );
+    try {
+      await settled(h);
+      await until(async () => (await header(h).getAttribute('data-plate')) === 'ring-in-dark');
+      const outline = () => header(h).evaluate((el) => getComputedStyle(el).outlineStyle);
+      await setTheme(h.page, 'dark');
+      assert.equal(await outline(), 'solid', 'no ring on a dark theme');
+      await setTheme(h.page, 'light');
+      assert.equal(await outline(), 'none', 'a ring on the light theme, which needs none');
     } finally {
       await h.close();
     }

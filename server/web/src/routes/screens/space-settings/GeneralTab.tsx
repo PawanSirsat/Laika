@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { completeProjectIcon, removeProjectIcon } from '../../../api/project-icons.ts';
 import type { Project } from '../../../api/projects.ts';
 import { settingsFieldErrors, updateSpace } from '../../../api/space-settings.ts';
 import { Button } from '../../../components/forms/Button.tsx';
@@ -12,11 +13,12 @@ import {
   colorLabel,
   draftOf,
   generalIssues,
-  generalPatch,
+  type HeldIcon,
   isDirty,
   keyChange,
   nextTaskKey,
   repoFromPaste,
+  savePatch,
   type GeneralDraft,
 } from './space-settings-model.ts';
 import { IconSection } from './IconSection.tsx';
@@ -42,7 +44,10 @@ export interface GeneralTabProps {
 
 /**
  * Name, key, description, colour, icon and repository (D-103 items 3 and 4,
- * D-152). The icon saves on its own, at once (`IconSection`).
+ * D-152). **The icon is held until Save changes too** (LAI-1321): picking an
+ * image, an emoji or Remove makes the form dirty, and Save sends it — an
+ * emoji in the same `PATCH` as the fields, an image completed and a removal
+ * sent after it. Discard drops it.
  *
  * **A form with Save, not instant saves**: a key change re-keys every new
  * task, and a half-typed name should not land on everybody's sidebar. The
@@ -69,6 +74,8 @@ export function GeneralTab({
   onDirtyChange,
 }: GeneralTabProps) {
   const [draft, setDraft] = useState<GeneralDraft>(() => draftOf(project));
+  /** An icon change waiting for Save changes (LAI-1321). */
+  const [heldIcon, setHeldIcon] = useState<HeldIcon | null>(null);
   const status = useSaveStatus();
   const saving = status.state.kind === 'saving';
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
@@ -92,7 +99,8 @@ export function GeneralTab({
     setDraft(draftOf(project));
   }, [project]);
 
-  const dirty = mayEdit && isDirty(project, draft);
+  const showsIcon = mayEdit && mayChangeIcon;
+  const dirty = (mayEdit && isDirty(project, draft)) || heldIcon !== null;
   const issues = mayEdit ? generalIssues(draft) : {};
   const issueCount = Object.keys(issues).length;
   /** The server's refusal for a field, else the rule it breaks once it has been left. */
@@ -142,6 +150,21 @@ export function GeneralTab({
     status.reset();
   };
 
+  /**
+   * Save changes, in order: the fields — and a held emoji — in one `PATCH`,
+   * then a held image completed or a held removal sent. Each answers the space
+   * as it stands; the last one is what the page renders from. A refusal stops
+   * there, so nothing after it is sent and the held icon stays held.
+   */
+  const send = async (held: HeldIcon | null): Promise<Project> => {
+    let saved = project;
+    const patch = savePatch(project, draft, mayEdit, held);
+    if (Object.keys(patch).length > 0) saved = await updateSpace(project.slug, patch);
+    if (held?.kind === 'image') saved = await completeProjectIcon(project.slug, held.staged);
+    if (held?.kind === 'remove') saved = await removeProjectIcon(project.slug);
+    return saved;
+  };
+
   // The whole save — its answer handled too — is what Retry runs again.
   const save = (): void => {
     if (issueCount > 0) {
@@ -149,22 +172,28 @@ export function GeneralTab({
       setFocusInvalid((n) => n + 1);
       return;
     }
-    const patch = generalPatch(project, draft);
+    const held = heldIcon;
     status
       .run(() => {
         setErrors({});
         setFailure(undefined);
-        return updateSpace(project.slug, patch).then(onSaved, (cause: unknown) => {
-          const byField = settingsFieldErrors(cause);
-          setErrors(byField);
-          // Once the refusal has marked its field, take the focus there (LAI-1204):
-          // the Save button that was pressed sits below the problem, out of sight.
-          setFocusInvalid((n) => n + 1);
-          if (Object.keys(byField).length === 0) {
-            setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
-          }
-          throw cause;
-        });
+        return send(held).then(
+          (saved) => {
+            setHeldIcon(null);
+            onSaved(saved);
+          },
+          (cause: unknown) => {
+            const byField = settingsFieldErrors(cause);
+            setErrors(byField);
+            // Once the refusal has marked its field, take the focus there (LAI-1204):
+            // the Save button that was pressed sits below the problem, out of sight.
+            setFocusInvalid((n) => n + 1);
+            if (Object.keys(byField).length === 0) {
+              setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
+            }
+            throw cause;
+          },
+        );
       })
       .catch(() => {
         // Said under the field it names, or above Save, and by the status.
@@ -299,7 +328,19 @@ export function GeneralTab({
           )}
         </Row>
 
-        {mayChangeIcon && <IconSection project={project} />}
+        {showsIcon && (
+          <IconSection
+            project={project}
+            held={heldIcon}
+            saving={saving}
+            onHold={(held) => {
+              setHeldIcon(held);
+              setFailure(undefined);
+              // *Saved* was about the icon before this change.
+              status.reset();
+            }}
+          />
+        )}
 
         {mayEdit ? (
           <TextInput
@@ -360,6 +401,7 @@ export function GeneralTab({
             disabled={!dirty || saving}
             onClick={() => {
               setDraft(draftOf(project));
+              setHeldIcon(null);
               setErrors({});
               setFailure(undefined);
               setTouched(new Set());

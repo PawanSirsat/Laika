@@ -395,6 +395,125 @@
   }
 }
 
+/* A held icon change (LAI-1321): said beside the preview until Save changes. */
+.ss-icon-held {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+}
+
+/* ---- the frame editor (LAI-1321): the square, its controls, the previews */
+
+.ss-frame {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.ss-frame-work {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.ss-frame-box {
+  position: relative;
+  /* `FRAME_PX` exactly: a drag moves the image by the pixels the pointer moved. */
+  width: 15rem;
+  height: 15rem;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+/* Transparent shows as the familiar checks, so "nothing here" reads as nothing. */
+.ss-frame-box[data-background='transparent'] {
+  background: repeating-conic-gradient(var(--bg-column) 0 25%, var(--bg-card) 0 50%) 50% / 1rem 1rem;
+}
+
+.ss-frame-box:active {
+  cursor: grabbing;
+}
+
+.ss-frame-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.ss-frame-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ss-frame-controls {
+  display: grid;
+  flex: 1 1 14rem;
+  gap: var(--space-2);
+  align-content: start;
+  justify-items: start;
+}
+
+.ss-frame-zoom {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.ss-frame-backgrounds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+
+.ss-frame-bg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.ss-frame-bg-on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ss-frame-bg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ss-frame-bg-swatch {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: repeating-conic-gradient(var(--bg-column) 0 25%, var(--bg-card) 0 50%) 50% / 0.5rem
+    0.5rem;
+}
+
+.ss-frame-previews {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ss-frame-preview canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* ---- footer bar */
 
 .ss-card-foot {
