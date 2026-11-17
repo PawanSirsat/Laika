@@ -5,8 +5,9 @@ area: server+web+docs
 assignee: shell
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T15:30:00Z
+finished: 2026-11-17T17:10:00Z
 ---
 
 ## Goal
@@ -49,26 +50,27 @@ ships the Microsoft provider.
   A deactivated account is refused a session.
 - **First boot in SSO mode** asks for no password: it creates the owner by
   email, and the owner signs in with Microsoft.
-- **Public**: `GET /api/v1/setup/status` says `sign_in: 'password' | 'microsoft'`
+- **Public**: `GET /api/v1/setup/status` says `sign_in: 'email' | 'microsoft'`
+  (not `'password'`: `setup.test.ts` keeps that word out of this public body)
   so the SPA draws the right screen before anyone is signed in.
 
 ## Acceptance criteria
 
-- [ ] Env: the three variables parse to one config; partial sets and a
+- [x] Env: the three variables parse to one config; partial sets and a
       multi-tenant tenant id refuse to start with a message naming the variable.
-- [ ] SSO mode: `/sign-in/email`, `/sign-up/email`, `POST /invites/accept`,
+- [x] SSO mode: `/sign-in/email`, `/sign-up/email`, `POST /invites/accept`,
       `POST /users/:id/reset-link` and `POST /password-resets/consume` refuse
       with `sso_only`; password mode unchanged.
-- [ ] A Microsoft sign-in for an existing email signs that person in; for a new
+- [x] A Microsoft sign-in for an existing email signs that person in; for a new
       email it is refused unless an unspent, unexpired invite for that address
       exists, and that invite is then spent with its role applied; an `owner`
       invite is never spent; a deactivated account gets no session.
-- [ ] First boot in SSO mode creates org and owner without a password.
-- [ ] `GET /setup/status` reports the sign-in method; the web client mirrors it.
-- [ ] Web: sign-in, invite and first-boot screens show *Sign in with Microsoft*
+- [x] First boot in SSO mode creates org and owner without a password.
+- [x] `GET /setup/status` reports the sign-in method; the web client mirrors it.
+- [x] Web: sign-in, invite and first-boot screens show *Sign in with Microsoft*
       in SSO mode and no password fields; an error returned from the callback
       is shown in words.
-- [ ] Tests for each of the above; typecheck, lint, format and the affected
+- [x] Tests for each of the above; typecheck, lint, format and the affected
       server and web suites exit 0.
 
 ## Proposed decision (for Belka to record in docs/DECISIONS.md)
@@ -83,3 +85,24 @@ ships the Microsoft provider.
 > endpoints are refused. Unsetting the variables restores passwords — that is
 > the recovery path, on purpose. SAML, SCIM and other providers remain
 > non-goals.
+
+## Named crossing (D-033/D-034)
+
+**SPEC §11.7 only: three rows**, `LAIKA_MICROSOFT_CLIENT_ID`, `_CLIENT_SECRET`
+and `_TENANT_ID`. `env-contract.test.ts` requires every variable the server
+reads to be documented there, so the server half cannot be green without
+them. Nothing else under `docs/` was touched: §1.1's non-goal line, §6.1's
+"two credentials" text and the decision itself are Belka's, proposed above.
+
+## Operator setup (for docs/OPERATIONS.md, Belka's)
+
+1. Entra admin centre → App registrations → New registration. Single tenant
+   ("Accounts in this organizational directory only").
+2. Redirect URI (Web): `LAIKA_PUBLIC_URL` + `/api/v1/auth/callback/microsoft`.
+3. Certificates & secrets → New client secret.
+4. Set `LAIKA_MICROSOFT_CLIENT_ID` (Application ID), `LAIKA_MICROSOFT_TENANT_ID`
+   (Directory ID) and `LAIKA_MICROSOFT_CLIENT_SECRET`, restart.
+5. Existing people sign in with Microsoft using the same email as their Laika
+   account; new people need an invite to their work address.
+6. Recovery: unset the three variables and restart — passwords work again for
+   accounts that have one.
