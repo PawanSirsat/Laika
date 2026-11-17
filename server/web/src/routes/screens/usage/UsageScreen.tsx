@@ -22,6 +22,7 @@ import {
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { UsageCard } from '../profile/UsageCard.tsx';
 import { AlertsCard } from './AlertsCard.tsx';
@@ -253,7 +254,12 @@ export function UsageScreen({
               className="usage-dropdown"
               aria-label="Space"
               value={scope ?? ''}
-              options={options}
+              // A space's value is its slug; All spaces ('') has no mark.
+              options={options.map((o) =>
+                o.value === ''
+                  ? o
+                  : { ...o, icon: <ProjectMark project={{ slug: o.value, name: o.label }} /> },
+              )}
               onChange={(value) => {
                 onProject(value);
               }}

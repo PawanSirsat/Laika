@@ -4,6 +4,7 @@ import { Button } from '../../../components/forms/Button.tsx';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import {
   createInvite,
   INVITE_EXPIRY_DAYS,
@@ -215,7 +216,11 @@ export function InviteDialog({
                     onChange={setSpace}
                     options={[
                       { value: '', label: 'No space' },
-                      ...projects.map((p) => ({ value: p.id, label: p.name })),
+                      ...projects.map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                        icon: <ProjectMark project={p} size="sm" />,
+                      })),
                     ]}
                   />
                   {space !== '' && (

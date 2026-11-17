@@ -27,46 +27,7 @@
   white-space: nowrap;
 }
 
-.ct-space-mark {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 1.125rem;
-  height: 1.125rem;
-  border-radius: var(--radius-xs);
-  background: var(--space-violet);
-  color: var(--on-space);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  line-height: 1;
-}
-
-/* The palette, by attribute — no style attribute, so nothing for the CSP. */
-.ct-space-mark[data-color='black'] {
-  background: var(--space-black);
-}
-.ct-space-mark[data-color='violet'] {
-  background: var(--space-violet);
-}
-.ct-space-mark[data-color='teal'] {
-  background: var(--space-teal);
-}
-.ct-space-mark[data-color='blue'] {
-  background: var(--space-blue);
-}
-.ct-space-mark[data-color='amber'] {
-  background: var(--space-amber);
-}
-.ct-space-mark[data-color='magenta'] {
-  background: var(--space-magenta);
-}
-.ct-space-mark[data-color='red'] {
-  background: var(--space-red);
-}
-.ct-space-mark[data-color='green'] {
-  background: var(--space-green);
-}
+/* The space's mark is `ProjectMark` (D-152); `.ct-space-mark` stays only as its hook. */
 
 /* The key, as the board's cards write it: mono, quiet, in a pill. */
 .ct-space-key {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ProfileProject } from '../../../../api/profiles.ts';
-import { spaceColor, spaceColorVar } from '../../../../theme/space-color.ts';
+import { ProjectMark } from '../../../../components/ProjectMark.tsx';
 import { hoursText, projectRole, quietLabel, splitProjects } from './overview-derive.ts';
 import { OverviewCard } from './OverviewCard.tsx';
 
@@ -11,13 +11,7 @@ function ProjectRow({ project }: { readonly project: ProfileProject }) {
   return (
     <div role="row" className="ov-project" data-project={project.slug}>
       <span role="rowheader" className="ov-project-name">
-        <span
-          className="ov-letter"
-          style={{ background: spaceColorVar(spaceColor(project)) }}
-          aria-hidden="true"
-        >
-          {project.name.charAt(0).toUpperCase()}
-        </span>
+        <ProjectMark project={{ slug: project.slug, name: project.name }} size="sm" />
         <span className="prof-key">{project.key}</span>
         <span className="ov-project-title" title={project.name}>
           {project.name}

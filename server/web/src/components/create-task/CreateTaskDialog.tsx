@@ -19,12 +19,12 @@ import type {
 } from '../../routes/screens/task/LazyRichEditor.tsx';
 import { useConfirm } from '../ConfirmProvider.tsx';
 import { Dropdown } from '../Dropdown.tsx';
+import { ProjectMark } from '../ProjectMark.tsx';
 import { Field } from '../forms/Field.tsx';
 import { Button } from '../forms/Button.tsx';
 import { IconButton } from '../forms/IconButton.tsx';
 import { InfoHint } from '../tooltip/InfoHint.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
-import { spaceColor } from '../../theme/space-color.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
 import { CreateTaskFields } from './CreateTaskFields.tsx';
 import {
@@ -526,18 +526,12 @@ export function CreateTaskDialog({
                   noun="spaces"
                   value={slug ?? ''}
                   placeholder={spacesLoaded ? 'No space' : 'Finding spaces…'}
-                  // The chosen space as its chip (LAI-1209's): colour, name — cut,
-                  // never wrapped — and key. The list draws the same three.
+                  // The chosen space as its chip (LAI-1209's): its mark (D-152), name —
+                  // cut, never wrapped — and key. The list draws the same three.
                   display={
                     space === undefined ? undefined : (
                       <span className="ct-space-chip" data-space-chip>
-                        <span
-                          className="ct-space-mark"
-                          data-color={spaceColor({ slug: space.slug, color: space.color })}
-                          aria-hidden="true"
-                        >
-                          {(space.name.trim()[0] ?? space.slug[0] ?? '?').toUpperCase()}
-                        </span>
+                        <ProjectMark project={space} className="ct-space-mark" />
                         <span className="ct-space">{space.name}</span>
                         <span className="ct-space-key">{space.key}</span>
                       </span>
@@ -549,15 +543,7 @@ export function CreateTaskDialog({
                     label: s.name,
                     detail: s.key,
                     keywords: `${s.key} ${s.slug}`,
-                    icon: (
-                      <span
-                        className="ct-space-mark"
-                        data-color={spaceColor({ slug: s.slug, color: s.color })}
-                        aria-hidden="true"
-                      >
-                        {(s.name.trim()[0] ?? s.slug[0] ?? '?').toUpperCase()}
-                      </span>
-                    ),
+                    icon: <ProjectMark project={s} className="ct-space-mark" />,
                   }))}
                   onChange={(next) => {
                     if (next === slug) return;

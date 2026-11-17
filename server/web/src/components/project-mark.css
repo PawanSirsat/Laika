@@ -1,0 +1,144 @@
+/*
+ * A space's mark (D-152, LAI-1311): an image, an emoji, or the first letter
+ * on the space's colour. One box per size; what is inside changes, the box
+ * does not, so swapping a letter for an image never moves a line.
+ */
+
+.project-mark {
+  --mark-size: 1.125rem;
+
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.project-mark-xs {
+  --mark-size: 1rem;
+
+  font-size: var(--text-tiny);
+}
+
+.project-mark-sm {
+  --mark-size: 1.125rem;
+
+  font-size: var(--text-small);
+}
+
+.project-mark-md {
+  --mark-size: 1.75rem;
+
+  border-radius: var(--radius-sm);
+  font-size: var(--text-body);
+}
+
+.project-mark-lg {
+  --mark-size: 2.25rem;
+
+  border-radius: var(--radius-card);
+  font-size: var(--text-body);
+}
+
+.project-mark-xl {
+  --mark-size: 3.5rem;
+
+  border-radius: var(--radius-column);
+  font-size: var(--text-heading-md);
+}
+
+.project-mark-2xl {
+  --mark-size: 4rem;
+
+  border-radius: var(--radius-card);
+  font-size: var(--text-heading-lg);
+}
+
+/* The letter or emoji, drawn from `data-glyph`: decoration, never part of the text around it. */
+.project-mark[data-glyph]::before {
+  content: attr(data-glyph);
+}
+
+/* The letter: white on the space's colour in both themes (`space-color.test.ts`). */
+.project-mark-letter {
+  color: var(--on-space);
+  background: var(--space-violet);
+}
+
+.project-mark-letter[data-color='black'] {
+  background: var(--space-black);
+}
+.project-mark-letter[data-color='violet'] {
+  background: var(--space-violet);
+}
+.project-mark-letter[data-color='teal'] {
+  background: var(--space-teal);
+}
+.project-mark-letter[data-color='blue'] {
+  background: var(--space-blue);
+}
+.project-mark-letter[data-color='amber'] {
+  background: var(--space-amber);
+}
+.project-mark-letter[data-color='magenta'] {
+  background: var(--space-magenta);
+}
+.project-mark-letter[data-color='red'] {
+  background: var(--space-red);
+}
+.project-mark-letter[data-color='green'] {
+  background: var(--space-green);
+}
+
+/* The emoji: on a wash of the space's colour, so it reads as the same tile a letter does. */
+.project-mark-emoji {
+  --mark-wash: var(--space-violet);
+
+  background: color-mix(in srgb, var(--mark-wash) 18%, transparent);
+  font-size: calc(var(--mark-size) * 0.7);
+  font-weight: normal;
+}
+
+.project-mark-emoji[data-color='black'] {
+  --mark-wash: var(--space-black);
+}
+.project-mark-emoji[data-color='violet'] {
+  --mark-wash: var(--space-violet);
+}
+.project-mark-emoji[data-color='teal'] {
+  --mark-wash: var(--space-teal);
+}
+.project-mark-emoji[data-color='blue'] {
+  --mark-wash: var(--space-blue);
+}
+.project-mark-emoji[data-color='amber'] {
+  --mark-wash: var(--space-amber);
+}
+.project-mark-emoji[data-color='magenta'] {
+  --mark-wash: var(--space-magenta);
+}
+.project-mark-emoji[data-color='red'] {
+  --mark-wash: var(--space-red);
+}
+.project-mark-emoji[data-color='green'] {
+  --mark-wash: var(--space-green);
+}
+
+/* The image: cover the box, on the card's surface for a transparent logo. */
+.project-mark-image {
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.project-mark-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

@@ -125,6 +125,17 @@ void describe('the rows', () => {
     );
   });
 
+  void test('a review or budget row names its space for the mark; others name none (D-152)', () => {
+    const rows = buildNotifications(
+      { review: [review('1', 10)], alerts: [alert('a1', 50)], unlisted: [note('n1', 30)] },
+      0,
+    );
+    const space = { slug: 'core', name: 'Laika Core' };
+    assert.deepEqual(rows.find((r) => r.kind === 'review')?.space, space);
+    assert.deepEqual(rows.find((r) => r.kind === 'budget')?.space, space);
+    assert.equal(rows.find((r) => r.kind === 'unlisted')?.space, undefined);
+  });
+
   void test('a notice leads to its space or card; a revoked tool to Developer access', () => {
     assert.equal(noticeHref(notice('x', 1, false)), '/board?project=core');
     assert.equal(

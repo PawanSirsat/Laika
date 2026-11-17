@@ -41,6 +41,7 @@ const project = (
   task_create_min_role: 'member',
   agents_allowed: true,
   former_prefixes: [],
+  icon: null,
   archived_at: null,
   created_at: 1,
   updated_at: 1,

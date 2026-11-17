@@ -11,6 +11,7 @@ import {
   type RepoTool,
 } from './repo-groups.ts';
 import './repo-rows.css';
+import { ProjectMark } from '../../../../components/ProjectMark.tsx';
 import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 
 const SETUP_ICON: Readonly<Record<SetupChipKey, DxIconName>> = {
@@ -42,6 +43,11 @@ export function RepoRows({ groups, projectName, toolAction }: RepoRowsProps) {
     const title = repoTitle(group, name);
     const meta = repoMeta(group, name);
     const chip = SETUP_CHIPS[group.chip];
+    const heading = (
+      <Tooltip content={title}>
+        <strong className="dx-record-title">{title}</strong>
+      </Tooltip>
+    );
     return (
       <li
         key={group.key}
@@ -54,9 +60,15 @@ export function RepoRows({ groups, projectName, toolAction }: RepoRowsProps) {
             <DxIcon name={SETUP_ICON[group.chip]} />
           </span>
           <div className="dx-record-main">
-            <Tooltip content={title}>
-              <strong className="dx-record-title">{title}</strong>
-            </Tooltip>
+            {group.repoLabel === null ? (
+              // A row named for its project draws the project's mark (LAI-1311).
+              <span className="dx-repo-title">
+                <ProjectMark project={{ slug: group.projectSlug, name }} size="sm" />
+                {heading}
+              </span>
+            ) : (
+              heading
+            )}
             <Tooltip content={meta}>
               <span className="dx-record-sub">{meta}</span>
             </Tooltip>

@@ -19,6 +19,7 @@ import { CONTEXT_BELONGS, CONTEXT_EXCLUDED, CONTEXT_PURPOSE } from './context-co
 import type { Member } from '../../../api/tasks.ts';
 import { dateTime } from '../../../api/time-label.ts';
 import './project-context.css';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 export interface ProjectContextPanelProps {
   readonly slug: string;
@@ -256,7 +257,10 @@ export function ProjectContextPanel({
       <header className="ctx-head">
         <div>
           <h2 className="ctx-title">Project context</h2>
-          <p className="ctx-project">{projectName}</p>
+          <p className="ctx-project">
+            <ProjectMark project={{ slug, name: projectName }} size="xs" />
+            {projectName}
+          </p>
         </div>
         <button type="button" className="ctx-close" onClick={close}>
           Close

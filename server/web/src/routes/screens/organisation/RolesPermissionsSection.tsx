@@ -4,6 +4,7 @@ import { projectRoleLabel } from '../../../api/members.ts';
 import type { Project } from '../../../api/projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { GrantsCard } from './GrantsCard.tsx';
 import { ScrollRegion } from './ScrollRegion.tsx';
 import {
@@ -42,6 +43,7 @@ const actions = (n: number): string => `${String(n)} ${n === 1 ? 'action' : 'act
  */
 function HeldGroup({
   title,
+  mark,
   chip,
   names,
   query,
@@ -50,6 +52,8 @@ function HeldGroup({
   dataProject,
 }: {
   readonly title: ReactNode;
+  /** The space's mark, before its name (LAI-1311). */
+  readonly mark?: ReactNode;
   readonly chip?: string | undefined;
   readonly names: readonly string[];
   readonly query: string;
@@ -80,6 +84,7 @@ function HeldGroup({
           {expanded ? '▾' : '▸'}
         </span>
         <span className="perm-project-head">
+          {mark}
           <span className="perm-project-name">{title}</span>
           {chip !== undefined && <span className="org-chip perm-role">{chip}</span>}
         </span>
@@ -380,6 +385,7 @@ export function RolesPermissionsSection({
     )
     .map((project) => ({
       id: project.id,
+      project,
       name: project.name,
       href: `/members?project=${encodeURIComponent(project.slug)}`,
     }));
@@ -475,17 +481,25 @@ export function RolesPermissionsSection({
           <>
             <h3 className="perm-subhead">In your spaces</h3>
             <ul className="perm-projects perm-groups">
-              {me.projects.map((grant) => (
-                <HeldGroup
-                  key={grant.project_id}
-                  className="perm-project"
-                  dataProject={grant.project_id}
-                  title={projectLabel(projects, grant.project_id)}
-                  chip={grant.role === null ? undefined : projectRoleLabel(grant.role)}
-                  names={heldNames(view, grant.actions)}
-                  query={query}
-                />
-              ))}
+              {me.projects.map((grant) => {
+                const project = projects.find((p) => p.id === grant.project_id);
+                return (
+                  <HeldGroup
+                    key={grant.project_id}
+                    className="perm-project"
+                    dataProject={grant.project_id}
+                    title={projectLabel(projects, grant.project_id)}
+                    mark={
+                      project === undefined ? undefined : (
+                        <ProjectMark project={project} size="sm" />
+                      )
+                    }
+                    chip={grant.role === null ? undefined : projectRoleLabel(grant.role)}
+                    names={heldNames(view, grant.actions)}
+                    query={query}
+                  />
+                );
+              })}
             </ul>
           </>
         )}
@@ -561,9 +575,12 @@ export function RolesPermissionsSection({
               {memberLinks.map((link, i) => (
                 <span key={link.id}>
                   {i > 0 && ', '}
-                  <InAppLink to={link.href} onNavigate={onNavigate}>
-                    {link.name}
-                  </InAppLink>
+                  <span className="perm-member-link">
+                    <ProjectMark project={link.project} size="xs" />
+                    <InAppLink to={link.href} onNavigate={onNavigate}>
+                      {link.name}
+                    </InAppLink>
+                  </span>
                 </span>
               ))}
             </p>

@@ -4,6 +4,7 @@ import { formatAgeCompact } from '../../../api/duration.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { Chip } from '../../../components/chip/Chip.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { typingIn } from '../../../components/typing-in.ts';
 import { pageState, toggleOne, togglePage } from '../list/list-select.ts';
@@ -126,11 +127,14 @@ export function ReviewGroups({
                   />
                 )}
               </span>
-              {/* Focusable, not in the Tab order: where focus lands when the
-                  dialog closes on a row that has since left the queue. */}
-              <h3 className="rev-group-title" id={headingId} tabIndex={-1}>
-                {group.project.name}
-              </h3>
+              <span className="rev-group-name">
+                <ProjectMark project={group.project} size="sm" />
+                {/* Focusable, not in the Tab order: where focus lands when the
+                    dialog closes on a row that has since left the queue. */}
+                <h3 className="rev-group-title" id={headingId} tabIndex={-1}>
+                  {group.project.name}
+                </h3>
+              </span>
               <span className="rev-group-count">
                 {group.items.length}
                 <span className="visually-hidden"> waiting</span>
