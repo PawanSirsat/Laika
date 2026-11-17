@@ -275,6 +275,7 @@ be obvious because someone will be asking for it.
 | See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Read own meetings and their transcripts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -3952,6 +3953,61 @@ what the object claims.
 **Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
 these rows and not the files (D-150 item 8).
 
+### 4.93 `meetings`
+
+A Microsoft Teams or Outlook meeting, read through Microsoft Graph by §11.6's
+meetings sync (LAI-1311). **There is no transcript column, and never one**
+(D-005, D-056): a transcript is read from Graph when a participant opens it
+(§6.4), and a review of it keeps only its hash (§4.12).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id` | FK `orgs`, cascade |
+| `graph_event_id` | unique — the calendar event's `iCalUId`, the same in every attendee's calendar and different per occurrence of a series |
+| `online_meeting_id` | nullable — the Teams online meeting, once resolved from its join URL |
+| `title` | ≤ 255 (CHECK) — the event's subject |
+| `organiser_email` | lowercased |
+| `join_url` | nullable — a Teams meeting's join link; set means online |
+| `scheduled_start` | unix ms |
+| `scheduled_end` | unix ms, not before `scheduled_start` (CHECK) |
+| `actual_start` | nullable — the first join in Teams' attendance report |
+| `actual_end` | nullable — the last leave |
+| `has_transcript` | 0/1 (CHECK) — whether Graph lists a transcript for this occurrence; **never its words** |
+| `project_id` | nullable, FK `projects`, set null — the space a participant linked it to, for a review |
+| `synced_at` | the run that last read it |
+| `created_at`, `updated_at` | |
+
+Indexes `(scheduled_start)`, `(org_id)`, `(project_id)`. **Upserted by
+`graph_event_id`, never deleted by the sync**: a meeting that leaves the
+window stays as it was last read. When a run could not read Teams' report,
+the attendance fields stay as they were.
+
+### 4.94 `meeting_attendance`
+
+Who a meeting (§4.93) was for and who came (LAI-1311): one row per address,
+invited from the calendar, joined and left from Teams' attendance report.
+**It is the meeting's visibility**: a person sees a meeting only through a row
+carrying their `user_id` or their address (§6.4).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `meeting_id` | FK `meetings`, cascade |
+| `email` | lowercased; unique with `meeting_id` |
+| `user_id` | nullable, FK `users`, set null — the Laika account with this address |
+| `display_name` | as the calendar or the report named them |
+| `invited` | 0/1 (CHECK) — on the invite; once set, never cleared |
+| `joined_at` | nullable — first join, unix ms |
+| `left_at` | nullable — last leave, unix ms |
+| `minutes` | 0–1440 (CHECK) — time in the meeting over every interval |
+| `time_entry_id` | nullable, FK `time_entries`, set null — the entry the person's own *Add to My day* made; while it is live a second is refused |
+
+Indexes `(user_id)`, `(email)`, `(time_entry_id)`, and the unique
+`(meeting_id, email)`. An address with no account keeps `user_id` null and is
+matched again on each run, so a person invited before they joined Laika sees
+the meeting once they do.
+
 ## 5. Task lifecycle
 
 ```
@@ -4345,6 +4401,11 @@ GET    /api/v1/me/local-activity             ?days=1–14 — what is held for t
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
 GET    /api/v1/me/notices                    ?unread=&limit=&cursor= → { data, next_cursor, unread_count }, newest first   POST .../:id/read  POST .../read-all → 204   (session only; D-134)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
+GET    /api/v1/me/meetings                   ?filter=all|attended|transcript&q=&cursor=&limit=1–200 (100) → { enabled, data: [{ id, title, organiser_email, organiser_name, scheduled_start, scheduled_end, actual_start, actual_end, is_online, join_url, has_transcript, project: { id, slug, name } | null, my_attendance: { invited, joined_at, left_at, minutes, time_entry_id } }], next_cursor }, newest scheduled first — only meetings the caller is on (§4.94)   (meeting.read_own; session only; LAI-1311)
+GET    /api/v1/meetings/:id                  one of them, with attendees [{ email, name, user_id, invited, joined_at, left_at, minutes, is_organiser, is_me }], can_read_transcript, review: { id, status, proposals, created_at, project_slug } | null; a meeting the caller is not on is 404   PATCH  body { project_id | null } — link a space the caller can open (422 unknown_project)   (meeting.read_own; session only)
+GET    /api/v1/meetings/:id/transcript       → { meeting_id, lines: [{ at_ms, speaker, text }] }, read from Graph now and **stored nowhere**; only who joined, or the organiser (403 not_attended); 404 no_transcript; 503 meetings_sync_off, or the Graph code as reason   (meeting.read_own; session only)
+POST   /api/v1/meetings/:id/review           the transcript, read live, into §10.2's review → 201 { review_id, proposals, project_slug }; a linked space (422 no_space), meeting_proposal.apply in it, the same monthly cap (429 monthly_cap) and provider (503 no_provider); source teams:<meeting id>   (session only)
+POST   /api/v1/meetings/:id/log-time         body { tz } — the person's own click: a confirmed `meeting` entry of their attended minutes, titled as the meeting, with X-Undo-Id → 201 the entry; 422 not_attended; 409 already_logged while the last one is live   (time_entries.write_own; session only; D-088)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
 PUT    /api/v1/me/time-drafts                a collector's blocks, each with a work folder's chosen name and branch if sent → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
@@ -4380,6 +4441,7 @@ GET    /api/v1/org/hr                        the HR connection → { status: off
 POST   /api/v1/org/hr/connect                body { base_url, email, password } — signs in once — or { base_url, token, expires_on? } — a pasted token; either way checks the token (who, sees everyone, sees departments), keeps it encrypted, starts the first sync → the connection, or status pending_2fa with two_factor.methods; 422 unprocessable reason clan_login_failed or clan_token_refused, 503 unavailable reason clan_unreachable   (owner, admin; session only)
 POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes a two-factor sign-in → the connection; a wrong code 422 unprocessable reason clan_login_failed; 409 conflict reason two_factor_expired. While pending, GET shows two_factor.methods [] and account_name the email — the methods come only in /connect's answer   (owner, admin; session only)
 POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
+POST   /api/v1/org/sso/meetings-sync         runs §11.6's meetings sync now, or joins the one running → GET /org/sso's body, whose microsoft.meetings_sync is { enabled, every_minutes, permissions, last_run: { at, ok, meetings, error } | null }; 409 conflict reason meetings_sync_off   (org.settings.edit; LAI-1311)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } (1–500) — map a person, or null for not on Laika → the connection; 422 reasons duplicate_person, duplicate_user, unknown_user; 409 conflict reason user_mapped_elsewhere when another owner mapping holds that member (an email match gives way); a remap stamps that person's live leave removed at once   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
@@ -8041,6 +8103,17 @@ One interval-driven scheduler in the same process:
   `system.hr.sync`. **A run never overlaps another** — *Sync now* joins one
   already running. No `activity` row: the connection carries its time, counts
   and last error
+- **meetings sync** (§4.93, §4.94, LAI-1311) — every 15 minutes **and once
+  at boot**, after the directory sync and before the HR sync, while
+  `LAIKA_MICROSOFT_MEETINGS_SYNC` is on: each active member's calendar from 14
+  days back to 7 ahead, and for every online meeting that has ended, Teams'
+  attendance report and whether a transcript exists — **never a transcript's
+  words**. Read in full, then one transaction; upserted by the event's
+  `iCalUId`, never deleted. A missing Graph grant is a code naming it
+  (`graph_forbidden_grant_<permission>`): a calendar refusal changes nothing,
+  an attendance or transcript refusal still writes the calendars. **A run
+  never overlaps another** — *Sync now* joins one already running. No
+  `activity` row: the settings page carries its last run, in memory
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`. **It is the one stale rule, on every screen**
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
@@ -8129,6 +8202,7 @@ compose file or systemd unit.
 | `LAIKA_MICROSOFT_CLIENT_SECRET` | unset | the app's client secret. Redacted from every startup error |
 | `LAIKA_MICROSOFT_TENANT_ID` | unset | **one directory**: the tenant's GUID or one of its verified domains. `common`, `organizations` and `consumers` are a startup failure — each would let accounts from any tenant, or personal accounts, sign in. The app's redirect URI is `LAIKA_PUBLIC_URL` + `/api/v1/auth/callback/microsoft` |
 | `LAIKA_MICROSOFT_DIRECTORY_SYNC` | `false` | `true` adds every **enabled Member** account of the Microsoft directory (no guests, no disabled accounts) as a Laika `member`, read through Microsoft Graph every 15 minutes and at boot (LAI-1239). Needs the three `LAIKA_MICROSOFT_*` variables and Graph's **`User.Read.All` application permission** with admin consent on the same app — without the grant the job fails with `graph_forbidden_grant_user_read_all` and adds nobody. Additive only: nobody already here is changed, and nobody is deactivated. Any value but `true`/`false` is a startup failure |
+| `LAIKA_MICROSOFT_MEETINGS_SYNC` | `false` | `true` reads every active member's **Teams meetings** through Microsoft Graph for the Meetings page (LAI-1311): calendar events from 14 days back to 7 ahead, and for ended online meetings Teams' attendance report and whether a transcript exists — every 15 minutes and at boot (§11.6). **A transcript's words are never stored**: they are read from Graph when a participant opens them (§6.4). Needs the three `LAIKA_MICROSOFT_*` variables, the **application permissions** `Calendars.Read`, `OnlineMeetings.Read.All`, `OnlineMeetingArtifact.Read.All`, `OnlineMeetingTranscript.Read.All` and `User.Read.All` with admin consent, and a Teams **application access policy** for the app; a missing grant fails the job with `graph_forbidden_grant_<permission>`. Any value but `true`/`false` is a startup failure |
 | `LAIKA_S3_ENDPOINT` | unset | attachments' store (D-150): its origin, path-style — `https://files.example.com`, no path, user, query or fragment; `http://` only for a loopback host. **The five `LAIKA_S3_*` all set turn attachments on, none leaves them off, and some but not all is a startup failure** naming the ones missing |
 | `LAIKA_S3_REGION` | unset | the store's region as it signs — `garage` for Garage, `us-east-1` for AWS |
 | `LAIKA_S3_BUCKET` | unset | the bucket every object goes in, as `p/<project_id>/<attachment_id>` |
@@ -8245,8 +8319,15 @@ when an owner connects it that way — and, when the operator configures one,
 **the attachments store** (D-150): signed `HEAD`, ranged `GET` and `DELETE` of
 the objects Laika itself names, nothing else. Browsers reach that store too,
 through the short-lived URLs Laika signs; it is the operator's own, beside
-Laika, not a third party's. Any task proposing otherwise is rejected at
-review.
+Laika, not a third party's. **When Microsoft SSO is configured** (§11.7,
+LAI-1238), the organisation's own Microsoft Entra ID tenant — sign-in and
+the app's token at `login.microsoftonline.com` — and, only while
+`LAIKA_MICROSOFT_DIRECTORY_SYNC` or `LAIKA_MICROSOFT_MEETINGS_SYNC` is on,
+**Microsoft Graph** (`graph.microsoft.com`): read-only `GET`s of the
+directory's members, and of members' calendars, Teams attendance reports and
+transcripts (LAI-1311). A transcript is read when a participant opens it or
+asks for a review, and **is never stored**. Any task proposing otherwise is
+rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day
