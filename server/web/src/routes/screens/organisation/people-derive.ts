@@ -242,3 +242,58 @@ export function newOwnerCandidates(people: readonly OrgUser[], meId: string): Or
 export function spaceRolesFor(orgRole: OrgRole): readonly ProjectRole[] {
   return orgRole === 'viewer' ? ['viewer'] : PROJECT_ROLES;
 }
+
+/**
+ * What the People tab is showing, as the address carries it (LAI-1210): the
+ * search `q`, the filter `show`, the space `space` (a slug) and the `sort`. A
+ * reload or a shared link opens the same view, and Overview links straight to
+ * the pending invites with `show=pending`.
+ *
+ * Defaults are absent from the address, and a value this tab does not know —
+ * a hand-edited `show=boss` — reads as the default rather than as an error.
+ */
+export interface PeopleView {
+  readonly query: string;
+  readonly filter: PeopleFilter;
+  readonly space: string;
+  readonly sort: PeopleSort;
+}
+
+const FILTER_VALUES: readonly PeopleFilter[] = [
+  'all',
+  'owner',
+  'admin',
+  'member',
+  'viewer',
+  'off',
+  'pending',
+];
+
+export function readPeopleView(params: URLSearchParams): PeopleView {
+  const show = params.get('show') ?? '';
+  const sort = params.get('sort') ?? '';
+  return {
+    query: params.get('q') ?? '',
+    filter: (FILTER_VALUES as readonly string[]).includes(show) ? (show as PeopleFilter) : 'all',
+    space: params.get('space') ?? '',
+    sort: (SORTS as readonly string[]).includes(sort) ? (sort as PeopleSort) : 'active',
+  };
+}
+
+/** `params` with `change` applied; a default value leaves the address. Other params are kept. */
+export function withPeopleView(
+  params: URLSearchParams,
+  change: Partial<PeopleView>,
+): URLSearchParams {
+  const next = new URLSearchParams(params);
+  const put = (key: string, value: string | undefined, fallback: string): void => {
+    if (value === undefined) return;
+    if (value === fallback || value === '') next.delete(key);
+    else next.set(key, value);
+  };
+  put('q', change.query, '');
+  put('show', change.filter, 'all');
+  put('space', change.space, '');
+  put('sort', change.sort, 'active');
+  return next;
+}

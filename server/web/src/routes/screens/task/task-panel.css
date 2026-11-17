@@ -22,9 +22,9 @@
   text-align: left;
   background: none;
   border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0.125rem 0.25rem;
-  margin: -0.125rem -0.25rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-0-5) var(--space-1);
+  margin: calc(var(--space-0-5) * -1) calc(var(--space-1) * -1);
   cursor: text;
 }
 
@@ -51,13 +51,13 @@
 .panel-text-pending {
   /* --leading-reading is a length (24px) since LAI-828, not a ratio. */
   min-height: calc(3 * var(--leading-reading));
-  padding: 0.25rem 0;
+  padding: var(--space-1) 0;
 }
 
 .panel-text-skeleton {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--leading-reading) - 0.75rem);
+  gap: calc(var(--leading-reading) - var(--space-3));
   padding-top: 0.4em;
 }
 
@@ -87,13 +87,13 @@
   display: block;
   box-sizing: content-box;
   width: 100%;
-  margin: -0.125rem -0.25rem;
-  padding: 0.125rem 0.25rem;
+  margin: calc(var(--space-0-5) * -1) calc(var(--space-1) * -1);
+  padding: var(--space-0-5) var(--space-1);
   font: inherit;
   color: var(--text-primary);
   background: var(--bg-card);
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 0 0 3px var(--accent-bg);
   outline: none;
   resize: none;
@@ -111,14 +111,20 @@
  * Jira's issue view. Only for somebody who may edit: the attribute is set by
  * the component that knows, and a reader's markup carries none.
  */
-[data-editable] {
-  transition: var(--transition);
-}
+/*
+ * **No transition on it** (LAI-1132). `var(--transition)` faded the
+ * background in from transparent, and a transition only moves on a rendered
+ * frame: until one lands, the hovered part still reads transparent (measured
+ * with the animation timeline frozen). On the glass branch CI read the hover
+ * 150 ms in and got transparent — `task-panel-editing.test.ts`, dark. The soft
+ * background now shows on the hover's own style change, with no frame to
+ * wait for.
+ */
 
 .doc-field {
   position: relative;
-  margin: -0.25rem -0.5rem;
-  padding: 0.25rem 0.5rem;
+  margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-control);
 }
 
@@ -151,7 +157,7 @@
  */
 .meta-value[data-editable],
 .fc-change-wrap[data-editable] {
-  border-radius: 4px;
+  border-radius: var(--radius-chip);
   cursor: pointer;
 }
 
@@ -170,9 +176,9 @@
 .rich-editor-failed {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 3rem;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-body);
   color: var(--text-muted);
   border: 1px dashed var(--border-subtle);
@@ -219,7 +225,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   flex: none;
 }
 
@@ -231,8 +237,8 @@
   color: var(--text-secondary);
   background: none;
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  padding: 0.375rem 0.5625rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) 0.5625rem;
   cursor: pointer;
 }
 
@@ -242,6 +248,14 @@
   color: var(--text-primary);
 }
 
+/*
+ * The ⋯ button and its menu, as one box for outside-click (LAI-1190). Draws
+ * nothing itself, so the menu still hangs from the header's action row.
+ */
+.panel-overflow-anchor {
+  display: contents;
+}
+
 .panel-overflow {
   position: absolute;
   top: calc(100% + 4px);
@@ -249,11 +263,11 @@
   z-index: 3;
   list-style: none;
   margin: 0;
-  padding: 0.25rem;
+  padding: var(--space-1);
   min-width: 12.5rem;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 
@@ -266,8 +280,8 @@
   color: var(--text-secondary);
   background: none;
   border: none;
-  border-radius: 6px;
-  padding: 0.4375rem 0.5rem;
+  border-radius: var(--radius-sm);
+  padding: 0.4375rem var(--space-2);
   cursor: pointer;
 }
 
@@ -282,9 +296,9 @@
 .claim-lock {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   flex-wrap: wrap;
-  margin: 0.5rem 0 0;
+  margin: var(--space-2) 0 0;
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   line-height: 1.4;
@@ -318,8 +332,8 @@
   color: var(--chip-orange);
   background: var(--chip-orange-bg);
   border: 1px solid var(--chip-orange-border);
-  border-radius: 4px;
-  padding: 0.125rem 0.25rem;
+  border-radius: var(--radius-chip);
+  padding: var(--space-0-5) var(--space-1);
 }
 
 /* ---------------------------------------------------------- discovered from */
@@ -328,13 +342,13 @@
    say "this belongs to another task" without a heading saying so. */
 .discovered {
   border: 1px dashed var(--border-default);
-  border-radius: 9px;
-  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-card);
+  padding: var(--space-2-5) var(--space-3);
   background: var(--bg-column);
 }
 
 .discovered-label {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-1);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1;
@@ -365,14 +379,14 @@
 /* ------------------------------------------------------------ dependencies */
 
 .dep-group + .dep-group {
-  margin-top: 0.875rem;
+  margin-top: var(--space-3-5);
 }
 
 .dep-label {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
-  margin: 0 0 0.375rem;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1;
@@ -394,7 +408,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .dep-chip {
@@ -402,9 +416,9 @@
   align-items: center;
   gap: 0.4375rem;
   min-width: 0;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--bg-card);
 }
 
@@ -415,7 +429,7 @@
   line-height: 1;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  border-radius: 4px;
+  border-radius: var(--radius-chip);
   padding: 0.1875rem 0.3125rem;
   background: var(--bg-column);
   color: var(--text-muted);
@@ -499,7 +513,7 @@
   color: var(--text-muted);
   background: none;
   border: none;
-  padding: 0 0.125rem;
+  padding: 0 var(--space-0-5);
 }
 
 .dep-remove:hover:not(:disabled),
@@ -509,14 +523,14 @@
 
 .dep-link,
 .sub-link {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--accent);
   background: none;
   border: 1px dashed var(--accent-border);
-  border-radius: 7px;
-  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2-5);
 }
 
 .dep-link:hover,
@@ -529,8 +543,8 @@
 .dep-add {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.5rem;
+  gap: var(--space-1-5);
+  margin-top: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -540,9 +554,9 @@
   min-width: 0;
   font: inherit;
   font-size: var(--text-body);
-  padding: 0.3125rem 0.375rem;
+  padding: 0.3125rem var(--space-1-5);
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: var(--text-primary);
 }
@@ -551,8 +565,8 @@
 .dep-cancel {
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
-  border-radius: 7px;
-  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2-5);
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
   color: var(--text-secondary);
@@ -565,6 +579,7 @@
 }
 
 .dep-confirm:disabled,
+.dep-confirm[aria-disabled='true'],
 .dep-cancel:disabled,
 .dep-remove:disabled {
   opacity: 0.55;
@@ -579,7 +594,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .watch-row {
@@ -621,19 +636,19 @@
   color: var(--text-muted);
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.125rem 0.25rem;
+  border-radius: var(--radius-chip);
+  padding: var(--space-0-5) var(--space-1);
 }
 
 .watch-toggle {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2-5);
 }
 
 .watch-toggle:hover:not(:disabled),
@@ -664,10 +679,10 @@
 .comment-code {
   position: relative;
   margin: 0 0 0.4375rem;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   overflow-x: auto;
 }
 
@@ -730,15 +745,15 @@
 /* --------------------------------------------------------------- the foot */
 
 .panel-foot {
-  margin-top: 1rem;
-  padding-top: 0.875rem;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3-5);
   border-top: 1px solid var(--border-subtle);
 }
 
 .panel-foot-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -750,8 +765,8 @@
   color: var(--text-secondary);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-card);
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
 }
 
@@ -773,7 +788,7 @@
  * cannot see.
  */
 .panel-permission {
-  margin: 0.625rem 0 0;
+  margin: var(--space-2-5) 0 0;
   font-size: var(--text-small);
   font-weight: var(--weight-medium);
   line-height: 1.5;
@@ -821,7 +836,7 @@
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1.25rem 1.375rem 1.5rem;
+  padding: var(--space-4-5) 1.375rem var(--space-5);
 }
 
 /* The rail scrolls independently, so the actions at its foot stay reachable
@@ -843,9 +858,9 @@
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   flex: none;
-  padding: 0.875rem 1.125rem;
+  padding: var(--space-3-5) 1.125rem;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-card);
 }
@@ -853,7 +868,7 @@
 .panel-head-main {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   min-width: 0;
   flex: 1;
 }
@@ -869,14 +884,14 @@
 .panel-state {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  border-radius: 8px;
-  padding: 0.4375rem 0.625rem;
+  border-radius: var(--radius-card);
+  padding: 0.4375rem var(--space-2-5);
   background: var(--bg-column);
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
@@ -910,7 +925,7 @@
 .panel-prio {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-family: var(--font-mono);
   font-size: var(--text-body);
   font-weight: var(--weight-heavy);
@@ -936,7 +951,7 @@
 /* ---------------------------------------------- the title and its byline */
 
 .panel-main .panel-title {
-  margin: 0 0 0.625rem;
+  margin: 0 0 var(--space-2-5);
   font-size: var(--text-heading-lg);
   font-weight: var(--weight-heavy);
   line-height: 1.22;
@@ -947,9 +962,9 @@
 .panel-byline {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin-bottom: 0.875rem;
+  margin-bottom: var(--space-3-5);
 }
 
 /* The design's purple "created via agent" chip — provenance at a glance,
@@ -957,14 +972,14 @@
 .panel-via {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   line-height: 1;
   color: var(--chip-pink);
   background: var(--chip-pink-bg);
   border: 1px solid var(--chip-pink-border);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   padding: 0.4375rem 0.5625rem;
 }
 
@@ -983,12 +998,12 @@
 }
 
 .meta-row {
-  padding: 0.75rem 0.875rem;
+  padding: var(--space-3) var(--space-3-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .meta-label {
-  margin: 0 0 0.375rem;
+  margin: 0 0 var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1;
@@ -1017,7 +1032,7 @@
 .meta-person {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -1051,9 +1066,9 @@
   color: var(--text-primary);
   background: none;
   border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0.125rem 0.25rem;
-  margin: -0.125rem -0.25rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-0-5) var(--space-1);
+  margin: calc(var(--space-0-5) * -1) calc(var(--space-1) * -1);
   cursor: pointer;
   max-width: 100%;
 }
@@ -1077,7 +1092,7 @@
    margins, clipping `P2` to `P`. Inline, the select sizes exactly as it did.
    The select pulls itself 0.25rem left; the margin pays that back. */
 .meta-value-prio > .priority-icon {
-  margin-right: 0.5rem;
+  margin-right: var(--space-2);
   vertical-align: -0.1875rem;
 }
 
@@ -1135,8 +1150,8 @@
   color: var(--text-primary);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0.3125rem 0.375rem 0.3125rem 0.4375rem;
+  border-radius: var(--radius-sm);
+  padding: 0.3125rem var(--space-1-5) 0.3125rem 0.4375rem;
   margin-left: -0.4375rem;
   white-space: nowrap;
   overflow: hidden;
@@ -1172,10 +1187,10 @@
 }
 
 .meta-sub {
-  margin: 0.375rem 0 0;
+  margin: var(--space-1-5) 0 0;
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   flex-wrap: wrap;
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
@@ -1191,7 +1206,7 @@
 /* --------------------------------------------- the execution panel (LAI-543) */
 
 .panel-side-exec {
-  padding: 0 0.875rem 0.875rem;
+  padding: 0 var(--space-3-5) var(--space-3-5);
 }
 
 /*
@@ -1210,7 +1225,7 @@
 
 .panel-side-exec .exec-title {
   margin: 0;
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
@@ -1219,7 +1234,7 @@
 
 /* The state and any notice as tinted rows, not boxes inside the card. */
 .panel-side-exec .exec-state-panel {
-  margin: 0.625rem 0.875rem 0;
+  margin: var(--space-2-5) var(--space-3-5) 0;
   font-size: var(--text-small);
   border: none;
   background: var(--bg-column);
@@ -1256,14 +1271,14 @@
 
 .panel-side-exec .exec-facts {
   gap: 0;
-  margin-top: 0.625rem;
+  margin-top: var(--space-2-5);
 }
 
 .panel-side-exec .exec-facts > div {
   grid-template-columns: 6rem minmax(0, 1fr);
-  gap: 0.75rem;
+  gap: var(--space-3);
   align-items: baseline;
-  padding: 0.5rem 0.875rem;
+  padding: var(--space-2) var(--space-3-5);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -1277,7 +1292,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.25rem;
+  gap: var(--space-1);
   font-size: var(--text-small);
 }
 
@@ -1293,12 +1308,12 @@
 }
 
 .panel-side-exec .exec-details {
-  padding: 0.5rem 0.875rem 0.625rem;
+  padding: var(--space-2) var(--space-3-5) var(--space-2-5);
   border-top: 1px solid var(--border-subtle);
 }
 
 .panel-side-exec .exec-details .exec-facts > div {
-  padding: 0.375rem 0;
+  padding: var(--space-1-5) 0;
   border-top: none;
 }
 
@@ -1330,8 +1345,8 @@
  * and running the two together loses that.
  */
 .panel-acceptance {
-  margin: 0 0 1rem;
-  padding: 0.0625rem 0 0.0625rem 0.875rem;
+  margin: 0 0 var(--space-4);
+  padding: 0.0625rem 0 0.0625rem var(--space-3-5);
   border-left: 3px solid var(--border-default);
 }
 
@@ -1370,8 +1385,8 @@
   line-height: 1;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  border-radius: 4px;
-  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-chip);
+  padding: var(--space-1) var(--space-1-5);
   background: var(--bg-column);
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
@@ -1398,14 +1413,14 @@
   border: none;
   background: none;
   padding: 0;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .panel-comment-head {
   display: flex;
   align-items: center;
   gap: 0.4375rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
 }
 
 .panel-comment-head .panel-time {
@@ -1430,7 +1445,7 @@
 
 .composer {
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: var(--bg-card);
   overflow: hidden;
 }
@@ -1447,7 +1462,7 @@
  * is gone — the chips say what they are.
  */
 .panel-main .tagp {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-4);
 }
 
 /*
@@ -1464,7 +1479,7 @@
 }
 
 .panel-main .tagp-list {
-  margin-bottom: 0.375rem;
+  margin-bottom: var(--space-1-5);
 }
 
 /* ===========================================================================
@@ -1486,8 +1501,8 @@
 .cmt {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4-5);
 }
 
 /* Solid, 36px, white initials — a face in a thread, not a badge on a row. */
@@ -1511,7 +1526,7 @@
   bottom: -3px;
   width: 16px;
   height: 16px;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   background: var(--chip-pink);
   border: 2px solid var(--bg-card);
 }
@@ -1524,9 +1539,9 @@
 .cmt-head {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-1);
 }
 
 .cmt-who {
@@ -1546,8 +1561,8 @@
   color: var(--chip-pink);
   background: var(--chip-pink-bg);
   border: 1px solid var(--chip-pink-border);
-  border-radius: 6px;
-  padding: 0.25rem 0.4375rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 0.4375rem;
 }
 
 .cmt-when,
@@ -1580,8 +1595,8 @@
 /* The code block, roomier and unlabelled — see the note in `CommentBody`.
    Its margins are the comment's markdown spacing (`.md-comment`). */
 .cmt-body .comment-code {
-  padding: 0.6875rem 0.875rem;
-  border-radius: 9px;
+  padding: 0.6875rem var(--space-3-5);
+  border-radius: var(--radius-card);
 }
 
 .cmt-body .comment-code code {
@@ -1594,19 +1609,19 @@
 .panel-composer {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .cmt-avatar-me {
-  margin-top: 0.125rem;
+  margin-top: var(--space-0-5);
 }
 
 /* One quiet line at rest (LAI-605), the task editor once clicked (LAI-827). */
 .cmt-composer-start {
   flex: 1;
   min-width: 0;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   font: inherit;
   font-size: var(--text-reading);
   text-align: left;
@@ -1663,7 +1678,7 @@
  * composer beneath it is what the reader is meant to look at.
  */
 .cmt-none {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-3);
   color: var(--text-muted);
   font-size: var(--text-body);
 }
@@ -1681,7 +1696,7 @@
 .panel-crumbs {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: 0;
   flex: 1;
   font-family: var(--font-mono);
@@ -1695,9 +1710,9 @@
   color: var(--text-muted);
   background: none;
   border: none;
-  padding: 0.125rem 0.25rem;
-  margin: 0 -0.25rem;
-  border-radius: 6px;
+  padding: var(--space-0-5) var(--space-1);
+  margin: 0 calc(var(--space-1) * -1);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -1723,6 +1738,11 @@
 }
 
 /* The icon actions: one square each, no words, the count beside the eye. */
+/* The Workroom's *Expand* is a link (LAI-1199), drawn as the row's buttons. */
+.panel-expand {
+  text-decoration: none;
+}
+
 .panel-head-actions .panel-head-action {
   display: inline-flex;
   align-items: center;
@@ -1730,7 +1750,7 @@
   min-width: 2rem;
   height: 2rem;
   justify-content: center;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
 }
 
 /*
@@ -1750,7 +1770,7 @@
   font-size: var(--text-heading-sm);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 
 .panel-head-actions .panel-close:hover,
@@ -1777,7 +1797,7 @@
   display: flex;
   align-items: center;
   gap: 0.4375rem;
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-2);
   padding: 0;
   font: inherit;
   font-size: var(--text-heading-sm);
@@ -1795,7 +1815,7 @@
   border-right: 2px solid var(--text-muted);
   border-bottom: 2px solid var(--text-muted);
   transform: rotate(-45deg);
-  transition: transform var(--transition);
+  transition: transform var(--duration-fast) var(--ease-standard);
   flex: none;
 }
 
@@ -1815,7 +1835,7 @@
 /* The merged timeline: an activity row inside the thread's list reads as a
    quiet line between messages, not as a second kind of card. */
 .panel-everything .panel-event {
-  padding: 0.25rem 0 0.25rem 2.5rem;
+  padding: var(--space-1) 0 var(--space-1) 2.5rem;
   font-size: var(--text-body);
   color: var(--text-muted);
 }
@@ -1825,16 +1845,16 @@
 .meta-status-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
-  padding: 0.875rem 0.875rem 0.5rem;
+  padding: var(--space-3-5) var(--space-3-5) var(--space-2);
 }
 
 .meta-status {
   position: relative;
   display: inline-flex;
   align-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
@@ -1849,7 +1869,7 @@
   color: inherit;
   background: none;
   border: none;
-  padding: 0.4375rem 1.75rem 0.4375rem 0.75rem;
+  padding: 0.4375rem 1.75rem 0.4375rem var(--space-3);
   cursor: pointer;
 }
 
@@ -1897,8 +1917,8 @@
   color: var(--text-secondary);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 0.4375rem 0.625rem;
+  border-radius: var(--radius-card);
+  padding: 0.4375rem var(--space-2-5);
   cursor: pointer;
 }
 
@@ -1909,24 +1929,24 @@
 }
 
 .meta-status-sub {
-  margin: 0 0.875rem 0.5rem;
+  margin: 0 var(--space-3-5) var(--space-2);
 }
 
 .meta-warn {
-  margin: 0 0.875rem 0.5rem;
+  margin: 0 var(--space-3-5) var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--chip-orange);
   background: var(--chip-orange-bg);
   border: 1px solid var(--chip-orange-border);
-  border-radius: 6px;
-  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1-5) var(--space-2);
 }
 
 /* ------------------------------------------------------------ the cards */
 
 .meta-card {
-  margin: 0.5rem 0.875rem 0;
+  margin: var(--space-2) var(--space-3-5) 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: var(--bg-card);
@@ -1936,9 +1956,9 @@
 .meta-card-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 100%;
-  padding: 0.75rem 0.875rem;
+  padding: var(--space-3) var(--space-3-5);
   font: inherit;
   font-size: var(--text-heading-sm);
   font-weight: var(--weight-heavy);
@@ -1957,7 +1977,7 @@
 }
 
 .meta-card .meta-rows .meta-row {
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   border-top: 1px solid var(--border-subtle);
   border-bottom: none;
 }
@@ -1999,7 +2019,7 @@
 .meta-date {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 
@@ -2019,9 +2039,9 @@
   min-width: 0;
   font: inherit;
   font-size: var(--text-body);
-  padding: 0.3125rem 0.375rem;
+  padding: 0.3125rem var(--space-1-5);
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: var(--text-primary);
 }
@@ -2037,8 +2057,8 @@
   color: var(--text-primary);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 0.3125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  padding: 0.3125rem var(--space-2);
   cursor: pointer;
 }
 
@@ -2067,18 +2087,18 @@
 }
 
 .meta-alert {
-  margin: 0.5rem 0.875rem;
+  margin: var(--space-2) var(--space-3-5);
 }
 
 /* ------------------------------------------------------------ the foot */
 
 .panel-side-foot {
   margin-top: auto;
-  padding: 0.875rem;
+  padding: var(--space-3-5);
 }
 
 .panel-foot-times {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-medium);
   line-height: 1.6;
@@ -2117,7 +2137,7 @@
 
 .sub-progress {
   height: 3px;
-  margin: 0 0 0.625rem;
+  margin: 0 0 var(--space-2-5);
   border-radius: var(--radius-pill);
   background: var(--bg-column);
   overflow: hidden;
@@ -2128,7 +2148,6 @@
   height: 100%;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  transition: width var(--transition);
 }
 
 /* The row is the hit area: key and title in one button, the rest beside it. */
@@ -2157,9 +2176,9 @@
   min-width: 0;
   font: inherit;
   font-size: var(--text-body);
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   border: 1px solid var(--border-subtle);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: var(--text-primary);
 }
@@ -2191,7 +2210,7 @@
   background: none;
   border: none;
   border-radius: inherit;
-  padding: 0.1875rem 1rem 0.1875rem 0.3125rem;
+  padding: 0.1875rem var(--space-4) 0.1875rem 0.3125rem;
   cursor: pointer;
 }
 
@@ -2278,7 +2297,7 @@
    by default, so here it takes the rail's shape. */
 .meta-row-agent .agent-picker {
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .meta-row-agent .agent-row-label {
@@ -2290,7 +2309,7 @@
 }
 
 .meta-row-agent .exec-state {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
 }
 
 .meta-agent {
@@ -2305,7 +2324,7 @@
 }
 
 .meta-agent-error {
-  margin-top: 0.375rem;
+  margin-top: var(--space-1-5);
   color: var(--overdue);
 }
 
@@ -2320,22 +2339,22 @@
  * ======================================================================== */
 
 .panel-meta {
-  gap: 0.75rem;
-  padding-bottom: 0.5rem;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
 }
 
 /* ------------------------------------------------- the status pill */
 
 .panel-meta .meta-status-row {
-  gap: 0.625rem;
-  padding: 1.25rem 0.875rem 0;
+  gap: var(--space-2-5);
+  padding: var(--space-4-5) var(--space-3-5) 0;
 }
 
 .panel-meta .meta-status {
-  gap: 0.5rem;
+  gap: var(--space-2);
   height: 2.125rem;
-  padding: 0 0.75rem;
-  border-radius: 9px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-card);
   border: 1px solid var(--border-default);
   background: var(--bg-column);
   color: var(--text-secondary);
@@ -2403,15 +2422,15 @@
 }
 
 .panel-meta .meta-warn {
-  margin: 0 0.875rem;
+  margin: 0 var(--space-3-5);
 }
 
 /* ------------------------------------------------- the cards */
 
 .panel-meta .meta-card {
-  margin: 0 0.875rem;
+  margin: 0 var(--space-3-5);
   border-color: var(--border-subtle);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   /* The dropdowns' lists draw over the next card, never clipped by this one. */
   overflow: visible;
 }
@@ -2420,7 +2439,7 @@
 .panel-meta .meta-card-head,
 .meta-card-title {
   margin: 0;
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: var(--leading-small);
@@ -2440,10 +2459,10 @@
 .panel-meta .meta-card .meta-rows .meta-row {
   display: grid;
   grid-template-columns: 6rem minmax(0, 1fr);
-  column-gap: 0.75rem;
-  row-gap: 0.25rem;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
   align-items: center;
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   border-top: 1px solid var(--border-subtle);
   border-bottom: none;
 }
@@ -2485,7 +2504,7 @@
 .meta-line {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -2510,15 +2529,15 @@
 }
 
 .panel-meta .meta-row-wide .sub-progress {
-  margin: 0.25rem 0 0;
+  margin: var(--space-1) 0 0;
 }
 
 .panel-meta .meta-row-wide .dep-list {
-  margin-top: 0.25rem;
+  margin-top: var(--space-1);
 }
 
 .panel-meta .meta-row-wide .dep-add {
-  margin-top: 0.25rem;
+  margin-top: var(--space-1);
 }
 
 /* The Agent row: LAI-536's picker brings its own label, laid out as the rows'. */
@@ -2529,7 +2548,7 @@
 .panel-meta .meta-row-agent > .agent-picker {
   grid-column: 1 / -1;
   grid-template-columns: 6rem minmax(0, 1fr);
-  column-gap: 0.75rem;
+  column-gap: var(--space-3);
 }
 
 .panel-meta .meta-row-agent .agent-row-label {
@@ -2571,8 +2590,8 @@
 .panel-meta .panel-side-foot {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.25rem 1rem 0.75rem;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-4) var(--space-3);
 }
 
 .panel-meta .panel-foot-times,
@@ -2589,7 +2608,7 @@
    profile link under the name when the two do not fit on one line. */
 .panel-meta .meta-person {
   flex-wrap: wrap;
-  row-gap: 0.25rem;
+  row-gap: var(--space-1);
 }
 
 .panel-meta .meta-person .assign {
@@ -2712,8 +2731,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 0.625rem;
-  row-gap: 0.375rem;
+  column-gap: var(--space-2-5);
+  row-gap: var(--space-1-5);
 }
 
 .panel-meta .meta-status-row .meta-review {
@@ -2767,7 +2786,7 @@
 .est-similar-line {
   display: flex;
   align-items: baseline;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 
@@ -2788,7 +2807,7 @@
 .tk-empty-compact {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   margin: 0;
 }
 

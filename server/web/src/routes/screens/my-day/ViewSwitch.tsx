@@ -10,6 +10,8 @@ import {
   zoomSpan,
   type Span,
 } from './span.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface ViewSwitchProps {
   readonly span: Span;
@@ -49,17 +51,19 @@ export function ViewSwitch({
     <div className="span-switch" data-view-switch data-span={span}>
       {withNav && (
         <div className="span-nav" role="group" aria-label={`${SPAN_LABELS[span]} to show`}>
-          <button
-            type="button"
-            className="span-nav-step"
-            aria-label={`Previous ${SPAN_LABELS[span].toLowerCase()}`}
-            disabled={disabled}
-            onClick={() => {
-              onStep(-1);
-            }}
-          >
-            <span aria-hidden="true">‹</span>
-          </button>
+          <Tooltip content={`Previous ${SPAN_LABELS[span].toLowerCase()}`}>
+            <button
+              type="button"
+              className="span-nav-step"
+              aria-label={`Previous ${SPAN_LABELS[span].toLowerCase()}`}
+              disabled={disabled}
+              onClick={() => {
+                onStep(-1);
+              }}
+            >
+              <Icon name="chevron-left" size="small" />
+            </button>
+          </Tooltip>
           <button
             type="button"
             className="span-nav-today"
@@ -68,17 +72,19 @@ export function ViewSwitch({
           >
             Today
           </button>
-          <button
-            type="button"
-            className="span-nav-step"
-            aria-label={`Next ${SPAN_LABELS[span].toLowerCase()}`}
-            disabled={disabled || startsAfter(span, stepPeriod(span, day, 1), today)}
-            onClick={() => {
-              onStep(1);
-            }}
-          >
-            <span aria-hidden="true">›</span>
-          </button>
+          <Tooltip content={`Next ${SPAN_LABELS[span].toLowerCase()}`}>
+            <button
+              type="button"
+              className="span-nav-step"
+              aria-label={`Next ${SPAN_LABELS[span].toLowerCase()}`}
+              disabled={disabled || startsAfter(span, stepPeriod(span, day, 1), today)}
+              onClick={() => {
+                onStep(1);
+              }}
+            >
+              <Icon name="chevron" size="small" />
+            </button>
+          </Tooltip>
         </div>
       )}
       {withNav && (
@@ -87,7 +93,7 @@ export function ViewSwitch({
             <span key={c.span} className="span-crumb-wrap">
               {i > 0 && (
                 <span className="span-crumb-sep" aria-hidden="true">
-                  ›
+                  <Icon name="chevron" size="small" />
                 </span>
               )}
               {c.span === span ? (
@@ -119,68 +125,70 @@ export function ViewSwitch({
         >
           <span className="span-seg-thumb" aria-hidden="true" />
           {SPANS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="radio"
-              aria-checked={s === span}
-              className="span-seg-option"
-              data-span-option={s}
-              title={`${SPAN_LABELS[s]} (${SPAN_LABELS[s].charAt(0)})`}
-              disabled={disabled}
-              tabIndex={s === span ? 0 : -1}
-              onClick={() => {
-                if (s !== span) onSpan(s);
-              }}
-              onKeyDown={(event) => {
-                const by =
-                  event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                    ? 1
-                    : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                      ? -1
-                      : 0;
-                if (by === 0) return;
-                event.preventDefault();
-                event.stopPropagation();
-                const group = event.currentTarget.parentElement;
-                const next = SPANS[(SPANS.indexOf(s) + by + SPANS.length) % SPANS.length];
-                if (next !== undefined) {
-                  onSpan(next);
-                  requestAnimationFrame(() => {
-                    group?.querySelector<HTMLElement>(`[data-span-option="${next}"]`)?.focus();
-                  });
-                }
-              }}
-            >
-              {SPAN_LABELS[s]}
-            </button>
+            <Tooltip key={s} content={SPAN_LABELS[s]} shortcut={SPAN_LABELS[s].charAt(0)}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={s === span}
+                className="span-seg-option"
+                data-span-option={s}
+                disabled={disabled}
+                tabIndex={s === span ? 0 : -1}
+                onClick={() => {
+                  if (s !== span) onSpan(s);
+                }}
+                onKeyDown={(event) => {
+                  const by =
+                    event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                      ? 1
+                      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                        ? -1
+                        : 0;
+                  if (by === 0) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const group = event.currentTarget.parentElement;
+                  const next = SPANS[(SPANS.indexOf(s) + by + SPANS.length) % SPANS.length];
+                  if (next !== undefined) {
+                    onSpan(next);
+                    requestAnimationFrame(() => {
+                      group?.querySelector<HTMLElement>(`[data-span-option="${next}"]`)?.focus();
+                    });
+                  }
+                }}
+              >
+                {SPAN_LABELS[s]}
+              </button>
+            </Tooltip>
           ))}
         </div>
         <div className="span-zoom" role="group" aria-label="Zoom the view">
-          <button
-            type="button"
-            className="span-zoom-step"
-            aria-label="Zoom out (−)"
-            title="Zoom out (−)"
-            disabled={disabled || coarser === undefined}
-            onClick={() => {
-              if (coarser !== undefined) onSpan(coarser);
-            }}
-          >
-            −
-          </button>
-          <button
-            type="button"
-            className="span-zoom-step"
-            aria-label="Zoom in (+)"
-            title="Zoom in (+)"
-            disabled={disabled || finer === undefined}
-            onClick={() => {
-              if (finer !== undefined) onSpan(finer);
-            }}
-          >
-            +
-          </button>
+          <Tooltip content="Zoom out" shortcut="−">
+            <button
+              type="button"
+              className="span-zoom-step"
+              aria-label="Zoom out (−)"
+              disabled={disabled || coarser === undefined}
+              onClick={() => {
+                if (coarser !== undefined) onSpan(coarser);
+              }}
+            >
+              −
+            </button>
+          </Tooltip>
+          <Tooltip content="Zoom in" shortcut="+">
+            <button
+              type="button"
+              className="span-zoom-step"
+              aria-label="Zoom in (+)"
+              disabled={disabled || finer === undefined}
+              onClick={() => {
+                if (finer !== undefined) onSpan(finer);
+              }}
+            >
+              +
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>

@@ -1,0 +1,33 @@
+/* The one inline "Sure?" (LAI-1129). A screen class may restyle the box. */
+.inline-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 28rem;
+  padding: var(--space-3);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-control);
+  background: var(--blocked-bg);
+  text-align: start;
+}
+
+.inline-confirm-question,
+.inline-confirm-error {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.inline-confirm-question {
+  color: var(--text-primary);
+}
+
+.inline-confirm-error {
+  color: var(--overdue);
+}
+
+.inline-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

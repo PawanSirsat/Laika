@@ -23,6 +23,8 @@ import {
 import { BarRows } from '../usage/BarRows.tsx';
 import { tokensOfLine } from './rail-derive.ts';
 import { BudgetEditor, BudgetMeter } from '../usage/BudgetMeter.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import '../usage/usage.css';
 import './tokens.css';
 
@@ -157,7 +159,10 @@ export function TokensSection({
       aria-label="Tokens"
       data-section="tokens"
     >
-      <h3 className={compact ? 'panel-section-title est-label' : 'panel-section-title'}>Tokens</h3>
+      <h3 className={compact ? 'panel-section-title est-label' : 'panel-section-title'}>
+        <Icon name="tokens" size="small" className="section-mark" />
+        Tokens
+      </h3>
       {failed ? (
         <p className="panel-alert" role="alert">
           Could not load this task’s tokens.
@@ -233,13 +238,11 @@ function TokensBody({
       {/* *597K of 716K (83%)* (LAI-1122), only against an estimate: the
           headline below already says the total alone. */}
       {compact && share !== null && p80 !== null && (
-        <p
-          className="tk-of"
-          data-state={share >= 1 ? 'over' : share >= 0.8 ? 'warn' : 'under'}
-          title="Against the token estimate’s high end"
-        >
-          {tokensOfLine(totals.tokens, p80)}
-        </p>
+        <Tooltip content="Against the token estimate’s high end" lazy>
+          <p className="tk-of" data-state={share >= 1 ? 'over' : share >= 0.8 ? 'warn' : 'under'}>
+            {tokensOfLine(totals.tokens, p80)}
+          </p>
+        </Tooltip>
       )}
       {/* LAI-773: the runaway alert, sent only to the person it is for — the
           server decides, this draws what arrives. About their quota, never a
@@ -250,12 +253,14 @@ function TokensBody({
         </p>
       )}
       <p className="tk-headline">
-        <span
-          className="tk-amount"
-          title={`${exactTokens(totals.tokens)} tokens: input, output and cache writes, not cache reads`}
+        <Tooltip
+          content={`${exactTokens(totals.tokens)} tokens: input, output and cache writes, not cache reads`}
+          lazy
         >
-          At least <span className="tk-total">{compactTokens(totals.tokens)}</span> tokens
-        </span>
+          <span className="tk-amount">
+            At least <span className="tk-total">{compactTokens(totals.tokens)}</span> tokens
+          </span>
+        </Tooltip>
         <span className="tk-sep" aria-hidden="true">
           {' · '}
         </span>
@@ -288,13 +293,15 @@ function TokensBody({
       <details className="tk-details">
         <summary>Details</summary>
         <dl className="tk-facts">
-          <div className="tk-fact" title={`${exactTokens(totals.cache_read)} cache reads`}>
-            <dt>Cache reads</dt>
-            <dd>
-              <span className="tk-cache">{compactTokens(totals.cache_read)}</span> · not counted in
-              the total
-            </dd>
-          </div>
+          <Tooltip content={`${exactTokens(totals.cache_read)} cache reads`} lazy>
+            <div className="tk-fact">
+              <dt>Cache reads</dt>
+              <dd>
+                <span className="tk-cache">{compactTokens(totals.cache_read)}</span> · not counted
+                in the total
+              </dd>
+            </div>
+          </Tooltip>
           {view.attributed !== null && (
             <div className="tk-fact" data-figure="attributed">
               <dt>Tied to a task</dt>

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  fakeStream,
   open,
   setTheme,
   until,
@@ -177,8 +178,10 @@ void describe('the space bar', () => {
        */
       assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
       // The icon came back with the name in LAI-299 — the owner's reference
-      // has both on the bar's first line.
-      assert.equal(await h.page.locator('.space-icon').count(), 1);
+      // has both on the bar's first line. Since LAI-1234 it is the space's own
+      // letter, the same badge the rail draws for it.
+      assert.equal(await h.page.locator('.space-icon .space-badge').count(), 1);
+      assert.equal((await h.page.locator('.space-icon .space-badge').innerText()).trim(), 'L');
 
       /*
        * Four avatars and `+2`, from six real members — never the design's four
@@ -247,29 +250,28 @@ void describe('the space bar', () => {
     }
   });
 
-  void test('the agent count comes from presence, not from a fixture', async () => {
+  /*
+   * **No Agents chip, and no presence read for it** (LAI-1233). The board
+   * made a `/presence` request on every load to fill a chip the owner asked
+   * to remove; the board itself draws no presence.
+   */
+  void test('the board draws no Agents chip and never asks for presence', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      // Wait for presence itself, not for the chip: the chip renders at once
-      // with no number and would be read before the fetch lands. This waited
-      // for WORKING NOW's first chip until LAI-727 removed the row; the number
-      // arriving is the same signal, read where it is shown.
-      const agents = h.page.locator('.space-chip', { hasText: 'Agents' });
-      await agents.waitFor({ timeout: 20_000 });
-      await h.page
-        .waitForFunction(
-          () =>
-            /Agents\s*\d/.test(
-              [...document.querySelectorAll('.space-chip')]
-                .map((e) => e.textContent ?? '')
-                .join(' '),
-            ),
-          undefined,
-          { timeout: 10_000 },
-        )
-        .catch(() => undefined);
-      // One of the two present sessions is an agent.
-      assert.match(await agents.innerText(), /Agents 1/);
+      // The positive control: the space bar did render, with its menu.
+      await h.page.locator('.space-bar .space-settings-link').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.space-bar .space-chip', { hasText: /^Agents/ }).count(),
+        0,
+        'the Agents chip is back in the space bar',
+      );
+      // Long enough for a live frame's settle (1.5s) to have fired a read.
+      await h.page.waitForTimeout(2_000);
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/presence').length,
+        0,
+        'the board asked for presence it does not draw',
+      );
     } finally {
       await h.close();
     }
@@ -278,12 +280,7 @@ void describe('the space bar', () => {
   void test('the controls write the URL, so a filtered space is a link', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-chip').first().waitFor({ timeout: 20_000 });
-
-      await h.page.locator('.space-chip', { hasText: 'Agents' }).click();
-      await h.page.waitForFunction(() => window.location.search.includes('agent=true'), undefined, {
-        timeout: 5000,
-      });
+      await h.page.locator('.bt-button', { hasText: 'Filter' }).waitFor({ timeout: 20_000 });
 
       /*
        * **A dropdown since LAI-270**, as the reference has it — selecting is
@@ -332,20 +329,39 @@ void describe('the space bar', () => {
     }
   });
 
+  /*
+   * **Measured on a live stream** (LAI-1306). This counted `/events` requests
+   * against the stub, which refuses the stream; a refused stream is forgotten
+   * at once so a later subscriber tries afresh (`event-stream.ts`, by design).
+   * Since the screens load as chunks (LAI-1219) and the header subscribes for
+   * its notifications (LAI-1221), the board's consumers mount after the
+   * shell's, and whether the refusal landed between them decided 1 or 3 — CI
+   * saw 3, a laptop 1. Sharing is a promise about a stream that is up, so the
+   * stream here stays up, and every source the app ever made is counted.
+   *
+   * **And the pill says LIVE on it.** On a shared stream the pill is a late
+   * joiner too, and `open` and `ready` are said once per connection: before
+   * `event-stream.ts` told late joiners, this read CONNECTING with one healthy
+   * stream open — the positive control below is that defect's test.
+   */
   void test('one stream for the space, not one per consumer', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+    const h = await open('/board?project=laika-core', STUB, { before: fakeStream });
     try {
-      await h.page.locator('.space-live').waitFor({ timeout: 20_000 });
+      // Positive controls: the board — whose lanes, motion and rail are the
+      // late subscribers — has drawn, and the stream reached the pill.
+      await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-live', { hasText: 'LIVE' }).waitFor({ timeout: 10_000 });
       await h.page.waitForTimeout(1200);
 
-      // The pill, the presence strip, the board's cards and its rail all want
-      // these frames. Opening a stream each would be four connections and four
-      // replay windows per project.
-      const streams = h.calls.filter((c: StubCall) => c.path === '/api/v1/events');
-      assert.ok(
-        streams.length <= 1,
-        `the space opened ${String(streams.length)} event streams, not one`,
+      // The pill, the header's notifications, the board's cards and its rail
+      // all want these frames. Opening a stream each would be four
+      // connections and four replay windows per project.
+      const created = await h.page.evaluate(() =>
+        (window as unknown as { __laikaStream: { created: () => number } }).__laikaStream.created(),
       );
+      assert.equal(created, 1, `the space opened ${String(created)} event streams, not one`);
+      // The fake replaced the real stream, so nothing reached the server.
+      assert.equal(h.calls.filter((c: StubCall) => c.path === '/api/v1/events').length, 0);
     } finally {
       await h.close();
     }
@@ -552,11 +568,15 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       const box = rail?.getBoundingClientRect();
       // Off-canvas counts as absent: it is in the DOM and nobody can read it.
       const railOnScreen = box !== undefined && box.left >= 0 && box.width > 0;
-      const wordmark = document.querySelector('.sidebar-wordmark');
+      // The product's name is the top bar's since LAI-1227 (the rail's head
+      // until then), so it no longer comes and goes with the rail.
+      const wordmark = document.querySelector('[data-app-header] .sidebar-wordmark');
       const barName = document.querySelector('.space-name');
 
       return {
-        rail: railOnScreen && visible(wordmark) ? (wordmark?.textContent ?? null) : null,
+        railOnScreen,
+        railWidth: Math.round(box?.width ?? 0),
+        product: visible(wordmark) ? (wordmark?.textContent ?? null) : null,
         bar: visible(barName) ? (barName?.textContent ?? null) : null,
       };
     });
@@ -580,7 +600,8 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       );
 
       const m = await naming(h);
-      assert.equal(m.rail, 'Laika', 'the rail must name the product');
+      assert.equal(m.railOnScreen, true);
+      assert.equal(m.product, 'Laika', 'the top bar must name the product');
       assert.equal(m.bar, 'Laika Core', 'the bar stopped naming the project');
     } finally {
       await h.close();
@@ -598,12 +619,13 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       await h.page.waitForTimeout(500);
       await until(async () => {
         const now = await naming(h);
-        return now.rail === null && now.bar === 'Laika Core';
+        return !now.railOnScreen && now.bar === 'Laika Core';
       });
 
       const m = await naming(h);
-      assert.equal(m.rail, null, 'the rail is on screen — this test is measuring the wrong state');
+      assert.equal(m.railOnScreen, false, 'the rail is on screen — measuring the wrong state');
       assert.equal(m.bar, 'Laika Core', 'nothing names the project at this width');
+      assert.equal(m.product, 'Laika', 'the top bar keeps the product without the rail');
     } finally {
       await h.close();
     }
@@ -616,7 +638,7 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       await h.page.setViewportSize({ width: 1600, height: 900 });
       await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
 
-      // The toggle in the rail's head is what collapses it (LAI-796).
+      // The toggle in the top bar is what collapses it (LAI-796; LAI-1227).
       await h.page.locator('.sidebar-toggle').click();
       await h.page.waitForSelector('.shell-rail-mini', { timeout: 10_000 });
       await h.page.waitForFunction(
@@ -627,8 +649,9 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       );
 
       const m = await naming(h);
-      assert.equal(m.rail, null, 'the wordmark survived the collapse — wrong state');
+      assert.equal(m.railWidth, 60, 'not the icon rail — wrong state');
       assert.equal(m.bar, 'Laika Core', 'nothing names the project while the rail is collapsed');
+      assert.equal(m.product, 'Laika', 'the top bar’s brand went with the rail');
     } finally {
       await h.close();
     }

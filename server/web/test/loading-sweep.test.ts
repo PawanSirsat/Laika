@@ -248,8 +248,8 @@ void describe('a count is not stated before it is known', () => {
      * CLAUDE.md §5.1: every number in the shipped UI comes from a response. A
      * count computed from absent data is a hardcoded value wearing a variable.
      */
+    // SpaceTopBar left this list with its Agents chip (LAI-1233).
     for (const path of [
-      'components/space/SpaceTopBar.tsx',
       'routes/screens/activity/ActivityScreen.tsx',
       'routes/screens/activity/ActivityPanels.tsx',
     ]) {

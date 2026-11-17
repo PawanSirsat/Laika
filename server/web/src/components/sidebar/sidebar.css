@@ -14,97 +14,24 @@
   width: 13.25rem; /* 212px */
   flex: none;
   box-sizing: border-box;
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-subtle);
+  /* Level-1 glass (LAI-1132): transparent, the pane is `glass.css`'s ::before
+     — never a blur on the sidebar itself, which would trap its fixed popover. */
+  background: transparent;
+  isolation: isolate;
+  border-right: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 0.16s ease;
+  /* Collapse is instant: a `width` transition relaid the whole board out every
+     frame for 160ms (LAI-1208). */
   /*
-   * Holds the viewport rather than growing with the page — without this the
-   * footer sits at the bottom of the *document*, below the fold on a full
-   * board. `.sidebar-nav` scrolls internally instead.
+   * The window below the top bar (LAI-1227): the shell's frame is the window
+   * less `--app-head-height`, and the sidebar fills its height rather than
+   * growing with the page. `.sidebar-nav` scrolls internally instead.
    */
-  position: sticky;
-  top: 0;
-  height: 100vh;
-}
-
-/* ------------------------------------------------------------------ head */
-
-.sidebar-head {
-  flex: none;
-  padding: 0.875rem 0.75rem;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-height: 3.75rem;
-  box-sizing: border-box;
-}
-
-/* The mark: 28px, radius 9, ground --text-primary, glyph --bg-card. */
-.sidebar-logo {
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: none;
-  border-radius: 0.5625rem;
-  background: var(--text-primary);
-  color: var(--bg-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.sidebar-logo svg {
-  stroke: currentColor;
-}
-
-.sidebar-identity {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-/* The org's real name — never the prototype's fixture. */
-.sidebar-orgline {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Collapse and expand: a quiet square at the head's right edge. */
-.sidebar-toggle {
   position: relative;
-  flex: none;
-  width: 1.875rem;
-  height: 1.875rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.5rem;
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0;
-}
-
-.sidebar-toggle:hover {
-  color: var(--text-primary);
-  border-color: var(--border-default);
-}
-
-.sidebar-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  align-self: stretch;
+  min-height: 0;
 }
 
 /* ------------------------------------------------------------------- nav */
@@ -114,10 +41,10 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.75rem 0.5rem;
+  padding: var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 /* ORGANISATION, SPACES: the uppercase micro-label of the owner's reference. */
@@ -128,14 +55,14 @@
   text-transform: uppercase;
   color: var(--text-muted);
   margin: 0;
-  padding: 1rem 0.625rem 0.375rem;
+  padding: var(--space-4) var(--space-2-5) var(--space-1-5);
   white-space: nowrap;
   overflow: hidden;
 }
 
 /* The rail's section divider — the prototype's `miniRule`. */
 .sidebar-minirule {
-  margin: 10px 8px 6px;
+  margin: var(--space-2-5) var(--space-2) var(--space-1-5);
   height: 1px;
   background: var(--border-subtle);
 }
@@ -146,16 +73,16 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .sidebar-link {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   height: 2.125rem;
-  padding: 0 0.625rem 0 0.375rem;
+  padding: 0 var(--space-2-5) 0 var(--space-1-5);
   border-radius: var(--radius-card);
   color: var(--text-secondary);
   text-decoration: none;
@@ -179,8 +106,8 @@
   width: 3px;
   height: 0.875rem;
   flex: none;
-  margin-right: -0.375rem;
-  border-radius: 2px;
+  margin-right: calc(var(--space-1-5) * -1);
+  border-radius: var(--radius-hairline);
   background: transparent;
 }
 
@@ -233,26 +160,13 @@
   color: var(--text-muted);
 }
 
-.sidebar-count {
-  flex: none;
-  min-width: 1.375rem;
-  padding: 0 0.3125rem;
-  box-sizing: border-box;
-  border-radius: var(--radius-pill);
-  background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1.25rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
+/* The count is the shared `Chip` count badge (LAI-1206): its box, face and
+   neutral tone live in `components/chip/chip.css`. The rail only decides the
+   active row's accent and, below, the collapsed rail's corner badge. */
 .sidebar-link-active .sidebar-count {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  color: var(--accent);
+  --chip-ink: var(--accent);
+  --chip-fill: var(--accent-bg);
+  --chip-edge: var(--accent-border);
 }
 
 /* ---------------------------------------------------------------- spaces */
@@ -267,9 +181,9 @@
 .spaces-head {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin: 0.75rem 0 0.25rem;
-  padding: 0 0.25rem 0 0.25rem;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 var(--space-1);
+  padding: 0 var(--space-1) 0 var(--space-1);
   height: 26px;
 }
 
@@ -280,9 +194,9 @@
   align-items: center;
   gap: 5px;
   height: 26px;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   font-family: inherit;
   font-size: var(--text-small);
@@ -317,7 +231,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
 
@@ -356,7 +270,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -381,8 +295,8 @@
 
 /* The last pinned row and the first recent one: a hairline between them. */
 .space-item-pinned + .space-item:not(.space-item-pinned) {
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -420,15 +334,15 @@
   max-height: calc(100dvh - 132px - 12px);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
-  border-radius: 12px;
-  /* The design's 0 18px 44px drop, coloured by the theme's own border token
-     rather than a raw rgba — colours live in tokens.css and nowhere else. */
-  box-shadow: 0 18px 44px var(--border-default);
-  padding: 12px;
+  border-radius: var(--radius-column);
+  /* The popover elevation (LAI-1230), not a drop of its own. */
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  animation: spaces-pop 0.14s ease;
+  gap: var(--space-2-5);
+  transform-origin: top left;
+  animation: spaces-pop var(--duration-base) var(--ease-enter);
 }
 
 @keyframes spaces-pop {
@@ -445,7 +359,7 @@
 .spaces-pop-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .spaces-pop-title {
@@ -465,7 +379,7 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -485,11 +399,11 @@
 .spaces-pop-search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   height: 34px;
-  padding: 0 10px;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-default);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   background: var(--bg-canvas);
   color: var(--text-muted);
 }
@@ -518,7 +432,7 @@
 
 .spaces-pop-empty {
   margin: 0;
-  padding: 16px 8px;
+  padding: var(--space-4) var(--space-2);
   font-size: var(--text-body);
   font-weight: var(--weight-medium);
   line-height: 1.5;
@@ -539,7 +453,7 @@
 .spaces-pop-list {
   list-style: none;
   margin: 0;
-  padding: 4px 0 0;
+  padding: var(--space-1) 0 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -564,7 +478,7 @@
   align-items: center;
   gap: 9px;
   height: 38px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border: none;
   border-radius: var(--radius-card);
   background: transparent;
@@ -586,7 +500,7 @@
   flex: none;
   width: 24px;
   height: 24px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -628,10 +542,10 @@
 .spaces-pop-all {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   height: 34px;
-  margin-top: 2px;
-  padding: 10px 8px 0;
+  margin-top: var(--space-0-5);
+  padding: var(--space-2-5) var(--space-2) 0;
   border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   text-decoration: none;
@@ -658,179 +572,6 @@
   color: var(--text-muted);
 }
 
-/* ---------------------------------------------------------------- footer */
-
-/* The person, and the menu that opens above them. */
-.sidebar-footer {
-  position: relative;
-  flex: none;
-  margin-top: auto;
-  padding: 0.5rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.user-menu-trigger {
-  position: relative;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-height: 2.75rem;
-  padding: 0.375rem 0.5rem;
-  border: none;
-  border-radius: var(--radius-card);
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.user-menu-trigger:hover,
-.user-menu-trigger-open {
-  background: var(--bg-column);
-}
-
-.user-menu-trigger:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.user-menu-caret {
-  flex: none;
-  color: var(--text-muted);
-  transform: rotate(-90deg);
-}
-
-.sidebar-user-avatar {
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: none;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
-}
-
-.sidebar-user-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.sidebar-user-name {
-  font-size: var(--text-body);
-  font-weight: var(--weight-bold);
-  line-height: 1;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The role in pink — the prototype's own emphasis colour for it. */
-.sidebar-user-role {
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--chip-pink);
-}
-
-.user-menu {
-  position: absolute;
-  left: 0.5rem;
-  right: 0.5rem;
-  bottom: calc(100% + 0.375rem);
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  padding: 0.375rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-column);
-  box-shadow: var(--shadow-modal);
-}
-
-.user-menu-who {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0.5rem 0.625rem 0.625rem;
-  margin-bottom: 0.25rem;
-  border-bottom: 1px solid var(--border-subtle);
-  min-width: 0;
-}
-
-.user-menu-name {
-  font-size: var(--text-body);
-  font-weight: var(--weight-heavy);
-  color: var(--text-primary);
-}
-
-.user-menu-email {
-  font-size: var(--text-small);
-  font-weight: var(--weight-medium);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 2.125rem;
-  padding: 0 0.625rem;
-  border: none;
-  border-radius: 0.4375rem;
-  background: transparent;
-  font-family: inherit;
-  font-size: var(--text-body);
-  font-weight: var(--weight-medium);
-  color: var(--text-primary);
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.user-menu-item:hover,
-.user-menu-item:focus-visible {
-  background: var(--bg-column);
-}
-
-.user-menu-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.user-menu-glyph {
-  margin-left: auto;
-  color: var(--text-muted);
-}
-
-.user-menu-rule {
-  height: 1px;
-  margin: 0.25rem 0.375rem;
-  background: var(--border-subtle);
-}
-
-.user-menu-signout {
-  color: var(--priority-high);
-}
-
-.user-menu-signout:disabled {
-  cursor: default;
-  color: var(--text-muted);
-}
-
 /* -------------------------------------------------------------- the rail */
 
 /*
@@ -848,14 +589,8 @@
 
   .sidebar-collapsed .sidebar-nav {
     overflow: visible;
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
-  }
-
-  .sidebar-collapsed .sidebar-head {
-    flex-direction: column;
-    padding: 0.75rem 0;
-    gap: 0.5rem;
+    padding-left: var(--space-2);
+    padding-right: var(--space-2);
   }
 
   .sidebar-collapsed .sidebar-link {
@@ -871,8 +606,7 @@
     margin: 0;
   }
 
-  .sidebar-collapsed .sidebar-chevron,
-  .sidebar-collapsed .user-menu-caret {
+  .sidebar-collapsed .sidebar-chevron {
     display: none;
   }
 
@@ -882,12 +616,12 @@
     top: 0.125rem;
     right: 0.125rem;
     min-width: 1rem;
+    height: 0.875rem;
     padding: 0 0.1875rem;
     font-size: var(--text-tiny);
-    line-height: 0.875rem;
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
+    --chip-ink: var(--on-accent);
+    --chip-fill: var(--accent);
+    --chip-edge: var(--accent);
   }
 
   /*
@@ -895,8 +629,7 @@
    * screen reader reads — drawn beside the rail on hover and on keyboard
    * focus, invisible otherwise.
    */
-  .sidebar-collapsed .sidebar-tip,
-  .sidebar-toggle .sidebar-tip {
+  .sidebar-collapsed .sidebar-tip {
     position: absolute;
     left: calc(100% + 0.625rem);
     top: 50%;
@@ -904,8 +637,8 @@
     flex: none;
     width: max-content;
     max-width: 14rem;
-    padding: 0.3125rem 0.5rem;
-    border-radius: 0.4375rem;
+    padding: 0.3125rem var(--space-2);
+    border-radius: var(--radius-sm);
     background: var(--text-primary);
     color: var(--bg-card);
     font-size: var(--text-body);
@@ -917,61 +650,22 @@
     pointer-events: none;
     opacity: 0;
     z-index: 31;
-    transition: opacity 0.1s ease;
+    transition: opacity var(--duration-instant) var(--ease-standard);
   }
 
-  .sidebar-collapsed .sidebar-user-text.sidebar-tip {
-    flex-direction: row;
-    gap: 0.375rem;
-    align-items: baseline;
-  }
-
-  .sidebar-collapsed .sidebar-user-text.sidebar-tip .sidebar-user-name,
-  .sidebar-collapsed .sidebar-user-text.sidebar-tip .sidebar-user-role {
-    color: inherit;
+  /* The rail's name reveal says the key after the name (LAI-1221). */
+  .sidebar-collapsed .sidebar-tip[data-shortcut]::after {
+    content: attr(data-shortcut);
+    margin-left: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-weight: var(--weight-medium);
+    opacity: 0.7;
   }
 
   .sidebar-collapsed .sidebar-link:hover .sidebar-tip,
-  .sidebar-collapsed .sidebar-link:focus-visible .sidebar-tip,
-  .sidebar-collapsed .user-menu-trigger:hover .sidebar-tip,
-  .sidebar-collapsed .user-menu-trigger:focus-visible .sidebar-tip,
-  .sidebar-toggle:hover .sidebar-tip,
-  .sidebar-toggle:focus-visible .sidebar-tip {
+  .sidebar-collapsed .sidebar-link:focus-visible .sidebar-tip {
     opacity: 1;
-  }
-
-  .sidebar-collapsed .sidebar-footer {
-    padding: 0.5rem 0;
-    display: flex;
-    justify-content: center;
-  }
-
-  .sidebar-collapsed .user-menu-trigger {
-    width: auto;
-    padding: 0.375rem;
-  }
-
-  /* Open, the toggle's tooltip drops below it — the sidebar clips its side. */
-  .sidebar:not(.sidebar-collapsed) .sidebar-toggle .sidebar-tip {
-    left: auto;
-    right: 0;
-    top: calc(100% + 0.375rem);
-    transform: none;
-  }
-
-  /* Beside the rail rather than above it: 60px is too narrow to hold it. */
-  .sidebar-collapsed .user-menu {
-    left: calc(100% + 0.5rem);
-    right: auto;
-    bottom: 0.5rem;
-    width: 15rem;
-  }
-}
-
-/* The phone's off-canvas sidebar has no rail to toggle. */
-@media (max-width: 900px) {
-  .sidebar-toggle {
-    display: none;
   }
 }
 
@@ -983,25 +677,15 @@
   .sidebar-collapsed {
     width: 13.25rem;
     position: fixed;
-    inset: 0 auto 0 0;
+    /* Under the top bar, which keeps its menu button to close it again. */
+    inset: var(--app-head-height) auto 0 0;
     z-index: 5;
     transform: translateX(-100%);
-    transition: transform 160ms ease;
+    transition: transform var(--duration-slow) var(--ease-drawer);
   }
 
   .sidebar-open {
     transform: translateX(0);
     box-shadow: var(--shadow-card);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sidebar,
-  .sidebar-tip {
-    transition: none;
-  }
-
-  .spaces-pop {
-    animation: none;
   }
 }

@@ -2,10 +2,11 @@
  * Whether a reader holds a permission a nav entry requires (LAI-248).
  *
  * **Lifted out of `Sidebar`, not copied.** Its own comment said *"one mirror,
- * not two"* — and then the space tab bar needed the same answer, because
- * `/dashboard` requires `audit_log.export` and a tab that 403s is exactly the
- * control §5.1 says not to render. Two copies of a permission predicate is how
- * one of them quietly stops matching the server.
+ * not two"* — and then the space tab bar needed the same answer, because a tab
+ * that 403s is exactly the control §5.1 says not to render (`/dashboard`
+ * required `audit_log.export` when this was written; today the gated entries
+ * are those `route-table.ts` marks `requires`). Two copies of a permission
+ * predicate is how one of them quietly stops matching the server.
  *
  * **The server's answer, never a role** (LAI-970): `actions` is
  * `GET /permissions`' `me.actions`, which already reflects the owner's grants.

@@ -100,12 +100,17 @@ void describe('My day loading (LAI-524)', () => {
     });
     try {
       await h.page.locator('[data-day-loading]').waitFor({ timeout: 20_000 });
-      assert.equal(
+      // Stood still by the global rule (LAI-1208): the sheen's duration is
+      // zero, and the gradient that would be a still stripe is gone.
+      assert.deepEqual(
         await h.page
           .locator('.dsk-bone')
           .first()
-          .evaluate((el) => getComputedStyle(el).animationName),
-        'none',
+          .evaluate((el) => {
+            const s = getComputedStyle(el);
+            return { duration: s.animationDuration, image: s.backgroundImage };
+          }),
+        { duration: '0s', image: 'none' },
       );
     } finally {
       await h.close();

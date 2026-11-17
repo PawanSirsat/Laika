@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import { offDescription, offKind, offLabel } from '../../../api/off-days.ts';
 import type { DaysDay } from '../../../api/time.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { compact, duration } from './format.ts';
 import { isoWeek, monthKey, monthWeeks } from './span.ts';
 import { barOf, busiest, cellKind, offMark, pct, totalOf } from './span-derive.ts';
@@ -146,9 +147,11 @@ function MonthCell({
         )}
       </span>
       {name !== null && tone !== null && (
-        <span className="span-month-off" data-off={tone} title={about ?? name}>
-          {name}
-        </span>
+        <Tooltip content={about ?? name} lazy>
+          <span className="span-month-off" data-off={tone}>
+            {name}
+          </span>
+        </Tooltip>
       )}
       {row?.top_tasks.slice(0, 2).map((t, i) => (
         <span

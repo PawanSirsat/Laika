@@ -7,6 +7,8 @@ import { DraftRow } from './DraftRow.tsx';
 import { minutesOf, needsCard, selectRange, type BulkKind } from './draft-bulk.ts';
 import { duration } from './format.ts';
 import { HeaderPopover } from './HeaderPopover.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** A batch in flight, on the day it runs on. Its last word is the page's toast. */
 export type Batch =
@@ -215,26 +217,37 @@ export function DraftList({
             </span>
             <span className="myday-bulk-sum">{duration(minutesOf(drafts, live))}</span>
             <span className="myday-bulk-divider" aria-hidden="true" />
-            <button
-              type="button"
-              className="myday-chip myday-chip-primary"
-              disabled={busy || chosenReady === 0}
-              data-bulk-confirm
-              title={
-                chosenReady < chosen.length
-                  ? `${String(chosen.length - chosenReady)} with no task yet stay in To review`
-                  : 'Confirm every ticked block'
+            <Tooltip
+              content={
+                chosenReady === 0
+                  ? 'Give the ticked blocks a task first — none of them has one'
+                  : chosenReady < chosen.length
+                    ? `${String(chosen.length - chosenReady)} with no task yet stay in To review`
+                    : 'Confirm every ticked block'
               }
-              onClick={() => {
-                act('confirm');
-              }}
             >
-              {chosenReady === chosen.length ? 'Confirm' : `Confirm ${String(chosenReady)}`}
-            </button>
+              <button
+                type="button"
+                className="myday-chip myday-chip-primary"
+                disabled={busy}
+                aria-disabled={chosenReady === 0 || undefined}
+                data-bulk-confirm
+                onClick={() => {
+                  if (chosenReady > 0) act('confirm');
+                }}
+              >
+                {chosenReady === chosen.length ? 'Confirm' : `Confirm ${String(chosenReady)}`}
+              </button>
+            </Tooltip>
             <HeaderPopover
-              trigger={<>Assign task ▾</>}
+              trigger={
+                <>
+                  Assign task
+                  <Icon name="chevron-down" size="tiny" />
+                </>
+              }
               label="Assign task"
-              title="Put every ticked block on a task"
+              tooltip="Put every ticked block on a task"
               triggerClassName="myday-chip"
               width="narrow"
               placement="above"
@@ -284,19 +297,21 @@ export function DraftList({
             >
               Not work time
             </button>
-            <button
-              type="button"
-              className="myday-chip myday-bulk-clear"
-              aria-label="Clear selection"
-              title="Clear selection"
-              disabled={busy}
-              onClick={() => {
-                setChecked(NO_SELECTION);
-                setAnchor(undefined);
-              }}
-            >
-              ×
-            </button>
+            <Tooltip content="Clear selection">
+              <button
+                type="button"
+                className="myday-chip myday-bulk-clear"
+                aria-label="Clear selection"
+                data-bulk-clear
+                disabled={busy}
+                onClick={() => {
+                  setChecked(NO_SELECTION);
+                  setAnchor(undefined);
+                }}
+              >
+                <Icon name="close" size="small" />
+              </button>
+            </Tooltip>
           </div>
         </div>
       )}

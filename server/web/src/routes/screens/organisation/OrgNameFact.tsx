@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { updateOrg, type Org } from '../../../api/org.ts';
 import { Button } from '../../../components/forms/Button.tsx';
+import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 
 export interface OrgNameFactProps {
   readonly org: Org;
@@ -13,11 +14,14 @@ export interface OrgNameFactProps {
  * The organisation's name on Overview (LAI-987, D-104 item 7): a field and
  * Save for whoever holds *Change organisation settings*, the name as text for
  * everyone else. 1–80 characters; the server trims it and refuses an empty one.
+ * Beside Save, *Saving… / Saved / Couldn't save — Retry* (`SaveStatus`,
+ * LAI-1129), *Saved* only on the server's answer.
  */
 export function OrgNameFact({ org, canEdit, onSaved }: OrgNameFactProps) {
   const [draft, setDraft] = useState(org.name);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const status = useSaveStatus();
+  const busy = status.state.kind === 'saving';
   const trimmed = draft.trim();
   const changed = trimmed !== org.name;
 
@@ -31,18 +35,24 @@ export function OrgNameFact({ org, canEdit, onSaved }: OrgNameFactProps) {
             onSubmit={(event) => {
               event.preventDefault();
               if (!changed || trimmed === '' || busy) return;
-              setBusy(true);
-              setError(undefined);
-              updateOrg({ name: trimmed })
-                .then((saved) => {
-                  setDraft(saved.name);
-                  onSaved(saved);
+              const name = trimmed;
+              // The whole save — its answer handled too — is what Retry runs again.
+              status
+                .run(() => {
+                  setError(undefined);
+                  return updateOrg({ name }).then(
+                    (saved) => {
+                      setDraft(saved.name);
+                      onSaved(saved);
+                    },
+                    (cause: unknown) => {
+                      setError(cause instanceof Error ? cause.message : 'That name was refused.');
+                      throw cause;
+                    },
+                  );
                 })
-                .catch((cause: unknown) => {
-                  setError(cause instanceof Error ? cause.message : 'That name was refused.');
-                })
-                .finally(() => {
-                  setBusy(false);
+                .catch(() => {
+                  // Said under the field and by the status.
                 });
             }}
           >
@@ -54,6 +64,7 @@ export function OrgNameFact({ org, canEdit, onSaved }: OrgNameFactProps) {
               disabled={busy}
               onChange={(event) => {
                 setDraft(event.target.value);
+                status.reset();
               }}
             />
             <span className="org-name-save" data-org-name-save>
@@ -61,6 +72,7 @@ export function OrgNameFact({ org, canEdit, onSaved }: OrgNameFactProps) {
                 Save
               </Button>
             </span>
+            <SaveStatus state={status.state} onRetry={status.retry} />
           </form>
         ) : (
           <span>{org.name}</span>

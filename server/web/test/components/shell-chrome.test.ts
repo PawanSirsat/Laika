@@ -116,15 +116,12 @@ void describe('the shell actually applies the rule', () => {
         'utf8',
       ),
     );
-    const sidebar = code(
-      await readFile(new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url), 'utf8'),
-    );
-
     // The criterion is that the identity is rendered, not how it is spelled:
-    // pre-auth it is `Brand`; the sidebar head draws its own wordmark since
-    // LAI-249 gave the logo a second job as the collapse control.
+    // pre-auth it is `Brand`; signed in, the top bar draws the mark and the
+    // wordmark itself since LAI-1227 (the sidebar's head did from LAI-249),
+    // so it is there whether the rail is open, folded or off-canvas.
     assert.match(shell, /<Brand[\s/>]/, 'the shell must show the brand when there is no nav');
-    assert.match(sidebar, /sidebar-wordmark/, 'and the sidebar must carry the wordmark');
+    assert.match(shell, /sidebar-wordmark/, 'and the signed-in top bar must carry the wordmark');
   });
 
   void test('a route that suppresses the shell header supplies both parts itself', async () => {
@@ -164,7 +161,8 @@ void describe('the shell actually applies the rule', () => {
       ),
     );
 
-    const start = src.indexOf('{!signedIn && (');
+    // Since LAI-1188 the pre-auth header is its own early return.
+    const start = src.indexOf('if (!signedIn) {');
     assert.notEqual(start, -1, 'there must be a pre-auth branch in the header');
     const preAuth = src.slice(start, src.indexOf('</header>', start));
 

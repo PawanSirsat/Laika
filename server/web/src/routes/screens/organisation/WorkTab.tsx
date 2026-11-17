@@ -19,6 +19,7 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { ScrollCue } from '../../../components/ScrollCue.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
 import { BulkBar } from '../list/BulkBar.tsx';
 import { runBulkAction, type BulkAction, type BulkRun } from '../list/list-bulk.ts';
@@ -33,6 +34,7 @@ import {
 import { bulkScope } from './work-bulk.ts';
 import {
   allTasksFilter,
+  groupWorkRows,
   PAGE_SIZES,
   pageRange,
   pageTotal,
@@ -40,15 +42,22 @@ import {
   personMode,
   readPageSize,
   readWorkFilter,
+  readWorkGroup,
   STATUS_FILTERS,
   STATUS_TILES,
   summaryFilter,
   withPageSize,
   withWorkFilter,
+  withWorkGroup,
+  WORK_GROUP_LABELS,
+  WORK_GROUPS,
   workRows,
+  type WorkGroup,
   type WorkFilter,
 } from './work-derive.ts';
 import './work-tab.css';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** A task to open, in its own space — the board's drawer (`?task=`). */
 export interface WorkTaskLink {
@@ -141,6 +150,17 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
 
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  /*
+   * **The last page that loaded, kept through a failure** (LAI-1196). A read
+   * that fails after one succeeded leaves those rows on screen, marked as the
+   * last that loaded, with Retry above them — rather than blanking a list the
+   * reader was in the middle of using. A first read that fails has nothing to
+   * keep and shows the error as before.
+   */
+  const [last, setLast] = useState<readonly TaskSummary[] | undefined>(undefined);
+  const retry = (): void => {
+    setAttempt((n) => n + 1);
+  };
 
   /*
    * **A refetch of the same page keeps its rows until the new ones land**
@@ -162,6 +182,7 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
     listAllTasks(cursor === null ? query : { ...query, cursor }, controller.signal)
       .then((page) => {
         setLoad({ status: 'ready', tasks: page.data, next: page.next_cursor });
+        setLast(page.data);
       })
       .catch((cause: unknown) => {
         if (aborted(cause)) return;
@@ -228,7 +249,11 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
     () => new Map(spaces.map((s) => [s.id, { slug: s.slug, name: s.name }])),
     [spaces],
   );
-  const tasks = useMemo(() => (load.status === 'ready' ? load.tasks : []), [load]);
+  const stale = load.status === 'error' && last !== undefined;
+  const tasks = useMemo(
+    () => (load.status === 'ready' ? load.tasks : load.status === 'error' ? (last ?? []) : []),
+    [load, last],
+  );
 
   /*
    * **The selection belongs to one page of one query** (LAI-1170), as the
@@ -372,6 +397,8 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
     [spacesById, people, sprintsBySpace],
   );
   const rows = useMemo(() => workRows(tasks, lookups), [tasks, lookups]);
+  const group = readWorkGroup(params);
+  const groups = useMemo(() => groupWorkRows(rows, group), [rows, group]);
   const selectable = writableIds.length > 0;
 
   /*
@@ -449,6 +476,90 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
    * gives for exactly this, and never the org role (LAI-970).
    */
   const seesPeople = gates.org('people.analytics.read');
+
+  const renderRow = (row: (typeof rows)[number]) => {
+    const updated = timeLabel(row.updatedAt, now);
+    const isSelected = effective.has(row.id);
+    return (
+      <li key={row.id} className="work-item">
+        {/*
+        The row opens its task — the title's button covers it
+        (`::after`) — and the assignee's name is its own link to
+        their profile, above that, for a reader who may open it
+        (LAI-959): a link cannot sit inside a button. The checkbox
+        sits above it the same way (LAI-1170).
+      */}
+        <div className={isSelected ? 'work-row work-row-selected' : 'work-row'}>
+          {selectable && (
+            <span className="work-check">
+              {writable.has(row.id) && (
+                <input
+                  type="checkbox"
+                  className="list-checkbox"
+                  aria-label={`Select ${row.key}`}
+                  checked={isSelected}
+                  onChange={() => {
+                    select(toggleOne(effective, row.id));
+                  }}
+                />
+              )}
+            </span>
+          )}
+          <span className="work-key">{row.key}</span>
+          <button
+            type="button"
+            className="work-title work-open"
+            data-task-id={row.id}
+            onClick={() => {
+              onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
+            }}
+          >
+            {row.title}
+          </button>
+          <span className="work-meta">
+            <span className="work-space">
+              {row.space === undefined ? (
+                '—'
+              ) : (
+                <>
+                  <SpaceBadge slug={row.space.slug} name={row.space.name} />
+                  <span className="work-space-name">{row.space.name}</span>
+                </>
+              )}
+            </span>
+            <span className="work-status" data-status={row.status}>
+              {row.statusName}
+            </span>
+            <span
+              className={
+                row.assignee === 'Unassigned' ? 'work-assignee work-muted' : 'work-assignee'
+              }
+            >
+              {row.assigneeId === null ? (
+                row.assignee
+              ) : (
+                <PersonLink
+                  userId={row.assigneeId}
+                  className="work-person"
+                  label={`${row.assignee}’s profile`}
+                >
+                  {row.assignee}
+                </PersonLink>
+              )}
+            </span>
+            <span className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}>
+              {row.sprint ?? 'No sprint'}
+            </span>
+            <Tooltip content={updated.full}>
+              <time className="work-updated" dateTime={updated.iso}>
+                {updated.text}
+              </time>
+            </Tooltip>
+          </span>
+        </div>
+      </li>
+    );
+  };
 
   return (
     <div className={selectable ? 'work work-selectable' : 'work'}>
@@ -529,16 +640,49 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
             set({ sprint: value });
           }}
         />
+        <Dropdown
+          className="work-filter work-group-by"
+          aria-label="Group by"
+          value={group}
+          options={WORK_GROUPS.map((g) => ({
+            value: g,
+            label: g === 'none' ? WORK_GROUP_LABELS[g] : `Group: ${WORK_GROUP_LABELS[g]}`,
+          }))}
+          onChange={(value: WorkGroup) => {
+            setParams(withWorkGroup(params, value));
+          }}
+        />
+        {/* The empty state offers the same, once; two identical buttons is one too many. */}
+        {filtered && !(load.status === 'ready' && rows.length === 0) && (
+          <button
+            type="button"
+            className="bar-control work-clear"
+            onClick={() => {
+              set({ person: '', status: '', space: '', sprint: '' });
+            }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
-      {load.status === 'error' ? (
+      {stale && (
+        <div className="work-stale" role="alert">
+          <p className="work-stale-text">
+            The work did not refresh. These rows are the last that loaded and may be out of date.
+          </p>
+          <button type="button" className="bar-control" onClick={retry}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {load.status === 'error' && !stale ? (
         <ApiErrorState
           error={load.error}
           resource="everyone’s work"
           scope="organisation"
-          onRetry={() => {
-            setAttempt((n) => n + 1);
-          }}
+          onRetry={retry}
         />
       ) : load.status === 'loading' ? (
         <LoadingState shape="row" count={6} label="Loading everyone’s work" />
@@ -563,132 +707,69 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
           {bar}
         </div>
       ) : (
-        <>
-          <div className="work-head">
-            {selectable && (
-              <span className="work-check work-check-all">
-                <input
-                  type="checkbox"
-                  className="list-checkbox"
-                  aria-label="Select every task on this page you may change"
-                  checked={headState === 'all'}
-                  // `indeterminate` is a property, not an attribute, so React
-                  // has no prop for it; the ref sets it on every render.
-                  ref={(box) => {
-                    if (box !== null) box.indeterminate = headState === 'some';
-                  }}
-                  onChange={() => {
-                    select(togglePage(effective, writableIds));
-                  }}
-                />
+        /*
+          The card and what floats over it (LAI-1170): the bar is positioned
+          from this box's foot, as the List's is from `.list-card`, and the
+          room at the end keeps the last row clear of it. The columns scroll
+          inside it at tablet width with a cue (LAI-1196); the bar stays
+          outside the scrolling region, so it never scrolls away.
+        */
+        <div className="work-card">
+          <ScrollCue className="work-table" label="Everyone’s work, table">
+            <div className="work-head">
+              {selectable && (
+                <span className="work-check work-check-all">
+                  <input
+                    type="checkbox"
+                    className="list-checkbox"
+                    aria-label="Select every task on this page you may change"
+                    checked={headState === 'all'}
+                    // `indeterminate` is a property, not an attribute, so React
+                    // has no prop for it; the ref sets it on every render.
+                    ref={(box) => {
+                      if (box !== null) box.indeterminate = headState === 'some';
+                    }}
+                    onChange={() => {
+                      select(togglePage(effective, writableIds));
+                    }}
+                  />
+                </span>
+              )}
+              <span className="work-head-labels" aria-hidden="true">
+                <span>Key</span>
+                <span>Title</span>
+                <span>Space</span>
+                <span>Status</span>
+                <span>Assignee</span>
+                <span>Sprint</span>
+                <span>Updated</span>
               </span>
-            )}
-            <span className="work-head-labels" aria-hidden="true">
-              <span>Key</span>
-              <span>Title</span>
-              <span>Space</span>
-              <span>Status</span>
-              <span>Assignee</span>
-              <span>Sprint</span>
-              <span>Updated</span>
-            </span>
-          </div>
-          {/*
-            The card and what floats over it (LAI-1170): the bar is positioned
-            from this box's foot, as the List's is from `.list-card`, and the
-            room at the end keeps the last row clear of it.
-          */}
-          <div className="work-card">
-            <ul className="work-list" aria-label="Tasks">
-              {rows.map((row) => {
-                const updated = timeLabel(row.updatedAt, now);
-                const isSelected = effective.has(row.id);
-                return (
-                  <li key={row.id} className="work-item">
-                    {/*
-                    The row opens its task — the title's button covers it
-                    (`::after`) — and the assignee's name is its own link to
-                    their profile, above that, for a reader who may open it
-                    (LAI-959): a link cannot sit inside a button. The checkbox
-                    sits above it the same way (LAI-1170).
-                  */}
-                    <div className={isSelected ? 'work-row work-row-selected' : 'work-row'}>
-                      {selectable && (
-                        <span className="work-check">
-                          {writable.has(row.id) && (
-                            <input
-                              type="checkbox"
-                              className="list-checkbox"
-                              aria-label={`Select ${row.key}`}
-                              checked={isSelected}
-                              onChange={() => {
-                                select(toggleOne(effective, row.id));
-                              }}
-                            />
-                          )}
-                        </span>
-                      )}
-                      <span className="work-key">{row.key}</span>
-                      <button
-                        type="button"
-                        className="work-title work-open"
-                        data-task-id={row.id}
-                        onClick={() => {
-                          onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
-                        }}
-                      >
-                        {row.title}
-                      </button>
-                      <span className="work-meta">
-                        <span className="work-space">
-                          {row.space === undefined ? (
-                            '—'
-                          ) : (
-                            <>
-                              <SpaceBadge slug={row.space.slug} name={row.space.name} />
-                              <span className="work-space-name">{row.space.name}</span>
-                            </>
-                          )}
-                        </span>
-                        <span className="work-status" data-status={row.status}>
-                          {row.statusName}
-                        </span>
-                        <span
-                          className={
-                            row.assignee === 'Unassigned'
-                              ? 'work-assignee work-muted'
-                              : 'work-assignee'
-                          }
-                        >
-                          {row.assigneeId === null ? (
-                            row.assignee
-                          ) : (
-                            <PersonLink
-                              userId={row.assigneeId}
-                              className="work-person"
-                              label={`${row.assignee}’s profile`}
-                            >
-                              {row.assignee}
-                            </PersonLink>
-                          )}
-                        </span>
-                        <span
-                          className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}
-                        >
-                          {row.sprint ?? 'No sprint'}
-                        </span>
-                        <time className="work-updated" dateTime={updated.iso} title={updated.full}>
-                          {updated.text}
-                        </time>
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-            {bar}
-          </div>
-        </>
+            </div>
+            {groups.map((g) => (
+              <section
+                key={g.key}
+                className={stale ? 'work-group work-group-stale' : 'work-group'}
+                aria-labelledby={group === 'none' ? undefined : `work-group-${g.key}`}
+              >
+                {group !== 'none' && (
+                  <h2 className="work-group-title" id={`work-group-${g.key}`}>
+                    <span>{g.label}</span>
+                    <span className="work-group-count">{g.rows.length}</span>
+                  </h2>
+                )}
+                <ul className="work-list" aria-label={group === 'none' ? 'Tasks' : g.label}>
+                  {g.rows.map(renderRow)}
+                </ul>
+              </section>
+            ))}
+          </ScrollCue>
+          {bar}
+        </div>
+      )}
+      {group !== 'none' && rows.length > 0 && load.status !== 'loading' && (
+        <p className="work-group-note">
+          Grouped within this page; Next and Previous page the whole list.
+        </p>
       )}
 
       {load.status === 'ready' && (rows.length > 0 || pageIndex > 0) && (
@@ -706,28 +787,36 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
               if (next !== undefined) setParams(withPageSize(params, next));
             }}
           />
-          <button
-            type="button"
-            className="bar-control"
-            aria-label="Previous page"
-            disabled={pageIndex === 0}
-            onClick={() => {
-              turn(stack.slice(0, -1));
-            }}
-          >
-            ‹ Previous
-          </button>
-          <button
-            type="button"
-            className="bar-control"
-            aria-label="Next page"
-            disabled={load.next === null}
-            onClick={() => {
-              if (load.next !== null) turn([...stack, load.next]);
-            }}
-          >
-            Next ›
-          </button>
+          <Tooltip content={pageIndex === 0 ? 'This is the first page' : 'Previous page'}>
+            <button
+              type="button"
+              className="bar-control"
+              aria-label="Previous page"
+              data-work-page="previous"
+              aria-disabled={pageIndex === 0 || undefined}
+              onClick={() => {
+                if (pageIndex > 0) turn(stack.slice(0, -1));
+              }}
+            >
+              <Icon name="chevron-left" size="tiny" />
+              Previous
+            </button>
+          </Tooltip>
+          <Tooltip content={load.next === null ? 'This is the last page' : 'Next page'}>
+            <button
+              type="button"
+              className="bar-control"
+              aria-label="Next page"
+              data-work-page="next"
+              aria-disabled={load.next === null || undefined}
+              onClick={() => {
+                if (load.next !== null) turn([...stack, load.next]);
+              }}
+            >
+              Next
+              <Icon name="chevron" size="tiny" />
+            </button>
+          </Tooltip>
         </nav>
       )}
     </div>
@@ -828,7 +917,8 @@ function WorkSummary({ count, filter, seesPeople, onFilter, onNavigate }: WorkSu
                     onNavigate(DECIDE_HREF);
                   }}
                 >
-                  Decide in Inbox ›
+                  Decide in Inbox
+                  <Icon name="chevron" size="tiny" />
                 </a>
               )}
             </span>

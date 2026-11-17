@@ -14,6 +14,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -186,7 +187,12 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         (await past.getAttribute('class'))?.includes('card-due-overdue'),
         'the overdue chip is not marked overdue',
       );
-      assert.match(await past.innerText(), /⚠/, 'the overdue chip carries no mark');
+      // A drawn warning triangle since LAI-1206, named aloud — not a ⚠ glyph.
+      assert.equal(
+        await past.locator('svg[data-mark="alert"]').count(),
+        1,
+        'the overdue chip carries no mark',
+      );
       assert.match(await past.innerText(), /\d{1,2} [A-Z][a-z]{2}/, 'the overdue chip has no date');
 
       const today = card(h, 'LAI-4').locator('.card-due');
@@ -197,7 +203,7 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         'the today chip is not marked today',
       );
       assert.equal((await today.innerText()).trim(), 'Due today');
-      assert.match((await today.getAttribute('title')) ?? '', /\d{4}/, 'no full date on hover');
+      assert.match(await tipText(today), /\d{4}/, 'no full date on hover');
 
       assert.equal(
         await card(h, 'LAI-5').locator('.card-due').count(),

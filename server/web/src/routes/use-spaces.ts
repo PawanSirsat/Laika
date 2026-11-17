@@ -36,11 +36,14 @@ export function useSpaces(
   readonly spaces: readonly SidebarSpace[];
   /** Every space, for the More-spaces popover (LAI-249). */
   readonly all: readonly Space[];
+  /** The list has been read (or the read failed): an empty `all` then means none. */
+  readonly loaded: boolean;
   readonly open: (slug: string) => void;
   /** Pin a space, or unpin it — kept in this browser. */
   readonly togglePin: (slug: string) => void;
 } {
   const [projects, setProjects] = useState<readonly Project[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [recent, setRecent] = useState<readonly string[]>(() =>
     typeof localStorage === 'undefined' ? [] : readRecent(localStorage),
   );
@@ -64,8 +67,10 @@ export function useSpaces(
         if (controller.signal.aborted) return;
         // A deleted project arrives as a tombstone, which has no name to show.
         setProjects(page.data.filter((row): row is Project => !isTombstone(row)));
+        setLoaded(true);
       })
       .catch(() => {
+        if (!controller.signal.aborted) setLoaded(true);
         // The sidebar's spaces are not worth an error state: the section is
         // absent and every other way of reaching a project still works.
       });
@@ -98,6 +103,7 @@ export function useSpaces(
   return {
     spaces: sidebarSpaces(projects, recent, pins, current),
     all: projects.map(toSpace),
+    loaded,
     open,
     togglePin: pin,
   };

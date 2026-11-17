@@ -36,6 +36,7 @@ import {
   setTheme,
   until,
 } from './harness.ts';
+import { DEACTIVATES, rowAction } from './row-menu.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { optionsOf, pick } from './dropdown.ts';
 
@@ -308,10 +309,7 @@ void describe('role management', () => {
       const ada = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
       assert.equal(await ada.locator('.org-person-role').innerText(), 'Owner');
       assert.equal(
-        await h.page
-          .locator('.org-person', { hasText: 'Tomas Nel' })
-          .locator('button.org-deactivate')
-          .count(),
+        await h.page.locator('.org-person', { hasText: 'Tomas Nel' }).locator(DEACTIVATES).count(),
         1,
       );
     } finally {
@@ -336,7 +334,7 @@ void describe('role management', () => {
           async () => (await h.page.locator('[data-invite-open]').count()) === (invited ? 1 : 0),
         );
         assert.equal(await h.page.locator('[data-invite-open]').count(), invited ? 1 : 0);
-        assert.equal((await h.page.locator('.org-deactivate').count()) > 0, deactivates);
+        assert.equal((await h.page.locator(DEACTIVATES).count()) > 0, deactivates);
         assert.equal(
           (await h.page.locator('.org-person [role="combobox"]').count()) > 0,
           role === 'owner',
@@ -408,7 +406,8 @@ void describe('role management', () => {
       assert.equal(patch.path, '/api/v1/users/u2', 'patched the wrong person');
       assert.deepEqual(patch.body, { org_role: 'admin' });
 
-      await h.page.locator('[data-people-undo] button').click();
+      // The app's toast (LAI-1129): Undo by name, beside its Dismiss.
+      await h.page.locator('[data-people-undo]').getByRole('button', { name: 'Undo' }).click();
       await until(() => h.calls.filter((c: StubCall) => c.method === 'PATCH').length === 2);
       const undone = h.calls.filter((c: StubCall) => c.method === 'PATCH')[1];
       assert.equal(undone?.path, '/api/v1/users/u2');
@@ -429,20 +428,27 @@ void describe('deactivation', () => {
   void test('an active person is deactivated and an inactive one reactivated', async () => {
     const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
+      await h.page.locator(DEACTIVATES).first().waitFor({ timeout: 20_000 });
 
-      const active = h.page
-        .locator('.org-person', { hasText: 'Tomas Nel' })
-        .locator('.org-deactivate');
-      assert.match(await active.innerText(), /^Deactivate$/i, 'wrong verb for an active person');
+      // An active person's Deactivate is in their row's ⋯ menu (LAI-1210).
+      const tomas = h.page.locator('.org-person', { hasText: 'Tomas Nel' });
+      await tomas.locator('.overflow-menu-button').click();
+      const active = tomas.getByRole('menuitem', { name: /^Deactivate/ });
+      assert.match(await active.innerText(), /^Deactivate\b/i, 'wrong verb for an active person');
+      await h.page.keyboard.press('Escape');
 
       const inactive = h.page
         .locator('.org-person', { hasText: 'Sam Okafor' })
         .locator('.org-reactivate');
       assert.match(await inactive.innerText(), /^Reactivate$/i, 'wrong verb for an inactive one');
 
-      // Reactivation asks nothing — it takes nobody's access away.
+      // Reactivation asks first since LAI-1194 — every consequential action
+      // confirms and then reports — but it is not a danger action.
       await inactive.click();
+      const asked = h.page.locator('[data-confirm-dialog]');
+      await asked.waitFor({ timeout: 10_000 });
+      assert.match(await asked.innerText(), /Reactivate Sam Okafor\?/);
+      await asked.locator('[data-confirm-ok] button').click();
       await until(() => h.calls.some((c: StubCall) => c.method === 'PATCH'));
       const patch = h.calls.find((c: StubCall) => c.method === 'PATCH');
       assert.ok(patch, 'reactivating sent no PATCH');
@@ -477,11 +483,8 @@ void describe('deactivation', () => {
       },
     });
     try {
-      await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
-      await h.page
-        .locator('.org-person', { hasText: 'Tomas Nel' })
-        .locator('.org-deactivate')
-        .click();
+      await h.page.locator(DEACTIVATES).first().waitFor({ timeout: 20_000 });
+      await rowAction(h.page.locator('.org-person', { hasText: 'Tomas Nel' }), 'Deactivate');
 
       const dialog = h.page.locator('.offb-dialog');
       await dialog.waitFor({ timeout: 20_000 });
@@ -662,9 +665,9 @@ void describe('both themes', () => {
 
         const button = h.page
           .locator('.org-person', { hasText: 'Tomas Nel' })
-          .locator('.org-deactivate');
+          .locator('.overflow-menu-button');
         const bbox = await button.boundingBox();
-        assert.ok(bbox !== null && bbox.height > 0, `${theme}: the deactivate button has no box`);
+        assert.ok(bbox !== null && bbox.height > 0, `${theme}: the row's menu button has no box`);
       }
     } finally {
       await h.close();

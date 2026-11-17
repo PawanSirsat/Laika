@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import {
   getCapacity,
@@ -8,16 +8,20 @@ import {
 } from '../../../api/presence.ts';
 import { isProject, listProjects } from '../../../api/projects.ts';
 import { timeLabel } from '../../../api/time-label.ts';
+import { usePolled } from '../../../api/use-polled.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { FilterBar, Segmented } from '../../../components/kpi/FilterBar.tsx';
+import { KpiRow, KpiTile } from '../../../components/kpi/KpiRow.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { StaleNotice } from '../../../components/StaleNotice.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { CapacityCard, LOAD_RULE } from './CapacityCard.tsx';
 import { CapacityList } from './CapacityList.tsx';
 import {
-  FILTERS,
+  filterCounts,
   matchesQuery,
   passesFilter,
   PRESENCE_FILTERS,
@@ -25,7 +29,9 @@ import {
   SORTS,
   summarize,
   teamLoad,
+  CAPACITY_DEFAULTS,
   type CapacityFilter,
+  type CapacityParams,
   type CapacitySort,
 } from './capacity-derive.ts';
 import '../../../components/markers.css';
@@ -48,13 +54,31 @@ export interface CapacityScreenProps {
   readonly reviewCapped?: boolean | undefined;
   /** Follow a tile's link without reloading the page. */
   readonly onNavigate: (to: string) => void;
+  /**
+   * The search, chip, space and sort the address names (LAI-1201), so a
+   * reload or a pasted link opens the same view. Absent: the screen keeps its
+   * own, starting from the defaults.
+   */
+  readonly params?: CapacityParams | undefined;
+  /** A filter changed: the shell writes it into the address. */
+  readonly onParams?: ((next: Partial<CapacityParams>) => void) | undefined;
 }
 
 /** How often to re-read. §11.4.2's screen is worthless if it silently ages. */
 const POLL_MS = 20_000;
 
-/** A focus and a visibility change arrive together; one read answers both. */
-const REFOCUS_GAP_MS = 2_000;
+/** The two reads the page is drawn from, taken together so they agree. */
+interface CapacityRead {
+  readonly capacity: CapacityView;
+  readonly presence: PresenceView;
+}
+
+function readCapacity(signal: AbortSignal): Promise<CapacityRead> {
+  return Promise.all([getCapacity(signal), getPresence(signal)]).then(([capacity, presence]) => ({
+    capacity,
+    presence,
+  }));
+}
 
 /** Cards or a table (LAI-991). Remembered per browser; cards until chosen. */
 export type CapacityViewMode = 'cards' | 'list';
@@ -127,19 +151,38 @@ export function CapacityScreen({
   reviewWaiting,
   reviewCapped,
   onNavigate,
+  params,
+  onParams,
 }: CapacityScreenProps) {
   const { theme } = useTheme();
-  const [capacity, setCapacity] = useState<CapacityView | undefined>(undefined);
-  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
-  const [error, setError] = useState<unknown>(null);
-  /** The last refresh failed while older figures are still on screen. */
-  const [stale, setStale] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  /*
+   * Re-read every 20 s while the tab is visible, and at once when it comes
+   * back (`usePolled`, LAI-1128). A good read clears any error; a failed
+   * re-read keeps the figures on screen and says they are stale.
+   */
+  const polled = usePolled(readCapacity, { ms: POLL_MS, keepOnError: true, pauseWhenHidden: true });
+  const capacity = polled.data?.capacity;
+  const presence = polled.data?.presence;
+  const now = polled.readAt ?? 0;
 
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<CapacityFilter>('all');
-  const [space, setSpace] = useState<string | null>(null);
-  const [sort, setSort] = useState<CapacitySort>('online');
+  const [own, setOwn] = useState<CapacityParams>(CAPACITY_DEFAULTS);
+  const { query, filter, space, sort } = params ?? own;
+  const update = (next: Partial<CapacityParams>): void => {
+    if (onParams === undefined) setOwn((was) => ({ ...was, ...next }));
+    else onParams(next);
+  };
+  const setQuery = (next: string): void => {
+    update({ query: next });
+  };
+  const setFilter = (next: CapacityFilter): void => {
+    update({ filter: next });
+  };
+  const setSpace = (next: string | null): void => {
+    update({ space: next });
+  };
+  const setSort = (next: CapacitySort): void => {
+    update({ sort: next });
+  };
   const [showNever, setShowNever] = useState(false);
   const [view, setView] = useState<CapacityViewMode>(rememberedView);
   const chooseView = (next: CapacityViewMode): void => {
@@ -182,51 +225,20 @@ export function CapacityScreen({
     };
   }, []);
 
-  const lastRead = useRef(0);
-  const hasData = useRef(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = (): void => {
-      lastRead.current = Date.now();
-      Promise.all([getCapacity(controller.signal), getPresence(controller.signal)])
-        .then(([cap, pres]) => {
-          hasData.current = true;
-          setCapacity(cap);
-          setPresence(pres);
-          setNow(Date.now());
-          setStale(false);
-        })
-        .catch((cause: unknown) => {
-          if (cause instanceof DOMException && cause.name === 'AbortError') return;
-          // A failed refresh keeps what is on screen and says so; only a
-          // first read with nothing to show is an error page.
-          if (hasData.current) setStale(true);
-          else setError(cause);
-        });
-    };
-    const poll = (): void => {
-      if (document.visibilityState !== 'hidden') load();
-    };
-    const back = (): void => {
-      if (document.visibilityState === 'hidden') return;
-      if (Date.now() - lastRead.current < REFOCUS_GAP_MS) return;
-      load();
-    };
-    load();
-    const timer = setInterval(poll, POLL_MS);
-    document.addEventListener('visibilitychange', back);
-    window.addEventListener('focus', back);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', back);
-      window.removeEventListener('focus', back);
-    };
-  }, []);
-
-  if (error !== null) {
-    return <ApiErrorState error={error} resource="capacity" scope="organisation" />;
+  if (polled.status === 'error') {
+    return (
+      <div className="cap-page">
+        <ScreenHeader title="Capacity" />
+        <div className="cap">
+          <ApiErrorState
+            error={polled.error}
+            resource="capacity"
+            scope="organisation"
+            onRetry={polled.retry}
+          />
+        </div>
+      </div>
+    );
   }
   if (capacity === undefined || presence === undefined) {
     return <CapacitySkeleton />;
@@ -262,21 +274,66 @@ export function CapacityScreen({
   const pick = (next: CapacityFilter): void => {
     setFilter(next);
   };
+  /** A figure pressed again goes back to everyone. */
+  const toggle = (next: CapacityFilter): void => {
+    setFilter(effectiveFilter === next ? 'all' : next);
+  };
+  const counts = filterCounts(everyone, space);
   const link = (to: string) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     onNavigate(to);
   };
 
-  const context = `${String(everyone.length)} ${everyone.length === 1 ? 'person' : 'people'}${
+  const summary = `${String(everyone.length)} ${everyone.length === 1 ? 'person' : 'people'}${
     on ? ` · ${String(sum.online)} online` : ''
-  } · ${stale ? `refresh failed, showing ${timeLabel(now, Date.now()).text}` : `updated every ${String(POLL_MS / 1000)}s`}`;
+  } · ${String(sum.inProgress)} in progress · ${polled.stale ? `refresh failed, showing ${timeLabel(now, Date.now()).text}` : `updated every ${String(POLL_MS / 1000)}s`}`;
+  /*
+   * The one-line summary ends with the two queues this page counts but does
+   * not list (LAI-1222): each a link to the page that does. They were tiles
+   * among the filters; a figure that goes elsewhere is not a filter here.
+   */
+  const context = (
+    <>
+      {summary}
+      <span className="cap-out-sep" aria-hidden="true">
+        {' · '}
+      </span>
+      <a
+        className="cap-out"
+        data-out="review"
+        href="/inbox?tab=review"
+        onClick={link('/inbox?tab=review')}
+      >
+        {reviewWaiting === undefined
+          ? 'Review'
+          : `${String(reviewWaiting)}${reviewCapped === true ? '+' : ''} waiting for review`}
+      </a>
+      {unlistedOpen !== undefined && (
+        <>
+          <span className="cap-out-sep" aria-hidden="true">
+            {' · '}
+          </span>
+          <a
+            className="cap-out"
+            data-out="unlisted"
+            href="/inbox?tab=unlisted"
+            onClick={link('/inbox?tab=unlisted')}
+          >
+            {`${String(unlistedOpen)} unlisted to triage`}
+          </a>
+        </>
+      )}
+    </>
+  );
 
   return (
     <div className="cap-page">
       <ScreenHeader title="Capacity" context={context} />
 
       <div className="cap">
+        {polled.stale && <StaleNotice readAt={polled.readAt} onRetry={polled.retry} />}
+
         {!on && (
           /* **Disabled is not empty.** No control here: turning it on is
              Admin+ on the Organisation screen (LAI-149). */
@@ -287,195 +344,215 @@ export function CapacityScreen({
           </p>
         )}
 
-        <div className="cap-tiles">
-          <Tile
-            label="Online now"
-            value={on ? sum.online : 'Off'}
-            sub={on ? `of ${String(everyone.length)} people` : 'presence is off'}
-            pressed={effectiveFilter === 'online'}
-            {...(on
-              ? {
-                  onClick: () => {
-                    pick(filter === 'online' ? 'all' : 'online');
-                  },
-                }
-              : {})}
-            tone="online"
-          />
-          <Tile
-            label="Agents running"
-            value={on ? sum.sessions : 'Off'}
-            sub={on ? (sum.sessions === 1 ? 'session' : 'sessions') : 'presence is off'}
-            pressed={effectiveFilter === 'agents'}
-            {...(on
-              ? {
-                  onClick: () => {
-                    pick(filter === 'agents' ? 'all' : 'agents');
-                  },
-                }
-              : {})}
-          />
-          <Tile
-            label="In progress"
-            value={sum.inProgress}
-            sub="tasks · heaviest first"
-            pressed={effectiveSort === 'load'}
-            onClick={() => {
-              setSort(sort === 'load' ? 'online' : 'load');
+        {/* The figures are the filters (LAI-1222): each tile shows how many
+            people its filter leaves, and pressing it narrows the cards; the
+            last two go to the page that breaks their figure down. */}
+        <KpiRow label="Filter people" className="cap-kpis">
+          <KpiTile
+            id="all"
+            label="People"
+            value={everyone.length}
+            sub={on ? `${String(sum.online)} online` : 'presence is off'}
+            pressed={effectiveFilter === 'all'}
+            onToggle={() => {
+              pick('all');
             }}
           />
-          <Tile
-            label="Waiting for review"
-            value={
-              reviewWaiting === undefined
-                ? '—'
-                : `${String(reviewWaiting)}${reviewCapped === true ? '+' : ''}`
-            }
-            sub="open Review"
-            href="/inbox?tab=review"
-            onLink={link('/inbox?tab=review')}
-          />
-          <Tile
-            label="Overdue"
-            value={sum.overdue}
-            sub="assigned tasks"
-            pressed={effectiveFilter === 'overdue'}
-            onClick={() => {
-              pick(filter === 'overdue' ? 'all' : 'overdue');
-            }}
-            tone={sum.overdue > 0 ? 'overdue' : undefined}
-          />
-          {unlistedOpen !== undefined && (
-            <Tile
-              label="Unlisted work"
-              value={unlistedOpen}
-              sub="to triage"
-              href="/inbox?tab=unlisted"
-              onLink={link('/inbox?tab=unlisted')}
-              tone="unlisted"
-            />
-          )}
-        </div>
-
-        <div className="cap-toolbar">
-          <label className="cap-search">
-            <span className="visually-hidden">Search people</span>
-            <svg className="cap-search-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="M10.5 10.5 14 14" />
-            </svg>
-            <input
-              type="search"
-              placeholder="Search people by name or email"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
+          {on && (
+            <KpiTile
+              id="online"
+              label="Online now"
+              value={counts.online}
+              sub={`of ${String(everyone.length)} people`}
+              tone={counts.online > 0 ? 'positive' : undefined}
+              pressed={effectiveFilter === 'online'}
+              onToggle={() => {
+                toggle('online');
               }}
             />
-          </label>
-          <div className="cap-chips" role="group" aria-label="Show">
-            {FILTERS.filter((f) => on || !PRESENCE_FILTERS.has(f.id)).map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className="cap-chip"
-                aria-pressed={effectiveFilter === f.id}
-                onClick={() => {
-                  pick(f.id);
-                }}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div className="cap-selects">
-            <span className="cap-select">
-              <span className="cap-select-label" aria-hidden="true">
-                Space
-              </span>
-              <Dropdown
-                className="cap-dropdown"
-                aria-label="Space"
-                value={space ?? ''}
-                options={[
-                  { value: '', label: 'All spaces' },
-                  ...[...(spaces ?? new Map<string, { slug: string; name: string }>())]
-                    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
-                    .map(([id, s]) => ({ value: id, label: s.name })),
-                ]}
-                onChange={(value) => {
-                  setSpace(value === '' ? null : value);
-                }}
-              />
-            </span>
-            <span className="cap-select">
-              <span className="cap-select-label" aria-hidden="true">
-                Sort
-              </span>
-              <Dropdown<CapacitySort>
-                className="cap-dropdown"
-                aria-label="Sort"
-                value={effectiveSort}
-                options={SORTS.filter((s) => on || (s.id !== 'online' && s.id !== 'seen')).map(
-                  (s) => ({ value: s.id, label: s.label }),
+          )}
+          {on && (
+            <KpiTile
+              id="agents"
+              label="Agents running"
+              value={counts.agents}
+              sub={`${String(sum.sessions)} ${sum.sessions === 1 ? 'session' : 'sessions'}`}
+              pressed={effectiveFilter === 'agents'}
+              onToggle={() => {
+                toggle('agents');
+              }}
+            />
+          )}
+          {(counts.heavy > 0 || effectiveFilter === 'heavy') && (
+            <KpiTile
+              id="heavy"
+              label="Heavy load"
+              value={counts.heavy}
+              sub={counts.heavy === 1 ? 'person' : 'people'}
+              tone={counts.heavy > 0 ? 'warning' : undefined}
+              pressed={effectiveFilter === 'heavy'}
+              onToggle={() => {
+                toggle('heavy');
+              }}
+            />
+          )}
+          <KpiTile
+            id="overdue"
+            label="Overdue"
+            value={sum.overdue}
+            sub={
+              sum.overdue === 0
+                ? 'nothing past due'
+                : `tasks · ${String(counts.overdue)} ${counts.overdue === 1 ? 'person' : 'people'}`
+            }
+            tone={sum.overdue > 0 ? 'danger' : undefined}
+            pressed={effectiveFilter === 'overdue'}
+            onToggle={() => {
+              toggle('overdue');
+            }}
+          />
+          {(counts.none > 0 || effectiveFilter === 'none') && (
+            <KpiTile
+              id="none"
+              label="No load"
+              value={counts.none}
+              sub="can take the next task"
+              pressed={effectiveFilter === 'none'}
+              onToggle={() => {
+                toggle('none');
+              }}
+            />
+          )}
+          {on && (counts.never > 0 || effectiveFilter === 'never') && (
+            <KpiTile
+              id="never"
+              label="Never seen"
+              value={counts.never}
+              sub={counts.never === 1 ? 'person' : 'people'}
+              pressed={effectiveFilter === 'never'}
+              onToggle={() => {
+                toggle('never');
+              }}
+            />
+          )}
+        </KpiRow>
+
+        {/* Nobody at all (LAI-1216): no search, filters or sort for a list that is not there. */}
+        {everyone.length > 0 && (
+          <FilterBar
+            label="Find people"
+            active={space === null ? 0 : 1}
+            primary={
+              <label className="cap-search">
+                <span className="visually-hidden">Search people</span>
+                <svg className="cap-search-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="7" cy="7" r="4.5" />
+                  <path d="M10.5 10.5 14 14" />
+                </svg>
+                <input
+                  type="search"
+                  placeholder="Search people by name or email"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                  }}
+                />
+              </label>
+            }
+            filters={
+              <>
+                <Dropdown
+                  className="cap-dropdown"
+                  aria-label="Space"
+                  value={space ?? ''}
+                  options={[
+                    { value: '', label: 'All spaces' },
+                    ...[...(spaces ?? new Map<string, { slug: string; name: string }>())]
+                      .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+                      .map(([id, s]) => ({ value: id, label: s.name })),
+                  ]}
+                  onChange={(value) => {
+                    setSpace(value === '' ? null : value);
+                  }}
+                />
+                <Dropdown<CapacitySort>
+                  className="cap-dropdown"
+                  aria-label="Sort"
+                  value={effectiveSort}
+                  options={SORTS.filter((s) => on || (s.id !== 'online' && s.id !== 'seen')).map(
+                    (s) => ({ value: s.id, label: `Sort: ${s.label}` }),
+                  )}
+                  onChange={setSort}
+                />
+                {(effectiveFilter !== 'all' || space !== null || searching) && (
+                  <button
+                    type="button"
+                    className="cap-clear"
+                    onClick={() => {
+                      update({ query: '', filter: 'all', space: null });
+                    }}
+                  >
+                    Clear filters
+                  </button>
                 )}
-                onChange={setSort}
-              />
-            </span>
-            <span className="cap-view" role="group" aria-label="View">
-              <button
-                type="button"
-                className="cap-view-button"
-                aria-pressed={view === 'cards'}
-                onClick={() => {
-                  chooseView('cards');
-                }}
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                className="cap-view-button"
-                aria-pressed={view === 'list'}
-                onClick={() => {
-                  chooseView('list');
-                }}
-              >
-                List
-              </button>
-            </span>
-            <InfoTip label="About these figures">
-              <dl className="prof-defs">
-                <dt>Online, away, last seen</dt>
-                <dd>
-                  The newest of a sign-in, a board action, and an agent’s heartbeat, MCP call or
-                  write. Online is the last 5 minutes, away the last hour. Reading the board does
-                  not count.
-                </dd>
-                <dt>Load</dt>
-                <dd>{LOAD_RULE}</dd>
-                <dt>Workload</dt>
-                <dd>
-                  Open tasks assigned to them, in the spaces you can see. To do is committed and not
-                  started; backlog is the pipeline, not yet committed. Waiting on reviewers is their
-                  work in review: it waits on the reviewer, not on them. Overdue is past its due
-                  date, and is its own badge.
-                </dd>
-                <dt>List</dt>
-                <dd>
-                  The same people as the cards, one row each. Every row’s bar is drawn to the same
-                  scale, so the longest bar is the heaviest person.
-                </dd>
-              </dl>
-            </InfoTip>
-          </div>
-        </div>
+              </>
+            }
+            trailing={
+              <>
+                <Segmented<CapacityViewMode>
+                  label="View"
+                  value={view}
+                  options={[
+                    { value: 'cards', label: 'Cards' },
+                    { value: 'list', label: 'List' },
+                  ]}
+                  onChange={chooseView}
+                />
+                <InfoTip label="About these figures">
+                  <dl className="prof-defs">
+                    <dt>Online, away, last seen</dt>
+                    <dd>
+                      The newest of a sign-in, a board action, and an agent’s heartbeat, MCP call or
+                      write. Online is the last 5 minutes, away the last hour. Reading the board
+                      does not count.
+                    </dd>
+                    <dt>Load</dt>
+                    <dd>{LOAD_RULE}</dd>
+                    <dt>Workload</dt>
+                    <dd>
+                      Open tasks assigned to them, in the spaces you can see. To do is committed and
+                      not started; backlog is the pipeline, not yet committed. Waiting on reviewers
+                      is their work in review: it waits on the reviewer, not on them. Overdue is
+                      past its due date, and is its own badge.
+                    </dd>
+                    <dt>The figures</dt>
+                    <dd>
+                      Each figure at the top is a filter: press it to show only those people, and
+                      press it again for everyone. A figure that would show nobody is left out.
+                    </dd>
+                    <dt>List</dt>
+                    <dd>
+                      The same people as the cards, one row each. Every row’s bar is drawn to the
+                      same scale, so the longest bar is the heaviest person.
+                    </dd>
+                  </dl>
+                </InfoTip>
+              </>
+            }
+          />
+        )}
 
         <p className="visually-hidden" role="status">
           {`${String(cards.length + never.length)} ${cards.length + never.length === 1 ? 'person' : 'people'} shown`}
         </p>
 
-        {shown.length === 0 ? (
+        {everyone.length === 0 ? (
+          /* Nobody to show is not "nobody matches": no filter would help. */
+          <EmptyState
+            headline="No one to show yet"
+            body="Capacity lists the people in the spaces you can see. Once someone is in one of your spaces, their workload and presence appear here."
+          />
+        ) : shown.length === 0 ? (
           <EmptyState
             headline="Nobody matches"
             body={
@@ -486,9 +563,7 @@ export function CapacityScreen({
             action={{
               label: 'Clear search and filters',
               onClick: () => {
-                setQuery('');
-                setFilter('all');
-                setSpace(null);
+                update({ query: '', filter: 'all', space: null });
               },
             }}
           />
@@ -540,60 +615,24 @@ export function CapacityScreen({
           </button>
         )}
 
-        <ul className="cap-legend" aria-hidden="true">
-          <li>
-            <span className="cap-swatch cap-part-in_progress" />
-            In progress
-          </li>
-          <li>
-            <span className="cap-swatch cap-part-todo" />
-            To do
-          </li>
-          <li className="cap-legend-note">committed work; backlog and review are counted apart</li>
-        </ul>
+        {everyone.length > 0 && (
+          <ul className="cap-legend" aria-hidden="true">
+            <li>
+              <span className="cap-swatch cap-part-in_progress" />
+              In progress
+            </li>
+            <li>
+              <span className="cap-swatch cap-part-todo" />
+              To do
+            </li>
+            <li className="cap-legend-note">
+              committed work; backlog and review are counted apart
+            </li>
+          </ul>
+        )}
       </div>
     </div>
   );
-}
-
-interface TileProps {
-  readonly label: string;
-  readonly value: ReactNode;
-  readonly sub: string;
-  readonly tone?: 'online' | 'overdue' | 'unlisted' | undefined;
-  /** A tile that applies a filter: a toggle button. */
-  readonly onClick?: () => void;
-  readonly pressed?: boolean;
-  /** A tile that goes somewhere: a real link. */
-  readonly href?: string;
-  readonly onLink?: (event: MouseEvent<HTMLAnchorElement>) => void;
-}
-
-/** A summary tile: a figure that filters the page, or links to the page it counts. */
-function Tile({ label, value, sub, tone, onClick, pressed, href, onLink }: TileProps) {
-  const className = `cap-tile${tone === undefined ? '' : ` cap-tile-${tone}`}`;
-  const body = (
-    <>
-      <span className="cap-tile-label">{label}</span>
-      <span className="cap-tile-value">{value}</span>
-      <span className="cap-tile-sub">{sub}</span>
-    </>
-  );
-  if (href !== undefined) {
-    return (
-      <a className={`${className} cap-tile-link`} href={href} onClick={onLink}>
-        {body}
-      </a>
-    );
-  }
-  if (onClick !== undefined) {
-    return (
-      <button type="button" className={className} aria-pressed={pressed} onClick={onClick}>
-        {body}
-      </button>
-    );
-  }
-  return <div className={className}>{body}</div>;
 }
 
 /** The final layout in grey — tiles, toolbar, three cards — so nothing jumps. */
@@ -603,22 +642,22 @@ function CapacitySkeleton() {
       <ScreenHeader title="Capacity" context="Loading" />
       <div className="cap" role="status" aria-busy="true" aria-live="polite">
         <span className="visually-hidden">Loading capacity</span>
-        <div className="cap-tiles" aria-hidden="true">
-          {Array.from({ length: 6 }, (_, i) => (
+        <div className="kpi-row" aria-hidden="true">
+          {Array.from({ length: 7 }, (_, i) => (
             // The tile's own three lines, each holding a grey bar of its
             // line's height, so the row is as tall as the real one.
-            <div key={i} className="cap-tile cap-tile-skeleton">
-              <span className="cap-tile-label">
+            <div key={i} className="kpi cap-tile-skeleton">
+              <span className="kpi-label">
                 <span className="skeleton cap-skeleton-text" style={{ width: '5rem' }}>
                   &nbsp;
                 </span>
               </span>
-              <span className="cap-tile-value">
+              <span className="kpi-value">
                 <span className="skeleton cap-skeleton-text" style={{ width: '1.75rem' }}>
                   &nbsp;
                 </span>
               </span>
-              <span className="cap-tile-sub">
+              <span className="kpi-sub">
                 <span className="skeleton cap-skeleton-text" style={{ width: '4rem' }}>
                   &nbsp;
                 </span>
@@ -628,9 +667,6 @@ function CapacitySkeleton() {
         </div>
         <div className="cap-toolbar" aria-hidden="true">
           <span className="skeleton cap-skeleton-search" />
-          <span className="cap-chips">
-            <span className="skeleton cap-skeleton-chips" />
-          </span>
         </div>
         <ul className="cap-grid" aria-hidden="true">
           {Array.from({ length: 3 }, (_, i) => (

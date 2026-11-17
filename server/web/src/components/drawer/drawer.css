@@ -25,7 +25,7 @@
   z-index: 20;
   /* The design's own scrim. A raw rgba rather than a token because no token is
      a dimming layer — `--border-default` is a border colour and reads far too light here. */
-  background: var(--scrim);
+  background: var(--glass-scrim);
 }
 
 /*
@@ -65,14 +65,16 @@
      screen. The same trap as the tab strip's 34px. */
   box-sizing: border-box;
   z-index: 21;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* LAI-1132: the frame is level-3 glass over the frosted scrim; the content
+     slot below stays solid — the document is never on glass. */
+  background: var(--glass-sheen), var(--glass-3);
+  border: 1px solid var(--glass-border-strong);
   /* Even on all sides now that it floats, rather than thrown from one edge. */
   box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: drawer-slidein 0.2s ease;
+  animation: drawer-slidein var(--duration-slow) var(--ease-drawer);
 }
 
 .drawer:focus {
@@ -80,12 +82,26 @@
 }
 
 .drawer-slot {
+  background: var(--glass-solid);
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/*
+ * What the host draws before the panel can (LAI-1190): the task's loading
+ * state and a task that is not there.
+ */
+.drawer-state {
+  padding: var(--space-5);
+}
+
+.drawer-state-missing {
+  margin: 0;
+  color: var(--text-secondary);
 }
 
 @keyframes drawer-slidein {
@@ -103,12 +119,6 @@
   to {
     transform: none;
     opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drawer {
-    animation: none;
   }
 }
 
@@ -132,7 +142,7 @@
     max-height: 94dvh;
     border-radius: var(--radius-card) var(--radius-card) 0 0;
     border-bottom: none;
-    animation: drawer-sheet 0.22s ease;
+    animation: drawer-sheet var(--duration-slow) var(--ease-drawer);
   }
 
   .drawer-handle {

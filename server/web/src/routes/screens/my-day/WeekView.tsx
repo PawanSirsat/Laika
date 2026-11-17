@@ -1,4 +1,5 @@
 import { memo, useMemo, useSyncExternalStore } from 'react';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { offDescription, offKind, offLabel } from '../../../api/off-days.ts';
 import type { MyDay } from '../../../api/time.ts';
 import { compact, duration, hourName } from './format.ts';
@@ -120,9 +121,13 @@ export const WeekView = memo(function WeekView({
               <span className="span-week-name">{shortDay(day)}</span>
               {t === undefined ? (
                 <span className="span-week-total span-pending-bone" aria-hidden="true" />
+              ) : all > 0 ? (
+                <Tooltip content={duration(all)} lazy>
+                  <span className="span-week-total">{state === 'future' ? '' : compact(all)}</span>
+                </Tooltip>
               ) : (
-                <span className="span-week-total" title={all > 0 ? duration(all) : undefined}>
-                  {state === 'future' || kind === 'off' ? '' : all > 0 ? compact(all) : '—'}
+                <span className="span-week-total">
+                  {state === 'future' || kind === 'off' ? '' : '—'}
                 </span>
               )}
               <span className="span-bar" aria-hidden="true">
@@ -204,14 +209,11 @@ function WeekColumn({
     >
       {/* A day off says so in place of No signal; with time, only a phone has room for it here. */}
       {tone !== null && name !== null ? (
-        <span
-          className="span-week-off"
-          data-off={tone}
-          data-timed={timed ? '' : undefined}
-          title={offDescription(view.off) ?? name}
-        >
-          {name}
-        </span>
+        <Tooltip content={offDescription(view.off) ?? name} lazy>
+          <span className="span-week-off" data-off={tone} data-timed={timed ? '' : undefined}>
+            {name}
+          </span>
+        </Tooltip>
       ) : (
         view.state === 'no_signal' && <span className="span-week-nosignal">No signal</span>
       )}
@@ -221,33 +223,36 @@ function WeekColumn({
         const item = labelOf(view, b);
         const detail = boxDetail(b.minutes);
         return (
-          <button
-            key={b.id}
-            type="button"
-            className="span-week-block"
-            data-kind={b.kind}
-            data-needs-card={b.needsCard ? '' : undefined}
-            data-meeting={item.meeting ? '' : undefined}
-            style={{
-              ['--b-top' as string]: pct(box.top),
-              ['--b-height' as string]: pct(box.height),
-              ['--b-left' as string]: pct(box.row / box.rows),
-              ['--b-width' as string]: pct(1 / box.rows),
-            }}
-            title={`${item.name} · ${duration(b.minutes)}`}
-            aria-label={`${item.name}, ${duration(b.minutes)}, ${b.kind === 'confirmed' ? 'confirmed' : 'to review'}. Open ${dayLong(view.day)}`}
-            onClick={() => {
-              onOpenBlock(view.day, { kind: b.kind === 'confirmed' ? 'entry' : 'draft', id: b.id });
-            }}
-          >
-            {detail !== 'none' && <span className="span-week-key">{item.key ?? item.name}</span>}
-            {(detail === 'length' || detail === 'title') && (
-              <span className="span-week-len">{compact(b.minutes)}</span>
-            )}
-            {detail === 'title' && item.key !== undefined && (
-              <span className="span-week-title">{item.name}</span>
-            )}
-          </button>
+          <Tooltip key={b.id} content={`${item.name} · ${duration(b.minutes)}`} lazy>
+            <button
+              type="button"
+              className="span-week-block"
+              data-kind={b.kind}
+              data-needs-card={b.needsCard ? '' : undefined}
+              data-meeting={item.meeting ? '' : undefined}
+              style={{
+                ['--b-top' as string]: pct(box.top),
+                ['--b-height' as string]: pct(box.height),
+                ['--b-left' as string]: pct(box.row / box.rows),
+                ['--b-width' as string]: pct(1 / box.rows),
+              }}
+              aria-label={`${item.name}, ${duration(b.minutes)}, ${b.kind === 'confirmed' ? 'confirmed' : 'to review'}. Open ${dayLong(view.day)}`}
+              onClick={() => {
+                onOpenBlock(view.day, {
+                  kind: b.kind === 'confirmed' ? 'entry' : 'draft',
+                  id: b.id,
+                });
+              }}
+            >
+              {detail !== 'none' && <span className="span-week-key">{item.key ?? item.name}</span>}
+              {(detail === 'length' || detail === 'title') && (
+                <span className="span-week-len">{compact(b.minutes)}</span>
+              )}
+              {detail === 'title' && item.key !== undefined && (
+                <span className="span-week-title">{item.name}</span>
+              )}
+            </button>
+          </Tooltip>
         );
       })}
       {nowMinute !== undefined && nowMinute >= 0 && nowMinute <= span && (

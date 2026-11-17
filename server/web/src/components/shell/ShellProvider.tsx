@@ -43,7 +43,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
 
   const signedIn = showsAppNav(session);
   const projectSlug = route.params.get('project') ?? undefined;
-  const { version, sprintCount, orgName, spaceName, spaceId } = useShellContext(
+  const { version, sprintCount, orgName, spaceName, spaceId, spaceKey } = useShellContext(
     projectSlug,
     signedIn,
   );
@@ -93,6 +93,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       orgName,
       spaceName,
       spaceId,
+      spaceKey,
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
@@ -122,6 +123,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       orgName,
       spaceName,
       spaceId,
+      spaceKey,
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,

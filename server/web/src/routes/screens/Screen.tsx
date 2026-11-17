@@ -16,7 +16,7 @@ export function Screen({ route }: { readonly route: Route }) {
 
   return (
     <>
-      <ScreenHeader title={route.label} context={route.phase} />
+      <ScreenHeader variant="page" title={route.label} context={route.phase} />
 
       {copy === undefined ? (
         <EmptyState headline={route.label} />

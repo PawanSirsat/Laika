@@ -8,9 +8,9 @@
   position: relative;
   display: flex;
   justify-content: center;
-  gap: 0.25rem;
-  margin-top: 0.5rem;
-  padding: 0 0.5rem;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   background: var(--bg-card);
@@ -99,7 +99,7 @@
 }
 
 .wheel-unit {
-  padding-left: 0.25rem;
+  padding-left: var(--space-1);
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -108,7 +108,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
   font-size: var(--text-small);
   color: var(--text-muted);
 }

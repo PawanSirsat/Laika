@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke-linejoin="round" stroke-linecap="round">
+  <!-- The Laika mark, flat (LAI-1126): the favicon is drawn at 16-32px, where
+       the full mark's rim and glow smear, so it is the two slabs in solid
+       brand colours. Geometry: src/components/brand/brand-paths.ts — kept in
+       step by test/components/brand/brand.test.ts. Literal colours are right
+       here: a favicon cannot read the page's CSS variables. -->
+  <path d="M17 44H55L52 53H14Z" fill="#A7A4E6" stroke="#A7A4E6" stroke-width="8" />
+  <path d="M25 9H37L27 47H15Z" fill="#8FB0E6" stroke="#8FB0E6" stroke-width="8" />
+</svg>

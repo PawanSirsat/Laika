@@ -17,7 +17,7 @@
   gap: var(--space-4);
   min-width: 0;
   /* The space bar's own gutters (`space.css`), so the cards line up under it. */
-  padding: var(--space-4) 1.5rem var(--space-6);
+  padding: var(--space-4) 1.125rem var(--space-6);
 }
 
 .dash,
@@ -65,7 +65,7 @@
 
 /* At 12px (LAI-828) the four ranges ended a pixel past a 390px phone's edge;
    tighter sides on a phone keep the whole control on screen. */
-@media (max-width: 30rem) {
+@media (max-width: 480px) {
   .dash-range {
     padding: var(--space-2) var(--space-2);
   }
@@ -104,10 +104,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  /* Level-2 glass tint (LAI-1132): translucent, no blur over a smooth ground. */
+  background: var(--glass-sheen), var(--glass-2);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--glass-highlight), var(--shadow-card);
   padding: var(--space-4);
 }
 
@@ -213,7 +214,7 @@
 }
 
 .dash-stat-sub {
-  margin: 0.125rem 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-small);
   color: var(--text-muted);
   white-space: nowrap;
@@ -221,15 +222,65 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * **Every figure is a link** (LAI-1195): the card is the target, through one
+ * stretched link per card, so it reads as one control and a screen reader
+ * hears the figure as the link's name. The overdue count is its own link,
+ * lifted above the stretch.
+ */
+.dash-stat {
+  position: relative;
+}
+
+.dash-stat-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dash-stat-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.dash-stat:hover {
+  border-color: var(--border-default);
+}
+
+.dash-stat:hover .dash-stat-n {
+  color: var(--accent);
+}
+
+.dash-stat-link:focus-visible {
+  outline: none;
+}
+
+.dash-stat:has(.dash-stat-link:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .dash-stat-overdue {
+  position: relative;
+  z-index: 1;
   color: var(--overdue);
   font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.dash-stat-overdue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 /* A caveat on the figure — "only 2 of 301 open tasks have a due date" (LAI-817).
    It wraps: a caveat cut by an ellipsis is the part nobody reads. */
 .dash-stat-note {
-  margin: 0.125rem 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-small);
   line-height: 1.3;
   color: var(--chip-orange);
@@ -258,7 +309,24 @@
   }
 }
 
+/* A phone keeps two figures a row (LAI-1195): four full-width cards pushed
+   the status chart a whole screen down. The icon gives way, the sub-line
+   wraps rather than cutting "1 overdue" off. */
 @container dash (max-width: 34rem) {
+  .dash-stat {
+    padding: var(--space-3);
+  }
+
+  .dash-stat-icon {
+    display: none;
+  }
+
+  .dash-stat-sub {
+    white-space: normal;
+  }
+}
+
+@container dash (max-width: 17rem) {
   .dash-stats {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -297,7 +365,7 @@
   grid-template-columns: minmax(0, 1fr);
   /* Rows at the top, at their own height — not spread to fill a tall card. */
   align-content: start;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
 }
 
 .dash-legend-row {
@@ -305,7 +373,7 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: 0.375rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-control);
   color: var(--text-primary);
   text-decoration: none;
@@ -329,7 +397,7 @@
   font-weight: var(--weight-semibold);
   color: var(--accent);
   text-decoration: none;
-  padding: 0.25rem 0.375rem;
+  padding: var(--space-1) var(--space-1-5);
   border-radius: var(--radius-control);
 }
 
@@ -445,7 +513,7 @@ a.dash-legend-row:focus-visible {
 }
 
 .dash-contrib thead th {
-  padding: 0 0.5rem 0.375rem;
+  padding: 0 var(--space-2) var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
@@ -459,7 +527,7 @@ a.dash-legend-row:focus-visible {
 }
 
 .dash-contrib tbody .dash-contrib-who {
-  padding: 0.4375rem 0.5rem;
+  padding: 0.4375rem var(--space-2);
   font-size: var(--text-body);
   color: var(--text-primary);
   vertical-align: middle;
@@ -487,7 +555,7 @@ a.dash-legend-row:focus-visible {
 
 .dash-contrib-n {
   width: 5.25rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   vertical-align: middle;
   text-align: right;
   font-family: var(--font-mono);
@@ -548,7 +616,7 @@ thead .dash-contrib-n {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -565,8 +633,8 @@ thead .dash-contrib-n {
   color: var(--text-secondary);
   background: none;
   border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 0.3125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  padding: 0.3125rem var(--space-2);
   cursor: pointer;
 }
 
@@ -604,7 +672,7 @@ thead .dash-contrib-n {
   padding: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .dash-prio-row {
@@ -612,7 +680,7 @@ thead .dash-contrib-n {
   grid-template-columns: minmax(5.5rem, 7rem) minmax(0, 1fr) 3ch;
   align-items: center;
   gap: var(--space-3);
-  padding: 0.4375rem 0.5rem;
+  padding: 0.4375rem var(--space-2);
   border-radius: var(--radius-control);
   color: var(--text-primary);
   text-decoration: none;
@@ -662,12 +730,16 @@ thead .dash-contrib-n {
 /* --------------------------------------------------- throughput & cycle */
 
 .dash-tp-bars {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
   display: flex;
   align-items: flex-end;
   /* Spread across the card: eight days are not bunched at the left, and
      thirty-one still fit. */
   justify-content: space-between;
-  gap: 2px;
+  gap: var(--space-0-5);
   height: 6.5rem;
   min-width: 0;
   padding-top: var(--space-2);
@@ -677,7 +749,7 @@ thead .dash-contrib-n {
   flex: 1 1 0;
   min-width: 0;
   max-width: 2.5rem;
-  border-radius: 3px 3px 0 0;
+  border-radius: var(--radius-chip) var(--radius-chip) 0 0;
   background: var(--chip-green);
 }
 
@@ -685,10 +757,73 @@ thead .dash-contrib-n {
   background: var(--border-subtle);
 }
 
+/* A bar is a stop for the keyboard (LAI-1195); the readout under the chart
+   says its day and count, so focus never relies on a hover title. */
+.dash-tp-bar {
+  align-self: flex-end;
+  cursor: default;
+}
+
+.dash-tp-bar:hover,
+.dash-tp-bar[data-active] {
+  background: var(--accent);
+}
+
+.dash-tp-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dash-tp-readout {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.dash-tp-readout strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.dash-card-link {
+  color: var(--accent);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.dash-card-link:hover {
+  text-decoration: underline;
+}
+
+.dash-card-link:focus-visible,
+.dash-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-hairline);
+}
+
+.dash-retry {
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-1) var(--space-3);
+  margin-left: var(--space-2);
+  cursor: pointer;
+}
+
 .dash-tp-axis {
   display: flex;
   justify-content: space-between;
-  margin: 0.375rem 0 0;
+  margin: var(--space-1-5) 0 0;
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -715,7 +850,7 @@ thead .dash-contrib-n {
 }
 
 .dash-cycle dd {
-  margin: 0.125rem 0 0;
+  margin: var(--space-0-5) 0 0;
   font-family: var(--font-mono);
   font-size: var(--text-body);
   font-weight: var(--weight-bold);
@@ -750,10 +885,10 @@ thead .dash-contrib-n {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   height: 1.75rem;
   min-width: 1.75rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
   background: var(--bg-card);
@@ -790,7 +925,7 @@ thead .dash-contrib-n {
   background: var(--accent);
   color: var(--on-accent);
   border-radius: var(--radius-pill);
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   min-width: 0.875rem;
   text-align: center;
 }
@@ -805,20 +940,20 @@ thead .dash-contrib-n {
   width: min(17rem, calc(100vw - 2rem));
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: 0.75rem 0.875rem 0.875rem;
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-3) var(--space-3-5) var(--space-3-5);
   text-align: left;
 }
 
 .dcf-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 0.5rem;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -849,7 +984,7 @@ thead .dash-contrib-n {
   color: var(--accent);
   background: none;
   border: 0;
-  padding: 0.125rem 0.25rem;
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--radius-chip);
   cursor: pointer;
 }
@@ -871,13 +1006,13 @@ thead .dash-contrib-n {
 .dcf-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.625rem 0.75rem;
+  gap: var(--space-2-5) var(--space-3);
 }
 
 .dcf-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -913,7 +1048,7 @@ thead .dash-contrib-n {
   content: '';
   width: 0.375rem;
   height: 0.375rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent);
 }
 

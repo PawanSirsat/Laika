@@ -28,6 +28,8 @@ import {
 import '../../../components/availability/availability.css';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { dayIn } from './my-day-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 type Choice = AvailabilityStatus | 'away';
 
@@ -290,18 +292,32 @@ export function AvailabilityPopover({
         {chevron}
       </span>
     )
-  ) : saved === undefined ? (
-    <span className="avail-trigger-quiet">{failed ? 'Availability' : 'Availability…'}</span>
-  ) : pill === null ? (
-    <span className="avail-trigger-quiet">Set availability</span>
   ) : (
-    <AvailabilityPill availability={saved} />
+    /*
+     * One control that says what it is and what it holds (LAI-1223): the
+     * word, the state, a chevron for the panel — and no tooltip, which only
+     * repeated it and opened over the date line under the title.
+     */
+    <span className="avail-chip-trigger">
+      <span className="avail-chip-word">Availability</span>
+      {saved === undefined ? (
+        <span className="avail-trigger-quiet">{failed ? 'unread' : '…'}</span>
+      ) : pill === null ? (
+        <span className="avail-trigger-quiet" data-avail-unset>
+          Not set
+        </span>
+      ) : (
+        <AvailabilityPill availability={saved} />
+      )}
+      {chevron}
+    </span>
   );
 
   return (
     <HeaderPopover
       trigger={trigger}
       label={label}
+      {...(head ? {} : { tooltip: false as const })}
       width="wide"
       align="left"
       className={head ? 'avail-pop avail-pop-head' : 'avail-pop'}
@@ -318,20 +334,22 @@ export function AvailabilityPopover({
         <div className="avail-form-head">
           <h3 className="avail-form-title">My availability</h3>
           {head && (
-            <button
-              type="button"
-              className="avail-close"
-              aria-label="Close"
-              onClick={(event) => {
-                // Back to the pill that opened it, before the panel goes.
-                event.currentTarget.closest('.myday-pop')?.querySelector('button')?.focus();
-                setOpen(false);
-              }}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 6l12 12M18 6 6 18" />
-              </svg>
-            </button>
+            <Tooltip content="Close" shortcut="Escape">
+              <button
+                type="button"
+                className="avail-close"
+                aria-label="Close"
+                onClick={(event) => {
+                  // Back to the pill that opened it, before the panel goes.
+                  event.currentTarget.closest('.myday-pop')?.querySelector('button')?.focus();
+                  setOpen(false);
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
         </div>
         {saved === undefined || draft === undefined ? (
@@ -452,16 +470,18 @@ export function AvailabilityPopover({
                 {draft.tags.map((tag) => (
                   <span key={tag} className="avail-tag">
                     {tag}
-                    <button
-                      type="button"
-                      className="avail-tag-x"
-                      aria-label={`Remove ${tag}`}
-                      onClick={() => {
-                        change({ tags: draft.tags.filter((t) => t !== tag) });
-                      }}
-                    >
-                      ×
-                    </button>
+                    <Tooltip content={`Remove ${tag}`}>
+                      <button
+                        type="button"
+                        className="avail-tag-x"
+                        aria-label={`Remove ${tag}`}
+                        onClick={() => {
+                          change({ tags: draft.tags.filter((t) => t !== tag) });
+                        }}
+                      >
+                        <Icon name="close" size="tiny" />
+                      </button>
+                    </Tooltip>
                   </span>
                 ))}
                 <input
@@ -544,17 +564,19 @@ export function AvailabilityPopover({
                   {upcoming.map((p) => (
                     <li key={p.id}>
                       <span aria-hidden="true">◐</span> {rangeShort(p.from, p.to)}
-                      <button
-                        type="button"
-                        className="avail-tag-x"
-                        aria-label={`Remove away ${rangeShort(p.from, p.to)}`}
-                        disabled={busy}
-                        onClick={() => {
-                          void removePeriod(p.id);
-                        }}
-                      >
-                        ×
-                      </button>
+                      <Tooltip content="Remove this time away">
+                        <button
+                          type="button"
+                          className="avail-tag-x"
+                          aria-label={`Remove away ${rangeShort(p.from, p.to)}`}
+                          disabled={busy}
+                          onClick={() => {
+                            void removePeriod(p.id);
+                          }}
+                        >
+                          <Icon name="close" size="tiny" />
+                        </button>
+                      </Tooltip>
                     </li>
                   ))}
                 </ul>

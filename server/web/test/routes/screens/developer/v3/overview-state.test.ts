@@ -149,7 +149,7 @@ void describe('the hero: one next step, from real data', () => {
       hero.sub,
       'Pair your laptop or cloud runner with Laika. No coding tool selection is needed yet.',
     );
-    assert.deepEqual(hero.primary, { label: 'Add a device →', href: OVERVIEW_ADDRESSES.addDevice });
+    assert.deepEqual(hero.primary, { label: 'Add a device', href: OVERVIEW_ADDRESSES.addDevice });
     assert.equal(hero.secondary, undefined);
   });
 
@@ -161,7 +161,7 @@ void describe('the hero: one next step, from real data', () => {
     assert.equal(hero.title, 'Connect a coding tool');
     assert.match(hero.sub, / on Belka\./);
     assert.deepEqual(hero.primary, {
-      label: 'Add your first tool →',
+      label: 'Add your first tool',
       href: OVERVIEW_ADDRESSES.addTool,
     });
     assert.equal(hero.secondary, undefined);
@@ -183,7 +183,7 @@ void describe('the hero: one next step, from real data', () => {
       hero.sub,
       'Credential created, never used. Finish its setup on Belka; this page moves on once it has connected.',
     );
-    assert.deepEqual(hero.primary, { label: 'Continue setup →', href: toolAddress('a1') });
+    assert.deepEqual(hero.primary, { label: 'Continue setup', href: toolAddress('a1') });
     assert.equal(hero.secondary, undefined);
   });
 
@@ -204,7 +204,7 @@ void describe('the hero: one next step, from real data', () => {
     const hero = heroOf(s, NOW, PROJECTS, TOOLS);
     assert.equal(hero.eyebrow, 'Your next step');
     assert.equal(hero.title, 'Set up your project repository');
-    assert.deepEqual(hero.primary, { label: 'Set up a project →', href: WIZARD });
+    assert.deepEqual(hero.primary, { label: 'Set up a project', href: WIZARD });
     assert.deepEqual(hero.secondary, { label: 'Manage tools', href: TOOLS });
   });
 
@@ -214,7 +214,7 @@ void describe('the hero: one next step, from real data', () => {
     const hero = heroOf(s, NOW, PROJECTS, TOOLS);
     assert.equal(hero.title, 'Set up another repository');
     assert.match(hero.sub, /^1 repository setup so far\./);
-    assert.deepEqual(hero.primary, { label: 'Set up a repository →', href: WIZARD });
+    assert.deepEqual(hero.primary, { label: 'Set up a repository', href: WIZARD });
     assert.deepEqual(hero.secondary, { label: 'Manage tools', href: TOOLS });
   });
 
@@ -735,7 +735,7 @@ void describe('what needs the reader', () => {
         href: toolAddress('a3'),
         setup: true,
         update: false,
-        action: 'Finish setup →',
+        action: 'Finish setup',
       },
       {
         agentId: 'a2',
@@ -744,7 +744,7 @@ void describe('what needs the reader', () => {
         href: toolAddress('a2'),
         setup: false,
         update: true,
-        action: 'Open details →',
+        action: 'Open details',
       },
     ]);
   });

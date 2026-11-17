@@ -13,21 +13,41 @@ export type SpacesFilter = (typeof SPACES_FILTERS)[number];
 export const SPACES_VIEWS = ['grid', 'list'] as const;
 export type SpacesView = (typeof SPACES_VIEWS)[number];
 
+/**
+ * How each section is ordered (LAI-1196). `name` is the default and leaves no
+ * param; `updated` is newest activity first; `open` is the most outstanding
+ * work first. Ties fall back to the name, so the order never depends on how
+ * the server happened to page the list.
+ */
+export const SPACES_SORTS = ['name', 'updated', 'open'] as const;
+export type SpacesSort = (typeof SPACES_SORTS)[number];
+
+export const SPACES_SORT_LABELS: Readonly<Record<SpacesSort, string>> = {
+  name: 'Name',
+  updated: 'Recently active',
+  open: 'Most open work',
+};
+
 export interface SpacesQuery {
   readonly filter: SpacesFilter;
   readonly view: SpacesView;
   readonly q: string;
+  readonly sort: SpacesSort;
 }
 
 /** Read the page's state from the URL; anything unknown is the default. */
 export function readSpacesQuery(params: URLSearchParams): SpacesQuery {
   const filter = params.get('filter');
+  const sort = params.get('sort');
   return {
     filter: (SPACES_FILTERS as readonly (string | null)[]).includes(filter)
       ? (filter as SpacesFilter)
       : 'all',
     view: params.get('view') === 'list' ? 'list' : 'grid',
     q: params.get('q') ?? '',
+    sort: (SPACES_SORTS as readonly (string | null)[]).includes(sort)
+      ? (sort as SpacesSort)
+      : 'name',
   };
 }
 
@@ -47,6 +67,8 @@ export function writeSpacesQuery(
   else next.set('view', merged.view);
   if (merged.q === '') next.delete('q');
   else next.set('q', merged.q);
+  if (merged.sort === 'name') next.delete('sort');
+  else next.set('sort', merged.sort);
   return next;
 }
 
@@ -101,10 +123,37 @@ export function spaceCounts(split: SpacesSplit): SpacesCounts {
   };
 }
 
-/** What each section shows for a chip and a search. */
-export function sectionsFor(split: SpacesSplit, filter: SpacesFilter, q: string): SpacesSplit {
+/** Outstanding work: everything not done and not cancelled. */
+export function openWork(space: Project): number {
+  const c = space.task_counts;
+  return c.backlog + c.todo + c.in_progress + c.review;
+}
+
+/** `spaces` in the chosen order, as a new array; ties by name, then id. */
+export function sortSpaces(spaces: readonly Project[], sort: SpacesSort): readonly Project[] {
+  const byName = (a: Project, b: Project): number =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
+  const key: (a: Project, b: Project) => number =
+    sort === 'updated'
+      ? (a, b) => updatedAt(b) - updatedAt(a)
+      : sort === 'open'
+        ? (a, b) => openWork(b) - openWork(a)
+        : () => 0;
+  return [...spaces].sort((a, b) => key(a, b) || byName(a, b));
+}
+
+/** What each section shows for a chip, a search and an order. */
+export function sectionsFor(
+  split: SpacesSplit,
+  filter: SpacesFilter,
+  q: string,
+  sort: SpacesSort = 'name',
+): SpacesSplit {
   const match = (list: readonly Project[]): readonly Project[] =>
-    list.filter((p) => matchesSearch(p, q));
+    sortSpaces(
+      list.filter((p) => matchesSearch(p, q)),
+      sort,
+    );
   const isPublic = (p: Project): boolean => p.visibility === 'public';
   switch (filter) {
     case 'all':
@@ -177,8 +226,13 @@ export function updatedAt(space: Project): number {
   return space.last_activity_at ?? space.updated_at;
 }
 
-/** `LAI-1 · owner/repo`, or the slug when no repository is set. */
+/**
+ * `LAIKA · owner/repo`: the task-key prefix, and the repository when one is
+ * set (LAI-1196). **Never the slug** — it is a URL part, not something a
+ * reader names a space by, and the old `LAIKA-1 · laika` printed both a key
+ * no task had and the address as if it were content.
+ */
 export function spaceSubline(space: Project): string {
-  const where = space.repo !== null && space.repo !== '' ? space.repo : space.slug;
-  return `${space.prefix}-1 · ${where}`;
+  const repo = space.repo?.trim() ?? '';
+  return repo === '' ? space.prefix : `${space.prefix} · ${repo}`;
 }

@@ -33,6 +33,7 @@ export function DaySettings({ settings, held, tz, pending, run }: DaySettingsPro
   return (
     <HeaderPopover
       label="Day settings"
+      tooltip="Day settings: Draft my time and where you are"
       triggerClassName="myday-chip myday-head-icon"
       dataAttr="data-day-settings"
       width="wide"

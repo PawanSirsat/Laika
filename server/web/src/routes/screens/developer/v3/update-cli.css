@@ -102,7 +102,7 @@
 }
 
 .dv3-cli-after {
-  padding-left: 1.25rem;
+  padding-left: var(--space-4-5);
 }
 
 .dv3-cli-after li + li {

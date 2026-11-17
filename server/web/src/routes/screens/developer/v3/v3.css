@@ -127,7 +127,7 @@
 
 .dev-setup-grant-why {
   flex-basis: 100%;
-  padding-left: 1.5rem;
+  padding-left: var(--space-5);
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
@@ -149,7 +149,7 @@
   margin-bottom: var(--space-2);
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .dev-setup-facts {
     grid-template-columns: minmax(0, 1fr);
     gap: 0 var(--space-2);

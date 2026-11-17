@@ -16,7 +16,7 @@
   white-space: nowrap;
 }
 
-.copy-button:hover:not(:disabled) {
+.copy-button:hover:not(:disabled, [aria-disabled='true']) {
   color: var(--text-primary);
   border-color: var(--border-default);
 }
@@ -26,7 +26,8 @@
   outline-offset: 2px;
 }
 
-.copy-button:disabled {
+.copy-button:disabled,
+.copy-button[aria-disabled='true'] {
   opacity: 0.5;
   cursor: default;
 }

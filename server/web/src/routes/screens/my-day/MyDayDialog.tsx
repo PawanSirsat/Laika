@@ -1,6 +1,8 @@
 import { useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface MyDayDialogProps {
   readonly title: string;
@@ -57,14 +59,16 @@ export function MyDayDialog({
             <h2 className="myday-dialog-title" id="myday-dialog-title">
               {title}
             </h2>
-            <button
-              type="button"
-              className="myday-dialog-close"
-              aria-label="Close"
-              onClick={onClose}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            <Tooltip content="Close" shortcut="Escape">
+              <button
+                type="button"
+                className="myday-dialog-close"
+                aria-label="Close"
+                onClick={onClose}
+              >
+                <Icon name="close" size="small" />
+              </button>
+            </Tooltip>
           </div>
         ) : (
           <h2 className="myday-dialog-title" id="myday-dialog-title">

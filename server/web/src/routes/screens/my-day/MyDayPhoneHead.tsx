@@ -5,6 +5,8 @@ import { duration } from './format.ts';
 import { addDays, dayLabel } from './my-day-derive.ts';
 import { cellKind } from './span-derive.ts';
 import { weekTiles, type WeekTile } from './week-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface MyDayPhoneHeadProps {
   readonly view: MyDay;
@@ -18,6 +20,11 @@ export interface MyDayPhoneHeadProps {
   readonly tools?: ReactNode;
   /** Confirm, or the day note — on the person's own day only. */
   readonly action?: ReactNode;
+  /**
+   * Time tracking is off for the organisation (LAI-1191): there is no day to
+   * walk, so no day row, week or total — only the page's name.
+   */
+  readonly off?: boolean;
 }
 
 /** What the line under the day says (the design's `phoneSub`). */
@@ -73,7 +80,15 @@ export function MyDayPhoneHead({
   onDay,
   tools,
   action,
+  off = false,
 }: MyDayPhoneHeadProps) {
+  if (off) {
+    return (
+      <header className="myday-phone-head myday-phone-head-off" data-phone-head>
+        <h1 className="myday-phone-off-title">{readOnly ? `${subjectName}’s day` : 'My day'}</h1>
+      </header>
+    );
+  }
   const confirmed = view.entries.reduce((n, e) => n + e.minutes, 0);
   const drafted = view.drafts.reduce((n, d) => n + d.minutes, 0);
   const firstName = subjectName.split(/\s+/)[0] ?? subjectName;
@@ -96,17 +111,19 @@ export function MyDayPhoneHead({
       <header className="myday-phone-head" data-phone-head>
         <h1 className="visually-hidden">{readOnly ? `${subjectName}’s day` : 'My day'}</h1>
         <div className="myday-phone-row" data-day-nav>
-          <button
-            type="button"
-            className="myday-phone-step"
-            aria-label="Previous day"
-            disabled={locked}
-            onClick={() => {
-              onDay(addDays(view.day, -1));
-            }}
-          >
-            <span aria-hidden="true">‹</span>
-          </button>
+          <Tooltip content="Previous day">
+            <button
+              type="button"
+              className="myday-phone-step"
+              aria-label="Previous day"
+              disabled={locked}
+              onClick={() => {
+                onDay(addDays(view.day, -1));
+              }}
+            >
+              <Icon name="chevron-left" size="small" />
+            </button>
+          </Tooltip>
           <span className="myday-phone-day">
             <strong className="myday-phone-date" data-phone-date>
               {readOnly && `${firstName} · `}
@@ -116,17 +133,22 @@ export function MyDayPhoneHead({
             </strong>
             <span className="myday-phone-word">{dayWord(view.day, view.today, readOnly)}</span>
           </span>
-          <button
-            type="button"
-            className="myday-phone-step"
-            aria-label="Next day"
-            disabled={locked || view.day >= view.today}
-            onClick={() => {
-              onDay(addDays(view.day, 1));
-            }}
+          <Tooltip
+            content={view.day >= view.today ? 'Today is the latest day there is' : 'Next day'}
           >
-            <span aria-hidden="true">›</span>
-          </button>
+            <button
+              type="button"
+              className="myday-phone-step"
+              aria-label="Next day"
+              disabled={locked}
+              aria-disabled={view.day >= view.today || undefined}
+              onClick={() => {
+                if (view.day < view.today) onDay(addDays(view.day, 1));
+              }}
+            >
+              <Icon name="chevron" size="small" />
+            </button>
+          </Tooltip>
           {tools !== undefined && <span className="myday-phone-tools">{tools}</span>}
         </div>
         <ol className="myday-phone-week" data-phone-week aria-label="Week">

@@ -41,7 +41,7 @@
   font: inherit;
   font-size: var(--text-small);
   font-weight: 600;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   cursor: pointer;
 }
 
@@ -64,7 +64,7 @@
 .span-crumbs {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
   font-size: var(--text-small);
   color: var(--text-muted);
@@ -73,7 +73,7 @@
 .span-crumb-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .span-crumb {
@@ -101,7 +101,7 @@
   position: relative;
   display: inline-grid;
   grid-template-columns: repeat(4, 62px);
-  padding: 2px;
+  padding: var(--space-0-5);
   border-radius: var(--radius-control);
   background: var(--bg-column);
 }
@@ -116,7 +116,9 @@
   background: var(--bg-card);
   box-shadow: var(--shadow-card);
   transform: translateX(calc(var(--span-index) * 62px));
-  transition: transform 0.36s cubic-bezier(0.32, 0.72, 0, 1);
+  /* The design's curve is --ease-drawer exactly; 0.36s is on no step of the
+     scale, so the nearest, --duration-slow (LAI-1208, merge train). */
+  transition: transform var(--duration-slow) var(--ease-drawer);
 }
 
 .span-seg-option {
@@ -129,7 +131,7 @@
   font-weight: 700;
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 0.2s;
+  transition: color var(--duration-glide);
 }
 
 .span-seg-option[aria-checked='true'] {
@@ -138,7 +140,7 @@
 
 .span-zoom {
   display: inline-flex;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .span-zoom-step {
@@ -214,13 +216,14 @@
 /*
  * A figure not here yet: a bone where the number goes, shimmering, so a view
  * mounted on the click is at its shape before its read lands. Still for a
- * reader who asked for less motion.
+ * reader who asked for less motion: --duration-shimmer is 0ms there
+ * (motion.css), so the loop runs once, at once.
  */
 .span-pending-bone {
   display: inline-block;
   width: 2.25em;
   height: 0.75em;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: linear-gradient(
     90deg,
     var(--bg-column) 0%,
@@ -228,7 +231,7 @@
     var(--bg-column) 100%
   );
   background-size: 200% 100%;
-  animation: span-shimmer 1.4s linear infinite;
+  animation: span-shimmer var(--duration-shimmer) linear infinite;
 }
 
 .span-pending-figure {
@@ -243,12 +246,6 @@
 
   to {
     background-position: -200% 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .span-pending-bone {
-    animation: none;
   }
 }
 
@@ -295,13 +292,13 @@
 .span-key {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .span-swatch {
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
 }
 
 .span-swatch-c {
@@ -351,7 +348,7 @@
   display: flex;
   height: 4px;
   width: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
   overflow: hidden;
   background: var(--bg-column);
 }
@@ -381,16 +378,16 @@
 .span-week-grid {
   display: grid;
   grid-template-columns: 56px repeat(7, minmax(0, 1fr));
-  gap: 0 4px;
+  gap: 0 var(--space-1);
 }
 
 .span-week-day {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
-  padding: 6px;
+  padding: var(--space-1-5);
   border: 0;
   border-radius: var(--radius-xs);
   background: none;
@@ -431,7 +428,7 @@
   width: 7px;
   height: 7px;
   box-sizing: border-box;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--holiday);
 }
 
@@ -480,7 +477,7 @@
 .span-week-nosignal {
   position: absolute;
   inset: 8px 4px auto;
-  padding: 6px 4px;
+  padding: var(--space-1-5) var(--space-1);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-xs);
   font-size: var(--text-small);
@@ -492,7 +489,7 @@
 .span-week-off {
   position: absolute;
   inset: 8px 4px auto;
-  padding: 6px 4px;
+  padding: var(--space-1-5) var(--space-1);
   overflow: hidden;
   border: 1px solid var(--holiday-border);
   border-radius: var(--radius-xs);
@@ -602,7 +599,7 @@
   top: -3px;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--overdue);
 }
 
@@ -611,7 +608,7 @@
 .span-month {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -619,7 +616,7 @@
 .span-month-row {
   display: grid;
   grid-template-columns: 44px repeat(7, minmax(0, 1fr));
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .span-month-head {
@@ -650,10 +647,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   min-height: 96px;
-  padding: 6px;
+  padding: var(--space-1-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   background: var(--bg-card);
@@ -700,7 +697,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .span-month-date {
@@ -708,7 +705,7 @@
   place-items: center;
   min-width: 22px;
   height: 22px;
-  border-radius: 11px;
+  border-radius: var(--radius-card);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   font-weight: 700;
@@ -729,11 +726,11 @@
 .span-month-chip {
   display: flex;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
-  padding: 1px 4px;
+  padding: 1px var(--space-1);
   border-left: 3px solid var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: var(--bg-column);
   font-size: var(--text-small);
 }
@@ -749,10 +746,10 @@
 
 .span-month-off {
   min-width: 0;
-  padding: 1px 4px;
+  padding: 1px var(--space-1);
   overflow: hidden;
   border-left: 3px solid var(--holiday-border);
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   background: var(--bg-card);
   font-size: var(--text-small);
   font-weight: 600;
@@ -799,8 +796,8 @@
 .span-year-month {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
   border-radius: var(--radius-card);
 }
 
@@ -808,7 +805,7 @@
   display: flex;
   justify-content: space-between;
   border: 0;
-  padding: 2px 4px;
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--radius-xs);
   background: none;
   font: inherit;
@@ -836,7 +833,7 @@
 .span-year-grid {
   display: grid;
   grid-template-columns: repeat(7, 24px);
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .span-year-day {
@@ -846,7 +843,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   background: var(--heat-empty);
   font-family: var(--font-mono);
   font-size: var(--text-small);
@@ -925,7 +922,7 @@
   right: 2px;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--holiday);
   box-shadow: 0 0 0 1px var(--bg-card);
 }
@@ -951,7 +948,7 @@
 .span-heat-swatch {
   width: 12px;
   height: 12px;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
   cursor: default;
 }
 
@@ -987,7 +984,7 @@
 
   .span-week-grid {
     grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .span-week-hours {
@@ -999,8 +996,8 @@
     min-height: 40px;
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    padding: 6px;
+    gap: var(--space-1);
+    padding: var(--space-1-5);
     background: var(--bg-column);
   }
 
@@ -1017,7 +1014,7 @@
     width: auto;
     height: auto;
     flex-direction: row;
-    gap: 6px;
+    gap: var(--space-1-5);
   }
 
   .span-week-nosignal,
@@ -1041,7 +1038,7 @@
   .span-month-head,
   .span-month-row {
     grid-template-columns: 28px repeat(7, minmax(0, 1fr));
-    gap: 2px;
+    gap: var(--space-0-5);
   }
 
   .span-month-cell {
@@ -1063,7 +1060,7 @@
     right: 3px;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     background: var(--holiday);
   }
 
@@ -1085,13 +1082,6 @@
     width: auto;
     height: 18px;
     font-size: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .span-seg-thumb,
-  .span-seg-option {
-    transition: none;
   }
 }
 

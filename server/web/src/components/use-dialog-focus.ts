@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react';
+import { isInDropdownPanel } from './dropdown-model.ts';
 
 /**
  * Where Tab should go inside a modal, or `undefined` to let the browser move
@@ -20,7 +21,8 @@ export function trapTarget<T>(items: readonly T[], current: T, backwards: boolea
   return undefined;
 }
 
-const FOCUSABLE =
+/** What can take focus inside a modal — `Dialog` picks its first control by it. */
+export const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface DialogFocus {
@@ -46,7 +48,13 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
   useEffect(() => {
     const box = dialog.current;
     if (box === null) return;
-    const controls = (): HTMLElement[] => [...box.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    // Only what is drawn: a control hidden by CSS cannot take focus, and
+    // wrapping onto one strands Tab — the phone sheet's handle above 600px
+    // (LAI-1190).
+    const controls = (): HTMLElement[] =>
+      [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) => el.getClientRects().length > 0,
+      );
     (latest.current.initial?.() ?? controls()[0])?.focus();
 
     const onKey = (event: KeyboardEvent): void => {
@@ -64,9 +72,9 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
       }
       // A Dropdown's panel is portaled into the modal, at its end, so its
       // search box reads as the last control and Tab would wrap to the first
-      // (LAI-1167 review). The Dropdown moves focus back to its trigger on
-      // Tab and lets the browser carry on from there; leave that to it.
-      if (active !== null && active.closest('[data-dropdown-panel]') !== null) return;
+      // (LAI-1167 review, LAI-1190). The Dropdown moves focus back to its
+      // trigger on Tab and lets the browser carry on from there; leave that to it.
+      if (isInDropdownPanel(active)) return;
       const target = trapTarget(controls(), active as HTMLElement, event.shiftKey);
       if (target === undefined) return;
       event.preventDefault();

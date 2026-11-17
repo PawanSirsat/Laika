@@ -15,6 +15,7 @@ import {
   type ExecutionState,
   type NoteState,
 } from './agent-states.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import './agent.css';
 
 export interface PanelAgent {
@@ -217,12 +218,9 @@ export function ExecutionPanel({
               ) : lastSeenAt === undefined ? (
                 lastSeen
               ) : (
-                <time
-                  dateTime={new Date(lastSeenAt).toISOString()}
-                  title={dateTime(lastSeenAt, Date.now())}
-                >
-                  {lastSeen}
-                </time>
+                <Tooltip content={dateTime(lastSeenAt, Date.now())} lazy>
+                  <time dateTime={new Date(lastSeenAt).toISOString()}>{lastSeen}</time>
+                </Tooltip>
               )}
             </dd>
           </div>
@@ -345,12 +343,9 @@ function CheckpointLine({
         {checkpoint.savedAt === undefined ? (
           checkpoint.age
         ) : (
-          <time
-            dateTime={new Date(checkpoint.savedAt).toISOString()}
-            title={dateTime(checkpoint.savedAt, Date.now())}
-          >
-            {checkpoint.age}
-          </time>
+          <Tooltip content={dateTime(checkpoint.savedAt, Date.now())} lazy>
+            <time dateTime={new Date(checkpoint.savedAt).toISOString()}>{checkpoint.age}</time>
+          </Tooltip>
         )}{' '}
         ·{' '}
         <b data-verification>

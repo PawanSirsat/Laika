@@ -44,6 +44,19 @@ export default defineConfig({
     // inlining a variable woff2 as base64 would bloat the CSS and defeat
     // caching. 0 disables inlining outright.
     assetsInlineLimit: 0,
+    // **Everything the first page needs, in one chunk** (LAI-1219). Screens
+    // load on demand (`routes/screen-chunks.ts`); without this group the
+    // bundler also moved code the shell shares with a screen into ~15 small
+    // siblings that load up front anyway — more requests for the same bytes —
+    // and took their CSS with them, out of the stylesheet's order.
+    // `$initial` is every module the entry reaches statically.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [{ name: 'shell', tags: ['$initial'] }],
+        },
+      },
+    },
   },
 
   server: {

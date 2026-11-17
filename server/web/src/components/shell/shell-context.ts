@@ -54,6 +54,8 @@ export interface ShellValue {
   readonly spaceName: string | undefined;
   /** The open project's id, from the same read (LAI-178); `undefined` until it lands. */
   readonly spaceId: string | undefined;
+  /** The open project's key (`LC`), from the same read (LAI-1198); absent until it lands. */
+  readonly spaceKey?: string | undefined;
   /**
    * Unlisted notes still waiting, for an owner or admin (LAI-754); `undefined`
    * for everyone else. Here because the rail's badge and Capacity's link are

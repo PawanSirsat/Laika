@@ -26,6 +26,8 @@ import {
   type Conflict,
 } from './devices-view.ts';
 import { DeviceUpdate, useDeviceUpdate, useVerification } from './ToolUpdate.tsx';
+import { Icon } from '../../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../../components/tooltip/Tooltip.tsx';
 
 export const DEVICE_PANEL_TITLE = 'dv3-device-panel-title';
 
@@ -82,6 +84,9 @@ export interface DeviceDetailsProps {
  * **Disconnect device…** stays at the foot: every tool on it, behind a
  * confirmation naming each.
  */
+/** The id of the line saying why *Disconnect device* is unavailable. */
+const DISCONNECT_WHY = 'dv3-disconnect-why';
+
 export function DeviceDetails({
   device,
   now,
@@ -192,17 +197,26 @@ export function DeviceDetails({
       panel="device"
       footer={
         canManage && live ? (
-          <button
-            type="button"
-            className="dx-btn dx-btn-sm dv3-danger"
-            aria-disabled={device.active_count === 0 || disconnecting || undefined}
-            onClick={() => {
-              if (device.active_count === 0 || disconnecting) return;
-              onDisconnect();
-            }}
-          >
-            Disconnect device…
-          </button>
+          <>
+            <button
+              type="button"
+              className="dx-btn dx-btn-sm dv3-danger"
+              aria-disabled={device.active_count === 0 || disconnecting || undefined}
+              aria-describedby={device.active_count === 0 ? DISCONNECT_WHY : undefined}
+              onClick={() => {
+                if (device.active_count === 0 || disconnecting) return;
+                onDisconnect();
+              }}
+            >
+              Disconnect device…
+            </button>
+            {/* Never a button that does nothing without saying why (LAI-1191, the audit's B10). */}
+            {device.active_count === 0 && (
+              <p className="dv3-note" id={DISCONNECT_WHY} data-disconnect-why>
+                No tool on this device is active, so there is nothing to disconnect.
+              </p>
+            )}
+          </>
         ) : undefined
       }
     >
@@ -399,9 +413,11 @@ export function DeviceDetails({
                     seen === undefined ? (
                       'Never'
                     ) : (
-                      <time dateTime={seen.iso} title={seen.full}>
-                        {seen.text.replace(/^just now$/, 'Just now')}
-                      </time>
+                      <Tooltip content={seen.full}>
+                        <time dateTime={seen.iso}>
+                          {seen.text.replace(/^just now$/, 'Just now')}
+                        </time>
+                      </Tooltip>
                     ),
                   id: 'last-seen',
                 },
@@ -599,7 +615,7 @@ function PanelTool({
         <span className="dv3-panel-tool-name">{label}</span>
         <DesignChip tone={chipTone(status.tone)}>{status.word}</DesignChip>
         <span className="dv3-panel-tool-go" aria-hidden="true">
-          →
+          <Icon name="arrow-right" size="tiny" />
         </span>
       </button>
     </li>

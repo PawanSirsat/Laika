@@ -1,4 +1,5 @@
 import type { Project } from '../../../api/projects.ts';
+import { ScrollCue } from '../../../components/ScrollCue.tsx';
 import { ago, progressOf, spaceSubline, updatedAt } from './spaces-model.ts';
 import {
   AccessBadge,
@@ -22,12 +23,14 @@ export interface SpaceTableProps {
  * **Fixed column widths, and every cell truncates inside its own column.** The
  * owner's list screenshot ran Members into Updated (`4 peopl2h ago`); with
  * `table-layout: fixed` a cell cannot grow into its neighbour, and a long name
- * ends in an ellipsis rather than overlapping. Below a tablet width the table
- * stacks into one block per space, each cell labelled.
+ * ends in an ellipsis rather than overlapping. Narrower than its columns —
+ * 768, a laptop with the rail open — it scrolls sideways with a cue on the
+ * edge that has more (LAI-1196); on a phone it stacks into one block per
+ * space, each cell labelled.
  */
 export function SpaceTable({ spaces, label, row }: SpaceTableProps) {
   return (
-    <div className="spaces-table-wrap">
+    <ScrollCue className="spaces-table-wrap" label={`${label}, table`}>
       <table className="spaces-table" aria-label={label}>
         <colgroup>
           <col className="spaces-col-space" />
@@ -57,7 +60,7 @@ export function SpaceTable({ spaces, label, row }: SpaceTableProps) {
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollCue>
   );
 }
 

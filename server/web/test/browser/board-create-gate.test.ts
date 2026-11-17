@@ -146,8 +146,13 @@ function stub(person: ReturnType<typeof me>): ApiStub {
   };
 }
 
-/** Every way to create a task the board and the space bar offer. */
-const CREATE = ['.lane-add', '.list-create', '.space-create', '.sub-link'];
+/**
+ * Every way to create a task the board, the List and the top bar offer. The
+ * top bar's + Create (LAI-1227; the space toolbar's `.space-create` until
+ * then) is drawn for everyone, so what counts is it being *available*.
+ */
+const HEADER_CREATE = '[data-header-create]:not([aria-disabled="true"])';
+const CREATE = ['.lane-add', '.list-create', HEADER_CREATE, '.sub-link'];
 
 const MEMBER = me('u2', 'Tomas Member', 'member');
 const SPACE_ADMIN = me('u1', 'Ada Admin', 'lead');
@@ -157,7 +162,7 @@ after(async () => {
 });
 
 void describe('a member in a Space admins only space', () => {
-  void test('is never shown a create control — Board, List, the space bar, Add subtask', async () => {
+  void test('is never shown a create control — Board, List, the top bar, Add subtask', async () => {
     const h = await open('/board?project=laika', stub(MEMBER), {
       before: (page) => watchFor(page, CREATE),
     });
@@ -213,7 +218,7 @@ void describe('the space admin of the same space', () => {
     const h = await open('/board?project=laika', stub(SPACE_ADMIN));
     try {
       await h.page.locator('.lane-add').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.space-create').waitFor({ timeout: 5_000 });
+      await h.page.locator(HEADER_CREATE).waitFor({ timeout: 5_000 });
       await h.page.goto(`${h.origin}/list?project=laika`);
       await h.page.locator('.list-create').waitFor({ timeout: 20_000 });
       await h.page.goto(`${h.origin}/board?project=laika&task=t1`);

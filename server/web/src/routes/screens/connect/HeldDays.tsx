@@ -3,6 +3,7 @@ import type { OwnLocalActivity } from '../../../api/local-activity.ts';
 import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { agentLabel } from '../profile/activity-derive.ts';
 import './connect.css';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** `Thu 15 Oct` — a held day, as a date; `Mon 13 Oct 2025` when not this year (LAI-751). */
 export function dayLabel(day: string): string {
@@ -48,11 +49,11 @@ export function HeldDays({ held }: { readonly held: OwnLocalActivity }) {
               <td>{day.sessions}</td>
               <td>{day.commits_local}</td>
               <td>{day.pushed_commits}</td>
-              <td
-                title={`${exactTokens(day.tokens)} tokens, ${exactTokens(day.cache_read)} cache reads`}
+              <Tooltip
+                content={`${exactTokens(day.tokens)} tokens, ${exactTokens(day.cache_read)} cache reads`}
               >
-                {compactTokens(day.tokens)}
-              </td>
+                <td>{compactTokens(day.tokens)}</td>
+              </Tooltip>
             </tr>
           );
         })}

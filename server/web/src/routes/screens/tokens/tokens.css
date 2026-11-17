@@ -169,8 +169,8 @@
 .tok-head {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.875rem 0.375rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3-5) var(--space-1-5);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1;
@@ -203,7 +203,7 @@
 /* Under 40rem a token row stacks its meta below its name (token-row.css), so
    these column heads no longer sit over anything — and their fixed widths,
    460px together, scrolled a phone sideways. They go with the columns. */
-@media (max-width: 40rem) {
+@media (max-width: 640px) {
   .tok-head {
     display: none;
   }
@@ -216,11 +216,11 @@
   border-radius: var(--radius-card);
   background: var(--bg-card);
   box-shadow: var(--shadow-card);
-  padding: 0.875rem 1rem;
+  padding: var(--space-3-5) var(--space-4);
 }
 
 .tok-ref-title {
-  margin: 0 0 0.625rem;
+  margin: 0 0 var(--space-2-5);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1;
@@ -233,13 +233,13 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .tok-ref-row {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .tok-ref-row dt {
@@ -254,8 +254,8 @@
   color: var(--accent);
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);
-  border-radius: 4px;
-  padding: 0.125rem 0.3125rem;
+  border-radius: var(--radius-chip);
+  padding: var(--space-0-5) 0.3125rem;
 }
 
 .tok-ref-row dd {
@@ -268,8 +268,8 @@
 
 .tok-cli-block {
   margin: 0;
-  padding: 0.6875rem 0.75rem;
-  border-radius: 8px;
+  padding: 0.6875rem var(--space-3);
+  border-radius: var(--radius-card);
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
   overflow-x: auto;
@@ -284,7 +284,7 @@
 }
 
 .tok-cli-note {
-  margin: 0.625rem 0 0;
+  margin: var(--space-2-5) 0 0;
   font-size: var(--text-small);
   font-weight: var(--weight-medium);
   line-height: 1.5;

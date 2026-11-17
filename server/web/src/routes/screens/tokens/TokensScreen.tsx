@@ -2,9 +2,9 @@ import { everyPage } from '../../../api/every-page.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
-import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
+import { ApiErrorPanel } from '../../../components/ApiErrorPanel.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
-import { EmptyState } from '../../../components/EmptyState.tsx';
+import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { TokenRow } from '../../../components/TokenRow.tsx';
@@ -305,13 +305,14 @@ export function TokensScreen({ me }: TokensScreenProps) {
       )}
 
       {loadError !== null ? (
-        <ApiErrorState error={loadError} resource="your tokens" scope="organisation" />
+        <ApiErrorPanel error={loadError} resource="your tokens" scope="organisation" />
       ) : tokens === undefined ? (
         <LoadingState shape="row" count={3} label="Loading your tokens" />
       ) : tokens.length === 0 ? (
-        <EmptyState
-          headline="No tokens yet"
-          body="Create one to point your coding agent or another tool at this board as you."
+        <EmptyPanel
+          variant="first-use"
+          title="No tokens yet"
+          why="Create one to point your coding agent or another tool at this board as you."
         />
       ) : (
         <>

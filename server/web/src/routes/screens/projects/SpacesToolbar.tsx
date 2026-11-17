@@ -1,9 +1,13 @@
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { NavIcon } from '../../../components/sidebar/NavIcon.tsx';
 import {
   SPACES_FILTERS,
+  SPACES_SORT_LABELS,
+  SPACES_SORTS,
   type SpacesCounts,
   type SpacesFilter,
   type SpacesQuery,
+  type SpacesSort,
   type SpacesView,
 } from './spaces-model.ts';
 
@@ -21,8 +25,8 @@ export interface SpacesToolbarProps {
 }
 
 /**
- * Search, the four chips with their counts, and Grid / List (D-103 item 12,
- * LAI-978). Every choice is written to the URL by the screen, so a reload or
+ * Search, the four chips with their counts, the order (LAI-1196) and
+ * Grid / List (D-103 item 12, LAI-978). Every choice is written to the URL by the screen, so a reload or
  * a shared link opens the page as it was left.
  */
 export function SpacesToolbar({ query, counts, onChange }: SpacesToolbarProps) {
@@ -59,6 +63,19 @@ export function SpacesToolbar({ query, counts, onChange }: SpacesToolbarProps) {
           </button>
         ))}
       </div>
+
+      <Dropdown
+        className="spaces-sort"
+        aria-label="Sort spaces"
+        value={query.sort}
+        options={SPACES_SORTS.map((sort) => ({
+          value: sort,
+          label: `Sort: ${SPACES_SORT_LABELS[sort]}`,
+        }))}
+        onChange={(sort: SpacesSort) => {
+          onChange({ sort });
+        }}
+      />
 
       <div className="spaces-seg spaces-view" role="group" aria-label="View">
         {(

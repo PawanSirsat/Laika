@@ -667,3 +667,158 @@ export function pairingStep(p: DevicePairing): { readonly line: string; readonly
 
 /** A revoke's refusal, in the reader's terms — the shared rule's sentence (`owner-setup.ts`). */
 export const refusalLine = revokeRefusal;
+
+// ------------------------------------------------------------------ the summary (LAI-1217)
+
+/**
+ * A token flag, from the token's own fields and nothing else (LAI-1217). Only
+ * a token that still works is flagged — revoked and expired need nothing.
+ *
+ * - `never`: it has never been used (`last_used_at` is null);
+ * - `stale`: its last use is older than {@link STALE_AFTER_MS};
+ * - `expiring`: `expires_at` falls within {@link EXPIRING_WITHIN_MS}.
+ */
+export type TokenFlag = 'never' | 'stale' | 'expiring';
+
+export const STALE_AFTER_MS = 90 * 86_400_000;
+export const EXPIRING_WITHIN_MS = 14 * 86_400_000;
+
+export const TOKEN_FLAG_WORDS: Readonly<Record<TokenFlag, string>> = {
+  never: 'Never used',
+  stale: 'Unused 90+ days',
+  expiring: 'Expires soon',
+};
+
+export function tokenFlags(token: SetupToken, now: number): TokenFlag[] {
+  const state = tokenState(token, now);
+  if (state === 'revoked' || state === 'expired') return [];
+  const flags: TokenFlag[] = [];
+  if (token.last_used_at === null) flags.push('never');
+  else if (now - token.last_used_at > STALE_AFTER_MS) flags.push('stale');
+  if (token.expires_at !== null && token.expires_at - now <= EXPIRING_WITHIN_MS) {
+    flags.push('expiring');
+  }
+  return flags;
+}
+
+/** Every token the read serves, personal first. */
+export function allTokens(view: Pick<DeveloperSetup, 'tokens'>): SetupToken[] {
+  return [...view.tokens.personal, ...view.tokens.tool_credentials];
+}
+
+/** Live tokens carrying at least one flag. */
+export function flaggedTokens(view: Pick<DeveloperSetup, 'tokens'>, now: number): SetupToken[] {
+  return allTokens(view).filter((t) => tokenFlags(t, now).length > 0);
+}
+
+/** The summary's line for flagged tokens, or nothing when none is. */
+export function flaggedTokensLine(count: number): string | undefined {
+  if (count === 0) return undefined;
+  return count === 1 ? '1 token to review' : `${String(count)} tokens to review`;
+}
+
+/**
+ * Where a step in `/developer` goes — the reader's **own** Developer access,
+ * by tab. Only your own setup links there: an owner reading someone else's
+ * would land on their own setup, so that view never gets one.
+ */
+export const DEVELOPER_HREF = {
+  overview: '/developer?tab=overview',
+  devices: '/developer?tab=devices',
+  tools: '/developer?tab=tools',
+  connect: '/developer?tab=connect',
+  projects: '/developer?tab=projects',
+  tokens: '/developer?tab=tokens',
+} as const;
+
+/** The one primary next step: a link into `/developer`, or a jump within the tab. */
+export type NextStep =
+  | { readonly kind: 'link'; readonly label: string; readonly href: string; readonly why: string }
+  | {
+      readonly kind: 'jump';
+      readonly label: string;
+      readonly target: string;
+      readonly why: string;
+    };
+
+/** The id the pending pairing block carries, so a step can move focus to it. */
+export const PENDING_ANCHOR = 'dev-pending';
+/** The tokens section's id, for the same reason. */
+export const TOKENS_ANCHOR = 'ds-tokens-title';
+
+/**
+ * The tab's single next step (LAI-1217), in the order a person would do
+ * things. **Your own** steps link into Developer access, where the action
+ * lives; **someone else's** never do — the only step there is moving to the
+ * first thing that needs attention, because only they can change it.
+ */
+export function nextStep(
+  view: SetupView,
+  items: readonly AttentionItem[],
+  own: boolean,
+): NextStep | undefined {
+  const flagged = flaggedTokens(view, view.now).length;
+  if (!own) {
+    const first = items[0];
+    if (first !== undefined) {
+      return {
+        kind: 'jump',
+        label: 'Go to the first issue',
+        target: first.target,
+        why: 'Each item below moves to its row.',
+      };
+    }
+    return undefined;
+  }
+  const claimed = view.pending_pairing.find((p) => p.state === 'claimed');
+  if (claimed !== undefined) {
+    return {
+      kind: 'jump',
+      label: 'Review the pairing request',
+      target: PENDING_ANCHOR,
+      why: `${claimed.display_name} is waiting for you to approve it.`,
+    };
+  }
+  const liveDevices = view.devices.filter((d) => d.status === 'active').length;
+  const liveTools = view.tools.filter((t) => t.status === 'active').length;
+  if (liveDevices === 0 && liveTools === 0) {
+    return {
+      kind: 'link',
+      label: 'Pair a device',
+      href: DEVELOPER_HREF.devices,
+      why: 'Pair the computer your agents run on, then add a tool to it.',
+    };
+  }
+  if (liveTools === 0) {
+    return {
+      kind: 'link',
+      label: 'Add a tool',
+      href: DEVELOPER_HREF.connect,
+      why: 'A paired device with no tool cannot pick up cards yet.',
+    };
+  }
+  const first = items[0];
+  if (first !== undefined) {
+    const repo = first.target.startsWith('dev-repo-');
+    return {
+      kind: 'link',
+      label: repo ? 'Fix the repository setup' : 'Fix in Developer access',
+      href: repo ? DEVELOPER_HREF.projects : DEVELOPER_HREF.tools,
+      why: `Start with ${first.label}. Each item below moves to its row.`,
+    };
+  }
+  if (flagged > 0) {
+    return {
+      kind: 'link',
+      label: 'Review tokens',
+      href: DEVELOPER_HREF.tokens,
+      why: `${flaggedTokensLine(flagged) ?? ''}: never used, unused for 90 days or expiring soon.`,
+    };
+  }
+  return undefined;
+}
+
+export function summaryHeadline(view: SetupView, attention: number): string {
+  if (isEmptySetup(view)) return 'Nothing set up yet';
+  return attentionWord(attention);
+}

@@ -118,6 +118,8 @@ function ThemePanel({ theme }: { readonly theme: Theme }) {
 export function TokenReference() {
   return (
     <div className="tr">
+      {/* The page names itself (LAI-1227): the top bar names no page. */}
+      <h1 className="tr-title">Design tokens</h1>
       <div className="tr-themes">
         <ThemePanel theme="light" />
         <ThemePanel theme="dark" />

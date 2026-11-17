@@ -1,6 +1,4 @@
 import { PRIORITIES, type TaskPriority } from '../../api/tasks.ts';
-import type { AgentClient } from '../../api/agent-clients.ts';
-import { agentsOf, type PresenceEntry } from '../../api/presence.ts';
 
 /**
  * The pure parts of the space top bar (LAI-251).
@@ -55,24 +53,10 @@ export function priorityLabel(current: TaskPriority | undefined): string {
 }
 
 /**
- * How many **agent** sessions are live in this space.
- *
- * The design's `Agents 2`. Counted from presence rather than from tasks: the
- * question is who is working now, not what was authored by an agent, and
- * `is_agent` is the server's own answer (§4.2).
+ * The name of a face that filters by assignee (LAI-1193). The face shows
+ * initials only, so its name is the whole of what it does — set as
+ * `aria-label`, with the shorter words in its tooltip.
  */
-export function agentCount(present: readonly PresenceEntry[] | undefined): number {
-  return present === undefined ? 0 : present.filter((entry) => entry.is_agent).length;
-}
-
-/**
- * Every distinct coding agent live in this space, for the `Agents` chip's
- * marks and its title (LAI-737). Unknown slugs are dropped by `agentsOf`.
- */
-export function agentsLive(present: readonly PresenceEntry[] | undefined): AgentClient[] {
-  const out: AgentClient[] = [];
-  for (const entry of present ?? []) {
-    for (const client of agentsOf(entry)) if (!out.includes(client)) out.push(client);
-  }
-  return out;
+export function memberFilterLabel(name: string, on: boolean): string {
+  return on ? `Showing only ${name}'s work — press to clear` : `Show only ${name}'s work`;
 }

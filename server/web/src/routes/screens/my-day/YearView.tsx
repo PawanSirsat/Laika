@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { offDescription, offKind } from '../../../api/off-days.ts';
 import type { DaysDay } from '../../../api/time.ts';
 import { duration, roundHours } from './format.ts';
@@ -118,24 +119,24 @@ export const YearView = memo(function YearView({
                 <span key={`lead-${String(i)}`} className="span-year-pad" aria-hidden="true" />
               ))}
               {cells.map((c, i) => (
-                <button
-                  key={c.d}
-                  type="button"
-                  tabIndex={-1}
-                  className="span-year-day"
-                  data-zk={`d:${c.d}`}
-                  data-kind={c.kind}
-                  data-heat={c.heat}
-                  data-off={c.tone ?? undefined}
-                  data-mark={c.mark ?? undefined}
-                  data-today={c.d === today ? '' : undefined}
-                  title={c.title}
-                  onClick={() => {
-                    onOpenDay(c.d);
-                  }}
-                >
-                  {i + 1}
-                </button>
+                <Tooltip key={c.d} content={c.title} lazy>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="span-year-day"
+                    data-zk={`d:${c.d}`}
+                    data-kind={c.kind}
+                    data-heat={c.heat}
+                    data-off={c.tone ?? undefined}
+                    data-mark={c.mark ?? undefined}
+                    data-today={c.d === today ? '' : undefined}
+                    onClick={() => {
+                      onOpenDay(c.d);
+                    }}
+                  >
+                    {i + 1}
+                  </button>
+                </Tooltip>
               ))}
             </div>
           </div>

@@ -46,6 +46,13 @@ export type StreamListener = (frame: StreamFrame) => void;
 interface Shared {
   readonly source: EventSource;
   readonly listeners: Set<StreamListener>;
+  /**
+   * How far the current connection has got: `open` once the browser says so,
+   * `ready` once the server's `ready` frame has come, back to `connecting` on
+   * a drop or a `closing`. Kept so a subscriber who joins later hears what the
+   * first one did — see {@link subscribeToEvents}.
+   */
+  state: 'connecting' | 'open' | 'ready';
 }
 
 const streams = new Map<string, Shared>();
@@ -125,7 +132,7 @@ function forget(slug: string, shared: Shared): void {
 function open(slug: string): Shared {
   const source = new EventSource(`${API_BASE}/events?project=${encodeURIComponent(slug)}`);
   const listeners = new Set<StreamListener>();
-  const shared: Shared = { source, listeners };
+  const shared: Shared = { source, listeners, state: 'connecting' };
 
   const emit = (frame: StreamFrame): void => {
     // Copied before iterating: a listener that unsubscribes in response to a
@@ -145,18 +152,22 @@ function open(slug: string): Shared {
   }
 
   source.addEventListener('ready', () => {
+    shared.state = 'ready';
     emit({ kind: 'ready' });
   });
   source.addEventListener('gap', (event) => {
     emit({ kind: 'gap', data: (event as MessageEvent<string>).data });
   });
   source.addEventListener('closing', () => {
+    shared.state = 'connecting';
     emit({ kind: 'closing' });
   });
   source.onopen = () => {
+    shared.state = 'open';
     emit({ kind: 'open' });
   };
   source.onerror = () => {
+    shared.state = 'connecting';
     const permanent = isPermanentFailure(source.readyState);
     // Forget it before announcing it. The browser has already closed this
     // source, so leaving it in the registry would hand a dead connection to the
@@ -177,6 +188,14 @@ function open(slug: string): Shared {
  * The first subscriber opens the connection and the last one to leave closes
  * it, so a screen that mounts and unmounts does not leak a stream and does not
  * tear down one another screen is still using.
+ *
+ * **A subscriber who joins a connection already up hears `open` and `ready`
+ * too** (LAI-1306). Both are said once per connection, so a late joiner used
+ * to wait for an activity frame before it believed the stream was live. Since
+ * the screens load as chunks (LAI-1219) and the header subscribes first, the
+ * space's LIVE pill was that late joiner and read CONNECTING on a healthy
+ * stream. Told on the next microtask, before any later frame, and only if the
+ * listener and the connection's state are both still there.
  */
 export function subscribeToEvents(slug: string, listener: StreamListener): () => void {
   const existing = streams.get(slug);
@@ -184,6 +203,14 @@ export function subscribeToEvents(slug: string, listener: StreamListener): () =>
   if (existing === undefined) streams.set(slug, shared);
 
   shared.listeners.add(listener);
+
+  if (existing !== undefined) {
+    queueMicrotask(() => {
+      if (!shared.listeners.has(listener) || shared.state === 'connecting') return;
+      listener({ kind: 'open' });
+      if (shared.state === 'ready') listener({ kind: 'ready' });
+    });
+  }
 
   return () => {
     shared.listeners.delete(listener);
