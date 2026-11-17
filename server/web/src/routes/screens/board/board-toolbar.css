@@ -1055,9 +1055,12 @@ button.bt-member-more:focus-visible {
     display: none;
   }
 
+  /* A floor for search (LAI-1230): with four action buttons back in the row,
+     search must not be the thing that gives way to nothing — the actions
+     scroll inside their group instead. */
   .space-toolbar .bt-search {
     flex: 1 1 auto;
-    min-width: 0;
+    min-width: 5.5rem;
   }
 }
 
