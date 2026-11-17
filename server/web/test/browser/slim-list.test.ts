@@ -293,6 +293,13 @@ void describe('the panel reads the task in full when it opens (LAI-795)', () => 
       );
       assert.equal(await h.page.locator('[data-section="acceptance"]').count(), 0);
 
+      // Positions are measured once the drawer has stopped rising: it opens
+      // 12px low (`drawer-slidein`, 280ms) and the pulse shows at 150ms, so on
+      // a slow runner the title was caught 0.87px short of rest and "moved"
+      // when the text landed (LAI-1309).
+      await h.page
+        .locator('.drawer')
+        .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
       const before = {
         title: await box('.panel-title'),
         rail: await box('.panel-meta'),
