@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T19:34:12Z
+finished: 2026-11-17T21:45:00Z
 ---
 
 ## Goal
@@ -27,7 +28,7 @@ merge.
 
 ## Acceptance criteria
 
-- [ ] **Graph client.** `server/src/services/microsoft-graph.ts`, copying
+- [x] **Graph client.** `server/src/services/microsoft-graph.ts`, copying
       `services/clan-client.ts`:
       - no SDK, injectable `fetchImpl`, sleep and clock;
       - AbortController timeout cleared in `finally`;
@@ -39,7 +40,7 @@ merge.
       - code-only errors that never echo Microsoft's body.
 
       Tests use `test/helpers/fake-graph.ts`, modelled on `fake-clan.ts`.
-- [ ] **Settings.**
+- [x] **Settings.**
       - A new table `org_calendar_source`, modelled on `org_hr_source` (`schema.ts:1496-1551`):
         tenant id, client id, the secret encrypted under a new `secrets.ts` purpose (write-only,
         last 4 shown), `enabled` **default false**, last sync status and time, and mapping rules
@@ -48,17 +49,17 @@ merge.
         admins (session only).
       - A "Test connection" that gets a token and reports the `roles` claim, saying whether
         `Calendars.Read` is granted. It works while the switch is off.
-- [ ] **Source enum and migration.** Add `calendar` to `TIME_ENTRY_SOURCES` (`enums.ts:641`).
+- [x] **Source enum and migration.** Add `calendar` to `TIME_ENTRY_SOURCES` (`enums.ts:641`).
       - The migration **rebuilds `time_entries`** for its CHECK (`0041_time_my_day.sql:87`), via
         `pnpm run db:generate`. Read the generated `INSERT … SELECT`.
       - `runMigrations` keeps FKs off (`migrate.ts:633-670`), and `ensureActivityTriggers`
         recreates the triggers.
       - Add a `test/db/migrate.test.ts` preservation test: rows, revisions, the
         `time_entries_no_replace` trigger, the three-year trigger, and FK integrity all survive.
-- [ ] **Link table.** `calendar_events` (`user_id`, `event_id` unique per user, `ical_uid`,
+- [x] **Link table.** `calendar_events` (`user_id`, `event_id` unique per user, `ical_uid`,
       `entry_id`, `entry_revision_synced`, `last_seen_at`), modelled on
       `solidtime_entries.entry_revision` (`schema.ts:4362`).
-- [ ] **Sync job.** `calendar.sync` in `jobs/scheduler.ts`: every 15 min, async, not `atStart`,
+- [x] **Sync job.** `calendar.sync` in `jobs/scheduler.ts`: every 15 min, async, not `atStart`,
       `assertCan(SYSTEM, 'system.calendar.sync')` (new SYSTEM_ACTIONS entry and §3.4 row), and a
       run-join so runs never overlap (the `runHrSync` pattern). It does nothing unless configured
       **and** enabled.
@@ -78,7 +79,7 @@ merge.
         is retired with `retireEntry`.
       - **A person's edit wins:** if the entry's current revision is past `entry_revision_synced`,
         the sync never touches it again.
-- [ ] **Web.**
+- [x] **Web.**
       - `api/time.ts` `EntrySource` gains `calendar`.
       - A "From Outlook" source pill and wording wherever `import` has a branch: `EntryRow.tsx`,
         `Inspector.tsx`, `revision-words.ts`, `timeline-derive.ts`, `Timeline.tsx`,
@@ -87,14 +88,14 @@ merge.
       - The Integrations card follows `HrSourceSection.tsx`: credentials, test connection, mapping
         rules, the switch (default off), last sync.
       - Both themes, phone width, tokens only.
-- [ ] **Decisions.**
+- [x] **Decisions.**
       - `calendar` entries are **not** pushed to the Solidtime outbox (`time-solidtime.ts:418,429,
         536`). They are editable and deletable by the person like manual entries.
       - **D-157**: calendar meetings are logged automatically. It amends D-088 items 2 and 4 (subject
         only, never links or bodies) and D-108 (kind `meeting` is set by the sync), and adds a new
         outbound destination to §13.4.
       - SPEC: §4.48 `source` row (`SPEC.md:2335`), §3.1, §3.4, §4 new tables, §6.4, §11.6, §13.4.
-- [ ] CI gate green on the PR into master: test, lint and format each exit 0.
+- [x] CI gate green on the PR into master: test, lint and format each exit 0.
 
 ## Notes / context
 
@@ -111,3 +112,26 @@ merge.
   master.
 - Reserved decision numbers: D-152 icons, D-153 email, D-154 Teams, D-155 email-to-task,
   D-156 Ksage line, D-157 this, D-158 SSO.
+
+## Build notes (2026-11-18, PR #364, green at `ecc09ee00`)
+
+- Numbers moved while it was built: the migration is **0086**
+  (`0086_calendar_sync`, renumbered through `db:generate` after icons 0083,
+  email 0084 and Teams 0085), and the tables are SPEC **§4.97**
+  `org_calendar_source` and **§4.98** `calendar_events` (email took §4.93,
+  Teams §4.94 – §4.96).
+- The rebuild needs one hand line: `DROP TRIGGER IF EXISTS
+  time_entry_revisions_is_append_only_no_delete` before it. SQLite refuses
+  the `RENAME` while that trigger names the dropped `time_entries`, and
+  `ensureActivityTriggers` recreates it at boot. This is recorded in the
+  migrations README.
+- I added out of office (`showAs: oof`) to the skips the task listed, since
+  it is not working time. An organiser whose response is `none` is logged.
+  Both are in D-157 item 3.
+- A title rule never reads a private meeting's subject.
+- Left for a live check once `Calendars.Read` is granted, because nothing
+  here can measure them:
+  - the channel rule matches the meeting's `location.displayName`;
+  - Graph resolves `/users/{email}` by UPN, so a member whose Laika email
+    is not their UPN counts as `no_mailbox`.
+
