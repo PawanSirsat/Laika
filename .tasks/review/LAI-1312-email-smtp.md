@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-1310
-status: in-progress
+status: review
 started: 2026-11-17T18:41:19Z
+finished: 2026-11-17T20:15:01Z
 ---
 
 ## Goal
@@ -123,15 +124,15 @@ Part B, assignment and @mention mail plus the digest, is LAI-1313 and comes afte
 
 ## Acceptance criteria
 
-- [ ] Settings: saving stores the key encrypted, the view shows `key_last4` and never the key, a
+- [x] Settings: saving stores the key encrypted, the view shows `key_last4` and never the key, a
       member is refused 403, and clearing them also turns the switch off.
-- [ ] Switch: it defaults off, turning it on with nothing configured is 422
+- [x] Switch: it defaults off, turning it on with nothing configured is 422
       `email_not_configured`, and `OrgView.email` reflects both.
-- [ ] Test send:
+- [x] Test send:
   - It sends to the caller over a fake transport while the switch is off.
   - It reports a 535 as `ok: false, code: '535'`, and a timeout with its code.
   - It's rate-limited.
-- [ ] Outbox:
+- [x] Outbox:
   - Switch off: a suppressed `email_off` row is written and the fake transport is never
     called.
   - Switch on: the row is queued, the job sends it, the row becomes `sent` and its body is
@@ -141,21 +142,21 @@ Part B, assignment and @mention mail plus the digest, is LAI-1313 and comes afte
     `unconfirmed`, not retried; a stale `sending` → `unconfirmed`.
   - Horizon → `too_old`.
   - The switch turned off after queueing → `email_off` at send time.
-- [ ] Invite create and re-issue and admin-issued reset links queue mail when the switch is on,
+- [x] Invite create and re-issue and admin-issued reset links queue mail when the switch is on,
       and say `email_off` when it's off. The copy link is unchanged either way.
-- [ ] Web:
+- [x] Web:
   - The Email card exists, with fields pre-filled, Save, Send test email showing its result,
     the switch, and the status badge.
   - The invite dialog and the reset-link box say whether a mail was queued.
   - Screenshots in light and dark.
-- [ ] Guards updated, not loosened:
+- [x] Guards updated, not loosened:
   - `EXPECTED_TABLES`, `schema-spec-drift`, `schema-migration-drift`, `migration-files`;
   - `policy-spec-drift`, `policy/matrix`, `permissions`;
   - `response-type-coverage`;
   - the agent-sessions route census;
   - the scheduler tests;
   - web `view-type-drift`, the `structure.test.ts` WEB maps, and the source guards.
-- [ ] The CI gate is green on the PR: test, lint and format each exit 0.
+- [x] The CI gate is green on the PR: test, lint and format each exit 0.
 
 ## Notes / context
 
@@ -168,3 +169,19 @@ Part B, assignment and @mention mail plus the digest, is LAI-1313 and comes afte
     (`220 smtp-relay.brevo.com ESMTP Service Ready`).
   - SolidTime already sends as `no-reply@kvelld.com` through the same Brevo account. The Ksage
     sender may need adding in Brevo.
+
+## Evidence
+
+- **PR:** #361 (https://github.com/PawanSirsat/Laika/pull/361). The head at review is
+  04b1eb51e plus this commit. CI passed every gate check on its first run: lint and format,
+  server 1–4/4, web 1–4/4, cli.
+- **Commits:** a90efc2b7 (server), 03207b047 (web), 04b1eb51e (docs).
+- **Local, single files on Belka:**
+  - The email suites: transport 15, templates 9, settings 22, outbox 20, routes 17.
+  - `migrate.test.ts` 49, with the new 0083 upgrade test.
+  - The browser test `organisation-email` 6, plus organisation-people, people-admin,
+    person-admin, profile-panel, organisation-hr and organisation-tabs.
+- **Mutation checks:** removing the enqueue switch check, retrying a timeout, and keeping
+  the body once final each turned their tests red; the file was restored and checksummed.
+- **Screenshots:** the card in light and dark (not set up, and off · ready) were sent to
+  CHIEF.
