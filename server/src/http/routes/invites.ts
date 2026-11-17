@@ -20,6 +20,7 @@ import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
+import { type EmailDispatchView, queueInviteEmail } from '../../services/email-outbox.ts';
 
 /**
  * `/api/v1/invites` (SPEC §6.4).
@@ -71,8 +72,13 @@ export interface CreatedInviteBody {
   invite: InviteView;
   /** Returned once, never recoverable — only the hash is stored (§4.11). */
   token: string;
-  /** Where to send the invitee. Laika mails nobody; the inviter passes it on. */
+  /** Where to send the invitee: the inviter can always pass it on themselves. */
   accept_url: string;
+  /**
+   * Whether the link was also queued to the invite's address (D-153, LAI-1312),
+   * and if not, why — `email_off` while the organisation's switch is off.
+   */
+  email: EmailDispatchView;
 }
 
 export interface AcceptedInviteBody {
@@ -93,6 +99,8 @@ export interface InviteRouteOptions {
    * invitee cannot open.
    */
   publicUrl?: string | undefined;
+  /** `LAIKA_SECRET`: a queued email's body is encrypted under it (D-153). */
+  serverSecret?: string | undefined;
 }
 
 /** `<public-url>/invite?token=…` — the screen at `/invite` in the SPA. */
@@ -128,6 +136,29 @@ function parseIncludeUsed(raw: string | undefined): boolean {
 export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, auth } = options;
+  const publicUrl = options.publicUrl ?? '';
+
+  /**
+   * Queue the link to the invite's address (D-153): the outbox decides whether
+   * it goes — off, not configured, a link invite with no address — and says so.
+   * Only an absolute link can be mailed, so with no `LAIKA_PUBLIC_URL` it is
+   * recorded `no_public_url` while the response still carries the relative one.
+   */
+  const mailInvite = (
+    actor: { userId: string; name: string },
+    created: { invite: InviteView; token: string },
+  ): EmailDispatchView =>
+    queueInviteEmail(
+      db,
+      {
+        inviteId: created.invite.id,
+        email: created.invite.email,
+        expiresAt: created.invite.expires_at,
+        acceptUrl: publicUrl === '' ? null : acceptUrlFor(publicUrl, created.token),
+        inviter: { userId: actor.userId, name: actor.name },
+      },
+      options.serverSecret ?? '',
+    );
 
   app.get('/', (c) => {
     const actor = requireActor(c);
@@ -165,6 +196,7 @@ export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
         invite: created.invite,
         token: created.token,
         accept_url: acceptUrlFor(options.publicUrl, created.token),
+        email: mailInvite(actor, created),
       },
       201,
     );
@@ -248,6 +280,7 @@ export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
         invite: created.invite,
         token: created.token,
         accept_url: acceptUrlFor(options.publicUrl, created.token),
+        email: mailInvite(actor, created),
       },
       201,
     );

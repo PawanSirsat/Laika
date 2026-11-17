@@ -99,9 +99,12 @@ describe('issuing a link', () => {
     const before = Date.now();
     const res = await issue(grace.id);
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { url: string; expires_at: number };
+    const body = (await res.json()) as { url: string; expires_at: number; email: unknown };
 
-    expect(Object.keys(body).sort()).toEqual(['expires_at', 'url']);
+    expect(Object.keys(body).sort()).toEqual(['email', 'expires_at', 'url']);
+    // D-153: also mailed only while the organisation's switch is on, which it
+    // ships without (LAI-1312).
+    expect(body.email).toEqual({ queued: false, reason: 'email_off' });
     expect(new URL(body.url).pathname).toBe('/reset-password');
     expect(body.expires_at).toBeGreaterThan(before);
     expect(body.expires_at).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000);

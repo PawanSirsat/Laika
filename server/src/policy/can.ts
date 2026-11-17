@@ -259,6 +259,8 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.notices.prune',
   'system.hr.sync',
   'system.attachment.prune',
+  'system.email.send',
+  'system.email.prune',
   'system.directory.sync',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
@@ -692,6 +694,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // it, so it stays with the two roles the owner named.
     case 'project.icon.write':
       return isAdminUp;
+
+    // | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
+    // *Email on* switch. Carried by *Change organisation settings, Time and
+    // breaks*, as the HR connection is; session only, because every invite
+    // and reset link goes wherever this points.
+    case 'org.email.configure':
+      return granted(actor, action);
 
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |
     // | Set own Draft my time | ✓ (session only) | … | ✓ (session only) |

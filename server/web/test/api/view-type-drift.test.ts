@@ -1037,6 +1037,50 @@ const PAIRS: readonly Pair[] = [
     client: 'HrSource',
     clientFile: 'hr.ts',
   },
+  // D-153 (LAI-1312): the Email card, its test send, and what an invite or a
+  // reset link says about its email.
+  {
+    server: 'OrgEmailView',
+    serverFile: 'services/email-settings.ts',
+    client: 'OrgEmail',
+    clientFile: 'org.ts',
+  },
+  {
+    server: 'EmailSettingsView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailSettings',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailDefaultsView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailDefaults',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailLastTestView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailLastTest',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailCountsView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailCounts',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailTestView',
+    serverFile: 'services/email-settings.ts',
+    client: 'EmailTestResult',
+    clientFile: 'email.ts',
+  },
+  {
+    server: 'EmailDispatchView',
+    serverFile: 'services/email-outbox.ts',
+    client: 'EmailDispatch',
+    clientFile: 'email.ts',
+  },
   // Organisation → Security's Sign-in card (LAI-1239).
   {
     server: 'SsoSettingsView',

@@ -12,6 +12,7 @@ import { immediateTransaction } from '../db/numbering.ts';
 import { invites, orgs, projectMemberships, projects, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { inviteEmailKey, invitesEmailed, supersedeEmail } from './email-outbox.ts';
 
 /**
  * Invites (SPEC §4.11, §6.4, D-004).
@@ -47,13 +48,17 @@ import { assertCan } from '../policy/can.ts';
  * §6.4 labels the preview "unauthenticated" in the spec itself. The token is the
  * credential in both, and it is checked before either returns anything.
  *
- * ## No email is sent
+ * ## Email, when it is switched on (D-153, LAI-1312)
  *
- * Laika has no SMTP (§11.7 lists no mail configuration and nothing reads one).
- * An invite yields a URL and the inviter passes it on themselves. `email_sent`
- * is on the response as a literal `false` so a UI cannot imply otherwise — a
- * screen that says "invitation sent" when nothing was sent is a support ticket
- * that arrives a week later.
+ * An invite yields a URL and the inviter can always pass it on themselves —
+ * the copy-link flow is the same whether email is on or off. When an owner or
+ * admin has turned *Email on*, the route also queues the link to the invite's
+ * address through the outbox (`services/email-outbox.ts`); with it off, that
+ * message is recorded `suppressed` / `email_off` and nothing is sent.
+ *
+ * `email_sent` is **true only once the outbox has actually sent it**, never on
+ * the strength of a queued row — a screen that says "invitation sent" when
+ * nothing was sent is a support ticket that arrives a week later.
  */
 
 /**
@@ -117,13 +122,17 @@ export interface InviteView {
   created_by: string;
   created_at: number;
   expires_at: number;
-  /** Always `false`. Laika sends no mail; see the module comment. */
-  email_sent: false;
+  /**
+   * Whether the invite's email has been sent — true only once the outbox has
+   * sent it (D-153), false while it waits, was suppressed or failed. See the
+   * module comment.
+   */
+  email_sent: boolean;
 }
 
 type InviteRow = typeof invites.$inferSelect;
 
-function toView(row: InviteRow): InviteView {
+function toView(row: InviteRow, emailed: ReadonlySet<string> = NONE): InviteView {
   return {
     id: row.id,
     email: row.email,
@@ -133,9 +142,11 @@ function toView(row: InviteRow): InviteView {
     created_by: row.createdBy,
     created_at: row.createdAt,
     expires_at: row.expiresAt,
-    email_sent: false,
+    email_sent: emailed.has(row.id),
   };
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 export interface CreateInviteInput {
   email?: string | null | undefined;
@@ -342,14 +353,18 @@ export function listInvites(
     );
   }
 
-  return db
+  const rows = db
     .select()
     .from(invites)
     .where(conditions.length === 0 ? undefined : and(...conditions))
     .orderBy(desc(invites.createdAt), desc(invites.id))
     .limit(options.limit + 1)
-    .all()
-    .map(toView);
+    .all();
+  const emailed = invitesEmailed(
+    db,
+    rows.map((r) => r.id),
+  );
+  return rows.map((row) => toView(row, emailed));
 }
 
 /**
@@ -382,6 +397,8 @@ export function revokeInvite(db: Db, actor: ResolvedActor, id: string): void {
   }
 
   db.delete(invites).where(eq(invites.id, id)).run();
+  // Its mail, if still waiting, would carry a dead link (D-153, LAI-1312 review).
+  supersedeEmail(db, [inviteEmailKey(id)], Date.now());
 }
 
 export interface ReissueInviteInput {
@@ -426,6 +443,8 @@ export function reissueInvite(
       }
 
       db.delete(invites).where(eq(invites.id, id)).run();
+      // The old link is dead: its mail, if still waiting, goes no further (D-153).
+      supersedeEmail(db, [inviteEmailKey(id)], input.now ?? Date.now());
 
       return createInvite(db, actor, {
         email: row.email,
@@ -676,6 +695,9 @@ export function consumeInvite(
     if (marked.changes !== 1) {
       throw new ApiError('forbidden', 'That invite has already been used');
     }
+    // Accepted: a mail still waiting would invite them to an account they
+    // already have (D-153, LAI-1312 review).
+    supersedeEmail(db, [inviteEmailKey(row.id)], now);
 
     db.update(users)
       .set({ orgRole: row.orgRole, updatedAt: new Date(now) })

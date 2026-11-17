@@ -81,6 +81,7 @@ describe('the mapping', () => {
         'org.time.set',
         'org.developer_insights.set',
         'org.hr.configure',
+        'org.email.configure',
       ],
     });
     expect(CAPABILITIES).not.toContain('manage_people');

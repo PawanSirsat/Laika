@@ -14,6 +14,12 @@ import {
   type HrSyncDeps,
   runHrSync,
 } from '../services/hr-sync.ts';
+import {
+  changedBy as emailChangedBy,
+  type EmailOutboxDeps,
+  pruneEmailOutbox,
+  runEmailOutbox,
+} from '../services/email-outbox.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
@@ -79,6 +85,12 @@ export interface SchedulerDeps {
    * nothing.
    */
   attachments?: AttachmentsDeps;
+  /**
+   * The outbox's transport (D-153, LAI-1312): `smtpTransport()` from
+   * `index.ts`, a recorder in the tests. Absent, the sender does nothing — no
+   * test can reach a mail server by leaving it out.
+   */
+  email?: Omit<EmailOutboxDeps, 'now'>;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
   clearTimer?: (handle: unknown) => void;
@@ -98,6 +110,9 @@ export interface Job {
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
+
+/** How often the outbox is drained: often enough that a mailed link is prompt. */
+export const EMAIL_SEND_EVERY_MS = 30 * 1000;
 
 /** §11.6's jobs and their intervals. */
 export function buildJobs(deps: SchedulerDeps): Job[] {
@@ -152,6 +167,34 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       run: (now) => pruneAttachments(db, deps.attachments, now),
     },
     { name: 'db.vacuum', everyMs: 7 * DAY, run: () => vacuum(db) },
+    // The outbox (§4.93, D-153, LAI-1312): what is queued is sent every 30
+    // seconds, under §3.4's `system.email.send`. Not `atStart`: nothing queued
+    // is urgent enough to hold a boot. A run still going when the next tick
+    // comes is joined, never doubled (`runEmailOutbox`). Nothing at all without
+    // a transport; nothing sent while the organisation's switch is off — queued
+    // rows are then recorded `suppressed` / `email_off`.
+    {
+      name: 'email.send',
+      everyMs: EMAIL_SEND_EVERY_MS,
+      run: async (now) => {
+        if (deps.email === undefined) return { changed: 0 };
+        const result = await runEmailOutbox(db, deps.serverSecret ?? '', {
+          ...deps.email,
+          now: () => now,
+        });
+        return { changed: emailChangedBy(result) };
+      },
+    },
+    // Outbox rows 90 days after they were written, under `system.email.prune`,
+    // daily and once at boot: deploys restart more often than daily, so a daily
+    // interval alone might never come round (CHIEF's LAI-1312 review). No
+    // `activity` row: nobody did it.
+    {
+      name: 'email.retention',
+      everyMs: DAY,
+      run: (now) => ({ changed: pruneEmailOutbox(db, now) }),
+      atStart: true,
+    },
     // Claims whose lease lapsed become `expired` (§9.1, proposal §4.2,
     // LAI-541), every `LAIKA_CLAIM_SCAN_SECONDS`. Not `atStart`: the boot
     // grace means the first scan after a restart could expire nothing anyway,
