@@ -7836,8 +7836,9 @@ Consent is still pending, so the feature ships whole and **off**.
    delete like one they typed, and it is never pushed to Solidtime.
 4. **What is kept — amends D-088 item 4.** The meeting's **subject** as the entry's title
    (≤ 120), its span and minutes, its space by the rules, and Graph's event and iCalendar ids
-   (§4.98). A **private or confidential** meeting is titled *Busy*, and no rule reads its
-   subject. **Never a join link, a body or an attendee** — not asked for, so not read. A
+   (§4.98) — **immutable ids** (`Prefer: IdType="ImmutableId"`), so a meeting moved between
+   folders keeps its id and is never logged twice. A **private, confidential or personal**
+   meeting is titled *Busy*, and no rule reads its subject or its location. **Never a join link, a body or an attendee** — not asked for, so not read. A
    meeting that runs past the person's midnight ends at midnight.
 5. **The kind is set — amends D-108 item 1.** A calendar entry is `kind: 'meeting'`. D-108's
    "a kind is never inferred" stays true of everything else.
@@ -7850,8 +7851,11 @@ Consent is still pending, so the feature ships whole and **off**.
 7. **Spaces by rule.** An owner or admin maps meetings to spaces: a keyword in the subject
    (any case), or a Teams channel, matched against the meeting's location, which Teams sets
    to the channel for a channel meeting. First match wins; no match is *General*. A rule
-   whose space is gone sends nothing anywhere.
-8. **Failures are Laika's words.** A refused secret, a missing grant, an unreachable or
-   unreadable Microsoft is recorded on the connection by code and changes nothing; a member
-   Microsoft has no calendar for is counted and skipped. Everyone's calendar is read before
-   one transaction writes, so a read that fails part-way writes nothing.
+   whose space is gone, or that **the person cannot open**, sends their meeting nowhere.
+8. **Failures are Laika's words.** A refused secret or token, a token without
+   `Calendars.Read`, an unreachable or unreadable Microsoft is recorded on the connection by
+   code and changes nothing. **One mailbox is one person, not the run**: a member whose
+   mailbox Microsoft does not have (`404`), will not open (`403`) or will not look up (`400`)
+   is counted by reason and skipped, and nothing of theirs is retired. Everyone's calendar is
+   read before one transaction writes, so a read that fails part-way writes nothing. With the
+   organisation's Time off, *Sync now* and turning the switch on are refused (`time_off`).
