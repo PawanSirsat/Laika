@@ -2,10 +2,11 @@
 id: LAI-1313
 title: 'Meetings in My day, Meeting review and the Sign-in card'
 area: web+server
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1312]
-status: backlog
+status: in-progress
+started: 2026-11-18T01:32:44+05:30
 ---
 
 ## Acceptance criteria
