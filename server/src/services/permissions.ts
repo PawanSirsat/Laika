@@ -125,6 +125,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'org.hr.configure': "Connect the organisation's HR system",
   'project.icon.write': "Change a space's icon",
   'org.email.configure': "Configure the organisation's email",
+  'org.teams.configure': 'Configure Teams posting',
 
   'project.members.manage': 'Manage project members',
   'project.settings.edit': 'Edit project settings and context_md',
