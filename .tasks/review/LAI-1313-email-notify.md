@@ -125,3 +125,36 @@ is off.
 **Renumbered after #360 merged** (2026-11-18): the migration is `0086_email_notify` and
 the four tables are SPEC §4.97 – §4.100. The Contract above keeps the numbers it was
 written with.
+
+## Review round 1 (CHIEF, 2026-11-18, by message) — what was done
+
+No criterion changed. The findings were fixed on the same branch:
+
+1. **The cursor can't stall.**
+   - A keyset cursor, `(read_to, read_to_id)`. `email_watermarks.read_to_id` is new.
+   - The two-minute window is re-read separately, for rows written late.
+   - Tests: `NOTIFY_BATCH + 1` rows in one millisecond, for each source.
+2. **`told` only when the mail is queued or sent.** An assignment or mention that isn't mailed
+   for `pref_off` or `too_old` reaches the digest, watching or not.
+3. **Private-space tests:**
+   - assigned, then removed;
+   - mentioned, then removed;
+   - an item collected, then the member removed, for both activity and notice items;
+   - escaping of all three templates.
+   - Each `canRead` check was deleted and its test went red; files restored by checksum.
+4. **`email.send` asks again** for `assignment` and `mention` mail: a new `email_outbox.task_id`
+   column; `no_access` and the body gone if not.
+5. **An instant mail first read over an hour late is `too_old`**, and the digest still
+   carries it.
+6. **Per-run caches** for `canRead`, prefs and watchers. `result.instant` counts only inserted
+   rows: a re-read renders and writes nothing.
+7. **Every notification mail links `/people?user=<id>`** ("Change what … emails you").
+8. **An upgrade test for 0086's outbox rebuild:** every row and column kept. The generated
+   INSERT … SELECT read `task_id` from the old table; it was hand-edited to `NULL`, as 0024
+   was.
+9. **Nits:**
+   - the keys added to §4.93;
+   - the digest's lists sit outside `<p>`;
+   - "since your last digest".
+
+The agent-for-owner question is filed as LAI-1341 (LAIKA-1094).
