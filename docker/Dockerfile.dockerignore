@@ -37,8 +37,10 @@ server/public
 
 # Not needed to build or run the server.
 docker
-# ...except the entrypoint, which the runtime stage copies in.
+# ...except the entrypoint, which the runtime stage copies in, and the nginx
+# config, which the web-serve stage does (LAI-1308).
 !docker/entrypoint.sh
+!docker/web
 plugin
 cli
 **/.DS_Store
