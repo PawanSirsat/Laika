@@ -292,18 +292,8 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
-  // LAI-1311: Teams meetings, served ahead of the Meetings page — LAI-1312
-  // builds the client and mirrors them, and each leaves this group then.
-  ['MeetingListView', 'no client type exists'],
-  ['MeetingSummaryView', 'no client type exists'],
-  ['MeetingDetailView', 'no client type exists'],
-  ['MeetingProjectView', 'no client type exists'],
-  ['MyAttendanceView', 'no client type exists'],
-  ['MeetingAttendeeView', 'no client type exists'],
-  ['MeetingReviewRefView', 'no client type exists'],
-  ['MeetingTranscriptView', 'no client type exists'],
-  ['TranscriptLineView', 'no client type exists'],
-  ['MeetingReviewStartedView', 'no client type exists'],
+  // LAI-1311's Teams meeting views left this group in LAI-1312, whose
+  // `web/src/api/meetings.ts` mirrors and pairs every one.
 ]);
 
 /**

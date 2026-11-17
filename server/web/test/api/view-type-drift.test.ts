@@ -57,6 +57,71 @@ interface Pair {
 }
 
 const PAIRS: readonly Pair[] = [
+  // LAI-1312: the Teams meeting views (LAI-1311), every one paired, nested
+  // ones included — `fieldsOf` reads a body's own fields, so `project`,
+  // `my_attendance`, `attendees` and `review` are seen as names and their
+  // insides only through their own pairs. `MeetingDetailView extends
+  // MeetingSummaryView` on both sides, and `fieldsOf` follows it.
+  {
+    server: 'MeetingListView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingList',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingSummaryView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingSummary',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingDetailView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingDetail',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingProjectView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingProject',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MyAttendanceView',
+    serverFile: 'services/meetings.ts',
+    client: 'MyAttendance',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingAttendeeView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingAttendee',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingReviewRefView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingReviewRef',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingTranscriptView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingTranscript',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'TranscriptLineView',
+    serverFile: 'services/meetings.ts',
+    client: 'TranscriptLine',
+    clientFile: 'meetings.ts',
+  },
+  {
+    server: 'MeetingReviewStartedView',
+    serverFile: 'services/meetings.ts',
+    client: 'MeetingReviewStarted',
+    clientFile: 'meetings.ts',
+  },
   {
     // LAI-739, replacing LAI-266's BoardColumn pair: one board column is one
     // project status now. Paired the moment the client type existed, for the
