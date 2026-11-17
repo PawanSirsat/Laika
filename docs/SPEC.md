@@ -993,10 +993,12 @@ A comment is served with **`sent_back`**, derived and never stored: `true` when
 gave for sending the task back from review (D-082).
 
 **Files** (§4.92, D-150): a comment's `body_md` may embed a file by
-`/api/v1/attachments/<id>/content`; saving it links the file to the comment and
-its task. **Deleting a comment removes the files only it carries** — one the
+`/api/v1/attachments/<id>/content`; saving it links a file no task has yet to
+the comment and its task. **Deleting a comment removes the files it first
+linked and the deleter may remove** (*Remove an attachment*, §3.2) — one the
 task's description or acceptance, or another live comment on the task, still
-embeds is kept.
+embeds is kept, and so is one somebody else uploaded when the deleter is a
+member.
 
 ### 4.8 `activity` — append-only
 
@@ -3915,7 +3917,7 @@ through URLs Laika signs (§6.4). This row is what Laika knows of the object.
 | `id` | ULID |
 | `project_id` | FK `projects`, cascade — a file belongs to a project from the start |
 | `task_id` | nullable, FK `tasks`, set null — the task it belongs to: named at upload, or filled when text on the task first links it; **never changed after** |
-| `comment_id` | nullable, FK `comments`, set null — the comment whose text first linked it |
+| `comment_id` | nullable, FK `comments`, set null — the comment whose text first linked it: set only by the save that also fills `task_id`, so never on a file that reached the task by its upload or by the task's text |
 | `uploaded_by` | FK `users` — who asked for the upload; the only one who may complete it, and the `own` of *Remove an attachment* (§3.2) |
 | `filename` | 1–255 (CHECK), no `/`, `\` or control character — **display only**, never a path or a key |
 | `content_type` | ≤ 127 (CHECK), lower case — as declared, and signed into the upload |
@@ -3935,11 +3937,18 @@ description and acceptance, or a comment, is saved with, for
 `/api/v1/attachments/<id>/content` — relative, or on any origin, since one
 deployment can be reached at two (the SPA and the API apart) and the id, not
 the host, decides — and takes only a file of **the same project**, `ready` and
-not removed: it fills a null `task_id` (writing `attachment.added`, §4.8) and a
-null `comment_id`, and **never relinks** a file another task has. **A deleted
-comment removes the files only it carries** (§4.7). §11.6's sweep deletes a
-`pending` row after 24 hours, removes a `ready` file no task took in 24 hours,
-and deletes the object of every removed file until `purged_at` is set.
+not removed, **that no task has yet**: it fills `task_id` (writing
+`attachment.added`, §4.8) and, for a comment, `comment_id`; a file a task
+already has is left alone, and one another task has is **never relinked**.
+**A deleted comment removes the files it first linked and the deleter may
+remove** — each asked of `can()` as `DELETE /attachments/:id` asks it (§4.7,
+LAI-1300 review). An upload may be completed within an hour of asking. §11.6's
+sweep deletes a `pending` row after 24 hours, removes a `ready` file no task
+took in the 24 hours since it became ready, and deletes the object of every
+removed file until `purged_at` is set. **A presigned `PUT` stays usable for the
+rest of its ten minutes** after the file is completed or removed: bounded, and
+safe because what a read serves is the type the presigned `GET` forces, not
+what the object claims.
 **Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
 these rows and not the files (D-150 item 8).
 
@@ -4536,7 +4545,7 @@ DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150)
-POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_missing or size_mismatch   (the uploader)
+POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch   (the uploader)
 GET    /api/v1/attachments/:id/content       → 302 to a presigned GET, five minutes; Cache-Control: private, max-age=60; pending, removed or unreadable 404   (project.read)
 DELETE /api/v1/attachments/:id               → 204   (attachment.delete: a lead any, a member their own)
 GET    /api/v1/tasks/:id/attachments         → { data: [attachment] }, ready and not removed, oldest first   (project.read)
@@ -6159,7 +6168,8 @@ relative, and never a store URL, so a stored body never expires.
   filename): the browser sends the two headers exactly as given and its own
   `content-length`, and **the store refuses another size or type**. The answer
   holds a credential, so it is never stored by the idempotency layer (§6.3).
-- **Completing** is the uploader's alone. Laika `HEAD`s the object — missing,
+- **Completing** is the uploader's alone, within an hour of asking (`409
+  upload_expired` after). Laika `HEAD`s the object — missing,
   or another size, is `409` and the row stays `pending` — reads its first
   sixteen bytes, sets `inline`, and marks it `ready`; a file that named its
   task writes `attachment.added` (§4.8).
@@ -8073,11 +8083,13 @@ One interval-driven scheduler in the same process:
 - **attachment sweep** (§4.92, D-150, LAI-1300) — hourly, not at boot, under
   §3.4's `system.attachment.prune`: a `pending` row older than 24 hours — an
   upload nobody finished — has its object deleted, if any, and then the row; a
-  `ready` file no task took in 24 hours is stamped removed; and every removed
-  file whose object is still stored has it deleted and `purged_at` set, which
-  is how a removal the store missed is retried. **It never touches a ready,
-  linked, live file.** A store it cannot reach leaves the row for the next
-  run. No `activity` row: nobody did it. Nothing without a store
+  `ready` file no task took in the 24 hours since it became ready is stamped
+  removed; and every removed file whose object is still stored has it deleted
+  and `purged_at` set, which is how a removal the store missed is retried.
+  **It never touches a ready, linked, live file.** **The first store failure
+  ends the store's part of the run**, so a hung store costs one timeout, and
+  **a run never overlaps another** — a tick joins the one still going. No
+  `activity` row: nobody did it. Nothing without a store
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
   at boot**, so a deploy starts with every task estimated. It writes no

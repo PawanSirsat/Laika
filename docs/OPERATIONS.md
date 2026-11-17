@@ -136,6 +136,12 @@ garage bucket allow --read --write --owner laika-attachments --key laika
 `LAIKA_S3_ACCESS_KEY_ID` and `LAIKA_S3_SECRET_ACCESS_KEY`. The key needs nothing
 but this bucket. `--owner` lets the same key set the bucket's CORS in step 2.
 
+**Keep the bucket private: no public read, and no website mode.** An object
+keeps the type its uploader declared, so an HTML file stored as `text/html`
+would render on the store's origin if it could be fetched directly; only the
+presigned `GET` Laika issues forces a download type, and that is the only way
+in it should have.
+
 Put the S3 API (port 3900) behind your TLS proxy at its own name, for example
 `https://files.example.com`. **Let the proxy pass bodies as large as
 `LAIKA_ATTACHMENT_MAX_BYTES`** — the upload goes through it, not through Laika.
