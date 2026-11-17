@@ -14,7 +14,12 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
-import { isCredentialRejection, signIn, SignInError } from '../../src/api/auth.ts';
+import {
+  isCredentialRejection,
+  microsoftErrorWords,
+  signIn,
+  SignInError,
+} from '../../src/api/auth.ts';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -114,5 +119,36 @@ void describe('a failed sign-in carries why it failed', () => {
     for (const other of [new Error('offline'), null, undefined, 'a string']) {
       assert.equal(isCredentialRejection(other), false);
     }
+  });
+});
+
+void describe('a Microsoft refusal, in words (LAI-1317)', () => {
+  void test('each code the server sends back has words of its own, not the fallback', () => {
+    // The codes `auth.ts` redirects with: one identity per person, and the id
+    // token's directory, issuer, audience and home directory.
+    for (const code of [
+      'account_already_linked',
+      'wrong_tenant',
+      'wrong_issuer',
+      'wrong_audience',
+      'guest_account',
+      'id_token_unreadable',
+    ]) {
+      assert.doesNotMatch(microsoftErrorWords(code), /did not finish/, code);
+    }
+  });
+
+  void test('a second Microsoft identity says what to ask an admin for', () => {
+    assert.match(microsoftErrorWords('account_already_linked'), /different Microsoft account/);
+    assert.match(microsoftErrorWords('account_already_linked'), /ask an admin/);
+  });
+
+  void test('a guest and another directory say to use the work account', () => {
+    assert.match(microsoftErrorWords('guest_account'), /Guest accounts cannot sign in here/);
+    assert.match(microsoftErrorWords('wrong_tenant'), /not in this organisation’s directory/);
+  });
+
+  void test('a token for another app names its code', () => {
+    assert.match(microsoftErrorWords('wrong_audience'), /\(wrong_audience\)/);
   });
 });

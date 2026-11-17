@@ -144,6 +144,18 @@ export function microsoftErrorWords(code: string): string {
     case 'access_denied':
     case 'consent_required':
       return 'Microsoft sign-in was cancelled.';
+    // LAI-1317: a person holds one Microsoft identity, and the token must be
+    // this organisation's directory's, for this Laika, and a member's.
+    case 'account_already_linked':
+      return 'Your Laika account is linked to a different Microsoft account. If yours was re-created, ask an admin to unlink the old one.';
+    case 'wrong_tenant':
+      return 'That Microsoft account is not in this organisation’s directory. Sign in with your work account.';
+    case 'guest_account':
+      return 'Guest accounts cannot sign in here. Sign in with your own account in this organisation’s directory.';
+    case 'wrong_issuer':
+    case 'wrong_audience':
+    case 'id_token_unreadable':
+      return `Microsoft’s answer was not for this Laika (${code}). Ask an admin to check the app registration.`;
     default:
       return `Microsoft sign-in did not finish (${code}). Try again, or ask an admin.`;
   }
