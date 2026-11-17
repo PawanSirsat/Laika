@@ -45,6 +45,12 @@
   padding-left: var(--control-pad-sm);
 }
 
+/* A `leading` mark's wrapper (LAI-1238): centred like an icon, not on the baseline. */
+span.button-glyph {
+  display: inline-flex;
+  flex: none;
+}
+
 .button-label {
   min-width: 0;
   /* An unbroken word (a URL, a German compound) breaks rather than overflows. */

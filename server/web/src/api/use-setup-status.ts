@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getSetupStatus, type SetupSystemStatus } from './setup.ts';
+import { getSetupStatus, type SetupSystemStatus, type SignInMethod } from './setup.ts';
 
 export interface UseSetupStatus {
   /** `undefined` while the first check is in flight. */
@@ -14,6 +14,14 @@ export interface UseSetupStatus {
    * whether something is wrong.
    */
   readonly system: SetupSystemStatus | undefined;
+  /**
+   * How people sign in here (LAI-1238). `undefined` only while the first check
+   * is in flight, so the sign-in screen waits rather than flashing a password
+   * form on an SSO-only instance. **A failed check reads as `email`** — the
+   * screen this app drew before SSO — rather than a blank page; on an SSO-only
+   * instance the server then answers that form `sso_only`, in words.
+   */
+  readonly signInMethod: SignInMethod | undefined;
   /**
    * Setup just succeeded — flip the flag **synchronously**.
    *
@@ -40,6 +48,7 @@ export interface UseSetupStatus {
 export function useSetupStatus(): UseSetupStatus {
   const [setupRequired, setSetupRequired] = useState<boolean | undefined>(undefined);
   const [system, setSystem] = useState<SetupSystemStatus | undefined>(undefined);
+  const [signInMethod, setSignInMethod] = useState<SignInMethod | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -49,9 +58,13 @@ export function useSetupStatus(): UseSetupStatus {
       .then((status) => {
         setSetupRequired(status.setup_required);
         setSystem(status.system);
+        // Anything but `microsoft` is the password form — including an answer
+        // from a server that predates the field, which says nothing at all.
+        setSignInMethod(status.sign_in === 'microsoft' ? 'microsoft' : 'email');
       })
       .catch(() => {
         setSetupRequired(false);
+        setSignInMethod('email');
       });
 
     return () => {
@@ -67,5 +80,5 @@ export function useSetupStatus(): UseSetupStatus {
     setAttempt((n) => n + 1);
   }, []);
 
-  return { setupRequired, system, markComplete, recheck };
+  return { setupRequired, system, signInMethod, markComplete, recheck };
 }

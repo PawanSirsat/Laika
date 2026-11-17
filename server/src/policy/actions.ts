@@ -212,6 +212,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: uploads nobody finished, files nothing linked, and the objects of
   // removed files, swept from the store hourly (D-150 item 6, LAI-1300).
   'system.attachment.prune',
+  // §11.6: every enabled Member of the Microsoft directory added as a member,
+  // every 15 minutes, when directory sync is on (D-158, LAI-1239, LAI-1317).
+  'system.directory.sync',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

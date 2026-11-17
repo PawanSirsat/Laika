@@ -686,3 +686,98 @@
   border-radius: var(--radius-card);
   text-wrap: pretty;
 }
+
+/* ---------------------------------------- Sign in with Microsoft (LAI-1238) */
+
+.auth-sso-lead {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* The action and the one line under it saying where the click goes. */
+.auth-sso-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.auth-sso-next {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* Good news, said first — *Laika is set up* — in the alert's shape, in green. */
+.auth-sso-notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-card);
+}
+
+/* First boot on an SSO-only instance (LAI-1238): how people will sign in, said
+   before the owner types the email that has to match it. */
+.boot-sso {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2-5) var(--space-3);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+}
+
+.boot-sso-head {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+/* ------------------------------ the Microsoft card, centred (2026-11-17) */
+
+.auth-sso {
+  text-align: center;
+}
+
+.auth-sso .auth-brand {
+  margin-inline: auto;
+}
+
+.auth-sso .auth-head {
+  align-items: center;
+}
+
+/* Messages read better ranged left, whatever the card around them does. */
+.auth-sso .auth-summary {
+  text-align: start;
+}
+
+.auth-sso .auth-sso-lead {
+  max-width: 30ch;
+  margin-inline: auto;
+}
+
+.auth-sso-rule {
+  width: 100%;
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.auth-sso-note {
+  margin: 0;
+  text-align: center;
+}

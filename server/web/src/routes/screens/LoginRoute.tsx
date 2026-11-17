@@ -1,7 +1,13 @@
 import { useCallback, useState } from 'react';
 import { LoginScreen, type LoginSubmit } from './LoginScreen.tsx';
 import { useShell } from '../../components/shell/shell-context.ts';
-import { isCredentialRejection, SignInError } from '../../api/auth.ts';
+import {
+  isCredentialRejection,
+  microsoftErrorWords,
+  SignInError,
+  signInWithMicrosoft,
+} from '../../api/auth.ts';
+import { MicrosoftSignInScreen } from './MicrosoftSignInScreen.tsx';
 
 /**
  * The sign-in flow (LAI-250), lifted out of `AppShell`.
@@ -12,6 +18,54 @@ import { isCredentialRejection, SignInError } from '../../api/auth.ts';
  * every state be checked without a server. This container is the other half.
  */
 export function LoginRoute() {
+  const { signInMethod } = useShell();
+  // Nothing until the instance says how people sign in (LAI-1238): a password
+  // form flashed on an SSO-only instance is a door that cannot open.
+  if (signInMethod === undefined) return null;
+  return signInMethod === 'microsoft' ? <MicrosoftLoginRoute /> : <PasswordLoginRoute />;
+}
+
+/**
+ * **Sign in with Microsoft** (LAI-1238). The button sends the browser to
+ * Microsoft; Microsoft comes back to `/` signed in, or here with `?error=`,
+ * which is said in words — a silent return reads as the button being broken.
+ */
+function MicrosoftLoginRoute() {
+  const { route } = useShell();
+  const [busy, setBusy] = useState(false);
+  const [startError, setStartError] = useState<string | undefined>(undefined);
+  const returned = route.params.get('error');
+  const error = startError ?? (returned === null ? undefined : microsoftErrorWords(returned));
+  // First boot hands over here only when it could not go straight to Microsoft.
+  const ready = route.params.get('ready') === 'owner';
+
+  return (
+    <MicrosoftSignInScreen
+      title="Sign in to Laika"
+      lead="Use your Microsoft work account. There’s no separate Laika password."
+      busy={busy}
+      error={error}
+      notice={
+        ready
+          ? 'Laika is set up. Sign in with the Microsoft account you entered as the owner.'
+          : undefined
+      }
+      onSignIn={() => {
+        setBusy(true);
+        setStartError(undefined);
+        signInWithMicrosoft('/', '/login').catch((cause: unknown) => {
+          setBusy(false);
+          setStartError(
+            cause instanceof SignInError ? cause.message : 'Could not reach the instance.',
+          );
+        });
+      }}
+      note="New here? An Owner or Admin has to invite your work email first."
+    />
+  );
+}
+
+function PasswordLoginRoute() {
   const { host, session, signIn } = useShell();
   const [error, setError] = useState<string | undefined>(undefined);
   const [rejected, setRejected] = useState(false);

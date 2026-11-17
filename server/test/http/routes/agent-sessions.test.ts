@@ -789,6 +789,8 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/org/hr/connect': 'session only (org.hr.configure)',
   'POST /api/v1/org/hr/connect/verify': 'session only (org.hr.configure)',
   'POST /api/v1/org/hr/sync': 'session only (org.hr.configure)',
+  'POST /api/v1/org/sso/directory-sync':
+    'org settings (org.settings.edit); adds directory members, not a task (LAI-1239)',
   'PUT /api/v1/org/hr/people': 'session only (org.hr.configure)',
   'DELETE /api/v1/org/hr': 'session only (org.hr.configure)',
   'POST /api/v1/org/holidays': 'session only (org.time.set); a holiday, not a task',

@@ -3,6 +3,7 @@ import { FirstBootScreen, type FirstBootSubmit } from './FirstBootScreen.tsx';
 import { useShell } from '../../components/shell/shell-context.ts';
 import { completeSetup, fieldErrors } from '../../api/setup.ts';
 import { ApiError } from '../../api/errors.ts';
+import { signInWithMicrosoft } from '../../api/auth.ts';
 
 /**
  * First boot (LAI-250), lifted out of `AppShell`.
@@ -22,7 +23,9 @@ export function SetupRoute() {
     recheck,
     retry,
     route: { navigate },
+    signInMethod,
   } = useShell();
+  const microsoft = signInMethod === 'microsoft';
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -39,10 +42,21 @@ export function SetupRoute() {
           orgName: values.orgName,
           ownerName: values.ownerName,
           ownerEmail: values.ownerEmail,
-          ownerPassword: values.password,
+          ...(microsoft ? {} : { ownerPassword: values.password }),
           projectName: values.projectName,
         });
         markComplete();
+        if (microsoft) {
+          // No session on an SSO-only instance (LAI-1238): Laika cannot vouch
+          // that whoever typed the address holds it. Microsoft does — so go
+          // straight there rather than to a sign-in page that only says "click
+          // again". If the hand-off cannot start, the sign-in page says the
+          // instance is ready and offers the same button.
+          await signInWithMicrosoft('/board', '/login').catch(() => {
+            navigate('/login?ready=owner');
+          });
+          return;
+        }
         retry();
         navigate('/board');
       } catch (cause) {
@@ -64,7 +78,7 @@ export function SetupRoute() {
         setSubmitting(false);
       }
     },
-    [markComplete, recheck, retry, navigate],
+    [markComplete, recheck, retry, navigate, microsoft],
   );
 
   return (
@@ -78,6 +92,7 @@ export function SetupRoute() {
       submitting={submitting}
       serverError={error}
       fieldErrors={fields}
+      microsoft={microsoft}
     />
   );
 }

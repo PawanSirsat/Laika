@@ -1,4 +1,6 @@
 import type Database from 'better-sqlite3';
+import { type MicrosoftSso } from '../auth/sso.ts';
+import { runDirectorySync, type DirectoryDeps } from '../services/microsoft-directory.ts';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { type AttachmentsDeps, pruneAttachments } from '../services/attachments.ts';
@@ -67,6 +69,10 @@ export interface SchedulerDeps {
   serverSecret?: string;
   /** The HR sync's `fetch` and waits — injected by the tests, which never call Clan. */
   hr?: HrSyncDeps;
+  /** Microsoft SSO (LAI-1238); its `directorySync` switches the directory job on. */
+  sso?: MicrosoftSso | null;
+  /** The directory sync's `fetch` — injected by the tests, which never call Graph. */
+  directory?: DirectoryDeps;
   /**
    * The attachments store (D-150, LAI-1300), and the `fetch` the tests inject
    * so none of them calls a store. Absent, or `config: null`, the sweep does
@@ -172,6 +178,23 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       everyMs: DAY,
       run: (now) => refitEstimates(db, now),
       atStart: true,
+    },
+    // Every enabled Member of the Microsoft directory as a Laika member
+    // (LAI-1239), every 15 minutes and at boot; nothing unless
+    // `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on. Near the end, like the HR sync, because it
+    // waits on the network — before the HR sync, which stays last. A failure throws its code alone (`DirectoryError`),
+    // never a token or Graph's body.
+    {
+      name: 'directory.sync',
+      everyMs: 15 * 60 * 1000,
+      atStart: true,
+      run: async (now) => {
+        const result = await runDirectorySync(db, deps.sso ?? null, {
+          ...deps.directory,
+          now: () => now,
+        });
+        return { changed: result.added };
+      },
     },
     // Holidays and leave from the organisation's HR system (D-149 item 7,
     // LAI-1181), every 30 minutes and at boot; nothing without a connected

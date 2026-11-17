@@ -1,4 +1,4 @@
-import { useId, type ButtonHTMLAttributes, type MouseEvent, type Ref } from 'react';
+import { useId, type ButtonHTMLAttributes, type MouseEvent, type ReactNode, type Ref } from 'react';
 import { Icon } from '../icon/Icon.tsx';
 import type { IconName } from '../icon/icon-paths.ts';
 import { Spinner } from '../Spinner.tsx';
@@ -51,6 +51,12 @@ export interface ButtonProps extends Passthrough {
   readonly fullWidth?: boolean;
   /** A leading icon, decorative: the label already says what it does. */
   readonly icon?: IconName | undefined;
+  /**
+   * A leading mark that is not one of our icons — a provider's sign-in mark
+   * (LAI-1238), which the icon registry keeps out on purpose. Decorative, like
+   * `icon`, and replaced by the spinner while `busy`, like it.
+   */
+  readonly leading?: ReactNode;
   /** An id the caller renders itself, added to `aria-describedby`. */
   readonly describedBy?: string | undefined;
   readonly ref?: Ref<HTMLButtonElement> | undefined;
@@ -85,6 +91,7 @@ export function Button({
   onClick,
   fullWidth = false,
   icon,
+  leading,
   describedBy,
   ref,
   ...rest
@@ -132,6 +139,10 @@ export function Button({
       >
         {busy ? (
           <Spinner size="sm" />
+        ) : leading !== undefined ? (
+          <span className="button-glyph" aria-hidden="true">
+            {leading}
+          </span>
         ) : (
           icon !== undefined && <Icon name={icon} size="small" className="button-glyph" />
         )}

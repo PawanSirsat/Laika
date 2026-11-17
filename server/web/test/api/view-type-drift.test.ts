@@ -1037,6 +1037,13 @@ const PAIRS: readonly Pair[] = [
     client: 'HrSource',
     clientFile: 'hr.ts',
   },
+  // Organisation → Security's Sign-in card (LAI-1239).
+  {
+    server: 'SsoSettingsView',
+    serverFile: 'services/sso-settings.ts',
+    client: 'SsoSettings',
+    clientFile: 'sso.ts',
+  },
   {
     server: 'HrSyncErrorView',
     serverFile: 'services/hr-source.ts',
