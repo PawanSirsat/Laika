@@ -8,12 +8,13 @@
 # in preference to a context-root .dockerignore, which keeps every file this
 # image needs inside Builder-B's area.
 #
-# Stages: deps -> web -> server -> prod-deps -> runtime.
-# Only the last stage ships. It carries compiled JS and production node_modules;
-# no TypeScript, no toolchain, and no database. Source maps do ship, and are
-# not served: the server's own sit beside dist/*.js, and the SPA's are built
-# `hidden` (linked from nothing) into public/, where the server refuses `*.map`
-# with a 404 (LAI-722).
+# Stages: deps -> web -> server -> prod-deps -> web-serve -> runtime.
+# The last stage, runtime, is the default target and the image that ships;
+# web-serve is built only when asked for by name. runtime carries compiled JS
+# and production node_modules; no TypeScript, no toolchain, and no database.
+# Source maps do ship, and are not served: the server's own sit beside
+# dist/*.js, and the SPA's are built `hidden` (linked from nothing) into
+# public/, where the server refuses `*.map` with a 404 (LAI-722).
 
 ARG NODE_VERSION=22
 ARG PNPM_VERSION=10.32.1
@@ -85,6 +86,46 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm deploy --filter=@laika/server --prod --legacy /prod \
  && test -d /prod/node_modules/better-sqlite3
+
+# ---------------------------------------------------------------------------
+# web-serve — the built SPA alone, served by nginx (LAI-1308).
+#
+# For a deployment that runs the frontend as its own resource on the server's
+# domain: the proxy sends /api, /mcp and /webhooks to `runtime` and everything
+# else here, so the browser still sees one origin. Built only on request
+# (`--target web-serve`). It sits above `runtime` so that `runtime` stays the
+# last stage and the default target: a build without `--target` is unchanged.
+#
+# The headers and the CSP are the server's, in docker/web/, and
+# server/test/tooling/web-serve.test.ts holds them to it.
+# ---------------------------------------------------------------------------
+FROM nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03 AS web-serve
+
+# LAIKA_STORAGE_ORIGIN is the attachment store's origin (the origin of the
+# server's LAIKA_S3_ENDPOINT), or empty with attachments off. It is defined
+# even when empty so the template always substitutes it; the filter keeps the
+# substitution to LAIKA_ names, so nginx's own `$uri` and anything an
+# orchestrator injects into the environment are left alone.
+ENV NGINX_ENVSUBST_FILTER=^LAIKA_ \
+    LAIKA_STORAGE_ORIGIN=""
+
+# Without the stock server block, a template that failed to render serves
+# nothing and fails the health check, instead of serving the app with none of
+# the headers.
+RUN rm /etc/nginx/conf.d/default.conf
+
+COPY --chown=root:root docker/web/security-headers.conf /etc/nginx/laika/security-headers.conf
+COPY --chown=root:root docker/web/default.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=web --chown=root:root /out /usr/share/nginx/html
+
+# The image's own unprivileged user (uid 101). The files above belong to root,
+# so nginx can read them and cannot change them.
+USER nginx
+EXPOSE 8080
+
+# busybox wget ships in the base image, so nothing is installed for this.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
 
 # ---------------------------------------------------------------------------
 # runtime — what actually ships.

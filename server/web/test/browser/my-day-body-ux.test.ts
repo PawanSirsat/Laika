@@ -40,6 +40,8 @@ function availability(work: { days: number[]; start: string; end: string } | nul
     '/api/v1/me/availability': {
       status: null,
       away: null,
+      // Always sent since LAI-1185 (master): null when the HR system has none.
+      on_leave: null,
       hours_per_week: null,
       note: null,
       tags: [],
@@ -57,9 +59,20 @@ async function openDay(
   theme: 'light' | 'dark' = 'dark',
 ): Promise<Harness> {
   const h = await open(`/my-day?day=${day}`, routes, { before: strictCsp });
-  await h.page.setViewportSize({ width, height: 900 });
-  await setTheme(h.page, theme);
-  await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+  /*
+   * **Closed if it never opens** (LAI-1306). Every caller's `try` starts after
+   * this returns, so a page that did not draw left its stub server listening
+   * and the file's process never exited: CI's web shard 2 sat 60 minutes and
+   * was cancelled, with this file's failures the last thing it printed.
+   */
+  try {
+    await h.page.setViewportSize({ width, height: 900 });
+    await setTheme(h.page, theme);
+    await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+  } catch (cause) {
+    await h.close();
+    throw cause;
+  }
   return h;
 }
 

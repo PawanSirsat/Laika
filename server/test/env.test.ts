@@ -432,3 +432,117 @@ describe('LAIKA_BUILD_COMMIT, LAIKA_DEVELOPER_ACCESS, LAIKA_CLI_SOURCE_URL (§11
     }
   });
 });
+
+describe('LAIKA_S3_* and LAIKA_ATTACHMENT_MAX_BYTES (§11.7, D-150, LAI-1300)', () => {
+  const STORE = {
+    LAIKA_S3_ENDPOINT: 'https://files.example.test',
+    LAIKA_S3_REGION: 'garage',
+    LAIKA_S3_BUCKET: 'laika-attachments',
+    LAIKA_S3_ACCESS_KEY_ID: 'GK0123456789abcdef01234567',
+    LAIKA_S3_SECRET_ACCESS_KEY: 'fixture-store-secret-never-real-0123456789',
+  };
+
+  function refusal(env: NodeJS.ProcessEnv): string {
+    let caught: unknown;
+    try {
+      readEnv(env);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(EnvError);
+    return (caught as EnvError).message;
+  }
+
+  it('is off — null — when none of the five store variables is set', () => {
+    expect(readEnv({ ...SECRET }).attachments).toBeNull();
+    // Empty is unset, as for every other variable.
+    expect(
+      readEnv({ ...SECRET, LAIKA_S3_ENDPOINT: '', LAIKA_S3_SECRET_ACCESS_KEY: '' }).attachments,
+    ).toBeNull();
+  });
+
+  it('is on with all five, and defaults the size to 25 MiB', () => {
+    expect(readEnv({ ...SECRET, ...STORE }).attachments).toEqual({
+      store: {
+        endpoint: 'https://files.example.test',
+        region: 'garage',
+        bucket: 'laika-attachments',
+        accessKeyId: 'GK0123456789abcdef01234567',
+        secretAccessKey: 'fixture-store-secret-never-real-0123456789',
+      },
+      maxBytes: 26_214_400,
+    });
+  });
+
+  it('keeps the endpoint as an origin, port and all, and takes http only on loopback', () => {
+    const endpoint = (value: string) =>
+      readEnv({ ...SECRET, ...STORE, LAIKA_S3_ENDPOINT: value }).attachments?.store.endpoint;
+    expect(endpoint('https://files.example.test:3900/')).toBe('https://files.example.test:3900');
+    expect(endpoint('http://localhost:3900')).toBe('http://localhost:3900');
+    expect(endpoint('http://127.0.0.1:3900')).toBe('http://127.0.0.1:3900');
+    for (const bad of [
+      'http://files.example.test',
+      'https://files.example.test/laika-attachments',
+      'https://GKkey:fixture-store-secret@files.example.test',
+      'https://files.example.test?x=1',
+      'ftp://files.example.test',
+      'files.example.test',
+    ]) {
+      const message = refusal({ ...SECRET, ...STORE, LAIKA_S3_ENDPOINT: bad });
+      expect(message, bad).toMatch(/^Invalid LAIKA_S3_ENDPOINT: "<redacted>"\. Expected an https:/);
+      expect(message).not.toContain('fixture-store-secret');
+    }
+  });
+
+  it('fails boot when some but not all are set, naming every one missing', () => {
+    const { LAIKA_S3_BUCKET: _b, LAIKA_S3_REGION: _r, ...partial } = STORE;
+    const message = refusal({ ...SECRET, ...partial });
+    expect(message).toMatch(/^Invalid LAIKA_S3_REGION: "<unset>"\./);
+    expect(message).toContain('LAIKA_S3_REGION, LAIKA_S3_BUCKET are missing');
+
+    const only = refusal({
+      ...SECRET,
+      LAIKA_S3_SECRET_ACCESS_KEY: STORE.LAIKA_S3_SECRET_ACCESS_KEY,
+    });
+    expect(only).toMatch(/^Invalid LAIKA_S3_ENDPOINT: "<unset>"\./);
+    // The one that is set is a secret, and the message never carries it.
+    expect(only).not.toContain(STORE.LAIKA_S3_SECRET_ACCESS_KEY);
+  });
+
+  it('refuses a malformed region, bucket, key id or secret — never echoing the two credentials', () => {
+    expect(refusal({ ...SECRET, ...STORE, LAIKA_S3_REGION: 'us/east' })).toMatch(
+      /^Invalid LAIKA_S3_REGION: "us\/east"/,
+    );
+    expect(refusal({ ...SECRET, ...STORE, LAIKA_S3_BUCKET: 'Laika_Files' })).toMatch(
+      /^Invalid LAIKA_S3_BUCKET: "Laika_Files"/,
+    );
+    const key = refusal({ ...SECRET, ...STORE, LAIKA_S3_ACCESS_KEY_ID: 'GK/fixture key' });
+    expect(key).toMatch(/^Invalid LAIKA_S3_ACCESS_KEY_ID: "<redacted>"/);
+    expect(key).not.toContain('fixture key');
+    const secret = refusal({
+      ...SECRET,
+      ...STORE,
+      LAIKA_S3_SECRET_ACCESS_KEY: 'two words-fixture',
+    });
+    expect(secret).toMatch(/^Invalid LAIKA_S3_SECRET_ACCESS_KEY: "<redacted>"/);
+    expect(secret).not.toContain('words-fixture');
+  });
+
+  it('takes the size from its variable, 1 to 5 GiB, and judges it even when off', () => {
+    expect(
+      readEnv({ ...SECRET, ...STORE, LAIKA_ATTACHMENT_MAX_BYTES: '1048576' }).attachments?.maxBytes,
+    ).toBe(1_048_576);
+    expect(
+      readEnv({ ...SECRET, ...STORE, LAIKA_ATTACHMENT_MAX_BYTES: '5368709120' }).attachments
+        ?.maxBytes,
+    ).toBe(5_368_709_120);
+    for (const bad of ['0', '5368709121', '25MB', '1e6', '-1']) {
+      expect(refusal({ ...SECRET, ...STORE, LAIKA_ATTACHMENT_MAX_BYTES: bad }), bad).toMatch(
+        /^Invalid LAIKA_ATTACHMENT_MAX_BYTES: /,
+      );
+    }
+    expect(refusal({ ...SECRET, LAIKA_ATTACHMENT_MAX_BYTES: 'lots' })).toMatch(
+      /^Invalid LAIKA_ATTACHMENT_MAX_BYTES: "lots"/,
+    );
+  });
+});

@@ -256,6 +256,12 @@ export const ACTIVITY_TYPES = [
   // stream reaches every reader and the answer is the pinger's and owner's.
   // Three owners (CLAUDE.md §4.4): §4.8's row, this, and slice C's mirror.
   'agent.capacity_requested',
+  // D-150 item 7 (LAI-1300): a file came to belong to a task — at its upload
+  // when it named the task, else when text on the task first linked it — and
+  // a file of a task was removed. The sweep writes neither. Three owners
+  // (CLAUDE.md §4.4): §4.8's row, this, and the web mirror, in one change.
+  'attachment.added',
+  'attachment.removed',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -712,3 +718,10 @@ export type LeavePart = (typeof LEAVE_PARTS)[number];
  */
 export const LEAVE_STATUSES = ['approved', 'pending'] as const;
 export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
+
+/**
+ * `attachments`' `state` (§4.92, D-150, LAI-1300): asked for and not yet
+ * confirmed in the store, or confirmed there and readable.
+ */
+export const ATTACHMENT_STATES = ['pending', 'ready'] as const;
+export type AttachmentState = (typeof ATTACHMENT_STATES)[number];

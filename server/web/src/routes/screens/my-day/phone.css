@@ -1272,7 +1272,15 @@
  * 390px it ran past the screen: the brand squashed to a sliver and *Viewing*
  * slid under the avatar. Under 480px the bar keeps every control and lets the
  * decoration go — the brand (the drawer carries it), the avatar (the person
- * menu is in the drawer), *Viewing*'s word — and the pill ellipsises.
+ * menu is in the drawer), *Viewing*'s word.
+ *
+ * **The pill's head is never cut** (D-149 item 5, LAI-1185): *On leave*,
+ * *Away* — the date and the type are in its title and the trigger's name. It
+ * ellipsised here once the top bar's search, Create and person joined the bar
+ * (LAI-1227), so the room comes from the bar's chrome instead: its edges, the
+ * gap between search and Create, those two at the bar's own 32px, the pill's
+ * chevron (the pill is the control, as the bar drew it before LAI-1223) and
+ * the Viewing chip's padding, which still says *Me* whole (LAI-1187).
  */
 @media (max-width: 479px) {
   /* Tighter since LAI-1227: the top bar's search, Create and person share it. */
@@ -1298,11 +1306,33 @@
     display: none;
   }
 
+  .shell-head[data-myday-bar] {
+    padding: 0 var(--space-2);
+  }
+
+  .shell-head[data-myday-bar] .shell-head-search {
+    gap: var(--space-1);
+  }
+
+  .shell-head[data-myday-bar] .cmdk-trigger-header,
+  .shell-head[data-myday-bar] .hdr-create {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  /* Whole, up to the longest head (*Leave requested*); past that, it ellipsises. */
   .shell-head[data-myday-bar] .avail-trigger {
-    min-width: 0;
-    max-width: 5rem;
-    flex: 0 1 auto;
+    flex: none;
+    max-width: 8rem;
     overflow: hidden;
+  }
+
+  .shell-head[data-myday-bar] .avail-chip-trigger {
+    padding: 0 var(--space-1-5);
+  }
+
+  .shell-head[data-myday-bar] .avail-chevron {
+    display: none;
   }
 
   .shell-head[data-myday-bar] .avail-head-trigger,
@@ -1318,30 +1348,7 @@
   .shell-head[data-myday-bar] .myday-viewing-trigger {
     min-width: 0;
     max-width: 6rem;
-  }
-
-  /*
-   * **The owner's call for 390px** (the #350 merge of LAI-1185, LAI-1187 and
-   * LAI-1227): the global top bar keeps its controls, and My day's row cannot
-   * also fit *On leave* and *Me* in words. Whose day gives way: the switch
-   * draws a person and a chevron, and *Me* stays its accessible name — hidden,
-   * never cut. That room goes to the availability pill, whose head is words.
-   */
-  .shell-head[data-myday-bar] .myday-viewing-icon {
-    display: inline-flex;
-  }
-
-  .shell-head[data-myday-bar] .myday-viewing-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .shell-head[data-myday-bar] .avail-trigger:has([data-avail-pill]) {
-    max-width: 6.5rem;
+    padding: 0 var(--space-1) 0 var(--space-1-5);
   }
 }
 

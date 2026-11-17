@@ -1,5 +1,6 @@
 import { Placeholder } from '@tiptap/extensions';
 import { Selection, TextSelection } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import {
   Fragment,
@@ -11,6 +12,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { AttachedFile } from '../../../../api/attachment-upload.ts';
 import { ApiError } from '../../../../api/errors.ts';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { Button } from '../../../../components/forms/Button.tsx';
@@ -24,7 +26,9 @@ import type {
   RichEditorProps,
   RichEditorWritten,
 } from '../LazyRichEditor.tsx';
+import { FileGlyph } from '../FileGlyph.tsx';
 import type { MentionDirectory } from '../mentions.ts';
+import { attachmentSnippet, FILE_GLYPHS, fileKind, filesFrom, pastedFiles } from './attach.ts';
 import { MARKDOWN_EXTENSIONS } from './extensions.ts';
 import {
   createBridge,
@@ -36,6 +40,7 @@ import {
 } from './markdown-bridge.ts';
 import { MentionPills, redrawMentions } from './mention-pills.ts';
 import { reducePastedHtml } from './paste.ts';
+import { placeholderAt, UploadPlaceholders, uploadPlaceholdersKey } from './upload-placeholders.ts';
 import './rich-editor.css';
 import './rte-toolbar.css';
 
@@ -55,6 +60,16 @@ import './rte-toolbar.css';
  * changed — an Escape is easy to press by accident, a Cancel click is not, so
  * Cancel discards at once. An Escape the editor consumes is `preventDefault`ed,
  * which is what tells the drawer not to close as well.
+ *
+ * ## Files (D-150, LAI-1301)
+ *
+ * Given `attach`, the paperclip, a pasted screenshot and a dropped file each
+ * upload. While one is on its way a placeholder holds its place in the text
+ * (`upload-placeholders.ts`) and a row below says how far it has got; when it
+ * arrives it becomes an image, or a link to the file, where the placeholder
+ * was. In the Markdown view the same markdown goes in at the caret. A file
+ * that fails says why on its row, and the text is as it was. Nothing is saved
+ * while a file is on its way.
  */
 
 const bridge = createBridge(MARKDOWN_EXTENSIONS);
@@ -63,6 +78,37 @@ type Mode = 'rich' | 'source';
 
 /** What a save would send, or why it cannot be sent as it stands. */
 type Written = RichEditorWritten;
+
+/** A file on its way, or one that did not make it and says why. */
+interface Upload {
+  readonly id: number;
+  readonly name: string;
+  /** 0 to 1. */
+  readonly progress: number;
+  readonly error?: string | undefined;
+}
+
+/**
+ * The markdown that links `file`, as the rich view would write it — so a text
+ * that gets one in the Markdown view still opens in the rich view. The plain
+ * snippet if, somehow, that cannot be written.
+ */
+function snippetFor(file: AttachedFile): string {
+  const inline = file.image
+    ? { type: 'image', attrs: { src: file.url, alt: file.filename, title: null } }
+    : { type: 'text', text: file.filename, marks: [{ type: 'link', attrs: { href: file.url } }] };
+  try {
+    return toMarkdown(
+      bridge,
+      bridge.schema.nodeFromJSON({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [inline] }],
+      }),
+    );
+  } catch {
+    return attachmentSnippet(file);
+  }
+}
 
 /** The line above the Markdown view: a word in bold, then why. */
 interface Notice {
@@ -398,6 +444,7 @@ const ICON = {
   card: 'M4 5h16v14H4zM8 9h8M8 13h5',
   undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3',
   redo: 'M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3',
+  attach: FILE_GLYPHS.paperclip.join(''),
 } as const;
 
 export function RichEditor({
@@ -415,6 +462,7 @@ export function RichEditor({
   cards,
   compact = false,
   caretAt,
+  attach,
 }: RichEditorProps) {
   /*
    * **Embedded** (LAI-1167): a field of a form rather than an editor that
@@ -444,9 +492,29 @@ export function RichEditor({
   const dismissedAt = useRef<number | null>(null);
   const wrap = useRef<HTMLDivElement | null>(null);
   const sourceField = useRef<HTMLTextAreaElement | null>(null);
+  const [uploads, setUploads] = useState<readonly Upload[]>([]);
+  const uploadSeq = useRef(0);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  /** Where a Markdown-view upload goes if the field has lost its caret: where it was. */
+  const sourceCarets = useRef(new Map<number, number>());
+  /** Read by the upload callbacks, which finish after the render that started them. */
+  const modeNow = useRef<Mode>(opening.kind);
+  /** Stops every upload still running when the editor closes. */
+  const uploadsStop = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    uploadsStop.current = controller;
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   /** Handlers the editor calls: it is created once, so they are read through a ref. */
   const keys = useRef<(event: KeyboardEvent) => boolean>(() => false);
+  const pasteFiles = useRef<(event: ClipboardEvent) => boolean>(() => false);
+  const dropFiles = useRef<(view: EditorView, event: DragEvent, moved: boolean) => boolean>(
+    () => false,
+  );
   const onTransaction = useRef<(editor: Editor) => void>(() => undefined);
   const placeCaret = useRef<(editor: Editor, attempt: number) => void>(() => undefined);
   /** Who the pills are for, read by the decoration on every redraw (LAI-868). */
@@ -472,6 +540,7 @@ export function RichEditor({
         ...MARKDOWN_EXTENSIONS,
         Placeholder.configure({ placeholder }),
         MentionPills.configure({ directory: () => mentions.current }),
+        UploadPlaceholders,
       ],
       content: opening.kind === 'rich' ? opening.content : null,
       // `style-src-elem 'self'` (LAI-205): an injected <style> would be refused.
@@ -488,9 +557,12 @@ export function RichEditor({
         },
         transformPastedHTML: reducePastedHtml,
         handleKeyDown: (_view: unknown, event: KeyboardEvent) => keys.current(event),
-        // A dropped file is not text: nothing to insert, and the browser must not open it.
-        handleDrop: (_view: unknown, event: DragEvent) =>
-          (event.dataTransfer?.files.length ?? 0) > 0,
+        // A pasted screenshot uploads (D-150); a paste with words in it is the words.
+        handlePaste: (_view: unknown, event: ClipboardEvent) => pasteFiles.current(event),
+        // A dropped file uploads where it was dropped (D-150) — or, with nowhere
+        // to keep it, is refused: never inserted, and never opened by the browser.
+        handleDrop: (view: EditorView, event: DragEvent, _slice: unknown, moved: boolean) =>
+          dropFiles.current(view, event, moved),
       },
       onTransaction: ({ editor: current }: { editor: Editor }) => {
         onTransaction.current(current);
@@ -578,8 +650,13 @@ export function RichEditor({
     [mode, value],
   );
 
+  /** A file on its way: a save now would not link it, so there is none until it lands. */
+  const uploadingNow = useRef(false);
+  uploadingNow.current = uploads.some((upload) => upload.error === undefined);
+
   const submit = useCallback(async (): Promise<void> => {
     if (busy || onSubmit === undefined || onClose === undefined) return;
+    if (uploadingNow.current) return;
     const result = written();
     if (!result.ok) {
       toSource(result, 'Not saved');
@@ -628,6 +705,7 @@ export function RichEditor({
       },
       // Nothing typed: the form asks before discarding only when there is.
       empty: (): boolean => (mode === 'rich' ? editor.isEmpty : source.trim() === ''),
+      uploading: (): boolean => uploadingNow.current,
     }),
     [written, toSource, mode, editor, source],
   );
@@ -752,6 +830,131 @@ export function RichEditor({
      */
     view.dispatch(state.tr.setSelection(selection));
     view.focus();
+  };
+
+  modeNow.current = mode;
+  const uploading = uploads.some((upload) => upload.error === undefined);
+
+  /** A row's change, by id. */
+  const updateUpload = (id: number, change: Partial<Upload>): void => {
+    setUploads((list) =>
+      list.map((upload) => (upload.id === id ? { ...upload, ...change } : upload)),
+    );
+  };
+
+  /**
+   * The file arrived: an image or a link where its placeholder is now — or at
+   * the caret, if the text around the placeholder went — and a space after a
+   * link, so the next word is not part of it. Somewhere that cannot hold one,
+   * a code block, gets it in a paragraph at the end instead.
+   */
+  const place = (id: number, file: AttachedFile): void => {
+    if (modeNow.current === 'source') {
+      const field = sourceField.current;
+      const focused = field !== null && document.activeElement === field;
+      const snippet = snippetFor(file);
+      const remembered = sourceCarets.current.get(id);
+      // Begun in the rich view: its placeholder there goes too.
+      unplace(id);
+      setSource((text) => {
+        const at = Math.min(
+          text.length,
+          focused ? field.selectionEnd : (remembered ?? text.length),
+        );
+        const caret = at + snippet.length;
+        if (focused) {
+          requestAnimationFrame(() => {
+            field.setSelectionRange(caret, caret);
+          });
+        }
+        return `${text.slice(0, at)}${snippet}${text.slice(at)}`;
+      });
+      return;
+    }
+    if (editor.isDestroyed) return;
+    const { state } = editor;
+    const { schema } = state;
+    const tr = state.tr.setMeta(uploadPlaceholdersKey, { remove: id });
+    const at = placeholderAt(state, id) ?? state.selection.to;
+    const inline = file.image
+      ? [schema.nodes.image!.create({ src: file.url, alt: file.filename })]
+      : [
+          schema.text(file.filename, [schema.marks.link!.create({ href: file.url })]),
+          schema.text(' '),
+        ];
+    const $at = tr.doc.resolve(at);
+    if ($at.parent.inlineContent && $at.parent.type.spec.code !== true) {
+      tr.insert(at, inline);
+    } else {
+      tr.insert(tr.doc.content.size, schema.nodes.paragraph!.create(null, inline));
+    }
+    editor.view.dispatch(tr);
+  };
+
+  /** The file did not make it: its placeholder goes, the text stays as it is. */
+  const unplace = (id: number): void => {
+    sourceCarets.current.delete(id);
+    if (editor.isDestroyed || placeholderAt(editor.state, id) === null) return;
+    editor.view.dispatch(editor.state.tr.setMeta(uploadPlaceholdersKey, { remove: id }));
+  };
+
+  /**
+   * Upload `files`, each with a placeholder at `at` — where they were dropped
+   * — or at the caret. In the Markdown view the caret is remembered instead.
+   */
+  const startUploads = (files: readonly File[], at: number | null, pasted: boolean): void => {
+    if (attach === undefined) return;
+    for (const file of files) {
+      uploadSeq.current += 1;
+      const id = uploadSeq.current;
+      const name = file.name === '' ? 'Pasted file' : file.name;
+      if (modeNow.current === 'rich') {
+        editor.view.dispatch(
+          editor.state.tr.setMeta(uploadPlaceholdersKey, {
+            add: { id, pos: at ?? editor.state.selection.to, label: name },
+          }),
+        );
+      } else {
+        sourceCarets.current.set(id, sourceField.current?.selectionEnd ?? source.length);
+      }
+      setUploads((list) => [...list, { id, name, progress: 0 }]);
+      attach
+        .upload(file, {
+          pasted,
+          signal: uploadsStop.current?.signal,
+          onProgress: (progress) => {
+            updateUpload(id, { progress });
+          },
+        })
+        .then((done) => {
+          place(id, done);
+          setUploads((list) => list.filter((upload) => upload.id !== id));
+        })
+        .catch((cause: unknown) => {
+          unplace(id);
+          updateUpload(id, {
+            error: cause instanceof Error ? cause.message : `Could not upload “${name}”.`,
+          });
+        });
+    }
+  };
+
+  pasteFiles.current = (event: ClipboardEvent): boolean => {
+    if (attach === undefined) return false;
+    const files = pastedFiles(event.clipboardData);
+    if (files.length === 0) return false;
+    startUploads(files, null, true);
+    return true;
+  };
+
+  dropFiles.current = (view: EditorView, event: DragEvent, moved: boolean): boolean => {
+    if (moved) return false;
+    const files = filesFrom(event.dataTransfer);
+    if (files.length === 0) return false;
+    event.preventDefault();
+    const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? null;
+    startUploads(files, at, false);
+    return true;
   };
 
   const toggleSource = (): void => {
@@ -954,6 +1157,23 @@ export function RichEditor({
           setPicker(picker?.kind === 'card' ? null : { kind: 'card', query: '', active: 0 });
         },
       },
+      /*
+       * Files (D-150), only where the board has a store. Both views: in the
+       * Markdown view the file goes in at the caret. Tier 1, so a narrow
+       * comment box keeps it on the bar — a screenshot is what people attach.
+       */
+      ...(attach === undefined
+        ? []
+        : [
+            {
+              label: 'Attach files',
+              glyph: <Glyph d={ICON.attach} />,
+              tier: 1 as const,
+              run: () => {
+                fileInput.current?.click();
+              },
+            },
+          ]),
     ],
     [
       {
@@ -977,6 +1197,7 @@ export function RichEditor({
 
   const cardMatches = picker?.kind === 'card' ? cardsMatching(cards, picker.query) : [];
   const empty = rich ? state.empty : source.trim() === '';
+  const uploadsShown = uploads.length > 0;
 
   return (
     <div
@@ -1050,6 +1271,23 @@ export function RichEditor({
           <Glyph text="M↓" />
         </Tool>
       </div>
+      {attach !== undefined && (
+        <input
+          ref={fileInput}
+          className="rte-file-input"
+          type="file"
+          multiple
+          hidden
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            // The same file chosen twice is still a change.
+            event.target.value = '';
+            startUploads(files, null, false);
+          }}
+        />
+      )}
 
       {rich && state.table && (
         <div className="rte-table-tools" role="group" aria-label="Table">
@@ -1214,6 +1452,19 @@ export function RichEditor({
             onChange={(event) => {
               setSource(event.target.value);
             }}
+            onPaste={(event) => {
+              const files = attach === undefined ? [] : pastedFiles(event.clipboardData);
+              if (files.length === 0) return;
+              event.preventDefault();
+              startUploads(files, null, true);
+            }}
+            onDrop={(event) => {
+              const files = filesFrom(event.dataTransfer);
+              if (files.length === 0) return;
+              // Never the file's path as text, and never the file opened in the tab.
+              event.preventDefault();
+              startUploads(files, null, false);
+            }}
             onKeyDown={(event) => {
               // Embedded: the form's keys (LAI-1167).
               if (embedded) return;
@@ -1258,6 +1509,53 @@ export function RichEditor({
         )}
       </div>
 
+      {uploadsShown && (
+        <ul className="rte-uploads" aria-label="Files being attached">
+          {uploads.map((upload) => (
+            <li
+              key={upload.id}
+              className={upload.error === undefined ? 'rte-upload' : 'rte-upload rte-upload-failed'}
+            >
+              <FileGlyph kind={fileKind(upload.name)} size={14} />
+              <span className="rte-upload-name">{upload.name}</span>
+              {upload.error === undefined ? (
+                <span
+                  className="rte-upload-bar"
+                  role="progressbar"
+                  aria-label={`Uploading ${upload.name}`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(upload.progress * 100)}
+                >
+                  <span
+                    className="rte-upload-fill"
+                    style={{ width: `${String(Math.round(upload.progress * 100))}%` }}
+                  />
+                </span>
+              ) : (
+                <>
+                  <span className="rte-upload-error" role="alert">
+                    {upload.error}
+                  </span>
+                  <Tooltip content="Dismiss" side="top">
+                    <button
+                      type="button"
+                      className="rte-upload-dismiss"
+                      aria-label={`Dismiss ${upload.name}`}
+                      onClick={() => {
+                        setUploads((list) => list.filter((u) => u.id !== upload.id));
+                      }}
+                    >
+                      <Icon name="close" size="small" />
+                    </button>
+                  </Tooltip>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {error !== undefined && (
         <p className="rich-editor-error" role="alert">
           {error}
@@ -1285,7 +1583,11 @@ export function RichEditor({
         </div>
       ) : (
         <div className="rich-editor-actions">
-          <Button busy={busy} disabled={compact && empty} onClick={() => void submit()}>
+          <Button
+            busy={busy}
+            disabled={(compact && empty) || uploading}
+            onClick={() => void submit()}
+          >
             {submitLabel}
           </Button>
           {!(compact && empty) && (
@@ -1294,7 +1596,9 @@ export function RichEditor({
             </Button>
           )}
           <span className="rich-editor-hint">
-            ⌘↵ to {submitLabel.toLowerCase()} · Esc to cancel
+            {uploading
+              ? `Attaching — ${submitLabel.toLowerCase()} when it has arrived`
+              : `⌘↵ to ${submitLabel.toLowerCase()} · Esc to cancel`}
           </span>
         </div>
       )}

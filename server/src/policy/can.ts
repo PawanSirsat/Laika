@@ -258,6 +258,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.checkpoint.prune',
   'system.notices.prune',
   'system.hr.sync',
+  'system.attachment.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -894,6 +895,22 @@ function canProjectAction(
     // | Edit / delete comment | own + any | own | — |
     case 'comment.edit':
     case 'comment.delete':
+      if (isLead) return true;
+      if (role === 'member') return resource.ownerId === actor.userId;
+      return false;
+
+    // | Attach a file | ✓ | ✓ | — |
+    //
+    // D-150 item 5 (LAI-1300): *Add comment*'s right — agents and tokens
+    // alike, narrowed by the grant and token as a comment is, and never a
+    // `read_only` one: it is not in `READ_ACTIONS`.
+    case 'attachment.create':
+      return isMemberUp;
+
+    // | Remove an attachment | own + any | own | — |
+    //
+    // Editing a comment's right: `ownerId` is who uploaded it.
+    case 'attachment.delete':
       if (isLead) return true;
       if (role === 'member') return resource.ownerId === actor.userId;
       return false;

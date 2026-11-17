@@ -13,6 +13,7 @@ import { newId } from '../db/ids.ts';
 import { comments, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { linkAttachmentRefs, removeCommentAttachments } from './attachments.ts';
 import { syncMentions } from './mentions.ts';
 import { sendBackCommentIds } from './rounds.ts';
 
@@ -255,6 +256,15 @@ export function addComment(
     now,
   });
 
+  // Files the comment embeds belong to it and its task (D-150 item 6), after
+  // its own row, so the feed reads *commented*, then *added*.
+  linkAttachmentRefs(
+    db,
+    { actor, projectId: project.id, taskId: task.id, commentId: id },
+    bodyMd,
+    now,
+  );
+
   return toView(db.select().from(comments).where(eq(comments.id, id)).get()!);
 }
 
@@ -297,6 +307,9 @@ export function editComment(
     payload: { action: 'edited', comment_id: commentId },
     now,
   });
+
+  // A file the edit embeds is linked; one it no longer embeds stays (D-150).
+  linkAttachmentRefs(db, { actor, projectId: project.id, taskId: task.id, commentId }, bodyMd, now);
 
   return toView(
     db.select().from(comments).where(eq(comments.id, commentId)).get()!,
@@ -345,6 +358,9 @@ export function deleteComment(
     payload: { action: 'deleted', comment_id: commentId },
     now,
   });
+
+  // The files only this comment carried go with it (D-150 item 6).
+  removeCommentAttachments(db, actor, { projectId: project.id, taskId: task.id, commentId }, now);
 }
 
 export { toView as commentView };

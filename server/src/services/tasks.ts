@@ -91,6 +91,7 @@ import {
   type SizeView,
 } from './estimates.ts';
 import { canBeMentioned } from './mentions.ts';
+import { linkAttachmentRefs } from './attachments.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import {
   ambiguousOutsideId,
@@ -1073,6 +1074,15 @@ export function createTask(
       now,
     });
 
+    // Files the text embeds belong to the task from here (D-150 item 6),
+    // after the create's own row, so the feed reads *created*, then *added*.
+    linkAttachmentRefs(
+      db,
+      { actor, projectId: project.id, taskId: id },
+      [input.description_md, input.acceptance_md].filter((md) => md != null).join('\n'),
+      now,
+    );
+
     // The request and its row as `PATCH` writes them, after the create's own
     // row, so the feed reads *created*, then *asked of that agent*.
     if (selectedAgentId !== null) {
@@ -1798,6 +1808,17 @@ export function updateTask(
           payload: { from: task.selectedAgentId, to },
           now,
         });
+      }
+
+      // Files the new text embeds belong to the task (D-150 item 6) — read
+      // again only when the text changed, after the edit's own row.
+      if ('descriptionMd' in changes || 'acceptanceMd' in changes) {
+        linkAttachmentRefs(
+          db,
+          { actor, projectId: project.id, taskId },
+          [input.description_md, input.acceptance_md].filter((md) => md != null).join('\n'),
+          now,
+        );
       }
 
       // **The size follows what the model reads, and nothing else** (D-085): the

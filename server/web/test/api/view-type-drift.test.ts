@@ -989,6 +989,40 @@ const PAIRS: readonly Pair[] = [
   // are `*View`s, so the server census counts each as served, and listing them
   // literally is right; the eight `UNPAIRED` entries LAI-1181 added are stale
   // from this commit (CLAUDE.md §4.4).
+  // D-150 (LAI-1300's views and their mirror, in one change): a file, the
+  // upload's answer and its ticket, a task's list, and `GET /org`'s
+  // `attachments`. Every nested shape is named on both sides and paired, as
+  // the HR views are; the ticket's `headers` is a one-line inline object.
+  {
+    server: 'AttachmentView',
+    serverFile: 'services/attachments.ts',
+    client: 'Attachment',
+    clientFile: 'attachments.ts',
+  },
+  {
+    server: 'AttachmentUploadView',
+    serverFile: 'services/attachments.ts',
+    client: 'AttachmentUpload',
+    clientFile: 'attachments.ts',
+  },
+  {
+    server: 'AttachmentUploadTicketView',
+    serverFile: 'services/attachments.ts',
+    client: 'AttachmentUploadTicket',
+    clientFile: 'attachments.ts',
+  },
+  {
+    server: 'AttachmentListView',
+    serverFile: 'services/attachments.ts',
+    client: 'AttachmentList',
+    clientFile: 'attachments.ts',
+  },
+  {
+    server: 'OrgAttachmentsView',
+    serverFile: 'services/attachments.ts',
+    client: 'OrgAttachments',
+    clientFile: 'org.ts',
+  },
   {
     server: 'HrSourceView',
     serverFile: 'services/hr-source.ts',

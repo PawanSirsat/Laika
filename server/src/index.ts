@@ -73,6 +73,8 @@ function main(): void {
     publicUrl: env.publicUrl,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
     warmStaticCache: true,
+    // The operator's store, or null — off (D-150, LAI-1300).
+    attachments: { config: env.attachments },
   });
 
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
@@ -128,6 +130,8 @@ function main(): void {
     serverSecret: env.serverSecret,
     // The directory sync reads Microsoft Graph with the SSO app (LAI-1239).
     sso: env.sso ?? null,
+    // The attachments sweep deletes from the store with it (D-150, LAI-1300).
+    attachments: { config: env.attachments },
   });
 
   const shutdown = createRuntimeShutdown({

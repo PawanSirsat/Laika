@@ -1915,11 +1915,6 @@ p.inspector-length {
   font-weight: var(--weight-semibold);
 }
 
-/* The phone bar draws the person, not the name (phone.css); hidden elsewhere. */
-.myday-viewing-icon {
-  display: none;
-}
-
 /* Whose day: cut with … rather than drawn past the chip (LAI-1187). */
 .myday-viewing-name {
   min-width: 0;

@@ -152,6 +152,80 @@ describe('style-src is split, not loosened (LAI-205)', () => {
     expect(extractStyleHashes('<p>no styles here</p>')).toEqual([]);
     expect(buildContentSecurityPolicy([])).toContain("style-src-elem 'self'");
   });
+
+  describe('a comment is not a style block (LAI-1309)', () => {
+    const REAL = extractStyleHashes('<style>body{color:red}</style>');
+
+    it('hashes nothing for a comment that names <style> and </style>, over several lines', () => {
+      const html =
+        '<p>x</p>\n<!-- no inline <style>\n  body{color:red}\n</style> here -->\n<p>y</p>';
+
+      expect(extractStyleHashes(html)).toEqual([]);
+    });
+
+    it('still hashes a real <style> element', () => {
+      expect(REAL).toHaveLength(1);
+      expect(REAL[0]).toMatch(/^'sha256-[A-Za-z0-9+/]{43}='$/);
+    });
+
+    it('hashes exactly the real block when both are in one document', () => {
+      const html = '<!-- <style>a{}</style> --><style>body{color:red}</style><!--\n</style> -->';
+
+      expect(extractStyleHashes(html)).toEqual(REAL);
+    });
+  });
+});
+
+describe('the attachments store in the policy (D-150, LAI-1300)', () => {
+  const STORE = 'https://files.example.test';
+  const directives = (policy: string) =>
+    new Map(policy.split('; ').map((d) => [d.split(' ')[0], d]));
+
+  it('is unchanged when attachments are off', () => {
+    const hashes = extractStyleHashes('<style>a{}</style>');
+    expect(buildContentSecurityPolicy(hashes, { storageOrigin: null })).toBe(
+      buildContentSecurityPolicy(hashes),
+    );
+    expect(buildContentSecurityPolicy(hashes)).toContain("img-src 'self' data:; ");
+    expect(buildContentSecurityPolicy(hashes)).toContain("connect-src 'self'; ");
+  });
+
+  it('adds the store to img-src and connect-src, and to nothing else', () => {
+    const off = directives(buildContentSecurityPolicy([]));
+    const on = directives(buildContentSecurityPolicy([], { storageOrigin: STORE }));
+
+    expect(on.get('img-src')).toBe(`img-src 'self' data: ${STORE}`);
+    expect(on.get('connect-src')).toBe(`connect-src 'self' ${STORE}`);
+    // Every other directive is the off policy's, word for word.
+    for (const [name, directive] of off) {
+      if (name === 'img-src' || name === 'connect-src') continue;
+      expect(on.get(name), name).toBe(directive);
+    }
+    expect([...on.keys()]).toEqual([...off.keys()]);
+  });
+
+  it('is what the app serves when it is given a store', async () => {
+    const { app } = testApp({
+      attachments: {
+        config: {
+          store: {
+            endpoint: STORE,
+            region: 'garage',
+            bucket: 'laika-attachments',
+            accessKeyId: 'GKfixture',
+            secretAccessKey: 'fixture-store-secret-never-real',
+          },
+          maxBytes: 1024,
+        },
+      },
+    });
+    const res = await app.request('/api/v1/health');
+    expect(res.headers.get('content-security-policy')).toBe(
+      buildContentSecurityPolicy(extractStyleHashes(readFileSync(FALLBACK_DOCUMENT, 'utf8')), {
+        storageOrigin: STORE,
+      }),
+    );
+  });
 });
 
 describe('HSTS is conditional (AC2)', () => {

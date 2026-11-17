@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listAllUsers, type OrgUser } from '../../../api/users.ts';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
-import { Icon } from '../../../components/icon/Icon.tsx';
 
 /** `undefined` while reading; the people, the reader first left out; `null` if the read failed. */
 export type People = readonly OrgUser[] | null | undefined;
@@ -69,11 +68,6 @@ export function ViewingSwitch({ meId, subjectId, people, onPick }: ViewingSwitch
         className="myday-chip myday-viewing-trigger"
         display={
           <>
-            {/* The phone bar's whole face (merge of LAI-1187 and LAI-1227): a
-                person, with whose day it is in the name rather than drawn. */}
-            <span className="myday-viewing-icon" aria-hidden="true">
-              <Icon name="person" size="small" />
-            </span>
             <span className="myday-viewing-label">
               Viewing<span className="myday-viewing-colon">:</span>
             </span>{' '}

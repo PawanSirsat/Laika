@@ -155,7 +155,12 @@ void describe('what the editor would rewrite opens as Markdown, and says why', (
     ['see <https://example.com/x>', /line 1/],
     ['a \\* b', /line 1/],
     ['a &amp; b', /line 1/],
-    ['![a diagram](https://example.com/pixel.png)', /image/],
+    ['![a diagram](https://example.com/pixel.png)', /an image from outside Laika/],
+    // Laika's path on somebody else's host is somebody else's image (D-150).
+    [
+      '![x](https://evil.example/api/v1/attachments/01JCZ8Y3V4QK9M2N7P5R6S8T0W/content)',
+      /an image from outside Laika/,
+    ],
   ];
   for (const [markdown, why] of rewritten) {
     void test(JSON.stringify(markdown), () => {
@@ -1134,5 +1139,50 @@ void describe('a notice names the line that refuses, not a forgiven wrap (LAI-31
       opening.kind === 'source' ? opening.reason : '',
       /^The rich editor would rewrite line 3:/,
     );
+  });
+});
+
+void describe('an attachment round-trips in the rich editor (D-150)', () => {
+  const URL = '/api/v1/attachments/01JCZ8Y3V4QK9M2N7P5R6S8T0W/content';
+
+  for (const markdown of [
+    `![shot.png](${URL})`,
+    `See ![shot.png](${URL}) on the second line.`,
+    `[Q3 budget_v2.xlsx](${URL})`,
+    `Before.\n\n![shot.png](${URL})\n\nAfter.`,
+    `- the failing run ![run.png](${URL})\n- [the log](${URL})`,
+    `![v2\\] final.png](${URL})`,
+    `![](${URL})`,
+  ]) {
+    void test(JSON.stringify(markdown), () => {
+      assert.equal(roundTrips(markdown), markdown);
+    });
+  }
+
+  void test('an image the editor adds is written as the snippet would be, escaped', () => {
+    assert.equal(
+      saveWith('Text.', [
+        { type: 'image', attrs: { src: URL, alt: 'v2] [draft].png', title: null } },
+      ]),
+      `Text.\n\n![v2\\] \\[draft\\].png](${URL})`,
+    );
+  });
+
+  void test('a file link the editor adds is a plain link to Laika’s path', () => {
+    assert.equal(
+      saveWith('Text.', [
+        { type: 'text', text: 'report_v2.pdf', marks: [{ type: 'link', attrs: { href: URL } }] },
+      ]),
+      `Text.\n\n[report_v2.pdf](${URL})`,
+    );
+  });
+
+  void test('an outside image beside an attachment still opens as Markdown, and names it', () => {
+    const opening = openDocument(
+      bridge,
+      `![ours.png](${URL}) and ![theirs](https://example.com/p.png)`,
+    );
+    assert.equal(opening.kind, 'source');
+    assert.match(opening.kind === 'source' ? opening.reason : '', /an image from outside Laika/);
   });
 });

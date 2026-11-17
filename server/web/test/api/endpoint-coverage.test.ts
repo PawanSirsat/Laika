@@ -58,6 +58,10 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
+  // D-150 (LAI-1300): a 302 to the store, followed by an <img> or a link the
+  // markdown carries — never read as JSON through `request()`.
+  'api/v1/attachments/*/content':
+    'markdown embeds it; the browser follows its 302 from an img or a link, never through request()',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
   'api/v1/tasks/*/finish':

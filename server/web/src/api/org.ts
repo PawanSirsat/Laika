@@ -90,6 +90,18 @@ export interface Org {
    * `extra_owners` is.
    */
   readonly owner_invites_pending?: readonly OrgOwnerInvite[];
+  /**
+   * Attachments on this board (D-150): the largest file it takes, or `null`
+   * when it has no store — and then nothing offers to attach. Read by
+   * everyone, so the limit is known before a file is chosen.
+   */
+  readonly attachments: OrgAttachments | null;
+}
+
+/** `GET /org`'s `attachments` when they are on (D-150). */
+export interface OrgAttachments {
+  /** Bytes; a larger file is refused `413` before it reaches the store. */
+  readonly max_bytes: number;
 }
 
 /** One pending pre-D-104 owner invite. `email` is `null` for a link made without one. */

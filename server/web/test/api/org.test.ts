@@ -112,6 +112,8 @@ void describe('the AI settings are absent, not null', () => {
       developer_insights: false,
       created_at: 1,
       updated_at: 2,
+      // Always sent, `null` on a board with no store (D-150).
+      attachments: null,
     };
     assert.equal('ai' in withheld, false);
     assert.equal(withheld.ai, undefined);

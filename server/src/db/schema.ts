@@ -85,6 +85,7 @@ import {
   PROJECT_SETUP_SOURCES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
+  ATTACHMENT_STATES,
   AVAILABILITY_STATUSES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
@@ -1679,6 +1680,75 @@ export const leaveDays = sqliteTable(
     check('leave_days_part_check', oneOf('part', LEAVE_PARTS)),
     check('leave_days_status_check', oneOf('status', LEAVE_STATUSES)),
     check('leave_days_type_name_check', sql.raw('type_name IS NULL OR length(type_name) <= 80')),
+  ],
+);
+
+// --------------------------------------------------------- §4.92 attachments
+
+/**
+ * A file in the operator's store (§4.92, D-150, LAI-1300). **The bytes are
+ * never here**, and never pass through Laika: a browser uploads them straight
+ * to the store through a presigned `PUT`, and reads them through a 302 to a
+ * presigned `GET`. This row is what Laika knows of the object — whose, how
+ * big, what it claims to be — and where it is, `storage_key`, a name Laika
+ * made (`p/<project_id>/<id>`) and **never the filename**, which is for
+ * display only.
+ *
+ * A file belongs to a project from the start, and to a task and a comment
+ * once text on them links it (`linkAttachmentRefs`) or the upload named the
+ * task. `pending` until the uploader says it is done and Laika has seen the
+ * object; `inline` only when its first bytes prove it is one of five types a
+ * browser may show. Removing one is `deleted_at`; the object goes after,
+ * `purged_at` saying it went. §11.6's sweep deletes a `pending` row nobody
+ * finished and soft-deletes a file nothing linked.
+ */
+export const attachments = sqliteTable(
+  'attachments',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
+    uploadedBy: text('uploaded_by')
+      .notNull()
+      .references(() => users.id),
+    /** As the uploader named it — shown, never a path. */
+    filename: text('filename').notNull(),
+    /** Lower case, as declared at upload and signed into it. */
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    /** `p/<project_id>/<id>`. */
+    storageKey: text('storage_key').notNull(),
+    state: text('state', { enum: ATTACHMENT_STATES }).notNull(),
+    /** 1 only for a png, jpeg, gif, webp or pdf whose first bytes say so; set at completion. */
+    inline: integer('inline').notNull(),
+    createdAt,
+    readyAt: integer('ready_at'),
+    deletedAt: integer('deleted_at'),
+    /** Who removed it; null for the sweep. */
+    deletedBy: text('deleted_by').references(() => users.id, { onDelete: 'set null' }),
+    /** When the object left the store. */
+    purgedAt: integer('purged_at'),
+  },
+  (t) => [
+    uniqueIndex('attachments_storage_key_unique').on(t.storageKey),
+    index('attachments_task_id_idx').on(t.taskId),
+    index('attachments_comment_id_idx').on(t.commentId),
+    index('attachments_state_created_at_idx').on(t.state, t.createdAt),
+    index('attachments_project_id_idx').on(t.projectId),
+    index('attachments_uploaded_by_idx').on(t.uploadedBy),
+    index('attachments_deleted_by_idx').on(t.deletedBy),
+    check('attachments_state_check', oneOf('state', ATTACHMENT_STATES)),
+    check('attachments_inline_check', sql.raw('inline IN (0, 1)')),
+    check('attachments_filename_check', sql.raw('length(filename) BETWEEN 1 AND 255')),
+    check('attachments_content_type_check', sql.raw('length(content_type) BETWEEN 1 AND 127')),
+    check('attachments_size_check', sql.raw('size_bytes >= 1')),
+    // Ready is stamped, and pending is not.
+    check('attachments_ready_check', sql.raw("(state = 'ready') = (ready_at IS NOT NULL)")),
+    // Nothing is purged that was not first removed.
+    check('attachments_purged_check', sql.raw('purged_at IS NULL OR deleted_at IS NOT NULL')),
   ],
 );
 
@@ -4374,3 +4444,4 @@ export type OrgHrSource = typeof orgHrSource.$inferSelect;
 export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;

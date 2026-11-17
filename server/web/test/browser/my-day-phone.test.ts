@@ -593,9 +593,18 @@ const intersect = (a: Box, b: Box): boolean =>
   b.top < a.bottom - 0.5;
 
 /**
- * The top bar and its controls — ☰, the mark, and each of My day's items after
- * the brand — with what each draws: words a control is too narrow for spill
- * past its own box, which the box alone does not show.
+ * The top bar and its controls — ☰, each of My day's items after the brand,
+ * and the top bar's own search, Create and person — with what each draws:
+ * words a control is too narrow for spill past its own box, which the box
+ * alone does not show.
+ *
+ * **The top bar's, since LAI-1227**: it carries the brand and the person on
+ * every screen, so My day's mark and avatar are not drawn in it (`phone.css`:
+ * "My day's own mark, name and avatar to the top bar's"), and under 480px the
+ * top bar's mark and bell give way to My day's controls. A control the bar
+ * does not display is not one of its controls; one it displays and squeezes
+ * to nothing still fails "has no width" below. The search, Create and person
+ * share the bar now, so they are measured against My day's controls too.
  */
 const barControls = (page: Page): Promise<{ bar: Box; items: Box[]; contents: Box[] }> =>
   page.evaluate(() => {
@@ -605,19 +614,18 @@ const barControls = (page: Page): Promise<{ bar: Box; items: Box[]; contents: Bo
     };
     const head = document.querySelector('.shell-head[data-myday-bar]');
     if (head === null) throw new Error('no My day bar');
+    /** Displayed at all: `display: none` on it or an ancestor leaves no box. */
+    const drawn = (el: Element): boolean => el.getClientRects().length > 0;
     const items: Element[] = [];
-    // **Drawn controls only.** Since the global top bar (LAI-1227) carries the
-    // mark, the bar's own mark is `display: none` on a phone; a hidden element
-    // is not a control anyone can collide with, and counting it as "no width"
-    // tested a layout this branch no longer has.
-    const drawn = (el: Element | null): el is Element =>
-      el !== null && el.getClientRects().length > 0;
     const toggle = head.querySelector('.shell-navtoggle');
-    if (drawn(toggle)) items.push(toggle);
-    const mark = head.querySelector('.myday-bar-mark');
-    if (drawn(mark)) items.push(mark);
+    if (toggle !== null) items.push(toggle);
     for (const el of head.querySelector('[data-myday-bar-items]')?.children ?? []) {
       if (!el.classList.contains('myday-bar-brand') && drawn(el)) items.push(el);
+    }
+    for (const el of head.querySelectorAll(
+      '.shell-head-search > *, .shell-head-tools .hdr-anchor, .shell-head-tools .shell-viewing',
+    )) {
+      if (drawn(el)) items.push(el);
     }
     const nameOf = (el: Element): string =>
       el.className === '' ? el.tagName : String(el.className);
@@ -657,8 +665,7 @@ void describe('My day on a phone: nothing in the head overlaps (LAI-1187)', () =
         await setTheme(h.page, theme);
         const { bar, items, contents } = await barControls(h.page);
         t.diagnostic(`bar ${describeBox(bar)}: ${items.map(describeBox).join(', ')}`);
-        // Five since LAI-1227: the mark is the global top bar's now, not this bar's.
-        assert.ok(items.length >= 5, `the bar holds ${String(items.length)} controls`);
+        assert.ok(items.length >= 6, `the bar holds ${String(items.length)} controls`);
         for (const [i, item] of items.entries()) {
           assert.ok(item.right - item.left > 0, `${describeBox(item)} has no width`);
           assert.ok(
@@ -683,14 +690,11 @@ void describe('My day on a phone: nothing in the head overlaps (LAI-1187)', () =
           }
         }
         // A long name ends in …, but *Me* has the room to be said whole.
-        // Named, not drawn, on a phone (the owner's call for the #350 merge):
-        // the switch shows a person; *Me* is its accessible name, never cut.
         const whose = h.page.locator('.shell-head[data-myday-bar] .myday-viewing-name');
-        assert.equal(await whose.textContent(), 'Me');
-        assert.equal(
-          await h.page.locator('.shell-head[data-myday-bar] .myday-viewing-icon').isVisible(),
-          true,
-          'the switch draws neither the name nor the person',
+        assert.equal(await whose.innerText(), 'Me');
+        assert.ok(
+          await whose.evaluate((el) => el.scrollWidth <= el.clientWidth),
+          'the bar cuts *Me* short',
         );
 
         // An empty past day offers Day note, its words inside the button.
@@ -781,8 +785,7 @@ void describe('My day on a phone: the longest pill in the bar (LAI-1185)', () =>
         assert.equal((await pill.innerText()).replace(/\s+/g, ' ').trim(), '◐ On leave');
         const { bar, items, contents } = await barControls(h.page);
         t.diagnostic(`bar ${describeBox(bar)}: ${items.map(describeBox).join(', ')}`);
-        // Five since LAI-1227: the mark is the global top bar's now, not this bar's.
-        assert.ok(items.length >= 5, `the bar holds ${String(items.length)} controls`);
+        assert.ok(items.length >= 6, `the bar holds ${String(items.length)} controls`);
         for (const [i, item] of items.entries()) {
           assert.ok(item.right - item.left > 0, `${describeBox(item)} has no width`);
           assert.ok(
@@ -804,14 +807,11 @@ void describe('My day on a phone: the longest pill in the bar (LAI-1185)', () =>
           }
         }
         // Viewing still says *Me* whole beside it.
-        // Named, not drawn, on a phone (the owner's call for the #350 merge):
-        // the switch shows a person; *Me* is its accessible name, never cut.
         const whose = h.page.locator('.shell-head[data-myday-bar] .myday-viewing-name');
-        assert.equal(await whose.textContent(), 'Me');
-        assert.equal(
-          await h.page.locator('.shell-head[data-myday-bar] .myday-viewing-icon').isVisible(),
-          true,
-          'the switch draws neither the name nor the person',
+        assert.equal(await whose.innerText(), 'Me');
+        assert.ok(
+          await whose.evaluate((el) => el.scrollWidth <= el.clientWidth),
+          'the bar cuts *Me* short',
         );
         await shoot(h.page, `phone-pill-on-leave-390-${theme}`);
       } finally {

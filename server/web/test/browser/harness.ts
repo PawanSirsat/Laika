@@ -250,6 +250,9 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'meeting_proposal.apply',
     'usage.read_project',
     'budget.set',
+    // D-150 (LAI-1300): files — as a comment, and removing one as editing one.
+    'attachment.create',
+    'attachment.delete',
   ],
   member: [
     'task.assign_sprint',
@@ -266,6 +269,8 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'project.read',
     'meeting_proposal.apply',
     'usage.read_project',
+    'attachment.create',
+    'attachment.delete',
   ],
   viewer: ['task.watch', 'project.read', 'usage.read_project'],
 };
@@ -996,7 +1001,8 @@ export async function open(
  *     await h.page.evaluate(() => window.__laikaStream.emit('task.status_changed', {...}, '7'));
  *
  * Every source the app opened receives the frame, as the shared connection
- * would.
+ * would. `count()` is the sources open now; `created()` is every one the app
+ * ever constructed, closed or not, so a test can tell sharing from churn.
  */
 export async function fakeStream(page: Page): Promise<void> {
   await page.addInitScript({
@@ -1047,6 +1053,9 @@ export async function fakeStream(page: Page): Promise<void> {
           },
           count() {
             return sources.filter((source) => source.readyState === 1).length;
+          },
+          created() {
+            return sources.length;
           },
         };
       })();

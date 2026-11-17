@@ -656,6 +656,11 @@ const NOT_FENCED: Record<string, string> = {
     'comments are never fenced (§6.3) — anyone who may read may speak',
   'PATCH /api/v1/comments/:id': 'comments are never fenced (§6.3)',
   'DELETE /api/v1/comments/:id': 'comments are never fenced (§6.3)',
+  // D-150 (LAI-1300): a file is attached beside a comment, never a task field.
+  'POST /api/v1/projects/:slug/attachments':
+    'a file, attached as a comment is — changes no field of a task (§6.3)',
+  'POST /api/v1/attachments/:id/complete': 'the upload’s own state; changes no field of a task',
+  'DELETE /api/v1/attachments/:id': 'removes a file, as deleting a comment does — never fenced',
   'POST /api/v1/projects/:slug/tasks': 'creates a task — nothing holds it yet',
   'POST /api/v1/unlisted/:id/promote': 'creates a task — nothing holds it yet',
   'POST /api/v1/meeting-reviews/:id/apply':

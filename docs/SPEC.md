@@ -36,10 +36,10 @@ The design commitments that follow from that:
 
 ### 1.1 Non-goals for v1 — do not build
 
-Multi-org / multi-tenant hosting, Postgres, WebSockets, custom fields, file
-uploads, a plugin system of our own, mobile apps, SSO/SAML/SCIM, zero-downtime
-deploys, **story points**, time tracking, and email as a *primary* interface
-(transactional invite mail only).
+Multi-org / multi-tenant hosting, Postgres, WebSockets, custom fields, a plugin
+system of our own, mobile apps, SSO/SAML/SCIM, zero-downtime deploys, **story
+points**, time tracking, and email as a *primary* interface (transactional
+invite mail only).
 
 **Changed 2026-08-24 (D-013, D-014).** "Sprints" and "Gantt charts" were on this
 list and are not any more: sprints ship in Phase 2 (§4.15) and a **sprint-based**
@@ -50,8 +50,8 @@ list and are not any more: `tasks.due_on` and `tasks.planned_start` exist
 (§4.5). D-014's cost — a task-dated timeline is a layout engine, not a
 rendering pass — was put to the owner and accepted; **the timeline stays
 sprint-based until a task makes it otherwise** (LAI-289). Tasks also carry a
-one-level `parent_task_id` (subtasks). Epics, story points and attachments stay
-out.
+one-level `parent_task_id` (subtasks). Epics and story points stay out;
+attachments did too, until D-150 (below).
 
 **Changed 2026-10-17 (D-085).** *Story points* and *time tracking* stay out in
 the sense they were meant: no points field anybody is asked to fill in, no
@@ -74,6 +74,15 @@ Per-person hours are visible to owners and admins only, every view logged and
 shown to the person; members see project totals. It is never a measure of a
 person's performance, and agent time is shown as agent minutes, never hours.
 Screenshots, keystrokes, idle tracking and prompt text stay out.
+
+**Changed 2026-11-17 (D-150).** *File uploads* were on this list and are not
+any more: a file of any type, up to `LAIKA_ATTACHMENT_MAX_BYTES` (25 MiB by
+default), attaches to a project, a task and a comment (§4.92) — **opt-in per
+deployment**, kept in an S3-compatible store the operator runs beside Laika
+and names with the `LAIKA_S3_*` variables (§11.7). A board that names none has
+no attachments and behaves as before. The bytes never pass through Laika: the
+browser uploads to the store and reads from it through short-lived URLs Laika
+signs (§13.1, §13.4).
 
 ---
 
@@ -572,6 +581,8 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Assign a task to someone else | ✓ | ✓ | — |
 | Add comment | ✓ | ✓ | — |
 | Edit / delete comment | own + any | own | — |
+| Attach a file | ✓ | ✓ | — |
+| Remove an attachment | own + any | own | — |
 | Cancel / delete task | ✓ | own-created | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
@@ -582,6 +593,12 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Leave a project | ✓ | ✓ | ✓ |
 | View the space's time totals | ✓ (session only) | — | — |
 | View logged days of the people in the space | ✓ (session only) | — | — |
+
+**Files (D-150, LAI-1300).** *Attach a file* is *Add comment*'s right —
+members and up, agents and full tokens alike, never a `read_only` token or
+grant — and *Remove an attachment* is editing a comment's: a lead any file, a
+member one they uploaded. Reading one is *Read tasks, comments, activity,
+capacity*. §4.92 and §6.4 have the rest.
 
 **Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
 `task_create_min_role` (§4.3): `member`, the default, is the cell as written;
@@ -731,6 +748,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.checkpoint.prune` | §11.6: checkpoint retention, 90 days after the task reaches `done` or `cancelled` (§4.70, D-115 item 9, LAI-545) |
 | `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 | `system.hr.sync` | §11.6: holidays and leave from the organisation's HR system, every 30 minutes and once at boot (§4.88 – §4.91, D-149, LAI-1181) |
+| `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -859,6 +877,10 @@ project role `viewer`.
 | `solves` | **not null**, default `[]` — JSON array of short strings: the problems finishing this removes, in order (at most 20 lines of 300 characters) |
 | `unlocks` | **not null**, default `[]` — JSON array of short strings: what finishing this makes possible, in order — may name a decision, `D-128` (same bounds) |
 
+**Files** (§4.92, D-150): `description_md` and `acceptance_md` may embed a file
+by Laika's own URL, `/api/v1/attachments/<id>/content`; saving the text links
+that file to the task. No column holds it.
+
 **`blocked_by` is what a task waits on, and `blocks` is the reverse.** Both are
 on `TaskView`; they are never merged, because a task blocking three others and
 one blocked by three are the same shape with opposite meanings. **Readiness
@@ -970,6 +992,14 @@ A comment is served with **`sent_back`**, derived and never stored: `true` when
 `task_reviews.comment_id` (§4.27) names it, because it is the reason a person
 gave for sending the task back from review (D-082).
 
+**Files** (§4.92, D-150): a comment's `body_md` may embed a file by
+`/api/v1/attachments/<id>/content`; saving it links a file no task has yet to
+the comment and its task. **Deleting a comment removes the files it first
+linked and the deleter may remove** (*Remove an attachment*, §3.2) — one the
+task's description or acceptance, or another live comment on the task, still
+embeds is kept, and so is one somebody else uploaded when the deleter is a
+member.
+
 ### 4.8 `activity` — append-only
 
 | field | notes |
@@ -1024,7 +1054,7 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.claim_reclaimed`, `task.checkpoint_saved`, `task.handoff_offered`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
 `task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
-`agent.capacity_requested`.
+`agent.capacity_requested`, `attachment.added`, `attachment.removed`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -1087,6 +1117,18 @@ reader, and the answer is shown only to whoever pinged and the agent's owner.
 Its own verb because *"who asked that agent whether it could take work, and
 when"* is the question. Three owners (CLAUDE.md §4.4): this row and the enum
 and CHECK (LAI-1038), and the web mirror and its wording (D-126's web slice).
+
+**`attachment.added` and `attachment.removed`** (D-150 item 7, LAI-1300) are a
+file coming to belong to a task — at its upload when the upload named the task
+(`POST /attachments/:id/complete`), else when text on the task first links it
+(§4.92) — and a file of a task being removed: `DELETE /attachments/:id`, or the
+comment that carried it deleted. Actor: whoever uploaded, saved the text, or
+removed it. Task-scoped. Payload `{ attachment_id, filename, content_type,
+size_bytes }`. **The sweep writes neither** (§11.6): an upload nobody finished
+was never added, and a file nothing linked belonged to no task. Their own verbs
+because *"who put this file on the task, and when"* is the question. Three
+owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0082, and the
+web mirror and its wording — one change (LAI-1300).
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -3863,6 +3905,53 @@ One day of a member's leave, as the HR system has it (D-149 items 2 and 3).
 Index `(user_id, day)`. **Never the reason**, balances or approvers. Away
 periods (§4.86) are untouched by it: they stay the person's own (D-149 item 3).
 
+### 4.92 `attachments`
+
+A file on a project, a task and a comment (D-150, LAI-1300). **The bytes are
+never in the database, and never pass through Laika**: they live in the
+operator's S3-compatible store (§11.7), uploaded and read by the browser
+through URLs Laika signs (§6.4). This row is what Laika knows of the object.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects`, cascade — a file belongs to a project from the start |
+| `task_id` | nullable, FK `tasks`, set null — the task it belongs to: named at upload, or filled when text on the task first links it; **never changed after** |
+| `comment_id` | nullable, FK `comments`, set null — the comment whose text first linked it: set only by the save that also fills `task_id`, so never on a file that reached the task by its upload or by the task's text |
+| `uploaded_by` | FK `users` — who asked for the upload; the only one who may complete it, and the `own` of *Remove an attachment* (§3.2) |
+| `filename` | 1–255 (CHECK), no `/`, `\` or control character — **display only**, never a path or a key |
+| `content_type` | ≤ 127 (CHECK), lower case — as declared, and signed into the upload |
+| `size_bytes` | ≥ 1 (CHECK), at most `LAIKA_ATTACHMENT_MAX_BYTES` — signed into the upload, and checked against the stored object |
+| `storage_key` | unique — `p/<project_id>/<id>`, **never the filename** |
+| `state` | `pending` \| `ready` (CHECK) — asked for, then confirmed in the store |
+| `inline` | 0/1 (CHECK), set at completion — 1 only for a png, jpeg, gif, webp or pdf **whose first bytes say so** and agree with `content_type` |
+| `created_at` | |
+| `ready_at` | nullable — set exactly when `ready` (CHECK) |
+| `deleted_at` | nullable — removed: by a person, with its comment, or by the sweep; never read again |
+| `deleted_by` | nullable, FK `users`, set null — who removed it; null for the sweep |
+| `purged_at` | nullable — when the object left the store; only once removed (CHECK) |
+
+Indexes `(task_id)`, `(comment_id)`, `(state, created_at)` — the sweep's —
+`(project_id)`, and the two user keys. **Linking** reads the markdown a task's
+description and acceptance, or a comment, is saved with, for
+`/api/v1/attachments/<id>/content` — relative, or on any origin, since one
+deployment can be reached at two (the SPA and the API apart) and the id, not
+the host, decides — and takes only a file of **the same project**, `ready` and
+not removed, **that no task has yet**: it fills `task_id` (writing
+`attachment.added`, §4.8) and, for a comment, `comment_id`; a file a task
+already has is left alone, and one another task has is **never relinked**.
+**A deleted comment removes the files it first linked and the deleter may
+remove** — each asked of `can()` as `DELETE /attachments/:id` asks it (§4.7,
+LAI-1300 review). An upload may be completed within an hour of asking. §11.6's
+sweep deletes a `pending` row after 24 hours, removes a `ready` file no task
+took in the 24 hours since it became ready, and deletes the object of every
+removed file until `purged_at` is set. **A presigned `PUT` stays usable for the
+rest of its ten minutes** after the file is completed or removed: bounded, and
+safe because what a read serves is the type the presigned `GET` forces, not
+what the object claims.
+**Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
+these rows and not the files (D-150 item 8).
+
 ## 5. Task lifecycle
 
 ```
@@ -4281,6 +4370,7 @@ GET    /api/v1/org/time/solidtime            the map, the people confirmed, and 
 PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects }   PUT .../people body { people } → { people }   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
+                                             every read carries attachments: { max_bytes } | null — null when the board has no store (D-150)
                                              the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
                                              and owner_invites_pending: [{ id, email, expires_at }] — owner invites from before D-104 still unaccepted and unexpired, to revoke (LAI-982)
 POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged; only the owner orgs.owner_user_id names may — another owner from before D-104 is 403 reason not_recorded_owner   (owner only; session only; LAI-982)
@@ -4454,6 +4544,11 @@ POST   /api/v1/tasks/:id/dependencies        body { blocked_by_task_id }  — th
 DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
+POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150)
+POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch   (the uploader)
+GET    /api/v1/attachments/:id/content       → 302 to a presigned GET, five minutes; Cache-Control: private, max-age=60; pending, removed or unreadable 404   (project.read)
+DELETE /api/v1/attachments/:id               → 204   (attachment.delete: a lead any, a member their own)
+GET    /api/v1/tasks/:id/attachments         → { data: [attachment] }, ready and not removed, oldest first   (project.read)
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+) — another person's agent is withheld per row (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984); an owner or admin is withheld another person's agent too (§4.8 `agent_id`, LAI-1011)
@@ -6055,6 +6150,41 @@ refused from that moment. `DELETE /org/github-webhook` clears it and answers
 `details.reason: "session_required"`: whoever holds the secret can sign
 deliveries that confirm an agent's proof (D-083).
 
+**Attachments (D-150, LAI-1300).** Every route answers `503 unavailable` with
+`details.reason: "attachments_off"` on a board with no store (§11.7), and
+`GET /org`'s `attachments` is then `null`, so the SPA offers no attach control.
+`AttachmentView` is `{ id, project_id, task_id, comment_id, filename,
+content_type, size_bytes, inline, uploaded_by, created_at, ready_at, url }`,
+`url` being `/api/v1/attachments/<id>/content` — **what markdown embeds**,
+relative, and never a store URL, so a stored body never expires.
+
+- **Asking** names the project by slug and optionally a task of it (another
+  project's is the missing task's `404`). `filename` is 1–255 with no `/`, `\`
+  or control character; `content_type` a media type, lower-cased;
+  `size_bytes` at most `LAIKA_ATTACHMENT_MAX_BYTES`, else `413
+  payload_too_large` with `details.max_bytes`. The answer's `upload` is a
+  presigned `PUT`, ten minutes long, signing `host`, `content-type`,
+  `content-length` and `content-disposition` (`attachment` with the RFC 6266
+  filename): the browser sends the two headers exactly as given and its own
+  `content-length`, and **the store refuses another size or type**. The answer
+  holds a credential, so it is never stored by the idempotency layer (§6.3).
+- **Completing** is the uploader's alone, within an hour of asking (`409
+  upload_expired` after). Laika `HEAD`s the object — missing,
+  or another size, is `409` and the row stays `pending` — reads its first
+  sixteen bytes, sets `inline`, and marks it `ready`; a file that named its
+  task writes `attachment.added` (§4.8).
+- **Reading** is a `302` to a presigned `GET`, five minutes long, that makes
+  the store answer `response-content-type` — the declared type when `inline`,
+  else `application/octet-stream` — and `response-content-disposition` —
+  `inline` when `inline`, else `attachment` — with the RFC 6266 filename
+  (§13.1). A `pending` or removed file, or one in a project the caller cannot
+  read, is the same `404`.
+- **Removing** stamps the row at once and deletes the object best effort; the
+  sweep retries until it goes (§11.6). A file that belonged to a task writes
+  `attachment.removed`.
+- **Linking** has no route: saving a task's or a comment's text links the
+  files it embeds (§4.92), REST and MCP alike.
+
 **The history export (LAI-984).** `GET /activity/history?format=csv` is the
 JSON answer's rows — same gate, same filters, same validation, newest first —
 as one `text/csv; charset=utf-8` attachment named `laika-history-<date>.csv`,
@@ -6971,7 +7101,7 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable`, `GET /tasks/:id/attachments`, `POST /projects/:slug/attachments`, `POST /attachments/:id/complete`, `DELETE /attachments/:id`, `GET /org`'s `attachments` (D-150) | `add_comment`, `get_task_context` | ✅ (attachments: LAI-1301) |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
@@ -7041,6 +7171,15 @@ anything missing sends the task back.
   commits) when any of them is set, an **Estimate** card (the Effort and
   Tokens sections below, in the rail), and `Created` / `Updated` at the foot.
   Comments distinguish human from agent.
+  **Attachments** (D-150, LAI-1301), only when `GET /org`'s `attachments` is
+  not `null`: a section listing the task's files (`GET /tasks/:id/attachments`)
+  — an image or a pdf `inline` as a thumbnail, anything else as a named
+  download with its size — with remove for a reader `can()` lets; and an
+  **attach** control in the description, acceptance and comment editors that
+  asks for the upload, `PUT`s the file to the store, completes it and inserts
+  `/api/v1/attachments/<id>/content` at the cursor — an image as `![name](…)`,
+  anything else as `[name](…)`. A file over `max_bytes` is refused before any
+  request, saying the limit.
   **What this delivers** (§4.5, LAI-1115): the Ships list with a mark per
   state and a progress line — *2 of 4 built · Terminal viewer in progress*,
   *4 of 4 built · waiting for approval* in review — then Solves, then Unlocks
@@ -7941,6 +8080,16 @@ One interval-driven scheduler in the same process:
 - **notice retention** (§4.87, D-134, LAI-1136) — daily: `member_notices`
   older than 90 days, read or not, under `system.notices.prune`. No
   `activity` row: a notice is not activity
+- **attachment sweep** (§4.92, D-150, LAI-1300) — hourly, not at boot, under
+  §3.4's `system.attachment.prune`: a `pending` row older than 24 hours — an
+  upload nobody finished — has its object deleted, if any, and then the row; a
+  `ready` file no task took in the 24 hours since it became ready is stamped
+  removed; and every removed file whose object is still stored has it deleted
+  and `purged_at` set, which is how a removal the store missed is retried.
+  **It never touches a ready, linked, live file.** **The first store failure
+  ends the store's part of the run**, so a hung store costs one timeout, and
+  **a run never overlaps another** — a tick joins the one still going. No
+  `activity` row: nobody did it. Nothing without a store
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
   at boot**, so a deploy starts with every task estimated. It writes no
@@ -7980,6 +8129,12 @@ compose file or systemd unit.
 | `LAIKA_MICROSOFT_CLIENT_SECRET` | unset | the app's client secret. Redacted from every startup error |
 | `LAIKA_MICROSOFT_TENANT_ID` | unset | **one directory**: the tenant's GUID or one of its verified domains. `common`, `organizations` and `consumers` are a startup failure — each would let accounts from any tenant, or personal accounts, sign in. The app's redirect URI is `LAIKA_PUBLIC_URL` + `/api/v1/auth/callback/microsoft` |
 | `LAIKA_MICROSOFT_DIRECTORY_SYNC` | `false` | `true` adds every **enabled Member** account of the Microsoft directory (no guests, no disabled accounts) as a Laika `member`, read through Microsoft Graph every 15 minutes and at boot (LAI-1239). Needs the three `LAIKA_MICROSOFT_*` variables and Graph's **`User.Read.All` application permission** with admin consent on the same app — without the grant the job fails with `graph_forbidden_grant_user_read_all` and adds nobody. Additive only: nobody already here is changed, and nobody is deactivated. Any value but `true`/`false` is a startup failure |
+| `LAIKA_S3_ENDPOINT` | unset | attachments' store (D-150): its origin, path-style — `https://files.example.com`, no path, user, query or fragment; `http://` only for a loopback host. **The five `LAIKA_S3_*` all set turn attachments on, none leaves them off, and some but not all is a startup failure** naming the ones missing |
+| `LAIKA_S3_REGION` | unset | the store's region as it signs — `garage` for Garage, `us-east-1` for AWS |
+| `LAIKA_S3_BUCKET` | unset | the bucket every object goes in, as `p/<project_id>/<attachment_id>` |
+| `LAIKA_S3_ACCESS_KEY_ID` | unset | a key the store gives Laika for that bucket alone: read, write and delete of objects |
+| `LAIKA_S3_SECRET_ACCESS_KEY` | unset | its secret — signs every URL Laika issues; redacted from every error, never logged or served |
+| `LAIKA_ATTACHMENT_MAX_BYTES` | `26214400` | the largest file, in bytes (25 MiB). Whole bytes, 1–5368709120; served as `GET /org`'s `attachments.max_bytes` and signed into each upload |
 
 **This table is the deployment contract.** Anything the server reads from the
 environment belongs in it, and anything in it must be read. It drifted in both
@@ -8049,6 +8204,21 @@ session cookie and every sign-in's password cross the network in clear, and a
 TLS is the real fix. Turning it on adds the `__Secure-` prefix to the cookie's
 name, which signs everyone out once.
 
+**Files are served by the store, under rules Laika signs** (D-150, LAI-1300).
+Markdown embeds Laika's own `/api/v1/attachments/<id>/content`, which answers a
+`302` to a presigned `GET` valid five minutes, `Cache-Control: private,
+max-age=60`. That URL fixes the store's answer: **only a png, jpeg, gif, webp
+or pdf whose first sixteen bytes say so** is served with its own type and
+`inline`; everything else — HTML and SVG included, whatever it was called — is
+`application/octet-stream` and `attachment`, a download. The store this was
+built against sends no `X-Content-Type-Options`, so this override is what keeps
+active content from rendering on its origin. Uploads are presigned `PUT`s that
+sign the size and type, so the store refuses anything else; the bytes never
+reach Laika, and Laika never echoes the store's own response text. **The CSP
+names the store's origin only when attachments are on**, and only in
+`img-src` and `connect-src` — never in `script-src`, `style-src`, `frame-src`
+or `object-src`.
+
 ### 13.2 Errors and logging
 
 Structured JSON to stdout: `request_id`, `actor_id`, `actor_kind`, `token_id`,
@@ -8069,10 +8239,14 @@ is exempt and §7.2 says why.
 **No telemetry. No analytics. No phone-home. No usage beacons.** Not opt-out —
 absent. The only outbound calls Laika ever makes are to the org's configured LLM
 provider (§12), configured SMTP, a webhook source it was configured to talk
-to, and the organisation's configured HR system (D-149) — read-only `GET`s of
+to, the organisation's configured HR system (D-149) — read-only `GET`s of
 its holidays, leave and people, plus the one sign-in that makes the token
-when an owner connects it that way. Any
-task proposing otherwise is rejected at review.
+when an owner connects it that way — and, when the operator configures one,
+**the attachments store** (D-150): signed `HEAD`, ranged `GET` and `DELETE` of
+the objects Laika itself names, nothing else. Browsers reach that store too,
+through the short-lived URLs Laika signs; it is the operator's own, beside
+Laika, not a third party's. Any task proposing otherwise is rejected at
+review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day
@@ -8123,7 +8297,10 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
 4. Should `member` be able to assign work to *other* people, or is that
    `lead`-only on larger teams? (Currently allowed — optimising for small
    trusting teams.)
-5. Task attachments / uploads — deferred; the `/data` volume anticipates them.
+5. ~~Task attachments / uploads — deferred; the `/data` volume anticipates them.~~
+   **Resolved 2026-11-17 (D-150):** in, opt-in per deployment, kept in an
+   S3-compatible store the operator runs — not in `/data`, so the default
+   install stays one image and one volume (D-002). §4.92, §6.4, §11.7.
 6. Multiple LLM providers configured at once (one for transcripts, one for
    summaries) — deferred past v1.
 7. ~~**Size limit for `projects.context_md`** (§7.3).~~ **Answered

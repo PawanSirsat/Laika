@@ -380,6 +380,8 @@ void describe('the Create task dialog’s Space field (LAI-1227)', () => {
     try {
       await at(h, 1440);
       await openCreate(h.page);
+      // The spaces are read as the dialog opens: wait for them, not for a race.
+      await until(async () => (await spaceField(h.page).innerText()).includes('Laika Shell'));
       assert.match(await spaceField(h.page).innerText(), /Laika Shell/);
     } finally {
       await h.close();
@@ -432,6 +434,7 @@ void describe('the Create task dialog’s Space field (LAI-1227)', () => {
       await h.page.locator('body').click({ position: { x: 600, y: 500 } });
       await h.page.keyboard.press('c');
       await dialog(h.page).locator('.ct-title-input').waitFor({ timeout: 15_000 });
+      await until(async () => (await spaceField(h.page).innerText()).includes('Laika Shell'));
       assert.match(await spaceField(h.page).innerText(), /Laika Shell/);
     } finally {
       await h.close();

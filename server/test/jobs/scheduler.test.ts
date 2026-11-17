@@ -7,6 +7,7 @@ import { newId } from '../../src/db/ids.ts';
 import { eq } from 'drizzle-orm';
 import {
   activity,
+  attachments,
   handoffOffers,
   heartbeats,
   leaveDays,
@@ -33,6 +34,7 @@ import {
   leaveRow,
 } from '../helpers/fake-clan.ts';
 import { encryptSecret } from '../../src/secrets.ts';
+import { fakeAttachments, fakeS3 } from '../helpers/fake-s3.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -98,6 +100,7 @@ describe('the jobs §11.6 names', () => {
       .sort();
 
     expect(names).toEqual([
+      'attachment.prune',
       'backup.snapshot',
       'checkpoint.retention',
       'claim.expiry',
@@ -151,6 +154,47 @@ describe('the jobs §11.6 names', () => {
     expect(hr?.atStart).toBe(true);
     // It waits on the network, and the boot runs `atStart` jobs in turn.
     expect(jobs.at(-1)?.name).toBe('hr.sync');
+  });
+
+  it('sweeps attachments hourly, not at boot (D-150, LAI-1300)', () => {
+    const job = buildJobs(deps()).find((j) => j.name === 'attachment.prune');
+    expect(job?.everyMs).toBe(60 * 60 * 1000);
+    // A boot does not wait on the store; an hour's wait costs nothing.
+    expect(job?.atStart).toBeUndefined();
+  });
+
+  it('runs the attachments sweep through the scheduler with the store it was given', async () => {
+    const fake = fakeS3();
+    const id = newId();
+    t.db
+      .insert(attachments)
+      .values({
+        id,
+        projectId: seeded.projectId,
+        uploadedBy: seeded.userId,
+        filename: 'left.bin',
+        contentType: 'application/octet-stream',
+        sizeBytes: 1,
+        storageKey: `p/${seeded.projectId}/${id}`,
+        state: 'pending',
+        inline: 0,
+        createdAt: NOW - 2 * 24 * 60 * 60 * 1000,
+      })
+      .run();
+    const scheduler = startScheduler(
+      deps({
+        ...fakeTimers(),
+        attachments: { config: fakeAttachments(), fetchImpl: fake.fetchImpl },
+      }),
+    );
+    await scheduler.started;
+
+    expect(await scheduler.runOnce('attachment.prune')).toEqual({ changed: 1 });
+    expect(t.db.select().from(attachments).all()).toEqual([]);
+    expect(fake.of('DELETE').map((r) => fake.keyOf(r.path))).toEqual([
+      `p/${seeded.projectId}/${id}`,
+    ]);
+    scheduler.stop();
   });
 
   it('runs the vacuum weekly and the snapshot daily', () => {

@@ -100,3 +100,145 @@ after.
 **The two steps a command would encapsulate are steps 3 and 4** — and those are
 exactly the two an operator should understand rather than delegate, because
 getting them wrong produces a database that opens and is quietly wrong.
+
+---
+
+## Attachments: running Garage beside Laika
+
+Attachments are **off** until the operator names a store (D-150, SPEC §11.7).
+Laika never holds the bytes: the browser uploads to the store and reads from it
+through URLs Laika signs, so the store must be reachable **at one address by
+both the browsers and the Laika server**. Any S3-compatible store that speaks
+path-style SigV4 works; these steps are for [Garage](https://garagehq.deuxfleurs.fr),
+which the Ksage deployment runs (`v2.5.0`, single node).
+
+**What backs each step.** Steps 1 and 2 are Garage's own quick start, and the
+behaviour they rely on was measured against the Ksage store on 2026-11-17
+(LAI-1300's task file): a presigned `PUT` of another size or type refused `403`,
+`PutBucketCors` accepted and a preflight from another origin refused. Step 3's
+rules are executed by `server/test/env.test.ts`,
+`server/test/http/routes/attachments.test.ts` and
+`server/test/http/security-headers.test.ts`, over a fake store; no test calls a
+real one.
+
+### 1. Run Garage and make a bucket and a key for Laika
+
+Single node, with its data and metadata on a persistent volume (Garage's quick
+start shows `garage.toml`; `s3_region = "garage"` is the region below). Then:
+
+```bash
+garage bucket create laika-attachments
+garage key create laika
+garage bucket allow --read --write --owner laika-attachments --key laika
+```
+
+`garage key create` prints the key id (`GK…`) and its secret **once** — they are
+`LAIKA_S3_ACCESS_KEY_ID` and `LAIKA_S3_SECRET_ACCESS_KEY`. The key needs nothing
+but this bucket. `--owner` lets the same key set the bucket's CORS in step 2.
+
+**Keep the bucket private: no public read, and no website mode.** An object
+keeps the type its uploader declared, so an HTML file stored as `text/html`
+would render on the store's origin if it could be fetched directly; only the
+presigned `GET` Laika issues forces a download type, and that is the only way
+in it should have.
+
+Put the S3 API (port 3900) behind your TLS proxy at its own name, for example
+`https://files.example.com`. **Let the proxy pass bodies as large as
+`LAIKA_ATTACHMENT_MAX_BYTES`** — the upload goes through it, not through Laika.
+
+### 2. Let the board's origin upload: `PutBucketCors`
+
+A browser `PUT`s to the store from the board's page, which is another origin, so
+the bucket must allow that origin — and only that one. With the AWS CLI, using
+the key from step 1:
+
+```bash
+cat > cors.json <<'JSON'
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://board.example.com"],
+      "AllowedMethods": ["PUT", "GET", "HEAD"],
+      "AllowedHeaders": ["content-type", "content-disposition"],
+      "ExposeHeaders": ["ETag"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
+JSON
+AWS_ACCESS_KEY_ID=GK… AWS_SECRET_ACCESS_KEY=… AWS_REGION=garage \
+  aws s3api put-bucket-cors --endpoint-url https://files.example.com \
+  --bucket laika-attachments --cors-configuration file://cors.json
+```
+
+`AllowedOrigins` is the origin the SPA is served from — the Netlify site on
+Ksage, `LAIKA_PUBLIC_URL` on a one-host install. A preflight from any other
+origin is refused, which is what was measured on 2026-11-17. Showing an image
+needs no CORS: an `<img>` follows Laika's `302` like any link.
+
+### 3. Tell Laika, and restart
+
+```bash
+LAIKA_S3_ENDPOINT=https://files.example.com
+LAIKA_S3_REGION=garage
+LAIKA_S3_BUCKET=laika-attachments
+LAIKA_S3_ACCESS_KEY_ID=GK…
+LAIKA_S3_SECRET_ACCESS_KEY=…
+# optional: the largest file, in bytes; 25 MiB by default
+LAIKA_ATTACHMENT_MAX_BYTES=26214400
+```
+
+**All five `LAIKA_S3_*` or none**: some but not all is a startup failure that
+names the missing ones. `http://` is refused unless the store is on a loopback
+host. After the restart `GET /api/v1/org` answers `attachments: { max_bytes }`
+— `null` means the board is still off — and the CSP names the store in
+`img-src` and `connect-src`.
+
+### 4. Back the store up yourself
+
+The nightly snapshot (SPEC §11.6) holds the `attachments` rows and **not the
+files**. Back Garage's data and metadata directories up on your own schedule.
+A restored database whose store was not restored lists files whose links answer
+the store's `404`; a restored store with an older database keeps objects nothing
+names, which nothing sweeps.
+
+### Turning it off
+
+Unset all five and restart. Every attachment route then answers `503` with
+`reason: attachments_off`, the SPA shows no attach control, and the rows and
+objects stay where they are, unread, until the variables come back.
+
+---
+
+## The frontend as its own resource, on one domain
+
+The default image serves the API and the SPA together. To run the frontend as
+a separate resource — the Ksage split on Coolify, 2026-11-17 — build the same
+`docker/Dockerfile` twice from **the same commit**:
+
+| Resource | Build target | Port | Routed to it |
+| --- | --- | --- | --- |
+| the server | default (`runtime`) | 3000 | `/api`, `/mcp`, `/webhooks`, and everything under them |
+| the frontend | `web-serve` | 8080 | everything else |
+
+1. **Route by path on one domain, strip-prefix off.** The server reads the full
+   path (`/api/v1/…`), so the proxy must pass it unchanged. Keeping one origin
+   is what lets sign-in, the session cookie and the CSP's `'self'` work as
+   before; `LAIKA_PUBLIC_URL` stays that domain, and so does the store's CORS
+   `AllowedOrigins` (Attachments, step 2).
+2. **Set `LAIKA_STORAGE_ORIGIN` on the frontend** when attachments are on: the
+   origin of the server's `LAIKA_S3_ENDPOINT`. The page's CSP now comes from the
+   frontend, so without it the browser refuses uploads to the store and images
+   from it. Unset or empty is the attachments-off policy. It is read by nginx,
+   not by the server, which is why SPEC §11.7 does not list it.
+3. **Check both.** `GET /healthz` on the frontend answers `ok`, and
+   `GET /api/v1/health` through the domain answers the server's JSON. An nginx
+   404 page there means `/api` was routed to the frontend.
+
+**What backs this.** `server/test/tooling/web-serve.test.ts` renders the
+frontend's nginx config as the image does and checks its headers and CSP (with
+and without a store), its cache rules and its 404 paths against the server's
+own code. The image was built and measured locally on 2026-11-17 (LAI-1308's
+log): the SPA document on `/` and `/my-day`, a year's cache on `/assets/`, 404
+on `/api/v1/health`, and both CSPs equal to the server's. No test runs the
+proxy's path routing; step 3 is how you check it.

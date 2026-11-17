@@ -62,6 +62,11 @@ import { inviteRoutes } from './http/routes/invites.ts';
 import { passwordResetRoutes } from './http/routes/password-resets.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
+import {
+  attachmentRoutes,
+  projectAttachmentRoutes,
+  taskAttachmentRoutes,
+} from './http/routes/attachments.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
 import { capacityPingRoutes } from './http/routes/capacity-pings.ts';
@@ -100,6 +105,7 @@ import { setEstimateLogger } from './services/estimates.ts';
 import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
+import { type AttachmentsDeps } from './services/attachments.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -109,7 +115,7 @@ import { type HrSyncDeps } from './services/hr-sync.ts';
  * for that — so the policy is built with no hash rather than refusing to boot
  * over a header.
  */
-function contentSecurityPolicyFor(fallbackDocument: string): string {
+function contentSecurityPolicyFor(fallbackDocument: string, storageOrigin: string | null): string {
   let html = '';
   try {
     html = readFileSync(fallbackDocument, 'utf8');
@@ -117,7 +123,7 @@ function contentSecurityPolicyFor(fallbackDocument: string): string {
     html = '';
   }
 
-  return buildContentSecurityPolicy(extractStyleHashes(html));
+  return buildContentSecurityPolicy(extractStyleHashes(html), { storageOrigin });
 }
 
 /** 1 MiB. Generous for JSON, small enough that a bad client cannot exhaust us. */
@@ -199,6 +205,13 @@ export interface CreateAppOptions {
    * real `fetch` is used.
    */
   hrSync?: HrSyncDeps;
+  /**
+   * Attachments (D-150, LAI-1300): the operator's store from `LAIKA_S3_*`,
+   * and the `fetch` and clock the tests inject so **none of them calls a
+   * store**. Absent, or `config: null`, is off: the routes are mounted and
+   * answer `503 attachments_off`, and `GET /org` says `attachments: null`.
+   */
+  attachments?: AttachmentsDeps;
 }
 
 /**
@@ -312,7 +325,17 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   );
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
-  app.use('*', createSecurityHeaders(contentSecurityPolicyFor(staticOptions.fallbackDocument)));
+  // The store's origin joins `img-src` and `connect-src` only when attachments
+  // are on: the browser shows its images and uploads to it (D-150).
+  app.use(
+    '*',
+    createSecurityHeaders(
+      contentSecurityPolicyFor(
+        staticOptions.fallbackDocument,
+        options.attachments?.config?.store.endpoint ?? null,
+      ),
+    ),
+  );
   // gzip for API JSON (LAI-722). Outside everything that produces or stores a
   // body — idempotency keeps the plain bytes it replays — and it decides for
   // itself which paths it may touch: never `/mcp`, never the SSE stream.
@@ -440,7 +463,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));
     app.route(
       `${API_BASE}/org`,
-      orgRoutes({ db, serverSecret: options.serverSecret ?? '', publicUrl: options.publicUrl }),
+      orgRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        publicUrl: options.publicUrl,
+        attachments: options.attachments?.config ?? null,
+      }),
     );
     // The HR connection and holidays (D-149, LAI-1181): `/hr*` and
     // `/holidays*`, paths `orgRoutes` does not have.
@@ -499,6 +527,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     );
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
+    // Files (§4.92, D-150, LAI-1300): asked for in a project, listed on a
+    // task, completed, read and removed by their own id. Always mounted; off,
+    // each answers `503 attachments_off`.
+    const files = { db, attachments: options.attachments };
+    app.route(`${API_BASE}/projects`, projectAttachmentRoutes(files));
+    app.route(`${API_BASE}/tasks`, taskAttachmentRoutes(files));
+    app.route(`${API_BASE}/attachments`, attachmentRoutes(files));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));
     // §4.70 – §4.72 (LAI-545): saving a checkpoint, reading them, re-tagging one.
     app.route(`${API_BASE}/tasks`, taskCheckpointRoutes({ db, sqlite: options.sqlite }));
