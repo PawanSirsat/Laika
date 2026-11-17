@@ -240,13 +240,13 @@ void describe('the header at 390', () => {
 });
 
 void describe('the board toolbar', () => {
-  void test('every button in the toolbar has a name; the ⋯ menu is labelled and keyboard-driven', async () => {
+  void test('every button in the toolbar has a name; the board actions are separate named buttons, no ⋯', async () => {
     const h = await open(`/board?${Q}`, spaceStub(), {
       before: (page) => page.setViewportSize({ width: 1440, height: 900 }),
     });
     try {
-      const more = h.page.locator('.board-bar [data-board-more]');
-      await more.waitFor({ timeout: 20_000 });
+      const actions = h.page.locator('.board-bar .bt-actions');
+      await actions.waitFor({ timeout: 20_000 });
 
       const unnamed = await h.page.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>('.space-bar button')]
@@ -255,56 +255,58 @@ void describe('the board toolbar', () => {
       );
       assert.deepEqual(unnamed, [], 'a button in the header has no accessible name');
 
-      // Four bare icons left the row for the menu.
-      for (const gone of ['Insights', 'View settings', 'Refresh the board']) {
-        assert.equal(
-          await h.page.locator(`.board-bar button[title="${gone}"]`).count(),
-          0,
-          `${gone} is still an icon in the row`,
-        );
-      }
+      // LAI-1230: the ⋯ that LAI-1198 folded them into is gone, dot and all.
+      assert.equal(await h.page.locator('[data-board-more]').count(), 0, 'the ⋯ is still drawn');
+      assert.equal(await h.page.locator('.bt-more-dot').count(), 0, 'the ⋯ dot is still drawn');
+      assert.equal(await h.page.getByRole('menu', { name: 'More board actions' }).count(), 0);
 
-      await more.focus();
-      await h.page.keyboard.press('Enter');
-      const menu = h.page.getByRole('menu', { name: 'More board actions' });
-      await menu.waitFor({ timeout: 5_000 });
-      assert.equal(await more.getAttribute('aria-expanded'), 'true');
-      const labels = (await menu.getByRole('menuitem').allInnerTexts()).map((t) => t.trim());
-      for (const label of ['View settings', 'Insights', 'Refresh']) {
-        assert.ok(
-          labels.includes(label),
-          `"${label}" is not a labelled item: ${labels.join(', ')}`,
-        );
-      }
-
-      const active = () =>
-        h.page.evaluate(
-          () => (document.activeElement as HTMLElement | null)?.innerText.trim() ?? '',
-        );
-      await until(async () => (await active()) === labels[0]);
-      assert.equal(await active(), labels[0], 'focus did not land on the first item');
-      await h.page.keyboard.press('ArrowDown');
-      assert.equal(await active(), labels[1], 'ArrowDown did not move to the next item');
-      await h.page.keyboard.press('End');
-      assert.equal(await active(), labels.at(-1), 'End did not reach the last item');
-      await h.page.keyboard.press('ArrowDown');
-      assert.equal(await active(), labels[0], 'ArrowDown did not wrap to the first');
-      await h.page.keyboard.press('ArrowUp');
-      assert.equal(await active(), labels.at(-1), 'ArrowUp did not wrap to the last');
-      await h.page.keyboard.press('Home');
-      assert.equal(await active(), labels[0], 'Home did not reach the first item');
-
-      await h.page.keyboard.press('Escape');
-      await menu.waitFor({ state: 'detached', timeout: 5_000 });
-      await until(() =>
-        h.page.evaluate(() => document.activeElement?.hasAttribute('data-board-more') ?? false),
+      // Each its own button, in the order they had before the fold, each with
+      // the shared Tooltip rather than a native title.
+      const names = await actions
+        .locator('button')
+        .evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label') ?? ''));
+      assert.deepEqual(
+        names.filter((n) => !n.startsWith('Hidden columns')),
+        ['Insights', 'View settings', 'Refresh'],
+        `the actions are not the original set and order: ${names.join(', ')}`,
       );
-      assert.equal(await more.getAttribute('aria-expanded'), 'false');
+      const untipped = await actions
+        .locator('button')
+        .evaluateAll((buttons) =>
+          buttons
+            .filter(
+              (b) =>
+                b.hasAttribute('title') ||
+                document
+                  .getElementById(b.getAttribute('aria-describedby') ?? '')
+                  ?.getAttribute('role') !== 'tooltip',
+            )
+            .map((b) => b.getAttribute('aria-label')),
+        );
+      assert.deepEqual(untipped, [], 'an action has no shared Tooltip');
 
-      // And an item does what it says: View settings opens its panel.
-      await more.click();
-      await menu.getByRole('menuitem', { name: 'View settings' }).click();
-      await h.page.getByRole('dialog', { name: 'View settings' }).waitFor({ timeout: 5_000 });
+      // Reached by keyboard, and does what it says: View settings opens its panel.
+      const settings = actions.getByRole('button', { name: 'View settings' });
+      assert.equal(await settings.getAttribute('aria-expanded'), 'false');
+      await settings.focus();
+      await h.page.keyboard.press('Enter');
+      const panel = h.page.getByRole('dialog', { name: 'View settings' });
+      await panel.waitFor({ timeout: 5_000 });
+      assert.equal(await settings.getAttribute('aria-expanded'), 'true');
+
+      // **It floats** (LAI-1230): the panel's shadow is the popover elevation
+      // token, resolved — not a card's hairline, not none.
+      const shadow = await h.page.evaluate(() => {
+        const probe = document.createElement('div');
+        probe.style.boxShadow = 'var(--shadow-popover)';
+        document.body.append(probe);
+        const token = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        const el = document.querySelector('.view-settings');
+        return { token, panel: el === null ? '' : getComputedStyle(el).boxShadow };
+      });
+      assert.notEqual(shadow.token, 'none', 'the token resolved to nothing');
+      assert.equal(shadow.panel, shadow.token, 'View settings does not use --shadow-popover');
     } finally {
       await h.close();
     }

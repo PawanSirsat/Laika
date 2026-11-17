@@ -1149,14 +1149,17 @@ const vsLabels = async (h: Harness): Promise<string[]> => {
   return labels;
 };
 
-const moreItems = async (h: Harness): Promise<string[]> => {
-  await h.page.locator('button[data-board-more]').click();
-  await h.page.locator('.bt-menu').waitFor({ timeout: 5_000 });
-  const items = (await h.page.locator('.bt-menu .bt-menu-item').allInnerTexts()).map((t) =>
-    t.trim(),
-  );
-  await h.page.keyboard.press('Escape');
-  return items;
+/**
+ * The toolbar's own action buttons, by accessible name (LAI-1230: separate
+ * buttons again, no ⋯ menu to open). The tab bar is the view switch, so no
+ * "Show as …" is among them on either view.
+ */
+const toolbarActions = async (h: Harness): Promise<string[]> => {
+  const group = h.page.locator('.board-bar .bt-actions');
+  await group.waitFor({ timeout: 5_000 });
+  return group
+    .locator('button')
+    .evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label') ?? ''));
 };
 
 void describe('Board and List share one filter state (LAI-488)', () => {
@@ -1238,7 +1241,14 @@ void describe('Board and List share one filter state (LAI-488)', () => {
       for (const section of ['group by', 'show fields', 'card density', 'column width', 'filter']) {
         assert.ok(labels.includes(section), `the Board lost "${section}" — ${labels.join(', ')}`);
       }
-      assert.ok((await moreItems(h)).includes('Show as list'));
+      const actions = await toolbarActions(h);
+      for (const name of ['Insights', 'View settings', 'Refresh']) {
+        assert.ok(
+          actions.includes(name),
+          `"${name}" is not a toolbar button: ${actions.join(', ')}`,
+        );
+      }
+      assert.equal(await h.page.locator('[data-board-more]').count(), 0, 'the ⋯ is back');
     } finally {
       await h.close();
     }
@@ -1260,11 +1270,11 @@ void describe('Board and List share one filter state (LAI-488)', () => {
       }
       assert.ok(labels.includes('filter'), 'the List lost its filter chips');
       assert.ok(labels.includes('hide done work items'), 'the List lost Hide done');
-      const items = await moreItems(h);
-      assert.ok(items.length > 0, 'positive control: the menu opened');
+      const items = await toolbarActions(h);
+      assert.ok(items.includes('View settings'), 'positive control: the actions are drawn');
       assert.ok(
-        !items.some((i) => i.startsWith('Show as')),
-        `"Show as" is on the List: ${items.join(', ')}`,
+        !items.some((i) => i.startsWith('Show as') || i.startsWith('Hidden columns')),
+        `a Board-only action is on the List: ${items.join(', ')}`,
       );
       // `?group=` is ignored here, and not deleted: it is the Board's to keep.
       assert.equal(new URL(h.page.url()).searchParams.get('group'), 'assignee');
