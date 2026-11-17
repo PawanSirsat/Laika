@@ -167,3 +167,13 @@ and returns the view with host and last four only — never print the URL. Then 
   dot, upper case, IDN labels), the stale cap, the code-point cut, the quote.
 - Filed **LAI-1320** (backlog, discovered-from LAI-1314): the digest's *Moved*
   reads `tasks.updated_at`; read status changes from `activity` instead.
+
+### Merged master `95cec12ee` (2026-11-18)
+
+#358's icons took **0083** and #361's email outbox **0084** and SPEC **§4.93**,
+so this branch's migration is now **`0085_teams_posting`** — regenerated from
+master's 0084 snapshot, its SQL byte-identical to the old 0083 (three
+`CREATE TABLE`s and their indexes), a second generate writing nothing — and
+its tables are **§4.94 `org_teams_settings`, §4.95 `project_teams_channels`,
+§4.96 `teams_posts`**. Earlier notes in this file that say 0083 or §4.93 –
+§4.95 are as they were written.
