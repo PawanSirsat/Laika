@@ -15,10 +15,8 @@ import {
   FILE_GLYPHS,
   fileKind,
   filesFrom,
-  formatBytes,
   isAttachmentUrl,
   pastedFiles,
-  uploadName,
   type FileCarrier,
 } from '../../../../../src/routes/screens/task/editor/attach.ts';
 
@@ -91,39 +89,6 @@ void describe('what a file is drawn as', () => {
       assert.ok(paths.length > 0, kind);
       for (const d of paths) assert.match(d, /^[Mm][\d.\s,a-zA-Z-]+$/, kind);
     }
-  });
-});
-
-void describe('a size as a person reads it', () => {
-  void test('bytes, then KB, MB and GB in steps of 1024', () => {
-    assert.equal(formatBytes(0), '0 B');
-    assert.equal(formatBytes(812), '812 B');
-    assert.equal(formatBytes(1024), '1 KB');
-    assert.equal(formatBytes(14 * 1024 + 300), '14 KB');
-    assert.equal(formatBytes(3.4 * 1024 * 1024), '3.4 MB');
-    assert.equal(formatBytes(26_214_400), '25 MB');
-    assert.equal(formatBytes(5 * 1024 ** 3), '5 GB');
-  });
-});
-
-void describe('the name a file is uploaded under', () => {
-  const now = new Date(2026, 10, 17, 9, 5, 7);
-
-  void test('a name the server takes is kept as it is', () => {
-    assert.equal(uploadName('Q3 budget (final).xlsx', 'text/csv', now), 'Q3 budget (final).xlsx');
-    assert.equal(uploadName('image.png', 'image/png', now), 'image.png');
-  });
-
-  void test('a character the server refuses becomes a dash, and the name stops at 255', () => {
-    assert.equal(uploadName('a/b\\c\u0007d.txt', 'text/plain', now), 'a-b-c-d.txt');
-    assert.equal(uploadName(`${'x'.repeat(300)}.txt`, 'text/plain', now).length, 255);
-  });
-
-  void test('a pasted screenshot, and a file with no name, are named for when they arrived', () => {
-    assert.equal(uploadName('image.png', 'image/png', now, true), 'Pasted 2026-11-17 09.05.07.png');
-    assert.equal(uploadName('', 'image/jpeg', now), 'Pasted 2026-11-17 09.05.07.jpeg');
-    // A pasted file with a real name keeps it.
-    assert.equal(uploadName('diagram.png', 'image/png', now, true), 'diagram.png');
   });
 });
 

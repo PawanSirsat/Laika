@@ -1,3 +1,5 @@
+import type { AttachedFile } from '../../../../api/attachment-upload.ts';
+
 /**
  * Files in the text (D-150, LAI-1301): which URLs are Laika's own attachments,
  * what a file is called and drawn as, how it is written into markdown, and
@@ -141,52 +143,6 @@ export const FILE_GLYPHS: Readonly<Record<FileKind | 'paperclip', readonly strin
     'M8.5 12.5h7M8.5 15.5h7M8.5 9.5h3',
   ],
 };
-
-/**
- * A size as a person reads it: `812 B`, `14 KB`, `3.4 MB`. Steps of 1024,
- * one decimal under ten.
- */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 1024) return `${String(Math.max(0, Math.round(bytes)))} B`;
-  const units = ['KB', 'MB', 'GB'] as const;
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const shown = value < 10 ? value.toFixed(1).replace(/\.0$/, '') : String(Math.round(value));
-  return `${shown} ${units[unit] ?? 'GB'}`;
-}
-
-/**
- * The name a file is uploaded under. The server refuses `/`, `\` and control
- * characters and more than 255 characters (§4.92); each refused character is
- * a `-` here rather than a refusal there. A file with no name, and a pasted
- * screenshot — every browser calls one `image.png` — is named for when it
- * arrived.
- */
-export function uploadName(name: string, contentType: string, now: Date, pasted = false): string {
-  const cleaned = Array.from(name.trim())
-    .map((c) => (c === '/' || c === '\\' || /\p{Cc}/u.test(c) ? '-' : c))
-    .join('')
-    .slice(0, 255);
-  if (cleaned !== '' && !(pasted && /^image\.(png|jpe?g|gif|webp)$/i.test(cleaned))) {
-    return cleaned;
-  }
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  const stamp = `${String(now.getFullYear())}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}.${pad(now.getMinutes())}.${pad(now.getSeconds())}`;
-  const extension = /\.([a-z0-9]+)$/i.exec(cleaned)?.[1] ?? contentType.split('/')[1] ?? 'bin';
-  return `Pasted ${stamp}.${extension.toLowerCase()}`;
-}
-
-/** A file the text links: its name, Laika's URL for it, and whether it shows as an image. */
-export interface AttachedFile {
-  readonly filename: string;
-  readonly url: string;
-  /** The server verified it is a png, jpeg, gif or webp (`inline`): drawn, not linked. */
-  readonly image: boolean;
-}
 
 /** An image's alt text as markdown holds it: `\`, `[` and `]` escaped. */
 export function escapeAlt(alt: string): string {
