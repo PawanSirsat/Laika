@@ -781,6 +781,8 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
   'DELETE /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
   'POST /api/v1/org/email/test': 'a test email to the caller, not a task',
+  'PUT /api/v1/me/email-prefs':
+    'session only (email_prefs.own); a person’s own switches, not a task',
   'PUT /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
   'DELETE /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
   'PUT /api/v1/org/time': 'session only (org.time.set)',

@@ -87,6 +87,7 @@ import {
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   ATTACHMENT_STATES,
+  EMAIL_DIGEST_STATES,
   EMAIL_KINDS,
   EMAIL_STATES,
   EMAIL_SUPPRESSED_REASONS,
@@ -1872,6 +1873,111 @@ export const emailOutbox = sqliteTable(
     ),
   ],
 );
+
+// -------------------------------------------------- §4.94 user_email_prefs
+
+/**
+ * A person's own email switches (§4.94, D-153, LAI-1313): instant mail on
+ * assignment and @mention, and the daily digest. **No row is both on** — the
+ * defaults — so a person who never opens the section is mailed as the org
+ * intends, and one who turns something off has a row that says so. Nothing is
+ * mailed at all while the organisation's switch is off.
+ */
+export const userEmailPrefs = sqliteTable(
+  'user_email_prefs',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    instant: integer('instant').notNull().default(1),
+    digest: integer('digest').notNull().default(1),
+    updatedAt,
+  },
+  () => [
+    check('user_email_prefs_instant_check', sql.raw('instant IN (0, 1)')),
+    check('user_email_prefs_digest_check', sql.raw('digest IN (0, 1)')),
+  ],
+);
+
+// ----------------------------------------------------- §4.95 email_digests
+
+/**
+ * A person's daily digest (§4.95, D-153, LAI-1313). **One open per person**,
+ * KSage's rule and a partial unique index: forty things happening at once are
+ * forty items in one digest, never forty emails — a rule easy to break by
+ * accident belongs in the schema. Closed when it is sent, or found empty.
+ */
+export const emailDigests = sqliteTable(
+  'email_digests',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    state: text('state', { enum: EMAIL_DIGEST_STATES }).notNull(),
+    openedAt: integer('opened_at').notNull(),
+    closedAt: integer('closed_at'),
+    /** The outbox row it went as; null while open, or when it closed empty. No FK: a pointer, not ownership. */
+    outboxId: text('outbox_id'),
+  },
+  (t) => [
+    uniqueIndex('email_digests_one_open_per_person').on(t.userId).where(sql.raw("state = 'open'")),
+    index('email_digests_state_idx').on(t.state, t.openedAt),
+    check('email_digests_state_check', oneOf('state', EMAIL_DIGEST_STATES)),
+    check('email_digests_closed_check', sql.raw("(state = 'closed') = (closed_at IS NOT NULL)")),
+  ],
+);
+
+// ------------------------------------------------ §4.96 email_digest_items
+
+/**
+ * What one person's digest will say (§4.96, LAI-1313): an `activity` row or a
+ * `member_notices` row, **once per person** — unique by person, not by digest,
+ * so the notify job's overlap re-read never puts one event in two digests.
+ */
+export const emailDigestItems = sqliteTable(
+  'email_digest_items',
+  {
+    id: text('id').primaryKey(),
+    digestId: text('digest_id')
+      .notNull()
+      .references(() => emailDigests.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The `activity` row; append-only, so no FK is needed to keep it. */
+    activityId: text('activity_id'),
+    noticeId: text('notice_id').references(() => memberNotices.id, { onDelete: 'cascade' }),
+    /** When the thing happened, for the 7-day horizon and the digest's order. */
+    occurredAt: integer('occurred_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('email_digest_items_activity_unique').on(t.userId, t.activityId),
+    uniqueIndex('email_digest_items_notice_unique').on(t.userId, t.noticeId),
+    index('email_digest_items_digest_idx').on(t.digestId),
+    check(
+      'email_digest_items_one_source_check',
+      sql.raw('(activity_id IS NULL) <> (notice_id IS NULL)'),
+    ),
+  ],
+);
+
+// -------------------------------------------------- §4.97 email_watermarks
+
+/**
+ * How far the notify job has read (§4.97, LAI-1313): one row per source,
+ * `activity` and `member_notices`, holding the newest `created_at` it has
+ * handled. **A time, not `rowid`**: a VACUUM may renumber the rowids of a table
+ * with a text key, which would make a stored rowid skip rows. Each run re-reads
+ * two minutes before it, and every effect is idempotent, so a row written late
+ * is still seen and one seen twice changes nothing.
+ */
+export const emailWatermarks = sqliteTable('email_watermarks', {
+  source: text('source').primaryKey(),
+  readTo: integer('read_to').notNull(),
+  updatedAt,
+});
 
 // --------------------------------------------- §4.67 recognised_agent_devices
 

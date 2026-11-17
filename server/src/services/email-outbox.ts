@@ -76,6 +76,13 @@ export interface QueueEmailInput {
   linkable?: boolean;
   /** A link's own expiry; the horizon is the earlier of this and seven days. */
   expiresAt?: number | undefined;
+  /**
+   * A reason the caller already knows it must not go (LAI-1313): the person
+   * turned this mail off (`pref_off`), or may no longer read what it is about
+   * (`no_access`). Asked after the switch and the settings, so a message on a
+   * board with email off still says `email_off` — the switch first, always.
+   */
+  refuse?: 'pref_off' | 'no_access' | undefined;
 }
 
 /** What `body_enc` decrypts to. */
@@ -145,6 +152,7 @@ function suppressionAt(
   const { enabled, configured } = emailSwitch(db);
   if (!enabled) return 'email_off';
   if (!configured || serverSecret === '') return 'email_not_configured';
+  if (input.refuse !== undefined) return input.refuse;
   if (input.to === null || input.to === '') return 'no_address';
   if (input.linkable === false) return 'no_public_url';
   return null;

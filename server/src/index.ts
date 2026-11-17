@@ -134,6 +134,8 @@ function main(): void {
     // The outbox's sender (D-153, LAI-1312). Nothing goes while the
     // organisation's *Email on* switch is off — the default.
     email: { transport: smtpTransport() },
+    // Links in notification mail (LAI-1313).
+    publicUrl: env.publicUrl,
   });
 
   const shutdown = createRuntimeShutdown({

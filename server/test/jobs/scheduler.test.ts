@@ -105,6 +105,7 @@ describe('the jobs §11.6 names', () => {
       'checkpoint.retention',
       'claim.expiry',
       'db.vacuum',
+      'email.notify',
       'email.retention',
       'email.send',
       'estimate.refit',

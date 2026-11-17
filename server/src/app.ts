@@ -21,7 +21,7 @@ import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-
 import { DEFAULT_CLI_SOURCE_URL, type DeveloperAccessMode } from './env.ts';
 import { developerRoutes } from './http/routes/developer.ts';
 import { healthRoutes } from './http/routes/health.ts';
-import { meNoticeRoutes, meRoutes, meWatchRoutes } from './http/routes/me.ts';
+import { meEmailPrefsRoutes, meNoticeRoutes, meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { permissionsRoutes } from './http/routes/permissions.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
@@ -391,6 +391,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
     // A member's own notices (D-134, LAI-1136).
     app.route(`${API_BASE}/me`, meNoticeRoutes({ db }));
+    // A person's own email switches (D-153, LAI-1313).
+    app.route(`${API_BASE}/me`, meEmailPrefsRoutes({ db }));
     // D-079's developer side (LAI-751): sharing, reports, and what is held.
     app.route(`${API_BASE}/me`, localActivityRoutes({ db }));
     // A person's own token alerts and plan limit (LAI-773, D-087).

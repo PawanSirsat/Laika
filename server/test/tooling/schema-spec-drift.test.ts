@@ -601,6 +601,8 @@ describe('the parser itself', () => {
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
+      // LAI-1313: one row per source the email job reads, keyed by its name.
+      'email_watermarks',
       'github_checks',
       'github_commits',
       'github_pull_requests',
@@ -634,6 +636,8 @@ describe('the parser itself', () => {
       'token_usage_zones',
       // LAI-1130: one row per person, keyed by `user_id`, as their time settings.
       'user_availability',
+      // LAI-1313: one row per person, keyed by `user_id`, as their availability.
+      'user_email_prefs',
       'user_time_settings',
     ]);
   });

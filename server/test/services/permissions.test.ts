@@ -173,6 +173,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'availability.set_own': 'YYYY',
   'availability.read': 'YYYY',
   'notices.own': 'YYYY',
+  'email_prefs.own': 'YYYY',
   // D-149 (LAI-1181): the HR connection, under *Change organisation settings*.
   'org.hr.configure': 'YYNN',
   // D-153 (LAI-1312 review): outbound email, under the same grant.
