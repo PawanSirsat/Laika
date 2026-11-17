@@ -153,6 +153,18 @@ export function createAuth(options: CreateAuthOptions) {
     account: {
       modelName: 'accounts',
       /**
+       * **Microsoft's access and refresh tokens are encrypted at rest**
+       * (LAI-1317). Sign-in asks for `offline_access`, so the refresh token is
+       * a long-lived credential to the person's Microsoft account; in clear it
+       * would be one database copy away from everyone's mailbox scopes.
+       * better-auth encrypts both with `LAIKA_SECRET` on every write and
+       * decrypts on its own reads; a row written in clear before this still
+       * reads, and the next sign-in rewrites it encrypted. Nothing else in
+       * Laika reads these columns. A password account has no tokens, so this
+       * changes nothing without SSO.
+       */
+      encryptOAuthTokens: true,
+      /**
        * An existing person signing in with Microsoft for the first time is
        * **linked** to their account by email, not given a second one (LAI-1238).
        * Trusting Microsoft's email for that is safe only because the tenant is

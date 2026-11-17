@@ -2,12 +2,12 @@
  * Microsoft SSO (LAI-1238): one Entra ID tenant, SSO-only when configured,
  * invited people only.
  *
- * The Microsoft round trip itself cannot run here — it needs Microsoft — so
- * the tests drive the pieces that decide everything around it, with a real
- * database and a real better-auth: the env contract, the endpoints that must
- * refuse, first boot without a password, and the hooks every social sign-in
- * passes through (called exactly as better-auth calls them, with the request
- * context's `path`).
+ * These drive the pieces that decide everything around the Microsoft round
+ * trip, with a real database and a real better-auth: the env contract, the
+ * endpoints that must refuse, first boot without a password, and the hooks
+ * every social sign-in passes through (called exactly as better-auth calls
+ * them, with the request context's `path`). The round trip itself, against a
+ * fake tenant, is `microsoft-callback.test.ts` (LAI-1317).
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -359,9 +359,9 @@ describe('a Microsoft sign-in joins only with an invite for that address', () =>
 describe('an existing person links their Microsoft account by email', () => {
   /*
    * Found against a real tenant (account_not_linked): better-auth links only
-   * when the local email is verified, and Laika verifies none. The link
-   * itself runs in Microsoft's callback, which cannot run here, so the
-   * options better-auth reads at that moment are what is asserted.
+   * when the local email is verified, and Laika verifies none. These are the
+   * options better-auth reads at that moment; the link itself, through the
+   * callback, is `microsoft-callback.test.ts` (LAI-1317).
    */
   it('trusts Microsoft and does not wait on a local verification Laika never does', () => {
     const harness = sso();
