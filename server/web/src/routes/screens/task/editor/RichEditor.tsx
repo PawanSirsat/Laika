@@ -1537,17 +1537,18 @@ export function RichEditor({
                   <span className="rte-upload-error" role="alert">
                     {upload.error}
                   </span>
-                  <button
-                    type="button"
-                    className="rte-upload-dismiss"
-                    aria-label={`Dismiss ${upload.name}`}
-                    title="Dismiss"
-                    onClick={() => {
-                      setUploads((list) => list.filter((u) => u.id !== upload.id));
-                    }}
-                  >
-                    ×
-                  </button>
+                  <Tooltip content="Dismiss" side="top">
+                    <button
+                      type="button"
+                      className="rte-upload-dismiss"
+                      aria-label={`Dismiss ${upload.name}`}
+                      onClick={() => {
+                        setUploads((list) => list.filter((u) => u.id !== upload.id));
+                      }}
+                    >
+                      ×
+                    </button>
+                  </Tooltip>
                 </>
               )}
             </li>

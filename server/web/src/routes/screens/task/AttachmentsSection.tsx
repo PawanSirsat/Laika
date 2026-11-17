@@ -10,6 +10,7 @@ import { subscribeToEvents } from '../../../api/event-stream.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import {
   attachmentRows,
   attachmentsHeading,
@@ -261,7 +262,6 @@ export function AttachmentsSection({
                         href={row.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title={`Open ${row.filename}`}
                       >
                         {row.filename}
                       </a>
@@ -326,17 +326,18 @@ export function AttachmentsSection({
                       <span className="att-send-error" role="alert">
                         {s.error}
                       </span>
-                      <button
-                        type="button"
-                        className="att-dismiss"
-                        aria-label={`Dismiss ${s.name}`}
-                        title="Dismiss"
-                        onClick={() => {
-                          setSending((list) => list.filter((x) => x.id !== s.id));
-                        }}
-                      >
-                        ×
-                      </button>
+                      <Tooltip content="Dismiss" side="top">
+                        <button
+                          type="button"
+                          className="att-dismiss"
+                          aria-label={`Dismiss ${s.name}`}
+                          onClick={() => {
+                            setSending((list) => list.filter((x) => x.id !== s.id));
+                          }}
+                        >
+                          ×
+                        </button>
+                      </Tooltip>
                     </>
                   )}
                 </li>

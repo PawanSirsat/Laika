@@ -168,7 +168,7 @@
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
-  transition: width 120ms ease;
+  transition: width var(--duration-fast) var(--ease-standard);
 }
 
 .att-send-error,

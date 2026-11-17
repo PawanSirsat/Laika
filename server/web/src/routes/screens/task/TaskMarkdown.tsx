@@ -123,7 +123,8 @@ function AttachmentImage({ src, alt }: { readonly src: string; readonly alt: str
       href={src}
       target="_blank"
       rel="noopener noreferrer"
-      title={alt === '' ? 'Open the image' : `Open ${alt}`}
+      // The image's alt text names the link; one with none still says what it opens.
+      aria-label={alt === '' ? 'Open the image' : undefined}
     >
       <img
         src={src}
