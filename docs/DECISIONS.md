@@ -7580,3 +7580,77 @@ the UI refine branches (`LAI-1200-calendar-refine` and the 37 after it); CHIEF a
 it dispatches file from `LAI-1300` – `LAI-1399`, lowest unused first, checked with §3's sweep.
 Measured on 2026-11-17 across every local and `origin` branch and all history: 100 of
 `LAI-1100` – `LAI-1199` taken, 38 ids in the `LAI-12xx` range taken, none in `LAI-13xx`.
+
+## D-154 — Teams posting: each space's stand-ups, digest and notices to its own Power Automate flow, KSage's flows reused, off until switched on
+
+**Date:** 2026-11-18 · **Decided by:** Pawan (owner), choosing *"D: Teams posting"* from the
+LAI-1310 research, then: *"implement everything and workable but I don't want to enable this …
+right now, will do that later at one click"*, and *"reuse KSage's flows"*. Recorded by CHIEF
+(Belka). Task LAI-1314. Amends §13.4; adds §4.93 – §4.95, §3.1's *Configure Teams posting*,
+§3.4's `system.teams.post`, §6.4's Teams routes and an §11.6 job.
+
+**Context.** The old KSage posts to Microsoft Teams through Power Automate flows: a stand-up per
+project twice a weekday, a nightly digest, and instant notices. Two of its six projects have a
+channel. That stops when KSage is switched off, so Laika takes it over — and the flows already
+exist, so what Laika sends has to be what they already accept.
+
+**Decision.**
+
+1. **Each space may have one Teams channel**: a Power Automate (or Teams *Incoming Webhook*)
+   address, stored per space (§4.94). **A space with none is told nothing** — never another
+   space's channel; KSage once fell back to an organisation-wide address and posted every
+   project's digest into one client's chat.
+2. **Off is how it ships.** An organisation switch, *Teams posting on* (§4.93), on Organisation
+   → Integrations, defaults off. While off nothing is posted, and every post that would have
+   gone is recorded in §4.95 as `suppressed`, reason `posting_off`. Turning it on is one click;
+   the changes made while it was off are never posted afterwards. **The test post** on a space's
+   card works while it is off — the only way to know a flow accepts posts is to post to it.
+3. **Owners and admins, signed in.** `org.teams.configure` (§3.1), carried by *Change
+   organisation settings, Time and breaks*, **session only**: the address decides where a
+   space's work is read out to, so no token — an agent's or a person's — sets one. A space's
+   own routes also need the space to be one the caller can open.
+4. **The address is a credential** — its `sig=` lets anybody post. Encrypted under `LAIKA_SECRET`
+   with its own purpose (`teams_webhook_url`), **written and never read back**: every view shows
+   the host and the last four characters. Only `https` on `*.logic.azure.com`,
+   `*.powerplatform.com` or `*.webhook.office.com`, port 443, no user or password — checked when
+   set and before every post, so an owner cannot aim the job at `localhost`, a metadata service
+   or an internal host.
+5. **KSage's payload, byte for byte** (`notify.rs`): one `POST`, `content-type:
+   application/json; charset=utf-8`, body `{"text":"<html>"}` built by hand with **every
+   non-ASCII UTF-16 unit escaped** `\uXXXX` (the gateway refuses raw multi-byte characters);
+   the HTML is KSage's — `<br>` lines, bold headings, `&nbsp;` indents, inline-styled tables,
+   an actions list, *Open in Laika* last. Any `2xx` is sent (Power Automate answers `202`).
+   The flows read `triggerBody()?['text']` and nothing else, so they take Laika's posts
+   unchanged.
+6. **What is posted is KSage's, in Laika's terms.** The *Daily Update* stand-up at 05:30 and
+   12:30 UTC (11:00 and 18:00 IST), Monday to Friday — Run, Status, As of, Owner; the counts;
+   Key updates since the last run; Blocked, Stale, Past their date and In flight; the actions —
+   and the nightly digest of the SAST day before at 07:00 UTC, only when something moved or is
+   blocked. Instant notices: handed to somebody by somebody else, into review, back from review,
+   done, blocked by a task not done, unblocked, and a person's comment. KSage's *project* is a
+   space, its *work item* a task, its *owner* the assignee, *blocked* a `blocked_by` not done,
+   *on hold* the stale flag, *UAT / with the client* `review`, *signed off* `done`; the full
+   mapping is in LAI-1314's task file.
+7. **One job, every minute** (§11.6, `system.teams.post`). Nothing in a request posts: notices
+   are read from `activity` after the fact, as the board stood when the change was made, so a
+   slow flow never slows or fails a write. A scheduled run is due for two hours from its time
+   and is **claimed before it is posted** (KSage's `digest_runs` guard), so it is never posted
+   twice.
+8. **No retry storm.** A ten-second timeout; Teams' answer is never read, logged or stored —
+   only its status. A scheduled run is tried again only when nothing reached Teams
+   (`unreachable`, or `408`/`429`/`5xx`), a minute apart, three attempts at most; a refusal,
+   or a post that may have arrived, is final. A notice is one attempt. At most 20 notices a
+   tick; a change more than an hour old when read is not posted. The record is kept 90 days.
+   The test post has its own rate-limit bucket, 6 a minute per person.
+9. **A new outbound destination (§13.4)**: each space's configured Teams webhook, and nothing
+   while posting is off. No activity verb (CLAUDE.md §4.4: `teams_posts` is the record), no
+   environment variable, no dependency — plain `fetch`, injectable, so no test calls Teams.
+10. **KSage's flows come over by CHIEF, after release**: the two existing webhook addresses are
+    read from KSage's database with `SELECT` only and set through `setProjectTeamsChannel` in a
+    one-off script, never printed and never in the repository.
+
+**Not ported — follow-ups.** KSage's *shipped to production* notice (Laika has no deployments),
+its agent pull-request Adaptive Card with approve and dismiss links (no approval tokens), and its
+per-person notification inbox delivered to email and Teams (no inbox). Agents' comments are not
+posted: agents comment as they go, and a channel that reads out every one is a channel everybody
+mutes.

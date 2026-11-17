@@ -141,7 +141,7 @@ organisation's grants for exactly these actions and no others.
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
 | *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
-| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149) |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.teams.configure` (D-154) |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
@@ -261,6 +261,7 @@ be obvious because someone will be asking for it.
 | Read and set own plan limit | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
 | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
+| Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
 | Read own time settings | ✓ | ✓ | ✓ | ✓ |
 | Set own Draft my time | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
@@ -400,6 +401,16 @@ themselves are the organisation's Time setting** — adding or removing one is
 holiday is not private. **Leave is read with the person's availability**
 (D-137), its type only by the person, owners, admins and *See everyone's
 analytics* (D-149 item 5).
+
+**"Configure Teams posting" is `org.teams.configure`** (D-154, LAI-1314),
+behind §6.4's `/org/teams` and `/projects/:slug/teams` routes: turn the
+organisation's *Teams posting on* switch, and set, clear and test each space's
+Power Automate webhook. Carried by *Change organisation settings, Time and
+breaks*, as the HR connection is. **Session only**, because the address decides
+where a space's stand-ups, titles and comments are read out to, and an agent's
+token that could set one could send them anywhere. A space's own routes also
+need the space to be one the caller can open (`project.read`), else the missing
+slug's `404`. The posting job acts as §3.4's `system.teams.post`.
 
 **"Change a member's confirmed time" is `time_entries.write_member`** (D-143,
 LAI-1165, amending D-102 rule 4 and D-088 items 2 and 6), behind §6.4's
@@ -749,6 +760,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 | `system.hr.sync` | §11.6: holidays and leave from the organisation's HR system, every 30 minutes and once at boot (§4.88 – §4.91, D-149, LAI-1181) |
 | `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
+| `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.93 – §4.95, D-154, LAI-1314) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -3952,6 +3964,65 @@ what the object claims.
 **Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
 these rows and not the files (D-150 item 8).
 
+### 4.93 `org_teams_settings`
+
+The organisation's Teams posting switch (D-154, LAI-1314) — one row, or none.
+**No row, or `posting_enabled` 0, is off**, and off is how it ships: nothing is
+posted, and each post that would have gone is recorded in §4.95 as suppressed.
+Its own table, as `org_time_settings` is, so the change is additive.
+
+| field | notes |
+| --- | --- |
+| `org_id` | pk, FK `orgs`, cascade |
+| `posting_enabled` | 0/1 (CHECK) — *Teams posting on*; turned by an owner or admin (`org.teams.configure`) |
+| `notice_cursor` | ≥ 0 (CHECK) — the last `activity` row (its rowid) the posting job has read for instant notices. It moves whether posting is on or off, so turning posting on never posts what changed while it was off; made at the newest row the first time anything writes this one |
+| `updated_by` | nullable, FK `users`, set null — who last turned the switch; null when only the posting job has written the row |
+| `updated_at` | |
+
+### 4.94 `project_teams_channels`
+
+A space's Teams channel (D-154): the Power Automate webhook its stand-ups,
+digest and notices are posted to. **No row is no channel**, and a space with
+none is told nothing — never another space's channel.
+
+| field | notes |
+| --- | --- |
+| `project_id` | pk, FK `projects`, cascade |
+| `webhook_url_enc` | the address, AES-256-GCM under purpose `teams_webhook_url` (D-009's scheme) — its `sig=` is the credential. **Written and never read back**: never returned, never logged, never in `activity`; decrypted only to post. Only an `https` address on `*.logic.azure.com`, `*.powerplatform.com` or `*.webhook.office.com`, on port 443, with no user or password — checked when set and again before every post |
+| `webhook_host` | 1–253 (CHECK) — the address's host, to show which flow it is |
+| `webhook_last4` | exactly 4 (CHECK) — the address's last four characters, to tell two flows apart |
+| `set_by` | nullable, FK `users`, set null |
+| `set_at` | |
+
+### 4.95 `teams_posts`
+
+One post to a space's Teams channel, or one that would have been (D-154): what
+went, what Teams answered, and what was held back and why. **Never the message's
+body and never Teams' answer** — the headline, the outcome, a closed reason and
+the HTTP status. Kept 90 days (§11.6).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects`, cascade |
+| `kind` | `standup` \| `digest` \| `notice` \| `test` (CHECK) |
+| `event` | nullable — `morning` \| `evening` for a stand-up; `assigned` \| `sent_back` \| `in_review` \| `done` \| `blocked` \| `unblocked` \| `commented` for a notice (CHECK); null for a digest and a test |
+| `slot` | nullable — a scheduled post's run, `standup:morning:2026-11-18` (the IST date) or `digest:2026-11-17` (the SAST day it reports); null for a notice and a test |
+| `title` | 1–300 (CHECK) — the message's first line, as composed |
+| `outcome` | `sending` \| `sent` \| `failed` \| `suppressed` (CHECK) |
+| `reason` | nullable, and present exactly when the outcome is `failed` or `suppressed` (CHECK) — `posting_off` \| `too_old` \| `burst` (suppressed); `refused` \| `unavailable` \| `unreachable` \| `no_answer` \| `address_unusable` (failed) |
+| `http_status` | nullable — Teams' status code, when it answered |
+| `attempt` | ≥ 1 (CHECK) — which attempt at its slot; 1 for everything else |
+| `created_at` | |
+| `finished_at` | nullable — when the outcome was known |
+
+A partial unique index on `(project_id, slot)` where `slot` is set and the
+outcome is `sending`, `sent` or `suppressed` is **KSage's `digest_runs` guard**:
+a slot is claimed before it is posted, so two ticks never both post it; a
+failure leaves the index and releases it, and a suppressed slot keeps it, so a
+run is recorded once and not once a tick. Indexes `(project_id, created_at)` for
+a space's card, and `(created_at)` for retention.
+
 ## 5. Task lifecycle
 
 ```
@@ -4282,7 +4353,9 @@ credential is not an org credential with a project filter.
   minute per person, so a run of filter clicks or month steps spends
   neither the session's budget nor each other's. **The HR connection has
   its own** (`POST /org/hr/connect`, `/connect/verify`, `/sync`, D-149,
-  LAI-1181), **6 a minute** per person: each one calls the HR system.
+  LAI-1181), **6 a minute** per person: each one calls the HR system. **So
+  has a space's Teams test post** (`POST /projects/:slug/teams/test`, D-154,
+  LAI-1314), **6 a minute** per person: each one posts to a Power Automate flow.
   **Checkpoints and hand-offs have their own buckets** (proposal §4.4,
   LAI-545, LAI-546), per agent across its tokens, beside the general one:
   registering a checkpoint or a re-tag, **30 a burst, refilled one every 20
@@ -4382,6 +4455,8 @@ POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes 
 POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } (1–500) — map a person, or null for not on Laika → the connection; 422 reasons duplicate_person, duplicate_user, unknown_user; 409 conflict reason user_mapped_elsewhere when another owner mapping holds that member (an email match gives way); a remap stamps that person's live leave removed at once   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
+GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one, by name] }   (owner, admin; session only; D-154, LAI-1314)
+PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -4520,6 +4595,10 @@ POST   /api/v1/handoff-offers/:id/decline    body { reason? } → offer; the sen
 POST   /api/v1/handoff-offers/:id/cancel     → offer; the sender's claim resumes
 GET    /api/v1/projects/:slug/handoff-policy PUT .../handoff-policy  body { allow_other_owners?, cross_owner_requires_approval?,
                                              max_handoffs?, offer_ttl_minutes? }   (§4.74; set: lead)
+GET    /api/v1/projects/:slug/teams          the space's Teams channel → { posting_enabled, channel: { project_id, project_slug, project_name, host, last4, set_at, set_by, last_post } | null, recent: [the 15 newest posts: { id, kind, event, title, outcome, reason, http_status, created_at, finished_at }] }   (owner, admin who can open the space; session only; D-154, LAI-1314)
+PUT    /api/v1/projects/:slug/teams          body { webhook_url } — set or replace the address; checked, encrypted, never answered → as GET; 422 unprocessable { field: webhook_url, reason: webhook_url_not_https | webhook_url_invalid }   (owner, admin; session only)
+DELETE /api/v1/projects/:slug/teams          the space has no channel and is told nothing (204)   (owner, admin; session only)
+POST   /api/v1/projects/:slug/teams/test     one test post to the channel, **whether posting is on or off** → the post, recorded like any other; 409 conflict reason teams_no_channel   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
                                              → review, with a round and its proof (finish_task's twin, D-082); a checklist
                                              line that is a deliverable's id or exact title marks it done (LAI-1115)
@@ -7099,14 +7178,14 @@ call MCP; agents do.
 | --- | --- | --- | --- | --- |
 | **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ |
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
-| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
+| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members`; on a space's settings, `GET/PUT/DELETE /projects/:slug/teams` and `POST /projects/:slug/teams/test` for owners and admins (D-154) | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable`, `GET /tasks/:id/attachments`, `POST /projects/:slug/attachments`, `POST /attachments/:id/complete`, `DELETE /attachments/:id`, `GET /org`'s `attachments` (D-150) | `add_comment`, `get_task_context` | ✅ (attachments: LAI-1301) |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT /org/teams` (D-154), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -8041,6 +8120,22 @@ One interval-driven scheduler in the same process:
   `system.hr.sync`. **A run never overlaps another** — *Sync now* joins one
   already running. No `activity` row: the connection carries its time, counts
   and last error
+- **Teams posting** (§4.93 – §4.95, D-154, LAI-1314) — every minute, not at
+  boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
+  channel at **05:30 and 12:30 UTC** (11:00 and 18:00 IST), Monday to Friday by
+  India's calendar, and its **nightly digest** of the SAST day before at **07:00
+  UTC** (09:00 SAST) every day, only when something moved or is blocked; each
+  due for two hours from its time, claimed in §4.95 before it is posted, and
+  tried again only when nothing reached Teams (`unreachable`, or Teams' *not
+  now*), three attempts at most — never one that may have arrived. **Instant
+  notices** come from the `activity` past §4.93's cursor, read as the board
+  stood when the change was made: handed to somebody by somebody else, into
+  review, back from review, done, blocked by a task not done, unblocked, and a
+  person's comment — never an agent's — at most 20 a tick and never one more
+  than an hour old. **Off, nothing is posted** and each post that would have
+  gone is recorded `suppressed`, `posting_off`. Records older than 90 days are
+  deleted. **A run never overlaps another** — a tick still going is joined. No
+  `activity` row: §4.95 is the record
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`. **It is the one stale rule, on every screen**
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
@@ -8241,8 +8336,13 @@ when an owner connects it that way — and, when the operator configures one,
 **the attachments store** (D-150): signed `HEAD`, ranged `GET` and `DELETE` of
 the objects Laika itself names, nothing else. Browsers reach that store too,
 through the short-lived URLs Laika signs; it is the operator's own, beside
-Laika, not a third party's. Any task proposing otherwise is rejected at
-review.
+Laika, not a third party's. **And, when an owner or admin sets one and turns
+posting on, each space's Teams channel** (D-154): one `POST` of
+`{"text": …}` to that space's Power Automate webhook — its stand-ups, nightly
+digest and notices, which carry task keys and titles, people's names and a
+person's comments — nothing to a space without one, and nothing at all while
+*Teams posting* is off, as it ships. Teams' answer is never read. Any task
+proposing otherwise is rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day
