@@ -191,12 +191,14 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     {
       name: 'teams.post',
       everyMs: TEAMS_TICK_MS,
-      run: async (now) => {
+      run: async () => {
         const ticked = await runTeamsTick(db, deps.serverSecret ?? '', {
           ...deps.teams,
           publicUrl: deps.teams?.publicUrl ?? deps.publicUrl ?? null,
           log: deps.teams?.log ?? deps.log,
-          now: () => now,
+          // The clock itself, not the tick's instant: a post's `created_at` and
+          // `finished_at` are when it was claimed and when Teams answered.
+          now: deps.now ?? Date.now,
         });
         return {
           changed: ticked.sent + ticked.failed + ticked.suppressed + ticked.pruned,

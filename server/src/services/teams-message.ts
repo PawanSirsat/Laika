@@ -48,9 +48,18 @@ export interface TeamsNotice {
 /** The link's words, KSage's *Open in KSage* in Laika's name. */
 export const OPEN_IN_LAIKA = 'Open in Laika';
 
-/** `&`, `<` and `>` — a task title is somebody's free text, landing in an HTML field. */
+/**
+ * `&`, `<`, `>` and `"` — a task title is somebody's free text, landing in an
+ * HTML field, and the link lands inside a double-quoted attribute. KSage
+ * escaped the first three; the quote is Laika's, so no value can close the
+ * `href` it is written into.
+ */
 function escape(text: string): string {
-  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 /**
@@ -113,8 +122,8 @@ export function noticeHtml(notice: TeamsNotice): string {
     html += '</ul>';
   }
 
-  // The address is Laika's own, not user text, and is escaped anyway so this
-  // stays true if that ever stops being the case.
+  // The address is Laika's own, not user text, and is escaped anyway — `"`
+  // included — so a quote in it can never end the attribute.
   if (notice.link !== undefined && notice.link !== null) {
     html += `<br><br><a href="${escape(notice.link)}">${OPEN_IN_LAIKA}</a>`;
   }

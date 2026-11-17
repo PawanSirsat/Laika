@@ -15,6 +15,7 @@ import {
   orgHrSource,
   projects,
   taskClaims,
+  teamsPosts,
   users,
 } from '../../src/db/schema.ts';
 import { applyCheckpointDelivery, registerCheckpoint } from '../../src/services/checkpoints.ts';
@@ -504,6 +505,25 @@ describe('teams.post (D-154, LAI-1314)', () => {
       event: 'cron.job_ran',
       changed: 1,
     });
+    scheduler.stop();
+  });
+
+  it('stamps a post with the clock as Teams answers, not the tick’s instant', async () => {
+    connect();
+    setTeamsPosting(t.db, loadActor(t.db, seeded.userId)!, { posting_enabled: true }, MORNING);
+    const fake = fakeTeams();
+    let clock = MORNING;
+    fake.answer = () => {
+      clock += 3_000;
+      return undefined;
+    };
+    const scheduler = startScheduler(deps({ ...teamsDeps(fake), now: () => clock }));
+    await scheduler.started;
+
+    await scheduler.runOnce('teams.post');
+    const [row] = t.db.select().from(teamsPosts).all();
+    expect(row?.createdAt).toBe(MORNING);
+    expect(row?.finishedAt).toBe(MORNING + 3_000);
     scheduler.stop();
   });
 

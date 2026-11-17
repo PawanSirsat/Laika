@@ -65,6 +65,19 @@ describe('the HTML Teams renders', () => {
     expect(html).toContain('<a href="https://laika.example/board?project=mur">Open in Laika</a>');
   });
 
+  it('escapes a quote, so nothing can end the link’s attribute', () => {
+    const html = noticeHtml({
+      title: 'Say "done"',
+      lines: [],
+      link: 'https://laika.example/task/X" onmouseover="alert(1)',
+    });
+    expect(html).toContain(
+      '<a href="https://laika.example/task/X&quot; onmouseover=&quot;alert(1)">Open in Laika</a>',
+    );
+    expect(html).toContain('<b>Say &quot;done&quot;</b>');
+    expect(html).not.toContain('" onmouseover');
+  });
+
   it('never lets a title become markup', () => {
     const html = noticeHtml({
       title: 'New comment on <script>alert(1)</script>',

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
@@ -13,7 +13,8 @@ import {
   users,
 } from '../../src/db/schema.ts';
 import { addComment } from '../../src/services/comments.ts';
-import { istInstant } from '../../src/services/teams-compose.ts';
+import { createProject } from '../../src/services/projects.ts';
+import { istInstant, OTHER_SPACE_BLOCKER } from '../../src/services/teams-compose.ts';
 import {
   dueSlots,
   MAX_SLOT_ATTEMPTS,
@@ -25,7 +26,11 @@ import {
   teamsTick,
   type TeamsPostingDeps,
 } from '../../src/services/teams-posting.ts';
-import { setProjectTeamsChannel, setTeamsPosting } from '../../src/services/teams.ts';
+import {
+  clearProjectTeamsChannel,
+  setProjectTeamsChannel,
+  setTeamsPosting,
+} from '../../src/services/teams.ts';
 import {
   addTaskDependency,
   changeStatus,
@@ -35,7 +40,7 @@ import {
 } from '../../src/services/tasks.ts';
 import { captureLog, type CapturedLog } from '../helpers/app.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
-import { fakeTeams, type FakeTeams, TEAMS_URL } from '../helpers/fake-teams.ts';
+import { fakeTeams, type FakeTeams, TEAMS_URL, TEAMS_URL_2 } from '../helpers/fake-teams.ts';
 
 /**
  * The Teams posting job (D-154, LAI-1314): KSage's stand-ups, digest and
@@ -454,10 +459,143 @@ describe('the instant notices', () => {
     await after(() => {
       changeStatus(t.db, owner, task('Ship it'), 'review', QUIET - 60_000);
     });
-    const file = readFileSync(t.sqlite.name).toString('latin1');
+    // Everything written so far into the main file, and the WAL read too:
+    // a row still only in the WAL is invisible to a read of the main file.
+    t.sqlite.pragma('wal_checkpoint(TRUNCATE)');
+    const read = (path: string) => (existsSync(path) ? readFileSync(path).toString('latin1') : '');
+    const file = read(t.sqlite.name) + read(`${t.sqlite.name}-wal`);
+    // A positive control: a row this test wrote is in what was read.
+    expect(file).toContain('LAI-1 is waiting for review');
     expect(file).not.toContain('sig=fixture');
     expect(JSON.stringify(t.db.select().from(projectTeamsChannels).all())).not.toContain('sig=');
     expect(JSON.stringify(posts())).not.toContain('sig=');
+  });
+});
+
+describe('the switch and the channel, read at each post', () => {
+  /** Two notices in one tick; the flow answers the first by running `during`. */
+  async function twoNotices(during: () => void): Promise<void> {
+    connect();
+    turnOn();
+    await teamsTick(t.db, SECRET, deps(QUIET - 600_000));
+    changeStatus(t.db, owner, task('First'), 'review', QUIET - 60_000);
+    changeStatus(t.db, owner, task('Second'), 'review', QUIET - 50_000);
+    let first = true;
+    fake.answer = () => {
+      if (first) {
+        first = false;
+        during();
+      }
+      return undefined;
+    };
+    fake.requests.length = 0;
+    await teamsTick(t.db, SECRET, deps(QUIET));
+  }
+
+  it('holds back the rest of a tick once posting is turned off mid-way', async () => {
+    await twoNotices(() => {
+      turnOn(false);
+    });
+    expect(fake.requests).toHaveLength(1);
+    expect(posts().map((p) => [p.title, p.outcome, p.reason])).toEqual([
+      ['LAI-1 is waiting for review', 'sent', null],
+      ['LAI-2 is waiting for review', 'suppressed', 'posting_off'],
+    ]);
+  });
+
+  it('posts nothing more to a channel removed mid-tick, and records nothing for it', async () => {
+    await twoNotices(() => {
+      clearProjectTeamsChannel(t.db, owner, 'laika');
+    });
+    expect(fake.requests).toHaveLength(1);
+    expect(posts().map((p) => p.title)).toEqual(['LAI-1 is waiting for review']);
+  });
+
+  it('posts to the new address once one replaces it mid-tick, never the old one', async () => {
+    await twoNotices(() => {
+      setProjectTeamsChannel(t.db, owner, 'laika', { webhook_url: TEAMS_URL_2 }, SECRET, QUIET);
+    });
+    expect(fake.requests.map((r) => r.url)).toEqual([TEAMS_URL, TEAMS_URL_2]);
+  });
+
+  it('says a scheduled post was held back when posting goes off before it', async () => {
+    connect();
+    turnOn(false);
+    await teamsTick(t.db, SECRET, deps(MORNING));
+    expect(fake.requests).toEqual([]);
+    expect(posts().map((p) => [p.slot, p.outcome, p.reason])).toEqual([
+      ['standup:morning:2026-11-18', 'suppressed', 'posting_off'],
+    ]);
+  });
+
+  it('stamps finished_at when Teams answered, not when the tick began', async () => {
+    connect();
+    turnOn();
+    let clock = MORNING;
+    fake.answer = () => {
+      clock += 4_000;
+      return undefined;
+    };
+    await teamsTick(t.db, SECRET, { ...deps(MORNING), now: () => clock });
+    const [sent] = posts();
+    expect(sent?.createdAt).toBe(MORNING);
+    expect(sent?.finishedAt).toBe(MORNING + 4_000);
+  });
+});
+
+describe('another space', () => {
+  /** A private space's task, with a title and a key that must never reach this space's channel. */
+  function elsewhere(): string {
+    createProject(t.sqlite, t.db, owner, {
+      name: 'Secret',
+      slug: 'secret',
+      prefix: 'SEC',
+      visibility: 'private',
+      now: QUIET - 600_000,
+    });
+    return createTask(t.sqlite, t.db, owner, 'secret', {
+      title: 'Confidential merger plan',
+      now: QUIET - 500_000,
+    }).id;
+  }
+
+  it('is named as another space, never by its key or title, in a notice', async () => {
+    connect();
+    turnOn();
+    const secret = elsewhere();
+    await teamsTick(t.db, SECRET, deps(QUIET - 400_000));
+    const waiting = task('Waits on the merger', QUIET - 120_000, { assignee_id: adaId });
+    addTaskDependency(t.sqlite, t.db, owner, waiting, secret, QUIET - 60_000);
+    fake.requests.length = 0;
+    await teamsTick(t.db, SECRET, deps(QUIET));
+
+    const texts = fake.texts();
+    expect(texts).toHaveLength(1);
+    // A positive control: the notice is there, and says something waits.
+    expect(texts[0]).toContain(`Waiting on: ${OTHER_SPACE_BLOCKER}`);
+    expect(texts[0]).not.toContain('Confidential');
+    expect(texts[0]).not.toContain('SEC-');
+    expect(JSON.stringify(posts())).not.toContain('SEC-');
+  });
+
+  it('is named as another space in the stand-up and the digest too', async () => {
+    connect();
+    turnOn();
+    const secret = elsewhere();
+    const waiting = task('Waits on the merger', Date.parse('2026-11-17T10:00:00Z'));
+    addTaskDependency(t.sqlite, t.db, owner, waiting, secret, Date.parse('2026-11-17T10:05:00Z'));
+    // 07:01 UTC on the 18th: the morning stand-up and the 17th's digest are both due.
+    await teamsTick(t.db, SECRET, deps(Date.parse('2026-11-18T07:01:00Z')));
+
+    const texts = fake.texts();
+    expect(texts).toHaveLength(2);
+    for (const text of texts) {
+      // Positive controls: the blocked task is listed, and its blocker as another space's.
+      expect(text).toContain('LAI-1');
+      expect(text).toContain(OTHER_SPACE_BLOCKER);
+      expect(text).not.toContain('Confidential');
+      expect(text).not.toContain('SEC-');
+    }
   });
 });
 

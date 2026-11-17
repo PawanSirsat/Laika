@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { projectTeamsChannels, teamsPosts, users } from '../../src/db/schema.ts';
+import {
+  projectMemberships,
+  projectTeamsChannels,
+  teamsPosts,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { decryptSecret } from '../../src/secrets.ts';
+import { createProject } from '../../src/services/projects.ts';
 import {
   clearProjectTeamsChannel,
   getProjectTeams,
@@ -86,6 +92,43 @@ describe('the switch', () => {
     expect(setTeamsPosting(t.db, owner, { posting_enabled: false }, NOW + 1).posting_enabled).toBe(
       false,
     );
+  });
+
+  it('lists only the spaces the reader can open', () => {
+    // A private space the admin is not in, and the seed space they are.
+    createProject(t.sqlite, t.db, owner, {
+      name: 'Secret',
+      slug: 'secret',
+      prefix: 'SEC',
+      visibility: 'private',
+      now: NOW,
+    });
+    setProjectTeamsChannel(t.db, owner, 'laika', { webhook_url: TEAMS_URL }, SECRET, NOW);
+    setProjectTeamsChannel(t.db, owner, 'secret', { webhook_url: TEAMS_URL_2 }, SECRET, NOW);
+    const adminId = person('Ada', 'admin').userId;
+    t.db
+      .insert(projectMemberships)
+      .values({
+        id: newId(),
+        projectId: s.projectId,
+        userId: adminId,
+        role: 'member',
+        createdAt: NOW,
+      })
+      .run();
+    // *Change organisation settings* kept, *Open every project* withdrawn.
+    const admin: ResolvedActor = {
+      ...loadActor(t.db, adminId)!,
+      orgGrants: { admin: ['change_org_settings'], member: [], viewer: [] },
+    };
+
+    expect(getTeamsSettings(t.db, owner).channels.map((c) => c.project_slug)).toEqual([
+      'laika',
+      'secret',
+    ]);
+    const seen = getTeamsSettings(t.db, admin);
+    expect(seen.channels.map((c) => c.project_slug)).toEqual(['laika']);
+    expect(JSON.stringify(seen)).not.toContain('Secret');
   });
 
   it('is an owner’s or an admin’s, and nobody else’s', () => {

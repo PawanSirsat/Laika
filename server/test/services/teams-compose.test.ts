@@ -10,6 +10,7 @@ import {
   istInstant,
   type StandupData,
   type StandupRun,
+  STALE_SHOWN,
   STANDUP_RUNS,
   UPDATES_FETCHED,
   windowStart,
@@ -204,6 +205,24 @@ describe('the stand-up', () => {
     expect(status({})).toBe('⚪ Not Started');
   });
 
+  it('writes out 25 stale tasks and counts the rest', () => {
+    const stale = Array.from({ length: STALE_SHOWN + 3 }, (_, i) => ({
+      key: `RMB-${String(i + 1)}`,
+      title: 't',
+      assignee: 'a',
+      days: 9,
+    }));
+    const notice = buildStandup(SPACE, 'evening', ist('2026-10-21', 18), null, {
+      ...empty(),
+      stale,
+    });
+    const table = notice.tables?.find((t) => t.heading.startsWith('Stale ('));
+    expect(table?.heading).toMatch(/^Stale \(28\)/);
+    expect(table?.rows).toHaveLength(STALE_SHOWN + 1);
+    expect(table?.rows.at(-1)?.[1]).toBe('… and 3 more');
+    expect(table?.rows.at(-2)?.[0]).toBe(`RMB-${String(STALE_SHOWN)}`);
+  });
+
   it('says a full page of updates is a floor, not a count', () => {
     const updates = Array.from({ length: UPDATES_FETCHED }, (_, i) => ({
       key: `RMB-${String(i)}`,
@@ -280,8 +299,7 @@ describe('the instant notices', () => {
       buildTaskNotice(task, 'S', null, { kind: 'done', to: 'Done', by: 'Bea' }).title,
       buildTaskNotice(task, 'S', null, {
         kind: 'blocked',
-        blockerKey: 'LAI-9',
-        blockerTitle: 'x',
+        waitingOn: 'LAI-9 x',
         assignee: 'Ada',
       }).title,
       buildTaskNotice(task, 'S', null, { kind: 'unblocked', assignee: 'Ada' }).title,
@@ -314,6 +332,21 @@ describe('the instant notices', () => {
     expect(long.lines[1]).toBe('Ada');
     expect(long.lines.at(-1)?.endsWith(' …')).toBe(true);
     expect(long.lines.at(-1)?.length).toBeLessThan(COMMENT_SHOWN + 5);
+  });
+
+  it('cuts a long comment by code point, never through an emoji', () => {
+    // The emoji is the 1000th code point and units 1000 and 1001: a cut by
+    // UTF-16 unit would keep its first half alone.
+    const body = `${'x'.repeat(COMMENT_SHOWN - 1)}😀 and the rest`;
+    const text =
+      buildCommentNotice(task, { name: 'Ada', role: null }, body, null).lines.at(-1) ?? '';
+    expect(text).toBe(`${'x'.repeat(COMMENT_SHOWN - 1)}😀 …`);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(text)).toBe(false);
+    // And a body of exactly 1000 code points is not cut at all.
+    const whole = `${'x'.repeat(COMMENT_SHOWN - 1)}😀`;
+    expect(buildCommentNotice(task, { name: 'Ada', role: null }, whole, null).lines.at(-1)).toBe(
+      whole,
+    );
   });
 
   it('says what a test post proves, KSage’s words in Laika’s name', () => {

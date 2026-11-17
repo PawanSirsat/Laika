@@ -49,6 +49,7 @@ import {
   type DigestData,
   isWeekend,
   istDay,
+  OTHER_SPACE_BLOCKER,
   istInstant,
   sastDay,
   sastMidnight,
@@ -162,18 +163,22 @@ function titleOf(notice: TeamsNotice): string {
   return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title || '(untitled)';
 }
 
-/** Record a post that was not sent. A slot already recorded is left as it is. */
+/**
+ * Record a post that was not sent, and answer the row. A slot already
+ * recorded is left as it is, and answers null.
+ */
 export function recordSuppressed(
   db: Db,
   record: PostRecord,
   reason: TeamsPostReason,
   now: number,
-): boolean {
-  return (
+): TeamsPost | null {
+  const id = newId();
+  const written =
     db
       .insert(teamsPosts)
       .values({
-        id: newId(),
+        id,
         ...record,
         outcome: 'suppressed',
         reason,
@@ -182,8 +187,13 @@ export function recordSuppressed(
         finishedAt: now,
       })
       .onConflictDoNothing()
-      .run().changes === 1
-  );
+      .run().changes === 1;
+  return written ? (db.select().from(teamsPosts).where(eq(teamsPosts.id, id)).get() ?? null) : null;
+}
+
+/** Whether the organisation's switch is on, read now. */
+function postingOn(db: Db): boolean {
+  return db.select({ on: orgTeamsSettings.postingEnabled }).from(orgTeamsSettings).get()?.on === 1;
 }
 
 /**
@@ -202,18 +212,37 @@ function addressOf(channel: ProjectTeamsChannel, serverSecret: string): string |
 }
 
 /**
- * Claim a post, send it, and record what came of it. `null` when the slot was
- * already claimed by somebody else — nothing was sent.
+ * Claim a post, send it, and record what came of it.
+ *
+ * **The switch and the channel are read here, at the moment of posting**, not
+ * once a tick: better-sqlite3 is synchronous, so from these reads to the claim
+ * and the decryption nothing else can run. A tick that waits on a slow flow
+ * for one space therefore never posts the next after posting was turned off,
+ * to a channel that was removed, or to an address that was replaced — it uses
+ * the row as it is now. Off, a scheduled post or a notice is recorded
+ * `posting_off` and not sent; a test post goes either way.
+ *
+ * Answers the row written, or `null` when nothing was: the space has no
+ * channel now, or the slot was already claimed by somebody else.
  */
 export async function postAndRecord(
   db: Db,
-  channel: ProjectTeamsChannel,
   serverSecret: string,
   record: PostRecord,
   notice: TeamsNotice,
   deps: TeamsPostingDeps,
 ): Promise<TeamsPost | null> {
   const clock = deps.now ?? Date.now;
+  const channel = db
+    .select()
+    .from(projectTeamsChannels)
+    .where(eq(projectTeamsChannels.projectId, record.projectId))
+    .get();
+  // Removed since the tick began: the space is told nothing, and that is no post.
+  if (channel === undefined) return null;
+  if (record.kind !== 'test' && !postingOn(db)) {
+    return recordSuppressed(db, record, 'posting_off', clock());
+  }
   const id = newId();
   const claimed =
     db
@@ -286,27 +315,24 @@ export function ensureTeamsSettings(db: Db, orgId: string, now: number): OrgTeam
   return db.select().from(orgTeamsSettings).where(eq(orgTeamsSettings.orgId, orgId)).get()!;
 }
 
-/** A space with a channel, and what a post needs of it. */
-interface Channelled {
-  readonly space: TeamsSpace & { readonly id: string };
-  readonly channel: ProjectTeamsChannel;
-}
-
-/** Every unarchived space that has a channel. A space with none is told nothing. */
-function channelledSpaces(db: Db): Map<string, Channelled> {
+/**
+ * Every unarchived space that had a channel when the tick began — which spaces
+ * to compose for. A space with none is told nothing. Whether its channel is
+ * still there, and where it points, is read again at each post.
+ */
+function channelledSpaces(
+  db: Db,
+): Map<string, { readonly space: TeamsSpace & { readonly id: string } }> {
   const rows = db
-    .select({ project: projects, channel: projectTeamsChannels })
+    .select({ project: projects })
     .from(projectTeamsChannels)
     .innerJoin(projects, eq(projects.id, projectTeamsChannels.projectId))
     .where(isNull(projects.archivedAt))
     .all();
   return new Map(
-    rows.map(({ project, channel }) => [
+    rows.map(({ project }) => [
       project.id,
-      {
-        space: { id: project.id, name: project.name, prefix: project.prefix, slug: project.slug },
-        channel,
-      },
+      { space: { id: project.id, name: project.name, prefix: project.prefix, slug: project.slug } },
     ]),
   );
 }
@@ -353,14 +379,18 @@ export async function teamsTick(
   const org = db.select({ id: orgs.id }).from(orgs).limit(1).get();
   if (org === undefined) return result;
 
+  // The switch is not read here: `postAndRecord` reads it, and the channel,
+  // at the moment of each post.
   const settings = ensureTeamsSettings(db, org.id, now);
-  const enabled = settings.postingEnabled === 1;
   const spaces = channelledSpaces(db);
   const publicUrl = deps.publicUrl ?? null;
 
-  const count = (post: TeamsPost | null): void => {
+  /** Counts a post, and says whether it went out to Teams (sent or failed). */
+  const count = (post: TeamsPost | null): boolean => {
     if (post?.outcome === 'sent') result.sent += 1;
     else if (post?.outcome === 'failed') result.failed += 1;
+    else if (post?.outcome === 'suppressed') result.suppressed += 1;
+    return post?.outcome === 'sent' || post?.outcome === 'failed';
   };
 
   // ---- instant notices, from the activity past the cursor
@@ -389,23 +419,20 @@ export async function teamsTick(
       const held: TeamsPostReason | null =
         now - row.createdAt > NOTICE_HORIZON_MS
           ? 'too_old'
-          : !enabled
-            ? 'posting_off'
-            : posted >= NOTICES_PER_TICK
-              ? 'burst'
-              : null;
+          : posted >= NOTICES_PER_TICK
+            ? 'burst'
+            : null;
       if (held !== null) {
-        if (recordSuppressed(db, record, held, now)) result.suppressed += 1;
+        count(recordSuppressed(db, record, held, now));
         continue;
       }
-      posted += 1;
-      count(await postAndRecord(db, where.channel, serverSecret, record, notice, deps));
+      if (count(await postAndRecord(db, serverSecret, record, notice, deps))) posted += 1;
     }
   }
 
   // ---- the stand-ups and the digest that are due now
   for (const due of dueSlots(now)) {
-    for (const { space, channel } of spaces.values()) {
+    for (const { space } of spaces.values()) {
       const previous = db
         .select({ outcome: teamsPosts.outcome, reason: teamsPosts.reason })
         .from(teamsPosts)
@@ -431,11 +458,7 @@ export async function teamsTick(
         title: titleOf(notice),
         attempt: previous.length + 1,
       };
-      if (!enabled) {
-        if (recordSuppressed(db, record, 'posting_off', now)) result.suppressed += 1;
-        continue;
-      }
-      count(await postAndRecord(db, channel, serverSecret, record, notice, deps));
+      count(await postAndRecord(db, serverSecret, record, notice, deps));
     }
   }
 
@@ -449,10 +472,12 @@ export type DueSlot =
   | { readonly kind: 'digest'; readonly day: string; readonly slot: string };
 
 /**
- * The scheduled posts due at `now`: a weekday's stand-ups from 11:00 and
- * 18:00 IST, and yesterday's digest from 09:00 SAST, each for
- * {@link SLOT_GRACE_MS}. Weekdays are India's: an agenda on a Sunday is how a
- * channel gets muted.
+ * The scheduled posts due at `now`, each for {@link SLOT_GRACE_MS}: the
+ * stand-ups from 11:00 and 18:00 IST, **Monday to Friday by India's
+ * calendar** (KSage's schedule: an agenda on a weekend is how a channel gets
+ * muted), and yesterday's digest from 09:00 SAST **every day, the weekend
+ * included** (D-154 item 6) — `buildDigest` then sends it only when
+ * something moved or is blocked.
  */
 export function dueSlots(now: number): DueSlot[] {
   const due: DueSlot[] = [];
@@ -532,11 +557,15 @@ function actorName(db: Db, row: Pick<ActivityEvent, 'actorId' | 'actorKind'>): s
 }
 
 /** The tasks a task waits on that are not done. */
-function openBlockers(db: Db, taskId: string): { key: string; addedAt: number }[] {
+function openBlockers(
+  db: Db,
+  taskId: string,
+): { key: string; projectId: string; addedAt: number }[] {
   return db
     .select({
       number: tasks.number,
       prefix: projects.prefix,
+      projectId: tasks.projectId,
       addedAt: taskDependencies.createdAt,
     })
     .from(taskDependencies)
@@ -545,7 +574,36 @@ function openBlockers(db: Db, taskId: string): { key: string; addedAt: number }[
     .where(and(eq(taskDependencies.taskId, taskId), sql`${tasks.status} <> 'done'`))
     .orderBy(asc(taskDependencies.createdAt))
     .all()
-    .map((b) => ({ key: `${b.prefix}-${String(b.number)}`, addedAt: b.addedAt }));
+    .map((b) => ({
+      key: `${b.prefix}-${String(b.number)}`,
+      projectId: b.projectId,
+      addedAt: b.addedAt,
+    }));
+}
+
+/**
+ * What a space's post may say its task waits on: its own space's keys, in
+ * order, and **any blocker in another space only as that** — never its key or
+ * title (D-154 item 1). Several there are one entry, where the first was.
+ */
+function waitingWords(
+  blockers: readonly { key: string; projectId: string }[],
+  projectId: string,
+): string[] {
+  const elsewhere = blockers.filter((b) => b.projectId !== projectId).length;
+  const phrase =
+    elsewhere === 1 ? OTHER_SPACE_BLOCKER : `${String(elsewhere)} tasks in other spaces`;
+  const words: string[] = [];
+  let said = false;
+  for (const b of blockers) {
+    if (b.projectId === projectId) {
+      words.push(b.key);
+    } else if (!said) {
+      words.push(phrase);
+      said = true;
+    }
+  }
+  return words;
 }
 
 /**
@@ -725,8 +783,11 @@ function noticesFor(
       return [
         notice({
           kind: 'blocked',
-          blockerKey: blocker.key,
-          blockerTitle: blocker.title,
+          // Another space's task is named as that and nothing more (D-154 item 1).
+          waitingOn:
+            blocker.projectId === task.projectId
+              ? `${blocker.key} ${blocker.title}`
+              : OTHER_SPACE_BLOCKER,
           assignee: assignee(task),
         }),
       ];
@@ -837,6 +898,7 @@ function spaceTasks(db: Db, projectId: string): SpaceTask[] {
 /** Open tasks waiting on something not done, oldest wait first, with what they wait on. */
 function blockedOf(
   db: Db,
+  projectId: string,
   open: readonly SpaceTask[],
 ): { task: SpaceTask; waitingOn: string[]; since: number }[] {
   return open
@@ -844,7 +906,7 @@ function blockedOf(
       const blockers = openBlockers(db, task.id);
       return {
         task,
-        waitingOn: blockers.map((b) => b.key),
+        waitingOn: waitingWords(blockers, projectId),
         since: Math.min(...blockers.map((b) => b.addedAt)),
       };
     })
@@ -856,7 +918,7 @@ function blockedOf(
 export function standupData(db: Db, projectId: string, run: StandupRun, now: number): StandupData {
   const all = spaceTasks(db, projectId);
   const open = all.filter((t) => OPEN(t.status));
-  const waiting = blockedOf(db, open);
+  const waiting = blockedOf(db, projectId, open);
   const blocked = waiting.slice(0, 40);
   const blockedIds = new Set(waiting.map((b) => b.task.id));
   const today = istDay(now);
@@ -990,7 +1052,7 @@ export function digestData(db: Db, projectId: string, day: string): DigestData {
       .filter((t) => t.updatedAt >= from && t.updatedAt < from + DAY_MS)
       .slice(0, 25)
       .map((t) => ({ key: t.key, title: t.title, status: t.statusName })),
-    blocked: blockedOf(db, open)
+    blocked: blockedOf(db, projectId, open)
       .slice(0, 25)
       .map((b) => ({ key: b.task.key, waitingOn: b.waitingOn })),
     inReview: open.filter((t) => t.status === 'review').length,

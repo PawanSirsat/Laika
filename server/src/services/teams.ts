@@ -1,5 +1,5 @@
 import { desc, eq, isNull } from 'drizzle-orm';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import {
   type TeamsPostEvent,
@@ -18,7 +18,7 @@ import {
   users,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 import { encryptSecret } from '../secrets.ts';
 import { requireReadableProjectBySlug } from './projects.ts';
 import { checkTeamsWebhookUrl } from './teams-client.ts';
@@ -183,7 +183,12 @@ function requireOrgId(db: Db): string {
   return org.id;
 }
 
-/** `GET /org/teams` — the switch, the schedule, and every space's channel. */
+/**
+ * `GET /org/teams` — the switch, the schedule, and the channel of every space
+ * **the caller can open**: a role granted *Change organisation settings*
+ * without *Open every project* is not told a private space's name, nor that
+ * it has a channel.
+ */
 export function getTeamsSettings(db: Db, actor: ResolvedActor): TeamsSettingsView {
   assertCan(actor, 'org.teams.configure');
   const settings = db.select().from(orgTeamsSettings).get();
@@ -207,7 +212,11 @@ export function getTeamsSettings(db: Db, actor: ResolvedActor): TeamsSettingsVie
         .toISOString()
         .slice(11, 16),
     },
-    channels: channels.map(({ project, channel }) => channelView(db, project, channel)),
+    channels: channels
+      .filter(({ project }) =>
+        can(withProject(actor, project.id), 'project.read', { projectId: project.id }),
+      )
+      .map(({ project, channel }) => channelView(db, project, channel)),
   };
 }
 
@@ -314,7 +323,6 @@ export async function sendTeamsTestPost(
   const notice = buildTestPost(project, deps.publicUrl ?? null);
   const post = await postAndRecord(
     db,
-    channel,
     serverSecret,
     {
       projectId: project.id,

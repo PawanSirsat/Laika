@@ -228,6 +228,15 @@ const UPDATES_SHOWN = 10;
 const BLOCKED_SHOWN = 5;
 /** How many keys one person's In flight row names. */
 const KEYS_SHOWN = 6;
+/** How many stale tasks are written out before the rest become a count. */
+export const STALE_SHOWN = 25;
+
+/**
+ * What a post says of a blocker in another space: that it is there, never its
+ * key or title. A dependency may cross spaces (`addTaskDependency`), and each
+ * space's channel is read by that space's people only (D-154 item 1).
+ */
+export const OTHER_SPACE_BLOCKER = 'a task in another space';
 
 function waited(days: number): string {
   const whole = Math.floor(days);
@@ -331,10 +340,18 @@ export function buildStandup(
     });
   }
 
+  // Capped like the other lists: a space with forty untouched tasks has a
+  // problem the first 25 already show, and the count says the rest.
+  const staleRows: string[][] = stale
+    .slice(0, STALE_SHOWN)
+    .map((s) => [s.key, s.title, s.assignee, waited(s.days)]);
+  if (stale.length > STALE_SHOWN) {
+    staleRows.push(['', `… and ${String(stale.length - STALE_SHOWN)} more`, '', '']);
+  }
   tables.push({
     heading: `Stale (${String(stale.length)}) — in progress and untouched, worth re-checking`,
     headers: ['Task', 'What', 'Who', 'Idle'],
-    rows: stale.map((s) => [s.key, s.title, s.assignee, waited(s.days)]),
+    rows: staleRows,
     note: stale.length === 0 ? 'Nothing stale.' : null,
   });
 
@@ -491,8 +508,8 @@ export type TaskEvent =
   /** Waiting on a task that is not done. */
   | {
       readonly kind: 'blocked';
-      readonly blockerKey: string;
-      readonly blockerTitle: string;
+      /** The blocker as the post may name it: `LAI-9 Its title`, or {@link OTHER_SPACE_BLOCKER}. */
+      readonly waitingOn: string;
       readonly assignee: string;
     }
   /** The last thing it waited on is done, or no longer in its way. */
@@ -531,7 +548,7 @@ export function buildTaskNotice(
       break;
     case 'blocked':
       headline = `${key} is blocked — ${event.assignee}`;
-      lines = [title, `Waiting on: ${event.blockerKey} ${event.blockerTitle}`];
+      lines = [title, `Waiting on: ${event.waitingOn}`];
       break;
     case 'unblocked':
       headline = `${key} is unblocked — ${event.assignee}`;
@@ -558,7 +575,11 @@ export function buildCommentNotice(
   body: string,
   publicUrl: string | null,
 ): TeamsNotice {
-  const text = body.length > COMMENT_SHOWN ? `${body.slice(0, COMMENT_SHOWN).trimEnd()} …` : body;
+  // By code point, so an emoji at the cut is kept whole or left out whole —
+  // never half a surrogate pair, which the escaping would send as a lone `\ud83d`.
+  const points = [...body];
+  const text =
+    points.length > COMMENT_SHOWN ? `${points.slice(0, COMMENT_SHOWN).join('').trimEnd()} …` : body;
   return {
     title: `New comment on ${task.key}`,
     lines: [

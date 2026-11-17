@@ -43,6 +43,18 @@ describe('a webhook address', () => {
     expect(checkTeamsWebhookUrl(TEAMS_URL).host).toBe(
       'default0fixture.00.environment.api.powerplatform.com',
     );
+    // Upper case is the same host: the check reads `URL`'s lower-cased name,
+    // and the address is posted to as it was pasted.
+    const upper = 'HTTPS://PROD-1.WESTEUROPE.LOGIC.AZURE.COM/workflows/x?sig=Ab';
+    expect(checkTeamsWebhookUrl(upper)).toEqual({
+      url: upper,
+      host: 'prod-1.westeurope.logic.azure.com',
+      last4: 'g=Ab',
+    });
+    // An international label under the suffix is still Microsoft's host.
+    expect(checkTeamsWebhookUrl('https://prod-1.wëst.logic.azure.com/workflows/x').host).toBe(
+      'prod-1.xn--wst-jma.logic.azure.com',
+    );
   });
 
   it('refuses an address that is not https', () => {
@@ -62,6 +74,14 @@ describe('a webhook address', () => {
       'https://user:pass@prod-1.westeurope.logic.azure.com/workflows/x',
       'https://prod-1.westeurope.logic.azure.com:8443/workflows/x',
       'not a url',
+      // A host that merely ends in the words, with no dot before them.
+      'https://evil-powerplatform.com/x',
+      'https://evillogic.azure.com/x',
+      // A trailing dot is a different name to `endsWith`; refused, not trimmed.
+      'https://prod-1.westeurope.logic.azure.com./workflows/x',
+      // A look-alike: a Greek omicron for the o in .com, which IDNA writes as
+      // a punycode label — never under one of the suffixes.
+      'https://prod-1.westeurope.logic.azure.c\u03bfm/workflows/x',
     ]) {
       expect(
         reasonOf(() => checkTeamsWebhookUrl(url)),
