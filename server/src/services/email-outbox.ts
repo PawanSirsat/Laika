@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { type Db } from '../db/client.ts';
 import { type EmailKind, type EmailSuppressedReason } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { emailOutbox } from '../db/schema.ts';
+import { emailOutbox, tasks, users } from '../db/schema.ts';
 import { type Logger } from '../log.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { decryptSecret, encryptSecret } from '../secrets.ts';
 import { emailBrand, emailSwitch, readSmtpConfig } from './email-settings.ts';
 import { inviteEmail, type RenderedEmail, resetEmail } from './email-templates.ts';
 import { errorLine, type MailTransport, type SendOutcome } from './email-transport.ts';
+import { canRead } from './watchers.ts';
 
 /**
  * The outbox (§4.93, D-153, LAI-1312): every email Laika sends goes through
@@ -78,12 +79,21 @@ export interface QueueEmailInput {
   expiresAt?: number | undefined;
   /**
    * A reason the caller already knows it must not go (LAI-1313): the person
-   * turned this mail off (`pref_off`), or may no longer read what it is about
-   * (`no_access`). Asked after the switch and the settings, so a message on a
-   * board with email off still says `email_off` — the switch first, always.
+   * turned this mail off (`pref_off`), may no longer read what it is about
+   * (`no_access`), or it is about something that happened too long ago to be
+   * news (`too_old`). Asked after the switch and the settings, so a message on
+   * a board with email off still says `email_off` — the switch first, always.
    */
-  refuse?: 'pref_off' | 'no_access' | undefined;
+  refuse?: 'pref_off' | 'no_access' | 'too_old' | undefined;
+  /**
+   * The task an `assignment` or `mention` mail is about (LAI-1313): the sender
+   * asks again, just before it goes, whether the person may still read it.
+   */
+  taskId?: string | null | undefined;
 }
+
+/** The kinds about one task, asked again at send time whether their person may still read it. */
+const ABOUT_A_TASK: ReadonlySet<EmailKind> = new Set(['assignment', 'mention']);
 
 /** What `body_enc` decrypts to. */
 const StoredBody = z.object({ text: z.string(), html: z.string() });
@@ -125,6 +135,7 @@ export function queueEmail(
       nextAttemptAt: reason === null ? now : null,
       sendBefore,
       createdBy: input.createdBy,
+      taskId: input.taskId ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -405,6 +416,13 @@ export async function sendDueEmail(
       break;
     }
 
+    // A mail about a task, asked again now (CHIEF's LAI-1313 review): the
+    // person may have left the space, or been deactivated, since it was queued.
+    if (ABOUT_A_TASK.has(row.kind) && !recipientMayRead(db, row)) {
+      result.suppressed += suppressOne(db, row.id, 'no_access', clock());
+      continue;
+    }
+
     const claimedAt = clock();
     const claimed = db
       .update(emailOutbox)
@@ -459,6 +477,35 @@ function suppressQueued(db: Db, reason: EmailSuppressedReason, now: number, extr
         : and(eq(emailOutbox.state, 'queued'), extra),
     )
     .run().changes;
+}
+
+/** One queued row → suppressed with `reason`, body gone. */
+function suppressOne(db: Db, id: string, reason: EmailSuppressedReason, now: number): number {
+  return suppressQueued(db, reason, now, eq(emailOutbox.id, id));
+}
+
+/**
+ * Whether the person an `assignment` or `mention` mail is for may still read
+ * its task: an active account that can read the project. No person, or no task
+ * — it was deleted, and `task_id` went null — is no.
+ */
+function recipientMayRead(
+  db: Db,
+  row: { recipientUserId: string | null; taskId: string | null },
+): boolean {
+  if (row.recipientUserId === null || row.taskId === null) return false;
+  const person = db
+    .select({ isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, row.recipientUserId))
+    .get();
+  if (person?.isActive !== 1) return false;
+  const task = db
+    .select({ projectId: tasks.projectId })
+    .from(tasks)
+    .where(eq(tasks.id, row.taskId))
+    .get();
+  return task !== undefined && canRead(db, row.recipientUserId, task.projectId);
 }
 
 function readBody(enc: string | null, serverSecret: string): { text: string; html: string } | null {

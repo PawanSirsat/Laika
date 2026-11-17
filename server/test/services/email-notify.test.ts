@@ -1,12 +1,25 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { emailDigestItems, emailDigests, emailOutbox, orgs, users } from '../../src/db/schema.ts';
+import { appendActivity } from '../../src/db/activity.ts';
+import { newId } from '../../src/db/ids.ts';
+import {
+  activity,
+  emailDigestItems,
+  emailDigests,
+  emailOutbox,
+  memberNotices,
+  orgs,
+  projects,
+  users,
+} from '../../src/db/schema.ts';
 import { runEmailOutbox } from '../../src/services/email-outbox.ts';
 import {
   describe as describeActivity,
   DIGEST_HORIZON_MS,
   excerpt,
+  INSTANT_LOOKBACK_MS,
   localMorning,
+  NOTIFY_BATCH,
   notifyEmail,
   pruneEmailDigests,
 } from '../../src/services/email-notify.ts';
@@ -81,11 +94,14 @@ async function ok(res: Response, status = 200): Promise<unknown> {
   return text === '' ? undefined : (JSON.parse(text) as unknown);
 }
 
-/** An admin — who reads every space — signed up through an invite. */
-async function join(name: string): Promise<{ id: string; cookie: string }> {
+/** Somebody signed up through an invite: an admin, who reads every space, unless said otherwise. */
+async function join(
+  name: string,
+  orgRole: 'admin' | 'member' = 'admin',
+): Promise<{ id: string; cookie: string }> {
   const email = `${name}@example.test`;
   const orgId = h.db.select().from(orgs).get()!.id;
-  const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole: 'admin' });
+  const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole });
   const res = await signUp(h.app, { email, password: PASSWORD, inviteToken: token, name });
   expect(res.status, await res.clone().text()).toBe(200);
   const id = h.db.select().from(users).where(eq(users.email, email)).get()!.id;
@@ -111,6 +127,52 @@ function drain() {
 
 async function assign(to: string, cookie = owner): Promise<void> {
   await ok(await call(cookie, 'PATCH', `/tasks/${taskId}`, { assignee_id: to }));
+}
+
+/** 08:00 UTC the day after `at`: a morning whose 07:00 came after the digest opened. */
+const nextMorning = (at: number): number => {
+  const d = new Date(at);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 8) + DAY;
+};
+
+function itemsOf(userId: string) {
+  return h.db.select().from(emailDigestItems).where(eq(emailDigestItems.userId, userId)).all();
+}
+
+function openDigestOf(userId: string) {
+  return h.db
+    .select()
+    .from(emailDigests)
+    .where(and(eq(emailDigests.userId, userId), eq(emailDigests.state, 'open')))
+    .get();
+}
+
+/**
+ * A member — no org-wide reading — in the private space the setup made. The
+ * notice their adding wrote is read while email is still off, so it collects
+ * nothing; then the switch goes on.
+ */
+async function member(name: string): Promise<{ id: string; cookie: string }> {
+  const person = await join(name, 'member');
+  await ok(
+    await call(owner, 'POST', '/projects/laika/members', { user_id: person.id, role: 'member' }),
+    201,
+  );
+  notify();
+  await emailOn();
+  return person;
+}
+
+/** Out of the space. One who still holds a task has it unassigned (LAI-986). */
+async function removeFromSpace(userId: string, holdsATask = false): Promise<void> {
+  await ok(
+    await call(
+      owner,
+      'DELETE',
+      `/projects/laika/members/${userId}`,
+      holdsATask ? { open_tasks: 'unassign' } : undefined,
+    ),
+  );
 }
 
 describe('with the switch off — how it ships', () => {
@@ -151,7 +213,8 @@ describe('assignment mail', () => {
     await assign(grace.id);
 
     expect(notify()).toMatchObject({ instant: 1 });
-    notify(); // the overlap re-read: nothing new
+    // The overlap re-read: nothing new written, and nothing counted.
+    expect(notify()).toMatchObject({ instant: 0 });
     expect(outbox().filter((r) => r.kind === 'assignment')).toHaveLength(1);
 
     await drain();
@@ -161,6 +224,10 @@ describe('assignment mail', () => {
       subject: 'Ada assigned you LAI-1: Do the thing',
     });
     expect(mail.sent[0]?.message.text).toContain(`${TEST_ORIGIN}/task/LAI-1`);
+    // Where to change it: the reader's own profile.
+    const prefs = `${TEST_ORIGIN}/people?user=${encodeURIComponent(grace.id)}`;
+    expect(mail.sent[0]?.message.text).toContain(`Change what Ksage emails you: ${prefs}`);
+    expect(mail.sent[0]?.message.html).toContain(`href="${prefs}"`);
   });
 
   it('never mails somebody who assigned themselves, or claimed it', async () => {
@@ -208,6 +275,22 @@ describe('assignment mail', () => {
     ]);
   });
 
+  it('records an assignment first read over an hour late as too_old, and the digest still carries it', async () => {
+    const grace = await join('grace');
+    await assign(grace.id);
+    notify(Date.now() + INSTANT_LOOKBACK_MS + 60_000);
+    expect(outbox()).toEqual([
+      expect.objectContaining({
+        kind: 'assignment',
+        state: 'suppressed',
+        suppressedReason: 'too_old',
+        bodyEnc: null,
+      }),
+    ]);
+    const assigned = h.db.select().from(activity).where(eq(activity.type, 'task.assigned')).get()!;
+    expect(itemsOf(grace.id).map((i) => i.activityId)).toEqual([assigned.id]);
+  });
+
   it('records no_access for somebody who can no longer read it', async () => {
     const grace = await join('grace');
     await assign(grace.id);
@@ -253,11 +336,43 @@ describe('mention mail', () => {
 describe('the daily digest', () => {
   beforeEach(emailOn);
 
-  /** 08:00 UTC the day after `at`: a morning whose 07:00 came after the digest opened. */
-  const nextMorning = (at: number): number => {
-    const d = new Date(at);
-    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 8) + DAY;
-  };
+  it('carries what instant mail did not: an assignment and a mention for somebody with instant off', async () => {
+    const grace = await join('grace');
+    const bob = await join('bob');
+    for (const person of [grace, bob]) {
+      await ok(await call(person.cookie, 'PUT', '/me/email-prefs', { instant: false }));
+    }
+    await assign(grace.id);
+    await ok(
+      await call(owner, 'POST', `/tasks/${taskId}/comments`, {
+        body_md: '@grace and @bob, a look?',
+      }),
+      201,
+    );
+    notify();
+    expect(
+      outbox()
+        .map((r) => [r.kind, r.recipientUserId, r.suppressedReason])
+        .sort(),
+    ).toEqual(
+      [
+        ['assignment', grace.id, 'pref_off'],
+        ['mention', bob.id, 'pref_off'],
+        ['mention', grace.id, 'pref_off'],
+      ].sort(),
+    );
+
+    const morning = nextMorning(openDigestOf(grace.id)!.openedAt);
+    notify(morning);
+    await runEmailOutbox(h.db, TEST_SECRET, { transport: mail.transport, now: () => morning });
+    const digestTo = (to: string) =>
+      mail.sent.find(
+        (s) => s.message.to === to && s.message.subject.startsWith('Your Ksage digest'),
+      )?.message.text;
+    expect(digestTo('grace@example.test')).toContain('Ada assigned it to you');
+    expect(digestTo('grace@example.test')).toContain('Ada mentioned you in a comment');
+    expect(digestTo('bob@example.test')).toContain('Ada mentioned you in a comment');
+  });
 
   it('collects what others did on a watched task, and a notice, and sends one digest in the morning', async () => {
     const grace = await join('grace');
@@ -302,7 +417,12 @@ describe('the daily digest', () => {
     expect(digest?.subject).toBe('Your Ksage digest: 3 updates');
 
     await runEmailOutbox(h.db, TEST_SECRET, { transport: mail.transport, now: () => morning });
-    const sent = mail.sent.find((s) => s.message.subject.startsWith('Your Ksage digest'));
+    // By recipient: Ada has a digest too (Grace's comment), queued in the same
+    // millisecond, so which of the two goes first is a coin toss.
+    const sent = mail.sent.find(
+      (s) =>
+        s.message.to === 'grace@example.test' && s.message.subject.startsWith('Your Ksage digest'),
+    );
     expect(sent?.message.text).toContain('LAI-1: Do the thing');
     expect(sent?.message.text).toContain('Ada moved it to In progress');
     expect(sent?.message.text).toContain('Ada commented');
@@ -378,6 +498,179 @@ describe('the daily digest', () => {
     notify(morning);
     expect(pruneEmailDigests(h.db, morning + 90 * DAY - 1)).toBe(0);
     expect(pruneEmailDigests(h.db, morning + 90 * DAY + 1)).toBe(1);
+  });
+});
+
+describe('a burst bigger than one run reads', () => {
+  beforeEach(emailOn);
+
+  const orgId = () => h.db.select().from(orgs).get()!.id;
+
+  it('moves past NOTIFY_BATCH + 1 activity rows sharing one millisecond, to the row after them', async () => {
+    const grace = await join('grace');
+    const at = Date.now() + 60_000;
+    // Org-level rows, as many as a run reads and one more, all at one instant
+    // — the shape `task.stale` writes, every row with one shared `now`.
+    const burst = Array.from({ length: NOTIFY_BATCH + 1 }, () => ({
+      id: newId(),
+      orgId: orgId(),
+      actorKind: 'system' as const,
+      type: 'webhook.commit' as const,
+      createdAt: at,
+    }));
+    for (let i = 0; i < burst.length; i += 200) {
+      h.db
+        .insert(activity)
+        .values(burst.slice(i, i + 200))
+        .run();
+    }
+    const project = h.db.select().from(projects).get()!;
+    const later = appendActivity(h.db, {
+      orgId: orgId(),
+      projectId: project.id,
+      taskId,
+      actorId: ownerId,
+      actorKind: 'user',
+      type: 'task.assigned',
+      payload: { from: null, to: grace.id },
+      now: at + 1,
+    });
+    const key = `assignment:${later.id}`;
+    const row = () =>
+      h.db.select().from(emailOutbox).where(eq(emailOutbox.idempotencyKey, key)).get();
+
+    notify(at + 10_000);
+    expect(row(), 'the first run read a batch, and stopped inside the burst').toBeUndefined();
+    notify(at + 10_000);
+    expect(row()).toMatchObject({ kind: 'assignment', state: 'queued', recipientUserId: grace.id });
+  });
+
+  it('moves past NOTIFY_BATCH + 1 notices sharing one millisecond, to the notice after them', async () => {
+    const grace = await join('grace');
+    const at = Date.now() + 60_000;
+    const notice = (createdAt: number) => ({
+      id: newId(),
+      userId: grace.id,
+      actorUserId: ownerId,
+      kind: 'token_revoked' as const,
+      subject: 'laptop',
+      createdAt,
+    });
+    const burst = Array.from({ length: NOTIFY_BATCH + 1 }, () => notice(at));
+    for (let i = 0; i < burst.length; i += 200) {
+      h.db
+        .insert(memberNotices)
+        .values(burst.slice(i, i + 200))
+        .run();
+    }
+    const later = notice(at + 1);
+    h.db.insert(memberNotices).values(later).run();
+    const collected = () =>
+      h.db.select().from(emailDigestItems).where(eq(emailDigestItems.noticeId, later.id)).get();
+
+    notify(at + 10_000);
+    expect(collected(), 'the first run read a batch, and stopped inside the burst').toBeUndefined();
+    notify(at + 10_000);
+    expect(collected()).toMatchObject({ userId: grace.id });
+  });
+});
+
+describe('a private space — access asked at every step', () => {
+  it('records no_access, and sends nothing, for a member assigned and then removed before the run', async () => {
+    const mia = await member('mia');
+    await assign(mia.id);
+    await removeFromSpace(mia.id, true);
+    notify();
+    expect(outbox().filter((r) => r.recipientUserId === mia.id)).toEqual([
+      expect.objectContaining({
+        kind: 'assignment',
+        state: 'suppressed',
+        suppressedReason: 'no_access',
+        bodyEnc: null,
+      }),
+    ]);
+    await drain();
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('records no_access, and sends nothing, for a member mentioned and then removed before the run', async () => {
+    const mia = await member('mia');
+    await ok(
+      await call(owner, 'POST', `/tasks/${taskId}/comments`, { body_md: '@mia have a look' }),
+      201,
+    );
+    await removeFromSpace(mia.id);
+    notify();
+    expect(outbox().filter((r) => r.recipientUserId === mia.id)).toEqual([
+      expect.objectContaining({
+        kind: 'mention',
+        state: 'suppressed',
+        suppressedReason: 'no_access',
+        bodyEnc: null,
+      }),
+    ]);
+    await drain();
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('asks again at send time: a mail queued for a member who then leaves does not go', async () => {
+    const mia = await member('mia');
+    await assign(mia.id);
+    notify();
+    const queued = outbox().find((r) => r.recipientUserId === mia.id);
+    expect(queued).toMatchObject({ kind: 'assignment', state: 'queued', taskId });
+    expect(queued?.bodyEnc).not.toBeNull();
+
+    await removeFromSpace(mia.id, true);
+    await drain();
+    expect(mail.sent).toHaveLength(0);
+    expect(outbox().find((r) => r.id === queued?.id)).toMatchObject({
+      state: 'suppressed',
+      suppressedReason: 'no_access',
+      bodyEnc: null,
+    });
+  });
+
+  it('leaves out of the morning digest what happened in a space the member has since left', async () => {
+    const mia = await member('mia');
+    await assign(mia.id); // mia watches it now, and is mailed this one at once
+    notify();
+    await ok(await call(owner, 'POST', `/tasks/${taskId}/status`, { status: 'in_progress' }));
+    notify();
+    expect(itemsOf(mia.id).filter((i) => i.activityId !== null)).toHaveLength(1);
+
+    await removeFromSpace(mia.id, true);
+    const open = openDigestOf(mia.id)!;
+    notify(nextMorning(open.openedAt));
+    expect(
+      h.db.select().from(emailDigests).where(eq(emailDigests.id, open.id)).get(),
+    ).toMatchObject({ state: 'closed', outboxId: null });
+    expect(outbox().filter((r) => r.kind === 'digest')).toEqual([]);
+  });
+
+  it('leaves out of the morning digest a notice about a space the member has since left', async () => {
+    const mia = await join('mia', 'member');
+    await emailOn();
+    await ok(
+      await call(owner, 'POST', '/projects/laika/members', { user_id: mia.id, role: 'member' }),
+      201,
+    );
+    notify();
+    expect(
+      h.db
+        .select()
+        .from(emailDigestItems)
+        .where(and(eq(emailDigestItems.userId, mia.id), isNotNull(emailDigestItems.noticeId)))
+        .all(),
+    ).toHaveLength(1);
+
+    await removeFromSpace(mia.id);
+    const open = openDigestOf(mia.id)!;
+    notify(nextMorning(open.openedAt));
+    expect(
+      h.db.select().from(emailDigests).where(eq(emailDigests.id, open.id)).get(),
+    ).toMatchObject({ state: 'closed', outboxId: null });
+    expect(outbox().filter((r) => r.kind === 'digest')).toEqual([]);
   });
 });
 

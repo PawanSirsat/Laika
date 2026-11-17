@@ -1,3 +1,12 @@
+-- LAI-1313: notification mail — four new tables, and `email_outbox` rebuilt for
+-- its new kinds, reasons and `task_id`.
+--
+-- Hand-edited in one place, as 0024 was: the generated INSERT … SELECT named
+-- the new `task_id` in its SELECT list, reading it from the *old* table, which
+-- does not have it — "no such column: task_id" on every database LAI-1312 made.
+-- It is selected as NULL instead: no row written before this had a task.
+-- `migrate.test.ts` migrates a populated 0085 database and checks every row,
+-- every column and `PRAGMA foreign_key_check`.
 CREATE TABLE `email_digest_items` (
 	`id` text PRIMARY KEY NOT NULL,
 	`digest_id` text NOT NULL,
@@ -32,6 +41,7 @@ CREATE INDEX `email_digests_state_idx` ON `email_digests` (`state`,`opened_at`);
 CREATE TABLE `email_watermarks` (
 	`source` text PRIMARY KEY NOT NULL,
 	`read_to` integer NOT NULL,
+	`read_to_id` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
@@ -63,10 +73,12 @@ CREATE TABLE `__new_email_outbox` (
 	`sent_at` integer,
 	`last_error` text,
 	`created_by` text,
+	`task_id` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`recipient_user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
 	FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "email_outbox_kind_check" CHECK(kind IN ('test', 'invite', 'password_reset', 'assignment', 'mention', 'digest')),
 	CONSTRAINT "email_outbox_state_check" CHECK(state IN ('queued', 'sending', 'sent', 'failed', 'unconfirmed', 'suppressed')),
 	CONSTRAINT "email_outbox_suppressed_reason_check" CHECK(suppressed_reason IS NULL OR suppressed_reason IN ('email_off', 'email_not_configured', 'no_address', 'no_public_url', 'too_old', 'superseded', 'pref_off', 'no_access')),
@@ -74,7 +86,7 @@ CREATE TABLE `__new_email_outbox` (
 	CONSTRAINT "email_outbox_last_error_check" CHECK(last_error IS NULL OR length(last_error) <= 300)
 );
 --> statement-breakpoint
-INSERT INTO `__new_email_outbox`("id", "kind", "idempotency_key", "recipient_user_id", "to_address", "subject", "body_enc", "state", "suppressed_reason", "attempts", "next_attempt_at", "send_before", "claimed_at", "sent_at", "last_error", "created_by", "created_at", "updated_at") SELECT "id", "kind", "idempotency_key", "recipient_user_id", "to_address", "subject", "body_enc", "state", "suppressed_reason", "attempts", "next_attempt_at", "send_before", "claimed_at", "sent_at", "last_error", "created_by", "created_at", "updated_at" FROM `email_outbox`;--> statement-breakpoint
+INSERT INTO `__new_email_outbox`("id", "kind", "idempotency_key", "recipient_user_id", "to_address", "subject", "body_enc", "state", "suppressed_reason", "attempts", "next_attempt_at", "send_before", "claimed_at", "sent_at", "last_error", "created_by", "task_id", "created_at", "updated_at") SELECT "id", "kind", "idempotency_key", "recipient_user_id", "to_address", "subject", "body_enc", "state", "suppressed_reason", "attempts", "next_attempt_at", "send_before", "claimed_at", "sent_at", "last_error", "created_by", NULL, "created_at", "updated_at" FROM `email_outbox`;--> statement-breakpoint
 DROP TABLE `email_outbox`;--> statement-breakpoint
 ALTER TABLE `__new_email_outbox` RENAME TO `email_outbox`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint

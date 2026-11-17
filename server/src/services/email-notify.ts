@@ -1,4 +1,5 @@
-import { and, asc, eq, gte, inArray, lt, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, type SQL } from 'drizzle-orm';
+import { type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { type Db } from '../db/client.ts';
 import { readPayload } from '../db/activity.ts';
 import { newId } from '../db/ids.ts';
@@ -42,13 +43,21 @@ import { canRead, watcherIdsOfTask } from './watchers.ts';
  * — the record every write already leaves — after a stored watermark, under
  * §3.4's `system.email.notify`, every 30 seconds:
  *
- * - **A time, not `rowid`.** `activity` has a text key, so a VACUUM may renumber
- *   its rowids, and a stored rowid would then skip rows. The watermark is the
- *   newest `created_at` handled, and every run re-reads two minutes before it.
- * - **Every effect is idempotent**, so the re-read costs nothing: an instant
- *   mail is keyed by what it is about (`assignment:<activity>`,
- *   `mention:<comment>:<person>`), and a digest item is unique per person.
- * - **The first run starts at "now".** History is never mailed.
+ * - **A keyset cursor, not `rowid`.** `activity` has a text key, so a VACUUM
+ *   may renumber its rowids, and a stored rowid would then skip rows. The
+ *   watermark is the last row handled, `(created_at, id)`, and each run reads
+ *   the rows after it — so a run always moves on, however many rows share one
+ *   millisecond (CHIEF's LAI-1313 review: a time alone stalled for good once a
+ *   batch's worth did).
+ * - **The two minutes behind it are read again**, for a row written late — a
+ *   request that took its `now` before it wrote. **Every effect is
+ *   idempotent**, so that costs a lookup: an instant mail is keyed by what it
+ *   is about (`assignment:<activity>`, `mention:<comment>:<person>`) and is
+ *   not written twice, and a digest item is unique per person.
+ * - **The first run starts at "now".** History is never mailed, and an instant
+ *   mail for something more than an hour old when first read — the board was
+ *   down, or the job was — is recorded `too_old` rather than sent; the digest
+ *   still carries it.
  *
  * ## The switch first
  *
@@ -59,10 +68,15 @@ import { canRead, watcherIdsOfTask } from './watchers.ts';
 
 const SYSTEM = systemPrincipal();
 
-/** How far before the watermark each run reads again. */
+/** How far behind the cursor each run reads again, for rows written late. */
 export const NOTIFY_OVERLAP_MS = 2 * 60 * 1000;
-/** Rows read from each source a run; the next run carries on from the watermark. */
+/**
+ * Rows read after the cursor from each source a run, and at most as many again
+ * from behind it; the next run carries on from the last row read.
+ */
 export const NOTIFY_BATCH = 2000;
+/** Older than this when first read, an instant mail is recorded `too_old`, not sent. */
+export const INSTANT_LOOKBACK_MS = 60 * 60 * 1000;
 /** The local hour a person's digest goes at, in their own zone. */
 export const DIGEST_LOCAL_HOUR = 7;
 /** Items older than this are left out of a digest. */
@@ -83,7 +97,7 @@ export const DIGEST_VERBS: ReadonlySet<string> = new Set([
 ]);
 
 export interface NotifyResult {
-  /** Instant mails written to the outbox, queued or suppressed. */
+  /** Instant mails this run wrote to the outbox, queued or suppressed — none for a re-read. */
   instant: number;
   /** Digest items collected. */
   collected: number;
@@ -117,79 +131,142 @@ export function notifyEmail(
   const result: NotifyResult = { instant: 0, collected: 0, digests: 0 };
   const run = new Run(db, serverSecret, publicUrl.replace(/\/+$/, ''), now);
 
-  const activityFrom = readWatermark(db, 'activity', now);
-  if (activityFrom !== null) {
-    const rows = db
-      .select({
-        id: activity.id,
-        type: activity.type,
-        taskId: activity.taskId,
-        projectId: activity.projectId,
-        actorId: activity.actorId,
-        payloadJson: activity.payloadJson,
-        createdAt: activity.createdAt,
-      })
+  const activityMark = readWatermark(db, 'activity', now);
+  if (activityMark !== null) {
+    const columns = {
+      id: activity.id,
+      type: activity.type,
+      taskId: activity.taskId,
+      projectId: activity.projectId,
+      actorId: activity.actorId,
+      payloadJson: activity.payloadJson,
+      createdAt: activity.createdAt,
+    };
+    const late = db
+      .select(columns)
       .from(activity)
       .where(
         and(
-          gte(activity.createdAt, activityFrom - NOTIFY_OVERLAP_MS),
-          lte(activity.createdAt, now),
+          gte(activity.createdAt, activityMark.at - NOTIFY_OVERLAP_MS),
+          atOrBefore(activity.createdAt, activity.id, activityMark),
         ),
+      )
+      .orderBy(desc(activity.createdAt), desc(activity.id))
+      .limit(NOTIFY_BATCH)
+      .all();
+    const fresh = db
+      .select(columns)
+      .from(activity)
+      .where(
+        and(after(activity.createdAt, activity.id, activityMark), lte(activity.createdAt, now)),
       )
       .orderBy(asc(activity.createdAt), asc(activity.id))
       .limit(NOTIFY_BATCH)
       .all();
-    for (const row of rows) run.activityRow(row, result);
-    writeWatermark(db, 'activity', Math.max(activityFrom, rows.at(-1)?.createdAt ?? 0), now);
+    for (const row of [...late.reverse(), ...fresh]) run.activityRow(row, result);
+    const last = fresh.at(-1);
+    if (last !== undefined) writeWatermark(db, 'activity', last.createdAt, last.id, now);
   }
 
-  const noticesFrom = readWatermark(db, 'member_notices', now);
-  if (noticesFrom !== null) {
-    const rows = db
-      .select({
-        id: memberNotices.id,
-        userId: memberNotices.userId,
-        createdAt: memberNotices.createdAt,
-      })
+  const noticesMark = readWatermark(db, 'member_notices', now);
+  if (noticesMark !== null) {
+    const columns = {
+      id: memberNotices.id,
+      userId: memberNotices.userId,
+      createdAt: memberNotices.createdAt,
+    };
+    const late = db
+      .select(columns)
       .from(memberNotices)
       .where(
         and(
-          gte(memberNotices.createdAt, noticesFrom - NOTIFY_OVERLAP_MS),
+          gte(memberNotices.createdAt, noticesMark.at - NOTIFY_OVERLAP_MS),
+          atOrBefore(memberNotices.createdAt, memberNotices.id, noticesMark),
+        ),
+      )
+      .orderBy(desc(memberNotices.createdAt), desc(memberNotices.id))
+      .limit(NOTIFY_BATCH)
+      .all();
+    const fresh = db
+      .select(columns)
+      .from(memberNotices)
+      .where(
+        and(
+          after(memberNotices.createdAt, memberNotices.id, noticesMark),
           lte(memberNotices.createdAt, now),
         ),
       )
       .orderBy(asc(memberNotices.createdAt), asc(memberNotices.id))
       .limit(NOTIFY_BATCH)
       .all();
-    for (const row of rows) {
+    for (const row of [...late.reverse(), ...fresh]) {
       if (run.collect(row.userId, { noticeId: row.id }, row.createdAt)) result.collected += 1;
     }
-    writeWatermark(db, 'member_notices', Math.max(noticesFrom, rows.at(-1)?.createdAt ?? 0), now);
+    const last = fresh.at(-1);
+    if (last !== undefined) writeWatermark(db, 'member_notices', last.createdAt, last.id, now);
   }
 
   result.digests += closeDueDigests(db, serverSecret, run, now);
   return result;
 }
 
-/** The newest `created_at` handled, or null on the first run — which records `now` and reads nothing. */
-function readWatermark(db: Db, source: string, now: number): number | null {
+/** The last row handled: its `created_at` and `id`. */
+interface Mark {
+  at: number;
+  id: string;
+}
+
+/** Rows after the cursor, in `(created_at, id)` order. */
+function after(createdAt: AnySQLiteColumn, id: AnySQLiteColumn, mark: Mark): SQL | undefined {
+  return or(gt(createdAt, mark.at), and(eq(createdAt, mark.at), gt(id, mark.id)));
+}
+
+/** Rows at or before the cursor. */
+function atOrBefore(createdAt: AnySQLiteColumn, id: AnySQLiteColumn, mark: Mark): SQL | undefined {
+  return or(lt(createdAt, mark.at), and(eq(createdAt, mark.at), lte(id, mark.id)));
+}
+
+/**
+ * The cursor, or null on the first run — which records `now` and reads
+ * nothing. `''` sorts before every id, so the first cursor is "everything
+ * from now on".
+ */
+function readWatermark(db: Db, source: string, now: number): Mark | null {
   const row = db.select().from(emailWatermarks).where(eq(emailWatermarks.source, source)).get();
-  if (row !== undefined) return row.readTo;
-  db.insert(emailWatermarks).values({ source, readTo: now, updatedAt: now }).run();
+  if (row !== undefined) return { at: row.readTo, id: row.readToId };
+  db.insert(emailWatermarks).values({ source, readTo: now, readToId: '', updatedAt: now }).run();
   return null;
 }
 
-function writeWatermark(db: Db, source: string, readTo: number, now: number): void {
+function writeWatermark(db: Db, source: string, readTo: number, readToId: string, now: number) {
   db.update(emailWatermarks)
-    .set({ readTo, updatedAt: now })
+    .set({ readTo, readToId, updatedAt: now })
     .where(eq(emailWatermarks.source, source))
     .run();
 }
 
-/** One run's lookups, cached: a task, a person and their switches are each read once. */
+/** What became of one instant mail. */
+interface Instant {
+  /** This call wrote the row; false when it was there already (a re-read) or nobody to write it for. */
+  inserted: boolean;
+  /** The mail is queued, going or gone — the person is told, so the digest leaves it out. */
+  queued: boolean;
+  /** Why not, when it is not queued. */
+  reason: string | null;
+}
+
+/**
+ * One run's lookups, cached: a task, a person, their switches, a task's
+ * watchers and whether a person may read a space are each asked once a run
+ * (CHIEF's LAI-1313 review). A run is one synchronous pass over the database,
+ * so nothing it cached can change under it.
+ */
 class Run {
   private readonly tasks = new Map<string, TaskInfo | null>();
   private readonly people = new Map<string, Person | null>();
+  private readonly prefs = new Map<string, { instant: boolean; digest: boolean }>();
+  private readonly watchers = new Map<string, string[]>();
+  private readonly reads = new Map<string, boolean>();
   readonly switchOn: boolean;
   readonly brand: { product: string; orgName: string };
 
@@ -225,6 +302,43 @@ class Run {
     return this.person(id)?.name ?? 'Someone';
   }
 
+  /** The person's own switches (§4.97): both on with no row. */
+  prefsOf(userId: string): { instant: boolean; digest: boolean } {
+    let prefs = this.prefs.get(userId);
+    if (prefs === undefined) {
+      prefs = emailPrefsFor(this.db, [userId]).get(userId) ?? { instant: true, digest: true };
+      this.prefs.set(userId, prefs);
+    }
+    return prefs;
+  }
+
+  /** Whether the person may read the space — on their own authority, as `canRead` asks it. */
+  canRead(userId: string, projectId: string): boolean {
+    const key = `${userId} ${projectId}`;
+    let reads = this.reads.get(key);
+    if (reads === undefined) {
+      reads = canRead(this.db, userId, projectId);
+      this.reads.set(key, reads);
+    }
+    return reads;
+  }
+
+  watchersOf(task: TaskInfo): string[] {
+    let ids = this.watchers.get(task.id);
+    if (ids === undefined) {
+      ids = watcherIdsOfTask(this.db, task.id, task.projectId);
+      this.watchers.set(task.id, ids);
+    }
+    return ids;
+  }
+
+  /** Where a person changes what Laika emails them: their own profile. */
+  prefsUrl(userId: string): string | null {
+    return this.publicUrl === ''
+      ? null
+      : `${this.publicUrl}/people?user=${encodeURIComponent(userId)}`;
+  }
+
   /** One `activity` row: the instant mails it causes, then the digest items. */
   activityRow(
     row: {
@@ -242,7 +356,17 @@ class Run {
     const task = this.task(row.taskId);
     if (task === null) return;
     const payload = asRecord(readPayload(row));
+    // Who was mailed at once, and so is not told again in the digest — and who
+    // this row is about but was not mailed (instant off, or too old to send):
+    // they hear it in the digest instead, watching the task or not.
     const told = new Set<string>();
+    const owed = new Set<string>();
+    const tooOld = this.now - row.createdAt > INSTANT_LOOKBACK_MS;
+    const settle = (userId: string, sent: Instant): void => {
+      if (sent.inserted) result.instant += 1;
+      if (sent.queued) told.add(userId);
+      else if (sent.reason !== 'no_access') owed.add(userId);
+    };
 
     if (row.type === 'task.assigned' || row.type === 'task.created') {
       // A task created with an assignee writes no `task.assigned` (LAI-1313
@@ -256,11 +380,17 @@ class Run {
             ? null
             : task.assigneeId;
       if (to !== null && to !== row.actorId) {
-        this.instant('assignment', `assignment:${row.id}`, to, task, (brand) =>
-          assignmentEmail({ brand, actorName: this.name(row.actorId), task: task.ref }),
+        settle(
+          to,
+          this.instant('assignment', `assignment:${row.id}`, to, task, tooOld, (brand) =>
+            assignmentEmail({
+              brand,
+              actorName: this.name(row.actorId),
+              task: task.ref,
+              prefsUrl: this.prefsUrl(to),
+            }),
+          ),
         );
-        result.instant += 1;
-        told.add(to);
       }
     }
 
@@ -279,51 +409,77 @@ class Run {
             .where(eq(commentMentions.commentId, commentId))
             .all()) {
             if (userId === row.actorId) continue;
-            this.instant('mention', `mention:${commentId}:${userId}`, userId, task, (brand) =>
-              mentionEmail({
-                brand,
-                actorName: this.name(row.actorId),
-                task: task.ref,
-                excerpt: excerpt(comment.bodyMd),
-              }),
+            settle(
+              userId,
+              this.instant(
+                'mention',
+                `mention:${commentId}:${userId}`,
+                userId,
+                task,
+                tooOld,
+                (brand) =>
+                  mentionEmail({
+                    brand,
+                    actorName: this.name(row.actorId),
+                    task: task.ref,
+                    excerpt: excerpt(comment.bodyMd),
+                    prefsUrl: this.prefsUrl(userId),
+                  }),
+              ),
             );
-            result.instant += 1;
-            told.add(userId);
           }
         }
       }
     }
 
-    if (!DIGEST_VERBS.has(row.type) || !this.switchOn) return;
-    if (row.type === 'task.updated' && payload.field === 'claim') return;
-    for (const userId of watcherIdsOfTask(this.db, task.id, task.projectId)) {
+    if (!this.switchOn) return;
+    const news =
+      DIGEST_VERBS.has(row.type) && !(row.type === 'task.updated' && payload.field === 'claim');
+    const readers = new Set([...(news ? this.watchersOf(task) : []), ...owed]);
+    for (const userId of readers) {
       if (userId === row.actorId || told.has(userId)) continue;
       if (this.collect(userId, { activityId: row.id }, row.createdAt)) result.collected += 1;
     }
   }
 
   /**
-   * Write one instant mail. The outbox decides whether it goes — the switch,
-   * the settings, the address — and this adds the two reasons only it knows:
-   * the person turned instant mail off, or may no longer read the project.
+   * Write one instant mail, once. The outbox decides whether it goes — the
+   * switch, the settings, the address — and this adds the reasons only it
+   * knows: the person may no longer read the space, turned instant mail off,
+   * or it happened too long ago to be news. A key already in the outbox is a
+   * re-read: nothing is rendered or written, and what the row says stands.
    */
   private instant(
     kind: 'assignment' | 'mention',
     key: string,
     userId: string,
     task: TaskInfo,
+    tooOld: boolean,
     render: (brand: { product: string; orgName: string }) => RenderedEmail,
-  ): void {
+  ): Instant {
+    const existing = this.db
+      .select({ state: emailOutbox.state, reason: emailOutbox.suppressedReason })
+      .from(emailOutbox)
+      .where(eq(emailOutbox.idempotencyKey, key))
+      .get();
+    if (existing !== undefined) {
+      return {
+        inserted: false,
+        queued: existing.state !== 'suppressed',
+        reason: existing.reason,
+      };
+    }
     const person = this.person(userId);
-    if (person === null) return;
-    const prefs = emailPrefsFor(this.db, [userId]).get(userId);
+    if (person === null) return { inserted: false, queued: false, reason: 'no_access' };
     const refuse =
-      !person.isActive || !canRead(this.db, userId, task.projectId)
+      !person.isActive || !this.canRead(userId, task.projectId)
         ? ('no_access' as const)
-        : prefs?.instant === false
+        : !this.prefsOf(userId).instant
           ? ('pref_off' as const)
-          : undefined;
-    queueEmail(
+          : tooOld
+            ? ('too_old' as const)
+            : undefined;
+    const view = queueEmail(
       this.db,
       {
         kind,
@@ -333,20 +489,39 @@ class Run {
         createdBy: null,
         rendered: render(this.brand),
         refuse,
+        taskId: task.id,
       },
       this.serverSecret,
       this.now,
     );
+    return { inserted: true, queued: view.queued, reason: view.reason };
   }
 
-  /** Add one thing to a person's open digest, opening it if need be. False when it was not added. */
+  /**
+   * Add one thing to a person's open digest, opening it if need be. False when
+   * it was not added — the switch is off, their digest is off, or it is in one
+   * of their digests already (a re-read), which opens nothing.
+   */
   collect(
     userId: string,
     source: { activityId: string } | { noticeId: string },
     occurredAt: number,
   ): boolean {
     if (!this.switchOn) return false;
-    if (emailPrefsFor(this.db, [userId]).get(userId)?.digest === false) return false;
+    if (!this.prefsOf(userId).digest) return false;
+    const already = this.db
+      .select({ id: emailDigestItems.id })
+      .from(emailDigestItems)
+      .where(
+        and(
+          eq(emailDigestItems.userId, userId),
+          'activityId' in source
+            ? eq(emailDigestItems.activityId, source.activityId)
+            : eq(emailDigestItems.noticeId, source.noticeId),
+        ),
+      )
+      .get();
+    if (already !== undefined) return false;
     const digestId = openDigestFor(this.db, userId, this.now);
     const inserted = this.db
       .insert(emailDigestItems)
@@ -484,7 +659,6 @@ function closeDueDigests(db: Db, serverSecret: string, run: Run, now: number): n
     let outboxId: string | null = null;
     if (person !== null && content !== null) {
       const key = `digest:${digest.id}`;
-      const prefs = emailPrefsFor(db, [digest.userId]).get(digest.userId);
       queueEmail(
         db,
         {
@@ -498,8 +672,13 @@ function closeDueDigests(db: Db, serverSecret: string, run: Run, now: number): n
             userName: person.name,
             tasks: content.tasks,
             notices: content.notices,
+            prefsUrl: run.prefsUrl(person.id),
           }),
-          refuse: !person.isActive ? 'no_access' : prefs?.digest === false ? 'pref_off' : undefined,
+          refuse: !person.isActive
+            ? 'no_access'
+            : !run.prefsOf(person.id).digest
+              ? 'pref_off'
+              : undefined,
         },
         serverSecret,
         now,
@@ -547,6 +726,8 @@ function digestContent(
       : db.select().from(activity).where(inArray(activity.id, activityIds)).all();
   const byId = new Map(rows.map((r) => [r.id, r]));
 
+  // The reader is "you" in their own digest: "Ada assigned it to you".
+  const namer = { name: (id: string | null) => (id === userId ? 'you' : run.name(id)) };
   const groups = new Map<string, DigestTask>();
   const notices: string[] = [];
   for (const item of items) {
@@ -554,8 +735,12 @@ function digestContent(
       const row = byId.get(item.activityId);
       if (row?.taskId == null) continue;
       const task = run.task(row.taskId);
-      if (task === null || !canRead(db, userId, task.projectId)) continue;
-      const line = describe(run, row.type, row.actorId, asRecord(readPayload(row)));
+      if (task === null || !run.canRead(userId, task.projectId)) continue;
+      const payload = asRecord(readPayload(row));
+      const line = describe(namer, row.type, row.actorId, payload, {
+        assigned: task.assigneeId === userId,
+        mentioned: mentions(db, stringOf(payload.comment_id), userId),
+      });
       if (line === null) continue;
       const group = groups.get(task.id) ?? { task: task.ref, lines: [] };
       group.lines.push(line);
@@ -567,7 +752,7 @@ function digestContent(
         .where(eq(memberNotices.id, item.noticeId))
         .get();
       if (notice === undefined) continue;
-      if (notice.projectId !== null && !canRead(db, userId, notice.projectId)) continue;
+      if (notice.projectId !== null && !run.canRead(userId, notice.projectId)) continue;
       notices.push(describeNotice(db, run, notice));
     }
   }
@@ -577,15 +762,38 @@ function digestContent(
   return { tasks: tasksOut, notices };
 }
 
+/** Whether a comment @mentions this person. */
+function mentions(db: Db, commentId: string | null, userId: string): boolean {
+  if (commentId === null) return false;
+  return (
+    db
+      .select({ userId: commentMentions.userId })
+      .from(commentMentions)
+      .where(and(eq(commentMentions.commentId, commentId), eq(commentMentions.userId, userId)))
+      .get() !== undefined
+  );
+}
+
+/** What a line needs to know about who reads it. */
+export interface DigestReader {
+  /** The task is theirs now. */
+  assigned: boolean;
+  /** The comment the row is about @mentions them. */
+  mentioned: boolean;
+}
+
 /** One activity row in a sentence, or null for one not worth a line. */
 export function describe(
   run: { name: (id: string | null) => string },
   type: string,
   actorId: string | null,
   payload: Record<string, unknown>,
+  reader: DigestReader = { assigned: false, mentioned: false },
 ): string | null {
   const who = run.name(actorId);
   switch (type) {
+    case 'task.created':
+      return reader.assigned ? `${who} created it and assigned it to you` : `${who} created it`;
     case 'task.status_changed': {
       const to = stringOf(payload.to_status_name) ?? stringOf(payload.to);
       return to === null ? `${who} changed its status` : `${who} moved it to ${to}`;
@@ -604,7 +812,9 @@ export function describe(
       return changed.length === 0 ? `${who} edited it` : `${who} changed its ${changed.join(', ')}`;
     }
     case 'comment.added':
-      return `${who} commented`;
+      return reader.mentioned ? `${who} mentioned you in a comment` : `${who} commented`;
+    case 'comment.edited':
+      return reader.mentioned ? `${who} mentioned you in a comment` : null;
     case 'attachment.added': {
       const name = stringOf(payload.filename);
       return name === null ? `${who} attached a file` : `${who} attached ${name}`;

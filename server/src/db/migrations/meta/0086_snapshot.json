@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "651c3ec3-67dc-4209-b34f-38aff3d8bb60",
+  "id": "6dfd6f52-63c5-434a-a03d-d1a5dbf5b880",
   "prevId": "7259ad27-24e6-451e-89ec-dd825fdf593a",
   "tables": {
     "accounts": {
@@ -2977,6 +2977,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -3032,6 +3039,15 @@
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "email_outbox_task_id_tasks_id_fk": {
+          "name": "email_outbox_task_id_tasks_id_fk",
+          "tableFrom": "email_outbox",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3072,6 +3088,13 @@
         "read_to": {
           "name": "read_to",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "read_to_id": {
+          "name": "read_to_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false

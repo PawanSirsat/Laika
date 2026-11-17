@@ -3626,9 +3626,12 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
         const fks = db.all<{ from: string; table: string; on_delete: string }>(
           sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('email_outbox') ORDER BY "from"`,
         );
+        // The run above went on to the newest migration: LAI-1313's 0086 adds
+        // `task_id`, the task a notification mail is about.
         expect(fks).toEqual([
           { from: 'created_by', table: 'users', on_delete: 'SET NULL' },
           { from: 'recipient_user_id', table: 'users', on_delete: 'SET NULL' },
+          { from: 'task_id', table: 'tasks', on_delete: 'SET NULL' },
         ]);
         const indexes = db.all<{ name: string }>(
           sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'email_outbox' ORDER BY name`,
@@ -3640,6 +3643,101 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
           'email_outbox_recipient_idx',
           'sqlite_autoindex_email_outbox_1',
         ]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0086 rebuilds the email outbox on a populated 0085 database and keeps every row (LAI-1313)', () => {
+  function folderAt0085(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0086_email_notify');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0086_email_notify']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  /** Every column 0084 made, in its order — what the rebuild must carry across untouched. */
+  const COLUMNS =
+    'id, kind, idempotency_key, recipient_user_id, to_address, subject, body_enc, state, suppressed_reason, attempts, next_attempt_at, send_before, claimed_at, sent_at, last_error, created_by, created_at, updated_at';
+
+  it(
+    'keeps every outbox row and column — the email_off rows production already has among them — and takes the new kinds and reasons',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0085() });
+        const s = seed(db);
+        // One row in every state LAI-1312 writes, each column set where that
+        // state sets it, so a column dropped or shifted by the copy shows.
+        const rows: [string, string, string | null, string | null, number, string | null][] = [
+          // [key, state, reason, body_enc, attempts, last_error]
+          ['invite:a', 'suppressed', 'email_off', null, 0, null],
+          ['invite:b', 'suppressed', 'superseded', null, 0, null],
+          ['password_reset:c', 'queued', null, 'v1.cipher', 0, null],
+          ['test:d', 'sent', null, null, 1, null],
+          ['invite:e', 'failed', null, null, 5, '550 5.1.1 no such user'],
+          ['invite:f', 'unconfirmed', null, null, 1, 'ETIMEDOUT: after DATA'],
+          ['invite:g', 'suppressed', 'too_old', null, 2, '421 try later'],
+        ];
+        rows.forEach(([key, state, reason, body, attempts, lastError], i) => {
+          db.run(sql`
+            INSERT INTO email_outbox (id, kind, idempotency_key, recipient_user_id, to_address, subject, body_enc, state, suppressed_reason, attempts, next_attempt_at, send_before, claimed_at, sent_at, last_error, created_by, created_at, updated_at)
+            VALUES (${newId()}, ${key.slice(0, key.indexOf(':'))}, ${key}, ${s.userId}, ${`p${String(i)}@example.test`},
+                    ${`Subject ${String(i)}`}, ${body}, ${state}, ${reason}, ${attempts},
+                    ${state === 'queued' ? 1_000 + i : null}, ${2_000 + i},
+                    ${state === 'sent' || state === 'unconfirmed' ? 3_000 + i : null},
+                    ${state === 'sent' ? 4_000 + i : null}, ${lastError}, ${s.userId}, ${5_000 + i}, ${6_000 + i})
+          `);
+        });
+        const read = () => db.all(sql.raw(`SELECT ${COLUMNS} FROM email_outbox ORDER BY id`));
+        const before = read();
+        expect(before).toHaveLength(rows.length);
+
+        runMigrations(db);
+
+        expect(read()).toEqual(before);
+        expect(db.all(sql`SELECT task_id FROM email_outbox`)).toEqual(
+          rows.map(() => ({ task_id: null })),
+        );
+
+        // LAI-1313's kinds and reasons are taken, and only those.
+        const insert = (kind: string, reason: string) =>
+          db.run(sql`
+            INSERT INTO email_outbox (id, kind, idempotency_key, subject, state, suppressed_reason, send_before, created_at, updated_at)
+            VALUES (${newId()}, ${kind}, ${newId()}, 's', 'suppressed', ${reason}, 1, 1, 1)
+          `);
+        for (const kind of ['assignment', 'mention', 'digest']) insert(kind, 'pref_off');
+        insert('assignment', 'no_access');
+        expectSqliteError(() => insert('weekly', 'pref_off'), /email_outbox_kind_check/);
+        expectSqliteError(() => insert('mention', 'muted'), /email_outbox_suppressed_reason_check/);
+
+        const fks = db.all<{ from: string; table: string; on_delete: string }>(
+          sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('email_outbox') ORDER BY "from"`,
+        );
+        expect(fks).toEqual([
+          { from: 'created_by', table: 'users', on_delete: 'SET NULL' },
+          { from: 'recipient_user_id', table: 'users', on_delete: 'SET NULL' },
+          { from: 'task_id', table: 'tasks', on_delete: 'SET NULL' },
+        ]);
+        expect(
+          db
+            .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('email_watermarks')`)
+            .map((c) => c.name),
+        ).toEqual(['source', 'read_to', 'read_to_id', 'updated_at']);
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
       } finally {
         sqlite.close();

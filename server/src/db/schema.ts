@@ -1827,7 +1827,11 @@ export const emailOutbox = sqliteTable(
   {
     id: text('id').primaryKey(),
     kind: text('kind', { enum: EMAIL_KINDS }).notNull(),
-    /** One message per thing it is about: `invite:<id>`, `password_reset:<id>`, `test:<id>`. */
+    /**
+     * One message per thing it is about: `invite:<id>`, `password_reset:<id>`,
+     * `test:<id>`, and LAI-1313's `assignment:<activity id>`,
+     * `mention:<comment id>:<user id>` and `digest:<digest id>`.
+     */
     idempotencyKey: text('idempotency_key').notNull(),
     /** The person it is for, when they have an account (a reset, a test). */
     recipientUserId: text('recipient_user_id').references(() => users.id, {
@@ -1852,6 +1856,13 @@ export const emailOutbox = sqliteTable(
     lastError: text('last_error'),
     /** Who caused it — the inviter, the admin who issued a reset or pressed *Send test email*. */
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * The task an `assignment` or `mention` mail is about (LAI-1313), so the
+     * sender can ask again, just before it goes, whether the person may still
+     * read it. Null for every other kind; null on one of those two means the
+     * task is gone, and the mail does not go.
+     */
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     createdAt,
     updatedAt,
   },
@@ -2097,15 +2108,19 @@ export const emailDigestItems = sqliteTable(
 
 /**
  * How far the notify job has read (§4.100, LAI-1313): one row per source,
- * `activity` and `member_notices`, holding the newest `created_at` it has
- * handled. **A time, not `rowid`**: a VACUUM may renumber the rowids of a table
- * with a text key, which would make a stored rowid skip rows. Each run re-reads
- * two minutes before it, and every effect is idempotent, so a row written late
- * is still seen and one seen twice changes nothing.
+ * `activity` and `member_notices`, holding the last row it handled as a keyset
+ * cursor, `(read_to, read_to_id)` — that row's `created_at` and `id`. **A time
+ * and an id, not `rowid`**: a VACUUM may renumber the rowids of a table with a
+ * text key, which would make a stored rowid skip rows. **And not a time
+ * alone**: more rows sharing one millisecond than a run reads would hold a
+ * time-only cursor still for ever (CHIEF's LAI-1313 review). Each run also
+ * re-reads the two minutes behind it for rows written late; every effect is
+ * idempotent, so one seen twice changes nothing.
  */
 export const emailWatermarks = sqliteTable('email_watermarks', {
   source: text('source').primaryKey(),
   readTo: integer('read_to').notNull(),
+  readToId: text('read_to_id').notNull(),
   updatedAt,
 });
 
