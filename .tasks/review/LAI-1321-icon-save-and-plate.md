@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-1311
-status: in-progress
+status: review
 started: 2026-11-17T21:00:26Z
+finished: 2026-11-17T21:33:22Z
 ---
 
 ## Goal
@@ -63,22 +64,40 @@ dispatched by CHIEF to builder session laika-c4:
 
 ## Acceptance criteria
 
-- [ ] Save changes is enabled after picking an image, choosing an emoji or pressing Remove;
+- [x] Save changes is enabled after picking an image, choosing an emoji or pressing Remove;
       nothing changes on the server until it is pressed; Discard drops the change.
-- [ ] Browser tests: a held image is not on the server before Save and is after; Discard;
+- [x] Browser tests: a held image is not on the server before Save and is after; Discard;
       the leave-page warning.
-- [ ] The ring/plate tone is a pure function with unit tests over fixed pixel arrays — the
+- [x] The ring/plate tone is a pure function with unit tests over fixed pixel arrays — the
       four cases and a mid-tone logo that gets nothing.
-- [ ] Browser test: pick an image larger than the frame, zoom and drag, Use this, Save; the
+- [x] Browser test: pick an image larger than the frame, zoom and drag, Use this, Save; the
       stored object is square and its corner pixel matches the chosen background.
-- [ ] Keyboard-only adjustment tested.
-- [ ] Screenshots at 1440 and 390, light and dark: the Icon row with a black-square logo, a
+- [x] Keyboard-only adjustment tested.
+- [x] Screenshots at 1440 and 390, light and dark: the Icon row with a black-square logo, a
       white transparent logo and a colourful one; and the frame editor.
-- [ ] D-152 and SPEC §11.4.2.1 wording updated.
-- [ ] Web guards (loading-sweep, board-bands, structure mirror, view-type-drift) green as
+- [x] D-152 and SPEC §11.4.2.1 wording updated.
+- [x] Web guards (loading-sweep, board-bands, structure mirror, view-type-drift) green as
       single files; CI green on the PR.
 
 ## Notes / context
 
 - Belka: single test files only; CI runs the full gate.
 - Release is CHIEF's: the builder stops at a green PR, this file in review and its log.
+
+## Build notes (LAI-1321, CHIEF builder laika-c4, Belka)
+
+PR #368, branch `LAI-1321-icon-save-and-plate`, CI green at `ac3c34c64` (every job).
+Every criterion above holds. Choices, each also in the PR body and the log:
+
+- **The emoji is `PATCH icon_emoji`**, not a `PUT` (the brief's word): that is the route
+  D-152 built, and it lets Save send the emoji and the changed fields as one request.
+- **No completion deadline exists**, so none is handled: icon ask/complete is stateless and
+  the presigned `PUT` is spent when *Use this* is pressed.
+- **The preview is a `data:` URL**: `img-src` has no `blob:`.
+- **The Icon row needs the right to edit settings too**: Save, and the emoji's `PATCH`, are
+  `project.settings.edit`'s.
+- **D-152 is unchanged**: it never said "saves at once"; SPEC §11.4.2.1 did, and is rewritten.
+- **Opaque images are judged at their edge**, transparent ones over their visible pixels,
+  each over the square `object-fit: cover` shows — the owner's black-square logo is a dark
+  tile at its edge whatever its figure.
+- **"In dark" covers the black theme too**: `:root:not([data-theme='light'])`.
