@@ -46,9 +46,10 @@ export function directoryErrorWords(code: string): string {
   if (code === 'graph_forbidden_grant_user_read_all') {
     return 'Microsoft refused to list the directory. In Entra, give the app Microsoft Graph’s User.Read.All application permission and grant admin consent.';
   }
+  // Before `token_`: `token_unreachable` is the network, not a refusal (LAI-1317).
+  if (code.endsWith('_unreachable')) return 'Microsoft could not be reached. It will try again.';
   if (code.startsWith('token_')) {
     return `Microsoft refused the app’s sign-in (${code}). Check the client secret has not expired.`;
   }
-  if (code.endsWith('_unreachable')) return 'Microsoft could not be reached. It will try again.';
   return `The directory could not be read (${code}).`;
 }
