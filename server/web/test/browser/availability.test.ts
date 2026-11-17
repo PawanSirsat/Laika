@@ -153,6 +153,10 @@ void describe('My availability on My day (frames 2a–2c)', () => {
       });
       await until(async () => (await pill.innerText()).includes('~10 h/wk'));
       assert.match(await pill.innerText(), /~10 h\/wk/);
+      // The save says what it set, in the app's toast (LAI-1310).
+      const toast = h.page.locator('[data-toast] [role="status"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.innerText(), 'Availability set to Open to more work');
     } finally {
       await h.close();
     }
@@ -179,6 +183,11 @@ void describe('My availability on My day (frames 2a–2c)', () => {
       const alert = panel.getByRole('alert');
       await alert.waitFor({ timeout: 10_000 });
       assert.equal(await alert.innerText(), 'hours_per_week is 1 to 80');
+      // The toast only points at the field (LAI-1310).
+      assert.match(
+        await h.page.locator('[data-toast] [role="alert"]').innerText(),
+        /see the highlighted field/,
+      );
       assert.equal(await hours.getAttribute('aria-invalid'), 'true');
       assert.equal(await hours.inputValue(), '99');
     } finally {
@@ -278,6 +287,9 @@ void describe('My availability on My day (frames 2a–2c)', () => {
       const pill = h.page.locator('[data-my-availability] [data-avail-pill]');
       await until(async () => (await pill.getAttribute('data-avail-pill')) === 'away');
       assert.equal(await pill.getAttribute('data-avail-pill'), 'away');
+      const toast = h.page.locator('[data-toast] [role="status"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.match(await toast.innerText(), /^Availability set to Away until \S+ \d+ \S+$/);
     } finally {
       await h.close();
     }
@@ -308,9 +320,13 @@ void describe('My availability on My day (frames 2a–2c)', () => {
       const panel = await openPopover(h.page);
       await panel.locator('input[type="date"]').first().fill(addDays(TODAY, 9));
       await panel.getByRole('button', { name: 'Save' }).click();
-      const alert = panel.getByRole('alert');
+      // No field named: the refusal is the app's toast, the server's sentence
+      // under its headline (LAI-1310), and the panel keeps no banner of its own.
+      const alert = h.page.locator('[data-toast] [role="alert"]');
       await alert.waitFor({ timeout: 10_000 });
-      assert.equal(await alert.innerText(), 'At most 20 current and upcoming away periods');
+      assert.match(await alert.innerText(), /^Couldn’t save your availability/);
+      assert.match(await alert.innerText(), /At most 20 current and upcoming away periods/);
+      assert.equal(await panel.getByRole('alert').count(), 0);
       await h.page.waitForTimeout(500);
       assert.equal(
         writes.some((w) => w.method === 'DELETE'),
@@ -596,9 +612,11 @@ void describe('For you (D-134)', () => {
       await card
         .getByRole('button', { name: 'Mark read: Pawan Sirsat added you to Atlas' })
         .click();
-      const alert = card.getByRole('alert');
+      // The app's toast says it (LAI-1310), with the server's sentence.
+      const alert = h.page.locator('[data-toast] [role="alert"]');
       await alert.waitFor({ timeout: 10_000 });
-      assert.equal(await alert.innerText(), 'That could not be marked read. Try again.');
+      assert.match(await alert.innerText(), /^Couldn’t mark that read/);
+      assert.match(await alert.innerText(), /boom/);
       assert.match(await nav.innerText(), /^2/);
       assert.equal(await card.locator('[data-unread="true"]').count(), 2);
       assert.match(await card.locator('.foryou-count').innerText(), /^2$/);

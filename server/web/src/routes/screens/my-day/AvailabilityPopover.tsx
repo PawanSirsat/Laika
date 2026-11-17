@@ -17,6 +17,7 @@ import { Button } from '../../../components/forms/Button.tsx';
 import { AvailabilityPill } from '../../../components/availability/AvailabilityPill.tsx';
 import {
   addTag,
+  dayShort,
   HOURS_MAX,
   HOURS_MIN,
   NOTE_MAX,
@@ -26,6 +27,8 @@ import {
   updatedAgo,
 } from '../../../components/availability/availability-derive.ts';
 import '../../../components/availability/availability.css';
+import { namesFields } from '../../../components/toast/action-model.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { dayIn } from './my-day-derive.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
@@ -81,6 +84,14 @@ function problemOf(cause: unknown): Problem {
   return { field: 'form', message: 'Your availability could not be saved. Try again.' };
 }
 
+/** What a saved availability says in its toast (LAI-1310): the status it now is. */
+function savedWords(choice: Choice | null, until: string): string {
+  if (choice === 'open') return 'Availability set to Open to more work';
+  if (choice === 'capacity') return 'Availability set to At capacity';
+  if (choice === 'away') return `Availability set to Away until ${dayShort(until)}`;
+  return 'Availability saved';
+}
+
 /**
  * **My availability** (frames 2a–2c, D-131; LAI-1139): the pill in My day's
  * header, and under it the person's own declaration — open to more work, at
@@ -120,6 +131,17 @@ export function AvailabilityPopover({
   const [awayTo, setAwayTo] = useState('');
   const [asked, setAsked] = useState(0);
   const id = useId();
+  const { run } = useAction();
+
+  /**
+   * A refusal's other half (LAI-1310): the toast has said it failed; a
+   * message for a field goes under that field. One that names no field is
+   * the toast's alone, with the server's sentence as its detail.
+   */
+  const placeProblem = (cause: unknown): void => {
+    const found = problemOf(cause);
+    if (found.field !== 'form' || namesFields(cause)) setProblem(found);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -180,7 +202,7 @@ export function AvailabilityPopover({
     }
     setBusy(true);
     setProblem(undefined);
-    try {
+    const write = async (): Promise<Availability> => {
       const hours = draft.hours.trim() === '' ? null : Number(draft.hours);
       const patch: AvailabilityPatch = {
         ...(draft.choice === 'open' || draft.choice === 'capacity' ? { status: draft.choice } : {}),
@@ -211,19 +233,26 @@ export function AvailabilityPopover({
         await deleteAwayPeriod(current.id);
         next = await getMyAvailability();
       }
-      setSaved(next, at);
-      setOpen(false);
-    } catch (cause) {
-      setProblem(problemOf(cause));
-      // A half-made change — the status saved, the period refused — is shown as it is.
-      getMyAvailability()
-        .then((a) => {
-          setSaved(a, at);
-        })
-        .catch(() => undefined);
-    } finally {
-      setBusy(false);
-    }
+      return next;
+    };
+    const next = await run({
+      do: write,
+      success: savedWords(draft.choice, draft.until),
+      failure: 'Couldn’t save your availability',
+      onError: (cause) => {
+        placeProblem(cause);
+        // A half-made change — the status saved, the period refused — is shown as it is.
+        getMyAvailability()
+          .then((a) => {
+            setSaved(a, at);
+          })
+          .catch(() => undefined);
+      },
+    });
+    setBusy(false);
+    if (next === undefined) return;
+    setSaved(next, at);
+    setOpen(false);
   };
 
   const addPeriod = async (): Promise<void> => {
@@ -232,31 +261,36 @@ export function AvailabilityPopover({
     if (awayFrom === '' || awayTo === '' || busy) return;
     setBusy(true);
     setProblem(undefined);
-    try {
-      setSaved(await addAwayPeriod(awayFrom, awayTo), at);
-      setAwayFrom('');
-      setAwayTo('');
-    } catch (cause) {
-      setProblem(problemOf(cause));
-    } finally {
-      setBusy(false);
-    }
+    const next = await run({
+      do: () => addAwayPeriod(awayFrom, awayTo),
+      success: `Away ${rangeShort(awayFrom, awayTo)} added`,
+      failure: 'Couldn’t add the time away',
+      onError: placeProblem,
+    });
+    setBusy(false);
+    if (next === undefined) return;
+    setSaved(next, at);
+    setAwayFrom('');
+    setAwayTo('');
   };
 
-  const removePeriod = async (periodId: string): Promise<void> => {
+  const removePeriod = async (periodId: string, words: string): Promise<void> => {
     // Whose record this is for: a sign-in meanwhile drops the answer.
     const at = availabilityGeneration();
     if (busy) return;
     setBusy(true);
     setProblem(undefined);
-    try {
-      await deleteAwayPeriod(periodId);
-      setSaved(await getMyAvailability(), at);
-    } catch (cause) {
-      setProblem(problemOf(cause));
-    } finally {
-      setBusy(false);
-    }
+    const next = await run({
+      do: async () => {
+        await deleteAwayPeriod(periodId);
+        return getMyAvailability();
+      },
+      success: `Away ${words} removed`,
+      failure: 'Couldn’t remove the time away',
+      onError: placeProblem,
+    });
+    setBusy(false);
+    if (next !== undefined) setSaved(next, at);
   };
 
   const onTagKey = (event: KeyboardEvent<HTMLInputElement>): void => {
@@ -571,7 +605,7 @@ export function AvailabilityPopover({
                           aria-label={`Remove away ${rangeShort(p.from, p.to)}`}
                           disabled={busy}
                           onClick={() => {
-                            void removePeriod(p.id);
+                            void removePeriod(p.id, rangeShort(p.from, p.to));
                           }}
                         >
                           <Icon name="close" size="tiny" />

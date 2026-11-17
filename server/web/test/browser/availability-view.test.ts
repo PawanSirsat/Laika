@@ -497,6 +497,11 @@ void describe('Add to project… (frames 2j–2l)', () => {
       const done = h.page.locator('tr[data-person="u2"] .avail-done');
       await done.waitFor({ timeout: 10_000 });
       assert.equal(await done.innerText(), '✓ Added to SynQ as Member · Amara was notified');
+      // And the app's toast names who went where (LAI-1310).
+      assert.equal(
+        await h.page.locator('[data-toast] [role="status"]').innerText(),
+        'Amara added to SynQ',
+      );
     } finally {
       await h.close();
     }
@@ -520,6 +525,11 @@ void describe('Add to project… (frames 2j–2l)', () => {
       assert.equal(
         await alert.innerText(),
         'Amara Okafor is deactivated and can’t be added to a space.',
+      );
+      // The refusal is the app's toast too, with the server's sentence (LAI-1310).
+      assert.match(
+        await h.page.locator('[data-toast] [role="alert"]').first().innerText(),
+        /^Couldn’t add Amara to SynQ[\s\S]*That person is deactivated/,
       );
 
       answer = reply(409, {

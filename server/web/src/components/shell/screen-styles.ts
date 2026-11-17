@@ -107,7 +107,6 @@ import '../../routes/screens/my-day/wheel.css';
 import '../../routes/screens/my-day/editor.css';
 import '../../routes/screens/my-day/day-states.css';
 import '../../routes/screens/my-day/timeline.css';
-import '../../routes/screens/my-day/toast.css';
 import '../../routes/screens/my-day/my-day.css';
 import '../../routes/screens/my-day/lists.css';
 import '../../routes/screens/my-day/phone.css';

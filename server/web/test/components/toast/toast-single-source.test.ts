@@ -25,14 +25,6 @@ const SRC = fileURLToPath(new URL('../../../src/', import.meta.url));
 /** The provider, which is the one implementation. */
 const CANONICAL = ['components/toast/ToastProvider.tsx', 'components/toast/toast.css'];
 
-/**
- * TODO(LAI-1130 follow-up): My day keeps its own toast until it is migrated
- * onto `useToast()`. LAI-1130 is editing My day in parallel, so the move is
- * left to a task of its own; when it lands, delete these two entries and the
- * test below holds the line at one.
- */
-const NOT_YET_MIGRATED = ['routes/screens/my-day/Toast.tsx', 'routes/screens/my-day/toast.css'];
-
 async function sources(ext: readonly string[]): Promise<string[]> {
   return (await readdir(SRC, { recursive: true }))
     .filter((f) => typeof f === 'string' && ext.some((e) => f.endsWith(e)))
@@ -53,7 +45,7 @@ void describe('the toast has a single source', () => {
     }
     assert.deepEqual(
       offenders,
-      [...CANONICAL, ...NOT_YET_MIGRATED].filter((f) => f.endsWith('.tsx')),
+      CANONICAL.filter((f) => f.endsWith('.tsx')),
       'a screen draws its own toast — call useToast() from components/toast/ToastProvider.tsx',
     );
   });
@@ -66,7 +58,7 @@ void describe('the toast has a single source', () => {
     }
     assert.deepEqual(
       offenders,
-      [...CANONICAL, ...NOT_YET_MIGRATED].filter((f) => f.endsWith('.css')),
+      CANONICAL.filter((f) => f.endsWith('.css')),
       'a stylesheet styles a private toast — the one in components/toast/toast.css is the toast',
     );
   });
