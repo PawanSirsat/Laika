@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: [LAI-1312]
 discovered-from: LAI-1310
-status: in-progress
+status: review
 started: 2026-11-17T20:50:03Z
+finished: 2026-11-17T21:17:48Z
 ---
 
 ## Goal
@@ -85,26 +86,26 @@ is off.
 
 ## Acceptance criteria
 
-- [ ] **Switch off:** an assignment or a mention writes a suppressed `email_off` row, no
+- [x] **Switch off:** an assignment or a mention writes a suppressed `email_off` row, no
       digest collects, and nothing is sent.
-- [ ] **Assignment mail:** assigning someone else mails them once; self-assignment and a
+- [x] **Assignment mail:** assigning someone else mails them once; self-assignment and a
       claim do not. Re-running over the same activity writes nothing new.
-- [ ] **Mention mail:** an @mention mails the person once. Editing the comment mails only the
+- [x] **Mention mail:** an @mention mails the person once. Editing the comment mails only the
       newly mentioned. The author is never mailed.
-- [ ] **Instant off:** `pref_off` is recorded. **No access:** `no_access` is recorded and
+- [x] **Instant off:** `pref_off` is recorded. **No access:** `no_access` is recorded and
       nothing is sent.
-- [ ] **Digest collection:**
+- [x] **Digest collection:**
   - Activity on a watched task by someone else, and a member notice, land in that person's
     one open digest.
   - Nothing of their own, nothing they were mailed instantly, nothing on a task they don't
     watch.
-- [ ] **Digest sending:**
+- [x] **Digest sending:**
   - Sent once, after 07:00 in their zone; its items are listed and grouped.
   - Empty sends nothing; items past 7 days are dropped.
   - Digest off collects nothing.
-- [ ] **Preferences:** read and set own. A token is refused (session only). The profile shows
+- [x] **Preferences:** read and set own. A token is refused (session only). The profile shows
       the two switches and says when email is off for the organisation.
-- [ ] **Guards updated, not loosened:**
+- [x] **Guards updated, not loosened:**
   - `EXPECTED_TABLES`, `schema-spec-drift`, `schema-migration-drift`, `migration-files`,
     `migrate` (an upgrade test);
   - policy and matrix;
@@ -112,7 +113,7 @@ is off.
   - the scheduler;
   - `response-type-coverage`;
   - web `view-type-drift`, the structure WEB maps, and the source guards.
-- [ ] **CI:** the gate is green on the PR.
+- [x] **CI:** the gate is green on the PR.
 
 ## Notes
 
