@@ -1198,3 +1198,154 @@
     display: none;
   }
 }
+
+/* D-154 (LAI-1314): the space's Teams channel, its own card under General.
+   Theme tokens only; a failed post is the overdue red, a sent one green. */
+.ss-teams {
+  margin-top: var(--space-5);
+}
+
+.ss-teams-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+.ss-teams-body > .ss-notice,
+.ss-teams-body > .ss-field-error {
+  flex: none;
+}
+
+.ss-teams-channel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.ss-teams-label {
+  color: var(--text-secondary);
+}
+
+.ss-teams-host {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.ss-teams-set {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.ss-teams-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.ss-teams-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ss-teams-tested {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.ss-teams-tested[data-tone='on'] {
+  color: var(--chip-green);
+}
+
+.ss-teams-tested[data-tone='bad'] {
+  color: var(--overdue);
+}
+
+.ss-teams-recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ss-teams-recent-head {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  color: var(--text-secondary);
+}
+
+.ss-teams-posts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ss-teams-post {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+
+.ss-teams-post-kind {
+  color: var(--text-secondary);
+}
+
+.ss-teams-post-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-teams-post-outcome {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ss-teams-post[data-tone='on'] .ss-teams-post-outcome {
+  color: var(--chip-green);
+}
+
+.ss-teams-post[data-tone='bad'] .ss-teams-post-outcome {
+  color: var(--overdue);
+}
+
+@media (max-width: 640px) {
+  .ss-teams-body {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .ss-teams-post {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-0-5);
+  }
+
+  .ss-teams-post-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

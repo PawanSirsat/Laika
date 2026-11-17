@@ -98,6 +98,12 @@ export const LIMITS = {
    * Clan's sign-in on somebody's behalf.
    */
   hr: { perMinute: 6 },
+  /**
+   * A space's Teams test post (D-154, LAI-1314): each is a post to a Power
+   * Automate flow, so **6 a minute per person**, on its own bucket — enough to
+   * test a flow while fixing it, never a loop that has Laika flood a channel.
+   */
+  teamsTest: { perMinute: 6 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;
