@@ -15,6 +15,7 @@
  */
 
 import { accessSync, constants } from 'node:fs';
+import { parseMicrosoftSso, type MicrosoftSso } from './auth/sso.ts';
 import { isAbsolute, join, resolve } from 'node:path';
 
 export interface Env {
@@ -68,6 +69,13 @@ export interface Env {
    * checkout is cloned from, served by `GET /developer/compatibility`.
    */
   readonly cliSourceUrl: string;
+  /**
+   * Microsoft SSO (LAI-1238): `LAIKA_MICROSOFT_CLIENT_ID`, `_CLIENT_SECRET` and
+   * `_TENANT_ID`, all three or none. Set, it makes Microsoft the only way to
+   * sign in; `null` keeps email and password. Optional on the type so the many
+   * hand-built `Env`s in tests need no edit; `readEnv` always sets it.
+   */
+  readonly sso?: MicrosoftSso | null;
 }
 
 /**
@@ -423,6 +431,9 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     developerAccess: source.LAIKA_DEVELOPER_ACCESS,
     cliSourceUrl: source.LAIKA_CLI_SOURCE_URL,
   };
+  // Microsoft SSO's three variables, read here for the same reason (LAI-1238);
+  // parsing them never throws, so judging them can wait for the return below.
+  const ssoParsed = parseMicrosoftSso(source);
 
   return {
     port,
@@ -441,5 +452,22 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     buildCommit: parseBuildCommit(buildRaw.commit),
     developerAccess: parseDeveloperAccess(buildRaw.developerAccess),
     cliSourceUrl: parseCliSourceUrl(buildRaw.cliSourceUrl),
+    sso: judgeMicrosoftSso(ssoParsed, source),
   };
+}
+
+/**
+ * The three `LAIKA_MICROSOFT_*` variables (LAI-1238), judged in `auth/sso.ts`.
+ * The secret is never echoed into the error; the client and tenant ids are not
+ * secrets and are named so the operator can see which one is wrong.
+ */
+function judgeMicrosoftSso(
+  parsed: ReturnType<typeof parseMicrosoftSso>,
+  source: NodeJS.ProcessEnv,
+): MicrosoftSso | null {
+  if ('sso' in parsed) return parsed.sso;
+  const { variable, message } = parsed.problem;
+  const shown =
+    variable === 'LAIKA_MICROSOFT_CLIENT_SECRET' ? '<redacted>' : (source[variable] ?? '');
+  throw new EnvError(variable, shown, message);
 }

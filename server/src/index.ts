@@ -47,6 +47,7 @@ function main(): void {
     secret: env.serverSecret,
     baseUrl: env.publicUrl,
     secureCookies: env.secureCookies,
+    sso: env.sso ?? null,
   });
 
   // Built here rather than inside `createApp` because the shutdown handler needs
@@ -61,6 +62,7 @@ function main(): void {
     buildCommit: env.buildCommit,
     developerAccess: env.developerAccess,
     cliSourceUrl: env.cliSourceUrl,
+    sso: env.sso ?? null,
     isStopping: () => stopping,
     logger: log,
     auth,
