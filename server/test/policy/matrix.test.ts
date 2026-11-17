@@ -183,6 +183,9 @@ const ORG_MATRIX: OrgRow[] = [
   // | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
   // D-153 (LAI-1312 review): the same grant; a token is refused in `can.test.ts`.
   ['org.email.configure', true, true, false, false],
+  // | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
+  // D-154 (LAI-1314): the same grant; a token is refused in `can.test.ts`.
+  ['org.teams.configure', true, true, false, false],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -524,6 +527,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.email.send', {}],
     ['system.email.prune', {}],
     ['system.email.notify', {}],
+    ['system.teams.post', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

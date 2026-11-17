@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "34a6475c-c9d8-40a7-a7f9-f3047068f98b",
+  "id": "7259ad27-24e6-451e-89ec-dd825fdf593a",
   "prevId": "004d85d8-03a7-447d-befd-eb77439d804b",
   "tables": {
     "accounts": {
@@ -2670,197 +2670,6 @@
         }
       }
     },
-    "email_digest_items": {
-      "name": "email_digest_items",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "digest_id": {
-          "name": "digest_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "activity_id": {
-          "name": "activity_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "notice_id": {
-          "name": "notice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "email_digest_items_activity_unique": {
-          "name": "email_digest_items_activity_unique",
-          "columns": ["user_id", "activity_id"],
-          "isUnique": true
-        },
-        "email_digest_items_notice_unique": {
-          "name": "email_digest_items_notice_unique",
-          "columns": ["user_id", "notice_id"],
-          "isUnique": true
-        },
-        "email_digest_items_digest_idx": {
-          "name": "email_digest_items_digest_idx",
-          "columns": ["digest_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "email_digest_items_digest_id_email_digests_id_fk": {
-          "name": "email_digest_items_digest_id_email_digests_id_fk",
-          "tableFrom": "email_digest_items",
-          "tableTo": "email_digests",
-          "columnsFrom": ["digest_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "email_digest_items_user_id_users_id_fk": {
-          "name": "email_digest_items_user_id_users_id_fk",
-          "tableFrom": "email_digest_items",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "email_digest_items_notice_id_member_notices_id_fk": {
-          "name": "email_digest_items_notice_id_member_notices_id_fk",
-          "tableFrom": "email_digest_items",
-          "tableTo": "member_notices",
-          "columnsFrom": ["notice_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "email_digest_items_one_source_check": {
-          "name": "email_digest_items_one_source_check",
-          "value": "(activity_id IS NULL) <> (notice_id IS NULL)"
-        }
-      }
-    },
-    "email_digests": {
-      "name": "email_digests",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "opened_at": {
-          "name": "opened_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "outbox_id": {
-          "name": "outbox_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "email_digests_one_open_per_person": {
-          "name": "email_digests_one_open_per_person",
-          "columns": ["user_id"],
-          "isUnique": true,
-          "where": "state = 'open'"
-        },
-        "email_digests_state_idx": {
-          "name": "email_digests_state_idx",
-          "columns": ["state", "opened_at"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "email_digests_user_id_users_id_fk": {
-          "name": "email_digests_user_id_users_id_fk",
-          "tableFrom": "email_digests",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "email_digests_state_check": {
-          "name": "email_digests_state_check",
-          "value": "state IN ('open', 'closed')"
-        },
-        "email_digests_closed_check": {
-          "name": "email_digests_closed_check",
-          "value": "(state = 'closed') = (closed_at IS NOT NULL)"
-        }
-      }
-    },
     "email_outbox": {
       "name": "email_outbox",
       "columns": {
@@ -3039,7 +2848,7 @@
       "checkConstraints": {
         "email_outbox_kind_check": {
           "name": "email_outbox_kind_check",
-          "value": "kind IN ('test', 'invite', 'password_reset', 'assignment', 'mention', 'digest')"
+          "value": "kind IN ('test', 'invite', 'password_reset')"
         },
         "email_outbox_state_check": {
           "name": "email_outbox_state_check",
@@ -3047,7 +2856,7 @@
         },
         "email_outbox_suppressed_reason_check": {
           "name": "email_outbox_suppressed_reason_check",
-          "value": "suppressed_reason IS NULL OR suppressed_reason IN ('email_off', 'email_not_configured', 'no_address', 'no_public_url', 'too_old', 'superseded', 'pref_off', 'no_access')"
+          "value": "suppressed_reason IS NULL OR suppressed_reason IN ('email_off', 'email_not_configured', 'no_address', 'no_public_url', 'too_old', 'superseded')"
         },
         "email_outbox_suppressed_check": {
           "name": "email_outbox_suppressed_check",
@@ -3058,37 +2867,6 @@
           "value": "last_error IS NULL OR length(last_error) <= 300"
         }
       }
-    },
-    "email_watermarks": {
-      "name": "email_watermarks",
-      "columns": {
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "read_to": {
-          "name": "read_to",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
     },
     "github_checks": {
       "name": "github_checks",
@@ -5226,6 +5004,85 @@
         }
       }
     },
+    "org_teams_settings": {
+      "name": "org_teams_settings",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "posting_enabled": {
+          "name": "posting_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notice_cursor": {
+          "name": "notice_cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "org_teams_settings_updated_by_idx": {
+          "name": "org_teams_settings_updated_by_idx",
+          "columns": ["updated_by"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "org_teams_settings_org_id_orgs_id_fk": {
+          "name": "org_teams_settings_org_id_orgs_id_fk",
+          "tableFrom": "org_teams_settings",
+          "tableTo": "orgs",
+          "columnsFrom": ["org_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "org_teams_settings_updated_by_users_id_fk": {
+          "name": "org_teams_settings_updated_by_users_id_fk",
+          "tableFrom": "org_teams_settings",
+          "tableTo": "users",
+          "columnsFrom": ["updated_by"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "org_teams_settings_enabled_check": {
+          "name": "org_teams_settings_enabled_check",
+          "value": "posting_enabled IN (0, 1)"
+        },
+        "org_teams_settings_cursor_check": {
+          "name": "org_teams_settings_cursor_check",
+          "value": "notice_cursor >= 0"
+        }
+      }
+    },
     "org_time_settings": {
       "name": "org_time_settings",
       "columns": {
@@ -6145,6 +6002,92 @@
         "project_statuses_name_check": {
           "name": "project_statuses_name_check",
           "value": "length(trim(name)) BETWEEN 1 AND 40"
+        }
+      }
+    },
+    "project_teams_channels": {
+      "name": "project_teams_channels",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "webhook_url_enc": {
+          "name": "webhook_url_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "webhook_host": {
+          "name": "webhook_host",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "webhook_last4": {
+          "name": "webhook_last4",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_by": {
+          "name": "set_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "set_at": {
+          "name": "set_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "project_teams_channels_set_by_idx": {
+          "name": "project_teams_channels_set_by_idx",
+          "columns": ["set_by"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "project_teams_channels_project_id_projects_id_fk": {
+          "name": "project_teams_channels_project_id_projects_id_fk",
+          "tableFrom": "project_teams_channels",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_teams_channels_set_by_users_id_fk": {
+          "name": "project_teams_channels_set_by_users_id_fk",
+          "tableFrom": "project_teams_channels",
+          "tableTo": "users",
+          "columnsFrom": ["set_by"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "project_teams_channels_host_check": {
+          "name": "project_teams_channels_host_check",
+          "value": "length(webhook_host) BETWEEN 1 AND 253"
+        },
+        "project_teams_channels_last4_check": {
+          "name": "project_teams_channels_last4_check",
+          "value": "length(webhook_last4) = 4"
         }
       }
     },
@@ -8767,6 +8710,156 @@
         "tasks_parent_task_id_check": {
           "name": "tasks_parent_task_id_check",
           "value": "parent_task_id IS NULL OR parent_task_id <> id"
+        }
+      }
+    },
+    "teams_posts": {
+      "name": "teams_posts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event": {
+          "name": "event",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "slot": {
+          "name": "slot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "http_status": {
+          "name": "http_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "teams_posts_slot_unique": {
+          "name": "teams_posts_slot_unique",
+          "columns": ["project_id", "slot"],
+          "isUnique": true,
+          "where": "slot IS NOT NULL AND outcome IN ('sending', 'sent', 'suppressed')"
+        },
+        "teams_posts_project_created_at_idx": {
+          "name": "teams_posts_project_created_at_idx",
+          "columns": ["project_id", "created_at"],
+          "isUnique": false
+        },
+        "teams_posts_created_at_idx": {
+          "name": "teams_posts_created_at_idx",
+          "columns": ["created_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "teams_posts_project_id_projects_id_fk": {
+          "name": "teams_posts_project_id_projects_id_fk",
+          "tableFrom": "teams_posts",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "teams_posts_kind_check": {
+          "name": "teams_posts_kind_check",
+          "value": "kind IN ('standup', 'digest', 'notice', 'test')"
+        },
+        "teams_posts_event_check": {
+          "name": "teams_posts_event_check",
+          "value": "event IS NULL OR event IN ('morning', 'evening', 'assigned', 'sent_back', 'in_review', 'done', 'blocked', 'unblocked', 'commented')"
+        },
+        "teams_posts_outcome_check": {
+          "name": "teams_posts_outcome_check",
+          "value": "outcome IN ('sending', 'sent', 'failed', 'suppressed')"
+        },
+        "teams_posts_reason_check": {
+          "name": "teams_posts_reason_check",
+          "value": "reason IS NULL OR reason IN ('posting_off', 'too_old', 'burst', 'refused', 'unavailable', 'unreachable', 'no_answer', 'address_unusable')"
+        },
+        "teams_posts_reason_needed_check": {
+          "name": "teams_posts_reason_needed_check",
+          "value": "(outcome IN ('sending', 'sent')) = (reason IS NULL)"
+        },
+        "teams_posts_title_check": {
+          "name": "teams_posts_title_check",
+          "value": "length(title) BETWEEN 1 AND 300"
+        },
+        "teams_posts_attempt_check": {
+          "name": "teams_posts_attempt_check",
+          "value": "attempt >= 1"
         }
       }
     },
@@ -11458,65 +11551,6 @@
         "user_away_periods_range_check": {
           "name": "user_away_periods_range_check",
           "value": "to_day >= from_day"
-        }
-      }
-    },
-    "user_email_prefs": {
-      "name": "user_email_prefs",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "instant": {
-          "name": "instant",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
-        "digest": {
-          "name": "digest",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "user_email_prefs_user_id_users_id_fk": {
-          "name": "user_email_prefs_user_id_users_id_fk",
-          "tableFrom": "user_email_prefs",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "user_email_prefs_instant_check": {
-          "name": "user_email_prefs_instant_check",
-          "value": "instant IN (0, 1)"
-        },
-        "user_email_prefs_digest_check": {
-          "name": "user_email_prefs_digest_check",
-          "value": "digest IN (0, 1)"
         }
       }
     },

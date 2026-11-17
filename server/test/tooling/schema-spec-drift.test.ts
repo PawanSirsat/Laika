@@ -614,8 +614,12 @@ describe('the parser itself', () => {
       'org_hr_source',
       'org_model_prices',
       'org_role_grants',
+      // LAI-1314: one row per organisation, keyed by `org_id`, as its Time setting.
+      'org_teams_settings',
       'org_time_settings',
       'plan_limits',
+      // LAI-1314: one channel per space, keyed by `project_id`.
+      'project_teams_channels',
       'pushed_commit_keys',
       'recognised_agent_devices',
       'solidtime_entries',

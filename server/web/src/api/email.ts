@@ -105,7 +105,7 @@ export function sendTestEmail(): Promise<EmailTestResult> {
   return request<EmailTestResult>('/org/email/test', { method: 'POST' });
 }
 
-/** A person's own email switches (§4.94, LAI-1313): both on until they change them. */
+/** A person's own email switches (§4.97, LAI-1313): both on until they change them. */
 export interface EmailPrefs {
   /** Mail at once when assigned a task or @mentioned. */
   readonly instant: boolean;

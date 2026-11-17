@@ -50,7 +50,8 @@ function folderBefore0073(): string {
     '0082_attachments',
     '0083_project_icons',
     '0084_email_outbox',
-    '0085_email_notify',
+    '0085_teams_posting',
+    '0086_email_notify',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));

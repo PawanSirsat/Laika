@@ -19,6 +19,7 @@ import {
   pruneEmailOutbox,
   runEmailOutbox,
 } from '../services/email-outbox.ts';
+import { runTeamsTick, TEAMS_TICK_MS, type TeamsPostingDeps } from '../services/teams-posting.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
@@ -87,8 +88,14 @@ export interface SchedulerDeps {
    */
   email?: Omit<EmailOutboxDeps, 'now'>;
   /**
-   * `LAIKA_PUBLIC_URL`, which every link in a notification mail is built from
-   * (LAI-1313). Empty: the mails go without a link.
+   * Teams posting's `fetch` and waits (D-154, LAI-1314) — injected by the
+   * tests, which never call Teams.
+   */
+  teams?: TeamsPostingDeps;
+  /**
+   * `LAIKA_PUBLIC_URL`, for the links back a Teams post carries and every
+   * link in a notification mail (LAI-1313). Empty: the mails go without a
+   * link.
    */
   publicUrl?: string;
   now?: () => number;
@@ -195,7 +202,7 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       run: (now) => ({ changed: pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) }),
       atStart: true,
     },
-    // Assignment and mention mail, and the daily digests (§4.94 – §4.97,
+    // Assignment and mention mail, and the daily digests (§4.97 – §4.100,
     // D-153, LAI-1313), read from `activity` and `member_notices` every 30
     // seconds under `system.email.notify`. Only writes to the outbox — the
     // `email.send` job sends — so it needs no transport, and a board with
@@ -235,6 +242,30 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       everyMs: DAY,
       run: (now) => refitEstimates(db, now),
       atStart: true,
+    },
+    // Each space's Teams stand-ups, digest and notices (D-154, LAI-1314),
+    // every minute: a notice is instant to within one tick, and a scheduled
+    // run goes the first tick after its time. Posting is off until an owner
+    // turns it on, and then this still sends nothing for a space with no
+    // channel. Not `atStart`: it waits on the network, and the next minute
+    // comes round. A tick still going when the next comes is joined, never
+    // doubled (`runTeamsTick`).
+    {
+      name: 'teams.post',
+      everyMs: TEAMS_TICK_MS,
+      run: async () => {
+        const ticked = await runTeamsTick(db, deps.serverSecret ?? '', {
+          ...deps.teams,
+          publicUrl: deps.teams?.publicUrl ?? deps.publicUrl ?? null,
+          log: deps.teams?.log ?? deps.log,
+          // The clock itself, not the tick's instant: a post's `created_at` and
+          // `finished_at` are when it was claimed and when Teams answered.
+          now: deps.now ?? Date.now,
+        });
+        return {
+          changed: ticked.sent + ticked.failed + ticked.suppressed + ticked.pruned,
+        };
+      },
     },
     // Holidays and leave from the organisation's HR system (D-149 item 7,
     // LAI-1181), every 30 minutes and at boot; nothing without a connected

@@ -5,7 +5,7 @@ import { userEmailPrefs } from '../db/schema.ts';
 import { assertCan } from '../policy/can.ts';
 
 /**
- * A person's own email switches (§4.94, D-153, LAI-1313): instant mail when
+ * A person's own email switches (§4.97, D-153, LAI-1313): instant mail when
  * they are assigned or @mentioned, and the daily digest.
  *
  * **Both on unless they say otherwise.** No row is the defaults, so a person

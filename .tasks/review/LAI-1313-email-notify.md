@@ -121,3 +121,7 @@ is off.
 - **Where it stops:** at a green PR. CHIEF merges.
 - **Migration number:** this branch's migration follows LAI-1312's 0084, and #360 (Teams) is
   to take 0085. Whichever lands second regenerates (migrations README).
+
+**Renumbered after #360 merged** (2026-11-18): the migration is `0086_email_notify` and
+the four tables are SPEC §4.97 – §4.100. The Contract above keeps the numbers it was
+written with.

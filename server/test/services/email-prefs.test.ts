@@ -11,7 +11,7 @@ import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpe
 import { loadActor } from '../../src/auth/resolve-actor.ts';
 
 /**
- * A person's own email switches (§4.94, D-153, LAI-1313): both on until they
+ * A person's own email switches (§4.97, D-153, LAI-1313): both on until they
  * say otherwise, their own row only, and signed in only.
  */
 

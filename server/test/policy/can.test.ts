@@ -712,6 +712,52 @@ describe('org.email.configure (D-153, LAI-1312 review)', () => {
   });
 });
 
+/**
+ * D-154 (LAI-1314): a space's Teams address decides where its work is read
+ * out to, so every token is refused — an owner's full one included — and an
+ * owner or admin may, signed in.
+ */
+describe('Teams posting refuses every token (LAI-1314)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+
+  it('allows an owner and an admin on a cookie session, and refuses each to any token', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role, null), 'org.teams.configure'), role).toBe(true);
+      for (const token of tokens) {
+        expect(can(actor(role, null, token), 'org.teams.configure'), `${role} / ${token.id}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('says a token is refused for being a token, not for the role', () => {
+    try {
+      assertCan(actor('owner', null, tokens[0]), 'org.teams.configure');
+      expect.unreachable('a token reached Teams posting');
+    } catch (err) {
+      expect((err as ApiError).details).toEqual({
+        action: 'org.teams.configure',
+        reason: 'session_required',
+      });
+    }
+  });
+
+  it('gives a member and a viewer none of it, signed in', () => {
+    expect(can(actor('member', null), 'org.teams.configure')).toBe(false);
+    expect(can(actor('viewer', null), 'org.teams.configure')).toBe(false);
+  });
+
+  it('follows the admin grant it is carried by', () => {
+    const withdrawn = { ...actor('admin', null), orgGrants: { admin: [], member: [], viewer: [] } };
+    expect(can(withdrawn, 'org.teams.configure')).toBe(false);
+  });
+});
+
 describe('time refuses every token but where a collector or an agent acts (LAI-787)', () => {
   const tokens: TokenContext[] = [
     { id: 'tok_full', scope: 'full', projectIds: null },
