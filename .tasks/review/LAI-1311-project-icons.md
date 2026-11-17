@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T18:13:27Z
+finished: 2026-11-17T20:06:00Z
 ---
 
 ## Goal
@@ -70,24 +71,24 @@ written.
 
 ## Acceptance criteria
 
-- [ ] Migration 0083 adds the four columns; the generated SQL is read; every
+- [x] Migration 0083 adds the four columns; the generated SQL is read; every
       `migrationsFolder` test and `schema` guard is green.
-- [ ] Emoji: set, replace and clear through `PATCH`; anything that is not exactly one
+- [x] Emoji: set, replace and clear through `PATCH`; anything that is not exactly one
       emoji grapheme is `422`; a lead who is not an org owner or admin is `403`.
-- [ ] Image over a fake store: ask, then `PUT`, then complete, then read the bytes; a
+- [x] Image over a fake store: ask, then `PUT`, then complete, then read the bytes; a
       different size is `409`; SVG, another type and over 1 MiB are refused; a file
       whose first bytes do not match its declared type is refused; replacing and
       removing delete the old object; store off is `503 attachments_off`; a member, a
       viewer and a read-only token are `403`.
-- [ ] Read: bytes and `Cache-Control: private, max-age=31536000, immutable`; a project
+- [x] Read: bytes and `Cache-Control: private, max-age=31536000, immutable`; a project
       the caller cannot read, or one with no image, is `404`.
-- [ ] `project.icon.write`: §3.1 row, `can()`, labels, and the policy guards updated,
+- [x] `project.icon.write`: §3.1 row, `can()`, labels, and the policy guards updated,
       not loosened.
-- [ ] `ProjectMark` is used at every place the census found; the PR body lists them.
-- [ ] Space settings → General Icon section: owners and admins only; Upload hidden with
+- [x] `ProjectMark` is used at every place the census found; the PR body lists them.
+- [x] Space settings → General Icon section: owners and admins only; Upload hidden with
       no store; both themes and phone width.
-- [ ] D-152 and the SPEC rows written.
-- [ ] CI gate green on the PR: test, lint and format each exit 0.
+- [x] D-152 and the SPEC rows written.
+- [x] CI gate green on the PR: test, lint and format each exit 0.
 
 ## Notes / context
 
@@ -95,3 +96,24 @@ written.
   below 15, CI runs the full gate.
 - Release: the builder stops at a green PR, this file in review and its log; CHIEF
   reviews, merges and pushes to KvellDynamics/ksage-2.0 (CHIEF, 2026-11-17).
+
+## Build notes (LAI-1311, CHIEF builder laika-c4, Belka)
+
+PR #358, branch `LAI-1311-project-icons`, CI green at `a9e9de1ec` (every check). Every
+criterion above holds. Deviations and choices, each also in the PR body and the log:
+
+- **One icon at a time.** Setting an emoji drops an image (its object deleted after the
+  write); completing an image clears the emoji; `DELETE` clears both. Otherwise removing an
+  image would resurface a forgotten emoji.
+- **Stateless ask/complete.** The upload id is a ULID in the key; nothing is stored between
+  the two steps. An image put and never completed stays in the store (≤ 1 MiB, owner/admin
+  only) — the known limit D-152 records.
+- **`immutable` only when `v` is the current version**; any other `v` is `private, no-cache`.
+- **The complete body carries `upload_id`, `content_type` and `size_bytes`** (the contract
+  named only HEAD + sniff): `size_bytes` is what the `409 size_mismatch` criterion is checked
+  against, and `content_type` what the first bytes must agree with (`422 type_mismatch`).
+- **The look store** (`api/project-looks.ts`) means ~60 sites whose endpoints send only
+  `{slug, name}` draw the right mark with no view growing a field.
+- **The glyph is drawn from `data-glyph`, not written as text**, so no row reads
+  `AAcme Billing`; four browser tests that read the letter as text now read the attribute.
+- **Chart series colours** still hash the slug — a follow-up for CHIEF to file (log).
