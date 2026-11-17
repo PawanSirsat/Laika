@@ -2811,6 +2811,9 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         // LAI-1300's attachments: one new table, and `activity` rebuilt for
         // its two verbs, every row kept.
         expect.stringMatching(/_attachments$/),
+        // LAI-1316's calendar tables, and `time_entries` rebuilt for the
+        // `calendar` source, every row kept.
+        expect.stringMatching(/_calendar_sync$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2959,6 +2962,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
+      '0083_calendar_sync',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3055,6 +3059,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
+      '0083_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3083,8 +3088,9 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
 
         runMigrations(db);
 
-        // LAI-1181's 0081 rides along and adds its four HR tables, and
-        // LAI-1300's 0082 its attachments; nothing else appears.
+        // LAI-1181's 0081 rides along and adds its four HR tables,
+        // LAI-1300's 0082 its attachments and LAI-1316's 0083 its two
+        // calendar tables; nothing else appears.
         expect(tables()).toEqual(
           [
             ...before,
@@ -3094,6 +3100,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'org_holidays',
             'org_hr_source',
             'attachments',
+            'calendar_events',
+            'org_calendar_source',
           ].sort(),
         );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
@@ -3141,6 +3149,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
+      '0083_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3255,6 +3264,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
+      '0083_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3335,6 +3345,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
+      '0083_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3414,7 +3425,7 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
     const at = journal.entries.findIndex((e) => e.tag === '0082_attachments');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0082_attachments']);
+    expect(dropped.map((e) => e.tag)).toEqual(['0082_attachments', '0083_calendar_sync']);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3487,6 +3498,196 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
           'attachments_task_id_idx',
           'attachments_uploaded_by_idx',
           'sqlite_autoindex_attachments_1',
+        ]);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0083 rebuilds time_entries for the calendar source on a populated 0082 database (LAI-1316)', () => {
+  function folderAt0082(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0083_calendar_sync');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0083_calendar_sync']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps every entry, revision, draft link and Solidtime twin, keeps the triggers and accepts calendar',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0082() });
+        const s = seed(db);
+        const now = Date.now();
+        // Recent enough that the three-year trigger still holds every row.
+        const day = new Date(now).toISOString().slice(0, 10);
+        const columnsBefore = db.all<{ name: string }>(
+          sql`SELECT name FROM pragma_table_info('time_entries') ORDER BY cid`,
+        );
+
+        const entry = (
+          source: string,
+          sourceRef: string | null,
+          extra: { deletedAt?: number; kind?: string; folder?: string } = {},
+        ) => {
+          const id = newId();
+          db.run(sql`
+            INSERT INTO time_entries (id, user_id, task_id, project_id, day, tz, started_at, ended_at,
+              minutes, source, source_ref, note, kind, title, description, folder, branch, revision,
+              deleted_at, created_at, updated_at)
+            VALUES (${id}, ${s.userId}, NULL, ${s.projectId}, ${day}, 'Africa/Johannesburg',
+              ${now - 3_600_000}, ${now}, 60, ${source}, ${sourceRef}, 'a note',
+              ${extra.kind ?? null}, 'A title', 'A description', ${extra.folder ?? null},
+              ${extra.folder === undefined ? null : 'main'}, 2, ${extra.deletedAt ?? null}, ${now}, ${now})
+          `);
+          for (const revision of [1, 2]) {
+            db.run(sql`
+              INSERT INTO time_entry_revisions (id, entry_id, revision, change, changed_by, task_id,
+                project_id, day, tz, started_at, ended_at, minutes, note, kind, title, description, created_at)
+              VALUES (${newId()}, ${id}, ${revision}, ${revision === 1 ? 'created' : 'edited'}, ${s.userId},
+                NULL, ${s.projectId}, ${day}, 'Africa/Johannesburg', ${now - 3_600_000}, ${now}, 60,
+                'a note', ${extra.kind ?? null}, 'A title', 'A description', ${now})
+            `);
+          }
+          return id;
+        };
+        const draftId = newId();
+        const confirmed = entry('draft', draftId, { folder: 'laika' });
+        entry('manual', null, { kind: 'meeting' });
+        entry('manual', null, { deletedAt: now });
+        const imported = entry('import', 'st-1');
+        // Rows that point at an entry: each would go with the old table if the
+        // rebuild ran with foreign keys on (a draft's `set null`, a Solidtime
+        // twin's and a revision's `cascade`).
+        db.run(sql`
+          INSERT INTO time_drafts (id, user_id, source, day, tz, started_at, ended_at, minutes, state,
+            entry_id, created_at, updated_at)
+          VALUES (${draftId}, ${s.userId}, 'collector', ${day}, 'Africa/Johannesburg',
+            ${now - 3_600_000}, ${now}, 60, 'confirmed', ${confirmed}, ${now}, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO solidtime_entries (solidtime_id, member_id, user_id, entry_id, entry_revision,
+            hash, started_at, day, minutes, project_id, task_id, updated_at)
+          VALUES ('st-1', 'm-1', ${s.userId}, ${imported}, 2, 'h', ${now - 3_600_000}, ${day}, 60,
+            ${s.projectId}, NULL, ${now})
+        `);
+        const insertSource = (source: string) =>
+          db.run(sql`
+            INSERT INTO time_entries (id, user_id, day, tz, minutes, source, revision, created_at, updated_at)
+            VALUES (${newId()}, ${s.userId}, ${day}, 'UTC', 30, ${source}, 1, ${now}, ${now})
+          `);
+        // Before 0083 the source is refused: the CHECK is what the rebuild changes.
+        expectSqliteError(() => insertSource('calendar'), /time_entries_source_check/);
+
+        const before = {
+          entries: db.all(sql`SELECT rowid, * FROM time_entries ORDER BY id`),
+          revisions: db.all(sql`SELECT * FROM time_entry_revisions ORDER BY id`),
+          drafts: db.all(sql`SELECT * FROM time_drafts ORDER BY id`),
+          twins: db.all(sql`SELECT * FROM solidtime_entries ORDER BY solidtime_id`),
+        };
+        expect(before.entries).toHaveLength(4);
+        expect(before.revisions).toHaveLength(8);
+
+        runMigrations(db);
+
+        expect(db.all(sql`SELECT rowid, * FROM time_entries ORDER BY id`)).toEqual(before.entries);
+        expect(db.all(sql`SELECT * FROM time_entry_revisions ORDER BY id`)).toEqual(
+          before.revisions,
+        );
+        expect(db.all(sql`SELECT * FROM time_drafts ORDER BY id`)).toEqual(before.drafts);
+        expect(db.all(sql`SELECT * FROM solidtime_entries ORDER BY solidtime_id`)).toEqual(
+          before.twins,
+        );
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        // Every column the old table had, and no other: the INSERT … SELECT
+        // names all 21. Their order is the schema's now — 0047 and 0057 had
+        // added five at the end — which no query reads, since every one names
+        // its columns; the rows above compare by name.
+        const names = (rows: { name: string }[]) => rows.map((r) => r.name).sort();
+        expect(columnsBefore).toHaveLength(21);
+        expect(
+          names(
+            db.all<{ name: string }>(
+              sql`SELECT name FROM pragma_table_info('time_entries') ORDER BY cid`,
+            ),
+          ),
+        ).toEqual(names(columnsBefore));
+
+        insertSource('calendar');
+        expectSqliteError(() => insertSource('outlook'), /time_entries_source_check/);
+
+        // `ensureActivityTriggers` put the table's two triggers back.
+        const triggers = db
+          .all<{ name: string }>(
+            sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'time_entries' ORDER BY name`,
+          )
+          .map((r) => r.name);
+        expect(triggers).toEqual(['time_entries_kept_three_years', 'time_entries_no_replace']);
+        // Kept three years: a recent entry cannot be deleted.
+        expectSqliteError(
+          () => db.run(sql`DELETE FROM time_entries WHERE id = ${confirmed}`),
+          /kept three years/,
+        );
+        // Never replaced: re-inserting a deleted import's source_ref is refused.
+        expectSqliteError(
+          () =>
+            db.run(sql`
+              INSERT OR REPLACE INTO time_entries (id, user_id, day, tz, minutes, source, source_ref,
+                revision, created_at, updated_at)
+              VALUES (${newId()}, ${s.userId}, ${day}, 'UTC', 30, 'import', 'st-1', 1, ${now}, ${now})
+            `),
+          /INSERT OR REPLACE is not permitted/,
+        );
+        // The revisions' own triggers still see the rebuilt table: a
+        // revision of a live entry cannot be deleted.
+        expectSqliteError(
+          () => db.run(sql`DELETE FROM time_entry_revisions WHERE entry_id = ${confirmed}`),
+          /append-only/,
+        );
+
+        const fks = db.all<{ from: string; table: string; on_delete: string }>(
+          sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('time_entries') ORDER BY "from"`,
+        );
+        expect(fks).toEqual([
+          { from: 'project_id', table: 'projects', on_delete: 'SET NULL' },
+          { from: 'task_id', table: 'tasks', on_delete: 'SET NULL' },
+          { from: 'user_id', table: 'users', on_delete: 'NO ACTION' },
+        ]);
+        const indexes = db
+          .all<{ name: string }>(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' ORDER BY name`,
+          )
+          .map((r) => r.name);
+        expect(indexes).toEqual([
+          'sqlite_autoindex_time_entries_1',
+          'time_entries_day_idx',
+          'time_entries_project_day_idx',
+          'time_entries_source_ref_unique',
+          'time_entries_task_id_idx',
+          'time_entries_user_day_idx',
+        ]);
+        // The new tables point at the rebuilt one.
+        expect(
+          db.all<{ from: string; table: string; on_delete: string }>(
+            sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('calendar_events') ORDER BY "from"`,
+          ),
+        ).toEqual([
+          { from: 'entry_id', table: 'time_entries', on_delete: 'CASCADE' },
+          { from: 'user_id', table: 'users', on_delete: 'CASCADE' },
         ]);
       } finally {
         sqlite.close();

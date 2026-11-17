@@ -98,6 +98,8 @@ describe('migrations', () => {
     // LAI-1300, D-150: files in the operator's store, by project, task and comment.
     'attachments',
     'board_activity_days',
+    // LAI-1316, D-157: which time entry holds which Outlook meeting.
+    'calendar_events',
     // LAI-1038, D-126: capacity pings and the one answer each got.
     'capacity_pings',
     // LAI-545, D-116: every ref a checkpoint has, and every push that moved one.
@@ -127,6 +129,8 @@ describe('migrations', () => {
     // LAI-1136, D-134: a member's own notices, kept 90 days.
     'member_notices',
     'member_ratings',
+    // LAI-1316, D-157: the Outlook calendar connection.
+    'org_calendar_source',
     // LAI-1181, D-149: holidays, synced or typed, and the HR connection.
     'org_holidays',
     'org_hr_source',

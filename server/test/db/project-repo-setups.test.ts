@@ -48,6 +48,7 @@ function folderBefore0073(): string {
     '0080_member_notices_time_changed',
     '0081_hr_source',
     '0082_attachments',
+    '0083_calendar_sync',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));

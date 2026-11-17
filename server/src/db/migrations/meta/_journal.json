@@ -575,6 +575,13 @@
       "when": 1794909017979,
       "tag": "0082_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1794946189713,
+      "tag": "0083_calendar_sync",
+      "breakpoints": true
     }
   ]
 }

@@ -87,6 +87,7 @@ import {
   ANALYTICS_VIEW_KINDS,
   ATTACHMENT_STATES,
   AVAILABILITY_STATUSES,
+  CALENDAR_SYNC_ERROR_CODES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -1749,6 +1750,115 @@ export const attachments = sqliteTable(
     check('attachments_ready_check', sql.raw("(state = 'ready') = (ready_at IS NOT NULL)")),
     // Nothing is purged that was not first removed.
     check('attachments_purged_check', sql.raw('purged_at IS NULL OR deleted_at IS NOT NULL')),
+  ],
+);
+
+// ------------------------------------------------ §4.93 org_calendar_source
+
+/**
+ * The organisation's Outlook calendar connection (§4.93, D-157, LAI-1316): an
+ * Entra app's tenant, client id and client secret, with which the sync reads
+ * each member's meetings through Microsoft Graph as the application — never
+ * as a person — once an admin has granted it `Calendars.Read`. **No row is
+ * not configured.** `enabled` is the switch, and it starts off: nothing is
+ * read until an owner or admin turns it on, and *Test connection* works
+ * before then.
+ *
+ * The secret is §12's ciphertext under its own purpose
+ * (`calendar_client_secret`), with its last four characters to show; it is
+ * written, never served. `rules_json` maps a meeting to a space — a keyword
+ * in its subject, or the Teams channel it is in — as
+ * `[{"kind","text","project_id"}]`, first match wins. `last_test_roles_json`
+ * is the roles the last test's token carried, which says whether the grant
+ * has been made.
+ *
+ * Its own table rather than columns on `orgs`, as `org_hr_source` is.
+ */
+export const orgCalendarSource = sqliteTable(
+  'org_calendar_source',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** The Entra tenant: a GUID, or a domain such as `contoso.onmicrosoft.com`. */
+    tenantId: text('tenant_id').notNull(),
+    /** The app's client (application) id, a GUID. */
+    clientId: text('client_id').notNull(),
+    /** §12 ciphertext. Never logged, never served, never in `activity`. */
+    secretEnc: text('secret_enc').notNull(),
+    secretLast4: text('secret_last4').notNull(),
+    /** The switch: 0 until an owner or admin turns it on. */
+    enabled: integer('enabled').notNull().default(0),
+    /** `[{"kind":"title"|"channel","text":"…","project_id":"…"}]`, at most 50. */
+    rulesJson: text('rules_json').notNull().default('[]'),
+    configuredBy: text('configured_by').references(() => users.id, { onDelete: 'set null' }),
+    configuredAt: integer('configured_at').notNull(),
+    /** When *Test connection* last got a token, and the roles it carried, A–Z. */
+    lastTestAt: integer('last_test_at'),
+    lastTestRolesJson: text('last_test_roles_json'),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastSuccessAt: integer('last_success_at'),
+    lastErrorCode: text('last_error_code', { enum: CALENDAR_SYNC_ERROR_CODES }),
+    /** Laika's own words for the failure — never Microsoft's response text. */
+    lastError: text('last_error'),
+    /** The last complete sync's counts, as `CalendarSyncResultView`. */
+    lastResultJson: text('last_result_json'),
+    updatedAt,
+  },
+  (t) => [
+    index('org_calendar_source_configured_by_idx').on(t.configuredBy),
+    check('org_calendar_source_enabled_check', sql.raw('enabled IN (0, 1)')),
+    check(
+      'org_calendar_source_last_error_code_check',
+      oneOfOrNull('last_error_code', CALENDAR_SYNC_ERROR_CODES),
+    ),
+    // A test has both its time and its roles, or neither.
+    check(
+      'org_calendar_source_test_check',
+      sql.raw('(last_test_at IS NULL) = (last_test_roles_json IS NULL)'),
+    ),
+    check('org_calendar_source_tenant_check', sql.raw('length(tenant_id) BETWEEN 1 AND 100')),
+    check('org_calendar_source_client_check', sql.raw('length(client_id) = 36')),
+  ],
+);
+
+// ---------------------------------------------------- §4.94 calendar_events
+
+/**
+ * A meeting the calendar sync logged (§4.94, D-157, LAI-1316): which of a
+ * person's time entries holds which of their Outlook events, by Graph's
+ * event id, and **the entry's revision as the sync last wrote it**. An entry
+ * whose revision has moved past `entry_revision_synced` was changed by its
+ * person, and the sync never touches it again — the `solidtime_entries`
+ * pattern. Nothing of the meeting is kept here but its ids: the subject and
+ * the times are on the entry, and no link, body or attendee is stored
+ * anywhere.
+ */
+export const calendarEvents = sqliteTable(
+  'calendar_events',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Graph's id for the event, or for one occurrence of a series. */
+    eventId: text('event_id').notNull(),
+    /** The iCalendar UID Outlook gives the meeting, shared by everyone invited. */
+    icalUid: text('ical_uid'),
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => timeEntries.id, { onDelete: 'cascade' }),
+    /** The entry's revision as the sync last wrote it. */
+    entryRevisionSynced: integer('entry_revision_synced').notNull(),
+    /** The last sync that read the event. */
+    lastSeenAt: integer('last_seen_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('calendar_events_user_event_unique').on(t.userId, t.eventId),
+    uniqueIndex('calendar_events_entry_id_unique').on(t.entryId),
+    check('calendar_events_revision_check', sql.raw('entry_revision_synced >= 1')),
+    check('calendar_events_event_id_check', sql.raw('length(event_id) BETWEEN 1 AND 512')),
   ],
 );
 
@@ -4441,6 +4551,7 @@ export type UserAvailability = typeof userAvailability.$inferSelect;
 export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;
 export type OrgHrSource = typeof orgHrSource.$inferSelect;
+export type OrgCalendarSource = typeof orgCalendarSource.$inferSelect;
 export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;

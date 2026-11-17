@@ -78,7 +78,9 @@ export type SecretPurpose =
   | 'github_webhook_secret'
   | 'transcript_webhook_secret'
   // D-149 (LAI-1181): the HR system's API token, in `org_hr_source.token_enc`.
-  | 'clan_api_token';
+  | 'clan_api_token'
+  // D-157 (LAI-1316): the Entra app's client secret, in `org_calendar_source.secret_enc`.
+  | 'calendar_client_secret';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.

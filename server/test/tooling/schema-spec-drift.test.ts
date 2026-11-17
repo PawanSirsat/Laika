@@ -608,6 +608,8 @@ describe('the parser itself', () => {
       // found again by it at every sync, as Solidtime's members are.
       'hr_people',
       'local_activity_days',
+      // LAI-1316: one row per organisation, keyed by `org_id`, as the HR connection.
+      'org_calendar_source',
       // LAI-1181: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_hr_source',
       'org_model_prices',
