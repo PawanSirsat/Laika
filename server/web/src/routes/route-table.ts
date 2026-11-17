@@ -137,7 +137,7 @@ export interface Route {
   readonly palette?: readonly string[];
 }
 
-/** The Appearance page (LAI-1212): the person menu and the palette link here. */
+/** The Appearance page (LAI-1212): the top bar's gear (LAI-1231) and the palette link here. */
 export const APPEARANCE_PATH = '/settings/appearance';
 
 export const ROUTES: readonly Route[] = [

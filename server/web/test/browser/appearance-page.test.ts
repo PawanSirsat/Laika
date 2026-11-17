@@ -2,7 +2,7 @@
  * The Appearance page, in a real browser (LAI-1212; the font half from
  * LAI-1125, when it was a side panel).
  *
- * What only a browser can say: that the page is reached from the person menu
+ * What only a browser can say: that the page is reached from the gear
  * and the palette; that choosing a theme repaints at once and that a reload
  * puts it on `<html>` **before the body is parsed** — no frame of the wrong
  * theme; that Black really is black and readable; that the radio groups answer
@@ -197,10 +197,10 @@ async function onPage(page: Page): Promise<void> {
   await page.getByRole('radiogroup', { name: 'Theme' }).waitFor({ timeout: 5_000 });
 }
 
-/** Through the person menu, as a reader would. */
+/** Through the top bar's gear, as a reader would (the person menu's until LAI-1231). */
 async function viaMenu(page: Page): Promise<void> {
-  await page.locator('.user-menu-trigger').waitFor({ timeout: 20_000 });
-  await page.locator('.user-menu-trigger').dispatchEvent('click');
+  await page.locator('[data-header-settings]').waitFor({ timeout: 20_000 });
+  await page.locator('[data-header-settings]').dispatchEvent('click');
   await page.getByRole('menuitem', { name: 'Appearance' }).dispatchEvent('click');
   await onPage(page);
 }
@@ -306,7 +306,7 @@ void after(async () => {
 });
 
 void describe('reaching the page', () => {
-  void test('the person menu’s Appearance opens the page, not a sheet', async () => {
+  void test('the gear’s Appearance opens the page, not a sheet', async () => {
     const h = await open(BOARD, STUB);
     try {
       await viaMenu(h.page);

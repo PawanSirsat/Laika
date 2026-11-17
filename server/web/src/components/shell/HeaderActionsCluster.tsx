@@ -25,8 +25,9 @@ const NotificationsPopover = lazy(async () => {
  * **The top bar's own controls** (LAI-1221; Jira's order since LAI-1227).
  * `HeaderCreate` sits beside the search; this is the right-hand cluster:
  * the bell, keyboard shortcuts, settings, then the person (`PersonMenu`),
- * whose menu holds the profile, every theme, Appearance and signing out — the
- * one place for them now that the sidebar has no foot.
+ * whose menu holds the profile, the quick theme switch and signing out — the
+ * one place for them now that the sidebar has no foot. Appearance and
+ * Developer access are the gear's alone (LAI-1231).
  */
 export function HeaderActionsCluster() {
   const { me } = useShell();

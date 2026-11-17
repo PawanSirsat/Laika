@@ -43,8 +43,7 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   '/people':
     'a person — their name on Organisation, a Contributors row or a Capacity card (owners and admins)',
   // LAI-1212: a personal setting of this device, not a destination.
-  '/settings/appearance':
-    "the person menu's *Appearance* at the foot of the rail, and the ⌘K palette's Go to",
+  '/settings/appearance': "the top bar gear's *Appearance* (LAI-1231), and the ⌘K palette's Go to",
   // A person's own day (LAI-787, D-088): about whoever is signed in, so it
   // sits under their name at the foot of the rail rather than in a group.
 };
