@@ -62,7 +62,7 @@ import {
   matchesSearch,
   statusLabel,
 } from '../../api/board-derive.ts';
-import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
+import { statusEditMessage, useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
 import { useAction } from '../../components/toast/use-action.ts';
@@ -849,6 +849,123 @@ export function BoardScreen({
   const columnToDelete =
     deletingColumn === undefined ? undefined : statuses.byId.get(deletingColumn);
 
+  /*
+   * **Every board write says how it went** (LAI-1310), through the app's one
+   * toast. The refusal used to sit in a `.board-alert` banner above the lanes;
+   * it is now a persistent error toast with the server's sentence as its
+   * detail, and a success names the card or column and what happened to it.
+   *
+   * **Undo only where the server can really reverse it.** A card's column
+   * can be set back (the same `move` call), a column's visibility and the
+   * column order can be set back; a card's place *within* a lane cannot be
+   * restored exactly once the lane has moved on, and a deleted column took
+   * its tasks somewhere else, so neither offers one.
+   */
+  const statusName = (id: string | undefined): string =>
+    (id === undefined ? undefined : statuses.byId.get(id)?.name) ?? 'its column';
+
+  /**
+   * A card into a column: the drag's drop on a lane, the List's status pill,
+   * and the task drawer's status picker when it is open over this board
+   * (`taskSource.onMove`). The drawer passes the status it is leaving, which
+   * is the truth at the moment of the click; the board's own copy is the
+   * fallback for the callers that do not.
+   */
+  const moveCard = (id: string, toStatusId: string, fromStatusId?: string): void => {
+    const task = board.byId.get(id);
+    const key = task?.key ?? 'Task';
+    const from = fromStatusId ?? task?.status_id;
+    void action.run({
+      do: () => board.move(id, toStatusId),
+      success: `${key} moved to ${statusName(toStatusId)}`,
+      failure: `Couldn’t move ${key}`,
+      undo:
+        from === undefined || from === toStatusId
+          ? undefined
+          : async () => {
+              await board.move(id, from);
+              return `${key} moved back to ${statusName(from)}`;
+            },
+      mark: 'board-move',
+    });
+  };
+
+  const placeCard = (
+    id: string,
+    to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
+    statusId?: string,
+  ): void => {
+    const task = board.byId.get(id);
+    const status = statusId === undefined ? undefined : statuses.byId.get(statusId);
+    const from = task?.status_id;
+    const changesColumn = status !== undefined && from !== undefined && status.id !== from;
+    // A drop that changed nothing writes nothing, and says nothing.
+    if (!changesColumn && to.afterId === undefined && to.beforeId === undefined) return;
+    const key = task?.key ?? 'Task';
+    void action.run({
+      do: () => board.place(id, to, status),
+      success: changesColumn
+        ? `${key} moved to ${status.name}`
+        : `${key} reordered in ${statusName(from)}`,
+      failure: `Couldn’t move ${key}`,
+      undo: changesColumn
+        ? async () => {
+            await board.move(id, from);
+            return `${key} moved back to ${statusName(from)}`;
+          }
+        : undefined,
+      mark: 'board-move',
+    });
+  };
+
+  const hideColumn = (id: string, hidden: boolean): void => {
+    const name = statusName(id);
+    void action.run({
+      do: () => columnEdits.setHidden(id, hidden),
+      success: hidden ? `${name} column hidden` : `${name} column shown`,
+      failure: hidden ? `Couldn’t hide ${name}` : `Couldn’t show ${name}`,
+      undo: async () => {
+        await columnEdits.setHidden(id, !hidden);
+        return hidden ? `${name} column shown again` : `${name} column hidden again`;
+      },
+      mark: 'board-column',
+    });
+  };
+
+  const reorderColumns = (ids: readonly string[]): void => {
+    // The order before the drag, so Undo sends exactly that back.
+    const before = statuses.visible.map((s) => s.id);
+    void action.run({
+      do: () => columnEdits.reorder(ids),
+      success: 'Columns reordered',
+      failure: 'Couldn’t reorder the columns',
+      undo: async () => {
+        await columnEdits.reorder(before);
+        return 'Column order restored';
+      },
+      mark: 'board-column',
+    });
+  };
+
+  /**
+   * A rename is an inline edit: the header keeps showing a refusal under the
+   * field (LaneRow), and the toast says it as well. Resolves to that refusal.
+   */
+  const renameColumn = async (id: string, name: string): Promise<string | undefined> => {
+    const was = statusName(id);
+    let refused: string | undefined;
+    await action.run({
+      do: () => columnEdits.rename(id, name),
+      success: `${was} renamed to ${name}`,
+      failure: `Couldn’t rename ${was}`,
+      onError: (cause) => {
+        refused = statusEditMessage(cause);
+      },
+      mark: 'board-column',
+    });
+    return refused;
+  };
+
   const shownCount = shownTasks.length;
 
   /*
@@ -913,10 +1030,10 @@ export function BoardScreen({
             listReadAt: board.state.asOf,
             listReadOrder: board.state.readOrder,
             movingId: board.movingId,
-            moveError: board.moveError,
-            onMove: (id, to) => {
-              void board.move(id, to);
-            },
+            // A refused move is the toast's to say now (LAI-1310), so the
+            // drawer is not handed a second copy of it to print.
+            moveError: undefined,
+            onMove: moveCard,
             refresh,
             executionSignal: (taskId) => executionSignal(recent, taskId),
           },
@@ -931,8 +1048,7 @@ export function BoardScreen({
       board.state.asOf,
       board.state.readOrder,
       board.movingId,
-      board.moveError,
-      board.move,
+      moveCard,
       refresh,
       recent,
     ],
@@ -1294,9 +1410,16 @@ export function BoardScreen({
           busy={columnEdits.busy}
           error={columnEdits.error}
           onCreate={(name, category) => {
-            void columnEdits.create(name, category).then((made) => {
-              if (made !== undefined) setCreatingColumn(false);
-            });
+            void action
+              .run({
+                do: () => columnEdits.create(name, category),
+                success: `${name} column added`,
+                failure: 'Couldn’t add the column',
+                mark: 'board-column',
+              })
+              .then((made) => {
+                if (made !== undefined) setCreatingColumn(false);
+              });
           }}
           onClose={() => {
             setCreatingColumn(false);
@@ -1321,9 +1444,22 @@ export function BoardScreen({
           busy={columnEdits.busy}
           error={columnEdits.error}
           onDelete={(moveTo) => {
-            void columnEdits.remove(columnToDelete.id, moveTo).then((gone) => {
-              if (gone) setDeletingColumn(undefined);
-            });
+            const name = columnToDelete.name;
+            let gone = true;
+            void action
+              .run({
+                do: () => columnEdits.remove(columnToDelete.id, moveTo),
+                // No Undo: its tasks were moved to another column on the server.
+                success: `${name} column deleted`,
+                failure: `Couldn’t delete ${name}`,
+                onError: () => {
+                  gone = false;
+                },
+                mark: 'board-column',
+              })
+              .then(() => {
+                if (gone) setDeletingColumn(undefined);
+              });
           }}
           onClose={() => {
             setDeletingColumn(undefined);
@@ -1342,7 +1478,7 @@ export function BoardScreen({
           hidden={statuses.hidden}
           busy={columnEdits.busy}
           onShow={(id) => {
-            void columnEdits.setHidden(id, false);
+            hideColumn(id, false);
           }}
           onClose={() => {
             setHiddenOpen(false);
@@ -1455,28 +1591,9 @@ export function BoardScreen({
       )}
 
       {/*
-        **One alert region, not two stacked banners.** A refused card move and a
-        refused column edit are the same kind of news — the server said no and
-        gave a reason — and two boxes for it would compete for the same corner
-        of the screen.
+        A refused card move or column edit is a toast now (LAI-1310), with the
+        server's reason as its detail — not a banner above the lanes.
       */}
-      {board.moveError !== undefined && (
-        <p className="board-alert" role="alert">
-          {board.moveError}
-          <button type="button" className="board-alert-close" onClick={board.dismissMoveError}>
-            Dismiss
-          </button>
-        </p>
-      )}
-
-      {columnEdits.error !== undefined && !creatingColumn && columnToDelete === undefined && (
-        <p className="board-alert" role="alert">
-          {columnEdits.error}
-          <button type="button" className="board-alert-close" onClick={columnEdits.dismissError}>
-            Dismiss
-          </button>
-        </p>
-      )}
 
       {firstLoad || showBoardSkeleton ? (
         /* `null` until the delay elapses — deliberately not the empty board,
@@ -1639,9 +1756,7 @@ export function BoardScreen({
                 createTask.open({ slug });
               }}
               movingId={board.movingId}
-              onMove={(id, to) => {
-                void board.move(id, to);
-              }}
+              onMove={moveCard}
               selected={selectedIds}
               onSelect={(ids) => {
                 setListSelection((s) => ({ slug, ids, run: s.slug === slug ? s.run : undefined }));
@@ -1681,25 +1796,13 @@ export function BoardScreen({
               cardsDraggable={mayWrite}
               {...(mayWrite
                 ? {
-                    onPlace: (
-                      id: string,
-                      to: { readonly afterId?: string; readonly beforeId?: string },
-                      statusId?: string,
-                    ) => {
-                      void board.place(
-                        id,
-                        to,
-                        statusId === undefined ? undefined : statuses.byId.get(statusId),
-                      );
-                    },
+                    onPlace: placeCard,
                   }
                 : {})}
               density={prefs.preferences.density}
               columnWidth={prefs.preferences.columnWidth}
               movingId={board.movingId}
-              onMove={(id, to) => {
-                void board.move(id, to);
-              }}
+              onMove={moveCard}
               filtered={filtered}
               onOpen={openTaskInUrl}
               canAdd={mayCreate}
@@ -1718,7 +1821,7 @@ export function BoardScreen({
                       // The visible order; hidden columns keep their slots and
                       // the whole list is sent (`fullOrder`), because the server
                       // refuses a subset so a stale client cannot drop a column.
-                      void columnEdits.reorder(ids);
+                      reorderColumns(ids);
                     },
                     onAddColumn: () => {
                       // **Ask, then create** (LAI-291). This used to call
@@ -1726,12 +1829,11 @@ export function BoardScreen({
                       // called "New column" appeared and you renamed it after.
                       setCreatingColumn(true);
                     },
-                    onRenameColumn: (columnId: string, name: string) =>
-                      columnEdits.rename(columnId, name),
+                    onRenameColumn: renameColumn,
                     onHideColumn: (columnId: string) => {
                       // Never the last one: LaneRow disables it and says why.
                       if (statuses.visible.length <= 1) return;
-                      void columnEdits.setHidden(columnId, true);
+                      hideColumn(columnId, true);
                     },
                     onDeleteColumn: (column: ProjectStatus) => {
                       setDeletingColumn(column.id);

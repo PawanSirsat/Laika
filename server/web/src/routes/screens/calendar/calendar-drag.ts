@@ -13,15 +13,18 @@ import { toSummary, updateTask, type TaskSummary } from '../../../api/tasks.ts';
 export const DRAG_TYPE = 'application/x-laika-task';
 
 /**
- * Put `task` on `dueOn` (a date-only UTC midnight, D-066). Resolves with the
- * error message on a refusal, or undefined when the move landed.
+ * Put `task` on `dueOn` (a date-only UTC midnight, D-066). Resolves when the
+ * move landed, and **rejects with the server's refusal** once the chip is
+ * back on its old day — so the screen runs it through `useAction`, whose
+ * error toast carries that sentence (LAI-1310). A pure write with no UI, so
+ * `node --test` can drive it; the toast is the caller's.
  */
 export async function moveDue(
   slug: string,
   task: TaskSummary,
   dueOn: number | null,
-): Promise<string | undefined> {
-  if (task.due_on === dueOn) return undefined;
+): Promise<void> {
+  if (task.due_on === dueOn) return;
   const replace = (next: TaskSummary, settled: boolean, record?: string): void => {
     taskStore.writeLocal(slug, (tasks) => tasks.map((t) => (t.id === next.id ? next : t)), {
       changed: new Set([task.id]),
@@ -34,11 +37,10 @@ export async function moveDue(
   try {
     const answer = await updateTask(task.id, { due_on: dueOn });
     replace(toSummary(answer), true, task.id);
-    return undefined;
   } catch (cause) {
     replace(task, true);
     if (cause instanceof ApiError && cause.code === 'conflict') taskStore.reload(slug);
-    return cause instanceof ApiError ? cause.message : 'That move could not be saved.';
+    throw cause;
   } finally {
     taskStore.endWrite(slug, task.id);
   }

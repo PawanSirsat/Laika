@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, open, setTheme, until, type ApiStub, type StubCall } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  refuse,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 
 /**
  * The Calendar, reworked (LAI-1178): overdue work in a lane of its own, every
@@ -283,13 +291,39 @@ void describe('the Calendar, reworked (LAI-1178)', () => {
       await until(() => writes.length === 1);
       assert.deepEqual(writes[0]?.body, { due_on: dueIn(1) });
       await dayCell(h.page, 1).locator('.cal-task', { hasText: 'LC-9' }).waitFor();
-      // The app's one toast (LAI-1129); the calendar's own retired in the merge train.
-      const toast = h.page.locator('[data-toast]', { hasText: 'LC-9 moved to' });
+      // The app's one toast (LAI-1129); the calendar's own retired in the merge
+      // train. A success now (LAI-1310), through the shared action helper.
+      const toast = h.page.locator('[data-toast][data-tone="success"]', {
+        hasText: 'LC-9 moved to',
+      });
       assert.match((await toast.textContent()) ?? '', /LC-9 moved to/);
       await toast.getByRole('button', { name: 'Undo' }).click();
       await until(() => writes.length === 2);
       assert.deepEqual(writes[1]?.body, { due_on: dueIn(3) });
       await dayCell(h.page, 3).locator('.cal-task', { hasText: 'LC-9' }).waitFor();
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused drag puts the chip back and toasts the server’s sentence', async () => {
+    const h = await open('/calendar?project=laika-core', {
+      ...stub(),
+      '/api/v1/tasks/t9': refuse(403, 'forbidden', 'You may not edit tasks here.'),
+    });
+    try {
+      const chip = dayCell(h.page, 3).locator('.cal-task', { hasText: 'LC-9' });
+      await chip.waitFor({ timeout: 20_000 });
+      await chip.dragTo(dayCell(h.page, 1));
+      // A persistent error toast (LAI-1310): the headline, then the reason.
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await toast.locator('[role="alert"]').innerText()).replace(/\s+/g, ' ').trim(),
+        'Couldn’t move LC-9 You may not edit tasks here.',
+      );
+      await dayCell(h.page, 3).locator('.cal-task', { hasText: 'LC-9' }).waitFor();
+      assert.equal(await dayCell(h.page, 1).locator('.cal-task', { hasText: 'LC-9' }).count(), 0);
     } finally {
       await h.close();
     }

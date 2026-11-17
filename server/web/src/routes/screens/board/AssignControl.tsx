@@ -2,6 +2,7 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { assigneeOptions } from './assignee-options.ts';
 import { useId, useState } from 'react';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { assignTask, claimTask, claimWinner } from '../../../api/tasks.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import './assign.css';
@@ -35,36 +36,69 @@ function nameOf(id: string, members: ReadonlyMap<string, Member>): string {
  * **Claim is a separate button** because the server does a compare-and-swap on
  * that endpoint, and it is the common case. When it loses, the 409 carries the
  * winner's id, so this says who took it rather than "something went wrong".
+ *
+ * **Each change says so in a toast** (LAI-1310) — *LAI-42 assigned to Ada*,
+ * with Undo, which assigns the previous person back: the server takes that
+ * as readily as the change itself. A refusal is a persistent error toast with
+ * the server's sentence (or the claim's winner) as its detail; the inline
+ * `.assign-error` it replaces said the same thing in a smaller place.
  */
 export function AssignControl({ task, members, meId, mayAssign, onChanged }: AssignControlProps) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run: act } = useAction();
   const nameId = useId();
 
   const assigned = task.assignee_id;
   const mine = assigned !== null && assigned === meId;
   const canClaim = assigned === null && meId !== undefined && mayAssign;
 
-  const run = (work: Promise<unknown>): void => {
+  /** Whoever it goes to, as the toast names them. */
+  const who = (id: string | null): string => (id === null ? 'nobody' : nameOf(id, members));
+
+  const assign = (next: string | null): void => {
+    const before = assigned;
     setBusy(true);
-    setError(undefined);
-    work
-      .then(() => {
+    void act({
+      do: () => assignTask(task.id, next),
+      success: next === null ? `${task.key} unassigned` : `${task.key} assigned to ${who(next)}`,
+      failure: next === null ? `Couldn’t unassign ${task.key}` : `Couldn’t assign ${task.key}`,
+      undo: async () => {
+        await assignTask(task.id, before);
         onChanged();
-      })
-      .catch((cause: unknown) => {
-        const winner = claimWinner(cause);
-        if (winner !== undefined) {
-          // The point of the compare-and-swap: say who won.
-          setError(`Taken by ${nameOf(winner, members)} first.`);
-          onChanged();
-          return;
-        }
-        setError(cause instanceof Error ? cause.message : 'That did not work.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+        return before === null
+          ? `${task.key} unassigned again`
+          : `${task.key} back with ${who(before)}`;
+      },
+    }).then((done) => {
+      setBusy(false);
+      if (done !== undefined) onChanged();
+    });
+  };
+
+  const claim = (): void => {
+    let lost = false;
+    setBusy(true);
+    void act({
+      do: () =>
+        claimTask(task.id).catch((cause: unknown) => {
+          const winner = claimWinner(cause);
+          if (winner === undefined) throw cause;
+          // The point of the compare-and-swap: say who won, as the detail.
+          lost = true;
+          throw new Error(`Taken by ${nameOf(winner, members)} first.`);
+        }),
+      success: `${task.key} claimed`,
+      failure: `Couldn’t claim ${task.key}`,
+      undo: async () => {
+        await assignTask(task.id, null);
+        onChanged();
+        return `${task.key} unassigned again`;
+      },
+    }).then((done) => {
+      setBusy(false);
+      // A lost race changed the task too: show who has it now.
+      if (done !== undefined || lost) onChanged();
+    });
   };
 
   if (!mayAssign) {
@@ -96,7 +130,7 @@ export function AssignControl({ task, members, meId, mayAssign, onChanged }: Ass
           disabled={busy}
           options={assigneeOptions(members.values(), meId)}
           onChange={(next) => {
-            run(assignTask(task.id, next === '' ? null : next));
+            assign(next === '' ? null : next);
           }}
         />
       </label>
@@ -107,7 +141,7 @@ export function AssignControl({ task, members, meId, mayAssign, onChanged }: Ass
           className="assign-claim"
           disabled={busy}
           onClick={() => {
-            run(claimTask(task.id));
+            claim();
           }}
         >
           {busy && <Spinner size="sm" />}
@@ -116,12 +150,6 @@ export function AssignControl({ task, members, meId, mayAssign, onChanged }: Ass
       )}
 
       {mine && <span className="assign-mine">yours</span>}
-
-      {error !== undefined && (
-        <span className="assign-error" role="alert">
-          {error}
-        </span>
-      )}
     </span>
   );
 }

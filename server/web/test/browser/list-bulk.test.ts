@@ -230,6 +230,17 @@ void describe('selecting rows in the List', () => {
         'LC-2 — Cannot move a task from done to in_progress',
       ]);
 
+      // One toast for the run (LAI-1310): an error, because one was refused,
+      // naming it by key in the server's words. The report above stays — its
+      // list is what the reader goes and fixes.
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await toast.locator('[role="alert"]').innerText()).replace(/\s+/g, ' ').trim(),
+        '1 of 2 moved — 1 refused ' +
+          'LC-2: Cannot move a task from done to in_progress · 1 already there.',
+      );
+
       const posts = h.calls
         .slice(before)
         .filter((c) => c.method === 'POST')
@@ -247,6 +258,31 @@ void describe('selecting rows in the List', () => {
 
       // The selection and the report both survived that reload.
       assert.equal(await text(h.page.locator('.list-bulk-count')), '3 selected');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a bulk change that all lands is one success toast, and no report to dismiss', async () => {
+    const h = await open('/list?project=laika-core', STUB);
+    try {
+      await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
+      // LC-1 is backlog and LC-6 is backlog: both may go to To do.
+      await h.page.getByLabel('Select LC-1', { exact: true }).check();
+      await h.page.getByLabel('Select LC-6', { exact: true }).check();
+      await h.page.locator('.list-bulk-action', { hasText: 'Status' }).click();
+      await h.page.locator('.list-menu-item', { hasText: 'To do' }).click();
+
+      const toast = h.page.locator('[data-toast][data-tone="success"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await toast.locator('.toast-text').innerText()).trim(),
+        'Moved 2 tasks to To do',
+      );
+      // The toast says all the report would have, so the report is not drawn.
+      await until(async () => (await h.page.locator('.list-bulk-report').count()) === 0);
+      assert.equal(await h.page.locator('.list-bulk-report').count(), 0);
+      assert.equal(await text(h.page.locator('.list-bulk-count')), '2 selected');
     } finally {
       await h.close();
     }
@@ -275,6 +311,10 @@ void describe('selecting rows in the List', () => {
       await row.locator('.list-status', { hasText: 'To do' }).waitFor({ timeout: 10_000 });
       const posts = h.calls.filter((c) => c.method === 'POST').map((c) => [c.path, c.body]);
       assert.deepEqual(posts, [['/api/v1/tasks/t1/status', { status_id: 'st-todo' }]]);
+      // The board's toast, the same as a drag's (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-board-move][data-tone="success"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal((await toast.locator('.toast-text').innerText()).trim(), 'LC-1 moved to To do');
       assert.equal(
         await h.page.locator('.list-bulk').count(),
         0,

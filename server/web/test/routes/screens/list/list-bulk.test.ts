@@ -16,6 +16,7 @@ import {
   applyToEach,
   bulkPlan,
   bulkSummary,
+  bulkToast,
   failureMessage,
   runBulkAction,
   statusChoices,
@@ -307,5 +308,73 @@ void describe('runBulkAction — the whole run, shared by the List and Work (LAI
       { phase: 'running', completed: 0, total: 0 },
       { phase: 'done', summary: '0 updated, 1 already there', refusals: [] },
     ]);
+  });
+});
+
+void describe('bulkToast — one toast for the whole run (LAI-1310)', () => {
+  const keyOf = (id: string) => id.toUpperCase();
+  const all = (n: number) => ({
+    done: Array.from({ length: n }, (_, i) => `t${String(i)}`),
+    failed: [],
+  });
+
+  void test('every task landed: past tense, the count, and where they went', () => {
+    assert.deepEqual(bulkToast({ kind: 'status', statusId: 's' }, all(5), 0, 'Done', keyOf), {
+      text: 'Moved 5 tasks to Done',
+      tone: 'success',
+      detail: undefined,
+    });
+    assert.equal(bulkToast({ kind: 'cancel' }, all(1), 0, 'x', keyOf).text, 'Cancelled 1 task');
+    assert.equal(
+      bulkToast({ kind: 'priority', priority: 'p1' }, all(2), 0, 'P1', keyOf).text,
+      'Set 2 tasks to P1',
+    );
+    assert.equal(
+      bulkToast({ kind: 'assignee', assigneeId: 'u1' }, all(3), 0, 'Ada', keyOf).text,
+      'Assigned 3 tasks to Ada',
+    );
+    assert.equal(
+      bulkToast({ kind: 'assignee', assigneeId: null }, all(3), 0, 'nobody', keyOf).text,
+      'Unassigned 3 tasks',
+    );
+    assert.equal(
+      bulkToast({ kind: 'sprint', sprintId: 's4' }, all(2), 0, 'S4', keyOf).text,
+      'Added 2 tasks to S4',
+    );
+    assert.equal(
+      bulkToast({ kind: 'sprint', sprintId: null }, all(2), 0, 'no sprint', keyOf).text,
+      'Removed 2 tasks from sprints',
+    );
+  });
+
+  void test('tasks already there are said in the detail, never counted as refused', () => {
+    assert.deepEqual(bulkToast({ kind: 'status', statusId: 's' }, all(3), 2, 'Done', keyOf), {
+      text: 'Moved 3 tasks to Done',
+      tone: 'success',
+      detail: '2 already there.',
+    });
+  });
+
+  void test('a partial run is an error toast naming each refusal by key, in the server’s words', () => {
+    const outcome = {
+      done: ['t1', 't2', 't3'],
+      failed: [
+        { id: 't4', message: 'Cannot move a task from done to todo' },
+        { id: 't5', message: 'Not yours to change' },
+      ],
+    };
+    assert.deepEqual(bulkToast({ kind: 'status', statusId: 's' }, outcome, 1, 'To do', keyOf), {
+      text: '3 of 5 moved — 2 refused',
+      tone: 'error',
+      detail:
+        'T4: Cannot move a task from done to todo · T5: Not yours to change · 1 already there.',
+    });
+  });
+
+  void test('nothing sent says so, as information', () => {
+    assert.deepEqual(
+      bulkToast({ kind: 'priority', priority: 'p2' }, { done: [], failed: [] }, 4, 'P2', keyOf),
+      { text: 'Nothing to change', tone: 'info', detail: '4 already there.' },
+    );
   });
 });

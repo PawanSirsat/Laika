@@ -136,7 +136,7 @@ void describe('a create with a sprint and a blocker', () => {
 });
 
 void describe('a refused create', () => {
-  void test('a zod 422 lands under Outside id and Labels; the dialog stays, the title is kept, no toast', async () => {
+  void test('a zod 422 lands under Outside id and Labels; the dialog stays, the title is kept, the toast points there', async () => {
     const h = await openDialog('/board?project=laika-core', {
       '/api/v1/projects/laika-core/tasks': tasksRoute(
         reply(422, {
@@ -188,6 +188,14 @@ void describe('a refused create', () => {
         'focus is not on the first refused field',
       );
       assert.equal(await h.page.locator('[data-created-toast]').count(), 0, 'a toast on a refusal');
+      // The refusal toasts too (LAI-1310), and only points at the fields —
+      // their own messages are under them, where they can be fixed.
+      const error = h.page.locator('[data-toast][data-tone="error"]');
+      await error.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await error.locator('[role="alert"]').innerText()).trim(),
+        'Couldn’t save — see the highlighted field',
+      );
       assert.equal(posts(h, '/sprints/s1/tasks').length, 0);
     } finally {
       await h.close();

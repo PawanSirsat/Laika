@@ -257,3 +257,84 @@ export async function runBulkAction(
   });
   return outcome;
 }
+
+/* ------------------------------------------------------------------ the toast */
+
+/** What a finished bulk action says in the app's toast (LAI-1310). */
+export interface BulkToast {
+  readonly text: string;
+  readonly tone: 'success' | 'error' | 'info';
+  readonly detail?: string | undefined;
+}
+
+function tasksCount(n: number): string {
+  return n === 1 ? '1 task' : `${String(n)} tasks`;
+}
+
+/** The past participle for a partial run's headline: *3 of 5 moved*. */
+function participle(action: BulkAction): string {
+  switch (action.kind) {
+    case 'status':
+      return 'moved';
+    case 'cancel':
+      return 'cancelled';
+    case 'priority':
+      return 'updated';
+    case 'assignee':
+      return action.assigneeId === null ? 'unassigned' : 'assigned';
+    case 'sprint':
+      return action.sprintId === null ? 'removed' : 'added';
+  }
+}
+
+/** The headline when every request landed: *Moved 5 tasks to Done*. */
+function allDoneLine(action: BulkAction, n: number, target: string): string {
+  const tasks = tasksCount(n);
+  switch (action.kind) {
+    case 'status':
+      return `Moved ${tasks} to ${target}`;
+    case 'cancel':
+      return `Cancelled ${tasks}`;
+    case 'priority':
+      return `Set ${tasks} to ${target}`;
+    case 'assignee':
+      return action.assigneeId === null ? `Unassigned ${tasks}` : `Assigned ${tasks} to ${target}`;
+    case 'sprint':
+      return action.sprintId === null
+        ? `Removed ${tasks} from sprints`
+        : `Added ${tasks} to ${target}`;
+  }
+}
+
+/**
+ * **One toast for the whole run**, never one per task (LAI-1310): *Moved 5
+ * tasks to Done*, or *3 of 5 moved — 2 refused* with each refusal, by key
+ * and in the server's words, as the detail — an error toast, so it stays
+ * until it is read. Tasks already in the asked-for state were never sent
+ * (`bulkPlan`) and are said in the detail, not counted as refused.
+ *
+ * `target` names where the tasks went — the status, the priority, the
+ * person, the sprint — as the bar's menu showed it. No Undo: there is no
+ * one call that puts N tasks back, and a run of N reversals could itself be
+ * part-refused.
+ */
+export function bulkToast(
+  action: BulkAction,
+  outcome: BulkOutcome,
+  skipped: number,
+  target: string,
+  keyOf: (id: string) => string,
+): BulkToast {
+  const done = outcome.done.length;
+  const refused = outcome.failed.length;
+  const there = skipped > 0 ? `${String(skipped)} already there.` : undefined;
+  if (done + refused === 0) return { text: 'Nothing to change', tone: 'info', detail: there };
+  if (refused === 0)
+    return { text: allDoneLine(action, done, target), tone: 'success', detail: there };
+  const reasons = outcome.failed.map((f) => `${keyOf(f.id)}: ${f.message}`).join(' · ');
+  return {
+    text: `${String(done)} of ${String(done + refused)} ${participle(action)} — ${String(refused)} refused`,
+    tone: 'error',
+    detail: there === undefined ? reasons : `${reasons} · ${there}`,
+  };
+}

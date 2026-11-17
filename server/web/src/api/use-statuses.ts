@@ -91,18 +91,25 @@ export function useProjectStatuses(slug: string | undefined): UseStatuses {
   };
 }
 
+/**
+ * Every edit **rejects with the server's refusal**, after the list on screen
+ * is put back (LAI-1310): the screen runs each through `useAction`, which
+ * toasts either way, so this hook no longer keeps a banner's worth of error
+ * for every edit — only the one a dialog shows beside its form.
+ */
 export interface StatusEditor {
-  /** The server's reason for refusing the last edit. */
+  /**
+   * The server's reason for refusing the last **create or delete** — the two
+   * edits asked for in a dialog, which shows it beside the form it refused.
+   */
   readonly error: string | undefined;
   readonly busy: boolean;
   readonly create: (name: string, category: StatusCategory) => Promise<ProjectStatus | undefined>;
-  /** Resolves to the refusal's message, or `undefined` when it saved. */
-  readonly rename: (id: string, name: string) => Promise<string | undefined>;
+  readonly rename: (id: string, name: string) => Promise<void>;
   readonly setHidden: (id: string, hidden: boolean) => Promise<void>;
   /** The new order of the **visible** columns; hidden ones keep their slots. */
   readonly reorder: (visibleIds: readonly string[]) => Promise<void>;
-  /** Resolves `true` when the column is gone. */
-  readonly remove: (id: string, moveTo: string) => Promise<boolean>;
+  readonly remove: (id: string, moveTo: string) => Promise<void>;
   readonly dismissError: () => void;
 }
 
@@ -113,7 +120,7 @@ function listIn(
   return Array.isArray(answer?.data) ? (answer.data as readonly ProjectStatus[]) : undefined;
 }
 
-function message(cause: unknown): string {
+export function statusEditMessage(cause: unknown): string {
   // The server's sentence, not one invented here — it knows which rule refused.
   return cause instanceof ApiError ? cause.message : 'Could not save that. Try again.';
 }
@@ -137,8 +144,8 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       optimistic: ((list: readonly ProjectStatus[]) => readonly ProjectStatus[]) | undefined,
       call: () => Promise<T>,
       settle: (answer: T) => void,
-    ): Promise<{ ok: true; answer: T } | { ok: false; message: string }> => {
-      if (slug === undefined) return { ok: false, message: 'No project.' };
+    ): Promise<T> => {
+      if (slug === undefined) throw new Error('No project.');
       setBusy(true);
       setError(undefined);
       try {
@@ -150,11 +157,11 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
           settle(got);
           return got;
         });
-        return { ok: true, answer };
+        return answer;
       } catch (cause) {
         // Whatever was guessed on screen, the server's list replaces it.
         statusStore.reload(slug);
-        return { ok: false, message: message(cause) };
+        throw cause;
       } finally {
         setBusy(false);
       }
@@ -182,41 +189,41 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       // The new one is found by **id difference**, not by name: two columns
       // may share a name, and the answer is the whole list.
       const before = new Set((statusStore.peek(slug ?? '')?.statuses ?? []).map((s) => s.id));
-      const result = await run(
-        undefined,
-        () => createStatus(slug ?? '', { name, category }),
-        settleList,
-      );
-      if (!result.ok) {
-        setError(result.message);
-        return undefined;
+      try {
+        const answer = await run(
+          undefined,
+          () => createStatus(slug ?? '', { name, category }),
+          settleList,
+        );
+        return listIn(answer)?.find((s) => !before.has(s.id));
+      } catch (cause) {
+        // Beside the dialog's form as well as in the toast: the form is where
+        // a refused name is fixed.
+        setError(statusEditMessage(cause));
+        throw cause;
       }
-      return listIn(result.answer)?.find((s) => !before.has(s.id));
     },
     [run, slug, settleList],
   );
 
   const rename = useCallback(
     async (id: string, name: string) => {
-      const result = await run(
+      await run(
         (list) => list.map((s) => (s.id === id ? { ...s, name } : s)),
         () => updateStatus(slug ?? '', id, { name }),
         settleList,
       );
-      // Inline: the header that asked shows it, not the board's alert bar.
-      return result.ok ? undefined : result.message;
     },
     [run, slug, settleList],
   );
 
   const setHidden = useCallback(
     async (id: string, hidden: boolean) => {
-      const result = await run(
+      await run(
         (list) => list.map((s) => (s.id === id ? { ...s, hidden } : s)),
         () => updateStatus(slug ?? '', id, { hidden }),
         settleList,
       );
-      if (!result.ok) setError(result.message);
     },
     [run, slug, settleList],
   );
@@ -225,33 +232,35 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
     async (visibleIds: readonly string[]) => {
       if (slug === undefined) return;
       const ids = fullOrder(statusStore.peek(slug)?.statuses ?? [], visibleIds);
-      const result = await run(
+      await run(
         (list) => applyOrder(list, ids),
         () => reorderStatuses(slug, ids),
         settleList,
       );
-      if (!result.ok) setError(result.message);
     },
     [run, slug, settleList],
   );
 
   const remove = useCallback(
     async (id: string, moveTo: string) => {
-      if (slug === undefined) return false;
-      const result = await run(
-        undefined,
-        () => deleteStatus(slug, id, moveTo),
-        (answer) => {
-          // The server's remaining list — positions closed up — or, if it did
-          // not send one, this one without the deleted status.
-          const left = listIn(answer);
-          statusStore.write(slug, (list) => left ?? list.filter((s) => s.id !== id));
-          // Its tasks moved on the server: the board re-reads them.
-          taskStore.reload(slug);
-        },
-      );
-      if (!result.ok) setError(result.message);
-      return result.ok;
+      if (slug === undefined) return;
+      try {
+        await run(
+          undefined,
+          () => deleteStatus(slug, id, moveTo),
+          (answer) => {
+            // The server's remaining list — positions closed up — or, if it did
+            // not send one, this one without the deleted status.
+            const left = listIn(answer);
+            statusStore.write(slug, (list) => left ?? list.filter((s) => s.id !== id));
+            // Its tasks moved on the server: the board re-reads them.
+            taskStore.reload(slug);
+          },
+        );
+      } catch (cause) {
+        setError(statusEditMessage(cause));
+        throw cause;
+      }
     },
     [run, slug],
   );

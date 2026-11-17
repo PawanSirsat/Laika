@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError } from '../../../api/errors.ts';
 import {
   addTasksToSprint,
   createSprint,
@@ -87,16 +86,19 @@ export interface UseSprints {
    * that was actually pressed instead of all four.
    */
   readonly pending: string | undefined;
-  /** The server's reason for refusing the last action. Never invented here. */
-  readonly actionError: string | undefined;
-  readonly dismissError: () => void;
   readonly reload: () => void;
-  readonly create: (input: SprintInput) => Promise<boolean>;
-  readonly update: (id: string, patch: Partial<SprintInput>) => Promise<boolean>;
-  readonly activate: (id: string) => Promise<boolean>;
-  readonly remove: (id: string) => Promise<boolean>;
-  readonly assign: (id: string, taskIds: readonly string[]) => Promise<boolean>;
-  readonly unassign: (id: string, taskId: string) => Promise<boolean>;
+  /*
+   * Each write resolves when it landed and **rejects with the server's
+   * refusal** (LAI-1310): the screen runs it through `useAction`, whose
+   * toast carries that sentence — the `.sprint-alert` banner that held it
+   * is gone, and so is the error this hook used to keep for it.
+   */
+  readonly create: (input: SprintInput) => Promise<void>;
+  readonly update: (id: string, patch: Partial<SprintInput>) => Promise<void>;
+  readonly activate: (id: string) => Promise<void>;
+  readonly remove: (id: string) => Promise<void>;
+  readonly assign: (id: string, taskIds: readonly string[]) => Promise<void>;
+  readonly unassign: (id: string, taskId: string) => Promise<void>;
 }
 
 async function allSprints(slug: string, signal: AbortSignal): Promise<[Sprint[], boolean]> {
@@ -123,7 +125,6 @@ export function useSprints(slug: string | undefined): UseSprints {
   >(undefined);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<string | undefined>(undefined);
-  const [actionError, setActionError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -169,10 +170,6 @@ export function useSprints(slug: string | undefined): UseSprints {
     reloadProjectTasks(slug);
   }, [slug]);
 
-  const dismissError = useCallback((): void => {
-    setActionError(undefined);
-  }, []);
-
   /**
    * Run a mutation, then refetch.
    *
@@ -181,11 +178,12 @@ export function useSprints(slug: string | undefined): UseSprints {
    * two rows at once. Reconstructing that here would be a second implementation
    * of rules the server already applied.
    *
-   * Returns whether it succeeded, so a form knows whether to close.
+   * Rejects with the server's refusal — verbatim: its 409 already names the
+   * sprint holding `active` or the range that collides — for the caller's
+   * toast to say.
    */
   const run = useCallback(
-    async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
-      setActionError(undefined);
+    async (key: string, action: () => Promise<unknown>): Promise<void> => {
       setPending(key);
 
       try {
@@ -194,15 +192,6 @@ export function useSprints(slug: string | undefined): UseSprints {
         // walked again because assigning moves tasks between rows.
         setAttempt((n) => n + 1);
         reloadProjectTasks(slug);
-        return true;
-      } catch (cause) {
-        // Verbatim. The server's 409 already names the sprint holding `active`
-        // or the range that collides, and anything written here would be vaguer
-        // than what it replaced.
-        setActionError(
-          cause instanceof ApiError ? cause.message : 'That change could not be saved.',
-        );
-        return false;
       } finally {
         setPending(undefined);
       }
@@ -241,8 +230,6 @@ export function useSprints(slug: string | undefined): UseSprints {
       state,
       busy,
       pending,
-      actionError,
-      dismissError,
       reload,
       create,
       update,
@@ -251,19 +238,6 @@ export function useSprints(slug: string | undefined): UseSprints {
       assign,
       unassign,
     }),
-    [
-      state,
-      busy,
-      pending,
-      actionError,
-      dismissError,
-      reload,
-      create,
-      update,
-      activate,
-      remove,
-      assign,
-      unassign,
-    ],
+    [state, busy, pending, reload, create, update, activate, remove, assign, unassign],
   );
 }

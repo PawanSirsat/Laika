@@ -91,24 +91,28 @@ export interface UseBoard {
   readonly byId: ReadonlyMap<string, TaskSummary>;
   /** Set while a drop is in flight, so the card can show it is moving. */
   readonly movingId: string | undefined;
-  /** The server's reason for refusing the last move. Cleared on the next one. */
-  readonly moveError: string | undefined;
-  /** Into a project status — a column — by id (LAI-739). */
-  readonly move: (taskId: string, toStatusId: string) => Promise<void>;
+  /**
+   * Into a project status — a column — by id (LAI-739). Resolves to the
+   * server's task; **rejects with the refusal** once the card is back where
+   * it was, so the screen runs it through `useAction` and the toast says why
+   * (LAI-1310) — the board's own alert banner for it is gone.
+   */
+  readonly move: (taskId: string, toStatusId: string) => Promise<TaskSummary | undefined>;
   /**
    * Put a card **at a place** — below `afterId`, above `beforeId` — and, when
    * it was dropped in another lane, into that lane's status (LAI-473).
-   * Optimistic: the card shows where it was dropped at once.
+   * Optimistic: the card shows where it was dropped at once. Resolves to the
+   * server's task (`undefined` for a drop that changed nothing) and rejects
+   * with the refusal after the rollback, like `move`.
    */
   readonly place: (
     taskId: string,
     to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
     status?: ProjectStatus,
-  ) => Promise<void>;
+  ) => Promise<TaskSummary | undefined>;
   /** The placement in flight, for the lane order to draw (`groupByColumn`). */
   readonly placing: PendingMove | undefined;
   readonly reload: () => void;
-  readonly dismissMoveError: () => void;
   /**
    * Defer *applying* refresh answers until the returned release is called —
    * used for the length of a pointer drag, so a lane does not reflow under the
@@ -207,7 +211,6 @@ export function useBoard(
   /** The truth, written only by `commit`; React state follows it. */
   const stateRef = useRef<BoardState>(INITIAL);
   const [movingId, setMovingId] = useState<string | undefined>(undefined);
-  const [moveError, setMoveError] = useState<string | undefined>(undefined);
 
   /**
    * Depend on the filter's **content**, not its identity or a hand-listed
@@ -289,9 +292,8 @@ export function useBoard(
   }, [filterKey, deferred]);
 
   const move = useCallback(
-    async (taskId: string, toStatusId: string): Promise<void> => {
-      if (slug === undefined) return;
-      setMoveError(undefined);
+    async (taskId: string, toStatusId: string): Promise<TaskSummary | undefined> => {
+      if (slug === undefined) return undefined;
       setMovingId(taskId);
       taskStore.beginWrite(slug, taskId);
 
@@ -312,18 +314,15 @@ export function useBoard(
             },
           },
         );
+        return updated;
       } catch (cause) {
-        // The card never moved, so there is nothing to undo — that is the whole
-        // point of awaiting. Surface the server's reason verbatim; it is more
-        // specific than anything invented here ("only the assignee, a project lead
-        // or an admin may send a task to review").
-        //
-        // The example used to be "done cannot go back to backlog", and LAI-266
-        // widened the §5 table for people — so a person can now do exactly that,
-        // and a comment naming it as a refusal would describe behaviour the code
-        // no longer has.
-        setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
+        // The card never moved, so there is nothing to roll back — that is the
+        // whole point of awaiting. The refusal goes to the caller, whose toast
+        // carries the server's sentence verbatim (LAI-1310); it is more specific
+        // than anything invented here ("only the assignee, a project lead or an
+        // admin may send a task to review").
         setMovingId(undefined);
+        throw cause;
       } finally {
         taskStore.endWrite(slug, taskId);
       }
@@ -360,13 +359,13 @@ export function useBoard(
       taskId: string,
       to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
       status?: ProjectStatus,
-    ): Promise<void> => {
-      if (slug === undefined) return;
+    ): Promise<TaskSummary | undefined> => {
+      if (slug === undefined) return undefined;
       const before = stateRef.current.tasks.find((t) => t.id === taskId);
-      if (before === undefined) return;
+      if (before === undefined) return undefined;
       const target = status !== undefined && status.id !== before.status_id ? status : undefined;
       const reorders = to.afterId !== undefined || to.beforeId !== undefined;
-      if (target === undefined && !reorders) return;
+      if (target === undefined && !reorders) return undefined;
 
       const replace = (
         next: TaskSummary,
@@ -382,7 +381,6 @@ export function useBoard(
         });
       };
 
-      setMoveError(undefined);
       setMovingId(taskId);
       taskStore.beginWrite(slug, taskId);
       // The new lane and the new place in **one** commit (LAI-708): shown
@@ -418,8 +416,8 @@ export function useBoard(
       };
       let handed = false;
       let statusLanded = false;
+      let answer: TaskSummary | undefined;
       try {
-        let answer: TaskSummary | undefined;
         if (target !== undefined) {
           answer = await changeStatus(taskId, { status_id: target.id });
           statusLanded = true;
@@ -449,11 +447,14 @@ export function useBoard(
         if (statusLanded || (cause instanceof ApiError && cause.code === 'conflict')) {
           taskStore.reload(slug);
         }
-        setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
+        // Rolled back on screen and on the server; the caller's toast says
+        // why, in the server's words (LAI-1310).
+        throw cause;
       } finally {
         taskStore.endWrite(slug, taskId);
         if (!handed) endPlacing();
       }
+      return answer;
     },
     [slug],
   );
@@ -465,10 +466,6 @@ export function useBoard(
     if (slug !== undefined) taskStore.reload(slug);
   }, [slug]);
 
-  const dismissMoveError = useCallback((): void => {
-    setMoveError(undefined);
-  }, []);
-
   const hold = useCallback((): (() => void) => {
     if (slug === undefined) return () => undefined;
     return taskStore.hold(slug);
@@ -478,12 +475,10 @@ export function useBoard(
     state,
     byId,
     movingId,
-    moveError,
     move,
     place,
     placing,
     reload,
-    dismissMoveError,
     hold,
   };
 }

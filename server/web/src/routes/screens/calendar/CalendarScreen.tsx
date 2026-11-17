@@ -22,7 +22,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { typingIn } from '../../../components/typing-in.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
-import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { usePhone } from '../my-day/use-phone.ts';
 import { toolbarFilter } from '../board/filter-keys.ts';
@@ -130,9 +130,9 @@ export function CalendarScreen({ slug, onOpenTask, params, onPeriod }: CalendarS
   const all: readonly TaskSummary[] | undefined = read.status === 'ok' ? read.tasks : undefined;
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   const [dragging, setDragging] = useState(false);
-  // The app's one toast (LAI-1129), with its real Undo (merge train: the
-  // calendar's own toast retired so there is one).
-  const toast = useToast();
+  // The app's one toast (LAI-1129), with its real Undo, through the shared
+  // action helper (LAI-1310): a refusal persists with the server's sentence.
+  const { run } = useAction();
   const now = Date.now();
   const today = startOfDay(now);
   const view: CalendarView = params?.get('view') === 'week' ? 'week' : 'month';
@@ -310,21 +310,17 @@ export function CalendarScreen({ slug, onOpenTask, params, onPeriod }: CalendarS
 
   const move = (task: TaskSummary, dueOn: number | null): void => {
     const from = task.due_on;
-    void moveDue(slug, task, dueOn).then((error) => {
-      if (error !== undefined) {
-        toast.show({ text: error, tone: 'error' });
-        return;
-      }
-      toast.show({
-        text: `${task.key} moved to ${dueOn === null ? 'no date' : dateLabelShort(dueOn)}`,
-        tone: 'info',
-        // A real reversal: the server puts the date it had back.
-        undo: async () => {
-          const err = await moveDue(slug, { ...task, due_on: dueOn }, from);
-          if (err !== undefined) throw new Error(err);
-          return `${task.key} is back on ${from === null ? 'no date' : dateLabelShort(from)}`;
-        },
-      });
+    // A drop on the day it already has writes nothing, and says nothing.
+    if (from === dueOn) return;
+    void run({
+      do: () => moveDue(slug, task, dueOn),
+      success: `${task.key} moved to ${dueOn === null ? 'no date' : dateLabelShort(dueOn)}`,
+      failure: `Couldn’t move ${task.key}`,
+      // A real reversal: the server puts the date it had back.
+      undo: async () => {
+        await moveDue(slug, { ...task, due_on: dueOn }, from);
+        return `${task.key} is back on ${from === null ? 'no date' : dateLabelShort(from)}`;
+      },
     });
   };
   const dropOn = (taskId: string, at: number): void => {

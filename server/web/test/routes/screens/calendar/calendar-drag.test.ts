@@ -6,7 +6,8 @@ import { DRAG_TYPE, moveDue } from '../../../../src/routes/screens/calendar/cale
 /**
  * Moving a task to another day (LAI-1178): one `PATCH /tasks/:id` carrying
  * only `due_on`, nothing sent for a drop on the day it already has, and a
- * refusal handed back in the server's own words for the page to say.
+ * refusal handed back in the server's own words for the page's toast to say
+ * (LAI-1310: it rejects, so `useAction` can show it).
  */
 
 const original = globalThis.fetch;
@@ -43,23 +44,24 @@ const task = { id: 't1', key: 'LC-1', due_on: Date.UTC(2026, 10, 12) } as unknow
 void describe('moveDue', () => {
   void test('a drop on the day it already has sends nothing', async () => {
     const calls = stub(200, {});
-    assert.equal(await moveDue('core', task, Date.UTC(2026, 10, 12)), undefined);
+    await moveDue('core', task, Date.UTC(2026, 10, 12));
     assert.equal(calls.length, 0);
   });
 
   void test('one PATCH with the new date only', async () => {
     const to = Date.UTC(2026, 10, 14);
     const calls = stub(200, { ...task, due_on: to });
-    assert.equal(await moveDue('core', task, to), undefined);
+    await moveDue('core', task, to);
     assert.deepEqual(calls, [{ url: '/api/v1/tasks/t1', method: 'PATCH', body: { due_on: to } }]);
   });
 
   void test('a refusal comes back in the server’s words', async () => {
     stub(403, { error: { code: 'forbidden', message: 'You may not edit tasks here.' } });
-    assert.equal(
-      await moveDue('core', task, Date.UTC(2026, 10, 20)),
-      'You may not edit tasks here.',
-    );
+    await assert.rejects(moveDue('core', task, Date.UTC(2026, 10, 20)), {
+      name: 'ApiError',
+      code: 'forbidden',
+      message: 'You may not edit tasks here.',
+    });
   });
 
   void test('a drag says what it carries', () => {

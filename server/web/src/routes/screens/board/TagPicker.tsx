@@ -11,6 +11,7 @@ import type { ProjectTag } from '../../../api/tags.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import './tag-picker.css';
 
 interface TagPickerBase {
@@ -63,6 +64,13 @@ export type TagPickerProps = TagPickerSavedProps | TagPickerControlledProps;
  *
  * A regex here would be a second copy of that rule, and the copy is the one that
  * goes stale when the server tightens it.
+ *
+ * ## Each saved change says so (LAI-1310)
+ *
+ * On a task, adding or removing a label toasts what changed, with Undo that
+ * sends the previous list back — the same call, so the server can always take
+ * it. A refusal toasts too, and keeps its sentence under the field, where the
+ * word that was refused is.
  */
 export function TagPicker(props: TagPickerProps) {
   const { slug, tags, mayEdit } = props;
@@ -76,6 +84,7 @@ export function TagPicker(props: TagPickerProps) {
   /** Saving, or held by the caller: every control is locked, none goes away. */
   const locked = busy || props.disabled === true;
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const inputRef = useRef<HTMLInputElement>(null);
   /*
    * **Closed until asked** (LAI-1123): the chips and a *+ Add* button; the
@@ -111,24 +120,33 @@ export function TagPicker(props: TagPickerProps) {
       setDraft('');
       return;
     }
+    const onChanged = props.onChanged;
+    const before = tags;
     setBusy(true);
     setError(undefined);
 
-    setTaskTags(taskId, next)
-      .then((task) => {
-        props.onChanged(task.tags);
-        setDraft('');
-      })
-      .catch((cause: unknown) => {
-        // The server's own words. For a name that breaks the rule its message
-        // names the tag and states the rule; for a schema rejection it is
-        // generic, so the field issue is used instead of showing "Invalid
-        // request body" to someone who typed one word.
+    void run({
+      do: () => setTaskTags(taskId, next),
+      success: tagChangeLine(before, next),
+      failure: 'Couldn’t change the labels',
+      undo: async () => {
+        const back = await setTaskTags(taskId, before);
+        onChanged(back.tags);
+        return 'Labels put back';
+      },
+      onError: (cause) => {
+        // The server's own words, under the field as well. For a name that
+        // breaks the rule its message names the tag and states the rule; for
+        // a schema rejection it is generic, so the field issue is used instead
+        // of showing "Invalid request body" to someone who typed one word.
         setError(readableRefusal(cause));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+      },
+    }).then((task) => {
+      setBusy(false);
+      if (task === undefined) return;
+      onChanged(task.tags);
+      setDraft('');
+    });
   };
 
   const add = (raw: string): void => {
@@ -301,4 +319,13 @@ export function TagPicker(props: TagPickerProps) {
       )}
     </div>
   );
+}
+
+/** What a save did to the list, for its toast: *Label bug added*. */
+function tagChangeLine(before: readonly string[], after: readonly string[]): string {
+  const added = after.filter((t) => !before.includes(t));
+  const removed = before.filter((t) => !after.includes(t));
+  if (added.length === 1 && removed.length === 0) return `Label ${added[0] ?? ''} added`;
+  if (removed.length === 1 && added.length === 0) return `Label ${removed[0] ?? ''} removed`;
+  return 'Labels updated';
 }

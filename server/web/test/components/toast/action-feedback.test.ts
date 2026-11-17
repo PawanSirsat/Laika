@@ -78,13 +78,10 @@ const MUTATING_HOOKS: Readonly<Record<string, readonly string[]>> = {
  * needs no toast of its own (e.g. it hands the write to a parent that toasts).
  */
 const ALLOWED_WITHOUT_TOAST: Readonly<Record<string, string>> = {
-  'components/create-task/CreateTaskDialog.tsx': 'LAI-1310: not migrated yet',
   'components/drawer/TaskDrawerHost.tsx':
     'moves go through useLocalMoves, which toasts (use-space-reads.ts); the panel it renders reports its own actions',
-  'routes/screens/board/AssignControl.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/board/ColumnComposer.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/board/TagPicker.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/calendar/calendar-drag.ts': 'LAI-1310: not migrated yet',
+  'routes/screens/calendar/calendar-drag.ts':
+    'pure write helper with a node unit test; its only caller, CalendarScreen, runs it through useAction',
   'routes/screens/connect/ConnectScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/connect/ShareActivity.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/developer/AgentsTab.tsx': 'LAI-1310: not migrated yet',
@@ -99,7 +96,6 @@ const ALLOWED_WITHOUT_TOAST: Readonly<Record<string, string>> = {
   'routes/screens/developer/v3/ToolDetails.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/inbox/HandoffsTab.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/InviteRoute.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/list/ListView.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/meeting-review/MeetingReviewScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/MembersScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/organisation/BreakScheduleFact.tsx': 'LAI-1310: not migrated yet',
@@ -122,7 +118,6 @@ const ALLOWED_WITHOUT_TOAST: Readonly<Record<string, string>> = {
   'routes/screens/SetupRoute.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/space-settings/HandoffPolicySection.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/space-settings/SpaceSettingsScreen.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/sprints/SprintsScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/tokens/TokensScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/unlisted/UnlistedList.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/usage/BudgetsCard.tsx': 'LAI-1310: not migrated yet',
