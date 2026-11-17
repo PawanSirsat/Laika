@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError } from '../../../api/errors.ts';
 import {
   getOrgPermissions,
   setOrgPermissions,
@@ -10,7 +9,14 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Switch } from '../../../components/Switch.tsx';
-import { actionName, lockedRoles, sameGrants, withGrant } from './permissions-view.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
+import {
+  actionName,
+  grantsChangeLine,
+  lockedRoles,
+  sameGrants,
+  withGrant,
+} from './permissions-view.ts';
 
 type GrantsState =
   | { readonly status: 'loading' }
@@ -49,13 +55,17 @@ function changedLabel(ms: number): string {
  * Save sends the **whole** matrix, which is what `PUT` takes, and a refusal is
  * shown here in the server's words. The tables below this card are `can()`'s
  * answer under these grants, so a save asks for them again.
+ *
+ * A save toasts what changed (LAI-1310), with Undo: `PUT` takes the whole
+ * matrix, so putting the previous one back really reverses it. A refusal is
+ * an error toast carrying the server's sentence — which cell, and why.
  */
 export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
   const [state, setState] = useState<GrantsState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [draft, setDraft] = useState<Grants | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const reload = useCallback(() => {
     setAttempt((n) => n + 1);
   }, []);
@@ -113,21 +123,27 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
   const locked = lockedRoles(orgRoles, view.roles);
 
   const save = () => {
+    const previous = view.grants;
     setBusy(true);
-    setError(undefined);
-    setOrgPermissions(shown)
-      .then((saved) => {
-        setState({ status: 'ready', view: saved });
-        setDraft(saved.grants);
+    void run({
+      do: () => setOrgPermissions(shown),
+      success: (saved) => grantsChangeLine(previous, saved.grants, saved.capabilities),
+      undo: async () => {
+        const back = await setOrgPermissions(previous);
+        setState({ status: 'ready', view: back });
+        setDraft(back.grants);
         onSaved();
-      })
-      .catch((cause: unknown) => {
-        // The server's refusal, verbatim: which cell, and why.
-        setError(cause instanceof ApiError ? cause.message : 'The change did not save.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+        return 'Permissions put back';
+      },
+      failure: 'Couldn’t save the permissions',
+      mark: 'grants-saved',
+    }).then((saved) => {
+      setBusy(false);
+      if (saved === undefined) return;
+      setState({ status: 'ready', view: saved });
+      setDraft(saved.grants);
+      onSaved();
+    });
   };
 
   return (
@@ -230,11 +246,6 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
 
       {editable && (
         <>
-          {error !== undefined && (
-            <p className="org-fact-error" role="alert">
-              {error}
-            </p>
-          )}
           <div className="perm-grants-actions">
             <Button busy={busy} disabled={unchanged} onClick={save}>
               Save
@@ -244,7 +255,6 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
               disabled={unchanged || busy}
               onClick={() => {
                 setDraft(view.grants);
-                setError(undefined);
               }}
             >
               Discard

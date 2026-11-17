@@ -29,6 +29,25 @@ import {
 } from './harness.ts';
 import { boardAction } from './board-menu.ts';
 
+/**
+ * What the app's toast said (LAI-1310) for one board write: the toast with
+ * that mark and tone whose sentence matches, waited for, its text and detail
+ * read as one line. Every board write ends in one, where a refusal used to be
+ * a `.board-alert` banner and a success said nothing.
+ */
+async function toastSaid(
+  h: Harness,
+  mark: 'board-move' | 'board-column',
+  tone: 'success' | 'error',
+  says: RegExp,
+): Promise<string> {
+  const toast = h.page
+    .locator(`[data-toast][data-${mark}][data-tone="${tone}"]`)
+    .filter({ hasText: says });
+  await toast.first().waitFor({ timeout: 5_000 });
+  return (await toast.first().locator('.toast-text').innerText()).replace(/\s+/g, ' ').trim();
+}
+
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
 const FULL_PROJECT = {
@@ -281,6 +300,10 @@ void describe('renaming a column in place', () => {
       assert.deepEqual(patch[0]?.body, { name: 'Testing' });
       assert.ok((await titles(h)).includes('Testing'), 'the header kept its old name');
       assert.equal(await h.page.locator('.lane-rename-input').count(), 0, 'the field stayed open');
+      assert.equal(
+        await toastSaid(h, 'board-column', 'success', /renamed/),
+        'QA renamed to Testing',
+      );
     } finally {
       await h.close();
     }
@@ -325,7 +348,12 @@ void describe('renaming a column in place', () => {
       await error.waitFor({ state: 'visible', timeout: 3000 });
       assert.match(await error.innerText(), /already has a status called To do/);
       assert.equal(await h.page.locator('.lane-rename-input').inputValue(), 'To do');
-      // Not in the board's alert bar as well: one place, beside the column.
+      // Beside the column, and in the app's toast (LAI-1310) — never the old
+      // alert bar above the lanes.
+      assert.equal(
+        await toastSaid(h, 'board-column', 'error', /Couldn’t rename/),
+        'Couldn’t rename Done This project already has a status called To do',
+      );
       assert.equal(await h.page.locator('.board-alert').count(), 0);
     } finally {
       await h.close();
@@ -361,6 +389,7 @@ void describe('adding a column', () => {
       assert.equal(post.length, 1);
       assert.deepEqual(post[0]?.body, { name: 'Blocked', category: 'in_progress' });
       assert.equal(await dialog.count(), 0, 'the dialog stayed open');
+      assert.equal(await toastSaid(h, 'board-column', 'success', /added/), 'Blocked column added');
       // Where the server put it: after the last column of its kind.
       assert.deepEqual(await titles(h), [
         'To do',
@@ -389,6 +418,7 @@ void describe('hiding a column and showing it again', () => {
 
       assert.deepEqual(sent(h, 'PATCH', '/statuses/s-qa')[0]?.body, { hidden: true });
       assert.ok(!(await titles(h)).includes('QA'), 'the hidden column is still drawn');
+      assert.equal(await toastSaid(h, 'board-column', 'success', /hidden/), 'QA column hidden');
 
       // Cancelled was hidden already: two.
       await boardAction(h.page, 'Hidden columns (2)');
@@ -401,6 +431,7 @@ void describe('hiding a column and showing it again', () => {
       );
 
       assert.deepEqual(sent(h, 'PATCH', '/statuses/s-qa')[1]?.body, { hidden: false });
+      assert.equal(await toastSaid(h, 'board-column', 'success', /shown/), 'QA column shown');
       assert.deepEqual(await titles(h), ['To do', 'In progress', 'QA', 'Code review', 'Done']);
     } finally {
       await h.close();
@@ -433,6 +464,15 @@ void describe('deleting a column', () => {
       const del = sent(h, 'DELETE', '/statuses/s-qa');
       assert.equal(del.length, 1);
       assert.deepEqual(del[0]?.body, { move_to: 's-cr' });
+      // No Undo: its tasks were moved on the server.
+      assert.equal(await toastSaid(h, 'board-column', 'success', /deleted/), 'QA column deleted');
+      assert.equal(
+        await h.page
+          .locator('[data-toast][data-board-column]', { hasText: 'deleted' })
+          .locator('.toast-undo')
+          .count(),
+        0,
+      );
       assert.deepEqual(await titles(h), ['To do', 'In progress', 'Code review', 'Done']);
       // The task re-read from the server, in its new column.
       await lane(h, 'Code review').locator('.card', { hasText: 'Check the dialog' }).waitFor();
@@ -495,6 +535,16 @@ void describe('dropping a card on a column', () => {
       const move = sent(h, 'POST', '/tasks/t1/status');
       assert.equal(move.length, 1);
       assert.deepEqual(move[0]?.body, { status_id: 's-cr' });
+      // Said, with an Undo that sets the column back (LAI-1310).
+      assert.match(
+        await toastSaid(h, 'board-move', 'success', /moved to/),
+        /^LAI-\d+ moved to Code review$/,
+      );
+      assert.equal(
+        await h.page.locator('[data-toast][data-board-move] .toast-undo').count(),
+        1,
+        'a column change is offered back',
+      );
       assert.equal(
         await lane(h, 'Code review').locator('.lane-item[data-task-id="t1"]').count(),
         1,
@@ -520,19 +570,20 @@ void describe('dropping a card on a column', () => {
     try {
       await board(h);
       await drag(h, '.lane-item[data-task-id="t1"] .card', '.lane:nth-of-type(5)');
+      // A persistent error toast now (LAI-1310), not the `.board-alert` banner.
+      const said = await toastSaid(h, 'board-move', 'error', /without review/);
       await until(
-        async () =>
-          (await h.page.locator('.board-alert').count()) > 0 &&
-          (await lane(h, 'To do').locator('.lane-item[data-task-id="t1"]').count()) === 1,
+        async () => (await lane(h, 'To do').locator('.lane-item[data-task-id="t1"]').count()) === 1,
       );
 
       assert.equal(await lane(h, 'To do').locator('.lane-item[data-task-id="t1"]').count(), 1);
       assert.equal(await lane(h, 'Done').locator('.lane-item[data-task-id="t1"]').count(), 0);
       assert.match(
-        await h.page.locator('.board-alert').first().innerText(),
-        /without review/,
-        'the server’s own sentence',
+        said,
+        /^Couldn’t move LAI-\d+ Cannot move a task from todo to done without review$/,
+        'the server’s own sentence, as the detail',
       );
+      assert.equal(await h.page.locator('.board-alert').count(), 0, 'the banner is retired');
     } finally {
       await h.close();
     }

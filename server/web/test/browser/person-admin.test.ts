@@ -327,10 +327,12 @@ void describe('the Admin panel', () => {
       await until(() => sent.length === 1);
       assert.deepEqual(sent, [{ org_role: 'admin' }]);
       await until(() => reads === 2);
-      assert.match(
-        await admin.locator('.prof-admin-notice').innerText(),
-        /Bea Builder is now Admin/,
-      );
+      // The outcome is the app's toast now (LAI-1310), with a real Undo.
+      const toast = h.page.locator('[data-toast]', { hasText: 'Bea Builder is now Admin' });
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getAttribute('data-tone'), 'success');
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 1);
+      assert.equal(await admin.locator('.prof-admin-notice').count(), 0, 'the old notice is back');
     } finally {
       await h.close();
     }
@@ -411,7 +413,10 @@ void describe('deactivating asks about their open tasks', () => {
       await until(() => sent.length === 2);
       assert.deepEqual(sent, [{ is_active: false }, { is_active: false, open_tasks: 'unassign' }]);
       await dialog.waitFor({ state: 'detached' });
-      assert.match(await admin.locator('.prof-admin-notice').innerText(), /has been deactivated/);
+      // A toast (LAI-1310) whose Undo reactivates.
+      const toast = h.page.locator('[data-toast]', { hasText: 'Bea Builder deactivated' });
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 1);
     } finally {
       await h.close();
     }
@@ -592,9 +597,11 @@ void describe('access', () => {
       await admin.locator('[data-action="sign-out"]').click();
       assert.deepEqual(calls, []);
       await admin.locator('[data-action="admin-confirm"]').click();
-      await admin.locator('.prof-admin-notice').waitFor();
+      const toast = h.page.locator('[data-toast]', { hasText: 'Signed out everywhere' });
+      await toast.waitFor({ timeout: 5_000 });
       assert.deepEqual(calls, ['POST']);
-      assert.match(await admin.locator('.prof-admin-notice').innerText(), /Ended 2 sessions/);
+      // An ended session cannot be resumed: no Undo is offered.
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0);
     } finally {
       await h.close();
     }
@@ -675,11 +682,12 @@ void describe('access', () => {
       const admin = await panel(h);
       await admin.locator('[data-token="k1"] [data-action="revoke-token"]').click();
       await admin.locator('[data-token="k1"] [data-action="admin-confirm"]').click();
-      await until(async () =>
-        (await admin.locator('[data-admin="tokens"]').innerText()).includes('Only the owner'),
-      );
+      // An error toast (LAI-1310): it stays, and carries the reader's terms.
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.match(await toast.innerText(), /Couldn’t revoke token/);
       assert.match(
-        await admin.locator('[data-admin="tokens"]').innerText(),
+        await toast.innerText(),
         /Only the owner can change the owner’s setup\. Nothing was changed\./,
       );
     } finally {

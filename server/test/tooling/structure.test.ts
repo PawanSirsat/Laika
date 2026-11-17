@@ -110,6 +110,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React context and its hook — no renderer in this package (CONVENTIONS §4); its rules are create-task-form.ts, tested, and test/browser/create-task-dialog.test.ts drives the three ways in (LAI-1167)',
   ],
   [
+    'components/toast/use-action.ts',
+    'a React hook — no renderer in this package (CONVENTIONS §4); what it says is decided in action-model.ts, which is mirrored, and test/components/toast/action-feedback.test.ts holds every mutating screen to it (LAI-1310)',
+  ],
+  [
     'routes/screens/profile/use-own-setup.ts',
     'a React hook — no renderer in this package; its rules are own-setup-derive.ts, tested, and the browser test drives it (CONVENTIONS §4)',
   ],

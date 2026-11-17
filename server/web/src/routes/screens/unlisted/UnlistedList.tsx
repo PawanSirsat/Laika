@@ -21,6 +21,8 @@ import { Button } from '../../../components/forms/Button.tsx';
 import '../../../components/markers.css';
 import './unlisted.css';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 
 export interface UnlistedListProps {
   /** Already in the order to show — newest first is the caller's. */
@@ -59,6 +61,7 @@ interface PromotionResult {
  */
 export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedListProps) {
   const confirm = useConfirm();
+  const { run } = useAction();
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [promoting, setPromoting] = useState<UnlistedWork | undefined>(undefined);
   const [slug, setSlug] = useState('');
@@ -120,27 +123,41 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
     setSpacesAsked((n) => n + 1);
   };
 
-  const promote = (): void => {
+  const promote = async (): Promise<void> => {
     if (promoting === undefined || blocker !== undefined || busy) return;
+    const row = promoting;
     setBusy(true);
     setActionError(undefined);
-
-    promoteUnlisted(promoting.id, { project_slug: chosen, title: title.trim() })
-      .then((result) => {
-        // Kept so the link to the new task survives the refresh below — the
-        // row's own `promoted_task_id` is an id, and a person needs the key.
-        setJustPromoted({ unlistedId: promoting.id, taskKey: result.task.key });
-        setPromoting(undefined);
-        setSlug('');
-        setTitle('');
-        onChanged();
-      })
-      .catch((cause: unknown) => {
-        setActionError(cause instanceof Error ? cause.message : 'Could not promote that note.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    // The toast's *Open* needs the new key, which only the answer carries;
+    // `success` runs before the toast is shown, so it is set by then.
+    let madeKey = '';
+    const result = await run({
+      do: () => promoteUnlisted(row.id, { project_slug: chosen, title: title.trim() }),
+      success: (made) => {
+        madeKey = made.task.key;
+        return `Promoted to ${made.task.key}`;
+      },
+      action: {
+        label: 'Open',
+        run: () => {
+          onOpenTask(madeKey);
+        },
+      },
+      failure: 'Couldn’t promote note',
+      onError: (cause) => {
+        // A refusal naming the title or space stays beside the form.
+        if (namesFields(cause) && cause instanceof Error) setActionError(cause.message);
+      },
+    });
+    setBusy(false);
+    if (result === undefined) return;
+    // Kept so the link to the new task survives the refresh below — the
+    // row's own `promoted_task_id` is an id, and a person needs the key.
+    setJustPromoted({ unlistedId: row.id, taskKey: result.task.key });
+    setPromoting(undefined);
+    setSlug('');
+    setTitle('');
+    onChanged();
   };
 
   const dismiss = (row: UnlistedWork): void => {
@@ -151,18 +168,21 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
       icon: 'warning',
       detail: row.repo,
     }).then((yes) => {
-      if (yes) dismissNow(row);
+      if (yes) void dismissNow(row);
     });
   };
 
-  const dismissNow = (row: UnlistedWork): void => {
-    dismissUnlisted(row.id)
-      .then(() => {
-        onChanged();
-      })
-      .catch((cause: unknown) => {
-        setActionError(cause instanceof Error ? cause.message : 'Could not dismiss that note.');
-      });
+  const dismissNow = async (row: UnlistedWork): Promise<void> => {
+    // No Undo: §4.14 has no way back from dismissed to pending.
+    const done = await run({
+      do: async () => {
+        await dismissUnlisted(row.id);
+        return true;
+      },
+      success: 'Note dismissed',
+      failure: 'Couldn’t dismiss note',
+    });
+    if (done === true) onChanged();
   };
 
   return (
@@ -309,7 +329,7 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                       onSubmit={(event: FormEvent) => {
                         // Enter in the title submits, as a form does.
                         event.preventDefault();
-                        promote();
+                        void promote();
                       }}
                     >
                       <div className="unl-field">

@@ -26,6 +26,7 @@ import { InfoHint } from '../tooltip/InfoHint.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { spaceColor } from '../../theme/space-color.ts';
 import { useDialogFocus } from '../use-dialog-focus.ts';
+import { useAction } from '../toast/use-action.ts';
 import { CreateTaskFields } from './CreateTaskFields.tsx';
 import {
   creatableSpaces,
@@ -119,6 +120,7 @@ export function CreateTaskDialog({
   restore,
 }: CreateTaskDialogProps) {
   const confirm = useConfirm();
+  const { run: act } = useAction();
   const box = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const descriptionRef = useRef<RichEditorHandle | null>(null);
@@ -377,12 +379,23 @@ export function CreateTaskDialog({
     setBusy(true);
     setErrors(NO_ERRORS);
 
-    let task: Task;
-    try {
-      task = await createTask(slug, body);
-    } catch (cause) {
-      // The form stays as it was: a refusal must never cost what was typed.
-      setErrors(errorsByField(cause));
+    /*
+     * **A refusal toasts as well** (LAI-1310), and stays on the form, field
+     * by field: the toast says it did not happen, the form is where it is
+     * fixed. The success toast is not said here — the provider's `onCreated`
+     * says *created* (or *created, but…*) once the steps below have run, so
+     * this asks for none.
+     */
+    const task: Task | undefined = await act({
+      do: () => createTask(slug, body),
+      success: null,
+      failure: 'Couldn’t create the task',
+      onError: (cause) => {
+        // The form stays as it was: a refusal must never cost what was typed.
+        setErrors(errorsByField(cause));
+      },
+    });
+    if (task === undefined) {
       setBusy(false);
       return;
     }

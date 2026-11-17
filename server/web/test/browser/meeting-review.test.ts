@@ -16,7 +16,7 @@
 import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme, until } from './harness.ts';
+import { closeBrowser, open, reply, type ApiStub, setTheme, until } from './harness.ts';
 
 const PROJECT = {
   id: 'p1',
@@ -379,6 +379,10 @@ void describe('what landed is read from the response', () => {
       }
       await h.page.locator('.mr-apply').click();
       await h.page.locator('.mr-landed-applied').first().waitFor({ timeout: 20_000 });
+      // The count is a toast (LAI-1310): what the server applied, of what was sent.
+      await h.page
+        .locator('[data-toast]', { hasText: 'Applied 1 of 3 proposals' })
+        .waitFor({ timeout: 5_000 });
 
       const body = await h.page.locator('.mr-proposals').innerText();
       assert.match(body, /created t9/, 'the applied one does not report what it did');
@@ -444,6 +448,28 @@ void describe('discard is separated from apply', () => {
       await h.page.locator('.mr-discard').click();
       // The app's own dialog (LAI-522): it asks, names the set, and Cancel keeps it.
       assert.match(await answerConfirm(h.page, false), /Discard all \d+ proposals/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused discard is an error toast with the server’s reason (LAI-1310)', async () => {
+    const h = await open(
+      '/meeting-review?project=laika-core',
+      stub({
+        '/api/v1/meeting-reviews/r1/discard': reply(409, {
+          error: { code: 'conflict', message: 'This review was already applied' },
+        }),
+      }),
+    );
+    try {
+      await h.page.locator('.mr-discard').click({ timeout: 20_000 });
+      await answerConfirm(h.page, true);
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t discard review/);
+      assert.match(await toast.innerText(), /This review was already applied/);
+      assert.equal(await h.page.locator('.mr-error').count(), 0);
     } finally {
       await h.close();
     }

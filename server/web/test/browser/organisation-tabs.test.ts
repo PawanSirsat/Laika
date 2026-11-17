@@ -301,9 +301,14 @@ void describe('Security: find a person; flags from the fields; revoke confirms a
       await until(() => h.calls.some((c: StubCall) => c.method === 'DELETE'));
       const deleted = h.calls.find((c: StubCall) => c.method === 'DELETE');
       assert.equal(deleted?.path, '/api/v1/users/u3/tokens/t3');
-      const result = h.page.locator('[data-token-result]');
-      await until(async () => (await result.innerText()).length > 0);
-      assert.match(await result.innerText(), /^Revoked “Old deploy script”\./);
+      // Said in the app's toast (LAI-1310), with no Undo: a revoked token is gone.
+      const result = h.page.locator('[data-toast][data-token-result]');
+      await result.waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await result.locator('.toast-text').innerText()).trim(),
+        '“Old deploy script” revoked',
+      );
+      assert.equal(await result.getByRole('button', { name: 'Undo' }).count(), 0);
     } finally {
       await h.close();
     }

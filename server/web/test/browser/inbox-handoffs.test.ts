@@ -459,11 +459,10 @@ void describe('Inbox → Hand-offs', () => {
       const approve = tab(h.page).locator('[data-offer-id="o-approve"] [data-approve]');
       await approve.click();
       const target = tab(h.page).locator('[data-offer-id="o-approve"]');
-      await eventually(async () =>
-        (await target.innerText()).includes(
-          'Approved. The receiving agent still has to accept it.',
-        ),
-      );
+      // Said as a toast (LAI-1310), with no Undo: the server has no un-approve.
+      const toast = h.page.locator('[data-toast]', { hasText: 'Hand-off of LC-4 approved' });
+      await toast.waitFor({ timeout: 10_000 });
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0);
       // The re-read no longer lists it; the focus is in the list, so it stays put.
       await eventually(async () => (await target.innerText()).includes('No longer in this view'));
       assert.deepEqual(await idsOf(h.page), ['o-approve', 'o-mine-approve']);
@@ -599,22 +598,18 @@ void describe('Inbox → Hand-offs', () => {
       // B answers; A's request is still out, so A stays busy and a second
       // press sends nothing.
       gates.get('o-approve-2')?.();
-      await eventually(async () =>
-        (await tab(h.page).locator('[data-offer-id="o-approve-2"]').innerText()).includes(
-          'Approved.',
-        ),
-      );
+      await h.page
+        .locator('[data-toast]', { hasText: 'Hand-off of LC-9 approved' })
+        .waitFor({ timeout: 10_000 });
       assert.equal(await a.getAttribute('aria-disabled'), 'true', 'A was re-enabled by B');
       await a.click({ force: true });
       await new Promise((done) => setTimeout(done, 300));
       assert.deepEqual(sent, ['o-approve', 'o-approve-2'], 'A was sent twice');
 
       gates.get('o-approve')?.();
-      await eventually(async () =>
-        (await tab(h.page).locator('[data-offer-id="o-approve"]').innerText()).includes(
-          'Approved.',
-        ),
-      );
+      await h.page
+        .locator('[data-toast]', { hasText: 'Hand-off of LC-4 approved' })
+        .waitFor({ timeout: 10_000 });
       assert.deepEqual(sent, ['o-approve', 'o-approve-2']);
     } finally {
       for (const release of gates.values()) release();
@@ -648,10 +643,38 @@ void describe('Inbox → Hand-offs', () => {
       );
       const status = target.locator('[data-row-status]');
       assert.equal(await status.getAttribute('role'), 'status');
-      assert.match(
-        await status.innerText(),
-        /Approved\. The receiving agent still has to accept it\./,
-      );
+      // The row says why its control went; what Approve did is the toast's.
+      assert.match(await status.innerText(), /That action is no longer available\. Next: /);
+      await h.page
+        .locator('[data-toast]', { hasText: 'Hand-off of LC-4 approved' })
+        .waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused Approve is an error toast with the server’s reason, and the row stays', async () => {
+    const w = world();
+    const h = await inbox({
+      ...w,
+      stub: {
+        ...w.stub,
+        '/api/v1/handoff-offers/o-approve/approve': refuse(
+          409,
+          'conflict',
+          'This hand-off was already decided',
+        ),
+      },
+    });
+    try {
+      await tab(h.page).locator('[data-filter="needs_approval"]').click();
+      const approve = tab(h.page).locator('[data-offer-id="o-approve"] [data-approve]');
+      await approve.click();
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t approve hand-off/);
+      assert.match(await toast.innerText(), /This hand-off was already decided/);
+      assert.equal(await tab(h.page).locator('.handoffs-note-error').count(), 0);
     } finally {
       await h.close();
     }

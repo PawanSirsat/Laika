@@ -14,6 +14,8 @@ import { everyPage } from '../../../api/every-page.ts';
 import { getActivitySharing } from '../../../api/local-activity.ts';
 import { getOrg } from '../../../api/org.ts';
 import { getPresence, hasLocation } from '../../../api/presence.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 import {
   createToken,
   forcedTokenScope,
@@ -153,6 +155,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [minted, setMinted] = useState<MintedRef | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [mintError, setMintError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   /*
    * Whether the organisation collects local activity (D-102 amended), so the
    * setup blocks end by turning the collector on (LAI-507). Unknown until the
@@ -275,39 +278,46 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const blocks = setupBlocks(guide.id, { origin, secret, insightsOn });
   const start = startGuide(guide.id);
 
-  const mint = (): void => {
+  const mint = async (): Promise<void> => {
     if (me === undefined) return;
     setPending(true);
     setMintError(undefined);
-    createToken({
-      name:
-        name.trim() === '' ? suggestTokenName(navigator.userAgent, guide.tokenWord) : name.trim(),
-      scope: forcedTokenScope(me.org_role, 'full'),
-      // A credential that is about to be pasted into a transcript or a config
-      // should have an end date. Nothing else in the UI sets one; the field
-      // has always existed.
-      expires_at: Date.now() + NINETY_DAYS_MS,
-    })
-      .then((created) => {
-        setRevealed(created);
-        setFreshMint(true);
-        setMinted({
-          id: created.token.id,
-          created_at: created.token.created_at,
-          name: created.token.name,
-        });
-        setForgotten(false);
-        // Minting is the moment the reader is about to go and do it, so the
-        // watch arms itself rather than waiting to be asked.
-        ticks.current = 0;
-        setLive({ kind: 'watching', ticks: 0 });
-      })
-      .catch((cause: unknown) => {
-        setMintError(cause instanceof Error ? cause.message : 'Could not create that token.');
-      })
-      .finally(() => {
-        setPending(false);
-      });
+    // The toast says it happened; the secret and the blocks that carry it
+    // stay on the page, because they are what the reader copies next.
+    const created = await run({
+      do: () =>
+        createToken({
+          name:
+            name.trim() === ''
+              ? suggestTokenName(navigator.userAgent, guide.tokenWord)
+              : name.trim(),
+          scope: forcedTokenScope(me.org_role, 'full'),
+          // A credential that is about to be pasted into a transcript or a
+          // config should have an end date. Nothing else in the UI sets one;
+          // the field has always existed.
+          expires_at: Date.now() + NINETY_DAYS_MS,
+        }),
+      success: 'Token created',
+      failure: 'Couldn’t create token',
+      onError: (cause) => {
+        // A refusal naming the name field stays beside it.
+        if (namesFields(cause) && cause instanceof Error) setMintError(cause.message);
+      },
+    });
+    setPending(false);
+    if (created === undefined) return;
+    setRevealed(created);
+    setFreshMint(true);
+    setMinted({
+      id: created.token.id,
+      created_at: created.token.created_at,
+      name: created.token.name,
+    });
+    setForgotten(false);
+    // Minting is the moment the reader is about to go and do it, so the
+    // watch arms itself rather than waiting to be asked.
+    ticks.current = 0;
+    setLive({ kind: 'watching', ticks: 0 });
   };
 
   const via = guide.via;
@@ -588,7 +598,9 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                       className="bar-control bar-control-primary conn-mint-button"
                       disabled={pending || me === undefined}
                       aria-busy={pending}
-                      onClick={mint}
+                      onClick={() => {
+                        void mint();
+                      }}
                     >
                       {pending && <Spinner size="sm" />}
                       Mint a token

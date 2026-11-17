@@ -10,6 +10,8 @@ import { useTokenAlerts } from '../../api/token-alerts.ts';
 import { showsAppNav } from '../shell-chrome.ts';
 import { ShellProviderContext, type ShellValue } from './shell-context.ts';
 import { useGates } from '../../api/permissions.ts';
+import { useAction } from '../toast/use-action.ts';
+import { ApiError } from '../../api/errors.ts';
 
 /**
  * Whether this instance still has no owner. `undefined` until `/setup/status`
@@ -40,6 +42,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
   const { session, signIn, signOut, retry } = useSession();
   const { setupRequired, system, markComplete, recheck } = useSetupStatus();
   const [signingOut, setSigningOut] = useState(false);
+  const action = useAction();
 
   const signedIn = showsAppNav(session);
   const projectSlug = route.params.get('project') ?? undefined;
@@ -51,11 +54,26 @@ export function ShellProvider({ children }: ShellProviderProps) {
   const { navigate } = route;
   const handleSignOut = useCallback(() => {
     setSigningOut(true);
-    void signOut().finally(() => {
-      setSigningOut(false);
-      navigate('/login');
-    });
-  }, [signOut, navigate]);
+    // `useSession().signOut` goes locally anonymous whatever the server says,
+    // so the person still lands on Sign in — but a refused sign-out leaves the
+    // server session alive, and they should know (LAI-1310). Failure only: a
+    // sign-out that worked is the Sign in screen itself.
+    void action
+      .run({
+        do: () =>
+          signOut().catch((cause: unknown) => {
+            // A 401 means the session was already gone: that is signed out.
+            if (cause instanceof ApiError && cause.code === 'unauthorized') return;
+            throw cause;
+          }),
+        success: null,
+        failure: 'Couldn’t sign out',
+      })
+      .finally(() => {
+        setSigningOut(false);
+        navigate('/login');
+      });
+  }, [signOut, navigate, action]);
 
   const me = session.status === 'authenticated' ? session.user : undefined;
   // The store is keyed to the user by `setStoreUser`, which the session calls

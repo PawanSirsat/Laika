@@ -245,9 +245,14 @@ void describe('sprints: create and edit say what happened (LAI-1195)', () => {
       await h.page.locator('.sprint-form input[name="endsOn"]').fill(end);
       await h.page.getByRole('button', { name: 'Create sprint' }).click();
 
-      const notice = h.page.locator('.sprint-notice[role="status"]');
+      // Said in the app's toast (LAI-1310), where the `.sprint-notice` was.
+      const notice = h.page.locator('[data-toast][data-sprint-action][data-tone="success"]');
       await notice.waitFor({ timeout: 5_000 });
-      assert.match((await notice.textContent()) ?? '', /^Created Sprint 16 — Reports · /);
+      assert.equal(
+        (await notice.locator('.toast-text').innerText()).trim(),
+        'Sprint 16 — Reports created',
+      );
+      assert.equal(await h.page.locator('.sprint-notice').count(), 0, 'the banner is retired');
       assert.equal(w.writes.length, 1);
       assert.equal(w.writes[0]!.method, 'POST');
       assert.equal((w.writes[0]!.body as { name: string }).name, 'Sprint 16 — Reports');
@@ -272,16 +277,29 @@ void describe('sprints: create and edit say what happened (LAI-1195)', () => {
         await until(() => w.writes.length > 0);
         assert.equal(w.writes[0]?.method, 'PATCH');
 
+        // Both outcomes are the app's toast now (LAI-1310): the refusal a
+        // persistent error with the server's sentence as its detail.
         if (refusal) {
-          const alert = h.page.locator('.sprint-alert[role="alert"]');
+          const alert = h.page.locator('[data-toast][data-sprint-action][data-tone="error"]');
           await alert.waitFor({ timeout: 5_000 });
-          assert.match((await alert.textContent()) ?? '', /overlaps Sprint 14/);
+          assert.equal(
+            (await alert.locator('[role="alert"]').innerText()).replace(/\s+/g, ' ').trim(),
+            'Couldn’t save Sprint 15 — Approvals Sprint 15 overlaps Sprint 14 — Receipts.',
+          );
           assert.equal(await h.page.locator('.sprint-form').count(), 1, 'the form stays open');
-          assert.equal(await h.page.locator('.sprint-notice').count(), 0, 'no success claimed');
+          assert.equal(
+            await h.page.locator('[data-toast][data-tone="success"]').count(),
+            0,
+            'no success claimed',
+          );
+          assert.equal(await h.page.locator('.sprint-alert').count(), 0, 'the banner is retired');
         } else {
-          const notice = h.page.locator('.sprint-notice[role="status"]');
+          const notice = h.page.locator('[data-toast][data-sprint-action][data-tone="success"]');
           await notice.waitFor({ timeout: 5_000 });
-          assert.match((await notice.textContent()) ?? '', /^Saved Sprint 15 — Approvals v2 · /);
+          assert.equal(
+            (await notice.locator('.toast-text').innerText()).trim(),
+            'Sprint 15 — Approvals v2 saved',
+          );
           assert.equal(await h.page.locator('.sprint-form').count(), 0);
         }
       } finally {

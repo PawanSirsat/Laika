@@ -289,6 +289,10 @@ void describe('creating a credential', () => {
       assert.ok(days > 89.9 && days < 90.1, `expires in ${String(days)} days, not 90`);
 
       assert.equal(await h.page.locator('.tok-secret').innerText(), 'lai_secret_shown_once');
+      // The toast says it was made; the secret is never in it (LAI-1310).
+      const made = h.page.locator('[data-toast]', { hasText: 'Credential created' });
+      await made.waitFor({ timeout: 5_000 });
+      assert.doesNotMatch(await made.innerText(), /lai_secret_shown_once/);
       await h.page.getByRole('button', { name: 'I’ve saved it' }).click();
       await until(async () => (await h.page.locator('.tok-reveal').count()) === 0);
       assert.equal(await h.page.getByText('lai_secret_shown_once').count(), 0);
@@ -369,9 +373,11 @@ void describe('revoking', () => {
       await until(() =>
         h.calls.some((c) => c.method === 'DELETE' && c.path === '/api/v1/tokens/t2'),
       );
-      const error = h.page.locator('.dev-adv-error');
+      // An error toast now (LAI-1310): persistent, with the server's sentence.
+      const error = h.page.locator('[data-toast][data-tone="error"]');
       await error.waitFor({ timeout: 10_000 });
-      assert.equal(await error.innerText(), 'That token is busy');
+      assert.match(await error.innerText(), /Couldn’t revoke credential/);
+      assert.match(await error.innerText(), /That token is busy/);
       assert.equal(await h.page.locator('.tok-form').count(), 0);
     } finally {
       await h.close();

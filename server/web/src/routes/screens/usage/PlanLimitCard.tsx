@@ -26,6 +26,8 @@ import {
 import { compactTokens, readerZone } from '../../../api/usage.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 
 type Load =
   | { readonly kind: 'loading' }
@@ -46,6 +48,7 @@ type Load =
  */
 export function PlanLimitCard() {
   const confirm = useConfirm();
+  const { run } = useAction();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,25 +102,32 @@ export function PlanLimitCard() {
       setError(resetTimeError(time));
       return;
     }
+    void saveNow(tokens, minute);
+  };
+
+  const saveNow = async (tokens: number, minute: number | undefined): Promise<void> => {
     setBusy(true);
     setError(undefined);
-    setPlanLimit({
-      plan,
-      window: span,
-      limit_tokens: tokens,
-      tz: readerZone(),
-      ...(span === 'week' ? { week_reset: { weekday, minute: minute ?? 0 } } : {}),
-    })
-      .then((view) => {
-        setLoad({ kind: 'ready', view });
-        setEditing(false);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof ApiError ? cause.message : 'That did not save.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    const view = await run({
+      do: () =>
+        setPlanLimit({
+          plan,
+          window: span,
+          limit_tokens: tokens,
+          tz: readerZone(),
+          ...(span === 'week' ? { week_reset: { weekday, minute: minute ?? 0 } } : {}),
+        }),
+      success: 'Plan limit saved',
+      failure: 'Couldn’t save plan limit',
+      onError: (cause) => {
+        // A refusal naming a field is about what was typed: under the form too.
+        if (cause instanceof ApiError && namesFields(cause)) setError(cause.message);
+      },
+    });
+    setBusy(false);
+    if (view === undefined) return;
+    setLoad({ kind: 'ready', view });
+    setEditing(false);
   };
 
   const clear = (): void => {
@@ -127,25 +137,27 @@ export function PlanLimitCard() {
       confirmLabel: 'Clear limit',
       icon: 'warning',
     }).then((yes) => {
-      if (yes) clearNow();
+      if (yes) void clearNow();
     });
   };
 
-  const clearNow = (): void => {
+  const clearNow = async (): Promise<void> => {
     setBusy(true);
     setError(undefined);
-    clearPlanLimit()
-      .then(() => getPlanLimit())
-      .then((view) => {
-        setLoad({ kind: 'ready', view });
-        setEditing(true);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof ApiError ? cause.message : 'That did not clear.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    // No Undo: the cleared figure is gone from the server, and putting it
+    // back is a fresh Save the form is already open for.
+    const view = await run({
+      do: async () => {
+        await clearPlanLimit();
+        return getPlanLimit();
+      },
+      success: 'Plan limit cleared',
+      failure: 'Couldn’t clear plan limit',
+    });
+    setBusy(false);
+    if (view === undefined) return;
+    setLoad({ kind: 'ready', view });
+    setEditing(true);
   };
 
   const view = load.kind === 'ready' ? load.view : undefined;
@@ -303,11 +315,6 @@ export function PlanLimitCard() {
             )}
           </div>
         </form>
-      )}
-      {!editing && error !== undefined && (
-        <p className="usage-form-error" role="alert">
-          {error}
-        </p>
       )}
     </section>
   );

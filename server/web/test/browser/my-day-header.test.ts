@@ -247,7 +247,9 @@ void describe('the header (LAI-502)', () => {
       await pill.getByRole('button', { name: 'Stop timer and save' }).click();
       await until(() => writes.some((w) => w.path === '/api/v1/me/time/timer/stop'));
       await until(async () => (await h.page.locator('[data-timer]').count()) === 0);
-      const toast = h.page.locator('[data-toast]');
+      // The app's one toast (LAI-1310): Start, Pause and Resume each said
+      // theirs, so the stop's is found by what it says.
+      const toast = h.page.locator('[data-toast]', { hasText: 'saved from the timer' });
       await toast.waitFor({ timeout: 10_000 });
       assert.match(await toast.innerText(), /25 min saved from the timer/);
       assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 1);

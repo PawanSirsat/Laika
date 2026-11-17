@@ -234,6 +234,10 @@ void describe('Save checkpoints automatically (LAI-1007)', () => {
       await until(async () => (await control.getAttribute('aria-checked')) === 'true');
       assert.equal(await control.getAttribute('aria-checked'), 'true');
       assert.match(await stateOf(page, 'a1').innerText(), /^On — given .+ by you\.$/);
+      // Said as a toast too (LAI-1310), with an Undo that flips it back.
+      const said = page.locator('[data-toast]', { hasText: 'Automatic checkpoints turned on' });
+      await said.waitFor({ timeout: 5_000 });
+      assert.equal(await said.getByRole('button', { name: 'Undo' }).count(), 1);
       assert.equal(
         h.calls.filter((c) => c.method === 'PUT' && c.path.endsWith('/checkpoint-consent')).length,
         1,
@@ -258,7 +262,7 @@ void describe('Save checkpoints automatically (LAI-1007)', () => {
     }
   });
 
-  void test('a refusal is said inline with the server’s reason, and the switch stays where it was', async () => {
+  void test('a refusal is an error toast with the server’s reason, and the switch stays where it was', async () => {
     const api = consentApi([agentRow('a1')]);
     const h = await open('/developer?tab=agents', {
       ...api.stub,
@@ -273,12 +277,14 @@ void describe('Save checkpoints automatically (LAI-1007)', () => {
       await control.waitFor({ timeout: 20_000 });
       await control.focus();
       await page.keyboard.press('Space');
-      const refusal = page.locator('[data-consent="a1"] [data-consent-refusal]');
+      // The app's toast now (LAI-1310), persistent, with the server's sentence.
+      const refusal = page.locator('[data-toast][data-tone="error"]');
       await refusal.waitFor();
-      assert.equal(await refusal.getAttribute('role'), 'alert');
-      assert.equal(
+      assert.equal(await refusal.locator('[role="alert"]').count(), 1);
+      assert.match(await refusal.innerText(), /Couldn’t change automatic checkpoints/);
+      assert.match(
         await refusal.innerText(),
-        'Consent is given from a signed-in session, not a token',
+        /Consent is given from a signed-in session, not a token/,
       );
       assert.equal(await control.getAttribute('aria-checked'), 'false');
       assert.equal(await stateOf(page, 'a1').innerText(), 'Off — never given.');

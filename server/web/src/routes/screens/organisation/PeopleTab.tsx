@@ -4,6 +4,7 @@ import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { failureToast } from '../../../components/toast/action-model.ts';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { OverflowMenu, type OverflowMenuItem } from '../../../components/wizard/OverflowMenu.tsx';
 import {
@@ -314,8 +315,7 @@ export function PeopleTab({
       retireUndo();
       void onChange(person.id, { is_active: true })
         .then((ok) => {
-          if (ok)
-            say(`${person.name} can sign in again. Their old sessions and tokens stay ended.`);
+          if (ok) say(`${person.name} can sign in again`);
         })
         .finally(() => {
           setConfirming(false);
@@ -329,13 +329,14 @@ export function PeopleTab({
     revokeInvite(invite.id)
       .then(() => {
         closeConfirm();
-        say(
-          `The invite for ${invite.email ?? 'anyone with the link'} is revoked; its link no longer works.`,
-        );
+        say(`Invite for ${invite.email ?? 'the link'} revoked`);
         onReload();
       })
       .catch((cause: unknown) => {
         setConfirmError(cause instanceof Error ? cause.message : 'Could not revoke that invite.');
+        // Said in the dialog, which stays open, and as a persistent toast (LAI-1310).
+        const said = failureToast({ success: null, failure: 'Couldn’t revoke the invite' }, cause);
+        if (said !== null) toast.show(said);
       })
       .finally(() => {
         setConfirming(false);
@@ -347,10 +348,17 @@ export function PeopleTab({
     reissueInvite(invite.id)
       .then((created) => {
         setReissued({ email: created.invite.email, url: created.accept_url });
+        // The new link stays inline above the list — shown once, to copy.
+        say(`New link for ${created.invite.email ?? 'the invite'} created`);
         onReload();
       })
       .catch((cause: unknown) => {
         setInviteError(cause);
+        const said = failureToast(
+          { success: null, failure: 'Couldn’t re-issue the invite' },
+          cause,
+        );
+        if (said !== null) toast.show(said);
       });
   };
 
@@ -991,7 +999,7 @@ export function PeopleTab({
           }}
           onDone={() => {
             setOffboarding(undefined);
-            say(`${offboarding.name} is deactivated and can no longer sign in.`);
+            say(`${offboarding.name} deactivated`);
             onReload();
           }}
           onClose={() => {

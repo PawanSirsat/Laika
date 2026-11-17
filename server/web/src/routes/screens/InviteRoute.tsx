@@ -5,6 +5,8 @@ import { acceptInvite } from '../../api/invites.ts';
 import { useInvite } from '../../api/use-invite.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
+import { useToast } from '../../components/toast/ToastProvider.tsx';
+import { detailOf } from '../../components/toast/action-model.ts';
 
 /**
  * Accepting an invite (LAI-250), lifted out of `AppShell`.
@@ -25,6 +27,7 @@ export function InviteRoute() {
   } = useShell();
   const token = params.get('token') ?? undefined;
   const state = useInvite(token);
+  const toast = useToast();
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -60,16 +63,24 @@ export function InviteRoute() {
         // it expired while the form was open, or someone else spent a link
         // invite first. The server's own wording is used rather than a reworded
         // one, because it is the only party that knows which.
-        setError(
+        const said =
           cause instanceof ApiError
             ? cause.message
-            : 'Could not create your account. The instance may be unreachable.',
-        );
+            : 'Could not create your account. The instance may be unreachable.';
+        // The summary keeps it beside the form, where focus goes; the toast
+        // is the app's one place an action's failure is always said
+        // (LAI-1310). A field refusal, above, stays on its field alone.
+        setError(said);
+        toast.show({
+          text: 'Couldn’t create your account',
+          tone: 'error',
+          detail: detailOf(cause) ?? said,
+        });
       } finally {
         setSubmitting(false);
       }
     },
-    [token, retry, navigate],
+    [token, retry, navigate, toast],
   );
 
   return (

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { setDraftMyTime, type MyDay } from '../../../api/time.ts';
 import { Switch } from '../../../components/Switch.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { duration } from './format.ts';
 import { MyDayDialog } from './MyDayDialog.tsx';
 
@@ -9,8 +10,12 @@ export interface DraftMyTimeProps {
   /** Every pending draft held, on every day — what *off* deletes. */
   readonly held: MyDay['drafts_held'];
   readonly pending: string | undefined;
-  /** The page's runner: one write, the day re-read after, its word in a toast. */
-  readonly run: (key: string, write: () => Promise<unknown>, said: string) => Promise<boolean>;
+  /**
+   * The page's runner: keys the write so only this control waits, and
+   * re-reads the day after. The words are this control's own, said through
+   * `useAction` inside the write (LAI-1310).
+   */
+  readonly run: (key: string, write: () => Promise<unknown>) => Promise<boolean>;
   /** Inside *Day settings* (LAI-502): the switch alone, its words drawn by the row. */
   readonly compact?: boolean | undefined;
 }
@@ -29,6 +34,7 @@ const drafts = (n: number): string => `${String(n)} ${n === 1 ? 'draft' : 'draft
  */
 export function DraftMyTime({ settings, held, pending, run, compact = false }: DraftMyTimeProps) {
   const [asking, setAsking] = useState(false);
+  const { run: act } = useAction();
   const toggle = useRef<HTMLDivElement | null>(null);
 
   if (settings.org_mode !== 'drafts') {
@@ -43,10 +49,12 @@ export function DraftMyTime({ settings, held, pending, run, compact = false }: D
 
   const turnOff = (): void => {
     setAsking(false);
-    void run(
-      'switch',
-      () => setDraftMyTime(false),
-      'Draft my time is off. Every draft held was deleted; confirmed time stays.',
+    void run('switch', () =>
+      act({
+        do: () => setDraftMyTime(false),
+        success: 'Draft my time is off. Every draft held was deleted; confirmed time stays.',
+        failure: 'Couldn’t turn off Draft my time',
+      }),
     );
   };
 
@@ -64,10 +72,12 @@ export function DraftMyTime({ settings, held, pending, run, compact = false }: D
         disabled={pending !== undefined}
         onChange={(on) => {
           if (on) {
-            void run(
-              'switch',
-              () => setDraftMyTime(true),
-              'Draft my time is on. Your collector drafts from its next sync.',
+            void run('switch', () =>
+              act({
+                do: () => setDraftMyTime(true),
+                success: 'Draft my time is on. Your collector drafts from its next sync.',
+                failure: 'Couldn’t turn on Draft my time',
+              }),
             );
           } else if (held.count > 0) {
             setAsking(true);

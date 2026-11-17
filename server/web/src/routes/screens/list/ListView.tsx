@@ -13,7 +13,15 @@ import type { Sprint } from '../../../api/sprints.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { LIST_COLUMNS, listRows, nextSort, sortRows, type ListSort } from './list-derive.ts';
 import { effectiveSelection, pageState, selectAll, toggleOne, togglePage } from './list-select.ts';
-import { runBulkAction, statusChoices, type BulkAction, type BulkRun } from './list-bulk.ts';
+import {
+  bulkPlan,
+  bulkToast,
+  runBulkAction,
+  statusChoices,
+  type BulkAction,
+  type BulkRun,
+} from './list-bulk.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
@@ -76,7 +84,7 @@ export interface ListViewProps {
   readonly onPage: (page: number) => void;
   /**
    * The status pill's move — `board.move`, the same call the drag uses, so a
-   * refusal lands in the board's own alert strip and nothing moves until the
+   * refusal is the board's toast (LAI-1310) and nothing moves until the
    * server answers (LAI-049).
    */
   readonly movingId: string | undefined;
@@ -199,14 +207,48 @@ export function ListView({
   >(undefined);
   const menuTask = statusMenu === undefined ? undefined : byId.get(statusMenu.id);
 
+  const toast = useToast();
+
+  /** Where a bulk action sent the tasks, as the bar's menu named it. */
+  const targetOf = (action: BulkAction): string => {
+    switch (action.kind) {
+      case 'status':
+        return statuses.find((s) => s.id === action.statusId)?.name ?? 'the new status';
+      case 'priority':
+        return action.priority.toUpperCase();
+      case 'assignee':
+        return action.assigneeId === null
+          ? 'nobody'
+          : (members.get(action.assigneeId)?.name ?? 'them');
+      case 'sprint':
+        return action.sprintId === null
+          ? 'no sprint'
+          : (sprintLabels.get(action.sprintId)?.label ??
+              sprints.find((s) => s.id === action.sprintId)?.name ??
+              'the sprint');
+      case 'cancel':
+        return 'cancelled';
+    }
+  };
+
   const runBulk = (action: BulkAction): void => {
     const chosen = [...effective].flatMap((id) => {
       const task = byId.get(id);
       return task === undefined ? [] : [task];
     });
+    const skipped = bulkPlan(action, chosen).skipped;
+    const target = targetOf(action);
     // One request per task, in selection order, the report by key — the
     // shared run (`runBulkAction`), so Work counts exactly as the List does.
-    void runBulkAction(action, chosen, onBulkRun).then(() => {
+    void runBulkAction(action, chosen, onBulkRun).then((outcome) => {
+      /*
+       * **One toast for the run** (LAI-1310), and the bar's progress line
+       * while it went. When every task landed, the toast says all the bar's
+       * report would have, so the report goes; a refusal keeps it, because
+       * its list of keys and reasons is what the reader goes and fixes.
+       */
+      toast.show(bulkToast(action, outcome, skipped, target, (id) => byId.get(id)?.key ?? id));
+      if (outcome.failed.length === 0) onBulkRun(undefined);
       onChanged();
     });
   };

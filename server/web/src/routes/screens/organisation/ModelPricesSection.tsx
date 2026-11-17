@@ -15,6 +15,7 @@ import {
 } from '../../../api/model-prices.ts';
 import { COST_LABEL } from '../../../api/usage.ts';
 import { Button } from '../../../components/forms/Button.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 
 type Load =
   | { readonly kind: 'loading' }
@@ -45,6 +46,10 @@ const MODEL = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
  * with a release, or is typed in here. A price the table could not read off
  * its source says *inferred*, and a model with no price shows none on Usage,
  * never $0.
+ *
+ * Setting, resetting and removing a price toast (LAI-1310), with Undo: the
+ * model's price as it was is put back — the organisation's own again, or the
+ * override dropped so the table's applies.
  */
 export function ModelPricesSection() {
   const confirm = useConfirm();
@@ -59,6 +64,7 @@ export function ModelPricesSection() {
   const [newModel, setNewModel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run: act } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,21 +97,38 @@ export function ModelPricesSection() {
     });
   };
 
-  const run = (work: Promise<ModelPrices>): void => {
+  /** The model's price as it stands, so Undo can put it back. */
+  const restorer = (model: string): (() => Promise<ModelPrices>) => {
+    const before =
+      load.kind === 'ready' ? load.prices.entries.find((e) => e.model === model) : undefined;
+    if (before?.overridden !== true) return () => resetModelPrice(model);
+    const { input, output, cache_write, cache_read } = before;
+    return () => setModelPrice(model, { input, output, cache_write, cache_read });
+  };
+
+  const run = (
+    model: string,
+    words: { readonly success: string; readonly failure: string },
+    work: () => Promise<ModelPrices>,
+  ): void => {
+    const putBack = restorer(model);
     setBusy(true);
     setError(undefined);
-    work
-      .then((prices) => {
-        setLoad({ kind: 'ready', prices });
-        setEditing(undefined);
-        setNewModel('');
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof ApiError ? cause.message : 'The price did not save.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    void act({
+      do: work,
+      ...words,
+      undo: async () => {
+        setLoad({ kind: 'ready', prices: await putBack() });
+        return `${model} price put back`;
+      },
+      mark: 'model-price',
+    }).then((prices) => {
+      setBusy(false);
+      if (prices === undefined) return;
+      setLoad({ kind: 'ready', prices });
+      setEditing(undefined);
+      setNewModel('');
+    });
   };
 
   const commit = (): void => {
@@ -116,7 +139,10 @@ export function ModelPricesSection() {
       return;
     }
     const price = Object.fromEntries(parsed) as Record<Field, number>;
-    run(setModelPrice(editing, price));
+    const model = editing;
+    run(model, { success: `${model} price saved`, failure: 'Couldn’t save the price' }, () =>
+      setModelPrice(model, price),
+    );
   };
 
   const save = (event: FormEvent): void => {
@@ -256,7 +282,20 @@ export function ModelPricesSection() {
                                     danger: entry.table === null,
                                     icon: 'warning',
                                   }).then((yes) => {
-                                    if (yes) run(resetModelPrice(entry.model));
+                                    if (!yes) return;
+                                    run(
+                                      entry.model,
+                                      entry.table === null
+                                        ? {
+                                            success: `${entry.model} price removed`,
+                                            failure: 'Couldn’t remove the price',
+                                          }
+                                        : {
+                                            success: `${entry.model} reset to the table`,
+                                            failure: 'Couldn’t reset the price',
+                                          },
+                                      () => resetModelPrice(entry.model),
+                                    );
                                   });
                                 }}
                               >

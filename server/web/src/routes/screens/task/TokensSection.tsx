@@ -26,6 +26,8 @@ import { BudgetEditor, BudgetMeter } from '../usage/BudgetMeter.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import '../usage/usage.css';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { runOrThrow } from './run-or-throw.ts';
 import './tokens.css';
 
 export interface TokensSectionProps {
@@ -81,6 +83,7 @@ export function TokensSection({
   // keeps its figures until the new ones arrive.
   const [loaded, setLoaded] = useState<{ taskId: string; view: TaskUsage } | undefined>(undefined);
   const [failedFor, setFailedFor] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -187,7 +190,15 @@ export function TokensSection({
           compact={compact}
           mayBudget={mayBudget}
           onBudget={(tokens) =>
-            setTaskBudget(view.task_id, tokens).then(() => {
+            // Says what it set (LAI-1310); a refusal also stays in the editor.
+            runOrThrow(run, {
+              do: () => setTaskBudget(view.task_id, tokens),
+              success:
+                tokens === null
+                  ? 'Budget back to the estimate'
+                  : `Budget set to ${compactTokens(tokens)} tokens`,
+              failure: 'Couldn’t save the budget',
+            }).then(() => {
               setAsked((n) => n + 1);
             })
           }

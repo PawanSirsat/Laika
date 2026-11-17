@@ -9,6 +9,7 @@ import {
 import { everyPage } from '../../../api/every-page.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { BudgetEditor, BudgetMeter } from './BudgetMeter.tsx';
 
 /**
@@ -74,6 +75,32 @@ export function BudgetsCard({
     onChanged();
   };
 
+  const { run } = useAction();
+  /**
+   * One budget write, said as a toast (LAI-1310). A failure still rejects,
+   * so `BudgetEditor` keeps what was typed and marks its field; the toast
+   * carries the server's sentence either way.
+   */
+  const save = async (
+    what: 'Monthly budget' | 'Sprint budget',
+    tokens: number | null,
+    call: () => Promise<unknown>,
+  ): Promise<void> => {
+    let failed: Error | undefined;
+    const done = await run({
+      do: async () => {
+        await call();
+        return true;
+      },
+      success: tokens === null ? `${what} removed` : `${what} saved`,
+      failure: `Couldn’t save ${what.toLowerCase()}`,
+      onError: (cause) => {
+        failed = cause instanceof Error ? cause : new Error('The budget did not save.');
+      },
+    });
+    if (done !== true) throw failed ?? new Error('The budget did not save.');
+  };
+
   const canSet = own?.can_set === true;
   const monthly = budgets.filter((b) => b.scope === 'project');
   const ofSprints = budgets.filter((b) => b.scope === 'sprint');
@@ -102,7 +129,11 @@ export function BudgetsCard({
                 <BudgetEditor
                   current={monthly[0].tokens}
                   label={`Monthly token budget for ${space.name}`}
-                  onSave={(tokens) => setProjectBudget(space.slug, tokens).then(changed)}
+                  onSave={(tokens) =>
+                    save('Monthly budget', tokens, () => setProjectBudget(space.slug, tokens)).then(
+                      changed,
+                    )
+                  }
                 />
               )}
             </BudgetMeter>
@@ -113,7 +144,11 @@ export function BudgetsCard({
                 <BudgetEditor
                   current={undefined}
                   label={`Monthly token budget for ${space.name}`}
-                  onSave={(tokens) => setProjectBudget(space.slug, tokens).then(changed)}
+                  onSave={(tokens) =>
+                    save('Monthly budget', tokens, () => setProjectBudget(space.slug, tokens)).then(
+                      changed,
+                    )
+                  }
                 />
               )}
             </>
@@ -143,7 +178,9 @@ export function BudgetsCard({
                 <BudgetEditor
                   current={b.tokens}
                   label={`Token budget for ${b.label}`}
-                  onSave={(tokens) => setSprintBudget(b.id, tokens).then(changed)}
+                  onSave={(tokens) =>
+                    save('Sprint budget', tokens, () => setSprintBudget(b.id, tokens)).then(changed)
+                  }
                 />
               )}
             </BudgetMeter>
@@ -162,10 +199,12 @@ export function BudgetsCard({
                   current={undefined}
                   label="Token budget for the sprint"
                   onSave={(tokens) =>
-                    setSprintBudget(adding, tokens).then(() => {
-                      setAdding('');
-                      changed();
-                    })
+                    save('Sprint budget', tokens, () => setSprintBudget(adding, tokens)).then(
+                      () => {
+                        setAdding('');
+                        changed();
+                      },
+                    )
                   }
                 />
               )}

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError } from '../../api/errors.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { getProject } from '../../api/projects.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { changeStatus, getTask, type TaskSummary } from '../../api/tasks.ts';
 import { reloadProjectTasks } from '../../api/use-project-tasks.ts';
+import { useAction } from '../toast/use-action.ts';
 
 /*
  * **The space reads a task's panel needs when no view offers them**
@@ -95,26 +95,36 @@ export function useTaskRead(taskId: string | undefined): {
  * Moving a task from the drawer when the view offers no store of its own: the
  * same `POST /tasks/:id/status` the board's move makes, then the shared set
  * is read again so the view under the drawer follows.
+ *
+ * It ends in a toast (LAI-1310): *LAI-12 moved to Review*, with Undo back to
+ * the status it left when the caller says which — the same call, so the
+ * server really reverses it — or the server's refusal, which used to be a
+ * banner above the description.
  */
 export function useLocalMoves(slug: string | undefined) {
   const [movingId, setMovingId] = useState<string | undefined>(undefined);
-  const [moveError, setMoveError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const onMove = useCallback(
-    (taskId: string, toStatusId: string): void => {
-      setMoveError(undefined);
+    (taskId: string, toStatusId: string, fromStatusId?: string): void => {
       setMovingId(taskId);
-      changeStatus(taskId, { status_id: toStatusId })
-        .then(() => {
-          reloadProjectTasks(slug);
-        })
-        .catch((cause: unknown) => {
-          setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
-        })
-        .finally(() => {
-          setMovingId(undefined);
-        });
+      void run({
+        do: () => changeStatus(taskId, { status_id: toStatusId }),
+        success: (moved) => `${moved.key} moved to ${moved.status_name}`,
+        failure: 'Couldn’t move the task',
+        undo:
+          fromStatusId === undefined
+            ? undefined
+            : async () => {
+                const back = await changeStatus(taskId, { status_id: fromStatusId });
+                reloadProjectTasks(slug);
+                return `${back.key} back in ${back.status_name}`;
+              },
+      }).then((moved) => {
+        setMovingId(undefined);
+        if (moved !== undefined) reloadProjectTasks(slug);
+      });
     },
-    [slug],
+    [slug, run],
   );
-  return { movingId, moveError, onMove };
+  return { movingId, onMove };
 }

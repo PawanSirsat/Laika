@@ -3,6 +3,7 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { createTask, PRIORITIES } from '../../../api/tasks.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import './column-composer.css';
 
@@ -39,12 +40,17 @@ export interface ColumnComposerProps {
  * Enter creates and **keeps the box open**, cleared, because adding cards is
  * something people do in runs. Escape closes it. A failed create keeps the text
  * — the one outcome a composer must never have is losing what somebody typed.
+ *
+ * Each create says so in a toast (LAI-1310), naming the card and its column;
+ * a refusal toasts as well and keeps its sentence under the field, where the
+ * text that was refused still is.
  */
 export function ColumnComposer({ slug, status, onCreated, onClose }: ColumnComposerProps) {
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]>('p2');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const field = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -58,16 +64,21 @@ export function ColumnComposer({ slug, status, onCreated, onClose }: ColumnCompo
     setBusy(true);
     setError(undefined);
 
-    try {
-      await createTask(slug, { title: trimmed, priority, status_id: status.id });
-      setTitle('');
-      onCreated();
-      field.current?.focus();
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Could not create that. Try again.');
-    } finally {
-      setBusy(false);
-    }
+    const made = await run({
+      do: () => createTask(slug, { title: trimmed, priority, status_id: status.id }),
+      // No Undo: a created task is deleted, not un-created, and that is the
+      // drawer's confirmed action.
+      success: (task) => `${task.key} created in ${status.name}`,
+      failure: 'Couldn’t create the task',
+      onError: (cause) => {
+        setError(cause instanceof ApiError ? cause.message : 'Could not create that. Try again.');
+      },
+    });
+    setBusy(false);
+    if (made === undefined) return;
+    setTitle('');
+    onCreated();
+    field.current?.focus();
   };
 
   return (

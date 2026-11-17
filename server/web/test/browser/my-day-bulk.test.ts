@@ -36,7 +36,8 @@ const tick = (h: Harness, id: string) => row(h, id).locator('input.myday-check')
 const pageBox = (h: Harness) =>
   h.page.getByRole('checkbox', { name: 'Select every drafted block' });
 const count = (h: Harness) => h.page.locator('[data-bulk-count]');
-const said = (h: Harness) => h.page.locator('[data-bulk-said]');
+/** A batch's last word: the newest of the app's toasts marked as one (LAI-810, LAI-1310). */
+const said = (h: Harness) => h.page.locator('[data-bulk-said] .toast-text').last();
 /** The selection bar's Confirm (LAI-831: *Confirm*, as the owner's design names it). */
 const confirmSelected = (h: Harness) => h.page.locator('.myday-bulk [data-bulk-confirm]');
 /** The bar's Confirm when some ticked blocks have no task: `Confirm 9`. */
@@ -536,7 +537,7 @@ void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
         '/api/v1/me/time-drafts/d02/dismiss',
       ]);
       assert.equal(await said(h).innerText(), 'Marked 2 blocks as not work.');
-      await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
+      await h.page.locator('[data-bulk-said]').last().getByRole('button', { name: 'Undo' }).click();
       await until(() => posts(h, '/time/undo').length === 2);
       assert.deepEqual(
         h.calls.filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
@@ -563,7 +564,7 @@ void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
       await said(h).waitFor({ timeout: 20_000 });
       assert.deepEqual(patches(), ['d01', 'd04']);
       assert.equal(await said(h).innerText(), 'Moved 2 blocks to General.');
-      await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
+      await h.page.locator('[data-bulk-said]').last().getByRole('button', { name: 'Undo' }).click();
       await until(() => posts(h, '/time/undo').length === 2);
       assert.deepEqual(
         h.calls.filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),

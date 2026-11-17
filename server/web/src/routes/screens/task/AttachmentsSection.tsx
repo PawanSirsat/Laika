@@ -8,6 +8,7 @@ import {
 import { ApiError } from '../../../api/errors.ts';
 import { subscribeToEvents } from '../../../api/event-stream.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
@@ -76,11 +77,11 @@ export function AttachmentsSection({
   const [reads, setReads] = useState(0);
   const [sending, setSending] = useState<readonly Sending[]>([]);
   const [removing, setRemoving] = useState<string | undefined>(undefined);
-  const [removeError, setRemoveError] = useState<string | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
   const sendSeq = useRef(0);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const confirm = useConfirm();
+  const { run } = useAction();
   const on = attach !== undefined;
 
   const reload = useCallback(() => {
@@ -123,20 +124,26 @@ export function AttachmentsSection({
       const id = sendSeq.current;
       const name = file.name === '' ? 'Pasted file' : file.name;
       setSending((list) => [...list, { id, name, progress: 0 }]);
-      attach
-        .upload(file, {
-          onProgress: (progress) => {
-            setSending((list) => list.map((s) => (s.id === id ? { ...s, progress } : s)));
-          },
-        })
-        .then(() => {
-          setSending((list) => list.filter((s) => s.id !== id));
-          reload();
-        })
-        .catch((cause: unknown) => {
+      // Each file says how it went (LAI-1310); a refused one also keeps its
+      // row with the reason, since that row is the file it is about.
+      void run({
+        do: () =>
+          attach.upload(file, {
+            onProgress: (progress) => {
+              setSending((list) => list.map((s) => (s.id === id ? { ...s, progress } : s)));
+            },
+          }),
+        success: `“${name}” attached`,
+        failure: `Couldn’t attach “${name}”`,
+        onError: (cause) => {
           const error = cause instanceof Error ? cause.message : `Could not upload “${name}”.`;
           setSending((list) => list.map((s) => (s.id === id ? { ...s, error } : s)));
-        });
+        },
+      }).then((done) => {
+        if (done === undefined) return;
+        setSending((list) => list.filter((s) => s.id !== id));
+        reload();
+      });
     }
   };
 
@@ -150,21 +157,22 @@ export function AttachmentsSection({
     });
     if (!yes) return;
     setRemoving(file.id);
-    setRemoveError(undefined);
-    try {
-      await deleteAttachment(file.id);
-      setListing((was) =>
-        was.status === 'ready'
-          ? { status: 'ready', files: was.files.filter((f) => f.id !== file.id) }
-          : was,
-      );
-    } catch (cause) {
-      setRemoveError(
-        cause instanceof ApiError ? cause.message : `Could not remove “${file.filename}”.`,
-      );
-    } finally {
-      setRemoving(undefined);
-    }
+    // No Undo: a removed file is gone from the store, not hidden (LAI-1310).
+    const done = await run({
+      do: async () => {
+        await deleteAttachment(file.id);
+        return true;
+      },
+      success: `“${file.filename}” removed`,
+      failure: `Couldn’t remove “${file.filename}”`,
+    });
+    setRemoving(undefined);
+    if (done === undefined) return;
+    setListing((was) =>
+      was.status === 'ready'
+        ? { status: 'ready', files: was.files.filter((f) => f.id !== file.id) }
+        : was,
+    );
   };
 
   const dropHandlers = mayAttach
@@ -297,12 +305,6 @@ export function AttachmentsSection({
                 );
               })}
             </ul>
-          )}
-
-          {removeError !== undefined && (
-            <p className="att-note att-note-error" role="alert">
-              {removeError}
-            </p>
           )}
 
           {sending.length > 0 && (

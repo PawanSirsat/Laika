@@ -67,6 +67,9 @@ import { DevicesSection } from './DevicesSection.tsx';
 import { goToAgent } from './go-to-agent.ts';
 import '../tokens/tokens.css';
 import './agents.css';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { failureToast, namesFields } from '../../../components/toast/action-model.ts';
 import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
 
 export interface AgentsTabProps {
@@ -151,7 +154,7 @@ export function AgentsTab({
   const [abandoned, setAbandoned] = useState<
     { readonly id: string; readonly name: string; readonly tokenId: string | undefined } | undefined
   >(undefined);
-  const [actionError, setActionError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   /** An agent whose *Rotate token* the wizard's conflict notice asked for. */
   const [rotateAsk, setRotateAsk] = useState<string | undefined>(undefined);
   const registerButton = useRef<HTMLButtonElement | null>(null);
@@ -316,12 +319,14 @@ export function AgentsTab({
       icon: 'warning',
     }).then((yes) => {
       if (!yes) return;
-      setActionError(undefined);
-      revokeAgent(agent.id)
-        .then(put)
-        .catch((cause: unknown) => {
-          setActionError(errorText(cause, 'Could not revoke that agent.'));
-        });
+      // No Undo: a revoked agent cannot be restored (the confirm says so).
+      void run({
+        do: () => revokeAgent(agent.id),
+        success: `${labelOf(agent)} revoked`,
+        failure: 'Couldn’t revoke agent',
+      }).then((answer) => {
+        if (answer !== undefined) put(answer);
+      });
     });
   };
 
@@ -402,12 +407,6 @@ export function AgentsTab({
         <p className="agents-note" role="status">
           {abandoned.name} was registered after you cancelled, so its credential was never shown and
           nobody holds it. Rotate its token to get one, or revoke it.
-        </p>
-      )}
-
-      {actionError !== undefined && (
-        <p className="agents-error" role="alert">
-          {actionError}
         </p>
       )}
 
@@ -637,6 +636,7 @@ function RegisterWizard({
   const [choices, setChoices] = useState<Map<string, GrantChoice>>(() => new Map());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const toast = useToast();
   const { held: created, hold, retire, forget } = useOnceSecret();
   const [closing, setClosing] = useState(false);
   const [verify, setVerify] = useState<VerifyState>({ kind: 'watching' });
@@ -718,16 +718,30 @@ function RegisterWizard({
         }
         hold(answer);
         onRegistered(answer.agent);
+        // The credential and setup stay in the wizard, to copy; the toast
+        // says the action landed (LAI-1310).
+        toast.show({ text: `${agentLabel(answer.agent)} registered`, tone: 'success' });
       })
       .catch((cause: unknown) => {
         if (!live.current) return;
         const conflict = harnessDeviceConflict(cause);
         if (conflict !== undefined) {
+          // Not a failure to toast: the wizard's notice names the agent
+          // already there and offers its rotation, which is the way on.
           setConflictId(conflict.agentId);
           onConflict();
           return;
         }
-        setError(cloudExpiryProblem(cause) ?? errorText(cause, 'Could not register that agent.'));
+        const cloud = cloudExpiryProblem(cause);
+        // A refusal about the form stays in it, beside the fields.
+        if (cloud !== undefined || namesFields(cause)) {
+          setError(cloud ?? errorText(cause, 'Could not register that agent.'));
+        }
+        const said = failureToast(
+          { success: null, failure: 'Couldn’t register agent' },
+          cloud === undefined ? cause : new Error(cloud),
+        );
+        if (said !== null) toast.show(said);
       })
       .finally(() => {
         if (live.current) setPending(false);
@@ -1388,8 +1402,8 @@ function AgentRow({
   const readiness = agentReadiness(agent, now);
   const active = agent.status === 'active';
   const [panel, setPanel] = useState<Panel>('none');
-  const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const { run } = useAction();
   const { held: rotated, hold: holdRotated, forget } = useOnceSecret();
   const renameButton = useRef<HTMLButtonElement | null>(null);
   const accessButton = useRef<HTMLButtonElement | null>(null);
@@ -1403,7 +1417,6 @@ function AgentRow({
 
   const closePanel = (back: RefObject<HTMLButtonElement | null>): void => {
     setPanel('none');
-    setError(undefined);
     queueMicrotask(() => back.current?.focus());
   };
 
@@ -1419,23 +1432,30 @@ function AgentRow({
     }).then((yes) => {
       if (!yes) return;
       setBusy(true);
-      setError(undefined);
-      rotateAgentToken(
-        agent.id,
-        replaceable.id,
-        // LAI-592: a cloud agent's new token must expire within a day.
-        isCloudDevice(agent.device_label) ? cloudExpiry(Date.now()) : undefined,
-      )
-        .then((answer) => {
-          holdRotated(answer);
-          onChanged(answer.agent);
-        })
-        .catch((cause: unknown) => {
-          setError(cloudExpiryProblem(cause) ?? errorText(cause, 'Could not rotate that token.'));
-        })
-        .finally(() => {
-          setBusy(false);
-        });
+      // The new credential is shown below, once, to copy; the toast says the
+      // rotation landed. No Undo: the old token stopped working for good.
+      void run({
+        do: async () => {
+          try {
+            return await rotateAgentToken(
+              agent.id,
+              replaceable.id,
+              // LAI-592: a cloud agent's new token must expire within a day.
+              isCloudDevice(agent.device_label) ? cloudExpiry(Date.now()) : undefined,
+            );
+          } catch (cause: unknown) {
+            const cloud = cloudExpiryProblem(cause);
+            throw cloud === undefined ? cause : new Error(cloud);
+          }
+        },
+        success: `${label}’s token rotated`,
+        failure: 'Couldn’t rotate token',
+      }).then((answer) => {
+        setBusy(false);
+        if (answer === undefined) return;
+        holdRotated(answer);
+        onChanged(answer.agent);
+      });
     });
   };
 
@@ -1625,12 +1645,6 @@ function AgentRow({
           }}
         />
       )}
-
-      {error !== undefined && (
-        <p className="agents-error" role="alert">
-          {error}
-        </p>
-      )}
     </li>
   );
 }
@@ -1647,6 +1661,7 @@ export function RenameForm({
   const [name, setName] = useState(agent.display_name);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const input = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     input.current?.focus();
@@ -1657,14 +1672,24 @@ export function RenameForm({
     if (problem !== undefined || name.trim() === agent.display_name) return;
     setPending(true);
     setError(undefined);
-    updateAgent(agent.id, { display_name: name.trim() })
-      .then(onSaved)
-      .catch((cause: unknown) => {
-        setError(errorText(cause, 'Could not rename that agent.'));
-      })
-      .finally(() => {
-        setPending(false);
-      });
+    const was = agent.display_name;
+    void run({
+      do: () => updateAgent(agent.id, { display_name: name.trim() }),
+      success: (saved) => `Renamed to ${saved.display_name}`,
+      // A name is one field: putting the old one back is the same call.
+      undo: async () => {
+        onSaved(await updateAgent(agent.id, { display_name: was }));
+        return `Renamed back to ${was}`;
+      },
+      failure: 'Couldn’t rename agent',
+      onError: (cause) => {
+        // A refused name stays under the field it is about.
+        if (namesFields(cause)) setError(errorText(cause, 'Could not rename that agent.'));
+      },
+    }).then((saved) => {
+      setPending(false);
+      if (saved !== undefined) onSaved(saved);
+    });
   };
   return (
     <form
@@ -1745,6 +1770,7 @@ export function AccessForm({
   const [choices, setChoices] = useState(() => choicesFrom(agent.grants));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   /**
    * **Nothing is written until the projects have loaded** (review round 1).
    * An unloaded list read as `[]` made every grant "hidden", enabled *Save*,
@@ -1764,14 +1790,19 @@ export function AccessForm({
     if (next === undefined) return;
     setPending(true);
     setError(undefined);
-    setAgentGrants(agent.id, next)
-      .then(onSaved)
-      .catch((cause: unknown) => {
-        setError(errorText(cause, 'Could not change that agent’s access.'));
-      })
-      .finally(() => {
-        setPending(false);
-      });
+    // No Undo: saving drops grants on spaces the reader can no longer see,
+    // and the server refuses to write those back.
+    void run({
+      do: () => setAgentGrants(agent.id, next),
+      success: 'Agent access updated',
+      failure: 'Couldn’t change access',
+      onError: (cause) => {
+        if (namesFields(cause)) setError(errorText(cause, 'Could not change that agent’s access.'));
+      },
+    }).then((saved) => {
+      setPending(false);
+      if (saved !== undefined) onSaved(saved);
+    });
   };
   return (
     <div

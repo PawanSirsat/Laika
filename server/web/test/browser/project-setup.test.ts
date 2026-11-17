@@ -447,7 +447,10 @@ void describe('Project setup, v3', () => {
       await grantTile(h.page, 'full').click();
       assert.equal(await h.page.getByRole('radio', { name: 'Full' }).isChecked(), true);
       await h.page.getByRole('button', { name: 'Save access' }).click();
-      await h.page.getByText('Saved.').waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('[data-toast]', { hasText: 'now has' })
+        .last()
+        .waitFor({ timeout: 20_000 });
       assert.deepEqual(world.puts, [
         {
           grants: [
@@ -458,10 +461,12 @@ void describe('Project setup, v3', () => {
       ]);
       assert.equal((await grantChip(h.page).innerText()).trim(), 'Full access');
       assert.deepEqual(await facts(h.page), ['You Member', 'In effect Full']);
+      // The toast is the outcome, seen and heard (LAI-1310); *Saved.* is gone.
       await h.page
-        .locator('[role="status"]')
+        .locator('[data-toast] [role="status"]')
         .filter({ hasText: 'now has Full in OnRoute' })
         .waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.getByText('Saved.', { exact: true }).count(), 0);
       assert.equal(await h.page.locator('[data-note="grant-required"]').count(), 0);
       assert.equal(await continueButton(h.page).getAttribute('aria-disabled'), 'false');
       assert.equal(
@@ -605,7 +610,9 @@ void describe('Project setup, v3', () => {
       await grantTile(h.page, 'read_only').click();
       assert.equal(await h.page.getByRole('radio', { name: 'Read only' }).isChecked(), true);
       await h.page.getByRole('button', { name: 'Save access' }).click();
-      await h.page.getByText('Saved.').waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('[data-toast]', { hasText: 'now has Read only' })
+        .waitFor({ timeout: 20_000 });
       assert.deepEqual(world.puts, [
         {
           grants: [
@@ -1655,7 +1662,10 @@ void describe('Project setup, v3', () => {
 
       fail = false;
       await failed.getByRole('button', { name: 'Try again' }).click();
-      await h.page.getByText('Saved.').waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('[data-toast]', { hasText: 'now has' })
+        .last()
+        .waitFor({ timeout: 20_000 });
       assert.equal(await failed.count(), 0);
       assert.deepEqual(world.puts, [{ grants: [{ project_id: 'p1', scope: 'full' }] }]);
       assert.equal(await continueButton(h.page).getAttribute('aria-disabled'), 'false');
@@ -1678,7 +1688,10 @@ void describe('Project setup, v3', () => {
       const save = h.page.getByRole('button', { name: 'Save access' });
       await save.focus();
       await h.page.keyboard.press('Enter');
-      await h.page.getByText('Saved.').waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('[data-toast]', { hasText: 'now has' })
+        .last()
+        .waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.textContent ?? ''),
         'Save access',

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Switch } from '../../../components/Switch.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import {
   agentAnchor,
   getCheckpointConsent,
@@ -64,7 +65,8 @@ export function goToConsent(agentId: string): boolean {
  * **No optimistic state.** The switch shows what the server last said: a
  * press says *Saving…* and is ignored until the answer, and only the `PUT` or `DELETE`
  * answer moves it. A refusal leaves it where it was and says the server's
- * reason beside it.
+ * reason in an error toast; a change is said as a toast too, with an Undo
+ * that flips it back (LAI-1310).
  */
 export function CheckpointConsentSwitch({
   agent,
@@ -76,7 +78,7 @@ export function CheckpointConsentSwitch({
   const [read, setRead] = useState<Read>({ kind: 'loading' });
   const [round, setRound] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [refusal, setRefusal] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -121,22 +123,22 @@ export function CheckpointConsentSwitch({
   const change = (given: boolean): void => {
     if (saving || locked !== undefined) return;
     setSaving(true);
-    setRefusal(undefined);
-    setCheckpointConsent(agent.id, given)
-      .then((consent) => {
-        if (mounted.current) setRead({ kind: 'ready', consent });
-      })
-      .catch((cause: unknown) => {
-        if (!mounted.current) return;
-        setRefusal(
-          cause instanceof Error && cause.message !== ''
-            ? cause.message
-            : 'The board did not change it.',
-        );
-      })
-      .finally(() => {
-        if (mounted.current) setSaving(false);
-      });
+    void run({
+      do: () => setCheckpointConsent(agent.id, given),
+      success: given ? 'Automatic checkpoints turned on' : 'Automatic checkpoints turned off',
+      // Consent is one flag the owner may set either way, so flipping it
+      // back is the same call: a real Undo.
+      undo: async () => {
+        const back = await setCheckpointConsent(agent.id, !given);
+        if (mounted.current) setRead({ kind: 'ready', consent: back });
+        return given ? 'Automatic checkpoints off again' : 'Automatic checkpoints on again';
+      },
+      failure: 'Couldn’t change automatic checkpoints',
+    }).then((consent) => {
+      if (!mounted.current) return;
+      if (consent !== undefined) setRead({ kind: 'ready', consent });
+      setSaving(false);
+    });
   };
 
   return (
@@ -210,12 +212,6 @@ export function CheckpointConsentSwitch({
             </p>
           )}
         </>
-      )}
-
-      {refusal !== undefined && (
-        <p className="agents-error" role="alert" data-consent-refusal>
-          {refusal}
-        </p>
       )}
     </section>
   );

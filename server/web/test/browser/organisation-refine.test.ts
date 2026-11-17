@@ -171,10 +171,7 @@ void describe('People: consequential actions confirm, then say what happened', (
       await h.page.locator('[data-confirm-dialog] [data-confirm-ok] button').click();
       const result = h.page.locator('[data-people-result]');
       await result.waitFor({ timeout: 10_000 });
-      assert.match(
-        await result.innerText(),
-        /The invite for new\.hire@example\.com is revoked; its link no longer works\./,
-      );
+      assert.match(await result.innerText(), /Invite for new\.hire@example\.com revoked/);
       assert.ok(h.calls.some((c) => c.method === 'DELETE' && c.path === '/api/v1/invites/i1'));
 
       // Dismissing it is a keyboard action like any other.
@@ -355,9 +352,9 @@ void describe('Security: revoking a token confirms and reports', () => {
       await dialog.waitFor({ timeout: 10_000 });
       assert.equal(h.calls.filter((c) => c.method === 'DELETE').length, 0);
       await dialog.locator('[data-confirm-ok] button').click();
-      const result = h.page.locator('[data-token-result]');
-      await until(async () => (await result.innerText()).trim() !== '');
-      assert.match(await result.innerText(), /Revoked “Laptop — Claude Code”/);
+      const result = h.page.locator('[data-toast][data-token-result]');
+      await result.waitFor({ timeout: 10_000 });
+      assert.match(await result.innerText(), /“Laptop — Claude Code” revoked/);
     } finally {
       await h.close();
     }

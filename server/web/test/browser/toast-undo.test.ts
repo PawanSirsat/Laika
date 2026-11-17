@@ -274,8 +274,13 @@ void describe('Space settings: SaveStatus', () => {
       release?.();
       await until(async () => (await status.getAttribute('data-save-status')) === 'failed');
       assert.match(await status.innerText(), /Couldn’t save —\s*Retry/);
-      const retry = status.getByRole('button', { name: 'Retry' });
-      await retry.click();
+      assert.equal(await status.getByRole('button', { name: 'Retry' }).count(), 1);
+      // The error toast persists at the bottom centre and may cover the form's
+      // Retry, so it carries its own (the owner, 2026-11-18): that one is pressed.
+      const toast = h.page.locator('[data-toast][data-space-general]');
+      await toast.waitFor({ timeout: 5_000 });
+      await toast.getByRole('button', { name: 'Retry' }).click();
+      await until(async () => (await toast.count()) === 0);
       await until(async () => (await status.getAttribute('data-save-status')) === 'saved');
       assert.equal(patches, 2, 'Retry did not send the save again');
       assert.match(await status.locator('[role="status"]').innerText(), /Saved/);
@@ -559,6 +564,42 @@ void describe('the toast', () => {
         // is declared either way and takes no time under reduce.
         assert.equal(name, 'toast-in');
         assert.equal(duration === '0s', reduce, `toast-in ran for ${duration}`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  for (const width of [1280, 390]) {
+    void test(`it sits at the bottom centre of the window at ${String(width)}px (the owner, 2026-11-18)`, async () => {
+      const h = await open(`${SETTINGS}?tab=members`, removable([]));
+      try {
+        await h.page.setViewportSize({ width, height: 800 });
+        await removeTomas(h);
+        const toast = h.page.locator('[data-toast-stack] [data-toast]').last();
+        await toast.waitFor({ timeout: 10_000 });
+        const box = await h.page.evaluate(() => {
+          const t = [...document.querySelectorAll('[data-toast]')].at(-1)?.getBoundingClientRect();
+          return t === undefined
+            ? null
+            : {
+                left: t.left,
+                right: t.right,
+                bottom: t.bottom,
+                w: window.innerWidth,
+                h: window.innerHeight,
+              };
+        });
+        assert.ok(box !== null);
+        const centre = (box.left + box.right) / 2;
+        assert.ok(
+          Math.abs(centre - box.w / 2) <= 2,
+          `toast centre ${String(centre)} of ${String(box.w)}`,
+        );
+        assert.ok(
+          box.h - box.bottom <= 32,
+          `toast is ${String(box.h - box.bottom)}px off the bottom`,
+        );
       } finally {
         await h.close();
       }

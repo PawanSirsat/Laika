@@ -65,6 +65,8 @@ import {
 import { prefersReducedMotion } from '../../../theme/motion.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { runOrThrow } from '../task/run-or-throw.ts';
 
 export interface WorkroomProps {
   readonly task: TaskSummary;
@@ -164,7 +166,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
   const refresh = useCallback(() => {
     reloadProjectTasks(slug);
   }, [slug]);
-  const review = useTaskReview(task.id, () => {
+  /*
+   * The page's own writes are its inline fields, which keep their in-place
+   * status and toast only a failure (LAI-1310); status moves and the review
+   * decision toast through `useLocalMoves` and `useTaskReview`.
+   */
+  const { run } = useAction();
+  const review = useTaskReview(task.id, task.key, () => {
     refresh();
     detail.refresh();
     refreshReview();
@@ -440,11 +448,6 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
         <Icon name="rows" size="small" className="section-mark" />
         Overview
       </h2>
-      {moves.moveError !== undefined && (
-        <p className="panel-alert" role="alert">
-          {moves.moveError}
-        </p>
-      )}
       {full !== undefined && (
         <DeliversPanel
           task={full}
@@ -454,7 +457,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
           mayEdit={mayWrite && !text.stale}
           onOpen={openById}
           onSave={async (edit) => {
-            text.accept(await updateTask(task.id, edit));
+            text.accept(
+              await runOrThrow(run, {
+                do: () => updateTask(task.id, edit),
+                success: null,
+                failure: 'Couldn’t save that',
+              }),
+            );
             refresh();
           }}
         />
@@ -481,7 +490,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
               if (text.stale || text.version !== editedFrom.current.description) {
                 throw staleEdit('description');
               }
-              text.accept(await updateTask(task.id, { description_md: next }));
+              text.accept(
+                await runOrThrow(run, {
+                  do: () => updateTask(task.id, { description_md: next }),
+                  success: null,
+                  failure: 'Couldn’t save the description',
+                }),
+              );
               refresh();
             }}
           />
@@ -544,7 +559,13 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
                   if (text.stale || text.version !== editedFrom.current.acceptance) {
                     throw staleEdit('acceptance');
                   }
-                  text.accept(await updateTask(task.id, { acceptance_md: next }));
+                  text.accept(
+                    await runOrThrow(run, {
+                      do: () => updateTask(task.id, { acceptance_md: next }),
+                      success: null,
+                      failure: 'Couldn’t save the acceptance criteria',
+                    }),
+                  );
                   refresh();
                 }}
               />
@@ -687,11 +708,6 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
                 Send back
               </Button>
             </div>
-            {review.decideError !== undefined && (
-              <p className="panel-alert" role="alert">
-                {review.decideError}
-              </p>
-            )}
           </>
         )}
       </section>
@@ -711,7 +727,6 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
           sprints={sprints}
           maySetSprint={false}
           sprintBusy={false}
-          sprintError={undefined}
           onSprintChange={() => undefined}
           task={task}
           members={members}
@@ -788,7 +803,11 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
               required="A task needs a title."
               mayEdit={mayWrite}
               onSave={async (next) => {
-                await updateTask(task.id, { title: next });
+                await runOrThrow(run, {
+                  do: () => updateTask(task.id, { title: next }),
+                  success: null,
+                  failure: 'Couldn’t save the title',
+                });
                 refresh();
               }}
             />

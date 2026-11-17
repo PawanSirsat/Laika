@@ -11,6 +11,7 @@ import type { PermissionRow, Permissions } from '../../../../src/api/permissions
 import {
   actionName,
   cellFor,
+  grantsChangeLine,
   heldNames,
   lockedRoles,
   mayEditGrants,
@@ -133,6 +134,24 @@ void describe("the owner's grid (LAI-960)", () => {
     assert.equal(grants.guest['kite.mend'], false);
     assert.equal(sameGrants(grants, next), false);
     assert.equal(sameGrants(grants, withGrant(next, 'guest', 'kite.mend', false)), true);
+  });
+
+  void test('a save says the one cell it changed, in the response’s words (LAI-1310)', () => {
+    const caps = [
+      { id: 'kite.fly', label: 'Fly the kite' },
+      { id: 'kite.mend', label: 'Mend the kite' },
+    ];
+    assert.equal(
+      grantsChangeLine(grants, withGrant(grants, 'guest', 'kite.mend', true), caps),
+      'Guests can now mend the kite',
+    );
+    assert.equal(
+      grantsChangeLine(grants, withGrant(grants, 'steward', 'kite.fly', false), caps),
+      'Stewards can no longer fly the kite',
+    );
+    const two = withGrant(withGrant(grants, 'guest', 'kite.mend', true), 'guest', 'kite.fly', true);
+    assert.equal(grantsChangeLine(grants, two, caps), '2 permissions changed');
+    assert.equal(grantsChangeLine(grants, grants, caps), 'Permissions saved');
   });
 
   void test('only a reader the server lets manage permissions may edit', () => {

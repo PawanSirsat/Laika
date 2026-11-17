@@ -1,5 +1,6 @@
 import { setPlace, type MyDay } from '../../../api/time.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { PLACES, placeLabel, placeOf } from '../places.ts';
 
 export interface WhereYouAreProps {
@@ -7,8 +8,12 @@ export interface WhereYouAreProps {
   /** The day's own zone: what stands in until a place is set. */
   readonly tz: string;
   readonly pending: string | undefined;
-  /** The page's runner: one write, the day re-read after, its word in a toast. */
-  readonly run: (key: string, write: () => Promise<unknown>, said: string) => Promise<boolean>;
+  /**
+   * The page's runner: keys the write so only this control waits, and
+   * re-reads the day after. The words are this control's own, said through
+   * `useAction` inside the write (LAI-1310).
+   */
+  readonly run: (key: string, write: () => Promise<unknown>) => Promise<boolean>;
 }
 
 /** The option for "nothing set": the day's zone, named when the list knows it. */
@@ -21,6 +26,7 @@ const DEVICE = '';
  * is what stands in while nothing is set.
  */
 export function WhereYouAre({ settings, tz, pending, run }: WhereYouAreProps) {
+  const { run: act } = useAction();
   const fallback = placeOf(tz);
   const current = settings.place ?? DEVICE;
   const options = [
@@ -50,12 +56,15 @@ export function WhereYouAre({ settings, tz, pending, run }: WhereYouAreProps) {
         onChange={(value) => {
           if (value === current) return;
           const chosen = placeOf(value);
-          void run(
-            'place',
-            () => setPlace(value === DEVICE ? null : value),
-            chosen === undefined
-              ? 'Where you are follows your laptop. The sky follows it.'
-              : `Where you are: ${placeLabel(chosen)}. The sky on your Timeline follows it.`,
+          void run('place', () =>
+            act({
+              do: () => setPlace(value === DEVICE ? null : value),
+              success:
+                chosen === undefined
+                  ? 'Where you are follows your laptop. The sky follows it.'
+                  : `Where you are: ${placeLabel(chosen)}. The sky on your Timeline follows it.`,
+              failure: 'Couldn’t change where you are',
+            }),
           );
         }}
         options={options}

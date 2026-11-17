@@ -8,7 +8,12 @@ export interface DaySettingsProps {
   readonly held: MyDay['drafts_held'];
   readonly tz: string;
   readonly pending: string | undefined;
-  readonly run: (key: string, write: () => Promise<unknown>, said: string) => Promise<boolean>;
+  /**
+   * The page's runner: keys the write so only this control waits, and
+   * re-reads the day after. The words are this control's own, said through
+   * `useAction` inside the write (LAI-1310).
+   */
+  readonly run: (key: string, write: () => Promise<unknown>) => Promise<boolean>;
 }
 
 const Sliders = () => (

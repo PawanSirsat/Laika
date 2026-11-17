@@ -22,7 +22,14 @@ import { PersonLink } from '../../../components/PersonLink.tsx';
 import { ScrollCue } from '../../../components/ScrollCue.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
 import { BulkBar } from '../list/BulkBar.tsx';
-import { runBulkAction, type BulkAction, type BulkRun } from '../list/list-bulk.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import {
+  bulkPlan,
+  bulkToast,
+  runBulkAction,
+  type BulkAction,
+  type BulkRun,
+} from '../list/list-bulk.ts';
 import {
   effectiveSelection,
   NO_SELECTION,
@@ -380,10 +387,42 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
     [people],
   );
 
+  const toast = useToast();
+
+  /** Where a bulk action sent the tasks, as the bar's menu named it — the List's words. */
+  const targetOf = (action: BulkAction): string => {
+    switch (action.kind) {
+      case 'status':
+        return scopeStatuses?.find((s) => s.id === action.statusId)?.name ?? 'the new status';
+      case 'priority':
+        return action.priority.toUpperCase();
+      case 'assignee':
+        return action.assigneeId === null
+          ? 'nobody'
+          : (members.get(action.assigneeId)?.name ?? 'them');
+      case 'sprint':
+        return action.sprintId === null
+          ? 'no sprint'
+          : (sprintLabels.get(action.sprintId)?.label ??
+              scopeSprints?.find((s) => s.id === action.sprintId)?.name ??
+              'the sprint');
+      case 'cancel':
+        return 'cancelled';
+    }
+  };
+
   const runBulk = (action: BulkAction): void => {
+    const picked = new Map(chosen.map((task) => [task.id, task]));
+    const skipped = bulkPlan(action, chosen).skipped;
+    const target = targetOf(action);
     // One request per task, in selection order, the report by key — then the
     // list and the figures are read again, so every row is the server's.
-    void runBulkAction(action, chosen, setRun).then(() => {
+    void runBulkAction(action, chosen, setRun).then((outcome) => {
+      // One toast for the run (LAI-1310), as the List says it: when every
+      // task landed the bar's report has nothing more to say, so it goes; a
+      // refusal keeps it, with the keys to go and fix.
+      toast.show(bulkToast(action, outcome, skipped, target, (id) => picked.get(id)?.key ?? id));
+      if (outcome.failed.length === 0) setRun(undefined);
       setAttempt((n) => n + 1);
     });
   };

@@ -370,8 +370,7 @@
 .dayline-block-body:focus-visible,
 .dayline-edge:focus-visible,
 .inspector:focus-visible,
-.inspector-stepper button:focus-visible,
-.myday-toast button:focus-visible {
+.inspector-stepper button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

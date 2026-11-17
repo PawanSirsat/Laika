@@ -551,9 +551,10 @@ void describe('V3 Devices: imported versus paired', () => {
       const sent = h.calls.find((c) => c.path === '/api/v1/agents/devices/confirm');
       assert.equal(sent?.method, 'POST');
       assert.deepEqual(sent?.body, { device_label: 'belka' });
-      // The tab's own polite region, the first thing in its body.
-      await until(async () => (await live(h.page).innerText()).includes('confirmed as yours'));
-      assert.match(await live(h.page).innerText(), /Belka confirmed as yours/);
+      // Said as the app's toast (LAI-1310), which is heard as well as seen.
+      await h.page
+        .locator('[data-toast]', { hasText: 'Belka confirmed as yours' })
+        .waitFor({ timeout: 5_000 });
       // The row's chip follows.
       assert.doesNotMatch(await device(h.page, 'd1').innerText(), /confirm it’s yours/);
     } finally {
@@ -1319,8 +1320,10 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
       assert.deepEqual(sent?.body, { display_name: 'Strelka' });
       assert.equal(await titleOf(h.page).innerText(), 'Strelka');
       assert.equal(await device(h.page, 'd1').locator('.dx-record-title').innerText(), 'Strelka');
-      await until(async () => (await live(h.page).innerText()).includes('Renamed to Strelka.'));
-      assert.match(await live(h.page).innerText(), /Renamed to Strelka\./);
+      // Said as a toast now (LAI-1310), whose Undo puts the old name back.
+      const said = h.page.locator('[data-toast]', { hasText: 'Renamed to Strelka' });
+      await said.waitFor({ timeout: 5_000 });
+      assert.equal(await said.getByRole('button', { name: 'Undo' }).count(), 1);
       await until(async () => (await focusedText(h.page)) === 'Rename Strelka');
       assert.equal(await focusedText(h.page), 'Rename Strelka');
       // Its tools follow, in their own section.
@@ -1354,6 +1357,10 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
       const alert = form.locator('[role="alert"]');
       await alert.waitFor({ timeout: 10_000 });
       assert.match(await alert.innerText(), /You have a device with that name/);
+      // And an error toast, which stays until dismissed (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.match(await toast.innerText(), /Couldn’t rename device/);
       assert.equal(await titleOf(h.page).innerText(), 'Belka');
       // Focus is back on the name, not lost with the disabled Save.
       const input = form.getByRole('textbox', { name: 'Device name' });

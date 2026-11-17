@@ -341,6 +341,7 @@ void describe('Add device: paired only when the board says so', () => {
       assert.deepEqual(h.calls.find((c) => c.path.endsWith('/deny'))?.body, {
         key_fingerprint: FINGERPRINT,
       });
+      await page.locator('[data-toast]', { hasText: 'denied' }).waitFor({ timeout: 5_000 });
       assert.ok(await page.getByRole('button', { name: 'Start again' }).isVisible());
       assert.equal(writes(h.calls).filter((w) => w.endsWith('/approve')).length, 0);
     } finally {
@@ -394,18 +395,20 @@ void describe('Add device: paired only when the board says so', () => {
       const page = h.page;
       await wizard(page, 'device').waitFor({ timeout: 20_000 });
       await page.getByLabel('Device name').fill('Belka');
-      const alert = wizard(page, 'device').locator('[role="alert"]');
+      // Each refusal is an error toast in the wizard's words (LAI-1310); none
+      // of these ends the request, so none also stays in the wizard.
+      const said = async (words: string): Promise<boolean> =>
+        (await page.locator('[data-toast][data-tone="error"]').allInnerTexts()).some((t) =>
+          t.includes(words),
+        );
       const go = page.getByRole('button', { name: /Get a pairing code/ });
       await go.click();
-      await until(async () =>
-        (await alert.innerText().catch(() => '')).includes('LAIKA_PUBLIC_URL'),
-      );
+      await until(() => said('LAIKA_PUBLIC_URL'));
       await go.click();
-      await until(async () =>
-        (await alert.innerText().catch(() => '')).includes('Too many requests'),
-      );
+      await until(() => said('Too many requests'));
       await go.click();
-      await until(async () => (await alert.innerText().catch(() => '')).includes('called Belka'));
+      await until(() => said('called Belka'));
+      assert.equal(await wizard(page, 'device').locator('.dv3w-error').count(), 0);
       assert.equal(await step(page, 'device'), '1');
     } finally {
       await h.close();

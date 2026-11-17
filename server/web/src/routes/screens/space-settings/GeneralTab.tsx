@@ -7,6 +7,7 @@ import { Textarea } from '../../../components/forms/Textarea.tsx';
 import { TextInput } from '../../../components/forms/TextInput.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { SPACE_COLORS, spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
 import {
   colorLabel,
@@ -56,6 +57,7 @@ export interface GeneralTabProps {
 export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }: GeneralTabProps) {
   const [draft, setDraft] = useState<GeneralDraft>(() => draftOf(project));
   const status = useSaveStatus();
+  const { run } = useAction();
   const saving = status.state.kind === 'saving';
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [failure, setFailure] = useState<string | undefined>(undefined);
@@ -136,25 +138,30 @@ export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }:
       return;
     }
     const patch = generalPatch(project, draft);
-    status
-      .run(() => {
-        setErrors({});
-        setFailure(undefined);
-        return updateSpace(project.slug, patch).then(onSaved, (cause: unknown) => {
-          const byField = settingsFieldErrors(cause);
-          setErrors(byField);
-          // Once the refusal has marked its field, take the focus there (LAI-1204):
-          // the Save button that was pressed sits below the problem, out of sight.
-          setFocusInvalid((n) => n + 1);
-          if (Object.keys(byField).length === 0) {
-            setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
-          }
-          throw cause;
-        });
-      })
-      .catch(() => {
-        // Said under the field it names, or above Save, and by the status.
-      });
+    // *Saved* beside Save says success; a refusal also toasts (LAI-1310) —
+    // *see the highlighted field* when it names one.
+    void run({
+      do: () =>
+        status.run(() => {
+          setErrors({});
+          setFailure(undefined);
+          return updateSpace(project.slug, patch).then(onSaved, (cause: unknown) => {
+            const byField = settingsFieldErrors(cause);
+            setErrors(byField);
+            // Once the refusal has marked its field, take the focus there (LAI-1204):
+            // the Save button that was pressed sits below the problem, out of sight.
+            setFocusInvalid((n) => n + 1);
+            if (Object.keys(byField).length === 0) {
+              setFailure(cause instanceof Error ? cause.message : 'The change was not saved');
+            }
+            throw cause;
+          });
+        }),
+      success: null,
+      failure: 'Couldn’t save the space',
+      retry: save,
+      mark: 'space-general',
+    });
   };
 
   return (

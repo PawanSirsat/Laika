@@ -53,6 +53,9 @@ import {
   unusedCount,
   type TokenGroup,
 } from './token-groups.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { isAbort } from '../../../components/toast/action-model.ts';
 import './admin-panel.css';
 
 /** The profile kinds' words (D-078): the header's chip and the panel's control. */
@@ -292,38 +295,33 @@ function Problem({ text }: { readonly text: string | undefined }) {
   );
 }
 
-function Notice({ text }: { readonly text: string | undefined }) {
-  if (text === undefined) return null;
-  return (
-    <p className="prof-admin-notice" role="status">
-      {text}
-    </p>
-  );
-}
-
 /**
- * One section's request in flight: busy while it runs, its refusal or what it
- * did said once, and whatever question was open put away when it answers.
+ * One section's request in flight: busy while it runs, and whatever question
+ * was open put away when it answers. What it did — or why not — is a toast
+ * (LAI-1310), in the words `call` resolves to; the panel no longer carries a
+ * notice line that only says it was done.
  */
 function useAct<Asking>() {
+  const { run } = useAction();
   const [asking, setAsking] = useState<Asking | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
-  const act = (call: () => Promise<void>): void => {
+  const act = (
+    call: () => Promise<string>,
+    failure: string,
+    undo?: () => Promise<string>,
+  ): void => {
     setBusy(true);
-    setError(undefined);
-    setNotice(undefined);
-    call()
-      .catch((cause: unknown) => {
-        setError(said(cause));
-      })
-      .finally(() => {
-        setBusy(false);
-        setAsking(undefined);
-      });
+    void run({
+      do: call,
+      success: (said) => said,
+      failure,
+      ...(undo === undefined ? {} : { undo }),
+    }).then(() => {
+      setBusy(false);
+      setAsking(undefined);
+    });
   };
-  return { asking, setAsking, busy, error, notice, setNotice, act };
+  return { asking, setAsking, busy, act };
 }
 
 // -------------------------------------------------------------------- role
@@ -339,7 +337,7 @@ function RoleSection({
   readonly kind: KindControl | undefined;
   readonly onChanged: () => void;
 }) {
-  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'role'>();
+  const { asking, setAsking, busy, act } = useAct<'role'>();
   const [role, setRole] = useState<string>(user.org_role);
 
   useEffect(() => {
@@ -370,11 +368,22 @@ function RoleSection({
               yes="Change role"
               busy={busy}
               onYes={() => {
-                act(async () => {
-                  await updateUser(user.id, { org_role: role });
-                  setNotice(`${user.name} is now ${orgRoleLabel(role as OrgRole)}.`);
-                  onChanged();
-                });
+                const was = user.org_role;
+                act(
+                  async () => {
+                    await updateUser(user.id, { org_role: role });
+                    onChanged();
+                    return `${user.name} is now ${orgRoleLabel(role as OrgRole)}`;
+                  },
+                  'Couldn’t change role',
+                  // A role is one field; setting the old one back is the
+                  // same call, so the Undo is real.
+                  async () => {
+                    await updateUser(user.id, { org_role: was });
+                    onChanged();
+                    return `${user.name} is ${orgRoleLabel(was as OrgRole)} again`;
+                  },
+                );
               }}
               onNo={() => {
                 setRole(user.org_role);
@@ -386,9 +395,6 @@ function RoleSection({
       )}
 
       {kind !== undefined && <KindRow kind={kind} />}
-
-      <Problem text={error} />
-      <Notice text={notice} />
     </Block>
   );
 }
@@ -471,7 +477,7 @@ function SecuritySection({
   readonly signOut: boolean;
   readonly onSecret: ((shown: boolean) => void) | undefined;
 }) {
-  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'sign-out' | 'reset'>();
+  const { asking, setAsking, busy, act } = useAct<'sign-out' | 'reset'>();
   /**
    * The reset link, **shown once**: held here while it is on screen and nowhere
    * else, and gone when the panel goes (closed, another person, another page).
@@ -500,9 +506,12 @@ function SecuritySection({
               yes="Create link"
               busy={busy}
               onYes={() => {
+                // The link itself stays inline below, to copy: it is shown
+                // once, and a toast that times out is no place for it.
                 act(async () => {
                   setLink(await issueResetLink(user.id));
-                });
+                  return 'Reset link created';
+                }, 'Couldn’t create reset link');
               }}
               onNo={() => {
                 setAsking(undefined);
@@ -515,7 +524,6 @@ function SecuritySection({
               data-action="reset-link"
               disabled={busy || link !== undefined}
               onClick={() => {
-                setNotice(undefined);
                 setAsking('reset');
               }}
             >
@@ -545,14 +553,13 @@ function SecuritySection({
               busy={busy}
               danger
               onYes={() => {
+                // No Undo: an ended session cannot be resumed.
                 act(async () => {
                   const done = await signOutEverywhere(user.id);
-                  setNotice(
-                    done.sessions_ended === 0
-                      ? `${user.name} was not signed in anywhere.`
-                      : `Ended ${String(done.sessions_ended)} session${done.sessions_ended === 1 ? '' : 's'}. Their tokens still work.`,
-                  );
-                });
+                  return done.sessions_ended === 0
+                    ? `${user.name} wasn’t signed in anywhere`
+                    : 'Signed out everywhere';
+                }, 'Couldn’t sign them out');
               }}
               onNo={() => {
                 setAsking(undefined);
@@ -573,9 +580,6 @@ function SecuritySection({
           )}
         </div>
       )}
-
-      <Problem text={error} />
-      <Notice text={notice} />
     </Block>
   );
 }
@@ -591,7 +595,8 @@ function DangerSection({
   readonly onChanged: () => void;
   readonly focusBack: FocusBack;
 }) {
-  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'reactivate'>();
+  const { asking, setAsking, busy, act } = useAct<'reactivate'>();
+  const toast = useToast();
   const [offboarding, setOffboarding] = useState(false);
 
   const loadCandidates = useCallback(
@@ -616,7 +621,6 @@ function DangerSection({
           data-action="deactivate"
           disabled={busy}
           onClick={() => {
-            setNotice(undefined);
             setOffboarding(true);
           }}
         >
@@ -628,13 +632,13 @@ function DangerSection({
           yes="Reactivate"
           busy={busy}
           onYes={() => {
+            // No Undo: deactivating asks about their open tasks, which a
+            // toast's one button cannot.
             act(async () => {
               await updateUser(user.id, { is_active: true });
-              setNotice(
-                `${user.name} can sign in again. Their old sessions and tokens stay ended.`,
-              );
               onChanged();
-            });
+              return `${user.name} reactivated`;
+            }, 'Couldn’t reactivate');
           }}
           onNo={() => {
             setAsking(undefined);
@@ -653,9 +657,6 @@ function DangerSection({
           Reactivate
         </button>
       )}
-
-      <Problem text={error} />
-      <Notice text={notice} />
 
       {offboarding && (
         <OffboardingDialog
@@ -682,7 +683,18 @@ function DangerSection({
           }}
           onDone={() => {
             setOffboarding(false);
-            setNotice(`${user.name} has been deactivated.`);
+            // The dialog said its own refusals; the outcome is the toast's.
+            // Undo reactivates — real, though what deactivating ended
+            // (sessions, tokens, spaces) stays ended, and the toast says so.
+            toast.show({
+              text: `${user.name} deactivated`,
+              tone: 'success',
+              undo: async () => {
+                await updateUser(user.id, { is_active: true });
+                onChanged();
+                return `${user.name} reactivated — sessions and spaces stay ended`;
+              },
+            });
             onChanged();
           }}
           onClose={() => {
@@ -744,7 +756,7 @@ function TokensBlock({
   const [attempt, setAttempt] = useState(0);
   const [asking, setAsking] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -817,18 +829,25 @@ function TokensBlock({
               busy={busy}
               onYes={() => {
                 setBusy(true);
-                setError(undefined);
-                revokeUserToken(user.id, token.id)
-                  .then(() => {
-                    setAttempt((n) => n + 1);
-                  })
-                  .catch((cause: unknown) => {
-                    setError(revokeRefusal(cause, 'Nothing changed.'));
-                  })
-                  .finally(() => {
-                    setBusy(false);
-                    setAsking(undefined);
-                  });
+                // No Undo: a revoked token cannot be restored (§4.9).
+                void run({
+                  do: async () => {
+                    try {
+                      await revokeUserToken(user.id, token.id);
+                    } catch (cause: unknown) {
+                      if (isAbort(cause)) throw cause;
+                      // `revokeRefusal` names the owner-held case in words.
+                      throw new Error(revokeRefusal(cause, 'Nothing changed.'));
+                    }
+                    return true;
+                  },
+                  success: label === null ? 'Token revoked' : `${label}’s credential revoked`,
+                  failure: 'Couldn’t revoke token',
+                }).then((done) => {
+                  if (done === true) setAttempt((n) => n + 1);
+                  setBusy(false);
+                  setAsking(undefined);
+                });
               }}
               onNo={() => {
                 setAsking(undefined);
@@ -962,7 +981,6 @@ function TokensBlock({
       {load.kind === 'ready' && load.truncated && (
         <p className="prof-admin-muted">Only the first pages are shown.</p>
       )}
-      <Problem text={error} />
     </Block>
   );
 }
@@ -987,7 +1005,7 @@ function SpacesBlock({
   const [attempt, setAttempt] = useState(0);
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const [removing, setRemoving] = useState<PersonMembership | undefined>(undefined);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const toast = useToast();
   /** Whether the open removal went through: then its row, and its button, are going. */
   const removed = useRef(false);
 
@@ -1070,7 +1088,6 @@ function SpacesBlock({
                     data-action="remove-from-space"
                     aria-label={`Remove ${user.name} from ${m.name}`}
                     onClick={() => {
-                      setNotice(undefined);
                       removed.current = false;
                       setRemoving(m);
                     }}
@@ -1084,20 +1101,7 @@ function SpacesBlock({
         ))}
 
       {load.kind === 'ready' && user.is_active && addable.length > 0 && (
-        <AddToSpace
-          user={user}
-          spaces={addable}
-          onAdded={(text) => {
-            setNotice(text);
-            reload();
-          }}
-        />
-      )}
-
-      {notice !== undefined && (
-        <p className="prof-admin-notice" role="status">
-          {notice}
-        </p>
+        <AddToSpace user={user} spaces={addable} onAdded={reload} />
       )}
 
       {removing !== undefined && (
@@ -1129,7 +1133,9 @@ function SpacesBlock({
           }}
           onDone={() => {
             removed.current = true;
-            setNotice(`Removed ${user.name} from ${removing.name}.`);
+            // No Undo: the dialog may have moved their open tasks, which
+            // adding them back would not undo.
+            toast.show({ text: `Removed from ${removing.name}`, tone: 'success' });
             setRemoving(undefined);
             reload();
           }}
@@ -1149,13 +1155,36 @@ function AddToSpace({
 }: {
   readonly user: AdminSubject;
   readonly spaces: readonly Project[];
-  readonly onAdded: (notice: string) => void;
+  readonly onAdded: () => void;
 }) {
+  const { run } = useAction();
   const [slug, setSlug] = useState('');
   const [role, setRole] = useState<ProjectRole>('member');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
   const space = spaces.find((s) => s.slug === slug);
+
+  const add = async (to: Project): Promise<void> => {
+    setBusy(true);
+    const done = await run({
+      do: async () => {
+        await addMember(to.slug, user.id, role);
+        return true;
+      },
+      success: `Added to ${to.name} as ${projectRoleLabel(role)}`,
+      // Just added, so they hold no open tasks there: removing them again
+      // puts everything back as it was.
+      undo: async () => {
+        await removeMember(to.slug, user.id);
+        onAdded();
+        return `Removed from ${to.name} again`;
+      },
+      failure: `Couldn’t add to ${to.name}`,
+    });
+    setBusy(false);
+    if (done === undefined) return;
+    setSlug('');
+    onAdded();
+  };
 
   return (
     <form
@@ -1164,19 +1193,7 @@ function AddToSpace({
       onSubmit={(event) => {
         event.preventDefault();
         if (space === undefined || busy) return;
-        setBusy(true);
-        setError(undefined);
-        addMember(space.slug, user.id, role)
-          .then(() => {
-            setSlug('');
-            onAdded(`Added ${user.name} to ${space.name} as ${projectRoleLabel(role)}.`);
-          })
-          .catch((cause: unknown) => {
-            setError(said(cause));
-          })
-          .finally(() => {
-            setBusy(false);
-          });
+        void add(space);
       }}
     >
       <span className="prof-admin-label" id="prof-admin-add-label">
@@ -1217,7 +1234,6 @@ function AddToSpace({
           Add
         </button>
       </div>
-      <Problem text={error} />
     </form>
   );
 }

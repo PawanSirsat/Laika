@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { ApiError, NetworkError } from '../../../../src/api/errors.ts';
 import type { HrPerson, HrSource, OrgHoliday } from '../../../../src/api/hr.ts';
 import {
   companyAddress,
@@ -23,6 +24,10 @@ import {
   peopleToReview,
   pruneChoices,
   heldBy,
+  hrCause,
+  mappedLine,
+  syncedLine,
+  syncFailure,
   twoFactorMethodName,
   twoFactorWords,
   withHoliday,
@@ -282,5 +287,48 @@ void describe('the people an owner maps', () => {
         ['u4', { name: 'Contractor', locked: true }],
       ],
     );
+  });
+});
+
+void describe('what the HR actions toast (LAI-1310)', () => {
+  const result = {
+    people: 5,
+    matched: 4,
+    unmatched: 1,
+    holidays: 3,
+    leave_days: 1,
+    created: 0,
+    updated: 0,
+    removed: 0,
+    unchanged: 0,
+  };
+
+  void test('a sync names what it brought, counted', () => {
+    assert.equal(syncedLine(result), 'Synced — 3 holidays, 1 leave day');
+    assert.equal(syncedLine(null), 'Synced with Clan');
+  });
+
+  void test('a people map says how many it mapped', () => {
+    assert.equal(mappedLine(1), '1 person mapped');
+    assert.equal(mappedLine(3), '3 people mapped');
+  });
+
+  void test('a sync that answered with an error fails, in the sync words', () => {
+    assert.equal(syncFailure(view({})), undefined);
+    const failed = syncFailure(
+      view({ last_error: { code: 'unreachable', message: 'ECONNREFUSED' } }),
+    );
+    assert.equal(failed?.message, 'Laika could not reach Clan.');
+  });
+
+  void test('a refusal reads in the HR words; anything else is left alone', () => {
+    const refused = new ApiError('unprocessable', 'Bad login', 422, {
+      reason: 'clan_login_failed',
+    });
+    const said = hrCause(refused);
+    assert.ok(said instanceof Error && !(said instanceof ApiError));
+    assert.equal(said.message, 'Clan did not accept that email and password.');
+    const offline = new NetworkError('down');
+    assert.equal(hrCause(offline), offline);
   });
 });

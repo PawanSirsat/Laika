@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import {
   clearGithubWebhookSecret,
   GITHUB_WEBHOOK_PATH,
@@ -42,12 +43,16 @@ export interface GithubWebhookSectionProps {
  * GitHub confirms an agent's proof through these deliveries (D-083), so the
  * section says what that buys in one line and what it costs in another:
  * GitHub does not retry a failed delivery.
+ *
+ * Setting, rotating and clearing toast (LAI-1310), never with Undo: an old
+ * secret is gone once replaced. The new secret itself stays inline, because a
+ * toast that times out is no place for something shown only once.
  */
 export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectionProps) {
   const confirm = useConfirm();
   const [issued, setIssued] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   const payloadUrl = webhook.payload_url ?? `${window.location.origin}${GITHUB_WEBHOOK_PATH}`;
 
@@ -68,19 +73,19 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
   };
 
   const rotateNow = (): void => {
+    const wasSet = webhook.configured;
     setBusy(true);
-    setError(undefined);
-    rotateGithubWebhookSecret()
-      .then((answer) => {
-        setIssued(answer.secret);
-        onChanged(true);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'The secret could not be set.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    void run({
+      do: () => rotateGithubWebhookSecret(),
+      success: wasSet ? 'Webhook secret rotated' : 'Webhook secret set',
+      failure: wasSet ? 'Couldn’t rotate the secret' : 'Couldn’t set the secret',
+      mark: 'github-secret',
+    }).then((answer) => {
+      setBusy(false);
+      if (answer === undefined) return;
+      setIssued(answer.secret);
+      onChanged(true);
+    });
   };
 
   const clear = (): void => {
@@ -96,18 +101,20 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
 
   const clearNow = (): void => {
     setBusy(true);
-    setError(undefined);
-    clearGithubWebhookSecret()
-      .then(() => {
-        setIssued(undefined);
-        onChanged(false);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'The secret could not be cleared.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    void run({
+      do: async () => {
+        await clearGithubWebhookSecret();
+        return true;
+      },
+      success: 'Webhook secret cleared',
+      failure: 'Couldn’t clear the secret',
+      mark: 'github-secret',
+    }).then((done) => {
+      setBusy(false);
+      if (done === undefined) return;
+      setIssued(undefined);
+      onChanged(false);
+    });
   };
 
   return (
@@ -228,11 +235,6 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
           </Button>
         )}
       </div>
-      {error !== undefined && (
-        <p className="org-fact-error" role="alert">
-          {error}
-        </p>
-      )}
     </section>
   );
 }

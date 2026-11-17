@@ -3,6 +3,8 @@ import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import { deleteComment, editComment, type Comment } from '../../../api/comments.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { runOrThrow } from './run-or-throw.ts';
 import { CommentBody } from './CommentBody.tsx';
 import { foldLabel, type CommentKind } from './feed-groups.ts';
 import { REVEAL_FINISH_EVENT, roundOf } from './reveal-finish.ts';
@@ -34,10 +36,6 @@ export interface FeedCommentProps {
 /** How tall a folded finish summary stands (the design's 112px). */
 const FOLD_PX = 112;
 
-function refusal(cause: unknown): string {
-  return cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.';
-}
-
 /**
  * **One comment as the feed draws it** (D-129, LAI-1122): a person's comment
  * a bordered card, an agent's a progress note on the raised fill, a round's
@@ -66,7 +64,7 @@ export function FeedComment({
   );
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const editButton = useRef<HTMLButtonElement | null>(null);
 
   const body = saved?.from === comment.updated_at ? saved.body : comment.body_md;
@@ -79,21 +77,28 @@ export function FeedComment({
    * now read to the dialog as "already spent", so it is gone.
    */
 
+  /*
+   * **Confirmed, then toasted — no Undo** (LAI-1310): `DELETE /comments/:id`
+   * leaves a tombstone and there is no call that brings a comment back, so
+   * the confirmation is where it can still be stopped. A refusal closes the
+   * dialog and the error toast carries the server's reason.
+   */
   const remove = (): void => {
     setDeleting(true);
-    setDeleteError(undefined);
-    deleteComment(comment.id)
-      .then(() => {
-        setConfirming(false);
-        onDeleted(comment.id);
-        onChanged();
-      })
-      .catch((cause: unknown) => {
-        setDeleteError(refusal(cause));
-      })
-      .finally(() => {
-        setDeleting(false);
-      });
+    void run({
+      do: async () => {
+        await deleteComment(comment.id);
+        return true;
+      },
+      success: 'Comment deleted',
+      failure: 'Couldn’t delete the comment',
+    }).then((done) => {
+      setDeleting(false);
+      setConfirming(false);
+      if (done === undefined) return;
+      onDeleted(comment.id);
+      onChanged();
+    });
   };
 
   if (editing) {
@@ -115,7 +120,12 @@ export function FeedComment({
               editButton.current?.focus();
             }}
             onSubmit={async (next) => {
-              const answer = await editComment(comment.id, next);
+              // A refusal also stays in the editor with the draft (LAI-1310).
+              const answer = await runOrThrow(run, {
+                do: () => editComment(comment.id, next),
+                success: 'Comment updated',
+                failure: 'Couldn’t save the comment',
+              });
               setSaved({ from: comment.updated_at, body: answer.body_md });
               setEditing(false);
               onChanged();
@@ -160,7 +170,6 @@ export function FeedComment({
         className="cmt-action"
         aria-label="Delete comment"
         onClick={() => {
-          setDeleteError(undefined);
           setConfirming(true);
         }}
       >
@@ -208,7 +217,6 @@ export function FeedComment({
           confirmLabel="Delete"
           danger
           busy={deleting}
-          error={deleteError}
           onConfirm={remove}
           onClose={() => {
             setConfirming(false);

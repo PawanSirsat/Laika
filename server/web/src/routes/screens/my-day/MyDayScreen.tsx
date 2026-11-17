@@ -112,7 +112,6 @@ import {
   freeAround,
   STEP,
 } from './timeline-derive.ts';
-import { Toast, type ToastState } from './Toast.tsx';
 import { usePeople, ViewingSwitch } from './ViewingSwitch.tsx';
 import { WhoLooked } from './WhoLooked.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
@@ -129,6 +128,8 @@ import './lists.css';
 // After my-day.css: the phone's rules (LAI-518) win at equal specificity.
 import './phone.css';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { detailOf, isAbort } from '../../../components/toast/action-model.ts';
 // The View's Week, Month and Year (LAI-1174).
 import './span.css';
 
@@ -188,9 +189,28 @@ const RUNNING: Readonly<Record<BulkKind, string>> = {
 /** The keys a batch runs under: the bar's, and the header's *Confirm day*. */
 const BATCHES: ReadonlySet<string> = new Set(['bulk', 'confirm-day']);
 
-/** How long Undo is offered; the server keeps a change longer (`UNDO_WINDOW_MS`). */
+/**
+ * How long the editor's Undo is offered — the shared toast's own Undo stay
+ * (`toast-model.ts`); the server keeps a change longer (`UNDO_WINDOW_MS`).
+ */
 const UNDO_MS = 10_000;
-const SAID_MS = 6_000;
+
+/** The headline of a write the server refused; its own sentence is the detail. */
+const WRITE_FAILED = 'Couldn’t save that change';
+
+/** How a page's word sounds: a change made, or one that did not all go as asked. */
+type Tone = 'info' | 'warn' | 'error';
+
+/**
+ * The Undo on offer (LAI-831): the shared toast carrying it, the blocks the
+ * change touched — a later edit to any of them retires it (review round 1) —
+ * and the reversing call, which the editor's own Undo also runs.
+ */
+interface UndoOffer {
+  readonly toastId: number;
+  readonly blocks: ReadonlySet<string>;
+  readonly undo: () => Promise<string>;
+}
 
 const messageOf = (cause: unknown): string =>
   cause instanceof ApiError ? cause.message : 'That change did not save.';
@@ -379,7 +399,16 @@ export function MyDayScreen({
   const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
   const [tick, setTick] = useState(0);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
-  const [toast, setToast] = useState<ToastState | undefined>(undefined);
+  // Every word the page says goes through the app's one toast (LAI-1310).
+  const toast = useToast();
+  // Read after an await, so a ref holds it; the state mirrors it to redraw
+  // the editor's Undo.
+  const offerRef = useRef<UndoOffer | undefined>(undefined);
+  const [offer, setOfferState] = useState<UndoOffer | undefined>(undefined);
+  const keepOffer = useCallback((next: UndoOffer | undefined): void => {
+    offerRef.current = next;
+    setOfferState(next);
+  }, []);
   const [sheet, setSheet] = useState(false);
   const [lookedOpen, setLookedOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
@@ -428,7 +457,6 @@ export function MyDayScreen({
   // The owner's phone page (LAI-518): its own head, bar and Timeline.
   const phone = usePhone();
   const { theme } = useTheme();
-  const toastSeq = useRef(0);
   const lastDraftIndex = useRef(0);
   const batching = pending !== undefined && BATCHES.has(pending);
 
@@ -503,8 +531,10 @@ export function MyDayScreen({
   useEffect(() => {
     setSelection(undefined);
     setBatch({ kind: 'idle' });
-    setToast(undefined);
-  }, [selectedDay, subjectId]);
+    const held = offerRef.current;
+    if (held !== undefined) toast.dismiss(held.toastId);
+    keepOffer(undefined);
+  }, [selectedDay, subjectId, toast, keepOffer]);
 
   // The selection stays something that exists: a confirmed or dismissed block
   // hands it to the next one, and an open day starts on its first draft.
@@ -544,19 +574,16 @@ export function MyDayScreen({
     setBeside(false);
   }, [wide]);
 
-  // Undo is offered for about ten seconds; anything else says its word and goes.
+  // The editor's Undo goes when the toast's would: about ten seconds.
   useEffect(() => {
-    if (toast === undefined || toast.tone === 'error') return;
-    const timer = setTimeout(
-      () => {
-        setToast((current) => (current?.id === toast.id ? undefined : current));
-      },
-      toast.undo === undefined ? SAID_MS : UNDO_MS,
-    );
+    if (offer === undefined) return;
+    const timer = setTimeout(() => {
+      if (offerRef.current?.toastId === offer.toastId) keepOffer(undefined);
+    }, UNDO_MS);
     return () => {
       clearTimeout(timer);
     };
-  }, [toast]);
+  }, [offer, keepOffer]);
 
   const view = load.kind === 'ready' ? load.view : undefined;
   const line = useMemo(() => (view === undefined ? undefined : dayLine(view, now)), [view, now]);
@@ -608,22 +635,58 @@ export function MyDayScreen({
     if (at >= 0) lastDraftIndex.current = at;
   }, [view, selection]);
 
+  /**
+   * Take back what `made` did, newest first; the day is re-read after, and
+   * nothing else is changed while it runs. Resolves to what to say, which the
+   * toast that offered it shows in its place.
+   */
+  const undoMade = async (made: readonly Made[]): Promise<string> => {
+    setPending('undo');
+    try {
+      return await undoEach(made);
+    } finally {
+      setPending(undefined);
+      reload();
+    }
+  };
+
+  /**
+   * Say one thing in the shared toast. A change made is a success; one that
+   * did not all go as asked, or was refused, is an error and stays until it
+   * is closed. `made` offers Undo for exactly those changes; `batchReport`
+   * marks a batch's last word (LAI-810).
+   */
   const say = (
     text: string,
-    tone: ToastState['tone'] = 'info',
+    tone: Tone = 'info',
     made: readonly Made[] = [],
     batchReport = false,
+    detail?: string,
   ): void => {
-    toastSeq.current += 1;
-    setToast({
-      id: toastSeq.current,
+    const undoIt =
+      made.length === 0
+        ? undefined
+        : (): Promise<string> => {
+            // Taken back: the editor no longer offers it — unless a newer one replaced it.
+            if (offerRef.current?.undo === undoIt) keepOffer(undefined);
+            return undoMade(made);
+          };
+    const id = toast.show({
       text,
-      tone,
-      ...(made.length === 0
-        ? {}
-        : { undo: () => undoEach(made), blocks: new Set(made.flatMap((m) => m.blocks)) }),
-      ...(batchReport ? { batch: true } : {}),
+      tone: tone === 'info' ? 'success' : 'error',
+      ...(undoIt === undefined ? {} : { undo: undoIt }),
+      ...(detail === undefined ? {} : { detail }),
+      ...(batchReport ? { mark: 'bulk-said' } : {}),
     });
+    if (undoIt !== undefined) {
+      keepOffer({ toastId: id, blocks: new Set(made.flatMap((m) => m.blocks)), undo: undoIt });
+    }
+  };
+
+  /** A refused write: our headline, the server's sentence under it; an abort says nothing. */
+  const sayFailed = (cause: unknown): void => {
+    if (isAbort(cause)) return;
+    say(WRITE_FAILED, 'error', [], false, detailOf(cause) ?? messageOf(cause));
   };
 
   /**
@@ -632,18 +695,18 @@ export function MyDayScreen({
    * it — the server would refuse it, and the page does not offer it.
    */
   const retire = (blocks: readonly string[]): void => {
-    if (blocks.length === 0) return;
-    setToast((current) =>
-      current?.undo !== undefined && blocks.some((b) => current.blocks?.has(b) === true)
-        ? { id: current.id, text: current.text, tone: current.tone }
-        : current,
-    );
+    const held = offerRef.current;
+    if (blocks.length === 0 || held === undefined) return;
+    if (!blocks.some((b) => held.blocks.has(b))) return;
+    toast.dismiss(held.toastId);
+    keepOffer(undefined);
   };
 
   /**
    * Run one write to `blocks`, keyed so only its own control spins; re-read
    * the day after. When `said` asks, Undo is offered **for this change**, by
    * the id it answered with; any write retires an earlier Undo on its blocks.
+   * A refusal is an error toast with the server's sentence.
    */
   const run = async <T,>(
     key: string,
@@ -673,26 +736,23 @@ export function MyDayScreen({
       }
       return result;
     } catch (cause) {
-      say(messageOf(cause), 'error');
+      sayFailed(cause);
       return undefined;
     } finally {
       setPending(undefined);
     }
   };
 
-  const runUndo = (undoIt: () => Promise<string>): void => {
-    setPending('undo');
-    setToast(undefined);
-    undoIt()
+  /** The editor's Undo: the same call as the toast's, which then goes. */
+  const undoFromEditor = (held: UndoOffer): void => {
+    toast.dismiss(held.toastId);
+    held
+      .undo()
       .then((text) => {
         say(text);
       })
       .catch((cause: unknown) => {
         say(cause instanceof Error ? cause.message : 'Nothing could be undone.', 'error');
-      })
-      .finally(() => {
-        setPending(undefined);
-        reload();
       });
   };
 
@@ -1148,7 +1208,7 @@ export function MyDayScreen({
     } catch (cause) {
       // The timer stands on a refusal — a day that would hold more than a day
       // (`422 day_full`). Over confirmed time it saves (LAI-528, D-113).
-      say(messageOf(cause), 'error');
+      sayFailed(cause);
     } finally {
       setPending(undefined);
     }
@@ -1697,9 +1757,7 @@ export function MyDayScreen({
                     held={view.drafts_held}
                     tz={view.tz}
                     pending={pending}
-                    run={(key, writeIt, said) =>
-                      run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-                    }
+                    run={(key, writeIt) => run(key, [], writeIt).then((r) => r !== undefined)}
                   />
                 </>
               ),
@@ -2300,9 +2358,7 @@ export function MyDayScreen({
                   held={view.drafts_held}
                   tz={view.tz}
                   pending={pending}
-                  run={(key, writeIt, said) =>
-                    run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-                  }
+                  run={(key, writeIt) => run(key, [], writeIt).then((r) => r !== undefined)}
                 />
               )}
               {!notOwn && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
@@ -2442,15 +2498,6 @@ export function MyDayScreen({
             {dayBody}
           </div>
         )}
-
-        <Toast
-          toast={toast}
-          busy={busy}
-          onUndo={runUndo}
-          onClose={() => {
-            setToast(undefined);
-          }}
-        />
       </div>
 
       {/*
@@ -2487,10 +2534,10 @@ export function MyDayScreen({
               subject={subjectName}
               stopped={justStopped}
               undo={
-                toast?.undo === undefined || busy
+                offer === undefined || busy
                   ? undefined
                   : () => {
-                      if (toast.undo !== undefined) runUndo(toast.undo);
+                      undoFromEditor(offer);
                     }
               }
               pending={pending}

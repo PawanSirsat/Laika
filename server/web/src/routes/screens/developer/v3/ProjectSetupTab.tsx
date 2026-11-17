@@ -30,13 +30,13 @@ import {
 import type { Project } from '../../../../api/projects.ts';
 import { useProjects } from '../../../../api/use-projects.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
+import { useToast } from '../../../../components/toast/ToastProvider.tsx';
+import { useAction } from '../../../../components/toast/use-action.ts';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { Spinner } from '../../../../components/Spinner.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
-import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
-import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import {
   markedProjectBlock,
   PROJECT_BLOCK_REVISION,
@@ -181,7 +181,6 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
   const projects = useProjects();
   const [agents, setAgents] = useState<Load<readonly RegisteredAgent[]>>(LOADING);
   const setups = useAllSetups();
-  const [message, announce] = useLiveRegion();
   const [now] = useState(() => Date.now());
   const ids = useId();
 
@@ -418,7 +417,6 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
               </div>
             </div>
           }
-          announce={announce}
           go={go}
           setAddress={setAddress}
           onAgentChanged={(changed) => {
@@ -438,7 +436,6 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
 
   return (
     <div className="dx dx-ps dev-setup" data-view={view ?? 'loading'}>
-      <LiveRegion message={message} />
       {content}
     </div>
   );
@@ -632,7 +629,6 @@ interface SetupWizardProps {
   readonly step: SetupStep;
   readonly sectionTitle: ReactNode;
   readonly pickers: ReactNode;
-  readonly announce: (message: string) => void;
   readonly go: Go;
   readonly setAddress: SetAddress;
   readonly onAgentChanged: (agent: RegisteredAgent) => void;
@@ -646,7 +642,6 @@ function SetupWizard({
   step: asked,
   sectionTitle,
   pickers,
-  announce,
   go,
   setAddress,
   onAgentChanged,
@@ -780,7 +775,6 @@ function SetupWizard({
             tool={tool}
             project={project}
             access={access.value}
-            announce={announce}
             go={go}
             onSaved={(next, agent) => {
               data.setAccess(next);
@@ -862,7 +856,6 @@ function SetupWizard({
         records={data.records}
         evidence={evidence}
         target={target}
-        announce={announce}
         setRecords={data.setRecords}
         refreshRecords={data.refreshRecords}
         onRetry={data.reload}
@@ -976,7 +969,6 @@ interface AuthorizationProps {
   readonly tool: ToolChoice;
   readonly project: ProjectRef & { readonly id: string };
   readonly access: ProjectAccess;
-  readonly announce: (message: string) => void;
   readonly go: Go;
   readonly onSaved: (next: ProjectAccess, agent: RegisteredAgent) => void;
 }
@@ -987,13 +979,13 @@ interface AuthorizationProps {
  * is the one thing step 1 is waiting for. Remounted for each tool and
  * project, so a half-made choice never carries over to another pair.
  */
-function Authorization({ tool, project, access, announce, go, onSaved }: AuthorizationProps) {
+function Authorization({ tool, project, access, go, onSaved }: AuthorizationProps) {
   const ids = useId();
   const [choice, setChoice] = useState<GrantChoice>(() => currentChoice(access));
   const [changing, setChanging] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
-  const [saved, setSaved] = useState(false);
+  const toast = useToast();
 
   const options = grantOptions(access);
   const current = currentChoice(access);
@@ -1021,11 +1013,18 @@ function Authorization({ tool, project, access, announce, go, onSaved }: Authori
       const next = await getProjectAccess(tool.id, project.slug);
       onSaved(next, changed);
       setChoice(currentChoice(next));
-      setSaved(true);
-      announce(`${tool.label} now has ${grantLabel(currentChoice(next))} in ${project.name}.`);
+      // The toast replaces the *Saved.* beside the button (LAI-1310), and is
+      // heard as well as seen. No Undo: the grant before may have been one
+      // this reader could not give back.
+      toast.show({
+        text: `${tool.label} now has ${grantLabel(currentChoice(next))} in ${project.name}`,
+        tone: 'success',
+      });
     } catch (error: unknown) {
+      // Kept inline rather than toasted: its *Try again* saves the same
+      // choice, which a toast cannot offer, and it shows the server's reason
+      // for as long as the choice stays unsaved.
       setSaveError(error);
-      announce(`Could not change ${tool.label}’s access.`);
     } finally {
       setSaving(false);
     }
@@ -1130,7 +1129,6 @@ function Authorization({ tool, project, access, announce, go, onSaved }: Authori
                   aria-describedby={`${ids}-${option.value}-sub`}
                   onChange={() => {
                     setChoice(option.value);
-                    setSaved(false);
                   }}
                 />
                 <span>
@@ -1182,7 +1180,6 @@ function Authorization({ tool, project, access, announce, go, onSaved }: Authori
               {saving && <Spinner size="sm" />}
               Save access
             </button>
-            {saved && !dirty && <span className="conn-note">Saved.</span>}
           </div>
         </div>
       )}
@@ -1321,7 +1318,6 @@ interface ReviewStepProps {
   readonly records: Load<readonly ProjectSetup[]>;
   readonly evidence: SetupEvidence | null;
   readonly target: ReturnType<typeof targetFor>;
-  readonly announce: (message: string) => void;
   readonly setRecords: Dispatch<SetStateAction<Load<readonly ProjectSetup[]>>>;
   readonly refreshRecords: (signal?: AbortSignal) => void;
   readonly onRetry: () => void;
@@ -1342,14 +1338,13 @@ function ReviewStep({
   records,
   evidence,
   target,
-  announce,
   setRecords,
   refreshRecords,
   onRetry,
 }: ReviewStepProps) {
   const ids = useId();
   const [recording, setRecording] = useState(false);
-  const [recordError, setRecordError] = useState<unknown>(null);
+  const { run } = useAction();
   const checkCommand = projectCheckCommand(project.slug, tool.client);
   const manual = noDeviceCheck(tool.toolName, tool.client);
   const [cliSource, setCliSource] = useState<CliSource | undefined>(undefined);
@@ -1382,26 +1377,25 @@ function ReviewStep({
 
   const record = async () => {
     setRecording(true);
-    setRecordError(null);
-    try {
-      const made = await recordSelfReport({
-        agentId: tool.id,
-        projectSlug: project.slug,
-        templateRevision: PROJECT_BLOCK_REVISION,
-        instructionsPath: target.committable ? target.path : null,
-      });
-      setRecords((prev) =>
-        prev.kind === 'ready'
-          ? { kind: 'ready', value: [...prev.value.filter((r) => r.id !== made.id), made] }
-          : { kind: 'ready', value: [made] },
-      );
-      announce(`Recorded: you added the block for ${project.name}. Not verified.`);
-    } catch (error: unknown) {
-      setRecordError(error);
-      announce('Could not record it.');
-    } finally {
-      setRecording(false);
-    }
+    // No Undo: a record is the reader's own statement, kept as history.
+    const made = await run({
+      do: () =>
+        recordSelfReport({
+          agentId: tool.id,
+          projectSlug: project.slug,
+          templateRevision: PROJECT_BLOCK_REVISION,
+          instructionsPath: target.committable ? target.path : null,
+        }),
+      success: `Recorded for ${project.name} — not verified`,
+      failure: 'Couldn’t record it',
+    });
+    setRecording(false);
+    if (made === undefined) return;
+    setRecords((prev) =>
+      prev.kind === 'ready'
+        ? { kind: 'ready', value: [...prev.value.filter((r) => r.id !== made.id), made] }
+        : { kind: 'ready', value: [made] },
+    );
   };
 
   const orb =
@@ -1535,7 +1529,7 @@ function ReviewStep({
             I’ve added it
           </button>
         </div>
-        {(selfHere !== null || recordError !== null || !granted) && (
+        {(selfHere !== null || !granted) && (
           <div className="dx-ps-way-body">
             {selfHere !== null && (
               <ul className="dev-setup-records dx-ps-records" aria-label="What you recorded">
@@ -1544,14 +1538,6 @@ function ReviewStep({
                   <span className="conn-note">{recordFinding(selfHere)}</span>
                 </li>
               </ul>
-            )}
-            {recordError !== null && (
-              <ApiErrorState
-                error={recordError}
-                resource="your record"
-                scope="project"
-                verb="save"
-              />
             )}
             {!granted && (
               <p

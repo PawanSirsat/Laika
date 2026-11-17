@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { noticeLine, useNotices, type Notice } from '../../../api/notices.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import '../../../components/availability/availability.css';
 import { CardLink } from './CardLink.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -31,7 +32,7 @@ export interface ForYouCardProps {
 export function ForYouCard({ onNavigate, now = Date.now() }: ForYouCardProps) {
   const { state, reload, read, readAll } = useNotices(true);
   const [busy, setBusy] = useState<string | undefined>(undefined);
-  const [failed, setFailed] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   if (state.status === 'loading') return null;
   if (state.status === 'error') {
@@ -48,17 +49,17 @@ export function ForYouCard({ onNavigate, now = Date.now() }: ForYouCardProps) {
   }
   if (state.notices.length === 0) return null;
 
-  const act = async (key: string, run: () => Promise<void>): Promise<void> => {
+  /**
+   * One mark-read, said through the shared toast (LAI-1310). A single notice
+   * says nothing on success — the row turning read is the answer, and a toast
+   * per row would be noise; *Mark all read* says how many. A refusal is the
+   * error toast either way.
+   */
+  const act = async (key: string, write: () => Promise<void>, success: string | null) => {
     if (busy !== undefined) return;
     setBusy(key);
-    setFailed(undefined);
-    try {
-      await run();
-    } catch {
-      setFailed('That could not be marked read. Try again.');
-    } finally {
-      setBusy(undefined);
-    }
+    await run({ do: write, success, failure: 'Couldn’t mark that read' });
+    setBusy(undefined);
   };
 
   return (
@@ -80,7 +81,12 @@ export function ForYouCard({ onNavigate, now = Date.now() }: ForYouCardProps) {
             disabled={busy !== undefined}
             aria-busy={busy === 'all' || undefined}
             onClick={() => {
-              void act('all', readAll);
+              const n = state.unread;
+              void act(
+                'all',
+                readAll,
+                `${String(n)} ${n === 1 ? 'notice' : 'notices'} marked read`,
+              );
             }}
           >
             {busy === 'all' && <Spinner size="sm" />}
@@ -88,11 +94,6 @@ export function ForYouCard({ onNavigate, now = Date.now() }: ForYouCardProps) {
           </button>
         )}
       </header>
-      {failed !== undefined && (
-        <p className="avail-error" role="alert">
-          {failed}
-        </p>
-      )}
       <ul className="foryou-list">
         {state.notices.map((notice) => (
           <NoticeRow
@@ -102,7 +103,7 @@ export function ForYouCard({ onNavigate, now = Date.now() }: ForYouCardProps) {
             busy={busy === notice.id}
             disabled={busy !== undefined}
             onRead={() => {
-              void act(notice.id, () => read(notice.id));
+              void act(notice.id, () => read(notice.id), null);
             }}
             onNavigate={onNavigate}
           />

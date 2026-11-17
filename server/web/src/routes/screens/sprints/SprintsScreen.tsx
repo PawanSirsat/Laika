@@ -14,8 +14,9 @@ import { useRoute } from '../../use-route.ts';
 import { AssignTasksPanel } from './AssignTasksPanel.tsx';
 import { SprintCard } from './SprintCard.tsx';
 import { SprintForm } from './SprintForm.tsx';
-import { formatRange, sprintFigures } from './sprint-derive.ts';
+import { sprintFigures } from './sprint-derive.ts';
 import { useSprints } from './use-sprints.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
 import './sprints.css';
 import { pickProject } from '../../../api/pick-project.ts';
 import { withProjectParam } from '../../nav-url.ts';
@@ -66,9 +67,12 @@ export function SprintsScreen() {
   /**
    * What the last action did, said once (LAI-1195): a sprint created, saved,
    * started or deleted. The list changing is not enough — a new sprint can
-   * land below the fold, and a delete leaves nothing to look at.
+   * land below the fold, and a delete leaves nothing to look at. Said in the
+   * app's toast now (LAI-1310), where the `.sprint-notice` banner said it,
+   * and a refusal there too, with the server's sentence — its 409 names the
+   * sprint already holding `active`, or the one whose dates collide.
    */
-  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const confirmRef = useRef<HTMLDivElement>(null);
   /** The Delete button that opened the confirm, so focus goes back to it. */
   const deleteOrigin = useRef<string | undefined>(undefined);
@@ -183,7 +187,6 @@ export function SprintsScreen() {
             className="sprint-button sprint-button-primary"
             onClick={() => {
               setEditing(undefined);
-              setNotice(undefined);
               setFormOpen(true);
             }}
           >
@@ -192,54 +195,27 @@ export function SprintsScreen() {
         )}
       </SpaceSlot>
 
-      {sprints.actionError !== undefined && (
-        <p className="sprint-alert" role="alert">
-          {/* The server's own words. Its 409 names the sprint that already holds
-              `active`, or the one whose dates collide — both more specific than
-              anything this screen could say. */}
-          {sprints.actionError}
-          <button type="button" className="sprint-alert-close" onClick={sprints.dismissError}>
-            Dismiss
-          </button>
-        </p>
-      )}
-
-      {notice !== undefined && (
-        <p className="sprint-notice" role="status">
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-            <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="2.4" />
-          </svg>
-          <span>{notice}</span>
-          <button
-            type="button"
-            className="sprint-alert-close"
-            onClick={() => {
-              setNotice(undefined);
-            }}
-          >
-            Dismiss
-          </button>
-        </p>
-      )}
-
       {formOpen && (
         <SprintForm
           key={editing?.id ?? 'new'}
           {...(editing === undefined ? {} : { sprint: editing })}
           busy={sprints.busy}
           onSubmit={async (input) => {
-            setNotice(undefined);
-            const ok =
-              editing === undefined
-                ? await sprints.create(input)
-                : await sprints.update(editing.id, input);
+            let ok = true;
+            await run({
+              do: () =>
+                editing === undefined ? sprints.create(input) : sprints.update(editing.id, input),
+              success: `${input.name} ${editing === undefined ? 'created' : 'saved'}`,
+              failure:
+                editing === undefined
+                  ? 'Couldn’t create the sprint'
+                  : `Couldn’t save ${editing.name}`,
+              onError: () => {
+                ok = false;
+              },
+              mark: 'sprint-action',
+            });
             if (ok) {
-              setNotice(
-                `${editing === undefined ? 'Created' : 'Saved'} ${input.name} · ${formatRange(
-                  input.starts_on,
-                  input.ends_on,
-                )}.`,
-              );
               setFormOpen(false);
               setEditing(undefined);
             }
@@ -283,10 +259,18 @@ export function SprintsScreen() {
               disabled={sprints.busy}
               onClick={() => {
                 const gone = confirmingDelete;
-                void sprints.remove(gone.id).then((ok) => {
-                  if (!ok) return;
-                  setNotice(`Deleted ${gone.name}. Its tasks are back in no sprint.`);
-                  closeConfirm();
+                let ok = true;
+                void run({
+                  do: () => sprints.remove(gone.id),
+                  // No Undo: a deleted sprint is gone, and its tasks released.
+                  success: `${gone.name} deleted — its tasks kept`,
+                  failure: `Couldn’t delete ${gone.name}`,
+                  onError: () => {
+                    ok = false;
+                  },
+                  mark: 'sprint-action',
+                }).then(() => {
+                  if (ok) closeConfirm();
                 });
               }}
             >
@@ -378,19 +362,20 @@ export function SprintsScreen() {
                       setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);
                     }}
                     onEdit={() => {
-                      setNotice(undefined);
                       setEditing(row.sprint);
                       setFormOpen(true);
                     }}
                     onActivate={() => {
-                      setNotice(undefined);
-                      void sprints.activate(row.sprint.id).then((ok) => {
-                        if (ok)
-                          setNotice(`Started ${row.sprint.name}. It is now the active sprint.`);
+                      // No Undo: starting one sprint can change another's
+                      // status on the server, which one call cannot put back.
+                      void run({
+                        do: () => sprints.activate(row.sprint.id),
+                        success: `${row.sprint.name} started`,
+                        failure: `Couldn’t start ${row.sprint.name}`,
+                        mark: 'sprint-action',
                       });
                     }}
                     onDelete={() => {
-                      setNotice(undefined);
                       deleteOrigin.current = row.sprint.id;
                       setConfirmingDelete(row.sprint);
                     }}
@@ -398,7 +383,19 @@ export function SprintsScreen() {
                       setAssigning(row.sprint);
                     }}
                     onUnassign={(taskId) => {
-                      void sprints.unassign(row.sprint.id, taskId);
+                      const sprint = row.sprint;
+                      const key = projectById.get(taskId)?.key ?? 'Task';
+                      void run({
+                        do: () => sprints.unassign(sprint.id, taskId),
+                        success: `${key} removed from ${sprint.name}`,
+                        failure: `Couldn’t remove ${key} from ${sprint.name}`,
+                        // The same endpoint the Assign panel uses puts it back.
+                        undo: async () => {
+                          await sprints.assign(sprint.id, [taskId]);
+                          return `${key} back in ${sprint.name}`;
+                        },
+                        mark: 'sprint-action',
+                      });
                     }}
                   />
 
@@ -407,7 +404,30 @@ export function SprintsScreen() {
                       sprint={row.sprint}
                       available={sprints.state.status === 'ready' ? sprints.state.unassigned : []}
                       busy={sprints.busy}
-                      onAssign={(taskIds) => sprints.assign(row.sprint.id, taskIds)}
+                      onAssign={async (taskIds) => {
+                        const sprint = row.sprint;
+                        let ok = true;
+                        const count =
+                          taskIds.length === 1
+                            ? (projectById.get(taskIds[0] ?? '')?.key ?? '1 task')
+                            : `${String(taskIds.length)} tasks`;
+                        await run({
+                          do: () => sprints.assign(sprint.id, taskIds),
+                          success: `${count} added to ${sprint.name}`,
+                          failure: `Couldn’t add to ${sprint.name}`,
+                          // Each one taken back out, through the same endpoint
+                          // the card's own remove uses.
+                          undo: async () => {
+                            for (const id of taskIds) await sprints.unassign(sprint.id, id);
+                            return `${count} taken out of ${sprint.name}`;
+                          },
+                          onError: () => {
+                            ok = false;
+                          },
+                          mark: 'sprint-action',
+                        });
+                        return ok;
+                      }}
                       onClose={() => {
                         setAssigning(undefined);
                       }}

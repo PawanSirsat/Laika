@@ -11,6 +11,7 @@ import {
   reasonOf,
 } from '../../../components/availability/availability-derive.ts';
 import '../../../components/availability/availability.css';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
 
 /** A space this reader may add people to. */
@@ -75,6 +76,7 @@ export function AddToProjectDialog({
   const box = useRef<HTMLDivElement>(null);
   const id = useId();
   const space = spaces.find((s) => s.id === spaceId);
+  const { run } = useAction();
 
   useDialogFocus(box, { restore });
 
@@ -121,44 +123,49 @@ export function AddToProjectDialog({
   const chosenCard = cards.status === 'ready' ? cards.cards.find((c) => c.id === card) : undefined;
   const roleName = projectRoleLabel(role);
 
+  /**
+   * One add, said in the shared toast either way (LAI-1310): *Ada added to
+   * Laika Core*, or the refusal with the server's sentence. A refusal that
+   * changes what the dialog offers — added by someone else meanwhile, a
+   * deactivated person, a card gone, a viewer's only role — also says so here,
+   * beside the choices it changed.
+   */
   const submit = async (): Promise<void> => {
     if (space === undefined || busy) return;
     setBusy(true);
     setProblem(undefined);
-    try {
-      await addMember(space.slug, row.user.id, role, {
-        message,
-        assignTaskId: card,
-      });
-      onAdded(space, role);
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === 'conflict') {
-        // Someone added them first: say so, and take the space off the list.
-        setProblem(`${first} is already a member of ${space.name}.`);
-        setJoined((j) => new Set([...j, space.id]));
-        setSpaceId(open.find((s) => s.id !== space.id)?.id);
-        onStale();
-      } else if (cause instanceof ApiError && cause.code === 'unprocessable') {
-        const reason = reasonOf(cause.details);
-        const field = (cause.details as { field?: unknown } | null)?.field;
-        if (reason === 'user_deactivated') {
-          setProblem(`${row.user.name} is deactivated and can’t be added to a space.`);
-        } else if (reason === 'task_not_assignable') {
-          setProblem('That card can no longer be handed over. Pick another, or no card.');
-          setCardsAsked((n) => n + 1);
-        } else if (field === 'role') {
-          setViewerOnly(true);
-          setRole('viewer');
-          setProblem(cause.message);
-        } else {
-          setProblem(cause.message);
+    const done = await run({
+      do: async () => {
+        await addMember(space.slug, row.user.id, role, { message, assignTaskId: card });
+        return true;
+      },
+      success: `${first} added to ${space.name}`,
+      failure: `Couldn’t add ${first} to ${space.name}`,
+      onError: (cause) => {
+        if (cause instanceof ApiError && cause.code === 'conflict') {
+          // Someone added them first: say so, and take the space off the list.
+          setProblem(`${first} is already a member of ${space.name}.`);
+          setJoined((j) => new Set([...j, space.id]));
+          setSpaceId(open.find((s) => s.id !== space.id)?.id);
+          onStale();
+        } else if (cause instanceof ApiError && cause.code === 'unprocessable') {
+          const reason = reasonOf(cause.details);
+          const field = (cause.details as { field?: unknown } | null)?.field;
+          if (reason === 'user_deactivated') {
+            setProblem(`${row.user.name} is deactivated and can’t be added to a space.`);
+          } else if (reason === 'task_not_assignable') {
+            setProblem('That card can no longer be handed over. Pick another, or no card.');
+            setCardsAsked((n) => n + 1);
+          } else if (field === 'role') {
+            setViewerOnly(true);
+            setRole('viewer');
+            setProblem(cause.message);
+          }
         }
-      } else {
-        setProblem(cause instanceof Error ? cause.message : `${first} could not be added.`);
-      }
-    } finally {
-      setBusy(false);
-    }
+      },
+    });
+    setBusy(false);
+    if (done !== undefined) onAdded(space, role);
   };
 
   const roles: readonly ProjectRole[] = viewerOnly ? ['viewer'] : ['member', 'lead'];

@@ -184,46 +184,57 @@ void describe('Confirm day’s summary (LAI-503)', () => {
       }
     });
 
-    void test(`${theme}: the toast is a dark pill at the bottom centre of the page, 24px up and 92px over the bulk bar (LAI-517)`, async () => {
+    void test(`${theme}: the toast is the app's one, a pill in the page's ink, clear of the bulk bar and the drawer (LAI-517, LAI-1310)`, async () => {
       const writes: StubCall[] = [];
       const h = await myDay(writes);
       try {
         await setTheme(h.page, theme);
         await h.page.locator('[data-confirm-day]').click();
         await h.page.locator('[data-summary-confirm]').click();
-        const pill = h.page.locator('[data-toast]');
+        // My day's own pill is retired (LAI-1310): the word is the app's toast.
+        const pill = h.page.locator('[data-toast-stack] [data-toast]').last();
         await pill.waitFor({ timeout: 10_000 });
         const where = async () =>
           h.page.evaluate(() => {
-            const toast = document.querySelector('[data-toast]');
-            const column = document.querySelector('.myday-column');
-            if (toast === null || column === null) return undefined;
+            const toasts = [...document.querySelectorAll('[data-toast]')];
+            const toast = toasts.at(-1);
+            if (toast === undefined) return undefined;
             const t = toast.getBoundingClientRect();
-            const c = column.getBoundingClientRect();
             const probe = document.createElement('span');
             probe.style.color = 'var(--text-primary)';
             document.body.append(probe);
             const ink = getComputedStyle(probe).color;
             probe.remove();
+            /** Whether the toast covers any of `selector`'s box. */
+            const covers = (selector: string): boolean | undefined => {
+              const el = document.querySelector(selector);
+              if (el === null) return undefined;
+              const b = el.getBoundingClientRect();
+              return t.left < b.right && t.right > b.left && t.top < b.bottom && t.bottom > b.top;
+            };
             return {
-              up: Math.round(window.innerHeight - t.bottom),
-              offCentre: Math.abs(t.left + t.width / 2 - (c.left + c.width / 2)),
+              inside: t.right <= window.innerWidth && t.bottom <= window.innerHeight,
               height: t.height,
               ground: getComputedStyle(toast).backgroundColor,
               ink,
+              bulk: covers('.myday-bulk'),
+              drawer: covers('.myday-drawer'),
             };
           });
         const first = await where();
         assert.ok(first !== undefined);
-        assert.equal(first.up, 24);
-        assert.ok(first.offCentre < 2, `off the column's centre by ${String(first.offCentre)}px`);
+        assert.ok(first.inside, 'the toast is off the screen');
         assert.ok(first.height >= 40, `the pill is ${String(first.height)}px tall`);
         assert.equal(first.ground, first.ink, 'the pill is not the page’s ink');
-        // A block ticked: the bulk bar shows, and the toast stands over it.
+        // A block ticked: the bulk bar shows, and the toast stands clear of it.
         await h.page.locator('[data-day-tab="review"]').click();
         await h.page.locator('[data-settle-row="d2"] .myday-check').check();
         await h.page.locator('[data-bulk-count]').waitFor({ timeout: 5_000 });
-        assert.equal((await where())?.up, 92);
+        assert.equal((await where())?.bulk, false, 'the toast covers the bulk bar');
+        // A block opened: the drawer is beside the page, and the toast clear of it.
+        await h.page.locator('[data-select="d2"]').click();
+        await h.page.locator('.myday-drawer').waitFor({ timeout: 5_000 });
+        assert.equal((await where())?.drawer, false, 'the toast covers the drawer');
       } finally {
         await h.close();
       }

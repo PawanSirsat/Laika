@@ -5,6 +5,7 @@ import {
   expiryLabel,
   filterPeople,
   inviteButtonLabel,
+  inviteOutcome,
   invitedLabel,
   lastActive,
   lastSignIn,
@@ -204,5 +205,41 @@ void describe('LAI-987 features in the LAI-893 tab', () => {
   void test('an org viewer may be invited into a space only as a viewer', () => {
     assert.deepEqual(spaceRolesFor('viewer'), ['viewer']);
     assert.deepEqual(spaceRolesFor('member'), ['lead', 'member', 'viewer']);
+  });
+});
+
+void describe('what an invite send toasts (LAI-1310)', () => {
+  const sent = (email: string | null, emailed = true) => ({ email, url: 'https://x/i/1', emailed });
+  const refused = (email: string, error: string) => ({ email, error });
+
+  void test('one sent names the address; one not emailed was created, not sent', () => {
+    assert.deepEqual(inviteOutcome([sent('bo@kvelld.co.za')]), {
+      text: 'Invite sent to bo@kvelld.co.za',
+      tone: 'success',
+    });
+    assert.equal(
+      inviteOutcome([sent('bo@kvelld.co.za', false)]).text,
+      'Invite created for bo@kvelld.co.za',
+    );
+    assert.equal(inviteOutcome([sent(null, false)]).text, 'Invite link created');
+  });
+
+  void test('several are counted', () => {
+    assert.equal(
+      inviteOutcome([sent('a@x.io'), sent('b@x.io'), sent('c@x.io')]).text,
+      '3 invites sent',
+    );
+    assert.equal(inviteOutcome([sent('a@x.io'), sent('b@x.io', false)]).text, '2 invites created');
+  });
+
+  void test('a refusal is an error: the server’s sentence alone, or a pointer to the list', () => {
+    assert.deepEqual(inviteOutcome([refused('a@x.io', 'Already invited')]), {
+      text: 'Couldn’t create the invite',
+      tone: 'error',
+      detail: 'Already invited',
+    });
+    const mixed = inviteOutcome([sent('a@x.io'), refused('b@x.io', 'Already invited')]);
+    assert.equal(mixed.tone, 'error');
+    assert.equal(mixed.text, '1 of 2 invites refused');
   });
 });

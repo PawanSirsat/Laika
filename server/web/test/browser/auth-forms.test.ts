@@ -518,6 +518,34 @@ void describe('resetting a password, keyboard only', () => {
       const next = await h.page.locator('[data-reset-state="done"] [role="status"]').innerText();
       assert.match(next, /Sign in with your new password next/);
       assert.match(next, /signed out of 2 other sessions/);
+      // Said in the app's toast too (LAI-1310); the field refusal before it was not.
+      await h.page
+        .locator('[data-toast][data-tone="success"]', { hasText: 'Password reset — sign in' })
+        .waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.locator('[data-toast][data-tone="error"]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refusal that names no field is an error toast as well as the summary (LAI-1310)', async () => {
+    const h = await open('/reset-password?token=reset1', {
+      ...SIGNED_OUT,
+      '/api/v1/password-resets/consume': reply(503, {
+        error: { code: 'unavailable', message: 'The board is restarting.' },
+      }),
+    });
+    try {
+      await h.page.locator('form input').first().waitFor({ timeout: 20_000 });
+      await tabTo(h.page, 'field:New password');
+      await h.page.keyboard.type('correct horse battery');
+      await tabTo(h.page, 'field:Confirm password');
+      await h.page.keyboard.type('correct horse battery');
+      await h.page.keyboard.press('Enter');
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t reset password/);
+      assert.match(await toast.innerText(), /The board is restarting\./);
     } finally {
       await h.close();
     }

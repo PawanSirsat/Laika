@@ -244,6 +244,23 @@ void describe('dragging a column', () => {
         ['s4', 's1', 's5', 's2', 's3'],
         'every id must go — the hidden one in its own slot — or the server refuses it',
       );
+
+      // Said in the app's toast (LAI-1310), with an Undo that sends the old
+      // order back — the same call, so the server can always take it.
+      const toast = h.page.locator('[data-toast][data-board-column][data-tone="success"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal((await toast.locator('.toast-text').innerText()).trim(), 'Columns reordered');
+      await toast.locator('.toast-undo').click();
+      await movedTo(h, ['To do', 'In progress', 'Review', 'Done']);
+      const orders = h.calls.filter((c) => c.path.endsWith('/statuses/order'));
+      assert.equal(orders.length, 2, 'Undo sent no second order');
+      const back = (orders[1]?.body as { ids: string[] }).ids;
+      assert.deepEqual(
+        back.filter((id) => id !== 's5'),
+        ['s1', 's2', 's3', 's4'],
+        'Undo sends the visible order from before the drag',
+      );
+      assert.equal(back.filter((id) => id === 's5').length, 1, 'and the hidden one, once');
     } finally {
       await h.close();
     }
@@ -264,8 +281,10 @@ void describe('dragging a column', () => {
     try {
       await board(h);
       await drag(h, '.lane:nth-of-type(4) .lane-head-drag', '.lane:nth-of-type(1)');
-      // The alert is the refusal handled; then the order it put back.
-      await h.page.locator('.board-alert').first().waitFor({ timeout: 5_000 });
+      // The toast is the refusal handled (LAI-1310, where a `.board-alert`
+      // banner was); then the order it put back.
+      const toast = h.page.locator('[data-toast][data-board-column][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
       await movedTo(h, ['To do', 'In progress', 'Review', 'Done']);
 
       assert.deepEqual(
@@ -274,12 +293,12 @@ void describe('dragging a column', () => {
         'a refused reorder must not leave the optimistic order on screen',
       );
 
-      const alert = await h.page.locator('.board-alert').first().textContent();
-      assert.match(
-        alert ?? '',
-        /Only a project lead may configure columns/,
-        'the server’s own sentence, not one invented here',
+      assert.equal(
+        (await toast.locator('[role="alert"]').innerText()).replace(/\s+/g, ' ').trim(),
+        'Couldn’t reorder the columns Only a project lead may configure columns',
+        'the server’s own sentence as the detail, not one invented here',
       );
+      assert.equal(await h.page.locator('.board-alert').count(), 0, 'the banner is retired');
     } finally {
       await h.close();
     }

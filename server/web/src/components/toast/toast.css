@@ -1,30 +1,59 @@
 /*
  * The app's one toast (LAI-1129). A pill in the page's ink, its text the
  * card's colour — so it reads in both themes from tokens alone, as My day's
- * did (LAI-517). Bottom-right; bottom-centre below 600px. It floats above
- * dialogs (the confirm dialog is 80) and never covers the whole width.
+ * did (LAI-517). Bottom-centre at every width (the owner, 2026-11-18): the
+ * stack spans the gutters and shrinks to its widest toast, so `margin-inline:
+ * auto` centres it without a transform the toasts' own animation would fight.
+ * It floats above dialogs (the confirm dialog is 80) and never covers the
+ * whole width.
  */
 .toast-stack {
   position: fixed;
   right: var(--space-5);
   bottom: var(--space-5);
+  left: var(--space-5);
   z-index: 90;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--space-2);
+  width: fit-content;
   max-width: min(28rem, calc(100vw - 2 * var(--space-5)));
-  margin: 0;
+  margin: 0 auto;
   pointer-events: none;
 }
 
 @media (max-width: 599px) {
   .toast-stack {
     right: var(--space-4);
-    left: var(--space-4);
     bottom: var(--space-4);
-    align-items: center;
-    max-width: none;
+    left: var(--space-4);
+    max-width: calc(100vw - 2 * var(--space-4));
+  }
+}
+
+/*
+ * My day (LAI-1310, which retired its own pill): the toast stands clear of
+ * what that page keeps at the window's edge, as the pill did (LAI-517) — its
+ * 25rem drawer beside the page (the toast centres on what is left), and its
+ * bulk bar along the foot. Under 900px the drawer is a bottom sheet, so the
+ * toast goes above it, over the scrim.
+ */
+:root:has(.myday-column [data-bulk-count]) .toast-stack {
+  bottom: 5.75rem;
+}
+
+@media (min-width: 901px) {
+  :root[data-myday-drawer-open] .toast-stack {
+    right: calc(25rem + var(--space-5));
+    max-width: min(28rem, calc(100vw - 25rem - 2 * var(--space-5)));
+  }
+}
+
+@media (max-width: 900px) {
+  :root[data-myday-drawer-open] .toast-stack {
+    top: var(--space-4);
+    bottom: auto;
   }
 }
 

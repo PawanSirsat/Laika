@@ -11,6 +11,7 @@ import {
 import { Icon } from '../icon/Icon.tsx';
 import type { IconName } from '../icon/icon-paths.ts';
 import { Spinner } from '../Spinner.tsx';
+import { useAction } from '../toast/use-action.ts';
 import {
   ago,
   buildNotifications,
@@ -65,6 +66,7 @@ export function NotificationsPopover({
   const [attempt, setAttempt] = useState(0);
   const [marking, setMarking] = useState(false);
   const [markFailed, setMarkFailed] = useState(false);
+  const action = useAction();
   const unreadNotices = useUnreadNoticeCount() ?? 0;
   const box = useRef<HTMLDivElement | null>(null);
   const now = Date.now();
@@ -130,11 +132,19 @@ export function NotificationsPopover({
   const follow = (item: NotificationItem) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (item.noticeId !== undefined && item.unread) {
       // Read on the server, so My day's For you agrees; the badge follows.
-      void markNoticeRead(item.noticeId)
-        .then(() => {
+      const id = item.noticeId;
+      void action.run({
+        // The badge follows inside `do`, so it moves only on the server's yes.
+        do: async () => {
+          await markNoticeRead(id);
           setUnreadNotices(Math.max(0, unreadNotices - 1));
-        })
-        .catch(() => undefined);
+        },
+        // Failure only (LAI-1310): following a notice reads it, and a toast
+        // for every one followed would be noise. A failure is worth saying —
+        // the badge and My day's For you would otherwise disagree in silence.
+        success: null,
+        failure: 'Couldn’t mark that notification read',
+      });
     }
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();

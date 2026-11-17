@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useAction } from '../../../../components/toast/use-action.ts';
+import { namesFields } from '../../../../components/toast/action-model.ts';
 import { agentHarness, type RegisteredAgent } from '../../../../api/agents.ts';
 import { renameDevice, type Device } from '../../../../api/devices.ts';
+import { ApiError } from '../../../../api/errors.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import { SidePanel } from '../../../../components/SidePanel.tsx';
 import { Spinner } from '../../../../components/Spinner.tsx';
@@ -43,7 +46,6 @@ export interface DeviceDetailsProps {
   readonly confirming: boolean;
   /** Its disconnect is under way: the button says so and does nothing. */
   readonly disconnecting: boolean;
-  readonly error: string | undefined;
   readonly onRecognise: () => void;
   readonly onDisconnect: () => void;
   /** One of its tools: that tool's details, on Tools. */
@@ -53,7 +55,6 @@ export interface DeviceDetailsProps {
   readonly onChanged: (agent: RegisteredAgent) => void;
   /** *Rename…* saved: the device as the server now has it, its tools relabelled. */
   readonly onRenamed: (device: Device) => void;
-  readonly announce: (message: string) => void;
   readonly onClose: () => void;
   readonly restore: () => HTMLElement | null | undefined;
 }
@@ -93,14 +94,12 @@ export function DeviceDetails({
   canManage,
   confirming,
   disconnecting,
-  error,
   onRecognise,
   onDisconnect,
   onOpenTool,
   onAddTool,
   onChanged,
   onRenamed,
-  announce,
   onClose,
   restore,
 }: DeviceDetailsProps) {
@@ -282,8 +281,8 @@ export function DeviceDetails({
                           <RenameForm
                             agent={agent}
                             onSaved={(saved) => {
+                              // `RenameForm` says it in a toast (LAI-1310).
                               onChanged(saved);
-                              announce(`Renamed to ${saved.display_name}.`);
                               stopRenaming();
                             }}
                             onCancel={stopRenaming}
@@ -347,12 +346,6 @@ export function DeviceDetails({
                 </div>
               </NoteBlock>
             </div>
-          )}
-
-          {error !== undefined && (
-            <p className="agents-error" role="alert">
-              {error}
-            </p>
           )}
         </div>
 
@@ -456,7 +449,6 @@ export function DeviceDetails({
                     device={device}
                     onSaved={(saved) => {
                       onRenamed(saved);
-                      announce(`Renamed to ${saved.display_name}.`);
                       stopRenamingDevice();
                     }}
                     onCancel={stopRenamingDevice}
@@ -508,6 +500,7 @@ function DeviceRenameForm({
   const [name, setName] = useState(device.display_name);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const input = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     input.current?.focus();
@@ -519,21 +512,29 @@ function DeviceRenameForm({
     if (problem !== undefined || unchanged || pending) return;
     setPending(true);
     setError(undefined);
-    renameDevice(device.id, name.trim())
-      .then(onSaved)
-      .catch((cause: unknown) => {
-        setError(
-          cause instanceof Error && cause.message !== ''
-            ? cause.message
-            : 'Could not rename that device.',
-        );
+    const was = device.display_name;
+    void run({
+      do: () => renameDevice(device.id, name.trim()),
+      success: (saved) => `Renamed to ${saved.display_name}`,
+      // A name is one field: putting the old one back is the same call.
+      undo: async () => {
+        onSaved(await renameDevice(device.id, was));
+        return `Renamed back to ${was}`;
+      },
+      failure: 'Couldn’t rename device',
+      onError: (cause) => {
+        // A name another device holds is about the field: said under it too.
+        if (cause instanceof ApiError && (namesFields(cause) || cause.status === 409)) {
+          setError(cause.message);
+        }
         // *Save* was disabled under focus while it waited: back to the name,
         // so the reader can correct it and Escape still reaches the form.
         input.current?.focus();
-      })
-      .finally(() => {
-        setPending(false);
-      });
+      },
+    }).then((saved) => {
+      setPending(false);
+      if (saved !== undefined) onSaved(saved);
+    });
   };
   return (
     <form

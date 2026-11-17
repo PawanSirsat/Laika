@@ -48,7 +48,8 @@ const tokenView = (id: string, name: string) => ({
 
 const ONCE = 'lai_refine_secret_shown_once';
 
-const result = (page: Page) => page.locator('[data-result]');
+/** What a write said: the app's toast since LAI-1310 replaced the result note. */
+const result = (page: Page) => page.locator('[data-toast]');
 const stale = (page: Page) => page.locator('[data-stale]');
 const deletes = (calls: readonly StubCall[]) => calls.filter((c) => c.method === 'DELETE');
 
@@ -92,7 +93,7 @@ void describe('Advanced: revoking a personal credential', () => {
     }
   });
 
-  void test('confirming DELETEs it and says so on screen, until dismissed', async () => {
+  void test('confirming DELETEs it and says so in a toast, until dismissed', async () => {
     const h = await open('/developer?tab=advanced', advanced());
     try {
       const row = h.page.locator('.dev-adv-row', { hasText: 'nightly-export' });
@@ -106,12 +107,11 @@ void describe('Advanced: revoking a personal credential', () => {
         ['/api/v1/tokens/t1'],
       );
       await result(h.page).waitFor({ timeout: 10_000 });
-      assert.match(
-        await result(h.page).innerText(),
-        /Revoked “nightly-export”\. Anything using it has stopped working\./,
-      );
+      assert.match(await result(h.page).innerText(), /Revoked “nightly-export”/);
+      // No Undo: a revoked token cannot be restored.
+      assert.equal(await result(h.page).getByRole('button', { name: 'Undo' }).count(), 0);
       await result(h.page)
-        .getByRole('button', { name: /^Dismiss: Revoked/ })
+        .getByRole('button', { name: /^Dismiss/ })
         .click();
       await result(h.page).waitFor({ state: 'detached', timeout: 5_000 });
     } finally {
@@ -144,10 +144,9 @@ void describe('Advanced: a one-time secret', () => {
       await saved.click();
       await reveal.waitFor({ state: 'detached', timeout: 5_000 });
       assert.doesNotMatch(await h.page.content(), new RegExp(ONCE));
-      assert.match(
-        await result(h.page).innerText(),
-        /“release-bot” is ready to use\. Its secret is hidden now and cannot be shown again\./,
-      );
+      await result(h.page)
+        .filter({ hasText: '“release-bot” is ready to use' })
+        .waitFor({ timeout: 5_000 });
       assert.equal(await leavingAsks(h.page), false, 'leaving still asks with nothing to lose');
       await until(() => create.evaluate((el) => el === document.activeElement).catch(() => false));
       assert.equal(await create.evaluate((el) => el === document.activeElement), true);
@@ -196,10 +195,7 @@ void describe('Devices: disconnect, then a re-read that fails', () => {
       await until(() => h.calls.some((c) => c.path === '/api/v1/agents/devices/revoke'));
 
       await result(h.page).waitFor({ timeout: 10_000 });
-      assert.match(
-        await result(h.page).innerText(),
-        /Belka disconnected: 3 tools revoked\. Their credentials no longer work\./,
-      );
+      assert.match(await result(h.page).innerText(), /Belka disconnected · 3 tools revoked/);
 
       // The re-read failed: the list stays, with the notice and Retry — not an error in its place.
       await stale(h.page).waitFor({ timeout: 10_000 });

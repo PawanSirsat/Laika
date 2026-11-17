@@ -4,6 +4,7 @@ import { updateSpace } from '../../../api/space-settings.ts';
 import { Button } from '../../../components/forms/Button.tsx';
 import { TextInput } from '../../../components/forms/TextInput.tsx';
 import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 
 export interface DangerTabProps {
   readonly project: Project;
@@ -34,9 +35,10 @@ export function DangerTab({ project, mayArchive, onSaved, onNavigate }: DangerTa
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState('');
   const [failure, setFailure] = useState<string | undefined>(undefined);
-  /** What the last change did, said once the server confirms it. */
-  const [done, setDone] = useState<'archived' | 'restored' | undefined>(undefined);
+  /** An archive just landed: where the space now lives, which a toast cannot link. */
+  const [done, setDone] = useState<'archived' | undefined>(undefined);
   const status = useSaveStatus();
+  const { run } = useAction();
   const busy = status.state.kind === 'saving';
   const archiveButton = useRef<HTMLButtonElement | null>(null);
   const archived = project.archived_at !== null;
@@ -49,27 +51,45 @@ export function DangerTab({ project, mayArchive, onSaved, onNavigate }: DangerTa
   };
 
   // The whole save — its answer handled too — is what Retry runs again.
+  // Archiving and restoring toast too (LAI-1310). Archiving offers Undo —
+  // restoring asks nothing, so putting it back is the same click; restoring
+  // offers none, because archiving again is behind the typed confirmation.
   const set = (next: boolean): void => {
-    status
-      .run(() => {
-        setFailure(undefined);
-        setDone(undefined);
-        return updateSpace(project.slug, { archived: next }).then(
-          (updated) => {
-            setConfirming(false);
-            setTyped('');
-            setDone(next ? 'archived' : 'restored');
-            onSaved(updated);
-          },
-          (cause: unknown) => {
-            setFailure(cause instanceof Error ? cause.message : 'Nothing changed');
-            throw cause;
-          },
-        );
-      })
-      .catch(() => {
-        // Said beside the control, by the status and the message above.
-      });
+    void run({
+      do: () =>
+        status.run(() => {
+          setFailure(undefined);
+          setDone(undefined);
+          return updateSpace(project.slug, { archived: next }).then(
+            (updated) => {
+              setConfirming(false);
+              setTyped('');
+              // Only an archive leaves a note: it says where the space now lives.
+              setDone(next ? 'archived' : undefined);
+              onSaved(updated);
+              return updated;
+            },
+            (cause: unknown) => {
+              setFailure(cause instanceof Error ? cause.message : 'Nothing changed');
+              throw cause;
+            },
+          );
+        }),
+      success: next ? `${project.name} archived` : `${project.name} restored`,
+      ...(next
+        ? {
+            undo: async () => {
+              const back = await updateSpace(project.slug, { archived: false });
+              setDone(undefined);
+              onSaved(back);
+              return `${project.name} restored`;
+            },
+          }
+        : {}),
+      failure: next ? 'Couldn’t archive the space' : 'Couldn’t restore the space',
+      retry: () => set(next),
+      mark: 'space-archive',
+    });
   };
 
   const archivedLink = (
@@ -204,14 +224,8 @@ export function DangerTab({ project, mayArchive, onSaved, onNavigate }: DangerTa
       {done !== undefined && (
         <footer className="ss-card-foot ss-card-foot-note">
           <p className="ss-notice" role="status" data-danger-result={done}>
-            {done === 'archived' ? (
-              <>
-                {project.name} is archived and its board is read-only. Restore it here at any time,
-                or from {archivedLink}.
-              </>
-            ) : (
-              <>{project.name} is restored and open for work again.</>
-            )}
+            {project.name} is archived and its board is read-only. Restore it here at any time, or
+            from {archivedLink}.
           </p>
         </footer>
       )}

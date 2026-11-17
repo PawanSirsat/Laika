@@ -9,6 +9,8 @@ import { SubtasksSection } from './SubtasksSection.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 import './task-panel.css';
 
 export interface LinksCardProps {
@@ -60,18 +62,47 @@ export function LinksCard({
   onChanged,
 }: LinksCardProps) {
   const now = Date.now();
+  /** A refusal that names a field (a 422): shown here, where it is fixed. */
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
-  /** A field edit, with the server's reason shown when it refuses. */
-  const edit = async (patch: Parameters<typeof updateTask>[1]): Promise<void> => {
+  /**
+   * A field set or cleared by its own Save or `×`, an explicit action: it
+   * says what it did in a toast, with Undo back to the old value — the same
+   * PATCH, which the server can really reverse (LAI-1310). Resolves whether
+   * it saved, so a refused one keeps its field open.
+   */
+  const edit = async (
+    patch: Parameters<typeof updateTask>[1],
+    words: {
+      readonly success: string;
+      readonly failure: string;
+      readonly undo: Parameters<typeof updateTask>[1];
+      readonly undone: string;
+    },
+  ): Promise<boolean> => {
     setError(undefined);
-    try {
-      await updateTask(task.id, patch);
-      onChanged();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save that. Try again.');
-    }
+    const saved = await run({
+      do: () => updateTask(task.id, patch),
+      success: words.success,
+      failure: words.failure,
+      undo: async () => {
+        await updateTask(task.id, words.undo);
+        onChanged();
+        return words.undone;
+      },
+      onError: (cause) => {
+        if (namesFields(cause) && cause instanceof Error) setError(cause.message);
+      },
+    });
+    if (saved === undefined) return false;
+    onChanged();
+    return true;
   };
+  const keyOf = (id: string | null): string =>
+    id === null ? 'no parent' : id === parent?.id ? parent.key : (byId.get(id)?.key ?? 'a task');
+  const dateWords = (label: string, ms: number | null): string =>
+    ms === null ? `${label} cleared` : `${label} set to ${dateLabel(ms)}`;
 
   /*
    * One level (D-066): a task that has subtasks cannot be given a parent, so
@@ -98,7 +129,24 @@ export function LinksCard({
             candidates={parentCandidates}
             mayEdit={mayEdit}
             onOpen={onOpen}
-            onChange={(parentId) => edit({ parent_task_id: parentId })}
+            onChange={(parentId) =>
+              edit(
+                { parent_task_id: parentId },
+                {
+                  success:
+                    parentId === null
+                      ? `${task.key} detached from ${keyOf(task.parent_task_id)}`
+                      : `${task.key} now under ${keyOf(parentId)}`,
+                  failure:
+                    parentId === null ? `Couldn’t detach ${task.key}` : 'Couldn’t set the parent',
+                  undo: { parent_task_id: task.parent_task_id },
+                  undone:
+                    task.parent_task_id === null
+                      ? `${task.key} has no parent again`
+                      : `${task.key} back under ${keyOf(task.parent_task_id)}`,
+                },
+              )
+            }
           />
         )}
 
@@ -134,7 +182,20 @@ export function LinksCard({
           value={task.due_on}
           overdue={isOverdue(task, now)}
           mayEdit={mayEdit}
-          onChange={(ms) => edit({ due_on: ms })}
+          onChange={(ms) =>
+            edit(
+              { due_on: ms },
+              {
+                success: dateWords('Due date', ms),
+                failure: 'Couldn’t save the due date',
+                undo: { due_on: task.due_on },
+                undone:
+                  task.due_on === null
+                    ? 'Due date cleared again'
+                    : `Due date back to ${dateLabel(task.due_on)}`,
+              },
+            )
+          }
         />
 
         <DateRow
@@ -143,7 +204,20 @@ export function LinksCard({
           value={task.planned_start}
           overdue={false}
           mayEdit={mayEdit}
-          onChange={(ms) => edit({ planned_start: ms })}
+          onChange={(ms) =>
+            edit(
+              { planned_start: ms },
+              {
+                success: dateWords('Planned start', ms),
+                failure: 'Couldn’t save the planned start',
+                undo: { planned_start: task.planned_start },
+                undone:
+                  task.planned_start === null
+                    ? 'Planned start cleared again'
+                    : `Planned start back to ${dateLabel(task.planned_start)}`,
+              },
+            )
+          }
         />
 
         {error !== undefined && (
@@ -162,7 +236,8 @@ interface ParentRowProps {
   readonly candidates: readonly TaskSummary[];
   readonly mayEdit: boolean;
   readonly onOpen: (taskId: string) => void;
-  readonly onChange: (parentId: string | null) => Promise<void>;
+  /** Resolves whether it saved: a refused one keeps the picker open. */
+  readonly onChange: (parentId: string | null) => Promise<boolean>;
 }
 
 /**
@@ -179,9 +254,10 @@ function ParentRow({ task, parent, candidates, mayEdit, onOpen, onChange }: Pare
   const run = async (parentId: string | null): Promise<void> => {
     setBusy(true);
     try {
-      await onChange(parentId);
-      setPicking(false);
-      setPicked('');
+      if (await onChange(parentId)) {
+        setPicking(false);
+        setPicked('');
+      }
     } finally {
       setBusy(false);
     }
@@ -295,7 +371,8 @@ interface DateRowProps {
   readonly value: number | null;
   readonly overdue: boolean;
   readonly mayEdit: boolean;
-  readonly onChange: (ms: number | null) => Promise<void>;
+  /** Resolves whether it saved: a refused one keeps the input open. */
+  readonly onChange: (ms: number | null) => Promise<boolean>;
 }
 
 /**
@@ -312,8 +389,7 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
   const run = async (ms: number | null): Promise<void> => {
     setBusy(true);
     try {
-      await onChange(ms);
-      setEditing(false);
+      if (await onChange(ms)) setEditing(false);
     } finally {
       setBusy(false);
     }

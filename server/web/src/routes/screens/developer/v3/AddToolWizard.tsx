@@ -54,6 +54,8 @@ import { SectionTitle } from './SectionTitle.tsx';
 import '../../connect/connect.css';
 import './add-wizards.css';
 import { Icon } from '../../../../components/icon/Icon.tsx';
+import { useAction } from '../../../../components/toast/use-action.ts';
+import { isAbort } from '../../../../components/toast/action-model.ts';
 
 export interface AddToolWizardProps {
   readonly devices: readonly Device[] | undefined;
@@ -165,6 +167,7 @@ export function AddToolWizard({
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<ToolRefusal | undefined>(undefined);
+  const { run } = useAction();
   const [verification, setVerification] = useState<AgentVerification | undefined>(undefined);
   const [pollTrouble, setPollTrouble] = useState<string | undefined>(undefined);
   const changed = useRef(false);
@@ -202,6 +205,37 @@ export function AddToolWizard({
     [devices, onExchange],
   );
 
+  /**
+   * Make or remake a tool's setup command, said as a toast (LAI-1310). A
+   * refusal is an error toast in `toolRefusal`'s words; only one that offers
+   * a way on — the duplicates to resolve, the device to pair first — also
+   * stays in the wizard, because a toast cannot hold those links.
+   */
+  const setUp = useCallback(
+    async (
+      call: () => Promise<Parameters<typeof begin>[0]>,
+      name: string,
+      success: string,
+    ): Promise<void> => {
+      setBusy(true);
+      setRefusal(undefined);
+      const made = await run({
+        do: () =>
+          call().catch((cause: unknown) => {
+            if (isAbort(cause)) throw cause;
+            const why = toolRefusal(cause, name);
+            if ((why.duplicates?.length ?? 0) > 0 || why.needsPairing === true) setRefusal(why);
+            throw new Error(why.message);
+          }),
+        success,
+        failure: 'Couldn’t set up tool',
+      });
+      setBusy(false);
+      if (made !== undefined) begin(made);
+    },
+    [run, begin],
+  );
+
   // A reconnect, or an exchange to resume: once the devices are in, once — and
   // only what the address said when the wizard opened. The exchange this page
   // makes goes into the address too, and is not one to resume.
@@ -224,30 +258,18 @@ export function AddToolWizard({
         });
     } else if (reconnecting !== undefined) {
       started.current = true;
-      setBusy(true);
-      reconnectAgent(reconnecting)
-        .then(begin)
-        .catch((cause: unknown) => {
-          setRefusal(toolRefusal(cause, 'this tool'));
-        })
-        .finally(() => {
-          setBusy(false);
-        });
+      void setUp(() => reconnectAgent(reconnecting), 'this tool', 'New setup command ready');
     }
-  }, [devices, opened, begin, onExchange]);
+  }, [devices, opened, begin, onExchange, setUp]);
 
   const add = (): void => {
     if (device === undefined || tool === undefined) return;
-    setBusy(true);
-    setRefusal(undefined);
-    addToolToDevice(device.id, tool.harness)
-      .then(begin)
-      .catch((cause: unknown) => {
-        setRefusal(toolRefusal(cause, tool.name));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    // The command stays in the wizard, to copy; the toast says it was made.
+    void setUp(
+      () => addToolToDevice(device.id, tool.harness),
+      tool.name,
+      `${tool.name} added to ${device.display_name}`,
+    );
   };
 
   // The checks, asked again with backoff until the tool is Ready.
@@ -339,6 +361,9 @@ export function AddToolWizard({
       icon: 'warning',
     }).then((yes) => {
       if (!yes) return;
+      // Deliberately silent (LAI-1310): the reader asked to leave, and the
+      // wizard going is the answer. A failed cancel changes nothing they can
+      // act on — the command expires on its own within ten minutes.
       cancelToolSetup(open.id)
         .catch(() => undefined)
         .finally(then);
@@ -546,18 +571,14 @@ export function AddToolWizard({
               className="bar-control"
               disabled={busy}
               onClick={() => {
-                setBusy(true);
-                (reconnectId === undefined
-                  ? addToolToDevice(d.id, t.harness)
-                  : reconnectAgent(setup.agent.id)
-                )
-                  .then(begin)
-                  .catch((cause: unknown) => {
-                    setRefusal(toolRefusal(cause, t.name));
-                  })
-                  .finally(() => {
-                    setBusy(false);
-                  });
+                void setUp(
+                  () =>
+                    reconnectId === undefined
+                      ? addToolToDevice(d.id, t.harness)
+                      : reconnectAgent(setup.agent.id),
+                  t.name,
+                  'New setup command ready',
+                );
               }}
             >
               Get a new command

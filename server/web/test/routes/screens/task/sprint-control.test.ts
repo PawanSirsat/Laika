@@ -53,9 +53,10 @@ void describe('the task panel can change a sprint', () => {
      * that needs `removeTaskFromSprint`. Asserting both keeps a later
      * "simplification" from collapsing them.
      */
-    assert.match(panel, /addTasksToSprint\(sprintId, \[task\.id\]\)/, 'assigning is gone');
-    assert.match(panel, /removeTaskFromSprint\(task\.sprint_id, task\.id\)/, 'clearing is gone');
-    assert.match(panel, /sprintId === null/, 'the two paths are no longer distinguished');
+    // One writer for both directions since LAI-1310, so Undo can call it back.
+    assert.match(panel, /addTasksToSprint\(to, \[task\.id\]\)/, 'assigning is gone');
+    assert.match(panel, /removeTaskFromSprint\(from, task\.id\)/, 'clearing is gone');
+    assert.match(panel, /to === null/, 'the two paths are no longer distinguished');
   });
 
   void test('the control asks the policy, and does not invent an answer', () => {
@@ -65,10 +66,16 @@ void describe('the task panel can change a sprint', () => {
     assert.match(meta, /disabled=\{sprintBusy \|\| !maySetSprint\}/, 'a Viewer can edit it');
   });
 
-  void test('a refusal is shown, in the server words', () => {
-    // A closed sprint refuses with a reason. Inventing one here would tell the
-    // reader something the server did not say.
-    assert.match(panel, /cause instanceof ApiError \? cause\.message/);
-    assert.match(meta, /sprintError !== undefined/, 'the reason is never rendered');
+  void test('a change and a refusal are said in a toast, in the server words', () => {
+    // A closed sprint refuses with a reason. Since LAI-1310 the change goes
+    // through `useAction().run`, whose error toast carries the server's own
+    // sentence as its detail (`action-model.ts`'s `detailOf`, unit-tested
+    // there) — so this pins that the sprint change is run through it.
+    assert.match(
+      panel,
+      /action\.run\(\{\s*do: \(\) => writeSprint\(from, sprintId\)/,
+      'the sprint change no longer reports through useAction',
+    );
+    assert.match(panel, /failure: 'Couldn’t change the sprint'/, 'a refusal is not toasted');
   });
 });

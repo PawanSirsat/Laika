@@ -18,17 +18,22 @@ import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx'
 import { Button } from '../../../components/forms/Button.tsx';
 import { PasswordInput } from '../../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../../components/forms/TextInput.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import {
   companyAddress,
   connectedLine,
   countsLine,
   heldBy,
+  hrCause,
   initialChoice,
   isHttpsAddress,
+  mappedLine,
   mappingChanges,
   NOT_ON_LAIKA,
   peopleToReview,
   pruneChoices,
+  syncedLine,
+  syncFailure,
   twoFactorMethodName,
   twoFactorWords,
 } from './hr-derive.ts';
@@ -77,6 +82,11 @@ const STATUS_WORDS: Readonly<Record<HrSource['status'], string>> = {
  * browser's saved Laika password out), and the server never answers either.
  * The password is forgotten after its one sign-in; the token Laika keeps,
  * encrypted, is shown as its last four.
+ *
+ * Every action toasts (LAI-1310) — connect, the code, sync, disconnect and
+ * the people map — in Clan's words when Clan refused. None offers Undo: a
+ * forgotten token cannot be remembered, and a sync or a map moves leave the
+ * server does not move back.
  */
 export function HrSourceSection({ members }: HrSourceSectionProps) {
   const confirm = useConfirm();
@@ -93,7 +103,7 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
   const [code, setCode] = useState('');
   const [method, setMethod] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState<Busy | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run: act } = useAction();
   const [choices, setChoices] = useState<Readonly<Record<string, string>>>({});
   const [now, setNow] = useState(() => Date.now());
 
@@ -143,23 +153,31 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
     );
   }
 
-  /** Each call takes the control it names, and answers the view it changed. */
-  const run = (which: Busy, call: () => Promise<HrSource>): Promise<HrSource | undefined> => {
+  /**
+   * Each call takes the control it names, says how it went, and answers the
+   * view it changed — `undefined` when it did not.
+   */
+  const run = (
+    which: Busy,
+    words: { readonly success: string | ((answer: HrSource) => string); readonly failure: string },
+    call: () => Promise<HrSource>,
+  ): Promise<HrSource | undefined> => {
     setBusy(which);
-    setError(undefined);
-    return call()
-      .then((answer) => {
+    return act({
+      do: () =>
+        call().catch((cause: unknown) => {
+          throw hrCause(cause);
+        }),
+      ...words,
+      mark: `hr-toast-${which}`,
+    }).then((answer) => {
+      setBusy(undefined);
+      if (answer !== undefined) {
         setView(answer);
         setNow(Date.now());
-        return answer;
-      })
-      .catch((cause: unknown) => {
-        setError(hrRefusal(cause));
-        return undefined;
-      })
-      .finally(() => {
-        setBusy(undefined);
-      });
+      }
+      return answer;
+    });
   };
 
   const connect = (): void => {
@@ -176,7 +194,15 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
     // Gone from the form whatever the answer: kept nowhere, shown never again.
     setPassword('');
     setToken('');
-    void run('connect', () => connectHr(sent)).then((answer) => {
+    void run(
+      'connect',
+      {
+        success: (answer) =>
+          answer.status === 'connected' ? 'Clan connected' : 'Clan asked for a code',
+        failure: 'Couldn’t connect Clan',
+      },
+      () => connectHr(sent),
+    ).then((answer) => {
       if (answer === undefined) return;
       setConnecting(false);
       setCode('');
@@ -187,29 +213,37 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
   const verify = (): void => {
     const chosen = method ?? view.two_factor?.methods[0];
     if (chosen === undefined) return;
-    setBusy('verify');
-    setError(undefined);
-    verifyHr({ method: chosen, code: code.trim() })
-      .then((answer) => {
-        setView(answer);
+    let expired = false;
+    void run('verify', { success: 'Clan connected', failure: 'Couldn’t check the code' }, () =>
+      verifyHr({ method: chosen, code: code.trim() }).catch((cause: unknown) => {
+        expired = refusedFor(cause, 'two_factor_expired');
+        throw cause;
+      }),
+    ).then((answer) => {
+      if (answer !== undefined) setCode('');
+      // Ten minutes are up: the pending sign-in is gone, so is the code form.
+      if (expired) {
         setCode('');
-        setNow(Date.now());
-      })
-      .catch((cause: unknown) => {
-        setError(hrRefusal(cause));
-        // Ten minutes are up: the pending sign-in is gone, so is the code form.
-        if (refusedFor(cause, 'two_factor_expired')) {
-          setCode('');
-          setConnecting(true);
-        }
-      })
-      .finally(() => {
-        setBusy(undefined);
-      });
+        setConnecting(true);
+      }
+    });
   };
 
   const syncNow = (): void => {
-    void run('sync', syncHr);
+    void run(
+      'sync',
+      { success: (answer) => syncedLine(answer.last_result), failure: 'Sync failed' },
+      () =>
+        syncHr().then((answer) => {
+          // The server answers the view whether or not the sync went through;
+          // show it either way, and fail the toast when it did not.
+          setView(answer);
+          setNow(Date.now());
+          const failed = syncFailure(answer);
+          if (failed !== undefined) throw failed;
+          return answer;
+        }),
+    );
   };
 
   const disconnect = (): void => {
@@ -220,25 +254,21 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
       danger: true,
     }).then((yes) => {
       if (!yes) return;
-      setBusy('disconnect');
-      setError(undefined);
-      disconnectHr()
-        .then(() => getHrSource())
-        .then((answer) => {
-          setView(answer);
-          setChoices({});
-        })
-        .catch((cause: unknown) => {
-          setError(hrRefusal(cause));
-        })
-        .finally(() => {
-          setBusy(undefined);
-        });
+      void run(
+        'disconnect',
+        { success: 'Clan disconnected', failure: 'Couldn’t disconnect Clan' },
+        () => disconnectHr().then(() => getHrSource()),
+      ).then((answer) => {
+        if (answer !== undefined) setChoices({});
+      });
     });
   };
 
   const savePeople = (): void => {
-    void run('people', () => mapHrPeople(changes)).then((answer) => {
+    const n = changes.length;
+    void run('people', { success: mappedLine(n), failure: 'Couldn’t save the people' }, () =>
+      mapHrPeople(changes),
+    ).then((answer) => {
       if (answer !== undefined) setChoices({});
     });
   };
@@ -271,7 +301,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
             disabled={busy !== undefined}
             onClick={() => {
               setWay(option.way);
-              setError(undefined);
             }}
           >
             {option.label}
@@ -350,7 +379,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
             setPassword('');
             setToken('');
             setUrlError(undefined);
-            setError(undefined);
           }}
         >
           Cancel
@@ -387,7 +415,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
               variant="secondary"
               onClick={() => {
                 setConnecting(true);
-                setError(undefined);
               }}
             >
               Connect Clan
@@ -441,7 +468,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
                 onClick={() => {
                   setConnecting(true);
                   setCode('');
-                  setError(undefined);
                 }}
               >
                 Start again
@@ -461,7 +487,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
                 variant="secondary"
                 onClick={() => {
                   setConnecting(true);
-                  setError(undefined);
                 }}
               >
                 Connect again
@@ -542,7 +567,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
                     setEmail(view.account_email ?? '');
                     // The way it was connected: a pasted token carries no email.
                     setWay(view.account_email === null ? 'token' : 'sign_in');
-                    setError(undefined);
                   }}
                 >
                   Connect again
@@ -574,12 +598,6 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
               />
             )}
           </>
-        )}
-
-        {error !== undefined && (
-          <span className="org-fact-error" role="alert">
-            {error}
-          </span>
         )}
       </div>
     </section>

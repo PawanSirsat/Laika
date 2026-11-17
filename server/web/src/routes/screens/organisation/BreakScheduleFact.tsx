@@ -4,6 +4,7 @@ import { getTimeSettings, ISO_DAYS, setOrgBreaks, type BreakWindow } from '../..
 import { minuteClock, parseClock } from '../../../api/time-label.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { BREAK_KIND_NAMES, BREAK_PRESETS, breakKind } from '../break-kinds.ts';
 
 export interface BreakScheduleFactProps {
@@ -81,6 +82,10 @@ function issuesByWindow(cause: unknown): Map<number, string> {
  * Read from `GET /me/time-settings`, which every signed-in person may ask; set
  * whole by an owner or admin, signed in (`PUT /org/time/breaks`). Anyone else
  * reads it, and sees nothing when there is none.
+ *
+ * Saving toasts (LAI-1310), with Undo: the schedule is put whole, so putting
+ * the previous one back really reverses it. A window's refusal stays under
+ * that window; the toast points there.
  */
 export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
   const [breaks, setBreaks] = useState<readonly BreakWindow[] | undefined>(undefined);
@@ -88,6 +93,7 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
   const [busy, setBusy] = useState(false);
   const [issues, setIssues] = useState<ReadonlyMap<number, string>>(() => new Map());
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -112,34 +118,40 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
 
   const save = (): void => {
     if (drafts === undefined) return;
+    const previous = breaks;
     setBusy(true);
     setIssues(new Map());
     setError(undefined);
-    setOrgBreaks(
-      drafts.map((d) => ({
-        label: d.label.trim(),
-        start: d.start,
-        end: d.end,
-        days: [...d.days].sort((a, b) => a - b),
-      })),
-    )
-      .then((settings) => {
-        setBreaks(settings.breaks ?? []);
-        setDrafts(undefined);
-      })
-      .catch((cause: unknown) => {
+    void run({
+      do: () =>
+        setOrgBreaks(
+          drafts.map((d) => ({
+            label: d.label.trim(),
+            start: d.start,
+            end: d.end,
+            days: [...d.days].sort((a, b) => a - b),
+          })),
+        ),
+      success: 'Breaks saved',
+      undo: async () => {
+        const back = await setOrgBreaks(previous);
+        setBreaks(back.breaks ?? []);
+        return 'Breaks put back';
+      },
+      failure: 'Couldn’t save the breaks',
+      mark: 'org-breaks',
+      onError: (cause) => {
         const found = issuesByWindow(cause);
         setIssues(found);
-        const whole = found.get(-1);
-        if (whole !== undefined || found.size === 0) {
-          setError(
-            whole ?? (cause instanceof ApiError ? cause.message : 'The breaks did not save.'),
-          );
-        }
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+        // A refusal of the schedule as a whole has no window to sit under.
+        setError(found.get(-1));
+      },
+    }).then((settings) => {
+      setBusy(false);
+      if (settings === undefined) return;
+      setBreaks(settings.breaks ?? []);
+      setDrafts(undefined);
+    });
   };
 
   return (

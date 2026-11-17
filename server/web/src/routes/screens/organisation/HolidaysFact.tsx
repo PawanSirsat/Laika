@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  addHoliday,
-  hrRefusal,
-  listHolidays,
-  removeHoliday,
-  type OrgHoliday,
-} from '../../../api/hr.ts';
+import { addHoliday, listHolidays, removeHoliday, type OrgHoliday } from '../../../api/hr.ts';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import {
   coversOf,
   HOLIDAY_COVERS,
   holidayDayLabel,
   holidaysByYear,
   holidayWindow,
+  hrCause,
   localDay,
   withHoliday,
 } from './hr-derive.ts';
@@ -37,6 +33,10 @@ const MAX_LABEL = 120;
  *
  * Read from `GET /org/holidays`, which every member may ask. Absent when it
  * cannot be read, as the card's other facts are.
+ *
+ * Adding and removing toast (LAI-1310), each with Undo: a day added here is
+ * removed again, and one removed is added back as it was — the server keeps
+ * nothing else about a manual holiday.
  */
 export function HolidaysFact({ canManage }: HolidaysFactProps) {
   const [now] = useState(() => Date.now());
@@ -47,7 +47,7 @@ export function HolidaysFact({ canManage }: HolidaysFactProps) {
   const [label, setLabel] = useState('');
   /** `add`, or the id of the holiday being removed. */
   const [busy, setBusy] = useState<string | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,35 +74,51 @@ export function HolidaysFact({ canManage }: HolidaysFactProps) {
 
   const add = (): void => {
     setBusy('add');
-    setError(undefined);
-    addHoliday({ day, label: label.trim() })
-      .then((added) => {
-        setHolidays((list) => withHoliday(list ?? [], added));
-        setDay('');
-        setLabel('');
-        setAdding(false);
-      })
-      .catch((cause: unknown) => {
-        setError(hrRefusal(cause));
-      })
-      .finally(() => {
-        setBusy(undefined);
-      });
+    void run({
+      do: () =>
+        addHoliday({ day, label: label.trim() }).catch((cause: unknown) => {
+          throw hrCause(cause);
+        }),
+      success: (added) => `${added.label} added`,
+      undo: async (added) => {
+        await removeHoliday(added.id);
+        setHolidays((list) => list?.filter((h) => h.id !== added.id));
+        return `${added.label} removed`;
+      },
+      failure: 'Couldn’t add the holiday',
+      mark: 'holiday-added',
+    }).then((added) => {
+      setBusy(undefined);
+      if (added === undefined) return;
+      setHolidays((list) => withHoliday(list ?? [], added));
+      setDay('');
+      setLabel('');
+      setAdding(false);
+    });
   };
 
   const remove = (holiday: OrgHoliday): void => {
     setBusy(holiday.id);
-    setError(undefined);
-    removeHoliday(holiday.id)
-      .then(() => {
-        setHolidays((list) => list?.filter((h) => h.id !== holiday.id));
-      })
-      .catch((cause: unknown) => {
-        setError(hrRefusal(cause));
-      })
-      .finally(() => {
-        setBusy(undefined);
-      });
+    void run({
+      do: async () => {
+        await removeHoliday(holiday.id).catch((cause: unknown) => {
+          throw hrCause(cause);
+        });
+        return holiday;
+      },
+      success: `${holiday.label} removed`,
+      undo: async () => {
+        const back = await addHoliday({ day: holiday.day, label: holiday.label });
+        setHolidays((list) => withHoliday(list ?? [], back));
+        return `${holiday.label} put back`;
+      },
+      failure: 'Couldn’t remove the holiday',
+      mark: 'holiday-removed',
+    }).then((removed) => {
+      setBusy(undefined);
+      if (removed === undefined) return;
+      setHolidays((list) => list?.filter((h) => h.id !== holiday.id));
+    });
   };
 
   return (
@@ -224,7 +240,6 @@ export function HolidaysFact({ canManage }: HolidaysFactProps) {
                   disabled={busy === 'add'}
                   onClick={() => {
                     setAdding(false);
-                    setError(undefined);
                   }}
                 >
                   Cancel
@@ -237,7 +252,6 @@ export function HolidaysFact({ canManage }: HolidaysFactProps) {
                 variant="secondary"
                 onClick={() => {
                   setAdding(true);
-                  setError(undefined);
                 }}
               >
                 Add a holiday
@@ -250,11 +264,6 @@ export function HolidaysFact({ canManage }: HolidaysFactProps) {
             ? 'Everyone sees these. Clan’s are synced and change only in Clan; add your own for a day Clan does not list.'
             : 'Public and company holidays, synced from Clan or added by an owner or admin.'}
         </span>
-        {error !== undefined && (
-          <span className="org-fact-error" role="alert">
-            {error}
-          </span>
-        )}
       </dd>
     </div>
   );

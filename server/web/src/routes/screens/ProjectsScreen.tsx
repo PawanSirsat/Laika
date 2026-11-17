@@ -6,6 +6,7 @@ import { useTheme } from '../../theme/use-theme.ts';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { Button } from '../../components/forms/Button.tsx';
+import { useAction } from '../../components/toast/use-action.ts';
 import { Select } from '../../components/forms/Select.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
 import { useProjects } from '../../api/use-projects.ts';
@@ -119,14 +120,13 @@ export function ProjectsScreen({
     gates.org('project.archive') && gates.project(space.id, 'project.settings.edit');
   /** The space a join or restore is in flight for, so only its own button says so. */
   const [busy, setBusy] = useState<string | undefined>(undefined);
-  const [actionError, setActionError] = useState<string | undefined>(undefined);
+  /** Every join, restore, archive and create says how it went in a toast (LAI-1310). */
+  const { run } = useAction();
   const query = readSpacesQuery(params);
   const changeQuery = (patch: Partial<SpacesQuery>): void => {
     onParamsChange(writeSpacesQuery(params, patch));
   };
   const confirm = useConfirm();
-  /** What the last join, archive or restore did, said once (LAI-1196). */
-  const [notice, setNotice] = useState<string | undefined>(undefined);
 
   /**
    * Explicit membership from `me.memberships`, never from the summary's
@@ -152,29 +152,44 @@ export function ProjectsScreen({
   const sections = sectionsFor(split, query.filter, query.q, query.sort);
 
   /**
-   * A join or a restore, then a re-read: the lists decide membership and
-   * archiving, so neither is patched locally into a state the server never
-   * confirmed.
+   * A join, restore or archive, then a re-read: the lists decide membership
+   * and archiving, so neither is patched locally into a state the server
+   * never confirmed. The toast replaces LAI-1196's notice line.
    */
   const act = async (
     slug: string,
-    run: () => Promise<unknown>,
-    failed: string,
-    done: string,
+    call: () => Promise<unknown>,
+    words: {
+      readonly success: string;
+      readonly failure: string;
+      readonly undo?: () => Promise<string>;
+    },
   ): Promise<void> => {
     setBusy(slug);
-    setActionError(undefined);
-    setNotice(undefined);
-    try {
-      await run();
+    const reread = (): void => {
       list.reload();
       archivedList.reload();
-      setNotice(done);
-    } catch (cause) {
-      setActionError(cause instanceof ApiError ? cause.message : failed);
-    } finally {
-      setBusy(undefined);
-    }
+    };
+    const done = await run({
+      do: async () => {
+        await call();
+        return true;
+      },
+      success: words.success,
+      failure: words.failure,
+      ...(words.undo === undefined
+        ? {}
+        : {
+            undo: async () => {
+              const said = await (words.undo as () => Promise<string>)();
+              reread();
+              return said;
+            },
+          }),
+      mark: 'space-action',
+    });
+    setBusy(undefined);
+    if (done !== undefined) reread();
   };
 
   const handlers: SpaceHandlers = {
@@ -192,19 +207,17 @@ export function ProjectsScreen({
       onOpenSettings(space.slug);
     },
     onJoin: (space) => {
-      void act(
-        space.slug,
-        () => joinProject(space.slug),
-        'Could not join that space. Try again.',
-        `You joined ${space.name}. It is listed under Your spaces.`,
-      );
+      void act(space.slug, () => joinProject(space.slug), {
+        success: `You joined ${space.name}`,
+        failure: 'Couldn’t join the space',
+      });
     },
     onRestore: (space) => {
       void act(
         space.slug,
         () => setProjectArchived(space.slug, false),
-        'Could not restore that space. Try again.',
-        `${space.name} is restored and open for work again.`,
+        // No Undo: archiving again is behind its own confirmation.
+        { success: `${space.name} restored`, failure: 'Couldn’t restore the space' },
       );
     },
     /*
@@ -220,12 +233,15 @@ export function ProjectsScreen({
         danger: true,
       }).then((yes) => {
         if (!yes) return;
-        void act(
-          space.slug,
-          () => setProjectArchived(space.slug, true),
-          'Could not archive that space. Try again.',
-          `${space.name} is archived. Find it under Archived to restore it.`,
-        );
+        void act(space.slug, () => setProjectArchived(space.slug, true), {
+          success: `${space.name} archived`,
+          failure: 'Couldn’t archive the space',
+          // Restoring asks nothing and takes nothing away: a real reversal.
+          undo: async () => {
+            await setProjectArchived(space.slug, false);
+            return `${space.name} restored`;
+          },
+        });
       });
     },
   };
@@ -323,28 +339,36 @@ export function ProjectsScreen({
     setCreateError(null);
     setServerFields({});
 
-    try {
-      const project = await createProject({
-        name: name.trim(),
-        slug: slug.trim(),
-        prefix: prefix.trim().toUpperCase(),
-        visibility: visibility === 'public' ? 'public' : 'private',
-      });
-      list.add(project);
-      setName('');
-      setSlug('');
-      setPrefix('');
-      setTouched(false);
-      setEdited(false);
-      onOpen(project.slug);
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.code === 'unprocessable') {
-        setServerFields(fieldErrors(cause));
-      }
-      setCreateError(cause);
-    } finally {
-      setSubmitting(false);
-    }
+    // A refusal also stays above the form, with the fields marked; the toast
+    // says *see the highlighted field* when one is. No Undo: a space is
+    // archived, never deleted, and that is its own confirmed step.
+    const project = await run({
+      do: () =>
+        createProject({
+          name: name.trim(),
+          slug: slug.trim(),
+          prefix: prefix.trim().toUpperCase(),
+          visibility: visibility === 'public' ? 'public' : 'private',
+        }),
+      success: (made) => `${made.name} created`,
+      failure: 'Couldn’t create the space',
+      mark: 'space-created',
+      onError: (cause) => {
+        if (cause instanceof ApiError && cause.code === 'unprocessable') {
+          setServerFields(fieldErrors(cause));
+        }
+        setCreateError(cause);
+      },
+    });
+    setSubmitting(false);
+    if (project === undefined) return;
+    list.add(project);
+    setName('');
+    setSlug('');
+    setPrefix('');
+    setTouched(false);
+    setEdited(false);
+    onOpen(project.slug);
   };
 
   return (
@@ -556,15 +580,6 @@ export function ProjectsScreen({
                   : `No spaces match “${query.q.trim()}”.`}
               </p>
             )}
-
-          {actionError !== undefined && (
-            <p className="projects-error" role="alert">
-              {actionError}
-            </p>
-          )}
-          <p className="projects-notice" role="status" data-empty={notice === undefined}>
-            {notice}
-          </p>
 
           {contextFor !== undefined && (
             <ProjectContextPanel

@@ -29,6 +29,7 @@ import {
   whyNotActionable,
 } from './review-derive.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import './meeting-review.css';
 
 export interface MeetingReviewScreenProps {
@@ -63,6 +64,7 @@ export interface MeetingReviewScreenProps {
  */
 export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenProps) {
   const confirm = useConfirm();
+  const { run } = useAction();
   const [reviews, setReviews] = useState<readonly MeetingReview[] | undefined>(undefined);
   const [openId, setOpenId] = useState<string | undefined>(undefined);
   const [detail, setDetail] = useState<MeetingReviewDetail | undefined>(undefined);
@@ -94,7 +96,6 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
   const [sent, setSent] = useState<ReadonlySet<string>>(new Set());
   const [result, setResult] = useState<ApplyResult | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | undefined>(undefined);
   /** Bumped by Retry on a failed read, which asks for the list again (LAI-1207). */
   const [attempt, setAttempt] = useState(0);
 
@@ -132,7 +133,6 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
     // across would let somebody apply something they ticked on another meeting.
     setAccepted(new Set());
     setResult(undefined);
-    setActionError(undefined);
     getMeetingReview(openId, controller.signal)
       .then(setDetail)
       .catch((cause: unknown) => {
@@ -186,24 +186,27 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
     });
   };
 
-  const apply = (): void => {
+  const apply = async (): Promise<void> => {
     if (detail === undefined || accepted.size === 0) return;
+    const id = detail.id;
     setBusy(true);
-    setActionError(undefined);
     const submitted = new Set(accepted);
-    applyMeetingReview(detail.id, [...submitted])
-      .then((applied) => {
-        setSent(submitted);
-        setResult(applied);
-        return getMeetingReview(detail.id);
-      })
-      .then(setDetail)
-      .catch((cause: unknown) => {
-        setActionError(cause instanceof Error ? cause.message : 'Could not apply that review.');
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    // The toast gives the count; each proposal's own outcome stays on its
+    // row, because a toast cannot say which ones were refused and why.
+    const done = await run({
+      do: async () => {
+        const applied = await applyMeetingReview(id, [...submitted]);
+        return { applied, fresh: await getMeetingReview(id) };
+      },
+      success: ({ applied }) =>
+        `Applied ${String(applied.applied.length)} of ${String(submitted.size)} proposals`,
+      failure: 'Couldn’t apply review',
+    });
+    setBusy(false);
+    if (done === undefined) return;
+    setSent(submitted);
+    setResult(done.applied);
+    setDetail(done.fresh);
   };
 
   const discard = (): void => {
@@ -214,18 +217,24 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
       confirmLabel: 'Discard proposals',
       danger: true,
     }).then((yes) => {
-      if (yes) discardNow();
+      if (yes) void discardNow();
     });
   };
 
-  const discardNow = (): void => {
+  const discardNow = async (): Promise<void> => {
     if (detail === undefined) return;
-    discardMeetingReview(detail.id)
-      .then(() => getMeetingReview(detail.id))
-      .then(setDetail)
-      .catch((cause: unknown) => {
-        setActionError(cause instanceof Error ? cause.message : 'Could not discard that review.');
-      });
+    const id = detail.id;
+    // No Undo: the confirm says it cannot be applied afterwards, and the
+    // server has no way back from discarded.
+    const fresh = await run({
+      do: async () => {
+        await discardMeetingReview(id);
+        return getMeetingReview(id);
+      },
+      success: 'Review discarded',
+      failure: 'Couldn’t discard review',
+    });
+    if (fresh !== undefined) setDetail(fresh);
   };
 
   const blocked = detail === undefined ? undefined : whyNotActionable(detail);
@@ -291,12 +300,6 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                   </p>
                 )}
 
-                {actionError !== undefined && (
-                  <p className="mr-error" role="alert">
-                    {actionError}
-                  </p>
-                )}
-
                 <ul className="mr-proposals">
                   {detail.proposals.map((proposal) => (
                     <ProposalRow
@@ -340,7 +343,9 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                         disabled={busy || accepted.size === 0}
                         // Why it is off is the count beside it (LAI-1213).
                         aria-describedby={accepted.size === 0 ? 'mr-count' : undefined}
-                        onClick={apply}
+                        onClick={() => {
+                          void apply();
+                        }}
                       >
                         {busy && <Spinner size="sm" />}
                         {`Apply ${String(accepted.size)}`}
