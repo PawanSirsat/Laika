@@ -66,7 +66,6 @@ commits only, not pushed.
   screen, because the space's title row left the 48px top bar for the page.
 - `connect-golden`: `normalise` now maps React 19 `_r_…_` and Tooltip
   `tip-r…` ids; regenerated (two html digests; aria and styles unchanged).
-- `b06b0dc2` (its message is `fix(web): sidebar identity gap…`) was committed
-  and amended by a process other than this session, from files this session
-  had staged; it also carries this file's pure move to review/. Not rewritten.
+- The sidebar identity gap fix and test tightening landed as `4ee24cd6`. An
+  intermediate `b06b0dc2` was split back out before anything was pushed.
 
