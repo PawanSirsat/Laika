@@ -37,7 +37,7 @@ The design commitments that follow from that:
 ### 1.1 Non-goals for v1 — do not build
 
 Multi-org / multi-tenant hosting, Postgres, WebSockets, custom fields, a plugin
-system of our own, mobile apps, SSO/SAML/SCIM, zero-downtime deploys, **story
+system of our own, mobile apps, SAML and SCIM, zero-downtime deploys, **story
 points**, time tracking, and email as a *primary* interface (transactional
 invite mail only).
 
@@ -83,6 +83,16 @@ and names with the `LAIKA_S3_*` variables (§11.7). A board that names none has
 no attachments and behaves as before. The bytes never pass through Laika: the
 browser uploads to the store and reads from it through short-lived URLs Laika
 signs (§13.1, §13.4).
+
+**Changed 2026-11-18 (D-158).** *SSO* was on this list and is not any more, in
+one shape: **Microsoft Entra ID sign-in for one tenant**, opt-in per deployment
+with the `LAIKA_MICROSOFT_*` variables (§11.7). With them set, Microsoft is the
+only way in; a person is linked to their account by email, and a new person
+still needs an invite to the address Microsoft asserts (D-004). An optional
+directory sync adds the tenant's enabled members (§11.6). SAML, SCIM and any
+second identity provider stay out. It runs on the Ksage line only (D-156);
+a board that sets none of the variables signs in with email and password as
+before.
 
 ---
 
@@ -749,6 +759,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 | `system.hr.sync` | §11.6: holidays and leave from the organisation's HR system, every 30 minutes and once at boot (§4.88 – §4.91, D-149, LAI-1181) |
 | `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
+| `system.directory.sync` | §11.6: every enabled Member of the Microsoft directory added as a `member`, every 15 minutes and once at boot, while `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on; *Sync now* runs the same code after asking the person `org.settings.edit` (D-158, LAI-1239, LAI-1317) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -4384,6 +4395,8 @@ PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
+GET    /api/v1/org/sso                       how people sign in → { sign_in: email | microsoft, microsoft: { tenant_id, client_id, redirect_uri, directory_sync: { enabled, every_minutes, last_run: { at, ok, added, existing, error } | null } } | null }; microsoft null on a password board. Never the client secret, not even masked. Read only: sign-in is set by environment (§11.7), so nothing here can lock anyone out   (owner, admin — org.settings.edit; D-158, LAI-1239)
+POST   /api/v1/org/sso/directory-sync        body {} — runs the directory sync now (§11.6) → the same body, last_run the run it just made; a failed read is last_run { ok: false, error: <code> }, never Microsoft's text, not an error response; 409 conflict when LAIKA_MICROSOFT_DIRECTORY_SYNC is off   (owner, admin — org.settings.edit)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
 GET    /api/v1/org/overview                  people seen this week and open / in review / blocked / overdue counts over the spaces the caller can read → { people, tasks }   (viewer+; LAI-986)
 GET    /api/v1/org/permissions               what each org role is granted → { roles, capabilities, grants, owner_locked, updated_at, updated_by }   (viewer+; LAI-958)
@@ -8041,6 +8054,17 @@ One interval-driven scheduler in the same process:
   `system.hr.sync`. **A run never overlaps another** — *Sync now* joins one
   already running. No `activity` row: the connection carries its time, counts
   and last error
+- **directory sync** (D-158, LAI-1239) — every 15 minutes **and once at
+  boot**, only while `LAIKA_MICROSOFT_DIRECTORY_SYNC` is on (§11.7): the
+  Microsoft tenant's enabled **Member** accounts — no guests, no disabled
+  accounts — read through Graph's `/users` with the app's own token, and each
+  one Laika has no account for, by lowercased email, added as a `member` with
+  no password, one `member.added` row each (`via: microsoft_directory`, by the
+  system). **Additive only**: nobody already here is changed, and nobody is
+  deactivated. Nothing before first boot. Under §3.4's
+  `system.directory.sync`. A failure is recorded as a code — never a token or
+  Graph's body — and its last run is held in memory, for the Sign-in card
+  (§6.4); a restart forgets it and the boot run answers again
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`. **It is the one stale rule, on every screen**
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
@@ -8245,8 +8269,12 @@ when an owner connects it that way — and, when the operator configures one,
 **the attachments store** (D-150): signed `HEAD`, ranged `GET` and `DELETE` of
 the objects Laika itself names, nothing else. Browsers reach that store too,
 through the short-lived URLs Laika signs; it is the operator's own, beside
-Laika, not a third party's. Any task proposing otherwise is rejected at
-review.
+Laika, not a third party's. When the operator sets the `LAIKA_MICROSOFT_*`
+variables (D-158), **the organisation's own Microsoft Entra ID tenant**: the
+tenant's token endpoint, once per sign-in to exchange its code, and — only
+with directory sync on — the app's own token and Graph's `/users`, every 15
+minutes (§11.6). No profile photo is fetched, and nothing else of Graph's is
+read. Any task proposing otherwise is rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day

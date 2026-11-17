@@ -7580,3 +7580,70 @@ the UI refine branches (`LAI-1200-calendar-refine` and the 37 after it); CHIEF a
 it dispatches file from `LAI-1300` – `LAI-1399`, lowest unused first, checked with §3's sweep.
 Measured on 2026-11-17 across every local and `origin` branch and all history: 100 of
 `LAI-1100` – `LAI-1199` taken, 38 ids in the `LAI-12xx` range taken, none in `LAI-13xx`.
+
+## D-158 — Microsoft sign-in, env-gated, on the Ksage line only
+
+**Date:** 2026-11-18 · **Decided by:** Pawan (owner): merge Yashraaj's PR #354 (LAI-1238,
+LAI-1239) into KvellDynamics/ksage-2.0 only, not PawanSirsat/Laika master, and fix its CI
+ourselves. Recorded by CHIEF (Belka); built and hardened by LAI-1317. Amends §1.1, §3.4,
+§6.4, §11.6 and §13.4; builds on D-004 and D-156.
+
+**Context.** Ksage's people work in one Microsoft Entra ID tenant, and the board's 25 members
+are all lowercase `@kvelld.co.za` addresses. PR #354 adds Microsoft sign-in through
+better-auth's `microsoft` provider (callback `/api/v1/auth/callback/microsoft`), an optional
+directory sync through Microsoft Graph, and a read-only Sign-in card under Organisation →
+Security. Its review found three things to harden before it ran anywhere: Microsoft's refresh
+token stored in clear, a scheduled write that asked `can()` nothing, and no test of a sign-in
+whose email case differs from the stored one.
+
+**Decision.**
+
+1. **Env-gated, one tenant.** Microsoft sign-in exists only when `LAIKA_MICROSOFT_CLIENT_ID`,
+   `LAIKA_MICROSOFT_CLIENT_SECRET` and `LAIKA_MICROSOFT_TENANT_ID` are all set (§11.7). A
+   partial set, or the multi-tenant `common`, `organizations` or `consumers`, is a startup
+   failure. Nothing in the app switches it: unsetting the three and restarting brings
+   passwords back, which is the recovery when Microsoft is unreachable or misconfigured.
+2. **With the variables set, Microsoft is the only way in.** Email-and-password sign-in and
+   sign-up, accepting an invite with a password, issuing a reset link and using one all
+   answer `403 sso_only`. First boot makes the owner with no password and no session; they
+   sign in with Microsoft next.
+3. **A way to sign in, never a way to join (D-004).** An existing person is **linked** by
+   email the first time they use Microsoft, whatever case Microsoft spells it in — the same
+   user id, no second account. A new person needs an unexpired invite **addressed to the
+   email Microsoft asserts**; a link invite does not count, and anyone else is refused
+   `invite_required`. Directory sync (item 5) is the only other way to arrive.
+4. **Microsoft's access and refresh tokens are encrypted at rest** with `LAIKA_SECRET`
+   (better-auth's `account.encryptOAuthTokens`). Sign-in asks for `offline_access`, so the
+   refresh token is a long-lived credential; nothing in Laika reads either token. A row
+   written in clear before this still reads, and the next sign-in rewrites it encrypted.
+5. **Directory sync is opt-in** (`LAIKA_MICROSOFT_DIRECTORY_SYNC=true`, Graph's
+   `User.Read.All` application permission with admin consent): every 15 minutes and at boot,
+   every enabled Member of the tenant that Laika has no account for is added as a `member`
+   with no password. Additive only — nobody is changed or deactivated. It runs as the system
+   principal under the new `system.directory.sync` (§3.4); *Sync now* is for owners and
+   admins (`org.settings.edit`). Its last run is held in memory, not stored.
+6. **Two more outbound destinations (§13.4)**, only when configured: the tenant's token
+   endpoint at each sign-in, and — with directory sync on — the app's token and Graph's
+   `/users`. No profile photo is fetched.
+7. **Ksage only.** This ships on the Ksage line (D-156): `integration-ksage`, mirrored to
+   ksage-2.0 `laika` for https://ksage.kvelld.com. It does not go to PawanSirsat/Laika
+   master, and the AWS board sets none of the variables. Taking it to master is a decision of
+   its own. The Ksage line takes no migration, and this needs none.
+
+**Consequences — the known effects.**
+
+- **The CLI's password sign-in stops working on that board.** `laika init` signing in with
+  an email and password, the Solidtime sync's sign-in (`laika time push` and `pull`, D-088
+  item 10) and the agent-checkpoint consent prompt all call `/api/v1/auth/sign-in/email`
+  and get `403 sso_only`. Developers connect by device pairing (D-124) or with a token made
+  in the web app; tokens already issued keep working. The Solidtime sync and the consent
+  prompt have no other way in yet.
+- **`invite_required`.** Someone in the tenant with no Laika account and no invite to that
+  exact address is sent back to the sign-in page with *"That Microsoft account has no invite
+  to this Laika"*. A *Copy link* invite cannot be spent through Microsoft: invite by email,
+  or turn directory sync on.
+- **Offboarding is still Laika's.** Disabling someone in Entra stops their next Microsoft
+  sign-in; it does not end a Laika session already issued (30 days idle, §13.1) or revoke a
+  token. Deactivate them in Laika too.
+- better-auth also stores Microsoft's **id token** in `accounts.id_token`, in clear. It
+  carries the person's name, email and tenant claims and grants nothing; it is not encrypted.
