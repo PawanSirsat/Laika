@@ -3,6 +3,8 @@ import { ResetPasswordScreen } from './ResetPasswordScreen.tsx';
 import { useShell } from '../../components/shell/shell-context.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
+import { useToast } from '../../components/toast/ToastProvider.tsx';
+import { detailOf } from '../../components/toast/action-model.ts';
 import { consumeResetLink, resetRefusal, RESET_REFUSAL_COPY } from '../../api/password-resets.ts';
 
 type Refused = Exclude<ReturnType<typeof resetRefusal>, 'throttled' | undefined>;
@@ -23,6 +25,7 @@ export function ResetPasswordRoute() {
     host,
     route: { params, setParams, navigate },
   } = useShell();
+  const toast = useToast();
   const [token, setToken] = useState(() => params.get('token') ?? '');
   const [missingToken] = useState(() => token === '');
 
@@ -48,10 +51,18 @@ export function ResetPasswordRoute() {
         const view = await consumeResetLink(token, password);
         setToken('');
         setDone({ sessionsEnded: view.sessions_ended });
+        // The page stays, with its *Sign in* button; the toast says the
+        // action landed in the app's one voice (LAI-1310).
+        toast.show({ text: 'Password reset — sign in', tone: 'success' });
       } catch (cause) {
         const why = resetRefusal(cause);
         if (why === 'throttled') {
           setError(RESET_REFUSAL_COPY.throttled.body);
+          toast.show({
+            text: 'Couldn’t reset password',
+            tone: 'error',
+            detail: RESET_REFUSAL_COPY.throttled.body,
+          });
         } else if (why !== undefined) {
           setToken('');
           setRefused(why);
@@ -60,17 +71,25 @@ export function ResetPasswordRoute() {
           // `new_password`): it belongs under the field, not in a banner.
           setPasswordError(fieldErrors(cause).new_password);
         } else {
-          setError(
+          const said =
             cause instanceof ApiError
               ? cause.message
-              : 'Could not set your password. The instance may be unreachable.',
-          );
+              : 'Could not set your password. The instance may be unreachable.';
+          // Kept in the summary, where focus goes, and said as a toast
+          // too (LAI-1310). A refused link is the page's own state, above,
+          // and a refused password stays on its field.
+          setError(said);
+          toast.show({
+            text: 'Couldn’t reset password',
+            tone: 'error',
+            detail: detailOf(cause) ?? said,
+          });
         }
       } finally {
         setSubmitting(false);
       }
     },
-    [token],
+    [token, toast],
   );
 
   return (

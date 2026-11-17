@@ -208,14 +208,14 @@ void describe('revoke: confirm, then the result', () => {
       assert.match(await dialog.innerText(), /What stops working/i);
       assert.equal(calls.length, 0, 'nothing is revoked before the confirm');
       await dialog.getByRole('button', { name: 'Revoke token' }).click();
-      await h.page.locator('[data-ds-done]').waitFor();
+      await h.page.locator('[data-ds-done] [role="status"]').last().waitFor();
       assert.deepEqual(
         calls.map((c) => [c.method, c.path]),
         [['DELETE', '/api/v1/users/u2/tokens/p5']],
       );
       assert.equal(
-        (await h.page.locator('[data-ds-done]').innerText()).trim(),
-        'Token revoked. Rowan was notified.',
+        (await h.page.locator('[data-ds-done] [role="status"]').last().innerText()).trim(),
+        'Token revoked. Rowan was notified',
       );
     } finally {
       await h.close();

@@ -16,6 +16,7 @@ import {
 } from '../../../api/local-activity.ts';
 import { getOrgPermissions, type OrgPermissions } from '../../../api/permissions.ts';
 import { dayLabel, HeldDays } from './HeldDays.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 
 /** The collector's command (LAI-752): it checks collection is on first, then installs. */
 export const ACTIVITY_COMMAND = 'laika activity on';
@@ -141,7 +142,7 @@ export function ShareActivity({
   const confirm = useConfirm();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const [deleted, setDeleted] = useState(false);
   const commandRef = useRef<HTMLPreElement | null>(null);
   const otelRef = useRef<HTMLPreElement | null>(null);
@@ -197,19 +198,22 @@ export function ShareActivity({
 
   const { sharing, held, permissions } = state;
 
-  const change = (next: { scope: LocalActivityScope }): void => {
+  const change = async (next: { scope: LocalActivityScope }): Promise<void> => {
+    const was = sharing.scope;
     setBusy(true);
-    setError(undefined);
-    setActivitySharing(next)
-      .then((answer) => {
-        setState({ kind: 'ready', sharing: answer, held, permissions });
-      })
-      .catch((cause: unknown) => {
-        setError(said(cause, 'That change did not go through.'));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    const answer = await run({
+      do: () => setActivitySharing(next),
+      success: 'Sharing setting saved',
+      // One setting; putting the old scope back is the same call.
+      undo: async () => {
+        const back = await setActivitySharing({ scope: was });
+        setState({ kind: 'ready', sharing: back, held, permissions });
+        return 'Sharing setting put back';
+      },
+      failure: 'Couldn’t change sharing',
+    });
+    setBusy(false);
+    if (answer !== undefined) setState({ kind: 'ready', sharing: answer, held, permissions });
   };
 
   const erase = (): void => {
@@ -219,25 +223,25 @@ export function ShareActivity({
       confirmLabel: 'Delete history',
       danger: true,
     }).then((yes) => {
-      if (yes) eraseNow();
+      if (yes) void eraseNow();
     });
   };
 
-  const eraseNow = (): void => {
+  const eraseNow = async (): Promise<void> => {
     setBusy(true);
-    setError(undefined);
-    deleteOwnLocalActivity()
-      .then(() => getOwnLocalActivity())
-      .then((answer) => {
-        setDeleted(true);
-        setState({ kind: 'ready', sharing, held: answer, permissions });
-      })
-      .catch((cause: unknown) => {
-        setError(said(cause, 'The history was not deleted.'));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    // No Undo: the confirm says it cannot be undone, and it cannot.
+    const answer = await run({
+      do: async () => {
+        await deleteOwnLocalActivity();
+        return getOwnLocalActivity();
+      },
+      success: 'Activity history deleted',
+      failure: 'Couldn’t delete history',
+    });
+    setBusy(false);
+    if (answer === undefined) return;
+    setDeleted(true);
+    setState({ kind: 'ready', sharing, held: answer, permissions });
   };
 
   const intro = (
@@ -305,7 +309,7 @@ export function ShareActivity({
             value={scope}
             checked={sharing.scope === scope}
             onChange={() => {
-              change({ scope });
+              void change({ scope });
             }}
           />
           <span>
@@ -389,12 +393,6 @@ export function ShareActivity({
         </button>
       )}
     </>
-  );
-
-  const failed = error !== undefined && (
-    <p className="conn-note conn-note-warn" role="alert">
-      {error}
-    </p>
   );
 
   if (compact) {
@@ -489,8 +487,6 @@ export function ShareActivity({
             </div>
           </details>
         </div>
-
-        {failed}
       </div>
     );
   }
@@ -543,8 +539,6 @@ export function ShareActivity({
         {held.days.length === 0 ? nothingHeld : <HeldDays held={held} />}
         {heldFoot}
       </section>
-
-      {failed}
     </div>
   );
 }

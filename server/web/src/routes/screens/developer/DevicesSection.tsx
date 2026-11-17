@@ -27,6 +27,7 @@ import {
 import { agentLabel, twinNames } from '../../../api/selected-agent.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { goToAgent } from './go-to-agent.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
 import './devices.css';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
@@ -65,10 +66,9 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
   const [now, setNow] = useState(() => Date.now());
   const [asking, setAsking] = useState<AgentDevice | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   /** Devices with a *This is mine* in flight, each its own: one answer never clears another. */
   const [confirming, setConfirming] = useState<ReadonlySet<string>>(() => new Set());
-  const [rowErrors, setRowErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
   /** A device whose revoke button went away with the revoke: its heading takes focus. */
   const [refocus, setRefocus] = useState<string | undefined>(undefined);
   const headings = useRef(new Map<string, HTMLElement>());
@@ -124,51 +124,52 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
     headings.current.get(refocus)?.focus();
   }, [refocus, asking, devices]);
 
-  const recognise = (device: AgentDevice): void => {
+  /**
+   * *This is mine* and *Revoke device*, each said as a toast (LAI-1310): what
+   * happened, or the server's reason. A refused revoke leaves its question
+   * open, so nothing on screen changes but the toast. No Undo for either:
+   * the server has no un-recognise, and a revoked agent's token is gone.
+   */
+  const recognise = async (device: AgentDevice): Promise<void> => {
     const key = deviceKey(device);
     setConfirming((current) => new Set(current).add(key));
-    setRowErrors((current) => without(current, key));
-    confirmAgentDevice(device.device_label)
-      .then(() => {
-        setDevices((current) =>
-          current === undefined ? current : withRecognised(current, device.device_label),
-        );
-        reload();
-      })
-      .catch((cause: unknown) => {
-        setRowErrors((current) =>
-          new Map(current).set(key, errorText(cause, 'Could not confirm that device.')),
-        );
-      })
-      .finally(() => {
-        setConfirming((current) => {
-          const next = new Set(current);
-          next.delete(key);
-          return next;
-        });
-      });
+    const done = await run({
+      do: async () => {
+        await confirmAgentDevice(device.device_label);
+        return true;
+      },
+      success: `${device.display_name} recognised`,
+      failure: 'Couldn’t confirm device',
+    });
+    setConfirming((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    if (done === undefined) return;
+    setDevices((current) =>
+      current === undefined ? current : withRecognised(current, device.device_label),
+    );
+    reload();
   };
 
-  const revoke = (device: AgentDevice): void => {
+  const revoke = async (device: AgentDevice): Promise<void> => {
     setBusy(true);
-    setRevokeError(undefined);
-    revokeAgentDevice(device.device_label)
-      .then(({ revoked_agent_ids }) => {
-        setDevices((current) =>
-          current === undefined ? current : withRevoked(current, revoked_agent_ids, Date.now()),
-        );
-        reload();
-        setNow(Date.now());
-        setAsking(undefined);
-        setRefocus(deviceKey(device));
-        onRevoked();
-      })
-      .catch((cause: unknown) => {
-        setRevokeError(errorText(cause, 'Could not revoke that device. Nothing was changed.'));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    const answer = await run({
+      do: () => revokeAgentDevice(device.device_label),
+      success: `${device.display_name} revoked`,
+      failure: 'Couldn’t revoke device',
+    });
+    setBusy(false);
+    if (answer === undefined) return;
+    setDevices((current) =>
+      current === undefined ? current : withRevoked(current, answer.revoked_agent_ids, Date.now()),
+    );
+    reload();
+    setNow(Date.now());
+    setAsking(undefined);
+    setRefocus(deviceKey(device));
+    onRevoked();
   };
 
   return (
@@ -222,16 +223,14 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
                 now={now}
                 canManage={canManage}
                 confirming={confirming.has(key)}
-                error={rowErrors.get(key)}
                 headingRef={(el) => {
                   if (el === null) headings.current.delete(key);
                   else headings.current.set(key, el);
                 }}
                 onRecognise={() => {
-                  recognise(device);
+                  void recognise(device);
                 }}
                 onRevoke={() => {
-                  setRevokeError(undefined);
                   setAsking(device);
                 }}
               />
@@ -244,13 +243,11 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
         <RevokeDeviceDialog
           device={asking}
           busy={busy}
-          error={revokeError}
           onConfirm={() => {
-            revoke(asking);
+            void revoke(asking);
           }}
           onClose={() => {
             setAsking(undefined);
-            setRevokeError(undefined);
           }}
         />
       )}
@@ -265,7 +262,6 @@ interface DeviceGroupProps {
   readonly now: number;
   readonly canManage: boolean;
   readonly confirming: boolean;
-  readonly error: string | undefined;
   readonly headingRef: (el: HTMLElement | null) => void;
   readonly onRecognise: () => void;
   readonly onRevoke: () => void;
@@ -276,7 +272,6 @@ function DeviceGroup({
   now,
   canManage,
   confirming,
-  error,
   headingRef,
   onRecognise,
   onRevoke,
@@ -443,11 +438,6 @@ function DeviceGroup({
         </>
       )}
       {actions}
-      {error !== undefined && (
-        <p className="agents-error devices-error" role="alert">
-          {error}
-        </p>
-      )}
     </li>
   );
 }
@@ -485,13 +475,11 @@ function LastSeen({ at, now }: { readonly at: number | null; readonly now: numbe
 function RevokeDeviceDialog({
   device,
   busy,
-  error,
   onConfirm,
   onClose,
 }: {
   readonly device: AgentDevice;
   readonly busy: boolean;
-  readonly error: string | undefined;
   readonly onConfirm: () => void;
   readonly onClose: () => void;
 }) {
@@ -527,7 +515,6 @@ function RevokeDeviceDialog({
       danger
       icon="warning"
       busy={busy}
-      error={error}
       detail={
         <>
           <ul className="devices-dialog-list" data-revoke-targets>
@@ -564,15 +551,4 @@ function RevokeDeviceDialog({
       other devices and your own tokens are not touched.
     </ConfirmDialog>
   );
-}
-
-function without(errors: ReadonlyMap<string, string>, key: string): ReadonlyMap<string, string> {
-  if (!errors.has(key)) return errors;
-  const next = new Map(errors);
-  next.delete(key);
-  return next;
-}
-
-function errorText(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message !== '' ? cause.message : fallback;
 }

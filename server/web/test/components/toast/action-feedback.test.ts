@@ -82,32 +82,8 @@ const ALLOWED_WITHOUT_TOAST: Readonly<Record<string, string>> = {
     'moves go through useLocalMoves, which toasts (use-space-reads.ts); the panel it renders reports its own actions',
   'routes/screens/calendar/calendar-drag.ts':
     'pure write helper with a node unit test; its only caller, CalendarScreen, runs it through useAction',
-  'routes/screens/connect/ConnectScreen.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/connect/ShareActivity.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/AgentsTab.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/CheckpointConsentSwitch.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/DevicesSection.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/AddDeviceWizard.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/AddToolWizard.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/AdvancedTab.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/DeviceDetails.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/DeviceRoster.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/ProjectSetupTab.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/developer/v3/ToolDetails.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/inbox/HandoffsTab.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/InviteRoute.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/meeting-review/MeetingReviewScreen.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/profile/DeveloperSetupTab.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/profile/ManageSections.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/profile/ProfileScreen.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/ResetPasswordRoute.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/SetupRoute.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/space-settings/SpaceSettingsScreen.tsx':
     'hands useMembers’ writes to MembersTab, which toasts them',
-  'routes/screens/tokens/TokensScreen.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/unlisted/UnlistedList.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/usage/BudgetsCard.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/usage/PlanLimitCard.tsx': 'LAI-1310: not migrated yet',
 };
 
 /** Top-level declarations: `[export] [async] function name` or `[export] const name =`. */

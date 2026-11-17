@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
-import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { closeBrowser, open, reply, setTheme, until, type ApiStub } from './harness.ts';
 import { tipText } from './tooltip-probe.ts';
 
 /*
@@ -244,6 +244,10 @@ void describe('minting fills the page in', () => {
       assert.ok(prompt.includes(SECRET), 'the prompt did not take the token');
       assert.match(prompt, /install\.sh/, 'the prompt lost the installer');
 
+      // The toast says it was made, and never carries the secret (LAI-1310).
+      const made = h.page.locator('[data-toast]', { hasText: 'Token created' });
+      await made.waitFor({ timeout: 5_000 });
+      assert.ok(!(await made.innerText()).includes(SECRET), 'the secret reached the toast');
       const posted = h.calls.filter((c) => c.path === '/api/v1/tokens' && c.method === 'POST');
       assert.equal(posted.length, 1, 'minting did not POST exactly once');
       const body = posted[0]?.body as { name?: string; expires_at?: number };
@@ -252,6 +256,29 @@ void describe('minting fills the page in', () => {
         typeof body.expires_at === 'number' && body.expires_at > Date.now(),
         'the token was minted without an expiry',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused mint is an error toast with the server’s reason, and shows no secret (LAI-1310)', async () => {
+    const h = await open(
+      '/developer/connect',
+      stub({
+        '/api/v1/tokens': (call: { method?: string }) =>
+          call.method === 'POST'
+            ? reply(503, { error: { code: 'unavailable', message: 'The board is restarting.' } })
+            : { data: [], next_cursor: null },
+      }),
+    );
+    try {
+      await goTo(h, 2);
+      await h.page.locator('.conn-mint button').click();
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t create token/);
+      assert.match(await toast.innerText(), /The board is restarting\./);
+      assert.equal(await h.page.locator('.conn-secret-value').count(), 0);
     } finally {
       await h.close();
     }
@@ -1338,6 +1365,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         null,
         'the token box announced itself again',
       );
+      // The toast says so politely; nothing on the page is an alert.
       assert.equal(await h.page.locator('[role="alert"]').count(), 0);
     } finally {
       await h.close();

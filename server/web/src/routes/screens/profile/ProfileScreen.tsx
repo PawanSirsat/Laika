@@ -67,6 +67,7 @@ import {
   TabStrip,
   rovingTabIndex,
 } from '../../../components/tabs/TabStrip.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import './profile.css';
 
 export interface ProfileScreenProps {
@@ -92,10 +93,6 @@ type Load =
   | { readonly kind: 'ready'; readonly profile: MemberProfile };
 
 /** The server's sentence when there is one; never "something went wrong" over it. */
-function said(cause: unknown): string {
-  return cause instanceof ApiError ? cause.message : 'That did not go through. Try again.';
-}
-
 /** A plain click on an in-app link is the app's to follow; a modified one is the browser's. */
 function follow(go: () => void) {
   return (event: MouseEvent<HTMLAnchorElement>): void => {
@@ -163,7 +160,7 @@ export function ProfileScreen({
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [kindBusy, setKindBusy] = useState(false);
-  const [kindError, setKindError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   /** The Manage member panel (LAI-1134), and the ⋯ that opened it. */
   const [managing, setManaging] = useState(false);
   const manageButton = useRef<HTMLDivElement>(null);
@@ -180,7 +177,6 @@ export function ProfileScreen({
   useEffect(() => {
     shown.current = userId;
     // A panel belongs to the person it was opened on; moving away closes it.
-    setKindError(undefined);
     setManaging(false);
     setCopied(undefined);
   }, [userId]);
@@ -282,20 +278,25 @@ export function ProfileScreen({
   const now = Date.now();
   const first = firstName(user.name);
 
-  const changeKind = (kind: ProfileKind): void => {
+  const changeKind = async (kind: ProfileKind): Promise<void> => {
     if (kind === user.profile_kind || kindBusy) return;
+    const was = user.profile_kind;
+    const id = user.id;
     setKindBusy(true);
-    setKindError(undefined);
-    setProfileKind(user.id, kind)
-      .then((next) => {
-        if (shown.current === user.id) setLoad({ kind: 'ready', profile: next });
-      })
-      .catch((cause: unknown) => {
-        if (shown.current === user.id) setKindError(said(cause));
-      })
-      .finally(() => {
-        setKindBusy(false);
-      });
+    const next = await run({
+      do: () => setProfileKind(id, kind),
+      success: `${first} is now a ${KINDS[kind].label}`,
+      // Truly reversible: the kind is one field, and setting it back is the
+      // same call with the old value.
+      undo: async () => {
+        const back = await setProfileKind(id, was);
+        if (shown.current === id) setLoad({ kind: 'ready', profile: back });
+        return `${first} is a ${KINDS[was].label} again`;
+      },
+      failure: 'Couldn’t change profile kind',
+    });
+    setKindBusy(false);
+    if (next !== undefined && shown.current === id) setLoad({ kind: 'ready', profile: next });
   };
 
   /**
@@ -557,8 +558,12 @@ export function ProfileScreen({
           kind={{
             value: user.profile_kind,
             busy: kindBusy,
-            error: kindError,
-            onKind: changeKind,
+            // The outcome is a toast now (LAI-1310), so the control has no
+            // error line of its own to show.
+            error: undefined,
+            onKind: (kind) => {
+              void changeKind(kind);
+            },
           }}
           onChanged={refreshProfile}
           onClose={() => {

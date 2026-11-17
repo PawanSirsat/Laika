@@ -33,7 +33,9 @@ import {
 } from './advanced.ts';
 import '../../tokens/tokens.css';
 import '../../../../components/token-row.css';
-import { ResultNote, useResult } from './ResultNote.tsx';
+import { useAction } from '../../../../components/toast/use-action.ts';
+import { useToast } from '../../../../components/toast/ToastProvider.tsx';
+import { namesFields } from '../../../../components/toast/action-model.ts';
 import './advanced.css';
 
 export interface AdvancedTabProps {
@@ -71,8 +73,10 @@ const TOOLS_HREF = '/developer?tab=tools';
 export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   const confirm = useConfirm();
   const [message, announce] = useLiveRegion();
-  // What a revoke or a saved secret just did, on screen too (LAI-1197).
-  const [result, notify, clearResult] = useResult(announce);
+  // What a create, a revoke or a saved secret just did is a toast (LAI-1310);
+  // it replaced LAI-1197's result note, which only said it was done.
+  const { run } = useAction();
+  const toast = useToast();
   const formId = useId();
   const [tokens, setTokens] = useState<readonly TokenView[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -83,7 +87,6 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   const [scope, setScope] = useState<TokenScope>('full');
   const [expiry, setExpiry] = useState(DEFAULT_EXPIRY);
   const [mintError, setMintError] = useState<string | undefined>(undefined);
-  const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [revealed, setRevealed] = useState<CreatedToken | undefined>(undefined);
 
@@ -170,30 +173,36 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
     setMintError(undefined);
   };
 
-  const mint = (): void => {
+  const mint = async (): Promise<void> => {
     setPending(true);
     setMintError(undefined);
-    clearResult();
     const expiresAt = expiresAtFor(expiry, Date.now());
-    createToken({
-      name: name.trim(),
-      scope: effectiveScope,
-      ...(expiresAt === undefined ? {} : { expires_at: expiresAt }),
-    })
-      .then((created) => {
-        setRevealed(created);
-        setName('');
-        setExpiry(DEFAULT_EXPIRY);
-        setMinting(false);
-        announce(`Created ${created.token.name}. Copy its secret now; it is not shown again.`);
-        reload();
-      })
-      .catch((cause: unknown) => {
-        setMintError(cause instanceof Error ? cause.message : 'Could not create that credential.');
-      })
-      .finally(() => {
-        setPending(false);
-      });
+    const created = await run({
+      do: () =>
+        createToken({
+          name: name.trim(),
+          scope: effectiveScope,
+          ...(expiresAt === undefined ? {} : { expires_at: expiresAt }),
+        }),
+      // The secret stays inline below, once, to copy: a toast that times out
+      // is no place for the only copy.
+      success: 'Credential created',
+      failure: 'Couldn’t create credential',
+      onError: (cause) => {
+        // A refused name stays under the form; anything else is the toast's.
+        if (namesFields(cause) && cause instanceof Error) setMintError(cause.message);
+      },
+    });
+    setPending(false);
+    if (created === undefined) return;
+    setRevealed(created);
+    setName('');
+    setExpiry(DEFAULT_EXPIRY);
+    setMinting(false);
+    // The toast says it was made; this says what to do now, which the
+    // reveal panel shows a sighted reader.
+    announce(`Copy the secret for ${created.token.name} now; it is not shown again.`);
+    reload();
   };
 
   const revoke = (token: TokenView): void => {
@@ -208,17 +217,19 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
       icon: 'warning',
     }).then((yes) => {
       if (!yes) return;
-      setActionError(undefined);
-      clearResult();
-      revokeToken(token.id)
-        .then(() => {
-          notify(`Revoked “${token.name}”. Anything using it has stopped working.`);
-          listTitleRef.current?.focus();
-          reload();
-        })
-        .catch((cause: unknown) => {
-          setActionError(cause instanceof Error ? cause.message : 'Could not revoke that token.');
-        });
+      // No Undo: a revoked token cannot be restored (§4.9).
+      void run({
+        do: async () => {
+          await revokeToken(token.id);
+          return true;
+        },
+        success: `Revoked “${token.name}”`,
+        failure: 'Couldn’t revoke credential',
+      }).then((done) => {
+        if (done === undefined) return;
+        listTitleRef.current?.focus();
+        reload();
+      });
     });
   };
 
@@ -257,7 +268,6 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
               className="bar-control bar-control-primary"
               aria-controls={formId}
               onClick={() => {
-                setActionError(undefined);
                 setMinting(true);
               }}
             >
@@ -265,14 +275,6 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
             </button>
           )}
         </div>
-
-        {result !== undefined && <ResultNote message={result} onDismiss={clearResult} />}
-
-        {actionError !== undefined && (
-          <p className="tok-error dev-adv-error" role="alert">
-            {actionError}
-          </p>
-        )}
 
         {/* Shown once, and only once (§4.9): not on the row, not stored, not re-fetchable. */}
         {revealed !== undefined && (
@@ -294,9 +296,7 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
                   const name = revealed.token.name;
                   returnFocus.current = true;
                   forget();
-                  notify(
-                    `“${name}” is ready to use. Its secret is hidden now and cannot be shown again.`,
-                  );
+                  toast.show({ text: `“${name}” is ready to use`, tone: 'success' });
                 }}
               >
                 I’ve saved it
@@ -403,7 +403,9 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
                 type="button"
                 className="bar-control bar-control-primary"
                 disabled={pending || name.trim() === ''}
-                onClick={mint}
+                onClick={() => {
+                  void mint();
+                }}
               >
                 {pending && <Spinner size="sm" />}
                 Create credential

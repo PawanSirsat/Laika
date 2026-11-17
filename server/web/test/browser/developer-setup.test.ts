@@ -421,10 +421,10 @@ void describe('the revokes (frames 2v–2x)', () => {
       const before = reads;
 
       await dialog.getByRole('button', { name: 'Unpair rowan-box' }).click();
-      await h.page.locator('[data-ds-done]').waitFor();
+      await h.page.locator('[data-ds-done] [role="status"]').last().waitFor();
       assert.equal(
-        (await h.page.locator('[data-ds-done]').innerText()).trim(),
-        'rowan-box is unpaired. Rowan was notified.',
+        (await h.page.locator('[data-ds-done] [role="status"]').last().innerText()).trim(),
+        'rowan-box is unpaired. Rowan was notified',
       );
       assert.equal(calls.length, 1);
       assert.equal(calls[0]?.method, 'POST');
@@ -458,10 +458,10 @@ void describe('the revokes (frames 2v–2x)', () => {
         /Revoke Codex on rowan-box\?[\s\S]*Other tools on this device keep working/,
       );
       await dialog.getByRole('button', { name: 'Revoke Codex' }).click();
-      await h.page.locator('[data-ds-done]').waitFor();
+      await h.page.locator('[data-ds-done] [role="status"]').last().waitFor();
       assert.match(
-        await h.page.locator('[data-ds-done]').innerText(),
-        /Codex was revoked\. Rowan was notified\./,
+        await h.page.locator('[data-ds-done] [role="status"]').last().innerText(),
+        /Codex was revoked\. Rowan was notified/,
       );
 
       await h.page.getByRole('button', { name: 'Actions for deploy-key' }).click();
@@ -470,11 +470,13 @@ void describe('the revokes (frames 2v–2x)', () => {
       assert.match(await dialog.innerText(), /Revoke deploy-key\?/);
       await dialog.getByRole('button', { name: 'Revoke token' }).click();
       await until(async () =>
-        (await h.page.locator('[data-ds-done]').innerText()).includes('Token revoked'),
+        (await h.page.locator('[data-ds-done] [role="status"]').last().innerText()).includes(
+          'Token revoked',
+        ),
       );
       assert.match(
-        await h.page.locator('[data-ds-done]').innerText(),
-        /Token revoked\. Rowan was notified\./,
+        await h.page.locator('[data-ds-done] [role="status"]').last().innerText(),
+        /Token revoked\. Rowan was notified/,
       );
       assert.deepEqual(posted, [
         'POST /api/v1/people/u2/agents/a2/revoke',
@@ -502,7 +504,7 @@ void describe('the revokes (frames 2v–2x)', () => {
     }
   });
 
-  void test('a refusal stays in the confirm, in the reader’s words, and nothing changes', async () => {
+  void test('a refusal is an error toast in the reader’s words; the confirm stays and nothing changes', async () => {
     const h = await at(TAB, {
       '/api/v1/people/u2/devices/d1/revoke': reply(403, {
         error: {
@@ -519,12 +521,16 @@ void describe('the revokes (frames 2v–2x)', () => {
       await h.page.getByRole('menuitem', { name: 'Unpair device…' }).click();
       const dialog = h.page.getByRole('alertdialog');
       await dialog.getByRole('button', { name: 'Unpair rowan-box' }).click();
-      await until(async () => (await dialog.innerText()).includes('Only the owner'));
+      // The app's error toast (LAI-1310); the confirm stays open to retry or cancel.
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.match(await toast.innerText(), /Couldn’t unpair device/);
       assert.match(
-        await dialog.innerText(),
+        await toast.innerText(),
         /Only the owner can change the owner’s setup\. Nothing was changed\./,
       );
-      assert.equal(await h.page.locator('[data-ds-done]').count(), 0);
+      assert.equal(await dialog.isVisible(), true);
+      assert.equal(await h.page.locator('[data-ds-done] [role="status"]').last().count(), 0);
     } finally {
       await h.close();
     }
@@ -812,8 +818,11 @@ void describe('your own Developer access (LAI-1156, frame F)', () => {
 
       const before = listed;
       await h.page.getByRole('button', { name: 'Approve ada-spare' }).click();
-      await h.page.locator('[data-ds-done]').waitFor();
-      assert.match(await h.page.locator('[data-ds-done]').innerText(), /ada-spare is approved/);
+      await h.page.locator('[data-ds-done] [role="status"]').last().waitFor();
+      assert.match(
+        await h.page.locator('[data-ds-done] [role="status"]').last().innerText(),
+        /ada-spare approved/,
+      );
       await h.page.getByRole('button', { name: 'Decline ada-other' }).click();
       await until(() => decided.length === 2);
       assert.deepEqual(
@@ -893,10 +902,10 @@ void describe('your own Developer access (LAI-1156, frame F)', () => {
       assert.match(text, /It shows in your setup activity/);
       assert.doesNotMatch(text, /notified|Only the owner/);
       await dialog.getByRole('button', { name: 'Disconnect rowan-box' }).click();
-      await h.page.locator('[data-ds-done]').waitFor();
+      await h.page.locator('[data-ds-done] [role="status"]').last().waitFor();
       assert.equal(
-        (await h.page.locator('[data-ds-done]').innerText()).trim(),
-        'rowan-box is disconnected.',
+        (await h.page.locator('[data-ds-done] [role="status"]').last().innerText()).trim(),
+        'rowan-box is disconnected',
       );
 
       await h.page.getByRole('button', { name: /^Actions for Codex on rowan-box/ }).click();

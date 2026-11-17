@@ -15,7 +15,7 @@ import { AddDeviceWizard } from './AddDeviceWizard.tsx';
 import { AddToolWizard } from './AddToolWizard.tsx';
 import { DeviceDetails } from './DeviceDetails.tsx';
 import { DEVICES_TITLE, DevicesTab } from './DevicesTab.tsx';
-import { ResultNote, useResult } from './ResultNote.tsx';
+import { useAction } from '../../../../components/toast/use-action.ts';
 import { StaleNotice } from './StaleNotice.tsx';
 import { ToolDetails } from './ToolDetails.tsx';
 import { TOOLS_TITLE, ToolsTab } from './ToolsTab.tsx';
@@ -134,10 +134,10 @@ export function DeviceRoster({
   /** The device whose disconnect is under way, from its first read to the answer (review round 1). */
   const [disconnecting, setDisconnecting] = useState<string | undefined>(undefined);
   const disconnectingRef = useRef<string | undefined>(undefined);
-  const [deviceErrors, setDeviceErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [message, announce] = useLiveRegion();
-  // What a write just did, on screen as well as in the live region (LAI-1197).
-  const [result, notify, clearResult] = useResult(announce);
+  // What a write just did, or why not, is a toast (LAI-1310); it replaced
+  // LAI-1197's result note and the panel's error line.
+  const { run } = useAction();
   /** When the list last answered, for the stale notice. */
   const [loadedAt, setLoadedAt] = useState<number | undefined>(undefined);
   const [retrying, setRetrying] = useState(false);
@@ -354,24 +354,20 @@ export function DeviceRoster({
     setNow(Date.now());
   };
 
-  const recognise = (device: Device): void => {
+  const recognise = async (device: Device): Promise<void> => {
     setConfirming(device.id);
-    setDeviceErrors((errors) => without(errors, device.id));
-    confirmAgentDevice(device.device_label)
-      .then(() => {
-        setDevices((current) =>
-          current === undefined ? current : withConfirmed(current, device.id),
-        );
-        notify(`${device.display_name} confirmed as yours.`);
-      })
-      .catch((cause: unknown) => {
-        setDeviceErrors((errors) =>
-          new Map(errors).set(device.id, errorText(cause, 'Could not confirm that device.')),
-        );
-      })
-      .finally(() => {
-        setConfirming(undefined);
-      });
+    // No Undo: the server has no un-recognise.
+    const done = await run({
+      do: async () => {
+        await confirmAgentDevice(device.device_label);
+        return true;
+      },
+      success: `${device.display_name} confirmed as yours`,
+      failure: 'Couldn’t confirm device',
+    });
+    setConfirming(undefined);
+    if (done === undefined) return;
+    setDevices((current) => (current === undefined ? current : withConfirmed(current, device.id)));
   };
 
   const disconnectDevice = (device: Device): void => {
@@ -384,7 +380,6 @@ export function DeviceRoster({
     };
     disconnectingRef.current = device.id;
     setDisconnecting(device.id);
-    setDeviceErrors((errors) => without(errors, device.id));
     void Promise.all(
       targets.map((agent) =>
         getAgent(agent.id).then(
@@ -425,25 +420,23 @@ export function DeviceRoster({
           settle();
           return;
         }
-        revokeAgentDevice(device.device_label)
-          .then(({ revoked_agent_ids }) => {
-            setDevices((current) =>
-              current === undefined
-                ? current
-                : withRevokedAgents(current, revoked_agent_ids, Date.now()),
-            );
-            notify(
-              `${device.display_name} disconnected: ${String(revoked_agent_ids.length)} ${revoked_agent_ids.length === 1 ? 'tool' : 'tools'} revoked. Their credentials no longer work.`,
-            );
-            closeDetails();
-            void load();
-          })
-          .catch((cause: unknown) => {
-            setDeviceErrors((errors) =>
-              new Map(errors).set(device.id, errorText(cause, 'Could not disconnect that device.')),
-            );
-          })
-          .finally(settle);
+        // No Undo: a revoked tool's credentials cannot be restored.
+        void run({
+          do: () => revokeAgentDevice(device.device_label),
+          success: ({ revoked_agent_ids }) =>
+            `${device.display_name} disconnected · ${String(revoked_agent_ids.length)} ${revoked_agent_ids.length === 1 ? 'tool' : 'tools'} revoked`,
+          failure: 'Couldn’t disconnect device',
+        }).then((answer) => {
+          settle();
+          if (answer === undefined) return;
+          setDevices((current) =>
+            current === undefined
+              ? current
+              : withRevokedAgents(current, answer.revoked_agent_ids, Date.now()),
+          );
+          closeDetails();
+          void load();
+        });
       });
     });
   };
@@ -479,7 +472,6 @@ export function DeviceRoster({
 
   const lists = (
     <>
-      {result !== undefined && <ResultNote message={result} onDismiss={clearResult} />}
       {devices !== undefined && error !== null && (
         <StaleNotice
           what={tab === 'devices' ? 'your devices' : 'your tools'}
@@ -561,9 +553,8 @@ export function DeviceRoster({
           canManage={canManage}
           confirming={confirming === panelId}
           disconnecting={disconnecting === panelId}
-          error={panelId === undefined ? undefined : deviceErrors.get(panelId)}
           onRecognise={() => {
-            if (panelDevice.device !== undefined) recognise(panelDevice.device);
+            if (panelDevice.device !== undefined) void recognise(panelDevice.device);
           }}
           onDisconnect={() => {
             if (panelDevice.device !== undefined) disconnectDevice(panelDevice.device);
@@ -576,7 +567,6 @@ export function DeviceRoster({
           }}
           onChanged={put}
           onRenamed={renamed}
-          announce={notify}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}
         />
@@ -598,7 +588,6 @@ export function DeviceRoster({
           onChanged={put}
           onReconnect={reconnect}
           onDisconnected={closeDetails}
-          announce={notify}
           confirm={confirm}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}
@@ -691,15 +680,4 @@ export function DeviceRoster({
       )}
     </div>
   );
-}
-
-function without(errors: ReadonlyMap<string, string>, key: string): ReadonlyMap<string, string> {
-  if (!errors.has(key)) return errors;
-  const next = new Map(errors);
-  next.delete(key);
-  return next;
-}
-
-function errorText(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message !== '' ? cause.message : fallback;
 }

@@ -8,6 +8,8 @@ import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { TokenRow } from '../../../components/TokenRow.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 import {
   createToken,
   forcedTokenScope,
@@ -37,6 +39,7 @@ export interface TokensScreenProps {
  */
 export function TokensScreen({ me }: TokensScreenProps) {
   const confirm = useConfirm();
+  const { run } = useAction();
   const [tokens, setTokens] = useState<readonly TokenView[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -116,24 +119,29 @@ export function TokensScreen({ me }: TokensScreenProps) {
   // What the server will actually mint, whatever the form says.
   const effectiveScope = me === undefined ? scope : forcedTokenScope(me.org_role, scope);
 
-  const mint = (): void => {
+  const mint = async (): Promise<void> => {
     setPending(true);
     setMintError(undefined);
-    createToken({ name: name.trim(), scope: effectiveScope })
-      .then((created) => {
-        // Replacing one reveal with another overwrites the hook, so the earlier
-        // secret is displaced by the same mechanism `forget` relies on.
-        setRevealed(created);
-        setName('');
-        setMinting(false);
-        reload();
-      })
-      .catch((cause: unknown) => {
-        setMintError(cause instanceof Error ? cause.message : 'Could not create that token.');
-      })
-      .finally(() => {
-        setPending(false);
-      });
+    const created = await run({
+      do: () => createToken({ name: name.trim(), scope: effectiveScope }),
+      // The toast says it happened; the secret itself stays inline below,
+      // because a toast that times out is no place for the only copy.
+      success: 'Token created',
+      failure: 'Couldn’t create token',
+      onError: (cause) => {
+        // A refusal naming a field belongs under the form; anything else is
+        // the toast's alone, so it is not said twice.
+        if (namesFields(cause) && cause instanceof Error) setMintError(cause.message);
+      },
+    });
+    setPending(false);
+    if (created === undefined) return;
+    // Replacing one reveal with another overwrites the hook, so the earlier
+    // secret is displaced by the same mechanism `forget` relies on.
+    setRevealed(created);
+    setName('');
+    setMinting(false);
+    reload();
   };
 
   const revoke = (token: TokenView): void => {
@@ -144,18 +152,22 @@ export function TokensScreen({ me }: TokensScreenProps) {
       danger: true,
       icon: 'warning',
     }).then((yes) => {
-      if (yes) revokeNow(token);
+      if (yes) void revokeNow(token);
     });
   };
 
-  const revokeNow = (token: TokenView): void => {
-    revokeToken(token.id)
-      .then(() => {
-        reload();
-      })
-      .catch((cause: unknown) => {
-        setMintError(cause instanceof Error ? cause.message : 'Could not revoke that token.');
-      });
+  const revokeNow = async (token: TokenView): Promise<void> => {
+    // No Undo: a revoked token cannot be restored (§4.9), so offering one
+    // would promise what the server cannot do.
+    const done = await run({
+      do: async () => {
+        await revokeToken(token.id);
+        return true;
+      },
+      success: 'Token revoked',
+      failure: 'Couldn’t revoke token',
+    });
+    if (done === true) reload();
   };
 
   return (
@@ -295,7 +307,9 @@ export function TokensScreen({ me }: TokensScreenProps) {
               type="button"
               className="bar-control bar-control-primary"
               disabled={pending || name.trim() === ''}
-              onClick={mint}
+              onClick={() => {
+                void mint();
+              }}
             >
               {pending && <Spinner size="sm" />}
               Create token

@@ -211,6 +211,10 @@ void describe('the compact unlisted page', () => {
         .locator('.unl-link', { hasText: 'Open LAI-7' })
         .waitFor({ timeout: 10_000 })
         .catch(() => undefined);
+      // Said as a toast with a way to the new task (LAI-1310).
+      const toast = h.page.locator('[data-toast]', { hasText: 'Promoted to LAI-7' });
+      await toast.waitFor({ timeout: 10_000 });
+      assert.equal(await toast.getByRole('button', { name: 'Open' }).count(), 1);
       const posted = h.calls.filter(
         (c) => c.method === 'POST' && c.path === '/api/v1/unlisted/n2/promote',
       );
@@ -251,6 +255,32 @@ void describe('the compact unlisted page', () => {
         'no dismiss was sent',
       );
       assert.equal(await h.page.getByText('A note to dismiss.').count(), 0);
+      await h.page
+        .locator('[data-toast]', { hasText: 'Note dismissed' })
+        .waitFor({ timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused dismiss is an error toast with the server’s reason, and the note stays (LAI-1310)', async () => {
+    const h = await open('/inbox?tab=unlisted', {
+      ...server([...QUEUE]).stub,
+      '/api/v1/unlisted/n3': reply(409, {
+        error: { code: 'conflict', message: 'That note was already promoted' },
+      }),
+    });
+    try {
+      await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.unl-line', { hasText: 'A note to dismiss.' }).click();
+      await h.page.locator('.unl-dismiss').click();
+      await answerConfirm(h.page, true);
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t dismiss note/);
+      assert.match(await toast.innerText(), /That note was already promoted/);
+      assert.equal(await h.page.locator('.unl-error').count(), 0);
+      assert.equal(await h.page.locator('.unl-line', { hasText: 'A note to dismiss.' }).count(), 1);
     } finally {
       await h.close();
     }

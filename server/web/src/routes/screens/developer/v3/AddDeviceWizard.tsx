@@ -31,6 +31,8 @@ import {
 } from './add-flow.ts';
 import { CLOUD_NOTE } from './devices-view.ts';
 import { DesignWizard } from './DesignWizard.tsx';
+import { useAction } from '../../../../components/toast/use-action.ts';
+import { isAbort } from '../../../../components/toast/action-model.ts';
 import { DetailTiles } from './DetailTiles.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
@@ -122,6 +124,7 @@ export function AddDeviceWizard({
   const [pairing, setPairing] = useState<DevicePairing | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | undefined>(undefined);
+  const { run } = useAction();
   const [pollTrouble, setPollTrouble] = useState<string | undefined>(undefined);
   const [resumeError, setResumeError] = useState<Refusal | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
@@ -254,47 +257,65 @@ export function AddDeviceWizard({
     announce(said[pairing.state]);
   }, [pairing, announce]);
 
-  const create = (): void => {
-    setBusy(true);
-    setRefusal(undefined);
-    createPairingRequest(
-      chosen === undefined
-        ? { kind, display_name: name.trim() }
-        : { kind: chosen.kind, display_name: chosen.display_name, device_id: chosen.id },
-    )
-      .then((created) => {
-        changed.current = true;
-        setCode({ command: created.command });
-        shown.current = undefined;
-        show(created.pairing);
-        setNow(Date.now());
-        onRequest(created.pairing.id);
-      })
-      .catch((cause: unknown) => {
-        setRefusal(pairingRefusal(cause, chosen?.display_name ?? name.trim()));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+  /**
+   * A refused create or decide, said as an error toast in `pairingRefusal`'s
+   * words (LAI-1310). Only a refusal that ends the request also stays in the
+   * wizard, because its *Start again* is the way on and a toast cannot hold
+   * it; anything else would be said twice.
+   */
+  const refused = (cause: unknown, name: string): never => {
+    if (isAbort(cause)) throw cause;
+    const why = pairingRefusal(cause, name);
+    if (why.startAgain) setRefusal(why);
+    throw new Error(why.message);
   };
 
-  const decide = (approve: boolean): void => {
+  const create = async (): Promise<void> => {
+    setBusy(true);
+    setRefusal(undefined);
+    const name_ = chosen?.display_name ?? name.trim();
+    // The code and its command stay in the wizard, to copy; the toast says
+    // the request was made.
+    const created = await run({
+      do: () =>
+        createPairingRequest(
+          chosen === undefined
+            ? { kind, display_name: name.trim() }
+            : { kind: chosen.kind, display_name: chosen.display_name, device_id: chosen.id },
+        ).catch((cause: unknown) => refused(cause, name_)),
+      success: `Pairing code for ${name_} created`,
+      failure: 'Couldn’t start pairing',
+    });
+    setBusy(false);
+    if (created === undefined) return;
+    changed.current = true;
+    setCode({ command: created.command });
+    shown.current = undefined;
+    show(created.pairing);
+    setNow(Date.now());
+    onRequest(created.pairing.id);
+  };
+
+  const decide = async (approve: boolean): Promise<void> => {
     const shown = pairing?.claimed?.key_fingerprint;
     if (pairing === undefined || shown === undefined) return;
     setBusy(true);
     setRefusal(undefined);
-    (approve ? approvePairingRequest : denyPairingRequest)(pairing.id, shown)
-      .then((next) => {
-        show(next);
-      })
-      .catch((cause: unknown) => {
-        setRefusal(pairingRefusal(cause, pairing.display_name));
+    // No Undo: the server has no way back from approved or denied.
+    const next = await run({
+      do: () =>
+        (approve ? approvePairingRequest : denyPairingRequest)(pairing.id, shown).catch(
+          (cause: unknown) => refused(cause, pairing.display_name),
+        ),
+      success: approve ? `${pairing.display_name} approved` : `${pairing.display_name} denied`,
+      failure: approve ? 'Couldn’t approve device' : 'Couldn’t deny device',
+      onError: () => {
         // The answer may say why: read the request as it is now.
         getPairingRequest(pairing.id).then(show, () => undefined);
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+      },
+    });
+    setBusy(false);
+    if (next !== undefined) show(next);
   };
 
   const startAgain = (): void => {
@@ -321,6 +342,9 @@ export function AddDeviceWizard({
       icon: 'warning',
     }).then((yes) => {
       if (!yes) return;
+      // Deliberately silent (LAI-1310): the reader asked to close, and the
+      // wizard closing is the answer. A failed cancel changes nothing they
+      // can act on — the code expires on its own within minutes.
       cancelPairingRequest(pairing.id)
         .catch(() => undefined)
         .finally(() => {
@@ -463,7 +487,7 @@ export function AddDeviceWizard({
                   setName(event.target.value);
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter' && nameValid && !busy) create();
+                  if (event.key === 'Enter' && nameValid && !busy) void create();
                 }}
               />
               <Help>
@@ -520,7 +544,9 @@ export function AddDeviceWizard({
         className="dx-btn dx-btn-primary"
         disabled={!nameValid || busy}
         aria-busy={busy || undefined}
-        onClick={create}
+        onClick={() => {
+          void create();
+        }}
       >
         Get a pairing code <Icon name="arrow-right" size="tiny" />
       </button>
@@ -642,7 +668,7 @@ export function AddDeviceWizard({
           className="dx-btn dv3w-deny"
           disabled={busy}
           onClick={() => {
-            decide(false);
+            void decide(false);
           }}
         >
           Deny
@@ -655,7 +681,7 @@ export function AddDeviceWizard({
           disabled={busy}
           aria-busy={busy || undefined}
           onClick={() => {
-            decide(true);
+            void decide(true);
           }}
         >
           Approve {pairing.display_name}

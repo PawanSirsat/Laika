@@ -3,6 +3,8 @@ import { FirstBootScreen, type FirstBootSubmit } from './FirstBootScreen.tsx';
 import { useShell } from '../../components/shell/shell-context.ts';
 import { completeSetup, fieldErrors } from '../../api/setup.ts';
 import { ApiError } from '../../api/errors.ts';
+import { useToast } from '../../components/toast/ToastProvider.tsx';
+import { detailOf } from '../../components/toast/action-model.ts';
 
 /**
  * First boot (LAI-250), lifted out of `AppShell`.
@@ -23,6 +25,7 @@ export function SetupRoute() {
     retry,
     route: { navigate },
   } = useShell();
+  const toast = useToast();
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -59,12 +62,20 @@ export function SetupRoute() {
           setError('Some details need fixing before this instance can be created.');
           return;
         }
-        setError(cause instanceof Error ? cause.message : 'Could not create this instance.');
+        const said = cause instanceof Error ? cause.message : 'Could not create this instance.';
+        // Kept in the summary beside the form, and said as a toast
+        // (LAI-1310); a field refusal, above, stays on its field.
+        setError(said);
+        toast.show({
+          text: 'Couldn’t set up Laika',
+          tone: 'error',
+          detail: detailOf(cause) ?? said,
+        });
       } finally {
         setSubmitting(false);
       }
     },
-    [markComplete, recheck, retry, navigate],
+    [markComplete, recheck, retry, navigate, toast],
   );
 
   return (

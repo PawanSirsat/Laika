@@ -90,6 +90,8 @@ import {
   voiceFor,
 } from './developer-setup-derive.ts';
 import type { OwnSetup, SetupLoad } from './use-own-setup.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { isAbort } from '../../../components/toast/action-model.ts';
 import './developer-setup.css';
 
 export interface DeveloperSetupTabProps {
@@ -277,8 +279,7 @@ function SetupPanel({
   const { first, own } = voice;
   const [pending, setPending] = useState<Pending | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [refusal, setRefusal] = useState<string | undefined>(undefined);
-  const [notice, setNotice] = useState<string | undefined>(undefined);
+  const { run: act } = useAction();
   const { projects } = useProjects();
 
   const spaceName = useMemo(() => {
@@ -348,29 +349,38 @@ function SetupPanel({
   const canToken = canAct && canRevokeTokens;
 
   const ask = (next: Pending): void => {
-    setRefusal(undefined);
-    setNotice(undefined);
     setPending(next);
   };
 
-  const run = (target: Pending): void => {
+  /**
+   * Revoke what the dialog asked about, said as a toast (LAI-1310) in
+   * `doneLine`'s words — what stopped, and that they were told. No Undo: an
+   * unpaired device, a revoked tool or token cannot be restored. A refusal
+   * leaves the dialog open, so the reader can try again or cancel.
+   */
+  const run = async (target: Pending): Promise<void> => {
     setBusy(true);
-    setRefusal(undefined);
-    const done = doneLine(target, view, first, own);
-    revoke(target, view)
-      .then(() => {
-        // The write is done: say so, and read the setup again behind it. A
-        // failed re-read is the tab's own error, never the revoke's.
-        setPending(undefined);
-        setNotice(done);
-        onChanged();
-      })
-      .catch((error: unknown) => {
-        setRefusal(refusalLine(error, 'The revoke did not go through. Nothing was changed.'));
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    const done = await act({
+      do: async () => {
+        try {
+          await revoke(target, view);
+        } catch (error: unknown) {
+          if (isAbort(error)) throw error;
+          throw new Error(
+            refusalLine(error, 'The revoke did not go through. Nothing was changed.'),
+          );
+        }
+        return true;
+      },
+      success: doneLine(target, view, first, own).replace(/\.$/, ''),
+      failure: target.kind === 'unpair' ? 'Couldn’t unpair device' : 'Couldn’t revoke',
+      mark: 'ds-done',
+    });
+    setBusy(false);
+    if (done === undefined) return;
+    // A failed re-read is the tab's own error, never the revoke's.
+    setPending(undefined);
+    onChanged();
   };
 
   const copy = pending === undefined ? undefined : confirmCopy(pending, view, first, own);
@@ -413,11 +423,6 @@ function SetupPanel({
               : 'Revoke actions are not offered to you here.'}
           </p>
         )}
-        {notice !== undefined && (
-          <p role="status" className="ds-done" data-ds-done>
-            {notice}
-          </p>
-        )}
 
         {empty ? (
           <section className="ds-card ds-empty" aria-labelledby="ds-empty-title" data-ds-empty>
@@ -452,10 +457,7 @@ function SetupPanel({
               voice={voice}
               manifest={manifest}
               decide={decide}
-              onDecided={(line) => {
-                setNotice(line);
-                onChanged();
-              }}
+              onDecided={onChanged}
             />
             <Tools view={view} canAct={canAct} onAsk={ask} spaceName={spaceName} />
             <Repositories view={view} own={own} />
@@ -477,9 +479,8 @@ function SetupPanel({
             danger
             icon="warning"
             busy={busy}
-            error={refusal}
             onConfirm={() => {
-              run(pending);
+              void run(pending);
             }}
             onClose={() => {
               if (!busy) setPending(undefined);
@@ -745,7 +746,7 @@ function Devices({
   readonly voice: Voice;
   readonly manifest: UpdateManifest | 'failed' | undefined;
   readonly decide: ((pairing: DevicePairing, approve: boolean) => Promise<unknown>) | undefined;
-  readonly onDecided: (line: string) => void;
+  readonly onDecided: () => void;
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [revokedOpen, setRevokedOpen] = useState(false);
@@ -869,36 +870,34 @@ function OwnPairing({
   readonly pairing: DevicePairing;
   readonly now: number;
   readonly decide: (pairing: DevicePairing, approve: boolean) => Promise<unknown>;
-  readonly onDecided: (line: string) => void;
+  readonly onDecided: () => void;
 }) {
+  const { run } = useAction();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
   const step = pairingStep(pairing);
   const name = pairing.display_name;
+  // The row's own step line then says what is left — *waiting for the
+  // device to finish* — so the toast only says what was decided. No Undo:
+  // the server has no way back from approved or declined.
   const act = (approve: boolean) => (): void => {
     setBusy(true);
-    setError(undefined);
-    decide(pairing, approve)
-      .then(() => {
-        onDecided(
-          approve
-            ? `${name} is approved. The device finishes pairing on its own.`
-            : `${name}’s pairing request was declined.`,
-        );
-      })
-      .catch((cause: unknown) => {
-        setError(
-          refusalLine(
-            cause,
-            approve
-              ? 'The approval did not go through. Nothing was changed.'
-              : 'Declining did not go through. Nothing was changed.',
-          ),
-        );
-      })
-      .finally(() => {
-        setBusy(false);
-      });
+    void run({
+      do: async () => {
+        try {
+          await decide(pairing, approve);
+        } catch (cause: unknown) {
+          if (isAbort(cause)) throw cause;
+          throw new Error(refusalLine(cause, 'Nothing was changed.'));
+        }
+        return true;
+      },
+      success: approve ? `${name} approved` : `${name}’s request declined`,
+      failure: approve ? 'Couldn’t approve device' : 'Couldn’t decline request',
+      mark: 'ds-done',
+    }).then((done) => {
+      setBusy(false);
+      if (done === true) onDecided();
+    });
   };
   return (
     <span
@@ -938,11 +937,6 @@ function OwnPairing({
           >
             Decline
           </button>
-        </span>
-      )}
-      {error !== undefined && (
-        <span role="alert" className="ds-pending-error" data-ds-pairing-error>
-          {error}
         </span>
       )}
     </span>

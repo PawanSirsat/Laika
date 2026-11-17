@@ -382,6 +382,9 @@ void describe('Your devices', () => {
         [{ device_label: 'quokka box' }],
       );
       assert.equal(recognised.has('quokka box'), true);
+      await page
+        .locator('[data-toast]', { hasText: 'Quokka Box recognised' })
+        .waitFor({ timeout: 5_000 });
       // The other unrecognised device is still unrecognised.
       assert.equal(await group(page, 'kestrel-mk2').locator('[data-unrecognised]').count(), 1);
     } finally {
@@ -404,8 +407,11 @@ void describe('Your devices', () => {
     try {
       const quokka = group(page, 'quokka box');
       await quokka.getByRole('button', { name: /This is mine/ }).click({ timeout: 20_000 });
-      await quokka.locator('[role="alert"]').waitFor();
-      assert.match(await quokka.locator('[role="alert"]').innerText(), /signed-in session/);
+      // An error toast now (LAI-1310), persistent, with the server's reason.
+      const toast = page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t confirm device/);
+      assert.match(await toast.innerText(), /signed-in session/);
       assert.equal(await quokka.locator('[data-unrecognised]').innerText(), 'Not recognised');
     } finally {
       await h.close();
@@ -463,7 +469,7 @@ void describe('Your devices', () => {
     }
   });
 
-  void test('revoke: a refusal stays in the dialog and changes nothing', async () => {
+  void test('revoke: a refusal is an error toast, the dialog stays, and nothing changes', async () => {
     const now = Date.now();
     const agents = seed(now);
     const h = await openAt(
@@ -479,8 +485,11 @@ void describe('Your devices', () => {
       await confirmSettled(page);
       const dialog = page.locator('[data-confirm-dialog]');
       await dialog.locator('[data-confirm-ok] button').click();
-      await dialog.locator('[data-confirm-error]').waitFor();
-      assert.match(await dialog.locator('[data-confirm-error]').innerText(), /database is busy/);
+      const toast = page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t revoke device/);
+      assert.match(await toast.innerText(), /database is busy/);
+      assert.equal(await dialog.isVisible(), true);
       assert.equal(posts(h, '/api/v1/agents/devices/revoke').length, 1);
 
       await dialog.locator('[data-confirm-cancel] button').click();
@@ -617,7 +626,9 @@ void describe('Your devices', () => {
       }
 
       gate.release({ status: 500, message: 'The database is busy' });
-      await dialog.locator('[data-confirm-error]').waitFor();
+      await page.locator('[data-toast][data-tone="error"]').waitFor({ timeout: 10_000 });
+      // The toast never takes focus, so it stays in the dialog.
+      await until(inside);
       assert.equal(await inside(), true, 'focus left the dialog after the failure');
       await page.keyboard.press('Escape');
       await dialog.waitFor({ state: 'detached', timeout: 5_000 });

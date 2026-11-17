@@ -1297,6 +1297,32 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       await until(() => puts.length === 1);
       const body = puts[0]?.body as { week_reset?: { minute: number } };
       assert.equal(body.week_reset?.minute, 870);
+      // Saving says so in the app's toast (LAI-1310).
+      await h.page
+        .locator('[data-toast]', { hasText: 'Plan limit saved' })
+        .waitFor({ timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused plan-limit save is an error toast with the server’s reason (LAI-1310)', async () => {
+    const h = await open('/insights?tab=usage', {
+      ...ownerStub(),
+      '/api/v1/me/plan-limit': (call: StubCall) =>
+        call.method === 'PUT'
+          ? reply(503, { error: { code: 'unavailable', message: 'The board is restarting.' } })
+          : planLimit(),
+    });
+    try {
+      const card = h.page.locator('[data-section="plan-limit"]');
+      await card.locator('form').waitFor({ timeout: 20_000 });
+      await card.getByLabel('Your limit, in tokens').fill('3M');
+      await card.getByRole('button', { name: 'Save' }).click();
+      const toast = h.page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.match(await toast.innerText(), /Couldn’t save plan limit/);
+      assert.match(await toast.innerText(), /The board is restarting\./);
     } finally {
       await h.close();
     }

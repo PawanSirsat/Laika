@@ -469,6 +469,8 @@ void describe('the Agents tab (LAI-537)', () => {
       assert.equal(h.calls.filter((c) => c.method === 'POST').length, 0);
       await press(page, 'Register and create its credential');
       await page.locator('[data-testid="agent-secret"]').waitFor();
+      // The secret stays in the wizard; the toast says it landed (LAI-1310).
+      await page.locator('[data-toast]', { hasText: 'registered' }).waitFor({ timeout: 5_000 });
       const posted = h.calls.find((c) => c.method === 'POST' && c.path === '/api/v1/agents');
       assert.deepEqual(posted?.body, {
         display_name: 'claude-code on laptop-1',
@@ -663,6 +665,10 @@ void describe('the Agents tab (LAI-537)', () => {
       await until(
         async () => (await page.locator('.agents-row').getAttribute('data-state')) === 'revoked',
       );
+      // A toast says it, with no Undo — a revoked agent cannot come back.
+      const toast = page.locator('[data-toast]', { hasText: 'Codex · build box revoked' });
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0);
       // Revoked is said in words, and no readiness claims anything of it.
       assert.match(await page.locator('.agents-row .agents-revoked').innerText(), /^Revoked/);
       assert.equal(await page.locator('.agents-row [data-readiness]').count(), 0);
@@ -1575,6 +1581,10 @@ void describe('one agent per harness per device (D-120, LAI-1001)', () => {
       const error = page.locator('.agents-wizard .agents-error');
       await error.waitFor();
       assert.match(await error.innerText(), /may live at most 24 hours/);
+      // And as an error toast, which stays until dismissed (LAI-1310).
+      const toast = page.locator('[data-toast][data-tone="error"]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.match(await toast.innerText(), /Couldn’t register agent/);
       await shoot(page, 'wizard-cloud-refused-light-1440');
 
       await press(page, 'Register and create its credential');

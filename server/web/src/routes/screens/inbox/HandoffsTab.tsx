@@ -47,6 +47,8 @@ import { plainClick, taskHref } from '../my-day/task-link.ts';
 import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
 import '../../../components/agent/agent.css';
 import { Icon } from '../../../components/icon/Icon.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { isAbort } from '../../../components/toast/action-model.ts';
 
 /** Offers expire in minutes; a visible tab re-reads twice a minute, quietly. */
 const POLL_MS = 30_000;
@@ -117,9 +119,7 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate, only }: Hando
   const pending = useRef(new Set<string>());
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [focusInside, setFocusInside] = useState(false);
-  const [notes, setNotes] = useState<Readonly<Record<string, { error: boolean; words: string }>>>(
-    {},
-  );
+  const { run } = useAction();
   const latest = useRef<readonly PersonHandoffView[]>([]);
   const holding = busy.size > 0 || focusInside;
   const holdingRef = useRef(holding);
@@ -141,7 +141,6 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate, only }: Hando
       shownFor.current = key;
       more.current?.abort();
       setState(START);
-      setNotes({});
     }
     const controller = new AbortController();
     listPersonHandoffs({ view, includeClosed: closed, limit: PAGE }, controller.signal)
@@ -248,34 +247,38 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate, only }: Hando
     setView(next);
   };
 
-  const write = (kind: 'approve' | 'withdraw', row: PersonHandoffView): void => {
+  /**
+   * Approve or withdraw one row, said as a toast (LAI-1310). The row's own
+   * *Next* line, re-read below, already says what happens now — the
+   * receiver still has to accept, the sender's claim resumes — so the row
+   * carries no note of its own that only says it was done. No Undo: an
+   * approval is the lead's gate, and the server has no un-approve.
+   */
+  const write = async (kind: 'approve' | 'withdraw', row: PersonHandoffView): Promise<void> => {
     if (pending.current.has(row.id)) return;
     pending.current.add(row.id);
     setBusy(new Set(pending.current));
-    setNotes((n) => ({ ...n, [row.id]: { error: false, words: '' } }));
-    (kind === 'approve' ? approveHandoff(row.id) : cancelHandoff(row.id))
-      .then(() => {
-        setNotes((n) => ({
-          ...n,
-          [row.id]: {
-            error: false,
-            words:
-              kind === 'approve'
-                ? 'Approved. The receiving agent still has to accept it.'
-                : 'Withdrawn. The sender’s claim resumes.',
-          },
-        }));
-        onChanged();
-        reread();
-      })
-      .catch((cause: unknown) => {
-        setNotes((n) => ({ ...n, [row.id]: { error: true, words: handoffRefusal(cause) } }));
-        reread();
-      })
-      .finally(() => {
-        pending.current.delete(row.id);
-        setBusy(new Set(pending.current));
-      });
+    const done = await run({
+      do: async () => {
+        try {
+          return await (kind === 'approve' ? approveHandoff(row.id) : cancelHandoff(row.id));
+        } catch (cause: unknown) {
+          if (isAbort(cause)) throw cause;
+          // The reason's own words (`handoffRefusal`) read better than the
+          // bare server message, so they are the toast's detail.
+          throw new Error(handoffRefusal(cause));
+        }
+      },
+      success:
+        kind === 'approve'
+          ? `Hand-off of ${row.task_key} approved`
+          : `Hand-off of ${row.task_key} withdrawn`,
+      failure: kind === 'approve' ? 'Couldn’t approve hand-off' : 'Couldn’t withdraw hand-off',
+    });
+    pending.current.delete(row.id);
+    setBusy(new Set(pending.current));
+    if (done !== undefined) onChanged();
+    reread();
   };
 
   const shownCounts = state.counts ?? counts;
@@ -401,13 +404,12 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate, only }: Hando
                 gone={gone}
                 meId={meId}
                 busy={busy.has(row.id)}
-                note={notes[row.id]}
                 onNavigate={onNavigate}
                 onApprove={() => {
-                  write('approve', row);
+                  void write('approve', row);
                 }}
                 onWithdraw={() => {
-                  write('withdraw', row);
+                  void write('withdraw', row);
                 }}
               />
             ))}
@@ -432,22 +434,12 @@ interface HandoffRowProps {
   readonly gone: boolean;
   readonly meId: string | undefined;
   readonly busy: boolean;
-  readonly note: { readonly error: boolean; readonly words: string } | undefined;
   readonly onNavigate: (to: string) => void;
   readonly onApprove: () => void;
   readonly onWithdraw: () => void;
 }
 
-function HandoffRow({
-  row,
-  gone,
-  meId,
-  busy,
-  note,
-  onNavigate,
-  onApprove,
-  onWithdraw,
-}: HandoffRowProps) {
+function HandoffRow({ row, gone, meId, busy, onNavigate, onApprove, onWithdraw }: HandoffRowProps) {
   const titleId = useId();
   const href = taskHref({ id: row.task_id, key: row.task_key }, row.project_slug);
   // A row kept only because the reader is acting nearby offers nothing: its
@@ -605,14 +597,11 @@ function HandoffRow({
           )}
         </span>
       )}
-      {note?.error === true && note.words !== '' && (
-        <p className="handoffs-note handoffs-note-error" role="alert">
-          {note.words}
-        </p>
-      )}
-      {/* Always present, so what lands in it is announced — politely. */}
+      {/* Always present, so what lands in it is announced — politely. It now
+          carries only a lost focus's explanation; the outcome of Approve or
+          Withdraw is the toast's (LAI-1310). */}
       <p className="handoffs-note" role="status" data-row-status>
-        {note !== undefined && !note.error && note.words !== '' ? note.words : moved}
+        {moved}
       </p>
     </li>
   );

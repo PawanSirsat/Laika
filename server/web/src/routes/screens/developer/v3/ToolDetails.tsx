@@ -23,6 +23,8 @@ import {
 } from '../../../../components/agent/capacity-derive.ts';
 import { autoPickupWords } from '../../../../components/agent/capacity-derive.ts';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
+import { useAction } from '../../../../components/toast/use-action.ts';
+import { useToast } from '../../../../components/toast/ToastProvider.tsx';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch, type ConsentRead } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
@@ -73,7 +75,6 @@ export interface ToolDetailsProps {
   readonly onReconnect: (agent: RegisteredAgent) => void;
   /** The tool was disconnected: the panel closes, as its row leaves the list. */
   readonly onDisconnected: () => void;
-  readonly announce: (message: string) => void;
   readonly confirm: ReturnType<typeof useConfirm>;
   readonly onClose: () => void;
   readonly restore: () => HTMLElement | null | undefined;
@@ -136,7 +137,6 @@ export function ToolDetails({
   onChanged,
   onReconnect,
   onDisconnected,
-  announce,
   confirm,
   onClose,
   restore,
@@ -172,7 +172,6 @@ export function ToolDetails({
       onChanged={onChanged}
       onReconnect={onReconnect}
       onDisconnected={onDisconnected}
-      announce={announce}
       confirm={confirm}
       onClose={onClose}
       restore={restore}
@@ -194,7 +193,6 @@ function ToolPanel({
   onChanged,
   onReconnect,
   onDisconnected,
-  announce,
   confirm,
   onClose,
   restore,
@@ -221,7 +219,9 @@ function ToolPanel({
 
   const [form, setForm] = useState<Form>('none');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  // What a reconnect or a disconnect did, or why not, is a toast (LAI-1310).
+  const { run } = useAction();
+  const toast = useToast();
   const { held: rotated, hold, retire, forget } = useOnceSecret();
   // A revealed secret stops being shown the moment its tool is revoked — here
   // or by its device's disconnect — as the classic row does (review round 1).
@@ -277,7 +277,6 @@ function ToolPanel({
   const closeForm = (): void => {
     closed.current = form;
     setForm('none');
-    setError(undefined);
   };
 
   const rotate = (): void => {
@@ -292,25 +291,34 @@ function ToolPanel({
     }).then((yes) => {
       if (!yes) return;
       setBusy(true);
-      setError(undefined);
-      rotateAgentToken(agent.id, replaceable.id, cloud ? cloudExpiry(Date.now()) : undefined)
-        .then((answer) => {
-          hold(answer);
-          onChanged(answer.agent);
-          announce(`${label} has a new credential. Copy it now; it is not shown again.`);
-        })
-        .catch((cause: unknown) => {
-          setError(cloudExpiryProblem(cause) ?? errorText(cause, 'Could not reconnect that tool.'));
-        })
-        .finally(() => {
-          setBusy(false);
-        });
+      // The new credential is shown in the panel, once, to copy; the toast
+      // says the reconnect landed. No Undo: the old one stopped for good.
+      void run({
+        do: async () => {
+          try {
+            return await rotateAgentToken(
+              agent.id,
+              replaceable.id,
+              cloud ? cloudExpiry(Date.now()) : undefined,
+            );
+          } catch (cause: unknown) {
+            const said = cloudExpiryProblem(cause);
+            throw said === undefined ? cause : new Error(said);
+          }
+        },
+        success: `${label} has a new credential`,
+        failure: 'Couldn’t reconnect tool',
+      }).then((answer) => {
+        setBusy(false);
+        if (answer === undefined) return;
+        hold(answer);
+        onChanged(answer.agent);
+      });
     });
   };
 
   const disconnect = (): void => {
     setBusy(true);
-    setError(undefined);
     getAgent(agent.id)
       .then(
         (detail): readonly AgentSession[] | undefined => detail.sessions,
@@ -339,19 +347,18 @@ function ToolPanel({
           setBusy(false);
           return;
         }
-        revokeAgent(agent.id)
-          .then((next) => {
-            retire();
-            onChanged(next);
-            announce(`${label} disconnected. Its credential no longer works.`);
-            onDisconnected();
-          })
-          .catch((cause: unknown) => {
-            setError(errorText(cause, 'Could not disconnect that tool.'));
-          })
-          .finally(() => {
-            setBusy(false);
-          });
+        // No Undo: a revoked agent cannot be restored (the confirm says so).
+        void run({
+          do: () => revokeAgent(agent.id),
+          success: `${label} disconnected`,
+          failure: 'Couldn’t disconnect tool',
+        }).then((next) => {
+          setBusy(false);
+          if (next === undefined) return;
+          retire();
+          onChanged(next);
+          onDisconnected();
+        });
       })
       .catch(() => {
         setBusy(false);
@@ -437,7 +444,7 @@ function ToolPanel({
                 doneLabel="I’ve saved it"
                 onDone={() => {
                   forget();
-                  announce(`${label}’s new credential is hidden now and cannot be shown again.`);
+                  toast.show({ text: `${label}’s credential is hidden now`, tone: 'success' });
                 }}
               />
             </div>
@@ -514,12 +521,6 @@ function ToolPanel({
               </NoteBlock>
             </div>
           )}
-
-          {error !== undefined && (
-            <p className="agents-error" role="alert">
-              {error}
-            </p>
-          )}
         </div>
 
         <div className="dv3-folds">
@@ -538,8 +539,8 @@ function ToolPanel({
                 <RenameForm
                   agent={agent}
                   onSaved={(saved) => {
+                    // `RenameForm` says it in a toast (LAI-1310).
                     onChanged(saved);
-                    announce(`Renamed to ${saved.display_name}.`);
                     closeForm();
                   }}
                   onCancel={closeForm}
@@ -670,8 +671,8 @@ function ToolPanel({
                 onRetryProjects={onRetryProjects}
                 viewer={viewer}
                 onSaved={(saved) => {
+                  // `AccessForm` says it in a toast (LAI-1310).
                   onChanged(saved);
-                  announce(`${label}’s project access saved.`);
                   closeForm();
                 }}
                 onCancel={closeForm}
@@ -808,10 +809,6 @@ function InlineCode({ text }: { readonly text: string }) {
         part
       ),
     );
-}
-
-function errorText(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message !== '' ? cause.message : fallback;
 }
 
 /**
