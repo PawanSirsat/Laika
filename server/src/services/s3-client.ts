@@ -429,8 +429,12 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       if (answer.status < 200 || answer.status >= 300) {
         throw new StoreUnavailableError(`HEAD answered ${String(answer.status)}`);
       }
-      const size = Number(answer.headers.get('content-length'));
-      if (!Number.isSafeInteger(size) || size < 0) {
+      // Read as digits first: `Number(null)` is 0, so a store that sent no
+      // length would otherwise read as an empty object — a size mismatch to
+      // the caller, when it is the store failing to answer.
+      const length = answer.headers.get('content-length');
+      const size = length !== null && /^\d+$/.test(length) ? Number(length) : NaN;
+      if (!Number.isSafeInteger(size)) {
         throw new StoreUnavailableError('HEAD answered no size');
       }
       return { size };
