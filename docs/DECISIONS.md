@@ -7580,3 +7580,61 @@ the UI refine branches (`LAI-1200-calendar-refine` and the 37 after it); CHIEF a
 it dispatches file from `LAI-1300` – `LAI-1399`, lowest unused first, checked with §3's sweep.
 Measured on 2026-11-17 across every local and `origin` branch and all history: 100 of
 `LAI-1100` – `LAI-1199` taken, 38 ids in the `LAI-12xx` range taken, none in `LAI-13xx`.
+
+## D-157 — Outlook meetings are logged automatically as the person's time, read through Microsoft Graph as an app; the switch ships off
+
+**Date:** 2026-11-18 · **Decided by:** Pawan (owner); recorded by the builder CHIEF (Belka)
+dispatched. Task LAI-1316. Amends D-088 items 2 and 4, D-108 item 1 and §13.4.
+
+**Context.** The owner, 2026-11-18: *"get all data from Outlook calendar, like the meetings,
+into Ksage … and log that in My day, the timing"*. Meetings are most of a manager's day and
+none of it reaches Laika unless somebody types it. Kvell's mail and calendars are Microsoft
+365, and the Entra app **KSage** (client `ae9ce6ed-ef7a-45ff-9a05-6db164d947bd`, tenant
+`5abd4f6b-f235-4d86-a90c-08f2e5f56fbb`) already exists. Asked, the owner chose **an admin
+grants the app the Graph application permission `Calendars.Read`, once**, over each person
+connecting their own calendar, and **meetings logged automatically** over drafts to confirm.
+Consent is still pending, so the feature ships whole and **off**.
+
+**Decision.**
+
+1. **A fifth outbound call.** §13.4 gains the organisation's **configured Microsoft tenant**:
+   a client-credentials token from `login.microsoftonline.com` and read-only `GET`s of
+   `graph.microsoft.com/v1.0/users/{email}/calendarView` — nothing else, and no other host;
+   a next-page link that names another origin is refused, never followed. Set up by an owner
+   or admin (`org.calendar.configure`, session only) on Organisation → Integrations: the
+   tenant, the app's client id and its client secret, kept as D-009's provider key is (purpose
+   `calendar_client_secret`), never returned or logged, its last four shown. The credentials
+   live in the database (§4.93), not in the environment, so the master build carries the
+   feature and Ksage gets it by the usual merge.
+2. **The switch ships off.** Saving credentials reads nothing. **Test connection** asks
+   Microsoft for a fresh token and shows the roles it carries — whether `Calendars.Read` has
+   been granted — and works while the switch is off. Only with the switch on does the sync
+   run: every 15 minutes (`system.calendar.sync`, §11.6), never at boot.
+3. **What is logged — amends D-088 item 2.** A meeting on a member's calendar, matched to
+   them by lowercased email, from the start of yesterday to the end of tomorrow in their own
+   zone, **that they accepted or organised**, becomes a **confirmed** `time_entries` row with
+   `source: 'calendar'` — confirmed by the sync, not by the person. Tentative, declined,
+   not-answered, cancelled, all-day, *free* and *out of office* events are not logged. Each
+   revision is the member's own (`changed_by` is them), the entry is theirs to change or
+   delete like one they typed, and it is never pushed to Solidtime.
+4. **What is kept — amends D-088 item 4.** The meeting's **subject** as the entry's title
+   (≤ 120), its span and minutes, its space by the rules, and Graph's event and iCalendar ids
+   (§4.94). A **private or confidential** meeting is titled *Busy*, and no rule reads its
+   subject. **Never a join link, a body or an attendee** — not asked for, so not read. A
+   meeting that runs past the person's midnight ends at midnight.
+5. **The kind is set — amends D-108 item 1.** A calendar entry is `kind: 'meeting'`. D-108's
+   "a kind is never inferred" stays true of everything else.
+6. **A person's edit wins.** The sync remembers each entry's revision as it last wrote it; an
+   entry the person has changed or deleted since is never touched again. Otherwise a changed
+   meeting updates its entry, and one cancelled, declined or gone from a complete read of the
+   window is retired — `deleted_at` and a revision — and comes back if the meeting does. A
+   day already full (`day_full`) and the closed period are skipped, and the organisation's
+   Time being off stops the sync.
+7. **Spaces by rule.** An owner or admin maps meetings to spaces: a keyword in the subject
+   (any case), or a Teams channel, matched against the meeting's location, which Teams sets
+   to the channel for a channel meeting. First match wins; no match is *General*. A rule
+   whose space is gone sends nothing anywhere.
+8. **Failures are Laika's words.** A refused secret, a missing grant, an unreachable or
+   unreadable Microsoft is recorded on the connection by code and changes nothing; a member
+   Microsoft has no calendar for is counted and skipped. Everyone's calendar is read before
+   one transaction writes, so a read that fails part-way writes nothing.
