@@ -5,7 +5,8 @@ area: docker
 assignee: chief
 priority: p1
 depends-on: []
-status: review
+status: done
+accepted: 2026-11-17T13:48:17Z
 started: 2026-11-17T13:40:00Z
 finished: 2026-11-17T13:24:52Z
 ---
