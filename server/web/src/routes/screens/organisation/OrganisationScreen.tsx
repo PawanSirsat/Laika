@@ -31,6 +31,8 @@ import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
+import { EmailSection } from './EmailSection.tsx';
+import { emailOn } from './email-derive.ts';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
@@ -706,6 +708,7 @@ export function OrganisationScreen({
                 }}
                 onIssued={reload}
                 restore={() => inviteButton.current}
+                emailOn={org !== undefined && emailOn(org)}
               />
             )}
           </>
@@ -740,6 +743,17 @@ export function OrganisationScreen({
                 beside the other connection GitHub is — its holder's alone. */}
             {canConfigureHr && (
               <HrSourceSection members={state.people.filter((p) => p.is_active)} />
+            )}
+
+            {/* D-153 (LAI-1312): outbound email, the same §3.1 row as the AI
+                provider — `ai` is present exactly when the reader passes
+                `org.settings.edit`, so its presence is the gate here too. */}
+            {org?.ai !== undefined && (
+              <EmailSection
+                onChanged={(email) => {
+                  setOrg((current) => (current === undefined ? current : { ...current, email }));
+                }}
+              />
             )}
 
             {/* LAI-773: the prices every cost on Usage is computed with — read by

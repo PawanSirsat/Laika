@@ -325,6 +325,10 @@ const NOT_SERVED = new Map<string, string>([
   ],
   ['BackfillResult', 'what a backfill did, returned to the migration runner and never to a client'],
   ['JobResult', '§11.6 cron bookkeeping — counts the sweep touched, logged rather than served'],
+  [
+    'EmailRunResult',
+    '§11.6 cron bookkeeping — what one email.send run did to each row, logged rather than served (LAI-1312)',
+  ],
   ['LookupResult', 'the idempotency middleware asking whether it has seen this key'],
   ['StoredResponse', 'the idempotency cache entry — a stored response, not a served type'],
   ['OpenDbResult', 'the `{ db, sqlite }` pair `openDb` hands back inside the process'],
