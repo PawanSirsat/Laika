@@ -311,7 +311,41 @@ void describe('every failure says why, and too big is refused before asking', ()
         png(),
         {},
         steps({
-          complete: () => Promise.reject(new ApiError('conflict', 'Size mismatch.', 409)),
+          complete: () =>
+            Promise.reject(
+              new ApiError('conflict', 'Size mismatch.', 409, { reason: 'size_mismatch' }),
+            ),
+        }).all,
+      ),
+    );
+  });
+
+  void test('an ask over an hour old is attached again; another conflict is the server’s sentence', async () => {
+    await failsWith('expired', /^“shot\.png” took too long to arrive\. Attach it again\.$/, () =>
+      uploadAttachment(
+        { slug: 's', maxBytes: MAX },
+        png(),
+        {},
+        steps({
+          complete: () =>
+            Promise.reject(
+              new ApiError('conflict', 'Asked too long ago.', 409, { reason: 'upload_expired' }),
+            ),
+        }).all,
+      ),
+    );
+    await failsWith('refused', /^That upload is already complete$/, () =>
+      uploadAttachment(
+        { slug: 's', maxBytes: MAX },
+        png(),
+        {},
+        steps({
+          complete: () =>
+            Promise.reject(
+              new ApiError('conflict', 'That upload is already complete', 409, {
+                reason: 'not_pending',
+              }),
+            ),
         }).all,
       ),
     );

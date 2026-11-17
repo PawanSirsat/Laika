@@ -43,7 +43,15 @@ export interface AttachedFile {
 
 /** Why an upload did not finish, each with its own sentence. */
 export type UploadFailure =
-  'empty' | 'too_large' | 'off' | 'network' | 'store' | 'incomplete' | 'refused' | 'aborted';
+  | 'empty'
+  | 'too_large'
+  | 'off'
+  | 'network'
+  | 'store'
+  | 'incomplete'
+  | 'expired'
+  | 'refused'
+  | 'aborted';
 
 /** An upload that did not finish; `message` says why, for the person. */
 export class AttachmentUploadError extends Error {
@@ -217,10 +225,16 @@ const tooLarge = (name: string, size: number, max: number): AttachmentUploadErro
     `“${name}” is ${formatBytes(size)}; a file can be at most ${formatBytes(max)}.`,
   );
 
+/** The `reason` a refusal's details name, if any. */
+function reasonOf(error: ApiError): string | null {
+  const reason = (error.details as { reason?: unknown } | null)?.reason;
+  return typeof reason === 'string' ? reason : null;
+}
+
 /** Is this the server saying the board has no store (D-150 item 1)? */
 export function isAttachmentsOff(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status !== 503) return false;
-  return (error.details as { reason?: unknown } | null)?.reason === 'attachments_off';
+  return reasonOf(error) === 'attachments_off';
 }
 
 /**
@@ -264,8 +278,18 @@ export async function uploadAttachment(
     if (error instanceof ApiError && error.code === 'payload_too_large') {
       return tooLarge(name, file.size, maxFrom(error, target.maxBytes));
     }
-    if (error instanceof ApiError && error.code === 'conflict') {
+    // `complete`'s refusals (§6.4): the store has not got the file as asked
+    // for, or the ask is over an hour old; anything else is the server's own.
+    const conflict =
+      error instanceof ApiError && error.code === 'conflict' ? reasonOf(error) : null;
+    if (conflict === 'upload_missing' || conflict === 'size_mismatch') {
       return new AttachmentUploadError('incomplete', `“${name}” did not arrive whole. Try again.`);
+    }
+    if (conflict === 'upload_expired') {
+      return new AttachmentUploadError(
+        'expired',
+        `“${name}” took too long to arrive. Attach it again.`,
+      );
     }
     if (error instanceof NetworkError) {
       return new AttachmentUploadError(

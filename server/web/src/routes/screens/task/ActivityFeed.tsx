@@ -43,7 +43,11 @@ export interface ActivityFeedProps {
   readonly rounds: readonly Round[];
   /** The reader leads the space: Edit and Delete on every comment (§3.2). */
   readonly leads: boolean;
-  /** Attach files to a comment, new or edited (D-150); absent with no store. */
+  /**
+   * Attach files to a comment, new or edited (D-150); absent with no store.
+   * Aimed at the project only: the comment's save links each file to the task
+   * and to the comment, so the comment owns it (LAI-1300).
+   */
   readonly attach?: EditorAttach | undefined;
 }
 
