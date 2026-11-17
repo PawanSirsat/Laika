@@ -101,3 +101,39 @@ Every criterion above holds. Choices, each also in the PR body and the log:
   each over the square `object-fit: cover` shows — the owner's black-square logo is a dark
   tile at its edge whatever its figure.
 - **"In dark" covers the black theme too**: `:root:not([data-theme='light'])`.
+
+## Review round 1 (CHIEF, 2026-11-18) — response
+
+All ten items made; the task stays in review. Each must-fix test was checked by removing
+its fix: both go red.
+
+1. **A part-saved form is reported as saved** (`GeneralTab.tsx`): the `PATCH`'s answer
+   is handed to the screen the moment it lands, so a refused complete or removal leaves the
+   fields saved; only the icon stays held, said as *Saved. The icon was not saved: … Try
+   Save again.* Browser tests for a refused complete and a refused `DELETE`: the server
+   and the form both have the new name, the icon is still held, and Discard drops only it.
+2. **Save waits for an image to finish uploading**: `staging` is lifted to General, Save
+   (and Discard) are off meanwhile with the reason given; only what was sent is cleared
+   (`setHeldIcon(h => h === held ? null : h)`); `onHold` never resets the status while a
+   save runs. Browser test: Save pressed during a 1.5 s upload sends nothing; afterwards
+   the image completed is the one staged.
+3. **No `data:` URL in the plate cache**: a preview's measure lives in its mark's state.
+4. **40-megapixel cap, read from the header before decoding** (`imageSize`: PNG IHDR,
+   JPEG frame header, WebP VP8/VP8L/VP8X); unit tests per format, a browser test with a
+   10 000 × 5 000 PNG header.
+5. **Colour exempts nothing**: exempting colourful images only in the mid band is the same
+   as no exemption (the mid band gets nothing anyway), so `colourful` is gone and luminance
+   alone decides. Navy `#001f5b` → ring in dark; pastel `#ffe5f1` → ring in light; red,
+   blue, yellow ringed; orange and teal mid-tones nothing.
+6. **A save answer for another space is ignored** by the screen (`currentSlug` ref).
+7. **Drag scaled** by `FRAME_PX / clientWidth`; browser test with the box at half size.
+8. **The board's limit**: `maxBytes = min(1 MiB, attachments.max_bytes)`; `exportPlan`
+   tiers — PNG and WebP 0.92, then WebP 0.8, 0.6, then three-quarters the size, down to
+   64 — first tier that fits wins; *Made smaller to fit this board's file limit* when it
+   had to. Browser test with a 12 000-byte limit and an image of noise.
+9. **Server comment** (`project-icons.ts`): staged-and-never-completed images are normal
+   now; the sweep is CHIEF's to file.
+10. **Black theme ring asserted**; **a polite live region** says the zoom and offset as
+    the frame moves (`describePlacement`, unit-tested and asserted in the keyboard test).
+
+Also: SPEC §11.4.2.1 rewritten to match (header check, board limit, the save order).
