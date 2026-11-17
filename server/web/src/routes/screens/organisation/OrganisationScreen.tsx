@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { SsoSection } from './SsoSection.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
@@ -818,6 +819,9 @@ export function OrganisationScreen({
               onNavigate={onNavigate}
             />
           ))}
+
+        {/* How people sign in, above the tokens they hold (LAI-1239). */}
+        {tab === 'security' && canEditOrg && <SsoSection />}
 
         {tab === 'security' && canListTokens && (
           <section className="org-card" aria-labelledby="org-security">

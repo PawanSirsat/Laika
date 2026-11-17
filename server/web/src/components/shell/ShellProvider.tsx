@@ -38,7 +38,7 @@ export interface ShellProviderProps {
 export function ShellProvider({ children }: ShellProviderProps) {
   const route = useRoute();
   const { session, signIn, signOut, retry } = useSession();
-  const { setupRequired, system, markComplete, recheck } = useSetupStatus();
+  const { setupRequired, system, signInMethod, markComplete, recheck } = useSetupStatus();
   const [signingOut, setSigningOut] = useState(false);
 
   const signedIn = showsAppNav(session);
@@ -86,6 +86,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       signingOut,
       retry,
       system,
+      signInMethod,
       markComplete,
       recheck,
       version,
@@ -116,6 +117,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       signingOut,
       retry,
       system,
+      signInMethod,
       markComplete,
       recheck,
       version,

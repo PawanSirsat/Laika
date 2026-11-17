@@ -8,6 +8,7 @@ import * as schema from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { consumeInvite, ownerInviteRefused, removeOrphanedInvitee } from '../services/invites.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
+import { inviteForEmail, userIsActive, type MicrosoftSso } from './sso.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
 import { trustedOriginsFor } from './trusted-origins.ts';
 
@@ -66,7 +67,38 @@ export interface CreateAuthOptions {
    * §13.1).
    */
   secureCookies: boolean;
+  /**
+   * Microsoft SSO (LAI-1238). Set, Microsoft is the only way in: the password
+   * endpoints refuse `sso_only`, and a new account needs an invite addressed to
+   * the email Microsoft asserts. `null` or absent keeps email and password.
+   */
+  sso?: MicrosoftSso | null;
   now?: () => number;
+}
+
+/** The password endpoints, refused when Microsoft SSO is on (LAI-1238). */
+export const PASSWORD_AUTH_PATHS = [
+  '/sign-in/email',
+  '/sign-up/email',
+  '/request-password-reset',
+  '/forget-password',
+  '/reset-password',
+  '/change-password',
+  '/set-password',
+] as const;
+
+/** What a password endpoint answers on an SSO-only instance. */
+export const SSO_ONLY_MESSAGE =
+  'This Laika signs in with Microsoft only. Use "Sign in with Microsoft".';
+
+function ssoOnlyError(): APIError {
+  return new APIError('FORBIDDEN', { code: 'sso_only', message: SSO_ONLY_MESSAGE });
+}
+
+/** The path of a better-auth call that came over HTTP; `undefined` for an internal one. */
+function pathOf(ctx: unknown): string | undefined {
+  const path = (ctx as { path?: unknown } | null | undefined)?.path;
+  return typeof path === 'string' ? path : undefined;
 }
 
 /**
@@ -82,6 +114,7 @@ export function createAuth(options: CreateAuthOptions) {
   scrubTelemetryEnv();
 
   const now = options.now ?? (() => Date.now());
+  const sso = options.sso ?? null;
 
   return betterAuth({
     appName: 'Laika',
@@ -117,15 +150,59 @@ export function createAuth(options: CreateAuthOptions) {
       expiresIn: SESSION_EXPIRES_IN,
       updateAge: SESSION_UPDATE_AGE,
     },
-    account: { modelName: 'accounts' },
+    account: {
+      modelName: 'accounts',
+      /**
+       * An existing person signing in with Microsoft for the first time is
+       * **linked** to their account by email, not given a second one (LAI-1238).
+       * Trusting Microsoft's email for that is safe only because the tenant is
+       * one directory (`sso.ts` refuses `common`/`organizations`/`consumers`):
+       * the address comes from a directory this organisation runs.
+       *
+       * **`requireLocalEmailVerified: false`** — better-auth otherwise refuses
+       * to link unless the *local* account's email is marked verified
+       * (`account_not_linked`), and Laika never verifies one: every account is
+       * made by an invite or by first boot, so every existing person — the owner
+       * first — would be locked out the first time they used Microsoft. What
+       * that check guards against is someone registering a victim's address
+       * ahead of them; on an SSO-only, invite-only instance nobody can register
+       * at all, so the guard protects nothing here and costs everyone.
+       */
+      accountLinking:
+        sso === null
+          ? { enabled: false }
+          : {
+              enabled: true,
+              trustedProviders: ['microsoft'],
+              allowDifferentEmails: false,
+              requireLocalEmailVerified: false,
+            },
+    },
     verification: { modelName: 'verifications' },
 
     emailAndPassword: {
-      enabled: true,
+      // Off when Microsoft SSO is on (LAI-1238); the `before` hook below also
+      // answers those endpoints `sso_only` so a client is told why, in words.
+      enabled: sso === null,
       // Argon2id is better-auth's default hash (§13.1). Not overridden.
       requireEmailVerification: false,
       minPasswordLength: 12,
     },
+
+    // Microsoft Entra ID, one tenant (LAI-1238). No profile photo: it is a
+    // second call to Microsoft Graph for a picture Laika does not draw.
+    socialProviders:
+      sso === null
+        ? {}
+        : {
+            microsoft: {
+              clientId: sso.clientId,
+              clientSecret: sso.clientSecret,
+              tenantId: sso.tenantId,
+              disableProfilePhoto: true,
+              prompt: 'select_account',
+            },
+          },
 
     advanced: {
       database: { generateId: () => newId() },
@@ -194,6 +271,10 @@ export function createAuth(options: CreateAuthOptions) {
        * middleware sees.
        */
       before: createAuthMiddleware((ctx) => {
+        // SSO-only (LAI-1238): every password endpoint refuses, in words.
+        if (sso !== null && (PASSWORD_AUTH_PATHS as readonly string[]).includes(ctx.path)) {
+          throw ssoOnlyError();
+        }
         if (ctx.path !== '/sign-up/email') return Promise.resolve();
         if (!isInviteOnly(options.db)) return Promise.resolve();
 
@@ -270,8 +351,27 @@ export function createAuth(options: CreateAuthOptions) {
     databaseHooks: {
       user: {
         create: {
-          before: (user) => {
+          before: (user, ctx) => {
             const email = user.email.toLowerCase();
+
+            /*
+             * **SSO is a way to sign in, never a way to join** (D-004, LAI-1238).
+             * A Microsoft sign-in that would create an account needs an invite
+             * addressed to the email Microsoft asserts. Only a call that came
+             * over HTTP is gated: first-boot setup creates the owner through
+             * better-auth's internal adapter, with no request behind it.
+             */
+            if (sso !== null && pathOf(ctx) !== undefined) {
+              const invite = inviteForEmail(options.db, email, now());
+              if (invite === null) {
+                throw new APIError('FORBIDDEN', {
+                  code: 'invite_required',
+                  message: `No invite is waiting for ${email}. Ask an admin to invite that address.`,
+                });
+              }
+              // The backstop every path meets (LAI-982): no invite becomes `owner`.
+              if (invite.orgRole === 'owner') throw useTransferError();
+            }
 
             return Promise.resolve({
               data: {
@@ -280,6 +380,53 @@ export function createAuth(options: CreateAuthOptions) {
                 email,
               },
             });
+          },
+          /*
+           * Spend the invite the `before` gate found, and apply its role
+           * (LAI-1238) — the same `consumeInvite` the password sign-up uses, so
+           * the single-use transaction, the owner backstop and the audit rows
+           * are one code path. A lost race takes the new account with it, as on
+           * the password path, so the address is free to try again.
+           */
+          after: (user, ctx) => {
+            if (sso === null || pathOf(ctx) === undefined) return Promise.resolve();
+            const invite = inviteForEmail(options.db, user.email, now());
+            try {
+              if (invite === null)
+                throw new ApiError('forbidden', 'That invite was used meanwhile');
+              consumeInvite(options.sqlite, options.db, {
+                tokenHash: invite.tokenHash,
+                userId: user.id,
+                now: now(),
+              });
+            } catch (err) {
+              removeOrphanedInvitee(options.db, user.id);
+              if (isUseTransfer(err)) throw useTransferError();
+              throw new APIError('FORBIDDEN', {
+                code: 'invite_invalid',
+                message: err instanceof Error ? err.message : 'That invite could not be used.',
+              });
+            }
+            return Promise.resolve();
+          },
+        },
+      },
+      session: {
+        create: {
+          /*
+           * A deactivated account gets no session from Microsoft either (§4.1,
+           * LAI-442). The password path checks this after the credential in
+           * `app.ts`; a social sign-in never passes through that handler's
+           * check, so it is refused here, where every session is born.
+           */
+          before: (session) => {
+            if (sso !== null && !userIsActive(options.db, session.userId)) {
+              throw new APIError('FORBIDDEN', {
+                code: 'forbidden',
+                message: 'This account has been deactivated',
+              });
+            }
+            return Promise.resolve({ data: session });
           },
         },
       },

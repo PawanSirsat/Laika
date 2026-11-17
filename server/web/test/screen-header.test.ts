@@ -35,6 +35,9 @@ const PRE_AUTH = new Set([
   'InviteScreen.tsx',
   // A reset link's page (LAI-988): opened signed out, from a link an admin sent.
   'ResetPasswordScreen.tsx',
+  // Sign in / join / first boot with Microsoft (LAI-1238): the same three
+  // moments on an SSO-only instance, drawn signed out like the forms above.
+  'MicrosoftSignInScreen.tsx',
 ]);
 
 /** In-app screens: routed inside the shell, so they share its chrome. */

@@ -594,12 +594,19 @@ export function resolveInviteForAccept(
   return row;
 }
 
-export interface ConsumeInviteInput {
-  token: string;
+export type ConsumeInviteInput = (
+  | { token: string; tokenHash?: never }
+  /**
+   * The stored hash, for Microsoft SSO (LAI-1238): there nobody presents a
+   * token — the invite is found by the email Microsoft asserts — so the hash
+   * the lookup returned is what names it. Same transaction, same checks.
+   */
+  | { tokenHash: string; token?: never }
+) & {
   /** The account better-auth has just created for the invitee. */
   userId: string;
   now?: number;
-}
+};
 
 export interface ConsumedInvite {
   inviteId: string;
@@ -644,7 +651,12 @@ export function consumeInvite(
     const row = db
       .select()
       .from(invites)
-      .where(eq(invites.tokenHash, hashInviteToken(input.token)))
+      .where(
+        eq(
+          invites.tokenHash,
+          input.token === undefined ? input.tokenHash : hashInviteToken(input.token),
+        ),
+      )
       .get();
 
     if (row?.acceptedBy !== null || row.expiresAt <= now) {
