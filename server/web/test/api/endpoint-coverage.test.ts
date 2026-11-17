@@ -63,6 +63,15 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/attachments/*/content':
     'markdown embeds it; the browser follows its 302 from an img or a link, never through request()',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
+  // LAI-1311: Teams meetings, served ahead of their screens. LAI-1312 builds
+  // the Meetings page that calls the first five; LAI-1313 the Sign-in card's
+  // Sync now. Each entry goes when its caller exists.
+  'api/v1/me/meetings': 'LAI-1312 builds the page',
+  'api/v1/meetings/*': 'LAI-1312 builds the page',
+  'api/v1/meetings/*/transcript': 'LAI-1312 builds the page',
+  'api/v1/meetings/*/review': 'LAI-1312 builds the page',
+  'api/v1/meetings/*/log-time': 'LAI-1312 builds the page',
+  'api/v1/org/sso/meetings-sync': 'LAI-1313 builds the Sign-in card’s Sync now',
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
   'api/v1/tasks/*/finish':
     "finish_task's REST twin (D-082): an agent hands work back for review; a person accepts or sends back instead",

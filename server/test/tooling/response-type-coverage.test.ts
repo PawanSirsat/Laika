@@ -292,6 +292,18 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
+  // LAI-1311: Teams meetings, served ahead of the Meetings page — LAI-1312
+  // builds the client and mirrors them, and each leaves this group then.
+  ['MeetingListView', 'no client type exists'],
+  ['MeetingSummaryView', 'no client type exists'],
+  ['MeetingDetailView', 'no client type exists'],
+  ['MeetingProjectView', 'no client type exists'],
+  ['MyAttendanceView', 'no client type exists'],
+  ['MeetingAttendeeView', 'no client type exists'],
+  ['MeetingReviewRefView', 'no client type exists'],
+  ['MeetingTranscriptView', 'no client type exists'],
+  ['TranscriptLineView', 'no client type exists'],
+  ['MeetingReviewStartedView', 'no client type exists'],
 ]);
 
 /**
@@ -328,6 +340,10 @@ const NOT_SERVED = new Map<string, string>([
   ['LookupResult', 'the idempotency middleware asking whether it has seen this key'],
   ['StoredResponse', 'the idempotency cache entry — a stored response, not a served type'],
   ['OpenDbResult', 'the `{ db, sqlite }` pair `openDb` hands back inside the process'],
+  [
+    'ReadMeetingsResult',
+    'what the meetings sync read from Graph before writing it (LAI-1311) — never served',
+  ],
   ['SetupResult', 'first-boot wiring returned to the route, which serves its own shape'],
   [
     'BacktestResult',

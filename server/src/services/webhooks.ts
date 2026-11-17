@@ -684,6 +684,27 @@ export function submissionsInWindow(db: Db, now: number): number {
 }
 
 /**
+ * Refuse a transcript review once the window holds the cap (D-052) — the one
+ * check both ways in share: the signed webhook (§10.2) and a participant's
+ * *Review with AI* on a Teams meeting (LAI-1311). One org, one budget,
+ * whichever door the transcript came through.
+ *
+ * `>=` and not `>`: this counts the rows that already exist, and the
+ * submission being served is not one of them yet. The 200th is served and the
+ * 201st is refused. **A cap, not only a rate**, answered distinctly: "you have
+ * used this month's budget" and "you are going too fast" want different
+ * actions from whoever reads it.
+ */
+export function assertUnderTranscriptCap(db: Db, now: number): void {
+  if (submissionsInWindow(db, now) >= MONTHLY_SUBMISSION_CAP) {
+    throw new ApiError('rate_limited', 'This org has reached its monthly transcript cap', {
+      cap: MONTHLY_SUBMISSION_CAP,
+      reason: 'monthly_cap',
+    });
+  }
+}
+
+/**
  * The org's configured provider, or a refusal.
  *
  * `unavailable` rather than `unprocessable`: an org with no provider configured

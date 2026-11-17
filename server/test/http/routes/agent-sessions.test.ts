@@ -787,6 +787,13 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/org/hr/sync': 'session only (org.hr.configure)',
   'POST /api/v1/org/sso/directory-sync':
     'org settings (org.settings.edit); adds directory members, not a task (LAI-1239)',
+  'POST /api/v1/org/sso/meetings-sync':
+    'org settings (org.settings.edit); reads Teams meetings, not a task (LAI-1311)',
+  // LAI-1311: a person's own Teams meetings, session only (meeting.read_own).
+  'PATCH /api/v1/meetings/:id': 'links a meeting to a space; a meeting, not a task',
+  'POST /api/v1/meetings/:id/review':
+    'stores a meeting review of proposals; applying them is the review’s own apply',
+  'POST /api/v1/meetings/:id/log-time': 'the caller’s own time',
   'PUT /api/v1/org/hr/people': 'session only (org.hr.configure)',
   'DELETE /api/v1/org/hr': 'session only (org.hr.configure)',
   'POST /api/v1/org/holidays': 'session only (org.time.set); a holiday, not a task',

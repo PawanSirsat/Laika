@@ -8,8 +8,7 @@ import { storeTranscriptReview } from '../../services/meeting-reviews.ts';
 import {
   DeliveryLog,
   githubWebhookSecret,
-  MONTHLY_SUBMISSION_CAP,
-  submissionsInWindow,
+  assertUnderTranscriptCap,
   providerFor,
   transcriptWebhookSecret,
   handleCheck,
@@ -185,25 +184,12 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
       throw refuse(c, 'signature did not verify');
     }
 
-    // **A cap, not only a rate** (D-052). An authenticated integration gone
-    // wrong spends money at a perfectly legal rate, so the limiter cannot see
-    // it — and reaching the cap answers *distinctly*, because "you have used
-    // this month's budget" and "you are going too fast" want different actions
-    // from whoever reads it.
-    // **Counted from the database, not from a variable** (LAI-467). The
-    // previous counter lived in the process, so a restart forgave the month's
-    // spend — the wrong direction to be wrong in for a bound that exists to
-    // stop a runaway integration.
-    //
-    // `>=` and not `>`: this counts the rows that already exist, and the
-    // submission being served is not one of them yet. The 200th is served and
-    // the 201st is refused, exactly as the record-then-compare did.
-    if (submissionsInWindow(db, clock()) >= MONTHLY_SUBMISSION_CAP) {
-      throw new ApiError('rate_limited', 'This org has reached its monthly transcript cap', {
-        cap: MONTHLY_SUBMISSION_CAP,
-        reason: 'monthly_cap',
-      });
-    }
+    // **A cap, not only a rate** (D-052), shared with the Teams meetings'
+    // *Review with AI* (LAI-1311). **Counted from the database, not from a
+    // variable** (LAI-467): the previous counter lived in the process, so a
+    // restart forgave the month's spend — the wrong direction to be wrong in
+    // for a bound that exists to stop a runaway integration.
+    assertUnderTranscriptCap(db, clock());
 
     const body = parseBody(TranscriptBody, JSON.parse(raw || 'null'));
     const stored = await storeTranscriptReview(

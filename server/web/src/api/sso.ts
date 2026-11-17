@@ -24,6 +24,20 @@ export interface SsoSettings {
         readonly error: string | null;
       } | null;
     };
+    /** Teams meetings through Graph (LAI-1311); the Sign-in card's block is LAI-1313. */
+    readonly meetings_sync: {
+      readonly enabled: boolean;
+      readonly every_minutes: number;
+      /** The Graph application permissions the Entra app needs, admin-consented. */
+      readonly permissions: readonly string[];
+      readonly last_run: {
+        readonly at: number;
+        readonly ok: boolean;
+        readonly meetings: number;
+        /** A code when it failed or was incomplete; never a token or Microsoft's own text. */
+        readonly error: string | null;
+      } | null;
+    };
   } | null;
 }
 
