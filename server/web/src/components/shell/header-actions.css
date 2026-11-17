@@ -442,6 +442,19 @@
   font-size: var(--text-small);
 }
 
+/* A space's name, after its mark (LAI-1311); the name keeps the ellipsis. */
+.hdr-item-space {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.hdr-item-space-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hdr-item-meta {
   display: flex;
   flex-direction: column;

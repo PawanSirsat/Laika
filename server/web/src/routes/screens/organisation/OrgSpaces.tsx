@@ -2,7 +2,7 @@ import type { MouseEvent } from 'react';
 import type { UseProjects } from '../../../api/use-projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 export interface OrgSpacesProps {
   readonly projects: UseProjects;
@@ -76,7 +76,7 @@ export function OrgSpaces({ projects, onNavigate }: OrgSpacesProps) {
                   <tr key={project.id}>
                     <td>
                       <a className="org-space" href={href} onClick={follow(href)}>
-                        <SpaceBadge slug={project.slug} name={project.name} size="md" />
+                        <ProjectMark project={project} size="md" />
                         {project.name}
                       </a>
                     </td>

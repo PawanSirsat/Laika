@@ -6,6 +6,7 @@ import { EmptyPanel } from '../../components/EmptyPanel.tsx';
 import { Skeleton, SkeletonAvatar, SkeletonText } from '../../components/Skeleton.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { Dropdown } from '../../components/Dropdown.tsx';
+import { ProjectMark } from '../../components/ProjectMark.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useMembers } from '../../api/use-members.ts';
@@ -98,7 +99,16 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
       <ScreenHeader
         variant="page"
         title="Members"
-        context={project === undefined ? slug : project.name}
+        context={
+          project === undefined ? (
+            slug
+          ) : (
+            <span className="members-context">
+              <ProjectMark project={project} size="xs" />
+              {project.name}
+            </span>
+          )
+        }
       />
       <header className="members-head">
         <p className="members-sub">

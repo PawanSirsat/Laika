@@ -121,9 +121,11 @@ void describe('the SPACES section', () => {
       // LAI-262): no counts, no member figure, no two-letter key.
       const first = h.page.locator('.space-row').first();
       const row = (await first.innerText()).replace(/\s+/g, ' ').trim();
-      assert.equal(row, 'L Laika Core', `the row carries more than its letter and name: ${row}`);
-      const badge = first.locator('.space-badge');
-      assert.equal(await badge.innerText(), 'L');
+      // The mark's letter is drawn, not written (D-152): the row reads as its name.
+      assert.equal(row, 'Laika Core', `the row carries more than its mark and name: ${row}`);
+      // The space's mark (D-152): its letter on its stored colour, with no icon set.
+      const badge = first.locator('.project-mark');
+      assert.equal(await badge.getAttribute('data-glyph'), 'L');
       assert.equal(await badge.getAttribute('aria-hidden'), 'true', 'the letter is read aloud');
       // A colour of its own, from the palette — not the card's ground.
       const [ground, card] = await Promise.all([
@@ -255,11 +257,13 @@ void describe('pinned spaces (LAI-989)', () => {
         await pinned.getByRole('button', { name: 'Unpin Laika Docs' }).getAttribute('aria-pressed'),
         'true',
       );
-      // The row is still its letter and name: the pin is beside the link.
+      // The row is still its mark and name: the pin is beside the link. The
+      // mark's letter is drawn, not written (D-152), so the text is the name.
       assert.equal(
         (await pinned.locator('.space-row').innerText()).replace(/\s+/g, ' ').trim(),
-        'L Laika Docs',
+        'Laika Docs',
       );
+      assert.equal(await pinned.locator('.project-mark').getAttribute('data-glyph'), 'L');
 
       // Stored per browser: a reload keeps it.
       await h.page.reload();
@@ -673,7 +677,10 @@ void describe('the prototype geometry (LAI-249)', () => {
       assert.equal(await tipStill(), true, 'the tip never stopped fading');
       assert.equal(await inbox.locator('.sidebar-tip').evaluate(opacity), '0');
       assert.match(await inbox.locator('.sidebar-count').innerText(), /^2/);
-      assert.equal(await h.page.locator('.space-row .space-badge').first().innerText(), 'L');
+      assert.equal(
+        await h.page.locator('.space-row .project-mark').first().getAttribute('data-glyph'),
+        'L',
+      );
       // The name is still the link's — what a screen reader reads.
       assert.match(await inbox.innerText(), /Inbox/);
 

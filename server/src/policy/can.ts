@@ -683,6 +683,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'org.hr.configure':
       return granted(actor, action);
 
+    // | Change a space's icon | ✓ | ✓ | — | — |
+    //
+    // D-152 (LAI-1311): the owner's answer — org owners and admins, whoever
+    // leads the space. Its own row, not `project.settings.edit` borrowed: a
+    // lead edits their space's settings, and the icon is how the whole
+    // organisation tells its spaces apart. Not a grant: no capability carries
+    // it, so it stays with the two roles the owner named.
+    case 'project.icon.write':
+      return isAdminUp;
     // | Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
     //
     // D-157 (LAI-1316): the Entra app's credentials, the mapping rules, the

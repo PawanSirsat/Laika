@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8187a3b5-6691-462f-bcb5-0b8d53522825",
+  "id": "4244f322-ee44-4ec9-895f-2567051cb5a6",
   "prevId": "2557ebfe-071f-466e-88db-41d3f4d558aa",
   "tables": {
     "accounts": {
@@ -1786,111 +1786,6 @@
       },
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "calendar_events": {
-      "name": "calendar_events",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "ical_uid": {
-          "name": "ical_uid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "entry_id": {
-          "name": "entry_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "entry_revision_synced": {
-          "name": "entry_revision_synced",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "calendar_events_user_event_unique": {
-          "name": "calendar_events_user_event_unique",
-          "columns": ["user_id", "event_id"],
-          "isUnique": true
-        },
-        "calendar_events_entry_id_unique": {
-          "name": "calendar_events_entry_id_unique",
-          "columns": ["entry_id"],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "calendar_events_user_id_users_id_fk": {
-          "name": "calendar_events_user_id_users_id_fk",
-          "tableFrom": "calendar_events",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "calendar_events_entry_id_time_entries_id_fk": {
-          "name": "calendar_events_entry_id_time_entries_id_fk",
-          "tableFrom": "calendar_events",
-          "tableTo": "time_entries",
-          "columnsFrom": ["entry_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "calendar_events_revision_check": {
-          "name": "calendar_events_revision_check",
-          "value": "entry_revision_synced >= 1"
-        },
-        "calendar_events_event_id_check": {
-          "name": "calendar_events_event_id_check",
-          "value": "length(event_id) BETWEEN 1 AND 512"
-        }
-      }
     },
     "capacity_pings": {
       "name": "capacity_pings",
@@ -4389,183 +4284,6 @@
         }
       }
     },
-    "org_calendar_source": {
-      "name": "org_calendar_source",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "secret_enc": {
-          "name": "secret_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "secret_last4": {
-          "name": "secret_last4",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "rules_json": {
-          "name": "rules_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'[]'"
-        },
-        "configured_by": {
-          "name": "configured_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "configured_at": {
-          "name": "configured_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "last_test_at": {
-          "name": "last_test_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_test_roles_json": {
-          "name": "last_test_roles_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_attempt_at": {
-          "name": "last_attempt_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_success_at": {
-          "name": "last_success_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_result_json": {
-          "name": "last_result_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "org_calendar_source_configured_by_idx": {
-          "name": "org_calendar_source_configured_by_idx",
-          "columns": ["configured_by"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "org_calendar_source_org_id_orgs_id_fk": {
-          "name": "org_calendar_source_org_id_orgs_id_fk",
-          "tableFrom": "org_calendar_source",
-          "tableTo": "orgs",
-          "columnsFrom": ["org_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "org_calendar_source_configured_by_users_id_fk": {
-          "name": "org_calendar_source_configured_by_users_id_fk",
-          "tableFrom": "org_calendar_source",
-          "tableTo": "users",
-          "columnsFrom": ["configured_by"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "org_calendar_source_enabled_check": {
-          "name": "org_calendar_source_enabled_check",
-          "value": "enabled IN (0, 1)"
-        },
-        "org_calendar_source_last_error_code_check": {
-          "name": "org_calendar_source_last_error_code_check",
-          "value": "last_error_code IS NULL OR last_error_code IN ('credentials_rejected', 'not_granted', 'unreachable', 'bad_answer')"
-        },
-        "org_calendar_source_test_check": {
-          "name": "org_calendar_source_test_check",
-          "value": "(last_test_at IS NULL) = (last_test_roles_json IS NULL)"
-        },
-        "org_calendar_source_tenant_check": {
-          "name": "org_calendar_source_tenant_check",
-          "value": "length(tenant_id) BETWEEN 1 AND 100"
-        },
-        "org_calendar_source_client_check": {
-          "name": "org_calendar_source_client_check",
-          "value": "length(client_id) = 36"
-        }
-      }
-    },
     "org_holidays": {
       "name": "org_holidays",
       "columns": {
@@ -6116,6 +5834,34 @@
           "autoincrement": false,
           "default": "'[]'"
         },
+        "icon_emoji": {
+          "name": "icon_emoji",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "icon_key": {
+          "name": "icon_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "icon_type": {
+          "name": "icon_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "icon_updated_at": {
+          "name": "icon_updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -6182,6 +5928,14 @@
         "projects_agents_allowed_check": {
           "name": "projects_agents_allowed_check",
           "value": "agents_allowed IN (0, 1)"
+        },
+        "projects_icon_emoji_check": {
+          "name": "projects_icon_emoji_check",
+          "value": "icon_emoji IS NULL OR length(icon_emoji) BETWEEN 1 AND 32"
+        },
+        "projects_icon_type_check": {
+          "name": "projects_icon_type_check",
+          "value": "icon_type IS NULL OR icon_type IN ('image/png', 'image/jpeg', 'image/webp')"
         }
       }
     },
@@ -9239,7 +8993,7 @@
       "checkConstraints": {
         "time_entries_source_check": {
           "name": "time_entries_source_check",
-          "value": "source IN ('draft', 'manual', 'import', 'calendar')"
+          "value": "source IN ('draft', 'manual', 'import')"
         },
         "time_entries_minutes_check": {
           "name": "time_entries_minutes_check",

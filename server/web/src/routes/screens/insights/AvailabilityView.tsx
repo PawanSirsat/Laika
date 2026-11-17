@@ -6,6 +6,7 @@ import { useProjects } from '../../../api/use-projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Switch } from '../../../components/Switch.tsx';
 import { AvailabilityPill } from '../../../components/availability/AvailabilityPill.tsx';
 import {
@@ -145,7 +146,11 @@ export function AvailabilityView({ now = Date.now() }: { readonly now?: number }
             className="avail-filter-pick"
             options={[
               { value: '', label: 'All spaces' },
-              ...filterable.map((p) => ({ value: p.slug, label: p.name })),
+              ...filterable.map((p) => ({
+                value: p.slug,
+                label: p.name,
+                icon: <ProjectMark project={p} />,
+              })),
             ]}
             onChange={(v) => {
               setSpace(v === '' ? undefined : v);
@@ -377,6 +382,7 @@ function Spaces({ row }: { readonly row: AvailabilityRow }) {
     <span className="avail-spaces">
       {row.spaces.map((s) => (
         <span key={s.id} className="avail-chip">
+          <ProjectMark project={s} size="xs" />
           {s.name}
         </span>
       ))}

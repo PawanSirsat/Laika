@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import { rememberProjects } from './project-looks.ts';
 import type { MemberList, Page } from './tasks.ts';
 import type { SpaceColor } from '../theme/space-color.ts';
 
@@ -42,6 +43,11 @@ export interface Project {
   readonly agents_allowed: boolean;
   /** Prefixes the space carried before `prefix`, oldest first; old keys still resolve (D-103 item 3). */
   readonly former_prefixes: readonly string[];
+  /**
+   * The space's icon (D-152, LAI-1311): an image, else an emoji, else `null`
+   * — and `ProjectMark` draws the first letter on `color`.
+   */
+  readonly icon: ProjectIcon | null;
   readonly context_md: string;
   /** Days after which finished work leaves the board; `null` never (LAI-266). */
   readonly board_hide_done_days: number | null;
@@ -69,6 +75,26 @@ export interface Project {
 }
 
 export type TaskStatusKey = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
+
+/** A space whose icon is an emoji (D-152). */
+export interface ProjectEmojiIcon {
+  readonly emoji: string;
+}
+
+/**
+ * A space whose icon is an image (D-152): Laika's own URL for its bytes,
+ * versioned by `updated_at`, so the browser keeps each version for a year.
+ */
+export interface ProjectImageIcon {
+  readonly url: string;
+  readonly updated_at: number;
+}
+
+export type ProjectIcon = ProjectEmojiIcon | ProjectImageIcon;
+
+export function isImageIcon(icon: ProjectIcon | null | undefined): icon is ProjectImageIcon {
+  return icon !== null && icon !== undefined && 'url' in icon;
+}
 
 export interface ProjectMember {
   readonly user_id: string;
@@ -126,14 +152,24 @@ export function listProjects(
   return request<Page<ProjectRow>>(
     `/projects${search === '' ? '' : `?${search}`}`,
     signal === undefined ? {} : { signal },
-  );
+  ).then((page) => {
+    // Every space read is remembered for the marks that hold only a slug (D-152).
+    rememberProjects(page.data.filter(isProject));
+    return page;
+  });
 }
 
 export function getProject(slug: string, signal?: AbortSignal): Promise<Project> {
   return request<Project>(
     `/projects/${encodeURIComponent(slug)}`,
     signal === undefined ? {} : { signal },
-  );
+  ).then(remembered);
+}
+
+/** A project answer, remembered for every mark of that space (D-152), and passed on. */
+export function remembered(project: Project): Project {
+  rememberProjects([project]);
+  return project;
 }
 
 export interface CreateProjectInput {

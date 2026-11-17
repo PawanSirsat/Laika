@@ -87,7 +87,7 @@ import '../../routes/screens/not-found.css';
 import '../page-tabs.css';
 import '../switch.css';
 import '../token-row.css';
-import '../space-badge.css';
+import '../project-mark.css';
 import '../offboarding-dialog.css';
 import '../wizard/overflow-menu.css';
 import '../save-status.css';

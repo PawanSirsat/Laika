@@ -3,6 +3,7 @@ import type { TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { kindLabel } from './entry-kinds.ts';
 import { duration } from './format.ts';
 import { endTrayDrag, startTrayDrag } from './tray-drag.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 export interface UntimedTrayProps {
   readonly drafts: readonly TimeDraft[];
@@ -41,6 +42,8 @@ export function UntimedTray({
         id: d.id,
         minutes: d.minutes,
         title: d.task?.key ?? d.project?.name ?? 'General',
+        // The space the title names, when it names one — drawn with its mark (D-152).
+        space: d.task === null ? (d.project ?? undefined) : undefined,
         sub: null,
       })),
     ...entries
@@ -50,6 +53,10 @@ export function UntimedTray({
         id: e.id,
         minutes: e.minutes,
         title: e.title ?? e.task?.key ?? e.project?.name ?? 'General',
+        space:
+          (e.title === undefined || e.title === null) && e.task === null
+            ? (e.project ?? undefined)
+            : undefined,
         sub: e.kind === undefined || e.kind === null ? null : kindLabel(e.kind),
       })),
   ];
@@ -107,6 +114,7 @@ export function UntimedTray({
                 ⋮⋮
               </span>
               <span className="myday-tray-length">{duration(item.minutes)}</span>
+              {item.space !== undefined && <ProjectMark project={item.space} size="xs" />}
               <span className="myday-tray-title">{item.title}</span>
               {item.sub !== null && <span className="myday-tray-kind">{item.sub}</span>}
             </button>

@@ -1,4 +1,5 @@
 import type { TimeEntry } from '../../../api/time.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { CardLink } from './CardLink.tsx';
 import { kindLabel } from './entry-kinds.ts';
 import { folderOf } from './folder.ts';
@@ -82,6 +83,7 @@ export function EntryRow({
         <span className="myday-row-minutes">{duration(entry.minutes)}</span>
       </button>
       <span className="myday-row-target">
+        {entry.task === null && entry.project !== null && <ProjectMark project={entry.project} />}
         <span className={mono ? 'myday-row-key myday-row-key-mono' : 'myday-row-key'}>
           {entry.task === null ? (
             label

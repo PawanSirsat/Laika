@@ -4,6 +4,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { pickProject } from '../../../api/pick-project.ts';
 import { useProjects } from '../../../api/use-projects.ts';
 import {
@@ -116,7 +117,11 @@ export function ProjectsTab({ origin }: ProjectsTabProps) {
                 value={project.slug}
                 options={projects.projects
                   .filter((row): row is typeof row & { slug: string } => 'slug' in row)
-                  .map((row) => ({ value: row.slug, label: row.name }))}
+                  .map((row) => ({
+                    value: row.slug,
+                    label: row.name,
+                    icon: <ProjectMark project={row} size="sm" />,
+                  }))}
                 onChange={(next) => {
                   setSlug(next);
                 }}

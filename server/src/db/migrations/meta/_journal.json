@@ -579,8 +579,15 @@
     {
       "idx": 82,
       "version": "6",
-      "when": 1794946189713,
-      "tag": "0083_calendar_sync",
+      "when": 1794939347275,
+      "tag": "0083_project_icons",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1794947756401,
+      "tag": "0084_calendar_sync",
       "breakpoints": true
     }
   ]

@@ -10,6 +10,7 @@ import {
   type EntryKind,
   type NewEntry,
 } from '../../../api/time.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { CardChip, ChipWhy } from './card-chips.ts';
 import { CardLink } from './CardLink.tsx';
@@ -482,6 +483,7 @@ export function Inspector({
             )}
             {draft.task === null && draft.project !== null && (
               <p className="editor-task-line inspector-card">
+                <ProjectMark project={draft.project} size="xs" />
                 <span className="editor-task-title">
                   {draft.project.name}
                   {draft.folder !== undefined && draft.folder !== null && ` · ${draft.folder}`}
@@ -777,7 +779,10 @@ export function Inspector({
               {entry.task !== null ? (
                 <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
               ) : entry.project !== null ? (
-                <span className="editor-task-title">{entry.project.name}</span>
+                <>
+                  <ProjectMark project={entry.project} size="xs" />
+                  <span className="editor-task-title">{entry.project.name}</span>
+                </>
               ) : (
                 <>
                   <span className="editor-task-key">No task</span>

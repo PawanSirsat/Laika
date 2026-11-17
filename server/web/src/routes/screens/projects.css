@@ -201,29 +201,7 @@
   min-width: 0;
 }
 
-.space-avatar {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--on-space);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
-}
-
-.space-avatar-lg {
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: var(--radius-column);
-  font-size: var(--text-heading-md);
-}
-
-.space-avatar-md {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-card);
-  font-size: var(--text-body);
-}
+/* A space's avatar on its card and row is `ProjectMark` (D-152): xl and lg. */
 
 .project-card-titles {
   flex: 1;

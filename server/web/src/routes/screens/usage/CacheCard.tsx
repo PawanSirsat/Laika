@@ -1,4 +1,5 @@
 import { compactTokens, COST_LABEL, percent, usd, type Usage } from '../../../api/usage.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
@@ -41,7 +42,9 @@ export function CacheCard({ usage }: { readonly usage: Usage }) {
           <tbody>
             {usage.cache_by_project.map((p) => (
               <tr key={p.project.slug}>
-                <th scope="row">{p.project.name}</th>
+                <th scope="row">
+                  <ProjectMark project={p.project} /> {p.project.name}
+                </th>
                 <Tooltip
                   content={`${compactTokens(p.cache_read)} of ${compactTokens(p.input_side)}`}
                 >

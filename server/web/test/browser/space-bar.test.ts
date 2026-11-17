@@ -179,9 +179,12 @@ void describe('the space bar', () => {
       assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
       // The icon came back with the name in LAI-299 — the owner's reference
       // has both on the bar's first line. Since LAI-1234 it is the space's own
-      // letter, the same badge the rail draws for it.
-      assert.equal(await h.page.locator('.space-icon .space-badge').count(), 1);
-      assert.equal((await h.page.locator('.space-icon .space-badge').innerText()).trim(), 'L');
+      // letter, the same badge the rail draws for it — `ProjectMark` since D-152.
+      assert.equal(await h.page.locator('.space-icon .project-mark').count(), 1);
+      assert.equal(
+        await h.page.locator('.space-icon .project-mark').getAttribute('data-glyph'),
+        'L',
+      );
 
       /*
        * Four avatars and `+2`, from six real members — never the design's four

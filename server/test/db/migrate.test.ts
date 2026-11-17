@@ -2811,6 +2811,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         // LAI-1300's attachments: one new table, and `activity` rebuilt for
         // its two verbs, every row kept.
         expect.stringMatching(/_attachments$/),
+        // LAI-1311's space icons: four nullable columns on `projects`.
+        expect.stringMatching(/_project_icons$/),
         // LAI-1316's calendar tables, and `time_entries` rebuilt for the
         // `calendar` source, every row kept.
         expect.stringMatching(/_calendar_sync$/),
@@ -2895,7 +2897,17 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         runMigrations(db, { migrationsFolder: dir });
 
         // 0067 and 0068 rebuild `activity`; nothing of LAI-555's is touched.
-        expect(read()).toEqual(before);
+        expect(read()).toEqual({
+          ...before,
+          // 0083 (LAI-1311): a space's icon, empty on a row that predates it.
+          projects: before.projects.map((row) => ({
+            ...row,
+            icon_emoji: null,
+            icon_key: null,
+            icon_type: null,
+            icon_updated_at: null,
+          })),
+        });
         expect(db.all(sql`SELECT * FROM tasks`)).toEqual(
           tasksBefore.map((row) => ({
             ...row,
@@ -2962,7 +2974,8 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
-      '0083_calendar_sync',
+      '0083_project_icons',
+      '0084_calendar_sync',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3059,7 +3072,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
-      '0083_calendar_sync',
+      '0083_project_icons',
+      '0084_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3089,7 +3103,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
         runMigrations(db);
 
         // LAI-1181's 0081 rides along and adds its four HR tables,
-        // LAI-1300's 0082 its attachments and LAI-1316's 0083 its two
+        // LAI-1300's 0082 its attachments and LAI-1316's 0084 its two
         // calendar tables; nothing else appears.
         expect(tables()).toEqual(
           [
@@ -3149,7 +3163,8 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
-      '0083_calendar_sync',
+      '0083_project_icons',
+      '0084_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3264,7 +3279,8 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
-      '0083_calendar_sync',
+      '0083_project_icons',
+      '0084_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3345,7 +3361,8 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0080_member_notices_time_changed',
       '0081_hr_source',
       '0082_attachments',
-      '0083_calendar_sync',
+      '0083_project_icons',
+      '0084_calendar_sync',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3425,7 +3442,13 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
     const at = journal.entries.findIndex((e) => e.tag === '0082_attachments');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0082_attachments', '0083_calendar_sync']);
+    // LAI-1311's 0083 adds four nullable columns to `projects` and touches no
+    // `activity` row.
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0082_attachments',
+      '0083_project_icons',
+      '0084_calendar_sync',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3507,18 +3530,18 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
   );
 });
 
-describe('0083 rebuilds time_entries for the calendar source on a populated 0082 database (LAI-1316)', () => {
-  function folderAt0082(): string {
+describe('0084 rebuilds time_entries for the calendar source on a populated 0083 database (LAI-1316)', () => {
+  function folderAt0083(): string {
     const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
     copyMigrations(dir);
     const journalPath = join(dir, 'meta', '_journal.json');
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
       entries: { tag: string }[];
     };
-    const at = journal.entries.findIndex((e) => e.tag === '0083_calendar_sync');
+    const at = journal.entries.findIndex((e) => e.tag === '0084_calendar_sync');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0083_calendar_sync']);
+    expect(dropped.map((e) => e.tag)).toEqual(['0084_calendar_sync']);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3530,7 +3553,7 @@ describe('0083 rebuilds time_entries for the calendar source on a populated 0082
       const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
       const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
       try {
-        runMigrations(db, { migrationsFolder: folderAt0082() });
+        runMigrations(db, { migrationsFolder: folderAt0083() });
         const s = seed(db);
         const now = Date.now();
         // Recent enough that the three-year trigger still holds every row.
@@ -3590,7 +3613,7 @@ describe('0083 rebuilds time_entries for the calendar source on a populated 0082
             INSERT INTO time_entries (id, user_id, day, tz, minutes, source, revision, created_at, updated_at)
             VALUES (${newId()}, ${s.userId}, ${day}, 'UTC', 30, ${source}, 1, ${now}, ${now})
           `);
-        // Before 0083 the source is refused: the CHECK is what the rebuild changes.
+        // Before 0084 the source is refused: the CHECK is what the rebuild changes.
         expectSqliteError(() => insertSource('calendar'), /time_entries_source_check/);
 
         const before = {

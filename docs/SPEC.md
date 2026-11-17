@@ -276,6 +276,7 @@ be obvious because someone will be asking for it.
 | See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Change a space's icon | ✓ | ✓ | — | — |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -859,6 +860,10 @@ future multi-org becomes a migration rather than a rewrite.
 | `task_create_min_role` | `member` (default) \| `lead` — who may create tasks (§3.2, D-103) |
 | `agents_allowed` | boolean, default true — off, agent tokens only read here (§3.2, D-103) |
 | `former_prefixes` | JSON array of every prefix the project carried before `prefix`. A task stores its `number`, not its key, so a new prefix re-keys every task; a key resolves against `prefix` first and these second, so every old key keeps naming its task. Unique across the org together with `prefix`, enforced in code (D-103) |
+| `icon_emoji` | nullable — the space's icon as one emoji: one grapheme by `Intl.Segmenter`, drawn as a picture, at most 32 code points (D-152). A space holds an emoji or an image, never both: setting either clears the other |
+| `icon_key` | nullable — the icon image's key in the operator's store (§4.92's store, D-150), `p/<project_id>/icon/<ulid>`: a new key for every upload, and the object it replaces is deleted (D-152) |
+| `icon_type` | nullable — `image/png` \| `image/jpeg` \| `image/webp`, as the image's first bytes proved it; null exactly when `icon_key` is. Never SVG (D-152) |
+| `icon_updated_at` | nullable — when the icon last changed: the `?v=` its image URL carries (D-152) |
 | `archived_at` | nullable |
 
 ### 4.4 `project_memberships`
@@ -4506,6 +4511,12 @@ GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
        └ ?archived=include|only — archived projects whole rather than as tombstones, to their members and to `project.archive` holders; absent is unchanged (D-103)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
        └ PATCH takes { name, description, repo, visibility, color, prefix, task_create_min_role, agents_allowed, board_hide_done_days, archived } (lead+; archived: project.archive). A new prefix keeps every old key resolving; one another project holds is 409 on `prefix`, and one another project held is 409 with `reason: 'former'` (D-103)
+       └ PATCH also takes `icon_emoji`: one emoji, or null to clear it (lead+ and project.icon.write — org owner or admin, D-152). Anything but exactly one emoji is 422 `invalid_icon_emoji`; an emoji takes the place of an icon image, whose object is deleted
+POST   /api/v1/projects/:slug/icon           body { content_type, size_bytes } → 201 { upload_id, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at }, max_bytes }; image/png, image/jpeg or image/webp only — anything else, SVG included, 422 `unsupported_type`; over the smaller of 1 MiB and the attachments' largest 413 payload_too_large with max_bytes; nothing is written; never stored for a replay   (project.icon.write; D-152)
+POST   /api/v1/projects/:slug/icon/complete  body { upload_id, content_type, size_bytes } → the project; 409 conflict reason upload_missing or size_mismatch; 422 `type_mismatch` when the first bytes are not the declared type, and that object is deleted; clears any emoji, deletes the image it replaces, writes `project.updated` with `changed: ['icon']`   (project.icon.write)
+DELETE /api/v1/projects/:slug/icon           → the project, `icon: null`: image and emoji alike; the image's object is deleted, best effort   (project.icon.write)
+GET    /api/v1/projects/:slug/icon           ?v= → the image's bytes, answered by Laika rather than redirected, so `img-src 'self'` covers it; `Cache-Control: private, max-age=31536000, immutable` when `v` names the current `icon_updated_at`, else `private, no-cache`; no image, or a project the caller cannot read, 404   (project.read)
+       └ with no store configured (§11.7) ask, complete and read answer 503 unavailable, `details.reason: 'attachments_off'`; `DELETE` still clears the icon (there is no image to delete), and the emoji works on every board (D-152)
 POST   /api/v1/projects/:slug/join           (public projects)
 POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_access, notice }; the last lead 409 `last_lead` (D-103)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
@@ -5044,6 +5055,12 @@ panel's subtasks — and **the task panel reads the task in full with `GET
 /tasks/:id` when it opens**, and again when the task's `updated_at` moves past
 the copy it holds. `GET /tasks/:id` and every write still answer the whole
 task.
+
+**Every project answer carries `icon`, not §4.3's four icon columns** (D-152,
+LAI-1311): `{ emoji }`, or `{ url, updated_at }` for an image — `url` is
+`/api/v1/projects/<slug>/icon?v=<icon_updated_at>` — else `null`, and the
+client draws the space's first letter on its `color`. An image ranks over an
+emoji. The store key and type never leave the server.
 
 **A project in `GET /projects` is §4.3's columns plus five derived at read
 time** (LAI-053). None is stored, which is why §4.3 does not carry them and a
@@ -7167,7 +7184,7 @@ call MCP; agents do.
 | --- | --- | --- | --- | --- |
 | **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ |
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
-| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
+| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members`; Space settings' icon (D-152): `POST /projects/:slug/icon`, `POST /projects/:slug/icon/complete`, `DELETE /projects/:slug/icon`, `GET /org`'s `attachments`; every mark reads `GET /projects/:slug/icon` | `get_project_context` | ✅ (icons: LAI-1311) |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable`, `GET /tasks/:id/attachments`, `POST /projects/:slug/attachments`, `POST /attachments/:id/complete`, `DELETE /attachments/:id`, `GET /org`'s `attachments` (D-150) | `add_comment`, `get_task_context` | ✅ (attachments: LAI-1301) |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
@@ -7210,6 +7227,20 @@ anything missing sends the task back.
   progress bar by status, member avatars, live-agent indicator, blocked count,
   last activity; Open board vs Join for public projects; empty state; first-run
   state.
+- **A space's mark** (D-152, LAI-1311) — wherever a space is shown it leads
+  with one mark, the same component everywhere: its icon image, else its
+  emoji, else the first letter of its name on its **stored** colour (D-103
+  item 4) — never a colour hashed from the slug. Beside a written name the
+  mark is decoration, hidden from assistive tech; where it stands alone (the
+  task drawer's breadcrumb, the workroom's key line) it is an image named for
+  the space. An image that will not load shows the letter.
+- **Space settings → General → Icon** (D-152) — shown to org owners and admins
+  only (`project.icon.write`): the mark as it will look, *Upload image* (only
+  when `GET /org`'s `attachments` is set; PNG, JPEG or WebP up to 1 MB, refused
+  before sending otherwise), *Choose emoji* opening a grid of forty-eight and a
+  field for any one emoji, and *Remove* while an icon is set. Each change saves
+  at once, outside General's form, and every mark of the space on the page
+  changes with it; a refusal is said under the row.
 - **Board** — five columns (`backlog`, `todo`, `in_progress`, `review`, `done`)
   with counts; cards showing key, title, assignee, priority, **blocked / ready
   markers**, subtasks and a due date that is today or past; drag between columns issuing a real status call with snap-back

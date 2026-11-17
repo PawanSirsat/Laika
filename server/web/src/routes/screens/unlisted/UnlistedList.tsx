@@ -1,6 +1,7 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import { useGates } from '../../../api/permissions.ts';
@@ -327,6 +328,7 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                             value: space.slug,
                             label: space.name,
                             detail: space.prefix,
+                            icon: <ProjectMark project={space} size="sm" />,
                           }))}
                           onChange={setSlug}
                         />

@@ -32,6 +32,7 @@ import { useProjects } from '../../../../api/use-projects.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
+import { ProjectMark } from '../../../../components/ProjectMark.tsx';
 import { Spinner } from '../../../../components/Spinner.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
@@ -394,7 +395,11 @@ export function ProjectSetupTab({ origin, params, setParams, onNavigate }: Proje
                   value={project.slug}
                   options={projects.projects
                     .filter((row): row is typeof row & { slug: string } => 'slug' in row)
-                    .map((row) => ({ value: row.slug, label: row.name }))}
+                    .map((row) => ({
+                      value: row.slug,
+                      label: row.name,
+                      icon: <ProjectMark project={row} size="sm" />,
+                    }))}
                   onChange={(next) => {
                     choose('project', next);
                   }}
