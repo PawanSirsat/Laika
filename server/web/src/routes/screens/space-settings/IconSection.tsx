@@ -185,7 +185,6 @@ export function IconSection({ project }: IconSectionProps) {
                   className={emoji === current ? 'ss-emoji ss-emoji-on' : 'ss-emoji'}
                   aria-label={emojiLabel(emoji)}
                   aria-pressed={emoji === current}
-                  title={emoji}
                   disabled={busy !== null}
                   data-emoji={emoji}
                   onClick={() => {

@@ -89,7 +89,7 @@ export function subscribeLooks(listener: () => void): () => void {
   };
 }
 
-/** Forget every look — signing out, and between tests. */
+/** Forget every look — on a change of user (`setStoreUser`, sign-out included), and between tests. */
 export function forgetLooks(): void {
   if (looks.size === 0) return;
   looks.clear();
