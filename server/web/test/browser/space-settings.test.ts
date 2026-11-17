@@ -937,6 +937,187 @@ void describe('readers who may not change the space never see a control', () => 
   });
 });
 
+void describe('the icon (D-152, LAI-1311)', () => {
+  /** A 1×1 PNG, real bytes, for the image the mark draws. */
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  /** The space, answering `PATCH`'s `icon_emoji` and `DELETE /icon` as the server does. */
+  function iconStub(
+    me: Record<string, unknown>,
+    attachments: { max_bytes: number } | null,
+    extra: ApiStub = {},
+  ): { stub: ApiStub; current: () => Record<string, unknown> } {
+    let current: Record<string, unknown> = { ...PROJECT, icon: null };
+    const base = stub(me);
+    return {
+      current: () => current,
+      stub: {
+        ...base,
+        '/api/v1/org': { ...(base['/api/v1/org'] as object), attachments },
+        [`/api/v1/projects/${SLUG}`]: (call: StubCall) => {
+          if (call.method === 'PATCH') {
+            const body = call.body as { icon_emoji?: string | null };
+            if (body.icon_emoji !== undefined) {
+              current = {
+                ...current,
+                icon: body.icon_emoji === null ? null : { emoji: body.icon_emoji },
+              };
+            }
+          }
+          return current;
+        },
+        [`/api/v1/projects/${SLUG}/icon`]: (call: StubCall) => {
+          if (call.method === 'DELETE') current = { ...current, icon: null };
+          return current;
+        },
+        ...extra,
+      },
+    };
+  }
+
+  const header = (h: Harness) => h.page.locator('.ss-avatar');
+
+  void test('an owner picks an emoji, and every mark of the space changes; Remove takes it away', async () => {
+    const { stub: answers } = iconStub(ME, null);
+    const h = await open(SETTINGS, answers);
+    try {
+      await settled(h);
+      const section = h.page.locator('[data-icon-section]');
+      await section.waitFor({ timeout: 5_000 });
+      // No file store on this board: no Upload, and the help says why.
+      assert.equal(await h.page.locator('[data-action="icon-upload"]').count(), 0);
+      assert.match(await section.innerText(), /no file store, so images are off/);
+      assert.equal(await header(h).getAttribute('data-mark'), 'letter');
+      // Nothing set yet: nothing to remove.
+      assert.equal(await h.page.locator('[data-action="icon-remove"]').count(), 0);
+
+      await h.page.locator('[data-action="icon-emoji"]').click();
+      await h.page.locator('[data-emoji="🚀"]').click();
+      await until(() => h.calls.some((c) => c.method === 'PATCH'));
+      assert.deepEqual(h.calls.find((c) => c.method === 'PATCH')?.body, { icon_emoji: '🚀' });
+      // The page header and the preview both read the remembered look.
+      await until(async () => (await header(h).getAttribute('data-mark')) === 'emoji');
+      assert.equal(await header(h).getAttribute('data-glyph'), '🚀');
+      assert.equal(
+        (await section.locator('.project-mark').first().getAttribute('aria-label')) ?? '',
+        'Laika',
+      );
+      assert.equal(await h.page.locator('[data-emoji="🚀"]').getAttribute('aria-pressed'), 'true');
+
+      // Anything but one emoji is held back before it is sent.
+      const typed = h.page.locator('[data-emoji-input]');
+      await typed.fill('ab');
+      assert.equal(await typed.getAttribute('aria-invalid'), 'true');
+      assert.equal(await h.page.locator('[data-action="icon-emoji-use"]').isDisabled(), true);
+      await typed.fill('🎯');
+      await h.page.locator('[data-action="icon-emoji-use"]').click();
+      await until(async () => (await header(h).getAttribute('data-glyph')) === '🎯');
+      const patches = h.calls.filter((c) => c.method === 'PATCH').map((c) => c.body);
+      assert.deepEqual(patches, [{ icon_emoji: '🚀' }, { icon_emoji: '🎯' }]);
+
+      await h.page.locator('[data-action="icon-remove"]').click();
+      await until(async () => (await header(h).getAttribute('data-mark')) === 'letter');
+      assert.equal(await header(h).getAttribute('data-glyph'), 'L');
+      assert.ok(h.calls.some((c) => c.method === 'DELETE' && c.path.endsWith('/icon')));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('with a file store, Upload asks, puts the bytes and completes, and the image shows', async () => {
+    const ID = '01M7NB3PN15NBHEPSNB8VPBTZJ';
+    const image = { url: `/api/v1/projects/${SLUG}/icon?v=9`, updated_at: 9 };
+    const { stub: answers } = iconStub(
+      ME,
+      { max_bytes: 26_214_400 },
+      {
+        [`/api/v1/projects/${SLUG}/icon`]: (call: StubCall) =>
+          call.method === 'POST'
+            ? reply(201, {
+                upload_id: ID,
+                upload: {
+                  url: `/store/p/p1/icon/${ID}`,
+                  method: 'PUT',
+                  headers: { 'content-type': 'image/png', 'content-disposition': 'inline' },
+                  expires_at: Date.now() + 600_000,
+                },
+                max_bytes: 1_048_576,
+              })
+            : { ...PROJECT, icon: null },
+        [`/api/v1/projects/${SLUG}/icon/complete`]: { ...PROJECT, icon: image },
+      },
+    );
+    const puts: string[] = [];
+    const h = await open(SETTINGS, answers, {
+      before: async (page) => {
+        // The store and the image's bytes are not the stub API's to answer.
+        await page.route('**/store/**', async (route) => {
+          puts.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+          await route.fulfill({ status: 200, body: '' });
+        });
+        await page.route(`**/api/v1/projects/${SLUG}/icon?v=9`, (route) =>
+          route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
+        );
+      },
+    });
+    try {
+      await settled(h);
+      await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
+
+      // An SVG is refused before anything is sent.
+      await h.page.locator('[data-icon-file]').setInputFiles({
+        name: 'logo.svg',
+        mimeType: 'image/svg+xml',
+        buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+      });
+      await until(async () => (await h.page.locator('[data-icon-error]').count()) === 1);
+      assert.match(await h.page.locator('[data-icon-error]').innerText(), /PNG, JPEG or WebP/);
+      assert.equal(h.calls.filter((c) => c.path.includes('/icon')).length, 0);
+
+      await h.page.locator('[data-icon-file]').setInputFiles({
+        name: 'logo.png',
+        mimeType: 'image/png',
+        buffer: PNG,
+      });
+      await until(() => h.calls.some((c) => c.path.endsWith('/icon/complete')));
+      const ask = h.calls.find((c) => c.method === 'POST' && c.path.endsWith('/icon'));
+      assert.deepEqual(ask?.body, { content_type: 'image/png', size_bytes: PNG.length });
+      assert.deepEqual(puts, [`PUT /store/p/p1/icon/${ID}`]);
+      assert.deepEqual(h.calls.find((c) => c.path.endsWith('/icon/complete'))?.body, {
+        upload_id: ID,
+        content_type: 'image/png',
+        size_bytes: PNG.length,
+      });
+      await until(async () => (await header(h).getAttribute('data-mark')) === 'image');
+      assert.equal(await header(h).locator('img').getAttribute('src'), image.url);
+      await until(
+        async () =>
+          (await header(h)
+            .locator('img')
+            .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)) === true,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a space admin who is not an org owner or admin is never shown the Icon row', async () => {
+    const lead = { ...MEMBER_ME, memberships: [{ project_id: 'p1', role: 'lead' }] };
+    const h = await open(SETTINGS, iconStub(lead, { max_bytes: 26_214_400 }).stub);
+    try {
+      await settled(h);
+      // They may edit the space's settings — the form is there — but not its icon.
+      await h.page.locator('#ss-name').waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.locator('[data-icon-section]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('ways in', () => {
   void test('the space bar’s Space settings opens it, and View settings links there instead of Visibility', async () => {
     const h = await open(`/board?project=${SLUG}`, {

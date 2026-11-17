@@ -602,7 +602,9 @@ void describe('the Jira-shaped task view (D-066)', () => {
     try {
       await openById(h);
       assert.equal(await h.page.locator('.panel-crumb-parent').count(), 0);
-      assert.equal((await h.page.locator('.panel-crumbs').innerText()).trim(), 'LC-3');
+      // The space's mark, then the task's own key — no parent between (D-152).
+      assert.match((await h.page.locator('.panel-crumbs').innerText()).trim(), /^\/\s*LC-3$/);
+      assert.equal(await h.page.locator('.panel-crumbs .project-mark').count(), 1);
 
       await h.page.locator('.meta-row-parent .meta-add-link').click();
       const parentPick = h.page.locator('#parent-pick');

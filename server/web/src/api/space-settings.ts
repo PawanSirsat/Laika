@@ -1,7 +1,7 @@
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
 import { fieldErrors } from './setup.ts';
-import type { Project } from './projects.ts';
+import { remembered, type Project } from './projects.ts';
 import type { SpaceColor } from '../theme/space-color.ts';
 
 /**
@@ -24,13 +24,15 @@ export interface SpaceSettingsPatch {
   readonly task_create_min_role?: Project['task_create_min_role'];
   readonly agents_allowed?: boolean;
   readonly archived?: boolean;
+  /** One emoji as the space's icon, or `null` to clear it (D-152; owners and admins). */
+  readonly icon_emoji?: string | null;
 }
 
 export function updateSpace(slug: string, patch: SpaceSettingsPatch): Promise<Project> {
   return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
     method: 'PATCH',
     body: patch,
-  });
+  }).then(remembered);
 }
 
 /** What `POST /projects/:slug/leave` answers (D-103 item 5). */

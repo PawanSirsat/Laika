@@ -9,6 +9,7 @@ import {
 import { everyPage } from '../../../api/every-page.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { BudgetEditor, BudgetMeter } from './BudgetMeter.tsx';
 
 /**
@@ -125,7 +126,15 @@ export function BudgetsCard({
         <div className="usage-budget-group" data-group="month">
           <h4 className="usage-person-h">This month</h4>
           {monthly.map((b) => (
-            <BudgetMeter key={b.id} budget={b} name={b.project.name} />
+            <BudgetMeter
+              key={b.id}
+              budget={b}
+              name={
+                <>
+                  <ProjectMark project={b.project} /> {b.project.name}
+                </>
+              }
+            />
           ))}
         </div>
       )}
@@ -137,7 +146,15 @@ export function BudgetsCard({
             <BudgetMeter
               key={b.id}
               budget={b}
-              name={space === null ? `${b.label} · ${b.project.name}` : b.label}
+              name={
+                space === null ? (
+                  <>
+                    {b.label} · <ProjectMark project={b.project} size="xs" /> {b.project.name}
+                  </>
+                ) : (
+                  b.label
+                )
+              }
             >
               {canSet && (
                 <BudgetEditor

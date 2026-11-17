@@ -4,6 +4,7 @@ import { ApiError } from '../../../api/errors.ts';
 import { addMember, projectRoleLabel, type ProjectRole } from '../../../api/members.ts';
 import { listTasks, type TaskSummary } from '../../../api/tasks.ts';
 import { Button } from '../../../components/forms/Button.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { AvailabilityPill } from '../../../components/availability/AvailabilityPill.tsx';
 import {
   canTake,
@@ -208,6 +209,7 @@ export function AddToProjectDialog({
                     setProblem(undefined);
                   }}
                 />
+                <ProjectMark project={s} />
                 <span>{s.name}</span>
                 {already && <span className="avail-option-note">already a member</span>}
               </label>

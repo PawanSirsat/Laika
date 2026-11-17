@@ -258,6 +258,14 @@
   padding: 0 var(--space-2) var(--space-2) 0;
 }
 
+/* The space's mark, then its name (LAI-1311). */
+.rev-group-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .rev-group-title {
   margin: 0;
   font-size: var(--text-heading-sm);

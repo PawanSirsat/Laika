@@ -175,6 +175,9 @@ const ORG_MATRIX: OrgRow[] = [
   // D-149 (LAI-1181): *Change organisation settings, Time and breaks*; a token
   // is refused in `can.test.ts`.
   ['org.hr.configure', true, true, false, false],
+  // | Change a space's icon | ✓ | ✓ | — | — |
+  // D-152 (LAI-1311): the owner's two roles, and no grant moves it.
+  ['project.icon.write', true, true, false, false],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {

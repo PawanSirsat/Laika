@@ -234,12 +234,7 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                     ) : (
                       <ul className="cap-spaces">
                         {person.spaces.map((s) => (
-                          <SpaceChip
-                            key={s.project_id}
-                            space={s}
-                            on={s.project_id === space}
-                            theme={theme}
-                          />
+                          <SpaceChip key={s.project_id} space={s} on={s.project_id === space} />
                         ))}
                       </ul>
                     )}

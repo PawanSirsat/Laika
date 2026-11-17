@@ -130,10 +130,6 @@
   color: var(--text-primary);
 }
 
-.myday-ov-project .space-badge {
-  flex: none;
-}
-
 /* Time on no project wears an empty badge, dashed, where a space's letter would be. */
 .myday-ov-project-none {
   flex: none;

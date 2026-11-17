@@ -19,6 +19,7 @@ import {
   repoFromPaste,
   type GeneralDraft,
 } from './space-settings-model.ts';
+import { IconSection } from './IconSection.tsx';
 import { onRadioGroupKeyDown, radioTabIndex } from './radio-keys.ts';
 
 export interface GeneralTabProps {
@@ -26,6 +27,11 @@ export interface GeneralTabProps {
   /** The space's task counts, from the list; `undefined` until read. */
   readonly counts: Readonly<Record<string, number>> | undefined;
   readonly mayEdit: boolean;
+  /**
+   * Whether the reader may change the space's icon (`project.icon.write`,
+   * org owners and admins — D-152). Without it the Icon row is not shown.
+   */
+  readonly mayChangeIcon?: boolean;
   readonly onSaved: (project: Project) => void;
   /**
    * Whether the form holds changes not yet saved, so the screen can ask before
@@ -35,7 +41,8 @@ export interface GeneralTabProps {
 }
 
 /**
- * Name, key, description, colour and repository (D-103 items 3 and 4).
+ * Name, key, description, colour, icon and repository (D-103 items 3 and 4,
+ * D-152). The icon saves on its own, at once (`IconSection`).
  *
  * **A form with Save, not instant saves**: a key change re-keys every new
  * task, and a half-typed name should not land on everybody's sidebar. The
@@ -53,7 +60,14 @@ export interface GeneralTabProps {
  * pasted repository link offers its `owner/name` in one click. The bar holding
  * Save stays in view while there is something to save.
  */
-export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }: GeneralTabProps) {
+export function GeneralTab({
+  project,
+  counts,
+  mayEdit,
+  mayChangeIcon = false,
+  onSaved,
+  onDirtyChange,
+}: GeneralTabProps) {
   const [draft, setDraft] = useState<GeneralDraft>(() => draftOf(project));
   const status = useSaveStatus();
   const saving = status.state.kind === 'saving';
@@ -284,6 +298,8 @@ export function GeneralTab({ project, counts, mayEdit, onSaved, onDirtyChange }:
             </p>
           )}
         </Row>
+
+        {mayChangeIcon && <IconSection project={project} />}
 
         {mayEdit ? (
           <TextInput

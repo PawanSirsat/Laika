@@ -2,7 +2,7 @@ import { useLive } from './SpaceLive.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { SpaceSettingsLink } from './SpaceSettingsLink.tsx';
-import { SpaceBadge } from '../SpaceBadge.tsx';
+import { ProjectMark } from '../ProjectMark.tsx';
 
 /**
  * Row one of a space: **who and what, and nothing else** (LAI-1198) — in the
@@ -70,14 +70,16 @@ export function SpaceTopBar() {
             so this headline is the only place the space is named.
           */}
           {/*
-            **The space's own letter, as the rail draws it** (LAI-1234): the
-            same `SpaceBadge`, colour and letter, so the space looks like
-            itself in the rail and on its page. It was a fixed ink block with
-            a bar-chart glyph — the same mark for every space.
+            **The space's own mark, as the rail draws it** (LAI-1234; D-152):
+            the same `ProjectMark` — its image, emoji or letter on its colour —
+            so the space looks like itself in the rail and on its page. It was
+            a fixed ink block with a bar-chart glyph, the same for every space.
+            The shell's read of this space is remembered by slug, so the mark
+            has its icon without the bar carrying it.
           */}
           {slug !== undefined && (
             <span className="space-icon" aria-hidden="true">
-              <SpaceBadge slug={slug} name={spaceName ?? slug} size="md" />
+              <ProjectMark project={{ slug, name: spaceName ?? slug }} size="md" />
             </span>
           )}
           <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>

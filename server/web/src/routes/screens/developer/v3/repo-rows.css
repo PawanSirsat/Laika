@@ -18,6 +18,14 @@
   min-width: 0;
 }
 
+/* A row named for its project: the project's mark, then the name (LAI-1311). */
+.dx-repo-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
 /* Under the title, not under the icon: the icon's width and the head's gap. */
 .dx-repo-devices {
   display: flex;

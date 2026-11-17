@@ -122,7 +122,7 @@
 .space-icon {
   flex: none;
   display: flex;
-  /* The tile is `SpaceBadge`'s (LAI-1234); this only places it. */
+  /* The tile is `ProjectMark`'s (LAI-1234, D-152); this only places it. */
 }
 
 .space-name {

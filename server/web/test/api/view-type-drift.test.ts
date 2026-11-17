@@ -1011,6 +1011,14 @@ const PAIRS: readonly Pair[] = [
     client: 'AttachmentUploadTicket',
     clientFile: 'attachments.ts',
   },
+  // D-152 (LAI-1311): a space's icon upload — the attachments' ticket, named
+  // on both sides, so the guard reads its fields as its own and not the parent's.
+  {
+    server: 'ProjectIconUploadView',
+    serverFile: 'services/project-icons.ts',
+    client: 'ProjectIconUpload',
+    clientFile: 'project-icons.ts',
+  },
   {
     server: 'AttachmentListView',
     serverFile: 'services/attachments.ts',
