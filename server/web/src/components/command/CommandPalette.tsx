@@ -37,6 +37,7 @@ import { closePalette, paletteOpener } from './palette-store.ts';
 import { useOrgPeople } from '../../api/use-org-people.ts';
 import type { OrgUser } from '../../api/users.ts';
 import { matchPeople, personTargets, SEE_EVERYONE } from '../shell/header-model.ts';
+import { ProjectMark } from '../ProjectMark.tsx';
 
 /** The page `GET /tasks` is read in: the server's ceiling. */
 const TASK_PAGE = 200;
@@ -523,6 +524,9 @@ export function CommandPalette() {
                       if (item.href !== undefined) go(item.href, item.entry);
                     }}
                   >
+                    {item.entry.kind === 'space' && (
+                      <ProjectMark project={{ slug: item.entry.id, name: item.label }} />
+                    )}
                     <span className="cmdk-item-label">{item.label}</span>
                     {item.hint !== undefined && <span className="cmdk-item-hint">{item.hint}</span>}
                   </Command.Item>
@@ -594,6 +598,11 @@ export function CommandPalette() {
                       }
                     }}
                   >
+                    {item.id.startsWith('space:') && (
+                      <ProjectMark
+                        project={{ slug: item.id.slice('space:'.length), name: item.label }}
+                      />
+                    )}
                     <span className="cmdk-space-key" aria-hidden="true">
                       {item.hint}
                     </span>

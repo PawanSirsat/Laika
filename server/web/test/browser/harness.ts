@@ -223,6 +223,8 @@ const ADMIN_UP_ORG = [
   'time_sync.import_all',
   // D-143 (LAI-1165): a member's confirmed time — the admin's never the owner's.
   'time_entries.write_member',
+  // D-152 (LAI-1311): a space's icon.
+  'project.icon.write',
 ] as const;
 const OWNER_ONLY_ORG = [
   'org.delete',

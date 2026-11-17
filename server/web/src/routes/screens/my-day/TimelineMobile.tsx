@@ -28,6 +28,7 @@ import {
   type MobileZoom,
 } from './timeline-mobile-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 export interface TimelineMobileProps {
   readonly view: MyDay;
@@ -61,12 +62,20 @@ function labelOf(
   block: LaneBlock,
   drafts: ReadonlyMap<string, TimeDraft>,
   entries: ReadonlyMap<string, TimeEntry>,
-): { readonly top: string; readonly title: string; readonly mono: boolean } {
+): {
+  readonly top: string;
+  readonly title: string;
+  readonly mono: boolean;
+  /** The space `top` names, when it names one — drawn with its mark (D-152). */
+  readonly space?: { readonly slug: string; readonly name: string } | undefined;
+} {
   if (block.kind === 'drafted') {
     const d = drafts.get(block.id);
     if (d === undefined) return { top: '', title: '', mono: false };
     if (d.task !== null) return { top: d.task.key, title: d.task.title, mono: true };
-    if (d.project !== null) return { top: d.project.name, title: d.folder ?? '', mono: false };
+    if (d.project !== null) {
+      return { top: d.project.name, title: d.folder ?? '', mono: false, space: d.project };
+    }
     return { top: d.general ? 'General' : 'No task yet', title: '', mono: false };
   }
   const e = entries.get(block.id);
@@ -75,7 +84,9 @@ function labelOf(
   if (e.title !== undefined && e.title !== null) {
     return { top: e.title, title: e.description ?? e.note ?? '', mono: false };
   }
-  if (e.project !== null) return { top: e.project.name, title: e.note ?? '', mono: false };
+  if (e.project !== null) {
+    return { top: e.project.name, title: e.note ?? '', mono: false, space: e.project };
+  }
   return { top: 'General', title: e.note ?? '', mono: false };
 }
 
@@ -480,7 +491,7 @@ export function TimelineMobile({
                 );
               })}
             {line.blocks.map((block, i) => {
-              const { top, title, mono } = labelOf(block, drafts, entries);
+              const { top, title, mono, space } = labelOf(block, drafts, entries);
               const place = stacks[i] ?? { row: 0, rows: 1 };
               const spot = box(block.start, block.end);
               const lines = mobileBlockLines(spot.height);
@@ -533,6 +544,7 @@ export function TimelineMobile({
                     <span className="tlm-chip" aria-hidden="true">
                       {icon}
                     </span>
+                    {space !== undefined && <ProjectMark project={space} size="xs" />}
                     <span className={mono ? 'tlm-text tlm-mono' : 'tlm-text'}>{top}</span>
                     {alone && (
                       <span className="tlm-dur" data-mobile-dur>

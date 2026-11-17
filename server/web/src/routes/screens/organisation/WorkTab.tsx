@@ -19,8 +19,8 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { ScrollCue } from '../../../components/ScrollCue.tsx';
-import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
 import { BulkBar } from '../list/BulkBar.tsx';
 import { runBulkAction, type BulkAction, type BulkRun } from '../list/list-bulk.ts';
 import {
@@ -460,7 +460,11 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
     { value: '', label: 'Every space' },
     ...[...spaces]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((s) => ({ value: s.slug, label: s.name })),
+      .map((s) => ({
+        value: s.slug,
+        label: s.name,
+        icon: <ProjectMark project={s} size="sm" />,
+      })),
   ];
   const spaceSprints = filter.space === undefined ? [] : (sprintsBySpace.get(filter.space) ?? []);
   const sprintOptions = [
@@ -522,7 +526,7 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
                 '—'
               ) : (
                 <>
-                  <SpaceBadge slug={row.space.slug} name={row.space.name} />
+                  <ProjectMark project={row.space} size="sm" />
                   <span className="work-space-name">{row.space.name}</span>
                 </>
               )}
@@ -745,23 +749,30 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
                 <span>Updated</span>
               </span>
             </div>
-            {groups.map((g) => (
-              <section
-                key={g.key}
-                className={stale ? 'work-group work-group-stale' : 'work-group'}
-                aria-labelledby={group === 'none' ? undefined : `work-group-${g.key}`}
-              >
-                {group !== 'none' && (
-                  <h2 className="work-group-title" id={`work-group-${g.key}`}>
-                    <span>{g.label}</span>
-                    <span className="work-group-count">{g.rows.length}</span>
-                  </h2>
-                )}
-                <ul className="work-list" aria-label={group === 'none' ? 'Tasks' : g.label}>
-                  {g.rows.map(renderRow)}
-                </ul>
-              </section>
-            ))}
+            {groups.map((g) => {
+              // Every row under a space's heading is in that space.
+              const space = group === 'space' ? g.rows[0]?.space : undefined;
+              return (
+                <section
+                  key={g.key}
+                  className={stale ? 'work-group work-group-stale' : 'work-group'}
+                  aria-labelledby={group === 'none' ? undefined : `work-group-${g.key}`}
+                >
+                  {group !== 'none' && (
+                    <div className="work-group-head">
+                      {space !== undefined && <ProjectMark project={space} size="sm" />}
+                      <h2 className="work-group-title" id={`work-group-${g.key}`}>
+                        <span>{g.label}</span>
+                        <span className="work-group-count">{g.rows.length}</span>
+                      </h2>
+                    </div>
+                  )}
+                  <ul className="work-list" aria-label={group === 'none' ? 'Tasks' : g.label}>
+                    {g.rows.map(renderRow)}
+                  </ul>
+                </section>
+              );
+            })}
           </ScrollCue>
           {bar}
         </div>

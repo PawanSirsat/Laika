@@ -1,9 +1,9 @@
 import { NavIcon } from '../../../components/sidebar/NavIcon.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { Project } from '../../../api/projects.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { progressLine, progressOf } from './spaces-model.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -46,18 +46,17 @@ export interface SpaceItemProps {
   readonly handlers: SpaceHandlers;
 }
 
-/** The letter on the space's own colour (D-103 item 4). Decoration beside the name. */
+/**
+ * The space's mark on its card and row (D-152): its image, emoji or letter on
+ * its colour, as everywhere else. Decoration beside the name.
+ */
 export function SpaceAvatar({ space, size }: { space: Project; size: 'lg' | 'md' }) {
-  const letter = (space.name.trim()[0] ?? space.slug[0] ?? '?').toUpperCase();
   return (
-    <span
+    <ProjectMark
+      project={space}
+      size={size === 'lg' ? 'xl' : 'lg'}
       className={`space-avatar space-avatar-${size}`}
-      style={{ background: spaceColorVar(spaceColor(space)) }}
-      data-color={spaceColor(space)}
-      aria-hidden="true"
-    >
-      {letter}
-    </span>
+    />
   );
 }
 

@@ -82,6 +82,9 @@
 }
 
 .rd-space {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }

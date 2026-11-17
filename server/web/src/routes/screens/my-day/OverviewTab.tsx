@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { MyDay, TimeSummary } from '../../../api/time.ts';
-import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
 import {
   RANGE_LABELS,
@@ -185,7 +185,7 @@ function Figures({
                   {p.project === null ? (
                     <span className="myday-ov-project-none" aria-hidden="true" />
                   ) : (
-                    <SpaceBadge slug={p.project.slug} name={p.project.name} />
+                    <ProjectMark project={p.project} />
                   )}
                   <span
                     className={

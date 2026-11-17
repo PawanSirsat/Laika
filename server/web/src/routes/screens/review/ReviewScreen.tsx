@@ -17,6 +17,7 @@ import { FilterBar, Segmented } from '../../../components/kpi/FilterBar.tsx';
 import { KpiRow, KpiTile } from '../../../components/kpi/KpiRow.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
@@ -563,7 +564,11 @@ export function ReviewScreen({
                   value={filter.project ?? ''}
                   options={[
                     { value: '', label: 'All spaces' },
-                    ...projects.map(([slug, name]) => ({ value: slug, label: name })),
+                    ...projects.map(([slug, name]) => ({
+                      value: slug,
+                      label: name,
+                      icon: <ProjectMark project={{ slug, name }} size="sm" />,
+                    })),
                   ]}
                   onChange={(value) => {
                     setFilter((f) => ({ ...f, project: value === '' ? null : value }));

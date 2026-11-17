@@ -65,6 +65,7 @@ import {
 import { prefersReducedMotion } from '../../../theme/motion.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 export interface WorkroomProps {
   readonly task: TaskSummary;
@@ -774,6 +775,8 @@ export function Workroom({ task, slug, set, members, navigate, back }: WorkroomP
         </a>
         <div className="wr-head-main">
           <p className="wr-key">
+            {/* The space the task is in, as its mark (D-152), named. */}
+            <ProjectMark project={{ slug }} size="xs" labelled />
             <span>{task.key}</span>
             <span className="wr-status" data-category={task.status}>
               {task.status_name}

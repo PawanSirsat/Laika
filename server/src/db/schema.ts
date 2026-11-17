@@ -62,6 +62,7 @@ import {
   PROFILE_KINDS,
   PROJECT_ROLES,
   PROJECT_COLORS,
+  PROJECT_ICON_TYPES,
   PROJECT_VISIBILITIES,
   TASK_CREATE_MIN_ROLES,
   REVIEW_DECISIONS,
@@ -350,6 +351,26 @@ export const projects = sqliteTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'`),
+    /**
+     * The space's icon (D-152, LAI-1311). An image wins over an emoji, an
+     * emoji over the first letter on `color`, which is what a space with
+     * neither shows.
+     *
+     * `icon_emoji` is one grapheme, checked by the service with
+     * `Intl.Segmenter` — the CHECK only bounds its length, as SQLite cannot
+     * count graphemes.
+     */
+    iconEmoji: text('icon_emoji'),
+    /**
+     * The image's key in the operator's store, `p/<project_id>/icon/<ulid>`
+     * (D-150's store): a new key for every upload, so a cached copy of the old
+     * one can never be served as the new. Null with no image.
+     */
+    iconKey: text('icon_key'),
+    /** The image's type, as its first bytes proved it; null exactly when `icon_key` is. */
+    iconType: text('icon_type', { enum: PROJECT_ICON_TYPES }),
+    /** When the icon last changed — the `?v=` that keeps a cached image honest. */
+    iconUpdatedAt: integer('icon_updated_at'),
     createdAt,
     updatedAt,
   },
@@ -367,6 +388,11 @@ export const projects = sqliteTable(
       oneOf('task_create_min_role', TASK_CREATE_MIN_ROLES),
     ),
     check('projects_agents_allowed_check', sql.raw('agents_allowed IN (0, 1)')),
+    check(
+      'projects_icon_emoji_check',
+      sql.raw('icon_emoji IS NULL OR length(icon_emoji) BETWEEN 1 AND 32'),
+    ),
+    check('projects_icon_type_check', oneOfOrNull('icon_type', PROJECT_ICON_TYPES)),
   ],
 );
 

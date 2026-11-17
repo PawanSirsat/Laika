@@ -176,6 +176,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   // D-149 (LAI-1181): the HR connection, under *Change organisation settings*.
   'org.hr.configure': 'YYNN',
   'developer_setup.read_own': 'YYYY',
+  // D-152 (LAI-1311): a space's icon, owners and admins.
+  'project.icon.write': 'YYNN',
 
   'project.members.manage': 'YNN',
   'project.settings.edit': 'YNN',
@@ -425,6 +427,8 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'token.revoke_any')).toBe('YNNN');
     // Not a capability's, so not the grant's to withdraw.
     expect(cells(view, 'webhook.configure')).toBe('YYNN');
+    // D-152 (LAI-1311): nor is a space's icon.
+    expect(cells(view, 'project.icon.write')).toBe('YYNN');
   });
 
   it('changes the caller’s own actions with their role’s grant', () => {

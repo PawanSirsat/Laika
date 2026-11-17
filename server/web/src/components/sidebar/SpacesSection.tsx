@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CREATE_SPACE_HREF, navHref } from '../../routes/nav-url.ts';
 import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import { SpacesPopover } from './SpacesPopover.tsx';
-import { SpaceBadge } from '../SpaceBadge.tsx';
+import { ProjectMark } from '../ProjectMark.tsx';
 import { NavIcon } from './NavIcon.tsx';
 import { PinButton } from './PinButton.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
@@ -176,13 +176,13 @@ export function SpacesSection({
                 >
                   <span className="sidebar-link-bar" aria-hidden="true" />
                   {/*
-                    **A coloured letter and a name** (LAI-796, the owner's
-                    reference; LAI-262 had a dot). The letter is the rail's
-                    icon. **The display name** (owner, 2026-09-21 — reverses
+                    **The space's mark and a name** (LAI-796, the owner's
+                    reference; LAI-262 had a dot; D-152 its image or emoji
+                    before the letter). The mark is the rail's icon. **The display name** (owner, 2026-09-21 — reverses
                     LAI-271's slug): the lowercase slug read as a bug once real
                     projects appeared.
                   */}
-                  <SpaceBadge slug={space.slug} name={space.name} />
+                  <ProjectMark project={space} />
                   <span className="sidebar-label sidebar-tip">{space.name}</span>
                 </a>
                 {/*

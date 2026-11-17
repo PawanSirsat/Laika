@@ -27,6 +27,7 @@ import { ApiError } from '../../../api/errors.ts';
 import { OWNER_SETUP_NOTE } from '../../../api/owner-setup.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { revokeToken, revokeUserToken } from '../../../api/tokens.ts';
+import type { Project } from '../../../api/projects.ts';
 import { useProjects } from '../../../api/use-projects.ts';
 import { Chip } from '../../../components/chip/Chip.tsx';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
@@ -34,6 +35,7 @@ import { Icon } from '../../../components/icon/Icon.tsx';
 import '../../../components/forms/button.css';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { OverflowMenu } from '../../../components/wizard/OverflowMenu.tsx';
 import { SETUP_CHIPS } from '../developer/v3/overview-state.ts';
 import { updateManifestOf, type UpdateManifest } from '../developer/v3/update-status.ts';
@@ -285,6 +287,11 @@ function SetupPanel({
     const byId = new Map(projects.map((p) => [p.id, p.name]));
     return (id: string): string => byId.get(id) ?? 'A space';
   }, [projects]);
+  // The space itself, for its mark beside a tool's grant (LAI-1311).
+  const spaceOf = useMemo(() => {
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    return (id: string): Project | undefined => byId.get(id);
+  }, [projects]);
 
   const notice_ = (
     <p className="ds-notice" data-ds-notice>
@@ -457,7 +464,13 @@ function SetupPanel({
                 onChanged();
               }}
             />
-            <Tools view={view} canAct={canAct} onAsk={ask} spaceName={spaceName} />
+            <Tools
+              view={view}
+              canAct={canAct}
+              onAsk={ask}
+              spaceName={spaceName}
+              spaceOf={spaceOf}
+            />
             <Repositories view={view} own={own} />
             <Tokens
               view={view}
@@ -1122,11 +1135,13 @@ function Tools({
   canAct,
   onAsk,
   spaceName,
+  spaceOf,
 }: {
   readonly view: SetupView;
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly spaceName: (id: string) => string;
+  readonly spaceOf: (id: string) => Project | undefined;
 }) {
   const groups: { readonly key: string; readonly title: string; readonly tools: SetupTool[] }[] = [
     ...view.devices
@@ -1164,6 +1179,7 @@ function Tools({
                 canAct={canAct}
                 onAsk={onAsk}
                 spaceName={spaceName}
+                spaceOf={spaceOf}
                 device={g.title}
               />
             ))}
@@ -1180,6 +1196,7 @@ function ToolCard({
   canAct,
   onAsk,
   spaceName,
+  spaceOf,
   device,
 }: {
   readonly tool: SetupTool;
@@ -1187,6 +1204,7 @@ function ToolCard({
   readonly canAct: boolean;
   readonly onAsk: (p: Pending) => void;
   readonly spaceName: (id: string) => string;
+  readonly spaceOf: (id: string) => Project | undefined;
   readonly device: string;
 }) {
   const unverified = isUnverified(view, tool.id);
@@ -1258,11 +1276,15 @@ function ToolCard({
         {tool.grants.length === 0 && tool.grants_hidden === 0 && (
           <span className="ds-muted">nothing</span>
         )}
-        {tool.grants.map((g) => (
-          <span className="ds-space" key={g.project_id}>
-            {spaceName(g.project_id)} · <b>{accessWord(g.scope)}</b>
-          </span>
-        ))}
+        {tool.grants.map((g) => {
+          const space = spaceOf(g.project_id);
+          return (
+            <span className="ds-space" key={g.project_id}>
+              {space !== undefined && <ProjectMark project={space} size="xs" />}
+              {spaceName(g.project_id)} · <b>{accessWord(g.scope)}</b>
+            </span>
+          );
+        })}
         {tool.grants_hidden > 0 && (
           <span className="ds-muted" data-ds-grants-hidden>
             {tool.grants_hidden} {tool.grants_hidden === 1 ? 'space' : 'spaces'} you can’t see

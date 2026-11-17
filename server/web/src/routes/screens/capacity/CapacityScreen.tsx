@@ -12,6 +12,7 @@ import { usePolled } from '../../../api/use-polled.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { FilterBar, Segmented } from '../../../components/kpi/FilterBar.tsx';
 import { KpiRow, KpiTile } from '../../../components/kpi/KpiRow.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
@@ -469,7 +470,11 @@ export function CapacityScreen({
                     { value: '', label: 'All spaces' },
                     ...[...(spaces ?? new Map<string, { slug: string; name: string }>())]
                       .sort(([, a], [, b]) => a.name.localeCompare(b.name))
-                      .map(([id, s]) => ({ value: id, label: s.name })),
+                      .map(([id, s]) => ({
+                        value: id,
+                        label: s.name,
+                        icon: <ProjectMark project={s} />,
+                      })),
                   ]}
                   onChange={(value) => {
                     setSpace(value === '' ? null : value);

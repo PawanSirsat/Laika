@@ -9,6 +9,7 @@ import {
   type Notice,
 } from '../../api/notices.ts';
 import { Icon } from '../icon/Icon.tsx';
+import { ProjectMark } from '../ProjectMark.tsx';
 import type { IconName } from '../icon/icon-paths.ts';
 import { Spinner } from '../Spinner.tsx';
 import {
@@ -217,9 +218,15 @@ export function NotificationsPopover({
                     </span>
                     <span className="hdr-item-text">
                       <span className="hdr-item-line">{item.text}</span>
-                      {item.detail !== undefined && (
-                        <span className="hdr-item-detail">{item.detail}</span>
-                      )}
+                      {item.detail !== undefined &&
+                        (item.space === undefined ? (
+                          <span className="hdr-item-detail">{item.detail}</span>
+                        ) : (
+                          <span className="hdr-item-detail hdr-item-space">
+                            <ProjectMark project={item.space} size="xs" />
+                            <span className="hdr-item-space-name">{item.detail}</span>
+                          </span>
+                        ))}
                     </span>
                     <span className="hdr-item-meta">
                       <span className="hdr-item-age">{ago(item.at, now)}</span>

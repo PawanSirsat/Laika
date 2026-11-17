@@ -695,6 +695,7 @@
 .avail-chip {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-1);
   padding: 0.0625rem var(--space-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);

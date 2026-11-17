@@ -4,6 +4,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { IconButton } from '../../../components/forms/IconButton.tsx';
@@ -722,7 +723,11 @@ function CopyMembers({
           onChange={setSource}
           options={[
             { value: '', label: 'Choose a space', pinned: true },
-            ...others.map((s) => ({ value: s.slug, label: s.name })),
+            ...others.map((s) => ({
+              value: s.slug,
+              label: s.name,
+              icon: <ProjectMark project={s} size="sm" />,
+            })),
           ]}
         />
       </label>

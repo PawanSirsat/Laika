@@ -72,6 +72,7 @@ import '../task/task-panel.css';
 import '../../../components/markers.css';
 import { TrackedTime } from '../task/TrackedTime.tsx';
 import './task-detail.css';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
@@ -650,6 +651,11 @@ export function TaskDetailPanel({
           header for the rail, where they are fields a reader changes.
         */}
         <nav className="panel-crumbs" aria-label="Where this task sits">
+          {/* The space first, as its mark (D-152) — named, since no word says it here. */}
+          <ProjectMark project={{ slug }} size="xs" labelled className="panel-crumb-space" />
+          <span className="panel-crumb-sep" aria-hidden="true">
+            /
+          </span>
           {task.parent_task_id !== null && (
             <>
               {parent === undefined ? (

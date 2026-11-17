@@ -129,9 +129,9 @@ export const AVATAR_COLOR_COUNT = HUES.length;
 
 /**
  * A space drawn as a data series — a bar, a donut slice, a swatch (LAI-1216):
- * the hue of its {@link SpaceBadge} letter (`avatarColor('space:<slug>')`), so
- * a chart never paints a space one colour beside a badge that paints it
- * another. The badge fill is tuned to carry a white letter, and on the dark
+ * the hue `avatarColor('space:<slug>')` gives, which was the sidebar badge's
+ * until D-152 moved every mark to the space's stored colour — so a chart can
+ * paint a space another colour than its mark, a gap LAI-1311's log records. The badge fill is tuned to carry a white letter, and on the dark
  * card some hues sit under 3:1; mixed a little toward the theme's text ink it
  * clears 3:1 in dark and only deepens in light. One string for both themes:
  * the ink it mixes with is the theme's.

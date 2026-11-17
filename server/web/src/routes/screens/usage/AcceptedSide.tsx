@@ -1,4 +1,5 @@
 import { reworkLine, type Usage } from '../../../api/usage.ts';
+import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 
 /**
@@ -28,7 +29,10 @@ export function AcceptedSide({ usage }: { readonly usage: Usage }) {
           <ul className="usage-rework">
             {usage.rework.map((r) => (
               <li key={r.project.slug} className="usage-rework-row">
-                <span className="usage-rework-name">{r.project.name}</span>
+                <span>
+                  <ProjectMark project={r.project} />{' '}
+                  <span className="usage-rework-name">{r.project.name}</span>
+                </span>
                 <span className="usage-rework-line">{reworkLine(r)}</span>
               </li>
             ))}
@@ -58,7 +62,10 @@ export function AcceptedSide({ usage }: { readonly usage: Usage }) {
             <ul className="usage-rework">
               {usage.runaway.map((r) => (
                 <li key={r.project.slug} className="usage-rework-row" data-runaway={r.project.slug}>
-                  <span className="usage-rework-name">{r.project.name}</span>
+                  <span>
+                    <ProjectMark project={r.project} />{' '}
+                    <span className="usage-rework-name">{r.project.name}</span>
+                  </span>
                   <span className="usage-rework-line">
                     {String(r.alerts)} {r.alerts === 1 ? 'alert' : 'alerts'}
                   </span>

@@ -67,6 +67,7 @@ import {
   projectAttachmentRoutes,
   taskAttachmentRoutes,
 } from './http/routes/attachments.ts';
+import { projectIconRoutes } from './http/routes/project-icons.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
 import { capacityPingRoutes } from './http/routes/capacity-pings.ts';
@@ -525,13 +526,20 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
         throttle: options.passwordResetThrottle ?? new SignInThrottle(),
       }),
     );
-    app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
+    // The store is passed for D-152: an emoji set on `PATCH` deletes the icon
+    // image it replaces.
+    app.route(
+      `${API_BASE}/projects`,
+      projectRoutes({ db, sqlite: options.sqlite, attachments: options.attachments }),
+    );
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     // Files (§4.92, D-150, LAI-1300): asked for in a project, listed on a
     // task, completed, read and removed by their own id. Always mounted; off,
     // each answers `503 attachments_off`.
     const files = { db, attachments: options.attachments };
     app.route(`${API_BASE}/projects`, projectAttachmentRoutes(files));
+    // A space's icon image (D-152, LAI-1311), in the same store; off, `503`.
+    app.route(`${API_BASE}/projects`, projectIconRoutes(files));
     app.route(`${API_BASE}/tasks`, taskAttachmentRoutes(files));
     app.route(`${API_BASE}/attachments`, attachmentRoutes(files));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));
