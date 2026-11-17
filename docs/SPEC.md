@@ -4455,7 +4455,7 @@ POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes 
 POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } (1–500) — map a person, or null for not on Laika → the connection; 422 reasons duplicate_person, duplicate_user, unknown_user; 409 conflict reason user_mapped_elsewhere when another owner mapping holds that member (an email match gives way); a remap stamps that person's live leave removed at once   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
-GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one, by name] }   (owner, admin; session only; D-154, LAI-1314)
+GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one that the caller can open, by name] }   (owner, admin; session only; D-154, LAI-1314)
 PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
@@ -8132,7 +8132,12 @@ One interval-driven scheduler in the same process:
   stood when the change was made: handed to somebody by somebody else, into
   review, back from review, done, blocked by a task not done, unblocked, and a
   person's comment — never an agent's — at most 20 a tick and never one more
-  than an hour old. **Off, nothing is posted** and each post that would have
+  than an hour old. **A blocker in another space is named only as *a task in
+  another space*** — never its key or title — in a notice, the stand-up and
+  the digest alike. **The switch and the channel are read at each post**, not
+  once a tick: off by then, the post is recorded `suppressed`, `posting_off`;
+  a channel removed by then is posted nothing; one replaced is posted to at
+  its new address. **Off, nothing is posted** and each post that would have
   gone is recorded `suppressed`, `posting_off`. Records older than 90 days are
   deleted. **A run never overlaps another** — a tick still going is joined. No
   `activity` row: §4.95 is the record

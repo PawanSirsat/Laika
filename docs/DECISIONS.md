@@ -7599,7 +7599,9 @@ exist, so what Laika sends has to be what they already accept.
 1. **Each space may have one Teams channel**: a Power Automate (or Teams *Incoming Webhook*)
    address, stored per space (§4.94). **A space with none is told nothing** — never another
    space's channel; KSage once fell back to an organisation-wide address and posted every
-   project's digest into one client's chat.
+   project's digest into one client's chat. **And a space's posts never name another space's
+   work**: a dependency may cross spaces, so a blocker elsewhere is said as *a task in another
+   space*, never by its key or title (review of LAI-1314).
 2. **Off is how it ships.** An organisation switch, *Teams posting on* (§4.93), on Organisation
    → Integrations, defaults off. While off nothing is posted, and every post that would have
    gone is recorded in §4.95 as `suppressed`, reason `posting_off`. Turning it on is one click;
@@ -7608,7 +7610,8 @@ exist, so what Laika sends has to be what they already accept.
 3. **Owners and admins, signed in.** `org.teams.configure` (§3.1), carried by *Change
    organisation settings, Time and breaks*, **session only**: the address decides where a
    space's work is read out to, so no token — an agent's or a person's — sets one. A space's
-   own routes also need the space to be one the caller can open.
+   own routes, and the list of channels on Integrations, also need the space to be one the
+   caller can open.
 4. **The address is a credential** — its `sig=` lets anybody post. Encrypted under `LAIKA_SECRET`
    with its own purpose (`teams_webhook_url`), **written and never read back**: every view shows
    the host and the last four characters. Only `https` on `*.logic.azure.com`,
@@ -7635,7 +7638,9 @@ exist, so what Laika sends has to be what they already accept.
    are read from `activity` after the fact, as the board stood when the change was made, so a
    slow flow never slows or fails a write. A scheduled run is due for two hours from its time
    and is **claimed before it is posted** (KSage's `digest_runs` guard), so it is never posted
-   twice.
+   twice. **The switch and the space's channel are read at each post**, not once a tick: a
+   post after posting was turned off is held back, a removed channel is posted nothing, and a
+   replaced one is posted to at its new address.
 8. **No retry storm.** A ten-second timeout; Teams' answer is never read, logged or stored —
    only its status. A scheduled run is tried again only when nothing reached Teams
    (`unreachable`, or `408`/`429`/`5xx`), a minute apart, three attempts at most; a refusal,
