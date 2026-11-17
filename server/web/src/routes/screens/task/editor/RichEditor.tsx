@@ -1546,7 +1546,7 @@ export function RichEditor({
                         setUploads((list) => list.filter((u) => u.id !== upload.id));
                       }}
                     >
-                      ×
+                      <Icon name="close" size="small" />
                     </button>
                   </Tooltip>
                 </>

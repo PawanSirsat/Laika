@@ -9,6 +9,7 @@ import { ApiError } from '../../../api/errors.ts';
 import { subscribeToEvents } from '../../../api/event-stream.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import {
@@ -267,9 +268,15 @@ export function AttachmentsSection({
                       </a>
                       <span className="att-meta">
                         {row.size} · {row.uploader} ·{' '}
-                        <time dateTime={row.when.iso} title={row.when.full}>
-                          {row.when.text}
-                        </time>
+                        <Tooltip content={row.when.full}>
+                          <time
+                            dateTime={row.when.iso}
+                            tabIndex={0}
+                            aria-label={`${row.when.text}, ${row.when.full}`}
+                          >
+                            {row.when.text}
+                          </time>
+                        </Tooltip>
                       </span>
                     </span>
                     {row.mayDelete && file !== undefined && (
@@ -335,7 +342,7 @@ export function AttachmentsSection({
                             setSending((list) => list.filter((x) => x.id !== s.id));
                           }}
                         >
-                          ×
+                          <Icon name="close" size="small" />
                         </button>
                       </Tooltip>
                     </>
