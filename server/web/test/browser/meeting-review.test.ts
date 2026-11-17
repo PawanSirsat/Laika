@@ -16,7 +16,7 @@
 import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme, until } from './harness.ts';
+import { closeBrowser, open, refuse, type ApiStub, setTheme, until } from './harness.ts';
 
 const PROJECT = {
   id: 'p1',
@@ -473,6 +473,77 @@ void describe('a task on the second page still has its before (LAI-703)', () => 
       await changed.locator('.mr-change-from').first().waitFor({ timeout: 10_000 });
       assert.ok((await changed.locator('.mr-change-from').count()) > 0);
       assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a review made from a Teams meeting says where it came from (LAI-1313)', () => {
+  const FROM_TEAMS = { ...REVIEW, id: 'r3', source: 'teams:m1' };
+  const teamsStub = (meeting: unknown) =>
+    stub({
+      '/api/v1/projects/laika-core/meeting-reviews': {
+        data: [FROM_TEAMS, { ...REVIEW, id: 'r2', source: 'retro.txt' }],
+        next_cursor: null,
+      },
+      '/api/v1/meeting-reviews/r3': { ...FROM_TEAMS, proposals: PROPOSALS },
+      '/api/v1/meetings/m1': meeting,
+    });
+
+  void test('From Teams · the meeting’s title, in the list and as a link back to the meeting', async () => {
+    const h = await open(
+      '/meeting-review?project=laika-core',
+      teamsStub({ id: 'm1', title: 'Daily stand-up' }),
+    );
+    try {
+      const origin = h.page.locator('[data-review-origin]');
+      await origin.waitFor({ timeout: 20_000 });
+      await until(async () => (await origin.innerText()).includes('Daily stand-up'));
+      const link = origin.getByRole('link');
+      assert.equal(await link.innerText(), 'From Teams · Daily stand-up');
+      assert.equal(await link.getAttribute('href'), '/meetings?meeting=m1');
+      // The list names it too, never `teams:m1`; another source stays as it was.
+      assert.deepEqual(await h.page.locator('[data-review-source]').allInnerTexts(), [
+        'From Teams · Daily stand-up',
+        'retro.txt',
+      ]);
+      // Asked once, though the list and the detail both name it.
+      assert.equal(h.calls.filter((c) => c.path === '/api/v1/meetings/m1').length, 1);
+
+      await link.click();
+      await h.page.waitForURL(
+        (url) => url.pathname === '/meetings' && url.searchParams.get('meeting') === 'm1',
+        { timeout: 10_000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a reviewer who was not in the meeting reads From Teams, still linked', async () => {
+    const h = await open(
+      '/meeting-review?project=laika-core',
+      teamsStub(refuse(404, 'not_found', 'Meeting not found')),
+    );
+    try {
+      const origin = h.page.locator('[data-review-origin]');
+      await origin.waitFor({ timeout: 20_000 });
+      await until(() => h.calls.some((c) => c.path === '/api/v1/meetings/m1'));
+      await h.page.waitForTimeout(300);
+      assert.equal(await origin.getByRole('link').innerText(), 'From Teams');
+      assert.equal(await origin.getByRole('link').getAttribute('href'), '/meetings?meeting=m1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a review from anywhere else has no origin line and asks for no meeting', async () => {
+    const h = await open('/meeting-review?project=laika-core', stub());
+    try {
+      await h.page.locator('.mr-proposal').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('[data-review-origin]').count(), 0);
+      assert.equal(h.calls.filter((c) => c.path.startsWith('/api/v1/meetings/')).length, 0);
     } finally {
       await h.close();
     }

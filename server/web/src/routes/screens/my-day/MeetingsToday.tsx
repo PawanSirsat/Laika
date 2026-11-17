@@ -9,7 +9,8 @@ import {
 import { undo } from '../../../api/time.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
-import { attendedLine, meetingHref, meetingsToday } from './meetings-today-derive.ts';
+import { meetingHref } from '../meetings/meetings-derive.ts';
+import { attendedLine, meetingsToday } from './meetings-today-derive.ts';
 import { plainClick } from './task-link.ts';
 
 export interface MeetingsTodayProps {

@@ -45,8 +45,3 @@ export function attendedLine(meeting: Pick<MeetingSummary, 'my_attendance'>, tz:
     me.left_at === null ? `from ${clock(me.joined_at, tz)}` : span(me.joined_at, me.left_at, tz);
   return `${when} · ${minutes}`;
 }
-
-/** Where a meeting opens on the Meetings page. */
-export function meetingHref(id: string): string {
-  return `/meetings?meeting=${encodeURIComponent(id)}`;
-}

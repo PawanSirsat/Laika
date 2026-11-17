@@ -201,3 +201,11 @@ export function searchTranscript(
     (line) => line.text.toLowerCase().includes(q) || (line.speaker ?? '').toLowerCase().includes(q),
   );
 }
+
+/**
+ * Where a meeting opens: the Meetings page with it selected — the address
+ * My day's strip and Meeting review's origin line link to (LAI-1313).
+ */
+export function meetingHref(id: string): string {
+  return `/meetings?meeting=${encodeURIComponent(id)}`;
+}

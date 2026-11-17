@@ -192,6 +192,7 @@ function MeetingReviewRoute() {
   return (
     <MeetingReviewScreen
       slug={slug}
+      onNavigate={navigate}
       onOpenTask={(taskKey) => {
         // Over the review itself, in this space (B2): the reader came to
         // check a proposal, and closing the task should leave them on it.

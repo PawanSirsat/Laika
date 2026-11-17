@@ -1,7 +1,7 @@
 import { everyPage } from '../../../api/every-page.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiErrorPanel } from '../../../components/ApiErrorPanel.tsx';
 import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
 import { Skeleton, SkeletonTableRow } from '../../../components/Skeleton.tsx';
@@ -26,14 +26,20 @@ import {
   KIND_LABEL,
   KIND_MEANING,
   landedState,
+  originLabel,
+  teamsMeetingId,
   whyNotActionable,
 } from './review-derive.ts';
+import { getMeeting } from '../../../api/meetings.ts';
+import { meetingHref } from '../meetings/meetings-derive.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import './meeting-review.css';
 
 export interface MeetingReviewScreenProps {
   readonly slug: string | undefined;
   readonly onOpenTask: (taskKey: string) => void;
+  /** An in-app link — the Teams meeting a review came from (LAI-1313). */
+  readonly onNavigate?: ((to: string) => void) | undefined;
 }
 
 /**
@@ -61,7 +67,7 @@ export interface MeetingReviewScreenProps {
  * There is deliberately **no "accept all"**. If one is added it should be a
  * decision with a reason, not a convenience that arrives during implementation.
  */
-export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenProps) {
+export function MeetingReviewScreen({ slug, onOpenTask, onNavigate }: MeetingReviewScreenProps) {
   const confirm = useConfirm();
   const [reviews, setReviews] = useState<readonly MeetingReview[] | undefined>(undefined);
   const [openId, setOpenId] = useState<string | undefined>(undefined);
@@ -97,6 +103,14 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   /** Bumped by Retry on a failed read, which asks for the list again (LAI-1207). */
   const [attempt, setAttempt] = useState(0);
+  /**
+   * The titles of the Teams meetings reviews came from (LAI-1313), by meeting
+   * id: `null` once asked and not answered. The review stores only
+   * `teams:<id>`, so the title is the meeting's own, read from
+   * `GET /meetings/:id` — which answers only a participant, so a reviewer who
+   * was not in the meeting gets `404` and the line says *From Teams* alone.
+   */
+  const [meetingTitles, setMeetingTitles] = useState<ReadonlyMap<string, string | null>>(new Map());
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -123,6 +137,33 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
       controller.abort();
     };
   }, [slug, attempt]);
+
+  // Each Teams meeting asked once, and only for reviews that came from Teams.
+  // Asked ids are kept outside state, so an answer landing does not re-run
+  // this and cancel the others still in flight.
+  const askedMeetings = useRef(new Set<string>());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    for (const review of reviews ?? []) {
+      const id = teamsMeetingId(review.source);
+      if (id === undefined || askedMeetings.current.has(id)) continue;
+      askedMeetings.current.add(id);
+      void getMeeting(id)
+        .then(
+          (meeting): string | null => meeting.title,
+          () => null,
+        )
+        .then((title) => {
+          if (mounted.current) setMeetingTitles((prev) => new Map(prev).set(id, title));
+        });
+    }
+  }, [reviews]);
 
   useEffect(() => {
     if (openId === undefined) return;
@@ -229,6 +270,12 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
   };
 
   const blocked = detail === undefined ? undefined : whyNotActionable(detail);
+  /** A Teams meeting's title once read; `undefined` for any other source, or while asking. */
+  const titleOf = (source: string): string | undefined => {
+    const id = teamsMeetingId(source);
+    return id === undefined ? undefined : (meetingTitles.get(id) ?? undefined);
+  };
+  const originId = detail === undefined ? undefined : teamsMeetingId(detail.source);
   const open = detail !== undefined && isActionable(detail);
 
   return (
@@ -261,7 +308,9 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                 }}
               >
                 <span className="mr-item-head">
-                  <span className="mr-source">{review.source}</span>
+                  <span className="mr-source" data-review-source>
+                    {originLabel(review.source, titleOf(review.source))}
+                  </span>
                   <span className={`mr-status mr-status-${review.status}`}>{review.status}</span>
                 </span>
                 <span className="mr-item-meta">
@@ -281,6 +330,26 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
               </Skeleton>
             ) : (
               <>
+                {originId !== undefined && (
+                  /* Back to the meeting it came from (LAI-1313): the
+                     transcript is not kept here (D-056), but a participant
+                     can read it there, live from Teams. */
+                  <p className="mr-origin" data-review-origin>
+                    <Icon name="meetings" size="small" />
+                    <a
+                      href={meetingHref(originId)}
+                      onClick={(event) => {
+                        if (onNavigate === undefined) return;
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)
+                          return;
+                        event.preventDefault();
+                        onNavigate(meetingHref(originId));
+                      }}
+                    >
+                      {originLabel(detail.source, titleOf(detail.source))}
+                    </a>
+                  </p>
+                )}
                 {blocked !== undefined && (
                   /* **Read-only with the reason** — not an error, and not an
                      empty state. An expired review still has everything that was

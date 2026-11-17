@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { MeetingSummary, MyAttendance } from '../../../../src/api/meetings.ts';
+import { meetingHref } from '../../../../src/routes/screens/meetings/meetings-derive.ts';
 import {
   attendedLine,
-  meetingHref,
   meetingsToday,
 } from '../../../../src/routes/screens/my-day/meetings-today-derive.ts';
 
