@@ -202,12 +202,20 @@ export function countsLine(result: CalendarSyncResult): string {
     result.updated > 0 ? `${String(result.updated)} updated` : '',
     result.removed > 0 ? `${String(result.removed)} removed` : '',
     result.kept_edits > 0 ? `${String(result.kept_edits)} left as people changed them` : '',
-    result.skipped > 0 ? `${String(result.skipped)} not logged (day full or closed)` : '',
+    result.skipped > 0 ? `${String(result.skipped)} held back (day full or closed)` : '',
   ].filter((part) => part !== '');
-  const people =
-    result.no_mailbox > 0
-      ? `${count(result.people, 'person', 'people')}, ${String(result.no_mailbox)} with no Outlook calendar`
-      : count(result.people, 'person', 'people');
+  // The people skipped, by reason (LAI-1316 review F1): each is one person
+  // not read, never the run failing.
+  const notRead = [
+    result.no_mailbox > 0 ? `${String(result.no_mailbox)} with no Outlook calendar` : '',
+    result.mailbox_denied > 0
+      ? `${String(result.mailbox_denied)} whose calendar Microsoft would not open`
+      : '',
+    result.mailbox_refused > 0
+      ? `${String(result.mailbox_refused)} Microsoft could not look up`
+      : '',
+  ].filter((part) => part !== '');
+  const people = [count(result.people, 'person', 'people'), ...notRead].join(', ');
   return [count(result.meetings, 'meeting', 'meetings'), ...did, people].join(' · ');
 }
 

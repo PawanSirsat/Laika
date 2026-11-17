@@ -3677,6 +3677,46 @@ describe('0086 rebuilds time_entries for the calendar source on a populated 0085
         const columnsBefore = db.all<{ name: string }>(
           sql`SELECT name FROM pragma_table_info('time_entries') ORDER BY cid`,
         );
+        // Each index's definition and each CHECK, as written, to compare
+        // after the rebuild (review F9) — quoting and spacing aside, which a
+        // RENAME rewrites and which mean nothing.
+        const plain = (text: string) => text.replace(/[`"]/g, '').replace(/\s+/g, ' ').trim();
+        const indexSql = () =>
+          db
+            .all<{ name: string; sql: string | null }>(
+              sql`SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' ORDER BY name`,
+            )
+            .map((r) => [r.name, r.sql === null ? null : plain(r.sql)]);
+        /** Every `CONSTRAINT name CHECK(…)` in the table's DDL, balanced parentheses and all. */
+        const checks = (): Record<string, string> => {
+          const ddl = plain(
+            db.get<{ sql: string }>(
+              sql`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'time_entries'`,
+            )?.sql ?? '',
+          );
+          const out: Record<string, string> = {};
+          for (const m of ddl.matchAll(/CONSTRAINT (\w+) CHECK ?\(/g)) {
+            let depth = 1;
+            let i = (m.index ?? 0) + m[0].length;
+            const from = i;
+            while (depth > 0 && i < ddl.length) {
+              if (ddl[i] === '(') depth += 1;
+              if (ddl[i] === ')') depth -= 1;
+              i += 1;
+            }
+            out[m[1] ?? ''] = ddl.slice(from, i - 1);
+          }
+          return out;
+        };
+        const indexesBefore = indexSql();
+        const checksBefore = checks();
+        expect(Object.keys(checksBefore).sort()).toEqual([
+          'time_entries_minutes_check',
+          'time_entries_note_check',
+          'time_entries_revision_check',
+          'time_entries_source_check',
+          'time_entries_span_check',
+        ]);
 
         const entry = (
           source: string,
@@ -3806,6 +3846,16 @@ describe('0086 rebuilds time_entries for the calendar source on a populated 0085
           { from: 'task_id', table: 'tasks', on_delete: 'SET NULL' },
           { from: 'user_id', table: 'users', on_delete: 'NO ACTION' },
         ]);
+        // Every index defined exactly as before, and every CHECK the same but
+        // the one the rebuild is for.
+        expect(indexSql()).toEqual(indexesBefore);
+        expect(checks()).toEqual({
+          ...checksBefore,
+          time_entries_source_check: "source IN ('draft', 'manual', 'import', 'calendar')",
+        });
+        expect(checksBefore.time_entries_source_check).toBe(
+          "source IN ('draft', 'manual', 'import')",
+        );
         const indexes = db
           .all<{ name: string }>(
             sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'time_entries' ORDER BY name`,

@@ -13,8 +13,11 @@
  * - `GET https://graph.microsoft.com/v1.0/users/{user}/calendarView`, every
  *   event of that user overlapping `startDateTime`–`endDateTime`, paged by
  *   `$top` with an `@odata.nextLink` carrying `$skiptoken`. An unknown user
- *   is `404`; a token without `Calendars.Read` is `403`; one not issued here
- *   is `401`.
+ *   is `404`, one in `denied` `403` and one in `refused` `400`; a token
+ *   without `Calendars.Read` is `403`; one not issued here is `401`. **A read
+ *   without both `Prefer: outlook.timezone="UTC"` and `IdType="ImmutableId"`
+ *   is not answered at all** — the fetch throws, as a request the real Graph
+ *   would answer in another zone and with other ids must not pass quietly.
  *
  * `intercept` answers a request before the fake does — a `429`, a `500`, a
  * hang until the client gives up — and `hold` keeps every calendar read
@@ -39,6 +42,8 @@ export interface FakeGraphRequest {
   user: string | null;
   authorization: string | null;
   prefer: string | null;
+  /** What the client asked fetch to do with a redirect. */
+  redirect: RequestInit['redirect'];
   body: string;
 }
 
@@ -54,6 +59,10 @@ export interface FakeGraph {
   roles: string[];
   /** Tokens minted so far, newest last. */
   tokens: string[];
+  /** Users whose mailbox answers `403`, as an application access policy would. */
+  denied: Set<string>;
+  /** Users Graph will not look up: `400`. */
+  refused: Set<string>;
   /** How long each token lives, in seconds. */
   expiresIn: number;
   /** Answer a request before the fake does; return undefined to let it. */
@@ -113,6 +122,8 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
     ),
     roles: options.roles ?? ['Calendars.Read'],
     tokens: [],
+    denied: new Set(),
+    refused: new Set(),
     expiresIn: 3599,
     intercept: null,
     hold() {
@@ -150,6 +161,7 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
         user: view === null ? null : decodeURIComponent(view[1] ?? ''),
         authorization: headers.get('authorization'),
         prefer: headers.get('prefer'),
+        redirect: init?.redirect,
         body: typeof init?.body === 'string' ? init.body : '',
       };
       fake.requests.push(req);
@@ -202,8 +214,26 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
             error: { code: 'ErrorAccessDenied', message: 'MS-SECRET-WORDS Access is denied.' },
           });
         }
+        const prefer = req.prefer ?? '';
+        if (
+          !prefer.includes('outlook.timezone="UTC"') ||
+          !prefer.includes('IdType="ImmutableId"')
+        ) {
+          throw new TypeError(`the fake Graph refuses a read without both preferences: ${prefer}`);
+        }
         if (gate !== null) await gate;
-        const events = fake.calendars.get((req.user ?? '').toLowerCase());
+        const who = (req.user ?? '').toLowerCase();
+        if (fake.denied.has(who)) {
+          return json(403, {
+            error: { code: 'ErrorAccessDenied', message: 'MS-SECRET-WORDS access policy' },
+          });
+        }
+        if (fake.refused.has(who)) {
+          return json(400, {
+            error: { code: 'ErrorInvalidUser', message: 'MS-SECRET-WORDS bad user' },
+          });
+        }
+        const events = fake.calendars.get(who);
         if (events === undefined) {
           return json(404, {
             error: { code: 'ErrorInvalidUser', message: 'MS-SECRET-WORDS no such user' },

@@ -318,6 +318,41 @@ describe('testing it', () => {
   });
 });
 
+describe('with the organisation’s Time off (review F11)', () => {
+  it('refuses sync now and turning the switch on, and still saves with the switch off', async () => {
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgTimeSettings).set({ mode: 'off' }).run();
+    const on = await caught(() =>
+      saveCalendarSource(t.db, owner, SECRET, { ...SAVE, client_secret: undefined, enabled: true }),
+    );
+    expect(on.code).toBe('forbidden');
+    expect(on.details).toMatchObject({ reason: 'time_off' });
+    expect(t.db.select().from(orgCalendarSource).get()?.enabled).toBe(0);
+    // Off is always allowed, rules and all.
+    expect(
+      saveCalendarSource(t.db, owner, SECRET, { ...SAVE, client_secret: undefined }).enabled,
+    ).toBe(false);
+
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    const now = await caught(syncCalendarNow(t.db, owner, SECRET, deps()));
+    expect(now.code).toBe('forbidden');
+    expect(now.details).toMatchObject({ reason: 'time_off' });
+    expect(fake.requests).toEqual([]);
+  });
+});
+
+describe('a secret this server can no longer read', () => {
+  it('answers the test 409 secret_unreadable, and asks Microsoft nothing', async () => {
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    const err = await caught(
+      testCalendarSource(t.db, owner, 'another-secret-that-is-long-enough-too', deps()),
+    );
+    expect(err.code).toBe('conflict');
+    expect(err.details).toEqual({ reason: 'secret_unreadable' });
+    expect(fake.requests).toEqual([]);
+  });
+});
+
 describe('sync now and disconnect', () => {
   it('refuses sync now while the switch is off, and syncs when it is on', async () => {
     saveCalendarSource(t.db, owner, SECRET, SAVE);

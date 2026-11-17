@@ -60,8 +60,12 @@ export interface CalendarSyncError {
 export interface CalendarSyncResult {
   /** Active members whose calendar was read. */
   readonly people: number;
-  /** Of those, how many Microsoft has no calendar for. */
+  /** Of those, how many Microsoft has no calendar for (404). */
   readonly no_mailbox: number;
+  /** How many Microsoft would not open the calendar of (403): skipped, nothing of theirs retired. */
+  readonly mailbox_denied: number;
+  /** How many Microsoft would not look up (400): skipped the same way. */
+  readonly mailbox_refused: number;
   /** Accepted or organised meetings found in the window. */
   readonly meetings: number;
   readonly created: number;
@@ -71,7 +75,7 @@ export interface CalendarSyncResult {
   readonly unchanged: number;
   /** Entries the person changed themselves, left alone. */
   readonly kept_edits: number;
-  /** Meetings not logged: the day already full, or in the closed period. */
+  /** Meetings not logged, changed or retired: the day already full, or in the closed period. */
   readonly skipped: number;
 }
 
@@ -147,6 +151,12 @@ export const CALENDAR_REFUSAL_WORDS: Readonly<Record<string, string>> = {
     'That is not a client ID. Use the application (client) ID from the app’s overview in Microsoft Entra.',
   secret_required: 'Paste the client secret. Laika has none saved yet.',
   unknown_project: 'One of the rules names a space that no longer exists. Pick it again.',
+  too_many_rules: 'At most 50 rules. Remove one before adding another.',
+  secret_unreadable:
+    'Laika can no longer read the saved secret — the server’s key may have changed. Paste the secret again and save.',
+  graph_bad_answer: 'Microsoft answered something Laika could not read. Try again in a minute.',
+  time_off:
+    'Time is off for this organisation, so there is nothing to log meetings into. Turn Time on first.',
   calendar_not_configured: 'Save the tenant, client ID and secret first.',
   graph_credentials_refused:
     'Microsoft refused that tenant, client ID or secret. Check them, or make a new secret.',

@@ -5,11 +5,11 @@ import {
   graphClient,
   type GraphClientOptions,
   GraphCredentialsError,
-  GraphNotGrantedError,
   type GraphToken,
   GraphUnavailableError,
   isClientId,
   isTenantId,
+  readRoles,
   rolesOf,
 } from '../../src/services/microsoft-graph.ts';
 import {
@@ -148,9 +148,15 @@ describe('the token', () => {
     }
   });
 
-  it('reads no roles from a token that is not a readable JWT', () => {
+  it('reads no roles from a token that is not a readable JWT, and says it could not tell', () => {
+    expect(readRoles('opaque')).toEqual({ roles: [], known: false });
+    expect(readRoles('a.!!!.c')).toEqual({ roles: [], known: false });
+    // A readable token with no `roles` claim has none — that is an answer.
+    expect(readRoles(`h.${Buffer.from('{"aud":"x"}').toString('base64url')}.s`)).toEqual({
+      roles: [],
+      known: true,
+    });
     expect(rolesOf('opaque')).toEqual([]);
-    expect(rolesOf('a.!!!.c')).toEqual([]);
     expect(rolesOf(accessToken(['B', 'A', 'A', 7 as unknown as string], 1))).toEqual(['A', 'B']);
   });
 });
@@ -161,19 +167,21 @@ describe('a calendar', () => {
     const fake = fakeGraph({
       calendars: { [ADA]: [graphEvent(at, { subject: 'Standup', minutes: 15 })] },
     });
-    const events = await client(fake).calendarView(ADA, FROM, TO);
-    expect(events).toEqual([
-      expect.objectContaining({
-        subject: 'Standup',
-        start: at,
-        end: at + 15 * 60_000,
-        isAllDay: false,
-        showAs: 'busy',
-        sensitivity: 'normal',
-        response: 'accepted',
-        location: 'Room 4',
-      }),
-    ]);
+    const read = await client(fake).calendarView(ADA, FROM, TO);
+    expect(read).toEqual({
+      events: [
+        expect.objectContaining({
+          subject: 'Standup',
+          start: at,
+          end: at + 15 * 60_000,
+          isAllDay: false,
+          showAs: 'busy',
+          sensitivity: 'normal',
+          response: 'accepted',
+          location: 'Room 4',
+        }),
+      ],
+    });
     const [req] = fake.of('calendarView');
     expect(req?.url.origin + req!.url.pathname).toBe(
       `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(ADA)}/calendarView`,
@@ -187,7 +195,10 @@ describe('a calendar', () => {
     for (const field of ['body', 'attendees', 'onlineMeeting', 'onlineMeetingUrl', 'webLink']) {
       expect(req?.url.searchParams.get('$select')?.split(',')).not.toContain(field);
     }
-    expect(req?.prefer).toBe('outlook.timezone="UTC"');
+    // UTC times, and ids that survive a move between folders (review F5).
+    expect(req?.prefer).toBe('outlook.timezone="UTC", IdType="ImmutableId"');
+    // A redirect is never followed: the token would go wherever it pointed.
+    expect(fake.requests.map((r) => r.redirect)).toEqual(['error', 'error']);
     expect(req?.authorization).toBe(`Bearer ${fake.tokens[0] ?? ''}`);
   });
 
@@ -195,9 +206,22 @@ describe('a calendar', () => {
     const at = Date.UTC(2026, 10, 18, 0);
     const rows = Array.from({ length: 230 }, (_, i) => graphEvent(at + i * 60_000, { minutes: 1 }));
     const fake = fakeGraph({ calendars: { [ADA]: rows } });
-    const events = await client(fake).calendarView(ADA, FROM, TO);
-    expect(events).toHaveLength(230);
+    const read = await client(fake).calendarView(ADA, FROM, TO);
+    expect('events' in read && read.events).toHaveLength(230);
     expect(fake.of('calendarView')).toHaveLength(3);
+  });
+
+  it('refuses a redirect rather than follow it', async () => {
+    const fake = fakeGraph({ calendars: { [ADA]: [] } });
+    const err = await refusal(
+      client(fake, {
+        fetchImpl: (input, init) =>
+          init?.redirect === 'error'
+            ? Promise.reject(new TypeError('fetch failed: redirect mode is set to error'))
+            : fake.fetchImpl(input, init),
+      }).calendarView(ADA, FROM, TO),
+    );
+    expect(err).toBeInstanceOf(GraphUnavailableError);
   });
 
   it('never follows a next link off Graph', async () => {
@@ -232,23 +256,59 @@ describe('a calendar', () => {
     expect(fake.of('calendarView')).toHaveLength(20);
   });
 
-  it('answers null for somebody Microsoft has no calendar for', async () => {
-    const fake = fakeGraph({ calendars: {} });
-    expect(await client(fake).calendarView('nobody@kvelld.example', FROM, TO)).toBeNull();
-  });
-
-  it('says the app may not read calendars, and drops the token that was refused', async () => {
-    const fake = fakeGraph({ roles: [], calendars: { [ADA]: [] } });
+  it('skips one person’s mailbox by reason — no calendar, not opened, not looked up — and keeps the token', async () => {
+    const fake = fakeGraph({ calendars: { [ADA]: [], 'bea@kvelld.example': [] } });
+    fake.denied.add('bea@kvelld.example');
+    fake.refused.add('cy@kvelld.example');
     const cache = new Map<string, GraphToken>();
     const c = client(fake, { cache });
+    expect(await c.calendarView('nobody@kvelld.example', FROM, TO)).toEqual({
+      skipped: 'no_mailbox',
+    });
+    expect(await c.calendarView('bea@kvelld.example', FROM, TO)).toEqual({ skipped: 'denied' });
+    expect(await c.calendarView('cy@kvelld.example', FROM, TO)).toEqual({ skipped: 'refused' });
+    expect(await c.calendarView(ADA, FROM, TO)).toEqual({ events: [] });
+    // One mailbox is one person, not the token: it stays.
+    expect(cache.size).toBe(1);
+    expect(fake.of('token')).toHaveLength(1);
+  });
+
+  it('skips a person whose read fails on a later page, rather than keep half', async () => {
+    const at = Date.UTC(2026, 10, 18, 0);
+    const rows = Array.from({ length: 150 }, (_, i) => graphEvent(at + i * 60_000, { minutes: 1 }));
+    const fake = fakeGraph({ calendars: { [ADA]: rows } });
+    fake.intercept = (req) =>
+      req.kind === 'calendarView' && req.url.searchParams.has('$skiptoken')
+        ? new Response('{}', { status: 403 })
+        : undefined;
+    expect(await client(fake).calendarView(ADA, FROM, TO)).toEqual({ skipped: 'denied' });
+  });
+
+  it('says a token Graph refuses is refused, and drops it so the next ask is new', async () => {
+    const fake = fakeGraph({ calendars: { [ADA]: [] } });
+    const cache = new Map<string, GraphToken>();
+    const c = client(fake, { cache });
+    fake.intercept = (req) =>
+      req.kind === 'calendarView'
+        ? new Response('{"error":{"message":"MS-SECRET-WORDS"}}', { status: 401 })
+        : undefined;
     const err = await refusal(c.calendarView(ADA, FROM, TO));
-    expect(err).toBeInstanceOf(GraphNotGrantedError);
+    expect(err).toBeInstanceOf(GraphCredentialsError);
     sayNothingOfMicrosoft(err);
     expect(cache.size).toBe(0);
-    // Granted since: the next read asks for a token that carries it.
-    fake.roles = [CALENDARS_READ];
-    expect(await c.calendarView(ADA, FROM, TO)).toEqual([]);
+    fake.intercept = null;
+    expect(await c.calendarView(ADA, FROM, TO)).toEqual({ events: [] });
     expect(fake.of('token')).toHaveLength(2);
+  });
+
+  it('forgets its token when asked, so a grant made since is in the next one', async () => {
+    const fake = fakeGraph({ roles: [] });
+    const cache = new Map<string, GraphToken>();
+    const c = client(fake, { cache });
+    expect((await c.token()).roles).toEqual([]);
+    fake.roles = [CALENDARS_READ];
+    c.forget();
+    expect((await c.token()).roles).toEqual([CALENDARS_READ]);
   });
 
   it('refuses an event with no id or no UTC time as a bad answer', async () => {
@@ -286,13 +346,13 @@ describe('waiting and failing', () => {
       return new Response('{}', { status: 429, headers: { 'retry-after': '7' } });
     };
     const waits: number[] = [];
-    const events = await client(fake, {
+    const read = await client(fake, {
       sleep: (ms) => {
         waits.push(ms);
         return Promise.resolve();
       },
     }).calendarView(ADA, FROM, TO);
-    expect(events).toEqual([]);
+    expect(read).toEqual({ events: [] });
     expect(waits).toEqual([7000]);
     expect(fake.of('calendarView')).toHaveLength(2);
   });
@@ -335,7 +395,7 @@ describe('waiting and failing', () => {
     const fake = fakeGraph({ calendars: { [ADA]: [] } });
     fake.intercept = (req) =>
       req.kind === 'calendarView'
-        ? new Response('{"error":{"message":"MS-SECRET-WORDS"}}', { status: 400 })
+        ? new Response('{"error":{"message":"MS-SECRET-WORDS"}}', { status: 409 })
         : undefined;
     const err = await refusal(client(fake).calendarView(ADA, FROM, TO));
     expect(err).toBeInstanceOf(GraphAnswerError);

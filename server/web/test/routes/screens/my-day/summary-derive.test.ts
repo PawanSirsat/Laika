@@ -61,12 +61,11 @@ void describe('splitKeyOf', () => {
     assert.equal(splitKeyOf(entry({})), 'work');
   });
 
-  void test('a meeting the Outlook sync logged is a meeting, even with its kind cleared (D-157)', () => {
+  void test('an Outlook meeting splits by its kind, as Overview and the server count it (D-157)', () => {
     assert.equal(splitKeyOf(entry({ source: 'calendar', kind: 'meeting' })), 'meeting');
-    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: null })), 'meeting');
-    // The person's own word still wins: a kind they chose is the kind.
+    // The person cleared the kind: theirs, so Building's, as any entry's.
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: null })), 'work');
     assert.equal(splitKeyOf(entry({ source: 'calendar', kind: 'pairing' })), 'pairing');
-    // Every other source with no kind is still Building's.
     assert.equal(splitKeyOf(entry({ source: 'manual', kind: null })), 'work');
   });
 });
@@ -90,7 +89,7 @@ void describe('daySplit', () => {
     );
   });
 
-  void test('Outlook meetings count as meeting time in the split (D-157)', () => {
+  void test('Outlook meetings count as meeting time in the split by their kind (D-157)', () => {
     const split = daySplit(
       [
         entry({ id: 'o', minutes: 30, source: 'calendar', kind: 'meeting' }),
@@ -102,8 +101,8 @@ void describe('daySplit', () => {
     assert.deepEqual(
       split.map((s) => [s.key, s.minutes]),
       [
-        ['work', 60],
-        ['meeting', 60],
+        ['work', 90],
+        ['meeting', 30],
       ],
     );
   });

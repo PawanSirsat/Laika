@@ -98,6 +98,8 @@ const saved = (patch: Record<string, unknown> = {}) => ({
 const RESULT = {
   people: 9,
   no_mailbox: 1,
+  mailbox_denied: 1,
+  mailbox_refused: 0,
   meetings: 14,
   created: 3,
   updated: 1,
@@ -434,7 +436,7 @@ void describe('Outlook calendar: the switch and syncing', () => {
       await until(async () => (await c.locator('[data-calendar-counts]').count()) > 0);
       assert.equal(
         await c.locator('[data-calendar-counts]').innerText(),
-        'Last sync just now: 14 meetings · 3 logged · 1 updated · 1 removed · 2 left as people changed them · 9 people, 1 with no Outlook calendar.',
+        'Last sync just now: 14 meetings · 3 logged · 1 updated · 1 removed · 2 left as people changed them · 9 people, 1 with no Outlook calendar, 1 whose calendar Microsoft would not open.',
       );
       assert.equal(syncs.length, 1);
     } finally {

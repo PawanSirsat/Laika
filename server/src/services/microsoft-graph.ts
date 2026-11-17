@@ -21,9 +21,19 @@ import { ApiError } from '../errors.ts';
  * **The token is kept until five minutes before it lapses**, in the cache the
  * caller hands in — the sync keeps one per database, so a run every 15
  * minutes asks Microsoft for a token about once an hour. A token Graph
- * refuses (`401`, `403`) is dropped from the cache: one minted before an
- * admin granted `Calendars.Read` does not carry the role, and the next run
- * must ask for a new one rather than wait out the old.
+ * refuses (`401`) is dropped from the cache, and so is one the caller finds
+ * without `Calendars.Read` ({@link GraphClient.forget}): one minted before an
+ * admin granted it does not carry the role, and the next run must ask for a
+ * new one rather than wait out the old.
+ *
+ * **One mailbox is one person, not the run** (LAI-1316 review F1). A calendar
+ * Graph will not open (`403` — an application access policy, a mailbox in
+ * another tenant), will not look up (`400`) or does not have (`404`) is
+ * answered as that person skipped, by reason; the caller retires nothing of
+ * theirs and carries on with everyone else.
+ *
+ * **Ids are immutable** (`Prefer: IdType="ImmutableId"`): an event keeps its
+ * id when it moves between folders, so a meeting moved is never logged twice.
  *
  * **One retry, bounded**, as Clan's: a `429` or a `503` is asked once more
  * after the `Retry-After` it names (a second when it names none), unless it
@@ -103,9 +113,9 @@ export class GraphCredentialsError extends ApiError {
 }
 
 /**
- * Graph refused a read with the token (`401`/`403`): the app has not been
- * granted `Calendars.Read`, or an application access policy keeps it from
- * this mailbox.
+ * The app's token does not carry `Calendars.Read`: an admin has not granted
+ * it yet. Raised by the caller that read the token's roles, before any
+ * calendar is asked for.
  */
 export class GraphNotGrantedError extends ApiError {
   readonly answered: number;
@@ -153,7 +163,19 @@ export interface GraphToken {
   expiresAt: number;
   /** The token's `roles` claim, A–Z; empty when it has none or cannot be read. */
   roles: string[];
+  /**
+   * The token's claims could be read — so an empty `roles` is *no roles*, not
+   * *could not tell*. A token Microsoft one day makes opaque reads `false`,
+   * and the sync then learns from each mailbox instead.
+   */
+  rolesKnown: boolean;
 }
+
+/** Why one person's calendar was not read: a `404`, a `403` or a `400` for their mailbox. */
+export type MailboxSkip = 'no_mailbox' | 'denied' | 'refused';
+
+/** One person's calendar: every event in the window, or why it was not read. */
+export type CalendarRead = { events: GraphEvent[] } | { skipped: MailboxSkip };
 
 /**
  * One event, as the sync reads it. **Nothing here is stored but the ids, the
@@ -187,12 +209,15 @@ export interface GraphClient {
    * must see a grant made since the last.
    */
   token(options?: { fresh?: boolean }): Promise<GraphToken>;
+  /** Drop the cached token, so the next ask is a new one. */
+  forget(): void;
   /**
    * Every event on `user`'s calendar that overlaps `from`–`to` (unix ms),
-   * occurrences of a series each their own, or **null when Microsoft has no
-   * calendar for them** (`404`: no such user in the tenant, or no mailbox).
+   * occurrences of a series each their own — or **that person skipped**, when
+   * Graph has no calendar for them (`404`), will not open it (`403`) or will
+   * not look them up (`400`), on any page.
    */
-  calendarView(user: string, from: number, to: number): Promise<GraphEvent[] | null>;
+  calendarView(user: string, from: number, to: number): Promise<CalendarRead>;
 }
 
 export interface GraphClientOptions {
@@ -230,23 +255,30 @@ function retryAfterMs(header: string | null): number {
 /**
  * The `roles` claim of an access token, read and never verified: it is the
  * answer Microsoft just gave over TLS to the secret's holder, and it is only
- * shown to them. A token that is not a readable JWT has none.
+ * shown to them. `known` is whether the claims could be read at all — a
+ * readable token with no `roles` has none; one that is not a readable JWT
+ * cannot say.
  */
-export function rolesOf(accessToken: string): string[] {
+export function readRoles(accessToken: string): { roles: string[]; known: boolean } {
   const payload = accessToken.split('.')[1];
-  if (payload === undefined || payload === '') return [];
+  if (payload === undefined || payload === '') return { roles: [], known: false };
   try {
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
-      roles?: unknown;
-    };
-    if (!Array.isArray(claims.roles)) return [];
-    const roles = (claims.roles as unknown[]).flatMap((r) =>
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as unknown;
+    if (typeof claims !== 'object' || claims === null) return { roles: [], known: false };
+    const raw = (claims as { roles?: unknown }).roles;
+    if (!Array.isArray(raw)) return { roles: [], known: true };
+    const roles = (raw as unknown[]).flatMap((r) =>
       typeof r === 'string' && r.trim() !== '' ? [r.trim().slice(0, 100)] : [],
     );
-    return [...new Set(roles)].sort().slice(0, 100);
+    return { roles: [...new Set(roles)].sort().slice(0, 100), known: true };
   } catch {
-    return [];
+    return { roles: [], known: false };
   }
+}
+
+/** {@link readRoles}' roles alone. */
+export function rolesOf(accessToken: string): string[] {
+  return readRoles(accessToken).roles;
 }
 
 /** The real client. */
@@ -336,10 +368,12 @@ export function graphClient(options: GraphClientOptions): GraphClient {
     }
     const seconds = Number(body.expires_in);
     const lifetime = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 60 * 60 * 1000;
+    const { roles, known } = readRoles(body.access_token);
     return {
       accessToken: body.access_token,
       expiresAt: clock() + lifetime,
-      roles: rolesOf(body.access_token),
+      roles,
+      rolesKnown: known,
     };
   }
 
@@ -357,23 +391,35 @@ export function graphClient(options: GraphClientOptions): GraphClient {
     return made;
   }
 
-  /** A token-carrying read of a Graph URL: `2xx` is the body, `404` null, anything else a named failure. */
-  async function read(url: string, access: GraphToken): Promise<unknown> {
-    const answer = await send(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${access.accessToken}`,
-        // Every start and end in UTC, whatever the mailbox's own zone.
-        Prefer: 'outlook.timezone="UTC"',
-      },
+  /** The status that skips one person's mailbox, and why. */
+  const SKIPS: Readonly<Record<number, MailboxSkip>> = {
+    404: 'no_mailbox',
+    403: 'denied',
+    400: 'refused',
+  };
+
+  /**
+   * A token-carrying read of a Graph URL: `2xx` is the body, a `404`, `403`
+   * or `400` is that mailbox skipped, a `401` the token refused, anything else
+   * a named failure.
+   */
+  async function read(url: string, access: GraphToken): Promise<{ body: unknown } | MailboxSkip> {
+    const headers = new Headers({
+      Accept: 'application/json',
+      Authorization: `Bearer ${access.accessToken}`,
     });
-    if (answer.status >= 200 && answer.status < 300) return answer.body;
-    if (answer.status === 404) return null;
-    if (answer.status === 401 || answer.status === 403) {
-      // A token minted before the grant does not carry it: the next ask is new.
+    // Every start and end in UTC, whatever the mailbox's own zone; and ids that
+    // survive a move between folders (LAI-1316 review F5).
+    headers.append('Prefer', 'outlook.timezone="UTC"');
+    headers.append('Prefer', 'IdType="ImmutableId"');
+    const answer = await send(url, { method: 'GET', headers });
+    if (answer.status >= 200 && answer.status < 300) return { body: answer.body };
+    const skip = SKIPS[answer.status];
+    if (skip !== undefined) return skip;
+    if (answer.status === 401) {
+      // The token itself refused: the next ask is a new one.
       if (cache.get(cacheKey) === access) cache.delete(cacheKey);
-      throw new GraphNotGrantedError(answer.status);
+      throw new GraphCredentialsError(answer.status);
     }
     if (answer.status === 429 || answer.status >= 500) {
       throw new GraphUnavailableError(`answered ${String(answer.status)}`, true);
@@ -383,6 +429,10 @@ export function graphClient(options: GraphClientOptions): GraphClient {
 
   return {
     token,
+
+    forget() {
+      cache.delete(cacheKey);
+    },
 
     async calendarView(user, from, to) {
       const access = await token();
@@ -396,20 +446,17 @@ export function graphClient(options: GraphClientOptions): GraphClient {
         `${GRAPH_ROOT}/users/${encodeURIComponent(user)}/calendarView?${query.toString()}`;
       const events: GraphEvent[] = [];
       for (let n = 0; n < MAX_PAGES; n += 1) {
-        if (url === null) return events;
-        const body = await read(url, access);
-        // Only the first page can be "no such calendar"; a later page that is
-        // gone is the read failing part-way.
-        if (body === null) {
-          if (n === 0) return null;
-          throw new GraphAnswerError('calendarView: a later page is gone');
-        }
-        const page = (body ?? {}) as { value?: unknown; '@odata.nextLink'?: unknown };
+        if (url === null) return { events };
+        const answer = await read(url, access);
+        // On any page: the person's read is incomplete, so it is theirs
+        // skipped — and the caller retires nothing of theirs.
+        if (typeof answer === 'string') return { skipped: answer };
+        const page = (answer.body ?? {}) as { value?: unknown; '@odata.nextLink'?: unknown };
         if (!Array.isArray(page.value)) throw new GraphAnswerError('calendarView: no value list');
         events.push(...(page.value as unknown[]).map(eventOf));
         url = nextLinkOf(page['@odata.nextLink']);
       }
-      if (url === null) return events;
+      if (url === null) return { events };
       throw new GraphAnswerError(`calendarView: more than ${String(MAX_PAGES)} pages`);
     },
   };

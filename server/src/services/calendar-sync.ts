@@ -1,4 +1,5 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, or } from 'drizzle-orm';
+import { loadActors } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type CalendarRuleKind, type CalendarSyncErrorCode } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
@@ -17,6 +18,8 @@ import { decryptSecret } from '../secrets.ts';
 import { zonesFor } from './availability.ts';
 import { addDays, dayIn } from './calendar-days.ts';
 import {
+  type CalendarRead,
+  CALENDARS_READ,
   GraphAnswerError,
   graphClient,
   GraphCredentialsError,
@@ -25,6 +28,7 @@ import {
   type GraphToken,
   GraphUnavailableError,
 } from './microsoft-graph.ts';
+import { canSeeProject } from './projects.ts';
 import { startOfDay } from './plan-limit.ts';
 import { type EntryFields, insertEntry, retireEntry, syncEntry, type Tx } from './time-entries.ts';
 import { timeMode } from './time-settings.ts';
@@ -42,8 +46,9 @@ import { closedThrough } from './time-solidtime.ts';
  * that is tentative, declined, cancelled, shown as free, or all day is not.
  * Each is a `time_entries` row with `source: 'calendar'`, `source_ref` the
  * event's Graph id, `kind: 'meeting'`, its span and minutes, and its subject
- * as the title — **`Busy` when the meeting is private or confidential**. Its
- * space is the first mapping rule that matches, else none. **No join link, no
+ * as the title — **`Busy` when the meeting is private, confidential or
+ * personal**. Its space is the first mapping rule that matches and that the
+ * person can open, else none. **No join link, no
  * body and no attendee is read into Laika, let alone stored.** Every
  * revision is by the member: it is their time, and §4.49 wants a real person.
  *
@@ -62,7 +67,10 @@ import { closedThrough } from './time-solidtime.ts';
  * `BEGIN IMMEDIATE` writes the lot — and only when every read finished: the
  * sync retires by absence, so a partial read must never look complete. A
  * read that fails records why on the connection and changes nothing else. A
- * member Microsoft has no calendar for (`404`) is counted and left alone.
+ * member whose mailbox Microsoft does not have (`404`), will not open (`403`)
+ * or will not look up (`400`) is counted by reason and left alone — nothing of
+ * theirs is retired; the run fails only when the app's token is refused or
+ * does not carry `Calendars.Read` (LAI-1316 review F1).
  *
  * ## When it runs
  *
@@ -98,8 +106,12 @@ export interface StoredRule {
 export interface CalendarSyncResultView {
   /** Active members whose calendar was asked for. */
   people: number;
-  /** Of those, how many Microsoft has no calendar for. */
+  /** Of those, how many Microsoft has no calendar for (`404`). */
   no_mailbox: number;
+  /** How many Microsoft would not open the calendar of (`403`): skipped, nothing of theirs retired. */
+  mailbox_denied: number;
+  /** How many Microsoft would not look up (`400`): skipped the same way. */
+  mailbox_refused: number;
   /** Accepted or organised meetings found in the window. */
   meetings: number;
   created: number;
@@ -109,7 +121,7 @@ export interface CalendarSyncResultView {
   unchanged: number;
   /** Entries the person changed themselves, left alone. */
   kept_edits: number;
-  /** Meetings not logged: the day already full, or in the closed period. */
+  /** Meetings not logged, changed or retired: the day already full, or in the closed period. */
   skipped: number;
 }
 
@@ -131,7 +143,8 @@ export interface CalendarSyncDeps {
 
 /** What each failure code records as the connection's `last_error` — Laika's words. */
 export const CALENDAR_ERROR_TEXT: Readonly<Record<CalendarSyncErrorCode, string>> = {
-  credentials_rejected: 'Microsoft refused the tenant, client id or secret. Save them again.',
+  credentials_rejected:
+    'Microsoft refused the tenant, client id or secret, or the token they gave. Save them again.',
   not_granted:
     'The app may not read calendars: an admin grants it Calendars.Read in Microsoft Entra.',
   unreachable: 'Microsoft could not be reached. The next sync will try again.',
@@ -270,13 +283,21 @@ export async function syncCalendars(
 
   const reads: PersonRead[] = [];
   try {
+    // The grant is read off the token, before any calendar: a token that can
+    // say it lacks `Calendars.Read` fails the run, and is dropped so the next
+    // run asks for one minted after the grant.
+    const access = await client.token();
+    if (access.rolesKnown && !access.roles.includes(CALENDARS_READ)) {
+      client.forget();
+      throw new GraphNotGrantedError(403);
+    }
     // One person after another: a tenant's throttling is per app, and the
     // sync has fifteen minutes.
     for (const m of members) {
       const zone = zones.get(m.id) ?? 'UTC';
       const window = windowFor(zone, started);
-      const events = await client.calendarView(m.email.toLowerCase(), window.from, window.to);
-      reads.push({ userId: m.id, zone, window, events });
+      const read = await client.calendarView(m.email.toLowerCase(), window.from, window.to);
+      reads.push({ userId: m.id, zone, window, read });
     }
   } catch (err) {
     const code = failureCode(err);
@@ -324,8 +345,15 @@ interface PersonRead {
   userId: string;
   zone: string;
   window: { from: number; to: number; days: Set<string> };
-  /** Null: Microsoft has no calendar for them. */
-  events: GraphEvent[] | null;
+  /** Their events, or why their mailbox was skipped. */
+  read: CalendarRead;
+}
+
+/** Private, confidential or personal: a meeting whose subject and place are its own. */
+function isPrivate(e: GraphEvent): boolean {
+  return (
+    e.sensitivity === 'private' || e.sensitivity === 'confidential' || e.sensitivity === 'personal'
+  );
 }
 
 /**
@@ -341,29 +369,30 @@ export function isLogged(e: GraphEvent): boolean {
   return e.isOrganizer && e.response === 'none';
 }
 
-/** A private or confidential meeting is `Busy`; any other its subject, or nothing. */
+/** A private, confidential or personal meeting is `Busy`; any other its subject, or nothing. */
 export function titleOf(e: GraphEvent): string | null {
-  if (e.sensitivity === 'private' || e.sensitivity === 'confidential') return PRIVATE_TITLE;
+  if (isPrivate(e)) return PRIVATE_TITLE;
   return e.subject === null ? null : e.subject.slice(0, 120);
 }
 
 /**
- * The space the first matching rule names, if it still exists. A title rule
- * never reads a private meeting's subject; a channel rule reads the location,
- * which Teams sets to the channel for a channel meeting.
+ * The space the first matching rule names — when it still exists and the
+ * person can open it (`usable`), else none (LAI-1316 review F4). **No rule
+ * reads a private, confidential or personal meeting**: neither its subject
+ * nor its location, which Teams sets to the channel for a channel meeting.
  */
 export function projectFor(
   e: GraphEvent,
   rules: readonly StoredRule[],
-  live: ReadonlySet<string>,
+  usable: (projectId: string) => boolean,
 ): string | null {
-  const isPrivate = e.sensitivity === 'private' || e.sensitivity === 'confidential';
-  const subject = isPrivate ? undefined : e.subject?.toLowerCase();
+  if (isPrivate(e)) return null;
+  const subject = e.subject?.toLowerCase();
   const location = e.location?.toLowerCase();
   for (const rule of rules) {
     const text = rule.text.toLowerCase();
     const hit = rule.kind === 'title' ? subject?.includes(text) === true : location === text;
-    if (hit) return live.has(rule.project_id) ? rule.project_id : null;
+    if (hit) return usable(rule.project_id) ? rule.project_id : null;
   }
   return null;
 }
@@ -426,6 +455,8 @@ function reconcile(
   const result: CalendarSyncResultView = {
     people: 0,
     no_mailbox: 0,
+    mailbox_denied: 0,
+    mailbox_refused: 0,
     meetings: 0,
     created: 0,
     updated: 0,
@@ -455,13 +486,22 @@ function reconcile(
               .map((p) => p.id),
       );
 
+      const actors = loadActors(
+        db,
+        reads.map((r) => r.userId),
+      );
       for (const read of reads) {
         result.people += 1;
-        if (read.events === null) {
-          result.no_mailbox += 1;
+        if ('skipped' in read.read) {
+          if (read.read.skipped === 'no_mailbox') result.no_mailbox += 1;
+          else if (read.read.skipped === 'denied') result.mailbox_denied += 1;
+          else result.mailbox_refused += 1;
           continue;
         }
-        reconcilePerson(tx, read, rules, live, closed, now, result);
+        const actor = actors.get(read.userId);
+        const usable = (projectId: string): boolean =>
+          live.has(projectId) && actor !== undefined && canSeeProject(actor, projectId);
+        reconcilePerson(tx, read, read.read.events, rules, usable, closed, now, result);
       }
 
       tx.update(orgCalendarSource)
@@ -486,26 +526,42 @@ function reconcile(
 function reconcilePerson(
   tx: Tx,
   read: PersonRead,
+  readEvents: readonly GraphEvent[],
   rules: readonly StoredRule[],
-  live: ReadonlySet<string>,
+  usable: (projectId: string) => boolean,
   closed: string | null,
   now: number,
   result: CalendarSyncResultView,
 ): void {
   const { userId, zone, window } = read;
   const isClosed = (day: string): boolean => closed !== null && day <= closed;
-  const links = new Map(
+  // The last of each id: a calendar that shifted between pages may repeat one.
+  const events = new Map(readEvents.map((e) => [e.id, e]));
+
+  // **One read of the links that matter** (LAI-1316 review F11): those of the
+  // events just read, and those whose entry started inside the window — the
+  // ones a complete read can find gone. Never three years of links.
+  type Link = typeof calendarEvents.$inferSelect;
+  const ids = [...events.keys()];
+  const held = new Map<string, { link: Link; entry: EntryRow }>(
     tx
-      .select()
+      .select({ link: calendarEvents, entry: timeEntries })
       .from(calendarEvents)
-      .where(eq(calendarEvents.userId, userId))
+      .innerJoin(timeEntries, eq(timeEntries.id, calendarEvents.entryId))
+      .where(
+        and(
+          eq(calendarEvents.userId, userId),
+          or(
+            ...(ids.length === 0 ? [] : [inArray(calendarEvents.eventId, ids)]),
+            and(gte(timeEntries.startedAt, window.from), lt(timeEntries.startedAt, window.to)),
+          ),
+        ),
+      )
       .all()
-      .map((l) => [l.eventId, l]),
+      .map((r) => [r.link.eventId, r]),
   );
-  const entryOf = (id: string): EntryRow | undefined =>
-    tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
   /** Ours to change: the entry is as the sync last wrote it. */
-  const untouched = (link: typeof calendarEvents.$inferSelect, entry: EntryRow): boolean =>
+  const untouched = (link: Link, entry: EntryRow): boolean =>
     entry.revision <= link.entryRevisionSynced;
   const setLink = (eventId: string, values: Partial<typeof calendarEvents.$inferInsert>): void => {
     tx.update(calendarEvents)
@@ -513,22 +569,8 @@ function reconcilePerson(
       .where(and(eq(calendarEvents.userId, userId), eq(calendarEvents.eventId, eventId)))
       .run();
   };
-  /** Retire a linked entry the sync still owns; true when it did. */
-  const retire = (eventId: string): boolean => {
-    const link = links.get(eventId);
-    if (link === undefined) return false;
-    const entry = entryOf(link.entryId);
-    if (entry?.deletedAt !== null || !untouched(link, entry)) return false;
-    if (isClosed(entry.day)) return false;
-    const revision = retireEntry(tx, entry.id, userId, now);
-    setLink(eventId, { entryRevisionSynced: revision });
-    result.removed += 1;
-    return true;
-  };
 
   const seen = new Set<string>();
-  // The last of each id: a calendar that shifted between pages may repeat one.
-  const events = new Map((read.events ?? []).map((e) => [e.id, e]));
   for (const e of events.values()) {
     const day = dayIn(zone, e.start);
     // An event that began before the window only overlaps it.
@@ -536,17 +578,19 @@ function reconcilePerson(
     if (!isLogged(e)) continue;
     seen.add(e.id);
     result.meetings += 1;
-    const fields = fieldsOf(e, zone, titleOf(e), projectFor(e, rules, live));
+    const fields = fieldsOf(e, zone, titleOf(e), projectFor(e, rules, usable));
     if (fields === null || isClosed(fields.day)) {
       result.skipped += 1;
       continue;
     }
 
-    let link = links.get(e.id);
-    if (link === undefined) {
+    let found = held.get(e.id);
+    if (found === undefined) {
       // `time_entries` keeps one `calendar` row per event and person, and a
-      // trigger refuses a second (§4.48): an entry whose link was lost is
-      // linked again as it stands, and treated as any other below.
+      // trigger refuses a second (§4.48). An entry whose link was lost is
+      // linked again **only if the sync can vouch for it** — never changed
+      // (revision 1), or saying exactly what the meeting says. Anything else
+      // is the person's version, and is left alone unlinked (review F6).
       const had = tx
         .select()
         .from(timeEntries)
@@ -559,7 +603,11 @@ function reconcilePerson(
         )
         .get();
       if (had !== undefined) {
-        link = {
+        if (had.revision !== 1 && !same(had, fields)) {
+          result.kept_edits += 1;
+          continue;
+        }
+        const link: Link = {
           id: newId(),
           userId,
           eventId: e.id,
@@ -570,10 +618,10 @@ function reconcilePerson(
           createdAt: now,
         };
         tx.insert(calendarEvents).values(link).run();
-        links.set(e.id, link);
+        found = { link, entry: had };
       }
     }
-    if (link === undefined) {
+    if (found === undefined) {
       let entryId: string;
       try {
         entryId = insertEntry(tx, userId, fields, 'calendar', e.id, now, userId);
@@ -600,8 +648,7 @@ function reconcilePerson(
       continue;
     }
 
-    const entry = entryOf(link.entryId);
-    if (entry === undefined) continue;
+    const { link, entry } = found;
     if (!untouched(link, entry)) {
       // The person changed it, or deleted it: theirs now, for good.
       setLink(e.id, {});
@@ -633,12 +680,20 @@ function reconcilePerson(
   }
 
   // Gone, or no longer a meeting Laika logs: retire what the sync still owns
-  // whose meeting started inside this complete read's window.
-  for (const link of links.values()) {
+  // whose meeting started inside this complete read's window — never in the
+  // closed period, which is counted as skipped.
+  for (const { link, entry } of held.values()) {
     if (seen.has(link.eventId)) continue;
-    const start = entryOf(link.entryId)?.startedAt ?? null;
+    const start = entry.startedAt;
     if (start === null || start < window.from || start >= window.to) continue;
-    retire(link.eventId);
+    if (entry.deletedAt !== null || !untouched(link, entry)) continue;
+    if (isClosed(entry.day)) {
+      result.skipped += 1;
+      continue;
+    }
+    const revision = retireEntry(tx, entry.id, userId, now);
+    setLink(link.eventId, { entryRevisionSynced: revision });
+    result.removed += 1;
   }
 }
 

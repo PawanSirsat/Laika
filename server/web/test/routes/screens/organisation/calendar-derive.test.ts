@@ -177,6 +177,8 @@ void describe('the words', () => {
   const result = (over: Partial<CalendarSyncResult> = {}): CalendarSyncResult => ({
     people: 4,
     no_mailbox: 0,
+    mailbox_denied: 0,
+    mailbox_refused: 0,
     meetings: 6,
     created: 0,
     updated: 0,
@@ -202,7 +204,14 @@ void describe('the words', () => {
           no_mailbox: 1,
         }),
       ),
-      '1 meeting · 1 logged · 2 updated · 3 removed · 1 left as people changed them · 2 not logged (day full or closed) · 1 person, 1 with no Outlook calendar',
+      '1 meeting · 1 logged · 2 updated · 3 removed · 1 left as people changed them · 2 held back (day full or closed) · 1 person, 1 with no Outlook calendar',
+    );
+  });
+
+  void test('people Microsoft would not open or look up are counted by reason, not as a failure', () => {
+    assert.equal(
+      countsLine(result({ people: 9, no_mailbox: 1, mailbox_denied: 2, mailbox_refused: 1 })),
+      '6 meetings · 9 people, 1 with no Outlook calendar, 2 whose calendar Microsoft would not open, 1 Microsoft could not look up',
     );
   });
 

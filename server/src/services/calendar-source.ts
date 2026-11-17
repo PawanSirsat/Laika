@@ -20,6 +20,7 @@ import {
 } from './calendar-sync.ts';
 import { CALENDARS_READ, graphClient, isClientId, isTenantId } from './microsoft-graph.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
+import { assertTimeOn } from './time-settings.ts';
 
 /**
  * The organisation's Outlook calendar connection (§4.97, D-157, LAI-1316):
@@ -202,7 +203,9 @@ function syncSoon(db: Db, serverSecret: string, deps: CalendarSyncDeps): void {
  * The tenant is a GUID or a domain (`422 tenant_invalid`), the client id a
  * GUID (`422 client_invalid`); the secret may be left out when one is stored
  * (`422 secret_required` when none is). Each rule names a space the caller can
- * see (`422 unknown_project`). **Saving reads nothing from Microsoft.** New
+ * see (`422 unknown_project`), at most 50 (`422 too_many_rules`). Turning
+ * the switch on while the organisation's Time is off is `403 time_off`.
+ * **Saving reads nothing from Microsoft.** New
  * credentials forget the last test, which was of the old ones; turning the
  * switch on, or saving new credentials while it is on, starts a sync in the
  * background.
@@ -257,6 +260,9 @@ export function saveCalendarSource(
   const clock = deps.now ?? Date.now;
   const now = clock();
   const was = db.select().from(orgCalendarSource).get();
+  // Turning the switch on while the organisation's Time is off would log
+  // nothing, silently: say so instead (`403 time_off`, LAI-1316 review F11).
+  if (input.enabled && was?.enabled !== 1) assertTimeOn(db);
   const typed = input.client_secret?.trim();
   if ((typed === undefined || typed === '') && was === undefined) {
     throw new ApiError('unprocessable', 'A client secret is needed to connect', {
@@ -362,7 +368,8 @@ export async function testCalendarSource(
 /**
  * `POST /api/v1/org/calendar/sync`: sync now, or wait for the sync already
  * running, and answer how it went. `409 calendar_off` unless the connection
- * is saved and its switch is on.
+ * is saved and its switch is on; `403 time_off` while the organisation's Time
+ * is off, when the sync would log nothing.
  */
 export async function syncCalendarNow(
   db: Db,
@@ -375,6 +382,7 @@ export async function syncCalendarNow(
   if (row?.enabled !== 1) {
     throw new ApiError('conflict', 'The Outlook calendar sync is off', { reason: 'calendar_off' });
   }
+  assertTimeOn(db);
   await runCalendarSync(db, serverSecret, deps);
   return viewOf(db);
 }

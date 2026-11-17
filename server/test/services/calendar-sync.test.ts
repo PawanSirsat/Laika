@@ -5,6 +5,7 @@ import {
   calendarEvents,
   orgCalendarSource,
   orgTimeSettings,
+  projectMemberships,
   projects,
   timeEntries,
   timeEntryRevisions,
@@ -69,6 +70,14 @@ function person(name: string, email: string, zone: string | null = ZONE, active 
     t.db.insert(userTimeSettings).values({ userId: id, place: zone, updatedAt: NOW }).run();
   }
   return id;
+}
+
+/** Make `userId` a member of a space, so its rules may send their meetings there. */
+function join(userId: string, projectId: string): void {
+  t.db
+    .insert(projectMemberships)
+    .values({ id: newId(), projectId, userId, role: 'member', createdAt: NOW })
+    .run();
 }
 
 /** A saved connection, switched on unless said otherwise. */
@@ -290,12 +299,26 @@ describe('what is logged', () => {
       subject: 'Board',
       sensitivity: 'confidential',
     });
-    fake.calendars.set('ada@kvelld.example', [secret, confidential]);
-    connect({ rules: [{ kind: 'title', text: 'interview', project_id: s.projectId }] });
+    // Personal is private too (review F3): its subject and its place are its own.
+    const personal = graphEvent(nineOn(18) + 10_800_000, {
+      subject: 'Doctor (Interview room)',
+      sensitivity: 'personal',
+      location: { displayName: 'Laika Dev' },
+    });
+    fake.calendars.set('ada@kvelld.example', [secret, confidential, personal]);
+    join(ada, s.projectId);
+    connect({
+      rules: [
+        { kind: 'title', text: 'interview', project_id: s.projectId },
+        // A channel rule never reads a private meeting's location either.
+        { kind: 'channel', text: 'laika dev', project_id: s.projectId },
+      ],
+    });
     synced(await sync());
 
     const rows = entriesOf(ada);
     expect(rows.map((e) => [e.title, e.projectId])).toEqual([
+      ['Busy', null],
       ['Busy', null],
       ['Busy', null],
     ]);
@@ -305,7 +328,15 @@ describe('what is logged', () => {
       t.db.select().from(calendarEvents).all(),
       t.db.select().from(orgCalendarSource).all(),
     ]);
-    for (const never of ['Interview', 'Board', 'NEVER-STORED', 'Room 4', 'teams.microsoft.com']) {
+    for (const never of [
+      'Interview',
+      'Board',
+      'Doctor',
+      'NEVER-STORED',
+      'Room 4',
+      'Laika Dev',
+      'teams.microsoft.com',
+    ]) {
       expect(stored).not.toContain(never);
     }
   });
@@ -334,6 +365,8 @@ describe('what is logged', () => {
       }),
       graphEvent(at + 10_800_000, { subject: 'Lunch' }),
     ]);
+    join(ada, other);
+    join(ada, s.projectId);
     connect({
       rules: [
         { kind: 'title', text: 'KSAGE', project_id: other },
@@ -347,6 +380,17 @@ describe('what is logged', () => {
       ['Ksage in Laika Dev', other],
       ['Lunch', null],
     ]);
+  });
+
+  it('logs no space when the person cannot open the rule’s space (review F4)', async () => {
+    fake.calendars.set('ada@kvelld.example', [graphEvent(nineOn(18), { subject: 'Sprint' })]);
+    fake.calendars.set('bea@kvelld.example', [graphEvent(nineOn(18), { subject: 'Sprint' })]);
+    // Ada is in the private space; Bea is not, and is a member, not an admin.
+    join(ada, s.projectId);
+    connect({ rules: [{ kind: 'title', text: 'sprint', project_id: s.projectId }] });
+    synced(await sync());
+    expect(entriesOf(ada).map((e) => e.projectId)).toEqual([s.projectId]);
+    expect(entriesOf(bea).map((e) => e.projectId)).toEqual([null]);
   });
 
   it('logs no space for a rule whose space is gone', async () => {
@@ -542,6 +586,145 @@ describe('what it cannot log', () => {
     expect(synced(await sync())).toMatchObject({ people: 3, no_mailbox: 1, created: 1 });
     expect(entriesOf(bea)).toEqual([]);
   });
+
+  it('skips one person whose mailbox answers 403 or 400, syncs the rest, and retires nothing of theirs (review F1)', async () => {
+    const beaMeeting = graphEvent(nineOn(18), { subject: 'Bea’s' });
+    fake.calendars.set('bea@kvelld.example', [beaMeeting]);
+    connect();
+    synced(await sync());
+    expect(entriesOf(bea)).toHaveLength(1);
+
+    // An access policy now keeps Bea's mailbox from the app; the owner's is
+    // not looked up; Ada's meeting is new.
+    fake.denied.add('bea@kvelld.example');
+    fake.refused.add('owner@example.test');
+    fake.calendars.set('ada@kvelld.example', [graphEvent(nineOn(18), { subject: 'Ada’s' })]);
+    const result = synced(await sync(NOW + 900_000));
+    expect(result).toMatchObject({
+      people: 3,
+      mailbox_denied: 1,
+      mailbox_refused: 1,
+      no_mailbox: 0,
+      created: 1,
+      removed: 0,
+    });
+    expect(entriesOf(ada).map((e) => e.title)).toEqual(['Ada’s']);
+    // Not read is not gone: Bea's entry stands.
+    expect(entriesOf(bea)).toEqual([expect.objectContaining({ title: 'Bea’s', deletedAt: null })]);
+    expect(sourceRow()).toMatchObject({ lastErrorCode: null, lastSuccessAt: NOW + 900_000 });
+  });
+
+  it('holds back a retirement and an update in the closed period (review F8)', async () => {
+    const retiring = graphEvent(nineOn(17), { subject: 'Cancelled later' });
+    const moving = graphEvent(nineOn(17) + 7_200_000, { subject: 'Moved later' });
+    fake.calendars.set('ada@kvelld.example', [retiring, moving]);
+    connect();
+    synced(await sync());
+    timeOn('manual', '2026-11-17');
+
+    fake.calendars.set('ada@kvelld.example', [
+      { ...retiring, isCancelled: true },
+      { ...moving, subject: 'Moved later (renamed)' },
+    ]);
+    expect(synced(await sync(NOW + 1))).toMatchObject({ removed: 0, updated: 0, skipped: 2 });
+    fake.calendars.set('ada@kvelld.example', [{ ...moving, subject: 'Moved later (renamed)' }]);
+    expect(synced(await sync(NOW + 2))).toMatchObject({ removed: 0, updated: 0, skipped: 2 });
+    expect(entriesOf(ada).map((e) => [e.title, e.deletedAt, e.revision])).toEqual([
+      ['Cancelled later', null, 1],
+      ['Moved later', null, 1],
+    ]);
+  });
+
+  it('gives each occurrence of a recurring meeting its own entry (review F8)', async () => {
+    const series = 'series-standup';
+    fake.calendars.set('ada@kvelld.example', [
+      graphEvent(nineOn(17), { id: 'occ-17', iCalUId: series, subject: 'Standup', minutes: 15 }),
+      graphEvent(nineOn(18), { id: 'occ-18', iCalUId: series, subject: 'Standup', minutes: 15 }),
+      graphEvent(nineOn(19), { id: 'occ-19', iCalUId: series, subject: 'Standup', minutes: 15 }),
+    ]);
+    connect();
+    expect(synced(await sync())).toMatchObject({ meetings: 3, created: 3 });
+    expect(entriesOf(ada).map((e) => [e.sourceRef, e.day])).toEqual([
+      ['occ-17', '2026-11-17'],
+      ['occ-18', '2026-11-18'],
+      ['occ-19', '2026-11-19'],
+    ]);
+    expect(
+      t.db
+        .select()
+        .from(calendarEvents)
+        .all()
+        .map((l) => l.icalUid),
+    ).toEqual([series, series, series]);
+  });
+
+  it('leaves a retired meeting retired when it comes back to a day now full (review F8)', async () => {
+    const meeting = graphEvent(nineOn(18), { subject: 'Back again' });
+    fake.calendars.set('ada@kvelld.example', [meeting]);
+    connect();
+    synced(await sync());
+    fake.calendars.set('ada@kvelld.example', [{ ...meeting, isCancelled: true }]);
+    expect(synced(await sync(NOW + 1))).toMatchObject({ removed: 1 });
+    // The person fills the day meanwhile.
+    t.db
+      .insert(timeEntries)
+      .values({
+        id: newId(),
+        userId: ada,
+        day: '2026-11-18',
+        tz: ZONE,
+        minutes: 1420,
+        source: 'manual',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    fake.calendars.set('ada@kvelld.example', [meeting]);
+    expect(synced(await sync(NOW + 2))).toMatchObject({ updated: 0, skipped: 1 });
+    expect(
+      entriesOf(ada)
+        .filter((e) => e.source === 'calendar')
+        .map((e) => [e.deletedAt, e.revision]),
+    ).toEqual([[NOW + 1, 2]]);
+  });
+});
+
+describe('an entry whose link was lost (review F6)', () => {
+  function dropLinks(): void {
+    t.db.delete(calendarEvents).run();
+  }
+
+  it('is linked again when the sync wrote it and nobody changed it, and kept in step', async () => {
+    const meeting = graphEvent(nineOn(18), { subject: 'Planning' });
+    fake.calendars.set('ada@kvelld.example', [meeting]);
+    connect();
+    synced(await sync());
+    dropLinks();
+    fake.calendars.set('ada@kvelld.example', [{ ...meeting, subject: 'Planning (moved)' }]);
+    expect(synced(await sync(NOW + 1))).toMatchObject({ updated: 1, created: 0 });
+    expect(entriesOf(ada)).toEqual([
+      expect.objectContaining({ title: 'Planning (moved)', revision: 2 }),
+    ]);
+    expect(t.db.select().from(calendarEvents).all()).toEqual([
+      expect.objectContaining({ eventId: meeting.id, entryRevisionSynced: 2 }),
+    ]);
+  });
+
+  it('is left alone, unlinked, when the person changed it', async () => {
+    const meeting = graphEvent(nineOn(18), { subject: 'Planning' });
+    fake.calendars.set('ada@kvelld.example', [meeting]);
+    connect();
+    synced(await sync());
+    const [entry] = entriesOf(ada);
+    t.db.transaction((tx) => {
+      patchEntry(tx, ada, entry!.id, { title: 'Mine now' }, undefined, ada, NOW);
+    });
+    dropLinks();
+    fake.calendars.set('ada@kvelld.example', [{ ...meeting, subject: 'Planning (moved)' }]);
+    expect(synced(await sync(NOW + 1))).toMatchObject({ kept_edits: 1, updated: 0, created: 0 });
+    expect(entriesOf(ada)).toEqual([expect.objectContaining({ title: 'Mine now', revision: 2 })]);
+    expect(t.db.select().from(calendarEvents).all()).toEqual([]);
+  });
 });
 
 describe('when Microsoft fails', () => {
@@ -578,6 +761,25 @@ describe('when Microsoft fails', () => {
     expect(await sync()).toEqual({ kind: 'failed', code: 'unreachable' });
     expect(t.db.select().from(timeEntries).all()).toEqual([]);
     expect(t.db.select().from(calendarEvents).all()).toEqual([]);
+  });
+
+  it('fails on a token without Calendars.Read before reading anyone, and asks for a new one next time', async () => {
+    fake.roles = ['User.Read.All'];
+    fake.calendars.set('ada@kvelld.example', [graphEvent(nineOn(18))]);
+    connect();
+    expect(await sync()).toEqual({ kind: 'failed', code: 'not_granted' });
+    expect(fake.of('calendarView')).toEqual([]);
+    // Granted since: the next run does not reuse the token minted before it.
+    fake.roles = ['Calendars.Read'];
+    expect(synced(await sync(NOW + 1))).toMatchObject({ created: 1 });
+    expect(fake.of('token')).toHaveLength(2);
+  });
+
+  it('fails the run when Graph refuses the token itself', async () => {
+    fake.intercept = (req) =>
+      req.kind === 'calendarView' ? new Response('{}', { status: 401 }) : undefined;
+    connect();
+    expect(await sync()).toEqual({ kind: 'failed', code: 'credentials_rejected' });
   });
 
   it('records an unreadable stored secret as the credentials’ failure', async () => {

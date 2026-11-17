@@ -93,7 +93,7 @@ void describe('the calls (§6.4, LAI-1316)', () => {
 void describe('a refusal, in words', () => {
   const refused = (
     status: number,
-    code: 'unprocessable' | 'conflict' | 'internal',
+    code: 'unprocessable' | 'conflict' | 'internal' | 'forbidden',
     details?: Record<string, unknown>,
   ) => new ApiError(code, 'The server’s own sentence.', status, details ?? null);
 
@@ -107,6 +107,11 @@ void describe('a refusal, in words', () => {
       'graph_credentials_refused',
       'graph_unreachable',
       'calendar_off',
+      // LAI-1316 review F10, F11.
+      'too_many_rules',
+      'secret_unreadable',
+      'graph_bad_answer',
+      'time_off',
     ];
     // Both sides of the list, so a reason added to one and not the other fails here.
     assert.deepEqual(Object.keys(CALENDAR_REFUSAL_WORDS).sort(), [...reasons].sort());
@@ -123,6 +128,7 @@ void describe('a refusal, in words', () => {
       /could not reach Microsoft/,
     );
     assert.match(calendarRefusal(refused(409, 'conflict', { reason: 'calendar_off' })), /switch/);
+    assert.match(calendarRefusal(refused(403, 'forbidden', { reason: 'time_off' })), /Time is off/);
   });
 
   void test('a reason it does not know, or none, is the server’s message', () => {
