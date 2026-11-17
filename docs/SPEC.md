@@ -572,6 +572,8 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Assign a task to someone else | ✓ | ✓ | — |
 | Add comment | ✓ | ✓ | — |
 | Edit / delete comment | own + any | own | — |
+| Attach a file | ✓ | ✓ | — |
+| Remove an attachment | own + any | own | — |
 | Cancel / delete task | ✓ | own-created | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
@@ -582,6 +584,12 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Leave a project | ✓ | ✓ | ✓ |
 | View the space's time totals | ✓ (session only) | — | — |
 | View logged days of the people in the space | ✓ (session only) | — | — |
+
+**Files (D-150, LAI-1300).** *Attach a file* is *Add comment*'s right —
+members and up, agents and full tokens alike, never a `read_only` token or
+grant — and *Remove an attachment* is editing a comment's: a lead any file, a
+member one they uploaded. Reading one is *Read tasks, comments, activity,
+capacity*. §4.92 and §6.4 have the rest.
 
 **Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
 `task_create_min_role` (§4.3): `member`, the default, is the cell as written;
@@ -731,6 +739,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.checkpoint.prune` | §11.6: checkpoint retention, 90 days after the task reaches `done` or `cancelled` (§4.70, D-115 item 9, LAI-545) |
 | `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 | `system.hr.sync` | §11.6: holidays and leave from the organisation's HR system, every 30 minutes and once at boot (§4.88 – §4.91, D-149, LAI-1181) |
+| `system.attachment.prune` | §11.6: hourly, uploads nobody finished and files nothing linked after 24 hours, and the stored objects of removed files (§4.92, D-150, LAI-1300) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
