@@ -374,7 +374,7 @@ void describe('task links open the task in its own space (B2)', () => {
 });
 
 void describe('Detach from parent asks first, and says when it fails (B4)', () => {
-  void test('Cancel changes nothing; a refused detach is in the panel’s alert', async () => {
+  void test('Cancel changes nothing; a refused detach is an error toast with the server’s words', async () => {
     const h = await open('/calendar?project=laika-core&task=t2', {
       ...SPACE,
       '/api/v1/tasks/t2': (call: { method: string }) =>
@@ -406,10 +406,23 @@ void describe('Detach from parent asks first, and says when it fails (B4)', () =
         .getByRole('button', { name: 'Detach from parent' })
         .click();
       await ask.getByRole('button', { name: 'Detach' }).click();
-      const alert = h.page.locator('.drawer .panel-alert', {
-        hasText: 'Only a lead may move this task.',
+      // The toast replaced the panel's alert (LAI-1310): an error, read out
+      // as one, with the server's sentence under the headline.
+      const toast = h.page.locator('[data-toast][data-tone="error"]', {
+        hasText: 'Couldn’t detach',
       });
-      await alert.waitFor({ timeout: 5_000 });
+      await toast.waitFor({ timeout: 5_000 });
+      assert.match(
+        await toast.locator('[role="alert"]').innerText(),
+        /Only a lead may move this task\./,
+      );
+      assert.equal(
+        await h.page
+          .locator('.drawer .panel-alert', { hasText: 'Only a lead may move this task.' })
+          .count(),
+        0,
+        'the old alert stayed',
+      );
       assert.equal(patches(), 1);
     } finally {
       await h.close();

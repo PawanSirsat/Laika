@@ -16,6 +16,8 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { actorLine, describeActor } from '../board/actor-presentation.ts';
 import { threadOrder, type ThreadItem } from '../board/thread-order.ts';
 import { CommentComposer } from './CommentComposer.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { runOrThrow } from './run-or-throw.ts';
 import { FeedComment } from './FeedComment.tsx';
 import { actorKey, commentKind, runPositions, type RunPosition } from './feed-groups.ts';
 import { FEED_ICONS, feedLines, feedMeta } from './feed-line.ts';
@@ -115,6 +117,7 @@ export function ActivityFeed({
   attach,
 }: ActivityFeedProps) {
   const { theme } = useTheme();
+  const { run } = useAction();
   const now = Date.now();
   /**
    * Which tab is showing. Local, not in the URL: a tab is a way of looking at
@@ -476,7 +479,15 @@ export function ActivityFeed({
         people={people}
         meId={meId}
         cards={cards}
-        onPost={detail.post}
+        onPost={(bodyMd) =>
+          // Says so either way (LAI-1310); a refused post rejects too, so the
+          // composer keeps the draft and its reason.
+          runOrThrow(run, {
+            do: () => detail.post(bodyMd),
+            success: 'Comment posted',
+            failure: 'Couldn’t post the comment',
+          })
+        }
         attach={attach}
       />
     </div>

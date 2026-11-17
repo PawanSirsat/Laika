@@ -25,8 +25,8 @@ import {
   type TaskEstimate,
   type TaskSimilar,
 } from '../../../api/estimates.ts';
-import { ApiError } from '../../../api/errors.ts';
 import { type TaskSummary } from '../../../api/tasks.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { similarRows } from './rail-derive.ts';
 import { Chip } from '../../../components/chip/Chip.tsx';
@@ -108,7 +108,7 @@ export function ForecastSection({
   const [accuracy, setAccuracy] = useState<EstimateAccuracy | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState<string | undefined>(undefined);
-  const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const size = task.size ?? null;
   const sized = size !== null;
 
@@ -176,20 +176,28 @@ export function ForecastSection({
   const pick = (value: string) => {
     if (value === chosen) return;
     const next = value === COMPUTED ? null : (value as SizeLevel);
+    const was = size.overridden ? size.level : null;
+    const said = (level: SizeLevel | null): string =>
+      level === null ? 'Laika’s estimate' : effortWord(level);
     setSaving(value);
-    setSaveError(undefined);
-    setTaskSize(task.id, next)
-      .then(() => {
+    // Says what it set, with Undo back to the old effort — the same call
+    // (LAI-1310); a refusal toasts the server's reason.
+    void run({
+      do: async () => {
+        await setTaskSize(task.id, next);
+        return true;
+      },
+      success: next === null ? 'Effort back to Laika’s estimate' : `Effort set to ${said(next)}`,
+      failure: 'Couldn’t save the effort',
+      undo: async () => {
+        await setTaskSize(task.id, was);
         onChanged();
-      })
-      .catch((err: unknown) => {
-        setSaveError(
-          err instanceof ApiError ? err.message : 'The effort was not saved. Try again.',
-        );
-      })
-      .finally(() => {
-        setSaving(undefined);
-      });
+        return `Effort back to ${said(was)}`;
+      },
+    }).then((done) => {
+      setSaving(undefined);
+      if (done !== undefined) onChanged();
+    });
   };
 
   const actual = estimate?.actual;
@@ -291,11 +299,6 @@ export function ForecastSection({
           Set by {override === null ? 'a person' : nameOf(override.set_by)}
           <Sep />
           Laika’s estimate: {effortWord(size.computed)}
-        </p>
-      )}
-      {saveError !== undefined && (
-        <p className="panel-alert" role="alert">
-          {saveError}
         </p>
       )}
     </>

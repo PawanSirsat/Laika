@@ -3,6 +3,7 @@ import { PING_WAIT_MS, getCapacityPing, pingAgent, type CapacityPing } from '../
 import { clockTime, timeLabel } from '../../api/time-label.ts';
 import { PING_WORDS, answerItems, answeredAgo, isStale, pingRefusal } from './capacity-derive.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
+import { useToast } from '../toast/ToastProvider.tsx';
 import './agent.css';
 
 /** How often a ping that got no answer within the wait is asked about again. */
@@ -91,6 +92,13 @@ export function PingButton({
       ? { kind: 'answered', ping: initial }
       : asked;
   const [now, setNow] = useState(() => Date.now());
+  /*
+   * The ping says it went, or why it did not, in a toast (LAI-1310) —
+   * through `useToast`, since the POST is held and then watched, which
+   * `useAction` does not model. The answer itself stays in the live region
+   * beside the button, where it keeps updating.
+   */
+  const toast = useToast();
   const controller = useRef<AbortController | null>(null);
   const watch = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const answered = useRef(onAnswered);
@@ -237,6 +245,7 @@ export function PingButton({
       AbortSignal.any([next.signal, deadline]),
     )
       .then(({ ping: first }) => {
+        if (!next.signal.aborted) toast.show({ text: `Pinged ${target}`, tone: 'success' });
         settle(first, next.signal, waitUntil);
       })
       .catch((cause: unknown) => {
@@ -247,6 +256,16 @@ export function PingButton({
         // One reading of the clock for both: two would put `until` a moment
         // past `now + seconds`, and the wait would round up to a second more
         // than the board said.
+        toast.show({
+          text: `Couldn’t ping ${target}`,
+          tone: 'error',
+          detail:
+            refusal.kind === 'failed'
+              ? PING_WORDS.failed(refusal.message)
+              : refusal.kind === 'limited'
+                ? PING_WORDS.limited(target, refusal.seconds)
+                : PING_WORDS.refused(target),
+        });
         const at = Date.now();
         setNow(at);
         setOutcome(

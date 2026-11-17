@@ -67,6 +67,7 @@ import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { useAction } from '../../../components/toast/use-action.ts';
+import { runOrThrow } from '../task/run-or-throw.ts';
 import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
@@ -350,7 +351,7 @@ export function TaskDetailPanel({
   ).length;
 
   const [sprintBusy, setSprintBusy] = useState(false);
-  const [sprintError, setSprintError] = useState<string | undefined>(undefined);
+  const action = useAction();
 
   /*
    * **One request to move, one to clear** (LAI-619). Measured against the
@@ -358,29 +359,44 @@ export function TaskDetailPanel({
    * already in another sprint **reassigns** it and returns the updated task —
    * it does not refuse, and it does not need the old sprint removing first.
    * Only clearing needs the delete, because there is no sprint to post to.
+   *
+   * It says so in a toast (LAI-1310), with the server's reason when it
+   * refuses — a closed sprint does — and Undo puts the task back where it
+   * was, by the same two requests.
    */
-  const changeSprint = useCallback(
-    async (sprintId: string | null): Promise<void> => {
-      setSprintError(undefined);
-      setSprintBusy(true);
-      try {
-        if (sprintId === null) {
-          if (task.sprint_id !== null) await removeTaskFromSprint(task.sprint_id, task.id);
-        } else {
-          await addTasksToSprint(sprintId, [task.id]);
-        }
-        onTaskEdited();
-      } catch (cause) {
-        // The server's reason, not a guess — a closed sprint refuses with one.
-        setSprintError(
-          cause instanceof ApiError ? cause.message : 'That sprint change could not be saved.',
-        );
-      } finally {
-        setSprintBusy(false);
+  const sprintName = (id: string | null): string =>
+    id === null ? 'no sprint' : (sprints.find((s) => s.id === id)?.name ?? 'a sprint');
+  const writeSprint = useCallback(
+    async (from: string | null, to: string | null): Promise<void> => {
+      if (to === null) {
+        if (from !== null) await removeTaskFromSprint(from, task.id);
+      } else {
+        await addTasksToSprint(to, [task.id]);
       }
     },
-    [task.id, task.sprint_id, onTaskEdited],
+    [task.id],
   );
+  const changeSprint = async (sprintId: string | null): Promise<void> => {
+    const from = task.sprint_id;
+    setSprintBusy(true);
+    await action.run({
+      do: () => writeSprint(from, sprintId),
+      success:
+        sprintId === null
+          ? `${task.key} removed from ${sprintName(from)}`
+          : `${task.key} moved to ${sprintName(sprintId)}`,
+      failure: 'Couldn’t change the sprint',
+      undo: async () => {
+        await writeSprint(sprintId, from);
+        onTaskEdited();
+        return from === null
+          ? `${task.key} out of a sprint again`
+          : `${task.key} back in ${sprintName(from)}`;
+      },
+    });
+    onTaskEdited();
+    setSprintBusy(false);
+  };
   const panelRef = useRef<HTMLDivElement>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowButton = useRef<HTMLButtonElement>(null);
@@ -395,9 +411,7 @@ export function TaskDetailPanel({
     if (reason === 'escape') overflowButton.current?.focus();
   });
   const confirm = useConfirm();
-  const action = useAction();
-  /** Why the last detach was refused (B4): it used to fail in silence. */
-  const [detachError, setDetachError] = useState<string | undefined>(undefined);
+  /** Detaching says so, and why it was refused (B4, LAI-1310): it used to fail in silence. */
   const detach = async (): Promise<void> => {
     setOverflowOpen(false);
     const yes = await confirm({
@@ -406,17 +420,23 @@ export function TaskDetailPanel({
       confirmLabel: 'Detach',
     });
     if (!yes) return;
-    setDetachError(undefined);
-    try {
-      await updateTask(task.id, { parent_task_id: null });
-      onTaskEdited();
-    } catch (cause) {
-      setDetachError(
-        cause instanceof ApiError && cause.message !== ''
-          ? cause.message
-          : 'The task could not be detached.',
-      );
-    }
+    const parentId = task.parent_task_id;
+    const parentKey = parent?.key ?? 'its parent';
+    await action.run({
+      do: () => updateTask(task.id, { parent_task_id: null }),
+      success: `${task.key} detached from ${parentKey}`,
+      failure: `Couldn’t detach ${task.key}`,
+      // Re-attaching is the same PATCH with the old parent: truly reversible.
+      undo:
+        parentId === null
+          ? undefined
+          : async () => {
+              await updateTask(task.id, { parent_task_id: parentId });
+              onTaskEdited();
+              return `${task.key} is a subtask of ${parentKey} again`;
+            },
+    });
+    onTaskEdited();
   };
   const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
@@ -425,7 +445,7 @@ export function TaskDetailPanel({
   /* The rounds (LAI-1117) and the review decision (D-129, D-146), shared with the Workroom (LAI-1199). */
   const roundsRead = useTaskRounds(task.id, task.updated_at);
   const rounds = roundsRead.rounds;
-  const review = useTaskReview(task.id, () => {
+  const review = useTaskReview(task.id, task.key, () => {
     onTaskEdited();
     detail.refresh();
     onReviewDecided?.();
@@ -855,7 +875,12 @@ export function TaskDetailPanel({
               required="A task needs a title."
               mayEdit={mayEdit === true}
               onSave={async (next) => {
-                await updateTask(task.id, { title: next });
+                // Auto-saving: the field shows it saved; only a failure toasts (LAI-1310).
+                await runOrThrow(action.run, {
+                  do: () => updateTask(task.id, { title: next }),
+                  success: null,
+                  failure: 'Couldn’t save the title',
+                });
                 onTaskEdited();
               }}
             />
@@ -872,11 +897,6 @@ export function TaskDetailPanel({
               {moveError}
             </p>
           )}
-          {detachError !== undefined && (
-            <p className="panel-alert" role="alert">
-              {detachError}
-            </p>
-          )}
 
           {/* What this delivers (§4.5, D-129): drawn when the server sent it. */}
           {full !== undefined && (
@@ -888,7 +908,14 @@ export function TaskDetailPanel({
               mayEdit={mayEdit === true && !text.stale}
               onOpen={onOpen}
               onSave={async (edit) => {
-                text.accept(await updateTask(task.id, edit));
+                // An inline field: its own status says saved; a failure also toasts.
+                text.accept(
+                  await runOrThrow(action.run, {
+                    do: () => updateTask(task.id, edit),
+                    success: null,
+                    failure: 'Couldn’t save that',
+                  }),
+                );
                 onTaskEdited();
               }}
             />
@@ -904,7 +931,6 @@ export function TaskDetailPanel({
             claimNow={claimNow}
             mayDecide={mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
             deciding={review.deciding}
-            decideError={review.decideError}
             onAccept={review.accept}
             onSendBack={review.openSendBack}
             ping={
@@ -994,7 +1020,13 @@ export function TaskDetailPanel({
                         throw staleEdit('description');
                       }
                       // The answer is the newest text: held, so it is not read again.
-                      text.accept(await updateTask(task.id, { description_md: next }));
+                      text.accept(
+                        await runOrThrow(action.run, {
+                          do: () => updateTask(task.id, { description_md: next }),
+                          success: null,
+                          failure: 'Couldn’t save the description',
+                        }),
+                      );
                       onTaskEdited();
                     }}
                   />
@@ -1103,7 +1135,13 @@ export function TaskDetailPanel({
                         throw staleEdit('acceptance');
                       }
                       // Emptied, the section folds away: it is drawn only when set.
-                      text.accept(await updateTask(task.id, { acceptance_md: next }));
+                      text.accept(
+                        await runOrThrow(action.run, {
+                          do: () => updateTask(task.id, { acceptance_md: next }),
+                          success: null,
+                          failure: 'Couldn’t save the acceptance criteria',
+                        }),
+                      );
                       onTaskEdited();
                     }}
                   />
@@ -1178,7 +1216,6 @@ export function TaskDetailPanel({
             sprints={sprints}
             maySetSprint={maySetSprint}
             sprintBusy={sprintBusy}
-            sprintError={sprintError}
             onSprintChange={(sprintId) => {
               void changeSprint(sprintId);
             }}

@@ -188,7 +188,8 @@ function TaskDrawerTask({
         byId={byId ?? new Map([[task.id, task]])}
         members={source?.members ?? memberMap}
         moving={actions.movingId === task.id}
-        moveError={actions.moveError}
+        // The view's own move error until it toasts; a local move toasts (LAI-1310).
+        moveError={source?.moveError}
         onMove={actions.onMove}
         onClose={onClose}
         expandHref={workroomHref(task.key)}

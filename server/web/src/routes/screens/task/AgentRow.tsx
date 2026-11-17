@@ -16,6 +16,7 @@ import {
 } from '../../../api/selected-agent.ts';
 import { getTask, type TaskSummary } from '../../../api/tasks.ts';
 import { nextReadOrder } from '../../../api/read-order.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   abortReason,
   beginAgentWrite,
@@ -119,6 +120,14 @@ export function AgentRow({
   const [pendingWrite, setPending] = useState<Pending | undefined>(undefined);
   const [errorFor, setError] = useState<{ taskId: string; words: string } | undefined>(undefined);
   const [confirmed, setConfirmed] = useState<Confirmed | undefined>(undefined);
+  /*
+   * Choosing an agent is an explicit action, so it ends in a toast
+   * (LAI-1310) — straight through `useToast`, because this row's write has
+   * its own lock, deadline and read-back that `useAction` would not know.
+   * No Undo: the write lock and the read-back make "put the old one back" a
+   * second selection, not a reversal. A refusal also stays under the field.
+   */
+  const toast = useToast();
   /*
    * **Each request is its own, and only the newest one on this visit may
    * answer** (LAI-538 review, two rounds). The drawer keeps this row mounted
@@ -240,15 +249,20 @@ export function AgentRow({
     };
     try {
       const written = await selectTaskAgent(taskId, to, ticket.signal);
+      const chosen = selectedAgentOf(written);
       if (mine()) {
         // Settled by the server's own answer, whatever the follow-up read does.
         setConfirmed({
           taskId,
-          agent: selectedAgentOf(written),
+          agent: chosen,
           version: written.updated_at,
           order: nextReadOrder(),
         });
       }
+      toast.show({
+        text: chosen === null ? 'Agent cleared' : `Agent set to ${agentLabel(chosen)}`,
+        tone: 'success',
+      });
       settle();
       // On this visit or after the reader left: read the task again, so
       // whoever looks at it next sees what the server now holds.
@@ -285,7 +299,9 @@ export function AgentRow({
         }
         return;
       }
-      if (mine()) setError({ taskId, words: selectionErrorWords(cause) });
+      const words = selectionErrorWords(cause);
+      toast.show({ text: 'Couldn’t change the agent', tone: 'error', detail: words });
+      if (mine()) setError({ taskId, words });
       settle();
       if (!mine()) onChanged();
     } finally {

@@ -2,7 +2,6 @@ import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
-import { ApiError } from '../../../api/errors.ts';
 import { childrenOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import {
   assignTask,
@@ -14,6 +13,8 @@ import {
   type TaskSummary,
 } from '../../../api/tasks.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
+import { useAction, type ActionOptions } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { statusOptions } from '../board/status-options.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -84,7 +85,9 @@ export function SubtasksSection({
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
+  /** A refusal that names a field (a 422) — the new subtask's title. */
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
@@ -118,26 +121,45 @@ export function SubtasksSection({
     setChildren(childrenOf(task.id, byId));
   }, [task.id, byId]);
 
-  const act = async (run: () => Promise<unknown>): Promise<void> => {
+  /** Re-read the children and the board, after a change or its Undo. */
+  const reread = (): void => {
+    setGeneration((n) => n + 1);
+    onChanged();
+  };
+
+  /**
+   * Every change to a child says what it did in a toast (LAI-1310), with Undo
+   * where the opposite call really reverses it. Resolves whether it saved.
+   */
+  const act = async <T,>(opts: ActionOptions<T>): Promise<boolean> => {
     setBusy(true);
     setError(undefined);
-    try {
-      await run();
-      setGeneration((n) => n + 1);
-      onChanged();
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : 'Could not change that. Try again.');
-    } finally {
-      setBusy(false);
-    }
+    const done = await run({
+      ...opts,
+      onError: (cause) => {
+        if (namesFields(cause) && cause instanceof Error) setError(cause.message);
+      },
+    });
+    setBusy(false);
+    if (done === undefined) return false;
+    reread();
+    return true;
   };
+
+  const nameOf = (id: string | null): string =>
+    id === null ? 'nobody' : (members.get(id)?.name ?? 'someone');
 
   const submit = (): void => {
     const next = title.trim();
     if (next === '') return;
-    void act(() => createTask(slug, { title: next, parent_task_id: task.id })).then(() => {
-      // Stays open for the next one, as Jira's does.
-      setTitle('');
+    // No Undo: taking a new task back is a delete, not the reverse of a create.
+    void act({
+      do: () => createTask(slug, { title: next, parent_task_id: task.id }),
+      success: (made) => `Subtask ${made.key} added`,
+      failure: 'Couldn’t add the subtask',
+    }).then((saved) => {
+      // Stays open for the next one, as Jira's does; a refused title stays to fix.
+      if (saved) setTitle('');
     });
   };
 
@@ -228,9 +250,18 @@ export function SubtasksSection({
                       display={<span className="dd-value">{statusNameOf(child, byStatusId)}</span>}
                       options={statusOptions(statuses)}
                       onChange={(to) => {
-                        if (to !== child.status_id) {
-                          void act(() => changeStatus(child.id, { status_id: to }));
-                        }
+                        if (to === child.status_id) return;
+                        const from = child.status_id;
+                        void act({
+                          do: () => changeStatus(child.id, { status_id: to }),
+                          success: (moved) => `${child.key} moved to ${moved.status_name}`,
+                          failure: `Couldn’t move ${child.key}`,
+                          undo: async () => {
+                            const back = await changeStatus(child.id, { status_id: from });
+                            reread();
+                            return `${child.key} back in ${back.status_name}`;
+                          },
+                        });
                       }}
                     />
                   </label>
@@ -288,9 +319,23 @@ export function SubtasksSection({
                         ]}
                         onChange={(value) => {
                           const next = value === '' ? null : value;
-                          if (next !== child.assignee_id) {
-                            void act(() => assignTask(child.id, next));
-                          }
+                          if (next === child.assignee_id) return;
+                          const was = child.assignee_id;
+                          void act({
+                            do: () => assignTask(child.id, next),
+                            success:
+                              next === null
+                                ? `${child.key} unassigned`
+                                : `${child.key} assigned to ${nameOf(next)}`,
+                            failure: `Couldn’t assign ${child.key}`,
+                            undo: async () => {
+                              await assignTask(child.id, was);
+                              reread();
+                              return was === null
+                                ? `${child.key} unassigned again`
+                                : `${child.key} back with ${nameOf(was)}`;
+                            },
+                          });
                         }}
                       />
                     </label>
@@ -316,7 +361,16 @@ export function SubtasksSection({
                       disabled={busy}
                       aria-label={`Detach ${child.key}`}
                       onClick={() => {
-                        void act(() => updateTask(child.id, { parent_task_id: null }));
+                        void act({
+                          do: () => updateTask(child.id, { parent_task_id: null }),
+                          success: `${child.key} detached from ${task.key}`,
+                          failure: `Couldn’t detach ${child.key}`,
+                          undo: async () => {
+                            await updateTask(child.id, { parent_task_id: task.id });
+                            reread();
+                            return `${child.key} is a subtask again`;
+                          },
+                        });
                       }}
                     >
                       <Icon name="close" size="tiny" />

@@ -19,6 +19,7 @@ import {
 } from './handoff-derive.ts';
 import { ageWords } from './execution-derive.ts';
 import { HandoffOfferDialog } from './HandoffOfferDialog.tsx';
+import { useAction } from '../toast/use-action.ts';
 import './agent.css';
 
 export interface HandoffSectionProps {
@@ -67,24 +68,36 @@ export function HandoffSection({
   const [busy, setBusy] = useState<'approve' | 'cancel' | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   const opener = useRef<HTMLButtonElement>(null);
+  const { run } = useAction();
   const close = useCallback(() => {
     setOpen(false);
     setError(undefined);
   }, []);
 
+  /*
+   * Approve and Withdraw each end in a toast (LAI-1310). No Undo: an approved
+   * hand-off has moved the claim, and a withdrawn offer is closed — neither
+   * has a reversing call. A refusal also stays in the dialog, in the words
+   * `handoffRefusal` maps it to, beside the buttons it is about.
+   */
   const write = (kind: 'approve' | 'cancel', target: HandoffOffer): void => {
+    const what = target.kind === 'recovery' ? 'Recovery' : 'Hand-off';
     setBusy(kind);
     setError(undefined);
-    (kind === 'approve' ? approveHandoff(target.id) : cancelHandoff(target.id))
-      .then((answer) => {
-        onOffer(answer);
-      })
-      .catch((cause: unknown) => {
+    void run({
+      do: () => (kind === 'approve' ? approveHandoff(target.id) : cancelHandoff(target.id)),
+      success: kind === 'approve' ? `${what} approved for ${taskKey}` : `${what} withdrawn`,
+      failure:
+        kind === 'approve'
+          ? `Couldn’t approve the ${what.toLowerCase()}`
+          : `Couldn’t withdraw the ${what.toLowerCase()}`,
+      onError: (cause) => {
         setError(handoffRefusal(cause));
-      })
-      .finally(() => {
-        setBusy(null);
-      });
+      },
+    }).then((answer) => {
+      setBusy(null);
+      if (answer !== undefined) onOffer(answer);
+    });
   };
 
   const saved =

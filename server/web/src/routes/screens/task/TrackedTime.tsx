@@ -6,11 +6,14 @@ import {
   getMyDay,
   startTimer,
   stopTimer,
+  undo,
   type Timer,
   type TimeMode,
 } from '../../../api/time.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { useRoute } from '../../use-route.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { dayIn } from '../my-day/my-day-derive.ts';
 import { timerClock, timerSeconds } from '../my-day/TimerControl.tsx';
 import {
@@ -46,8 +49,8 @@ export function TrackedTime({ taskId, refreshKey }: TrackedTimeProps) {
   const [day, setDay] = useState<{ mode: TimeMode; timer: Timer | null } | undefined>();
   const [reread, setReread] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | undefined>();
-  const [note, setNote] = useState<string | undefined>();
+  const { run } = useAction();
+  const toast = useToast();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -92,19 +95,80 @@ export function TrackedTime({ taskId, refreshKey }: TrackedTimeProps) {
     };
   }, [ticking]);
 
-  const act = (call: () => Promise<unknown>, what: string) => {
+  const again = (): void => {
+    setReread((n) => n + 1);
+  };
+
+  /*
+   * Start and Stop each end in a toast (LAI-1310); the bar's own note and
+   * alert went with them. Start's Undo discards the timer it just started;
+   * Stop's is the server's undo of that stop (LAI-831), offered only when the
+   * server recorded one.
+   */
+  const start = async (): Promise<void> => {
     setBusy(true);
-    setFailed(undefined);
-    setNote(undefined);
-    call()
-      .catch((err: unknown) => {
-        // Somebody's timer already runs (one per person): show it, not an error.
-        if (!(err instanceof ApiError && err.status === 409)) setFailed(what);
-      })
-      .finally(() => {
-        setBusy(false);
-        setReread((n) => n + 1);
-      });
+    await run({
+      do: async () => {
+        try {
+          await startTimer({ tz: readerZone(), task: taskId });
+          return 'started' as const;
+        } catch (err) {
+          // Somebody's timer already runs (one per person): the bar shows
+          // where once it reads again, which is the answer, not an error.
+          if (err instanceof ApiError && err.status === 409) return 'elsewhere' as const;
+          throw err;
+        }
+      },
+      success: (outcome) =>
+        outcome === 'started' ? 'Timer started' : 'Your timer runs on another task',
+      failure: 'Couldn’t start the timer',
+    });
+    setBusy(false);
+    again();
+  };
+
+  const stop = async (): Promise<void> => {
+    setBusy(true);
+    let undoId: string | undefined;
+    const out = await run({
+      do: async () => {
+        try {
+          const stopped = await stopTimer((id) => {
+            undoId = id;
+          });
+          return { minutes: stopped.entry.minutes };
+        } catch (err) {
+          // Under a minute saves nothing (`timer_too_short`): the server says
+          // discard it, so Stop does, and says so.
+          if (!(err instanceof ApiError && tooShort(err))) throw err;
+          await discardTimer();
+          return { minutes: null };
+        }
+      },
+      // Said below: whether there is an Undo is known only once the server answers.
+      success: null,
+      failure: 'Couldn’t stop the timer',
+    });
+    setBusy(false);
+    again();
+    if (out === undefined) return;
+    const id = undoId;
+    toast.show({
+      text:
+        out.minutes === null
+          ? 'Timer discarded — under a minute'
+          : `Timer stopped · ${shortDuration(out.minutes)} logged`,
+      tone: 'success',
+      ...(out.minutes === null || id === undefined
+        ? {}
+        : {
+            undo: async () => {
+              await undo(id);
+              again();
+              return 'Timer stop undone';
+            },
+          }),
+    });
   };
 
   const view = loaded?.taskId === taskId ? loaded.view : undefined;
@@ -139,23 +203,13 @@ export function TrackedTime({ taskId, refreshKey }: TrackedTimeProps) {
       </span>
 
       <span className="tt-end">
-        {note !== undefined && <span className="tt-note">{note}</span>}
-        {failed !== undefined && (
-          <span className="tt-note tt-failed" role="alert">
-            {failed}
-          </span>
-        )}
-
         {timer.kind === 'idle' && (
           <button
             type="button"
             className="tt-timer"
             disabled={busy}
             onClick={() => {
-              act(
-                () => startTimer({ tz: readerZone(), task: taskId }),
-                'Could not start the timer.',
-              );
+              void start();
             }}
           >
             <span className="tt-dot" aria-hidden="true" />
@@ -174,17 +228,7 @@ export function TrackedTime({ taskId, refreshKey }: TrackedTimeProps) {
               className="tt-timer"
               disabled={busy}
               onClick={() => {
-                act(async () => {
-                  try {
-                    await stopTimer();
-                  } catch (err) {
-                    // Under a minute saves nothing (`timer_too_short`): the
-                    // server says discard it, so Stop does, and says so.
-                    if (!(err instanceof ApiError && tooShort(err))) throw err;
-                    await discardTimer();
-                    setNote('Under a minute, so nothing was saved.');
-                  }
-                }, 'Could not stop the timer.');
+                void stop();
               }}
             >
               Stop

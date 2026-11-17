@@ -5,6 +5,7 @@ import {
   sendBackReview,
   type TaskRounds,
 } from '../../../api/review.ts';
+import { useAction } from '../../../components/toast/use-action.ts';
 
 /**
  * **A task's rounds, read once** (LAI-1117) — for the state panel, the proof
@@ -39,10 +40,10 @@ export function useTaskRounds(taskId: string, updatedAt: number): RoundsRead {
 
 export interface TaskReview {
   readonly deciding: 'accept' | 'send_back' | null;
-  readonly decideError: string | undefined;
   readonly accept: () => void;
   /** The Send back dialog is open. */
   readonly sendingBack: boolean;
+  /** The server's reason the last send-back was refused, for the dialog's reason field. */
   readonly sendBackError: string | undefined;
   /** Open the dialog; focus returns to `opener` when it closes. */
   readonly openSendBack: (opener: HTMLElement | null) => void;
@@ -53,49 +54,52 @@ export interface TaskReview {
 
 /**
  * **Accept and Send back** (D-129 item 5; *Accept*, D-146): the Review
- * screen's endpoints, offered to the reader the server lets decide. A refusal
- * is shown as the server words it. `onDecided` runs after either succeeds.
+ * screen's endpoints, offered to the reader the server lets decide. Either
+ * ends in a toast (LAI-1310) — *LAI-12 accepted*, or the refusal as the
+ * server words it. No Undo: a decision is a new round's start, not a field
+ * the server can put back. `onDecided` runs after either succeeds.
+ *
+ * A refused send-back also stays in its dialog, under the reason, so the
+ * reason somebody wrote is still there to fix and send again.
  */
-export function useTaskReview(taskId: string, onDecided: () => void): TaskReview {
+export function useTaskReview(taskId: string, taskKey: string, onDecided: () => void): TaskReview {
+  const { run } = useAction();
   const [deciding, setDeciding] = useState<'accept' | 'send_back' | null>(null);
-  const [decideError, setDecideError] = useState<string | undefined>(undefined);
   const [sendingBack, setSendingBack] = useState(false);
   const [sendBackError, setSendBackError] = useState<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
   const accept = (): void => {
     setDeciding('accept');
-    setDecideError(undefined);
-    acceptReview(taskId)
-      .then(onDecided)
-      .catch((cause: unknown) => {
-        setDecideError(
-          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
-        );
-      })
-      .finally(() => {
-        setDeciding(null);
-      });
+    void run({
+      do: () => acceptReview(taskId),
+      success: `${taskKey} accepted`,
+      failure: `Couldn’t accept ${taskKey}`,
+    }).then((done) => {
+      setDeciding(null);
+      if (done !== undefined) onDecided();
+    });
   };
   const sendBack = (reason: string): void => {
     setDeciding('send_back');
     setSendBackError(undefined);
-    sendBackReview(taskId, reason)
-      .then(() => {
-        setSendingBack(false);
-        onDecided();
-      })
-      .catch((cause: unknown) => {
+    void run({
+      do: () => sendBackReview(taskId, reason),
+      success: `${taskKey} sent back`,
+      failure: `Couldn’t send ${taskKey} back`,
+      onError: (cause) => {
         setSendBackError(
           cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
         );
-      })
-      .finally(() => {
-        setDeciding(null);
-      });
+      },
+    }).then((done) => {
+      setDeciding(null);
+      if (done === undefined) return;
+      setSendingBack(false);
+      onDecided();
+    });
   };
   return {
     deciding,
-    decideError,
     accept,
     sendingBack,
     sendBackError,

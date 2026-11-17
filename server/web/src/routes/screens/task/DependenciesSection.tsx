@@ -1,7 +1,6 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useState } from 'react';
-import { ApiError } from '../../../api/errors.ts';
 import {
   addDependency,
   removeDependency,
@@ -14,6 +13,8 @@ import type { Theme } from '../../../theme/theme.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 import './task-panel.css';
 
 export interface DependenciesSectionProps {
@@ -53,27 +54,48 @@ export function DependenciesSection({
   const [adding, setAdding] = useState(false);
   const [picked, setPicked] = useState('');
   const [busy, setBusy] = useState(false);
+  /** A refusal that names a field (a 422), shown under the picker. */
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
+  const keyOf = (id: string): string => byId.get(id)?.key ?? 'a task';
 
-  const act = async (run: () => Promise<unknown>): Promise<void> => {
+  /*
+   * Linking and unlinking each say so in a toast with Undo — the opposite
+   * call, which the server really reverses (LAI-1310).
+   *
+   * The server refuses a cycle and a self-reference with a message written
+   * for a person — *"that would make a cycle"* — and the error toast carries
+   * it as its detail, which beats inventing one. The client does not
+   * pre-judge either: it would need the whole graph to know, and it has one
+   * page of it.
+   */
+  const link = async (blockerId: string, on: boolean): Promise<void> => {
     setBusy(true);
     setError(undefined);
-    try {
-      await run();
-      onChanged();
-      setAdding(false);
-      setPicked('');
-    } catch (cause) {
-      /*
-       * The server refuses a cycle and a self-reference with a message written
-       * for a person — *"that would make a cycle"* — and repeating it beats
-       * inventing one. The client does not pre-judge either: it would need the
-       * whole graph to know, and it has one page of it.
-       */
-      setError(cause instanceof ApiError ? cause.message : 'Could not change that. Try again.');
-    } finally {
-      setBusy(false);
-    }
+    const blocker = keyOf(blockerId);
+    const write = (adding: boolean): Promise<unknown> =>
+      adding ? addDependency(task.id, blockerId) : removeDependency(task.id, blockerId);
+    const done = await run({
+      do: async () => {
+        await write(on);
+        return true;
+      },
+      success: on ? `${task.key} blocked by ${blocker}` : `${blocker} no longer blocks ${task.key}`,
+      failure: on ? `Couldn’t link ${blocker}` : `Couldn’t unlink ${blocker}`,
+      undo: async () => {
+        await write(!on);
+        onChanged();
+        return on ? `${blocker} unlinked again` : `${task.key} blocked by ${blocker} again`;
+      },
+      onError: (cause) => {
+        if (namesFields(cause) && cause instanceof Error) setError(cause.message);
+      },
+    });
+    setBusy(false);
+    if (done === undefined) return;
+    onChanged();
+    setAdding(false);
+    setPicked('');
   };
 
   /** What this task could still be blocked by: everything loaded, minus itself
@@ -119,7 +141,7 @@ export function DependenciesSection({
                 {...(mayEdit
                   ? {
                       onRemove: () => {
-                        void act(() => removeDependency(task.id, id));
+                        void link(id, false);
                       },
                     }
                   : {})}
@@ -155,7 +177,7 @@ export function DependenciesSection({
                 aria-disabled={picked === '' ? true : undefined}
                 onClick={() => {
                   if (picked === '') return;
-                  void act(() => addDependency(task.id, picked));
+                  void link(picked, true);
                 }}
               >
                 {busy && <Spinner size="sm" />}

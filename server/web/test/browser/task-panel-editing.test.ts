@@ -18,11 +18,13 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
+import { pick } from './dropdown.ts';
 import {
   asServed,
   closeBrowser,
   fakeStream,
   open,
+  refuse,
   setTheme,
   until,
   type ApiStub,
@@ -1393,6 +1395,96 @@ void describe('the editor is not part of the board (LAI-827)', () => {
       assert.equal(scripts.filter((s) => s.includes('RichEditor')).length, 1, 'no editor chunk');
       // CSP: style-src-elem 'self' — the editor must not inject a <style>.
       assert.equal(await h.page.evaluate(() => document.querySelectorAll('style').length), styles);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Every action in the drawer says how it went** (LAI-1310): a picker change
+ * is a toast with Undo where the server can reverse it, a comment says it was
+ * posted, and a refusal is an error toast with the server's own sentence —
+ * while a refused comment keeps its draft.
+ */
+void describe('the drawer’s actions end in a toast (LAI-1310)', () => {
+  const toast = (h: Harness, text: string): Locator =>
+    h.page.locator('[data-toast]', { hasText: text });
+
+  void test('a priority change says what it set, and Undo puts the old one back', async () => {
+    const server: Server = { t3: subject({ priority: 'p2' }) };
+    const h = await panel(server);
+    try {
+      await pick(h.page.locator('.drawer .meta-prio [role="combobox"]'), 'p1');
+      const said = toast(h, 'Priority set to P1');
+      await said.waitFor({ timeout: 5_000 });
+      assert.equal(await said.getAttribute('data-tone'), 'success');
+      assert.deepEqual(patches(h)[0]?.body, { priority: 'p1' });
+
+      // The server can really reverse it — the same PATCH with the old value.
+      await said.getByRole('button', { name: 'Undo' }).click();
+      await until(() => patches(h).length === 2);
+      assert.deepEqual(patches(h)[1]?.body, { priority: 'p2' });
+      await toast(h, 'Priority back to P2').waitFor({ timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('posting a comment says so', async () => {
+    const server: Server = { t3: subject() };
+    const h = await panel(server);
+    try {
+      await h.page.getByRole('button', { name: /Add a comment/ }).click();
+      const editor = h.page.locator('.panel-composer .rich-editor');
+      await editor.waitFor({ timeout: 10_000 });
+      await content(editor).click();
+      await h.page.keyboard.type('Looks right');
+      await editor.getByRole('button', { name: 'Comment' }).click();
+      const said = toast(h, 'Comment posted');
+      await said.waitFor({ timeout: 5_000 });
+      assert.equal(await said.getAttribute('data-tone'), 'success');
+      // A comment has no reversing call: no Undo is offered.
+      assert.equal(await said.getByRole('button', { name: 'Undo' }).count(), 0, 'a fake Undo');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused comment is an error toast in the server’s words, and the draft stays', async () => {
+    const server: Server = { t3: subject() };
+    const base = stub(server);
+    const h = await open(
+      URL,
+      {
+        ...base,
+        '/api/v1/tasks/t3/comments': (call: { method: string }) =>
+          call.method === 'POST'
+            ? refuse(403, 'forbidden', 'Only members of this space may comment.')
+            : { data: [], next_cursor: null },
+      },
+      { before: fakeStream },
+    );
+    try {
+      await h.page.locator('[data-section="description"] .md h2').waitFor({ timeout: 20_000 });
+      await h.page.getByRole('button', { name: /Add a comment/ }).click();
+      const editor = h.page.locator('.panel-composer .rich-editor');
+      await editor.waitFor({ timeout: 10_000 });
+      await content(editor).click();
+      await h.page.keyboard.type('Keep me');
+      await editor.getByRole('button', { name: 'Comment' }).click();
+
+      const said = h.page.locator('[data-toast][data-tone="error"]', {
+        hasText: 'Couldn’t post the comment',
+      });
+      await said.waitFor({ timeout: 5_000 });
+      assert.match(
+        await said.locator('[role="alert"]').innerText(),
+        /Only members of this space may comment\./,
+      );
+      // The composer is still open with what was typed.
+      assert.equal(await editor.isVisible(), true, 'the composer closed on a refusal');
+      assert.match(await content(editor).innerText(), /Keep me/);
     } finally {
       await h.close();
     }

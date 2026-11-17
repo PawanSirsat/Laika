@@ -78,10 +78,9 @@ const MUTATING_HOOKS: Readonly<Record<string, readonly string[]>> = {
  * needs no toast of its own (e.g. it hands the write to a parent that toasts).
  */
 const ALLOWED_WITHOUT_TOAST: Readonly<Record<string, string>> = {
-  'components/agent/HandoffSection.tsx': 'LAI-1310: not migrated yet',
-  'components/agent/PingButton.tsx': 'LAI-1310: not migrated yet',
   'components/create-task/CreateTaskDialog.tsx': 'LAI-1310: not migrated yet',
-  'components/drawer/TaskDrawerHost.tsx': 'LAI-1310: not migrated yet',
+  'components/drawer/TaskDrawerHost.tsx':
+    'moves go through useLocalMoves, which toasts (use-space-reads.ts); the panel it renders reports its own actions',
   'routes/screens/board/AssignControl.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/board/ColumnComposer.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/board/TagPicker.tsx': 'LAI-1310: not migrated yet',
@@ -124,21 +123,10 @@ const ALLOWED_WITHOUT_TOAST: Readonly<Record<string, string>> = {
   'routes/screens/space-settings/HandoffPolicySection.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/space-settings/SpaceSettingsScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/sprints/SprintsScreen.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/AgentRow.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/AttachmentsSection.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/DependenciesSection.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/FeedComment.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/ForecastSection.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/LinksCard.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/SubtasksSection.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/TaskMeta.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/TokensSection.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/task/TrackedTime.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/tokens/TokensScreen.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/unlisted/UnlistedList.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/usage/BudgetsCard.tsx': 'LAI-1310: not migrated yet',
   'routes/screens/usage/PlanLimitCard.tsx': 'LAI-1310: not migrated yet',
-  'routes/screens/workroom/Workroom.tsx': 'LAI-1310: not migrated yet',
 };
 
 /** Top-level declarations: `[export] [async] function name` or `[export] const name =`. */

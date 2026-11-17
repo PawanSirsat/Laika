@@ -26,6 +26,8 @@ import { createdViaLine, priorityWords, pullRequestLine } from './rail-derive.ts
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { DisabledReason } from '../../../components/tooltip/DisabledReason.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
+import { namesFields } from '../../../components/toast/action-model.ts';
 import './task-panel.css';
 
 export interface TaskMetaProps {
@@ -41,10 +43,8 @@ export interface TaskMetaProps {
   readonly maySetSprint: boolean;
   /** `null` clears the sprint. */
   readonly onSprintChange: (sprintId: string | null) => void;
-  /** A sprint change is in flight. */
+  /** A sprint change is in flight; it says how it went in a toast (LAI-1310). */
   readonly sprintBusy: boolean;
-  /** The server's reason the last sprint change failed. */
-  readonly sprintError: string | undefined;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly meId: string | undefined;
@@ -62,8 +62,11 @@ export interface TaskMetaProps {
    * pull request when the task itself records neither.
    */
   readonly latestRound?: Round | undefined;
-  /** Into a project status, by id (LAI-739). */
-  readonly onMove: (taskId: string, toStatusId: string) => void;
+  /**
+   * Into a project status, by id (LAI-739). The status it leaves is passed
+   * too, so the move's toast can offer Undo back to it (LAI-1310).
+   */
+  readonly onMove: (taskId: string, toStatusId: string, fromStatusId?: string) => void;
   readonly onAssigned: () => void;
   readonly onTaskEdited: () => void;
   readonly onTagsChanged: (tags: readonly string[]) => void;
@@ -154,7 +157,6 @@ export function TaskMeta({
   maySetSprint,
   onSprintChange,
   sprintBusy,
-  sprintError,
   members,
   theme,
   meId,
@@ -186,7 +188,9 @@ export function TaskMeta({
 
   const [detailsOpen, setDetailsOpen] = useState(() => readOpen('details', true));
   const [devOpen, setDevOpen] = useState(() => readOpen('development', true));
+  /** A refusal that names a field (a 422) — the field is where to fix it. */
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   // The words that name each rail control (LAI-726), pointed at explicitly with
   // `aria-labelledby`, so the name never rests on how a browser reads a label
   // that also holds the control's value.
@@ -203,15 +207,37 @@ export function TaskMeta({
     .map((m) => m?.name)
     .filter((n): n is string => n !== undefined);
 
-  /** A field edit, with the server's reason shown when it refuses. */
-  const edit = async (patch: Parameters<typeof updateTask>[1]): Promise<void> => {
+  /**
+   * A field changed from a picker, which is an explicit action: it says what
+   * it did in a toast, with Undo back to the old value — the same PATCH, so
+   * the server can really reverse it (LAI-1310). Resolves whether it saved.
+   */
+  const edit = async (
+    patch: Parameters<typeof updateTask>[1],
+    words: {
+      readonly success: string;
+      readonly failure: string;
+      readonly undo: Parameters<typeof updateTask>[1];
+      readonly undone: string;
+    },
+  ): Promise<boolean> => {
     setError(undefined);
-    try {
-      await updateTask(task.id, patch);
-      onTaskEdited();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save that. Try again.');
-    }
+    const saved = await run({
+      do: () => updateTask(task.id, patch),
+      success: words.success,
+      failure: words.failure,
+      undo: async () => {
+        await updateTask(task.id, words.undo);
+        onTaskEdited();
+        return words.undone;
+      },
+      onError: (cause) => {
+        if (namesFields(cause) && cause instanceof Error) setError(cause.message);
+      },
+    });
+    if (saved === undefined) return false;
+    onTaskEdited();
+    return true;
   };
 
   const discovered = task.discovered_from === null ? undefined : byId.get(task.discovered_from);
@@ -268,7 +294,7 @@ export function TaskMeta({
             display={<span className="dd-value">{statusNameOf(task, byStatusId)}</span>}
             options={statusOptions(statuses)}
             onChange={(to) => {
-              if (to !== task.status_id) onMove(task.id, to);
+              if (to !== task.status_id) onMove(task.id, to, task.status_id);
             }}
           />
           <span className="meta-status-caret" aria-hidden="true">
@@ -296,7 +322,7 @@ export function TaskMeta({
               className="meta-review"
               disabled={moving}
               onClick={() => {
-                onMove(task.id, reviewColumn.id);
+                onMove(task.id, reviewColumn.id, task.status_id);
               }}
             >
               Move to {reviewColumn.name}
@@ -427,7 +453,17 @@ export function TaskMeta({
                       icon: <PriorityIcon priority={p} />,
                     }))}
                     onChange={(value) => {
-                      void edit({ priority: value });
+                      if (value === task.priority) return;
+                      const was = task.priority;
+                      void edit(
+                        { priority: value },
+                        {
+                          success: `Priority set to ${value.toUpperCase()}`,
+                          failure: 'Couldn’t change the priority',
+                          undo: { priority: was },
+                          undone: `Priority back to ${was.toUpperCase()}`,
+                        },
+                      );
                     }}
                   />
                 </label>
@@ -488,11 +524,6 @@ export function TaskMeta({
                   />
                 </label>
               </div>
-              {sprintError !== undefined && (
-                <p className="meta-sub" role="alert">
-                  {sprintError}
-                </p>
-              )}
             </div>
 
             <div className="meta-row">
@@ -527,7 +558,21 @@ export function TaskMeta({
             <OutsideIdRow
               value={outsideId}
               mayEdit={mayEdit}
-              onChange={(ref) => edit({ external_ref: ref })}
+              onChange={(ref) =>
+                edit(
+                  { external_ref: ref },
+                  {
+                    success: ref === null ? 'Outside id cleared' : `Outside id set to ${ref}`,
+                    failure: 'Couldn’t save the outside id',
+                    // The whole field as it was — it may have held a pull request's ref.
+                    undo: { external_ref: task.external_ref },
+                    undone:
+                      outsideId === null
+                        ? 'Outside id cleared again'
+                        : `Outside id back to ${outsideId}`,
+                  },
+                )
+              }
             />
 
             <div className="meta-row">
@@ -695,7 +740,8 @@ interface OutsideIdRowProps {
   /** The outside id the card carries, or `null` — never a pull request's ref. */
   readonly value: string | null;
   readonly mayEdit: boolean;
-  readonly onChange: (ref: string | null) => Promise<void>;
+  /** Resolves whether it saved: a refused save keeps the field open. */
+  readonly onChange: (ref: string | null) => Promise<boolean>;
 }
 
 /**
@@ -713,8 +759,7 @@ function OutsideIdRow({ value, mayEdit, onChange }: OutsideIdRowProps) {
   const run = async (ref: string | null): Promise<void> => {
     setBusy(true);
     try {
-      await onChange(ref);
-      setEditing(false);
+      if (await onChange(ref)) setEditing(false);
     } finally {
       setBusy(false);
     }

@@ -53,7 +53,6 @@ export interface StateHeroProps {
   /** Offer Accept / Send back (D-129 item 5; one word, D-146); the server still decides. */
   readonly mayDecide: boolean;
   readonly deciding: 'accept' | 'send_back' | null;
-  readonly decideError: string | undefined;
   readonly onAccept: () => void;
   readonly onSendBack: (opener: HTMLElement) => void;
   /** The rail's Ping, when this reader may ping the agent; nothing otherwise. */
@@ -264,7 +263,6 @@ export function StateHero({
   claimNow,
   mayDecide,
   deciding,
-  decideError,
   onAccept,
   onSendBack,
   ping,
@@ -333,11 +331,6 @@ export function StateHero({
         {!mayDecide && (
           <p className="hero-why">
             Only the assignee, a space admin or an organisation admin decides this one.
-          </p>
-        )}
-        {decideError !== undefined && (
-          <p className="hero-error" role="alert">
-            {decideError}
           </p>
         )}
         {latest === undefined ? (
