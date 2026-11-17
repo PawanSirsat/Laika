@@ -9,11 +9,16 @@
  * them, with the request context's `path`). The round trip itself, against a
  * fake tenant, is `microsoft-callback.test.ts` (LAI-1317).
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { parseMicrosoftSso, tenantProblem, type MicrosoftSso } from '../../src/auth/sso.ts';
+import {
+  CONSUMER_TENANT_ID,
+  parseMicrosoftSso,
+  tenantProblem,
+  type MicrosoftSso,
+} from '../../src/auth/sso.ts';
 import { readEnv, EnvError } from '../../src/env.ts';
-import { invites, orgs, users } from '../../src/db/schema.ts';
+import { accounts, invites, orgs, users } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   authHarness,
@@ -24,6 +29,7 @@ import {
   signUp,
   type AuthHarness,
 } from '../helpers/auth.ts';
+import { fakeMicrosoft, signInWithMicrosoft } from '../helpers/fake-microsoft.ts';
 
 const TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47';
 const SSO: MicrosoftSso = {
@@ -44,6 +50,7 @@ const CALLBACK = { path: '/callback/:id' };
 
 let h: AuthHarness | undefined;
 afterEach(() => {
+  vi.unstubAllGlobals();
   h?.close();
   h = undefined;
 });
@@ -148,12 +155,38 @@ describe('the env contract: all three LAIKA_MICROSOFT_* or none', () => {
     },
   );
 
-  it('takes a tenant GUID or a verified domain, and nothing else', () => {
+  it('takes a tenant GUID, and nothing else — a domain name is refused (LAI-1317)', () => {
     expect(tenantProblem(TENANT)).toBeNull();
-    expect(tenantProblem('contoso.onmicrosoft.com')).toBeNull();
-    expect(tenantProblem('kvelld.co.za')).toBeNull();
+    expect(tenantProblem(TENANT.toUpperCase())).toBeNull();
+    // Sign-in compares the token's `tid`, a GUID: a domain leaves nothing to compare.
+    expect(tenantProblem('contoso.onmicrosoft.com')).toMatch(/not a tenant id.*domain name/);
+    expect(tenantProblem('kvelld.co.za')).toMatch(/not a tenant id.*domain name/);
     expect(tenantProblem('not a tenant')).toMatch(/not a tenant id/);
     expect(tenantProblem('')).toMatch(/not a tenant id/);
+  });
+
+  it('refuses Microsoft’s personal-account tenant at boot (LAI-1317)', () => {
+    expect(tenantProblem(CONSUMER_TENANT_ID)).toMatch(/personal accounts/);
+    expect(() =>
+      readEnv({
+        ...ENV_BASE,
+        LAIKA_MICROSOFT_CLIENT_ID: SSO.clientId,
+        LAIKA_MICROSOFT_CLIENT_SECRET: SSO.clientSecret,
+        LAIKA_MICROSOFT_TENANT_ID: CONSUMER_TENANT_ID.toUpperCase(),
+      }),
+    ).toThrow(/LAIKA_MICROSOFT_TENANT_ID.*personal accounts/);
+  });
+
+  it('refuses a domain name at boot, and keeps a GUID lowercased', () => {
+    const env = (tenant: string) =>
+      readEnv({
+        ...ENV_BASE,
+        LAIKA_MICROSOFT_CLIENT_ID: SSO.clientId,
+        LAIKA_MICROSOFT_CLIENT_SECRET: SSO.clientSecret,
+        LAIKA_MICROSOFT_TENANT_ID: tenant,
+      });
+    expect(() => env('kvelld.co.za')).toThrow(/LAIKA_MICROSOFT_TENANT_ID.*not a tenant id/);
+    expect(env(TENANT.toUpperCase()).sso?.tenantId).toBe(TENANT);
   });
 });
 
@@ -177,6 +210,8 @@ describe('an SSO-only instance refuses every password path', () => {
   it.each([
     ['/api/v1/invites/accept', { token: 'inv_x', name: 'A', password: 'a-long-password-1' }],
     ['/api/v1/password-resets/consume', { token: 'r', password: 'a-long-password-1' }],
+    // LAI-1317: refused before the route looks for the person, or a session.
+    ['/api/v1/users/nobody/reset-link', {}],
   ])('%s answers 403 sso_only', async (path, body) => {
     const harness = sso();
     seedOrg(harness.db, true);
@@ -188,6 +223,37 @@ describe('an SSO-only instance refuses every password path', () => {
     expect(res.status).toBe(403);
     const json = (await res.json()) as { error: { details: { reason?: string }; message: string } };
     expect(json.error.details.reason).toBe('sso_only');
+    expect(json.error.message).toMatch(/Microsoft only/);
+  });
+
+  it.each([
+    [
+      '/api/v1/auth/sign-in/email',
+      { email: 'existing-owner@example.test', password: 'x'.repeat(12) },
+    ],
+    [
+      '/api/v1/auth/sign-up/email',
+      { email: 'a@example.test', password: 'x'.repeat(12), name: 'A' },
+    ],
+    ['/api/v1/auth/request-password-reset', { email: 'existing-owner@example.test' }],
+    ['/api/v1/auth/reset-password', { newPassword: 'x'.repeat(12), token: 'any' }],
+    [
+      '/api/v1/auth/change-password',
+      { currentPassword: 'x'.repeat(12), newPassword: 'y'.repeat(12) },
+    ],
+  ])('better-auth’s %s answers 403 sso_only (LAI-1317)', async (path, body) => {
+    const harness = sso();
+    seedOrg(harness.db, true);
+    const res = await harness.app.request(path, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as {
+      error: { details: { auth_code?: string }; message: string };
+    };
+    expect(json.error.details.auth_code).toBe('sso_only');
     expect(json.error.message).toMatch(/Microsoft only/);
   });
 
@@ -308,6 +374,10 @@ describe('a Microsoft sign-in joins only with an invite for that address', () =>
   });
 
   it('admits the invited address, case-insensitively, and spends the invite with its role', async () => {
+    // Through the real callback (LAI-1317): better-auth creates the user and
+    // the account between the two hooks, not this test.
+    const ms = fakeMicrosoft(SSO);
+    vi.stubGlobal('fetch', ms.fetchImpl);
     const harness = sso();
     const { orgId, ownerId } = seedOrg(harness.db, true);
     seedInvite(harness.db, {
@@ -316,24 +386,41 @@ describe('a Microsoft sign-in joins only with an invite for that address', () =>
       email: 'new.admin@example.test',
       orgRole: 'admin',
     });
-    const { userBefore, userAfter } = hooks(harness);
 
-    const user = newUser('New.Admin@Example.test');
-    const result = (await userBefore(user, CALLBACK as never)) as { data: { email: string } };
-    expect(result.data.email).toBe('new.admin@example.test');
+    const joined = await signInWithMicrosoft(harness.app, ms, {
+      email: 'New.Admin@Example.test',
+      name: 'New Admin',
+      oid: 'oid-new-admin',
+    });
+    expect(joined.error).toBeNull();
+    expect(joined.cookie).not.toBe('');
 
-    // better-auth writes the row between the two hooks.
-    harness.db
-      .insert(users)
-      .values({ ...user, email: result.data.email, orgRole: 'member', emailVerified: true })
-      .run();
-    await userAfter({ ...user, email: result.data.email }, CALLBACK as never);
+    const user = harness.db
+      .select()
+      .from(users)
+      .where(eq(users.email, 'new.admin@example.test'))
+      .get();
+    expect(user?.orgRole).toBe('admin');
+    expect(harness.db.select().from(invites).get()?.acceptedBy).toBe(user?.id);
+    const linked = harness.db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.userId, user?.id ?? ''))
+      .all();
+    expect(linked.map((a) => [a.providerId, a.accountId])).toEqual([
+      ['microsoft', 'oid-new-admin'],
+    ]);
 
-    expect(harness.db.select().from(users).where(eq(users.id, user.id)).get()?.orgRole).toBe(
-      'admin',
-    );
-    const invite = harness.db.select().from(invites).get();
-    expect(invite?.acceptedBy).toBe(user.id);
+    // Spent: the same address a second time is a sign-in, not a second join.
+    const again = await signInWithMicrosoft(harness.app, ms, {
+      email: 'new.admin@example.test',
+      name: 'New Admin',
+      oid: 'oid-new-admin',
+    });
+    expect(again.error).toBeNull();
+    expect(
+      harness.db.select().from(users).where(eq(users.email, 'new.admin@example.test')).all(),
+    ).toHaveLength(1);
   });
 
   it('leaves internal creation alone — first boot has no request behind it', async () => {
@@ -381,21 +468,28 @@ describe('an existing person links their Microsoft account by email', () => {
 
 describe('a deactivated account gets no session from Microsoft', () => {
   it('refuses the session, and allows an active one', async () => {
+    // Through the real callback (LAI-1317), so it is the session better-auth
+    // would have issued that is refused, not a hand-made one.
+    const ms = fakeMicrosoft(SSO);
+    vi.stubGlobal('fetch', ms.fetchImpl);
     const harness = sso();
     const { ownerId } = seedOrg(harness.db, true);
-    const { sessionBefore } = hooks(harness);
-    const session = {
-      id: newId(),
-      userId: ownerId,
-      token: 't',
-      expiresAt: new Date(Date.now() + 60_000),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const owner = { email: 'Existing-Owner@example.test', name: 'Owner', oid: 'oid-owner' };
 
-    await expect(sessionBefore(session as never)).resolves.toBeDefined();
+    const active = await signInWithMicrosoft(harness.app, ms, owner);
+    expect(active.error).toBeNull();
+    expect(active.cookie).not.toBe('');
 
     harness.db.update(users).set({ isActive: 0 }).where(eq(users.id, ownerId)).run();
-    expect(await codeOf(() => sessionBefore(session as never))).toBe('forbidden');
+    const sessionsBefore = harness.t.sqlite.prepare('SELECT COUNT(*) AS n FROM sessions').get() as {
+      n: number;
+    };
+
+    const refused = await signInWithMicrosoft(harness.app, ms, owner);
+    expect(refused.error).toBe('forbidden');
+    expect(refused.cookie).toBe('');
+    expect(harness.t.sqlite.prepare('SELECT COUNT(*) AS n FROM sessions').get()).toEqual(
+      sessionsBefore,
+    );
   });
 });

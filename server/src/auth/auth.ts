@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { APIError, createAuthMiddleware, getOAuthState } from 'better-auth/api';
+import { microsoft, type MicrosoftOptions } from 'better-auth/social-providers';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
@@ -8,7 +9,14 @@ import * as schema from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { consumeInvite, ownerInviteRefused, removeOrphanedInvitee } from '../services/invites.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
-import { inviteForEmail, userIsActive, type MicrosoftSso } from './sso.ts';
+import {
+  hasMicrosoftAccount,
+  idTokenProblem,
+  inviteForEmail,
+  userIsActive,
+  type IdTokenRefusal,
+  type MicrosoftSso,
+} from './sso.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
 import { trustedOriginsFor } from './trusted-origins.ts';
 
@@ -76,16 +84,24 @@ export interface CreateAuthOptions {
   now?: () => number;
 }
 
-/** The password endpoints, refused when Microsoft SSO is on (LAI-1238). */
+/**
+ * The password endpoints, refused when Microsoft SSO is on (LAI-1238). Every
+ * one is an HTTP route of better-auth 1.7.1's; `set-password` is server-only
+ * there and `forget-password` is gone, so neither is listed (LAI-1317).
+ */
 export const PASSWORD_AUTH_PATHS = [
   '/sign-in/email',
   '/sign-up/email',
   '/request-password-reset',
-  '/forget-password',
   '/reset-password',
   '/change-password',
-  '/set-password',
 ] as const;
+
+/** What the `before` hook may hand better-auth: a rewritten body, or nothing. */
+type BeforeHookResult = { context: { body: Record<string, unknown> } } | undefined;
+
+/** The routes that start a Microsoft sign-in or link, whose `scopes` are ignored (LAI-1317). */
+const SOCIAL_START_PATHS: readonly string[] = ['/sign-in/social', '/link-social'];
 
 /** What a password endpoint answers on an SSO-only instance. */
 export const SSO_ONLY_MESSAGE =
@@ -93,6 +109,24 @@ export const SSO_ONLY_MESSAGE =
 
 function ssoOnlyError(): APIError {
   return new APIError('FORBIDDEN', { code: 'sso_only', message: SSO_ONLY_MESSAGE });
+}
+
+/**
+ * Refuse a Microsoft sign-in whose id token is not this directory's (LAI-1317).
+ *
+ * On the callback the browser is sent where better-auth sends any failed
+ * sign-in — the error page the sign-in asked for — with the code as
+ * `?error=`, so the screen can say which. better-auth's own failures there are
+ * `c.redirect(...)`, which is this same 302 `APIError`. Anywhere else (no
+ * OAuth state in the request) it is a plain 401 with the code.
+ */
+async function idTokenRefused(code: IdTokenRefusal): Promise<APIError> {
+  const errorURL = (await getOAuthState())?.errorURL;
+  if (typeof errorURL !== 'string' || errorURL === '') {
+    return new APIError('UNAUTHORIZED', { code, message: `Microsoft sign-in refused: ${code}` });
+  }
+  const separator = errorURL.includes('?') ? '&' : '?';
+  return new APIError('FOUND', undefined, { location: `${errorURL}${separator}error=${code}` });
 }
 
 /** The path of a better-auth call that came over HTTP; `undefined` for an internal one. */
@@ -115,6 +149,32 @@ export function createAuth(options: CreateAuthOptions) {
 
   const now = options.now ?? (() => Date.now());
   const sso = options.sso ?? null;
+
+  /*
+   * Microsoft Entra ID, one tenant (LAI-1238). No profile photo: it is a
+   * second call to Microsoft Graph for a picture Laika does not draw.
+   *
+   * **No id-token sign-in** (LAI-1317). better-auth also takes a bare id token
+   * at `POST /sign-in/social` (and `/link-social`), verified against
+   * Microsoft's published keys, with the nonce optional — so any copy of a
+   * person's id token less than an hour old, `accounts.id_token` included,
+   * would buy a 30-day session, and each attempt would make Laika fetch keys.
+   * Laika's only sign-in is the code flow through the callback; this answers
+   * the other `ID_TOKEN_NOT_SUPPORTED`.
+   */
+  const microsoftOptions: MicrosoftOptions | null =
+    sso === null
+      ? null
+      : {
+          clientId: sso.clientId,
+          clientSecret: sso.clientSecret,
+          tenantId: sso.tenantId,
+          disableProfilePhoto: true,
+          prompt: 'select_account',
+          disableIdTokenSignIn: true,
+        };
+  // The stock provider, kept for its own decoding once `idTokenProblem` passes.
+  const microsoftDecoder = microsoftOptions === null ? null : microsoft(microsoftOptions);
 
   return betterAuth({
     appName: 'Laika',
@@ -154,10 +214,12 @@ export function createAuth(options: CreateAuthOptions) {
       modelName: 'accounts',
       /**
        * **Microsoft's access and refresh tokens are encrypted at rest**
-       * (LAI-1317). Sign-in asks for `offline_access`, so the refresh token is
-       * a long-lived credential to the person's Microsoft account; in clear it
-       * would be one database copy away from everyone's mailbox scopes.
-       * better-auth encrypts both with `LAIKA_SECRET` on every write and
+       * (LAI-1317). Sign-in asks for better-auth's fixed Microsoft scopes —
+       * `openid profile email User.Read offline_access`, nothing a client adds
+       * (see the `before` hook) — so the access token reads the person's own
+       * Graph profile, and `offline_access` makes the refresh token a
+       * long-lived way to mint more. In clear, both would be one database copy
+       * away from everyone's. better-auth encrypts both with `LAIKA_SECRET` on every write and
        * decrypts on its own reads; a row written in clear before this still
        * reads, and the next sign-in rewrites it encrypted. Nothing else in
        * Laika reads these columns. A password account has no tokens, so this
@@ -166,7 +228,9 @@ export function createAuth(options: CreateAuthOptions) {
       encryptOAuthTokens: true,
       /**
        * An existing person signing in with Microsoft for the first time is
-       * **linked** to their account by email, not given a second one (LAI-1238).
+       * **linked** to their account by email, not given a second one (LAI-1238)
+       * — **once**: a person holds one Microsoft identity, and a second one
+       * asserting the same email is refused (`databaseHooks.account`, LAI-1317).
        * Trusting Microsoft's email for that is safe only because the tenant is
        * one directory (`sso.ts` refuses `common`/`organizations`/`consumers`):
        * the address comes from a directory this organisation runs.
@@ -201,18 +265,19 @@ export function createAuth(options: CreateAuthOptions) {
       minPasswordLength: 12,
     },
 
-    // Microsoft Entra ID, one tenant (LAI-1238). No profile photo: it is a
-    // second call to Microsoft Graph for a picture Laika does not draw.
+    // See `microsoftOptions` above. `getUserInfo` checks the id token's tenant,
+    // issuer, audience and home directory before anything is read from it.
     socialProviders:
-      sso === null
+      sso === null || microsoftOptions === null || microsoftDecoder === null
         ? {}
         : {
             microsoft: {
-              clientId: sso.clientId,
-              clientSecret: sso.clientSecret,
-              tenantId: sso.tenantId,
-              disableProfilePhoto: true,
-              prompt: 'select_account',
+              ...microsoftOptions,
+              getUserInfo: async (tokens) => {
+                const problem = idTokenProblem(tokens.idToken, sso);
+                if (problem !== null) throw await idTokenRefused(problem);
+                return microsoftDecoder.getUserInfo(tokens);
+              },
             },
           },
 
@@ -282,13 +347,24 @@ export function createAuth(options: CreateAuthOptions) {
        * the invite check must read the raw body, which only an endpoint
        * middleware sees.
        */
-      before: createAuthMiddleware((ctx) => {
+      before: createAuthMiddleware((ctx): Promise<BeforeHookResult> => {
         // SSO-only (LAI-1238): every password endpoint refuses, in words.
         if (sso !== null && (PASSWORD_AUTH_PATHS as readonly string[]).includes(ctx.path)) {
           throw ssoOnlyError();
         }
-        if (ctx.path !== '/sign-up/email') return Promise.resolve();
-        if (!isInviteOnly(options.db)) return Promise.resolve();
+        /*
+         * **The scopes are the provider's, never the caller's** (LAI-1317).
+         * better-auth appends a request's `scopes` to Microsoft's fixed set, so
+         * anybody could ask Microsoft for `Mail.Read` in Laika's name and have
+         * the refresh token stored for it. Emptied, not refused: the screen
+         * never sends any, and this way nothing a client sends widens it.
+         */
+        if (sso !== null && SOCIAL_START_PATHS.includes(ctx.path)) {
+          const body = (ctx.body ?? {}) as Record<string, unknown>;
+          return Promise.resolve({ context: { body: { ...body, scopes: [] } } });
+        }
+        if (ctx.path !== '/sign-up/email') return Promise.resolve(undefined);
+        if (!isInviteOnly(options.db)) return Promise.resolve(undefined);
 
         const body = (ctx.body ?? {}) as { email?: unknown; inviteToken?: unknown };
         const email = typeof body.email === 'string' ? body.email.toLowerCase() : '';
@@ -309,7 +385,7 @@ export function createAuth(options: CreateAuthOptions) {
           });
         }
 
-        return Promise.resolve();
+        return Promise.resolve(undefined);
       }),
 
       /**
@@ -361,6 +437,35 @@ export function createAuth(options: CreateAuthOptions) {
     },
 
     databaseHooks: {
+      account: {
+        create: {
+          /*
+           * **One Microsoft identity per person** (LAI-1317). better-auth links
+           * a Microsoft account to whoever holds its email — the directory's
+           * `mail` attribute, which an admin can change or give to a new user.
+           * Without this, whoever next holds the address in Entra would be
+           * linked to the old person's Laika account beside them, and sign in
+           * as them. The first link stands; any other Microsoft identity for
+           * the same person is refused. Every new account row — a sign-in that
+           * links, one that creates a user, an explicit link — passes here.
+           * Recovering a person whose Entra user was re-made is an operator's
+           * step: delete their old `microsoft` row in `accounts`.
+           */
+          before: (account) => {
+            if (
+              account.providerId === 'microsoft' &&
+              hasMicrosoftAccount(options.db, account.userId)
+            ) {
+              throw new APIError('FORBIDDEN', {
+                code: 'account_already_linked',
+                message:
+                  'This Laika account is already linked to a different Microsoft account. Ask an admin.',
+              });
+            }
+            return Promise.resolve({ data: account });
+          },
+        },
+      },
       user: {
         create: {
           before: (user, ctx) => {

@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
-import { invites, users } from '../db/schema.ts';
+import { accounts, invites, users } from '../db/schema.ts';
 
 /**
  * Microsoft SSO (LAI-1238): one Microsoft Entra ID tenant, and when it is
@@ -15,7 +15,11 @@ export interface MicrosoftSso {
   readonly provider: 'microsoft';
   readonly clientId: string;
   readonly clientSecret: string;
-  /** One directory: a tenant GUID or one of its verified domains. */
+  /**
+   * One directory, **by its GUID**, lowercased (LAI-1317). Every id token
+   * names its tenant by GUID in `tid`, and that is what sign-in checks, so a
+   * domain name would leave nothing to compare.
+   */
   readonly tenantId: string;
   /**
    * `LAIKA_MICROSOFT_DIRECTORY_SYNC` (LAI-1239): add every enabled Member of the
@@ -41,17 +45,26 @@ export function signInMethod(sso: MicrosoftSso | null): SignInMethod {
  */
 export const MULTI_TENANT_IDS = ['common', 'organizations', 'consumers'] as const;
 
+/**
+ * Microsoft's own tenant for **personal** accounts: every consumer account's
+ * `tid` (LAI-1317). Configured as "the" directory, it would admit any
+ * outlook.com address.
+ */
+export const CONSUMER_TENANT_ID = '9188040d-6c67-4c5b-b112-36a304b66dad';
+
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DOMAIN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 
 /** Why a tenant id is refused, or `null` when it names one directory. */
 export function tenantProblem(tenantId: string): string | null {
   const id = tenantId.trim().toLowerCase();
   if ((MULTI_TENANT_IDS as readonly string[]).includes(id)) {
-    return `"${id}" lets accounts from any Microsoft tenant sign in; set your own directory's tenant id (a GUID) or verified domain`;
+    return `"${id}" lets accounts from any Microsoft tenant sign in; set your own directory's tenant id (a GUID)`;
   }
-  if (!GUID.test(id) && !DOMAIN.test(id)) {
-    return 'is not a tenant id (a GUID such as 72f988bf-86f1-41af-91ab-2d7cd011db47) or a verified domain';
+  if (id === CONSUMER_TENANT_ID) {
+    return "is Microsoft's tenant for personal accounts; set your own directory's tenant id (a GUID)";
+  }
+  if (!GUID.test(id)) {
+    return "is not a tenant id: your directory's GUID, such as 72f988bf-86f1-41af-91ab-2d7cd011db47 (Entra, Overview, Tenant ID). A domain name is refused: sign-in checks the GUID every token carries";
   }
   return null;
 }
@@ -121,10 +134,77 @@ export function parseMicrosoftSso(
       provider: 'microsoft',
       clientId,
       clientSecret,
-      tenantId: tenantId.trim(),
+      tenantId: tenantId.trim().toLowerCase(),
       directorySync,
     },
   };
+}
+
+/**
+ * Why a sign-in's id token is refused (LAI-1317), as the `?error=` code the
+ * browser is sent back with. The web has words for each (`api/auth.ts`).
+ */
+export type IdTokenRefusal =
+  'id_token_unreadable' | 'wrong_tenant' | 'wrong_issuer' | 'wrong_audience' | 'guest_account';
+
+/** The id token's claims, unverified, or `null` when it is not a JWT of an object. */
+export function idTokenClaims(idToken: string | undefined): Record<string, unknown> | null {
+  const payload = idToken?.split('.')[1];
+  if (payload === undefined || payload === '') return null;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return typeof claims === 'object' && claims !== null && !Array.isArray(claims)
+      ? (claims as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * **Whose token this is, checked before anyone is signed in** (LAI-1317).
+ *
+ * better-auth's Microsoft provider only *decodes* the id token on the code
+ * flow — it came from the token endpoint over TLS — and checks neither its
+ * tenant nor its audience; the callback's issuer check is skipped because the
+ * provider declares no issuer. So this does, on every sign-in:
+ *
+ *  - `tid` is the configured directory's GUID;
+ *  - `iss` is that directory's v2.0 issuer, exactly;
+ *  - `aud` is this app's client id, and nothing else;
+ *  - no `idp` other than `iss`: a guest's token names their **home** directory
+ *    there, and a guest is somebody else's account, whatever its email says.
+ *    Members carry no `idp`, and directory sync already skips guests.
+ */
+export function idTokenProblem(
+  idToken: string | undefined,
+  sso: MicrosoftSso,
+): IdTokenRefusal | null {
+  const claims = idTokenClaims(idToken);
+  if (claims === null) return 'id_token_unreadable';
+
+  const tenant = sso.tenantId.toLowerCase();
+  if (typeof claims.tid !== 'string' || claims.tid.toLowerCase() !== tenant) return 'wrong_tenant';
+  if (claims.iss !== `https://login.microsoftonline.com/${tenant}/v2.0`) return 'wrong_issuer';
+
+  const aud = claims.aud;
+  const audience = Array.isArray(aud) && aud.length === 1 ? (aud[0] as unknown) : aud;
+  if (audience !== sso.clientId) return 'wrong_audience';
+
+  if (claims.idp !== undefined && claims.idp !== claims.iss) return 'guest_account';
+  return null;
+}
+
+/** Whether this person already has a Microsoft account linked (LAI-1317). */
+export function hasMicrosoftAccount(db: Db, userId: string): boolean {
+  return (
+    db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'microsoft')))
+      .limit(1)
+      .get() !== undefined
+  );
 }
 
 /** An unspent, unexpired invite addressed to exactly this email. */
