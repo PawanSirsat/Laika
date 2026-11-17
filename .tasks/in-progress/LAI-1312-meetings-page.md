@@ -2,10 +2,11 @@
 id: LAI-1312
 title: 'The Meetings page: list, attendance, transcript, Review with AI, Add to My day'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-1311]
-status: backlog
+status: in-progress
+started: 2026-11-17T09:00:00+02:00
 ---
 
 ## Goal
