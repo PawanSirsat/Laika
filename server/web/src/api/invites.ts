@@ -1,6 +1,7 @@
 import { pageSuffix, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
+import type { EmailDispatch } from './email.ts';
 
 /**
  * Invites (SPEC §6.4, §4.11 — API by LAI-071, screen by LAI-077).
@@ -116,7 +117,7 @@ export interface PendingInvite {
   readonly created_by: string;
   readonly created_at: number;
   readonly expires_at: number;
-  /** SMTP is unconfigured (LAI-206), so this is `false` for everything today. */
+  /** True once the invite's email has actually been sent (D-153); never for a queued one. */
   readonly email_sent: boolean;
 }
 
@@ -139,6 +140,8 @@ export interface CreatedInvite {
   /** Shown **once**. Never listed again — the server keeps only a hash. */
   readonly token: string;
   readonly accept_url: string;
+  /** Whether the link was also queued to the address (D-153), and if not, why. */
+  readonly email: EmailDispatch;
 }
 
 /** Pending invites for the org. `admin+` — the server decides, not the screen. */

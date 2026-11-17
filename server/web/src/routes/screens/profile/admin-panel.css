@@ -280,6 +280,13 @@
   color: var(--text-secondary);
 }
 
+/* D-153: why a reset link was not also mailed, when there is a reason worth saying. */
+.prof-admin-secret-note {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--chip-orange);
+}
+
 .prof-admin-secret-row {
   display: flex;
   align-items: center;

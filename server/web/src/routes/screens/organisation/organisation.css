@@ -2091,6 +2091,16 @@
   color: var(--text-primary);
 }
 
+/* D-153: an invite link that was also mailed, or why it was not. */
+.org-issued-mail {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.org-issued-mail[data-issued-mail='false'] {
+  color: var(--chip-orange);
+}
+
 .org-dialog .org-issued-head {
   margin: 0;
 }
@@ -3148,4 +3158,52 @@
 .org-holiday-name {
   flex: 1 1 14rem;
   min-width: 0;
+}
+
+/*
+ * The Email card (D-153, LAI-1312): the HR card's form, and the switch with
+ * the step the owner is on beside it. Tokens only, so both themes follow.
+ */
+.org-email-lead {
+  margin: 0 0 var(--space-3);
+}
+
+.org-email-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.org-email-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 28rem;
+  min-width: 0;
+  margin-top: var(--space-1);
+}
+
+.org-email-form .field {
+  margin-bottom: var(--space-2);
+}
+
+.org-email-warning {
+  color: var(--chip-orange);
+}
+
+.org-email-test {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  overflow-wrap: anywhere;
+}
+
+.org-email-test[data-email-test-result='failed'] {
+  color: var(--chip-orange);
+}
+
+.org-email-server {
+  color: var(--text-secondary);
 }

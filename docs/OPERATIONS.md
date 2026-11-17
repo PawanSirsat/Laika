@@ -210,6 +210,68 @@ objects stay where they are, unread, until the variables come back.
 
 ---
 
+## Email: turning it on
+
+Email ships **off** (D-153, SPEC §4.93). Until an owner or admin turns it on,
+Laika mails nothing; every invite or reset link that would have been mailed is
+recorded in the outbox as `suppressed` / `email_off`, and the copy-link flow
+works exactly as before. Turning it on is three steps on **Organisation ›
+Integrations › Email**, with no restart and no environment change.
+
+**Before you start**, check two things outside Laika:
+
+- **The sender is verified in Brevo.** The card is pre-filled with
+  `ksage@kvelld.com`. Brevo refuses a From address it has not verified, and
+  the test send then fails with `550`/`553`. Add it under *Senders, domains &
+  dedicated IPs* if it is not there. `kvelld.com` is already authenticated for
+  SolidTime's `no-reply@kvelld.com`.
+- **`LAIKA_PUBLIC_URL` is set.** A link in an email must be absolute. Without
+  it, invites and reset links stay copy-only and the card says so.
+
+### 1. Paste a dedicated key and save
+
+In Brevo, open *SMTP & API › SMTP* and **generate a new SMTP key for Laika
+alone**, so that it can be revoked without touching SolidTime. Paste it into
+*SMTP key*, put the SMTP login Brevo shows into *Login*, and press *Save*.
+
+- **Kept encrypted.** The key is stored under `LAIKA_SECRET` (§12, purpose
+  `smtp_json`), and the card shows only its last four characters.
+- **Rotating `LAIKA_SECRET`** makes it unreadable. The card then says so, and
+  you paste the key again.
+- **Changing the host, port or login needs the key pasted again.** The stored
+  key is only ever sent to the server it was saved for.
+- **This page needs a signed-in owner or admin.** No API token can change
+  these settings or turn email on.
+
+### 2. Send a test email
+
+*Send test email* sends one message, right away, to your own address. It is
+the only send that works while the switch is off.
+
+- **When it works,** the card says where the message went.
+- **When it fails,** the card gives the server's code: `535` means a wrong
+  login or key; `550`/`553` an unverified sender; `ETIMEDOUT` or
+  `ECONNREFUSED` that port 587 is not reachable from the server.
+
+### 3. Flip *Email on*
+
+From then on, an invite with an address and an admin-issued reset link are
+also mailed. The sender job runs every 30 seconds, and each message is recorded
+in the outbox:
+
+- **A refusal** (5xx) is final.
+- **A temporary failure** is retried for about an hour and a half.
+- **A timeout once the server had the message** is `unconfirmed` and never
+  sent twice.
+
+### Turning it off
+
+Flip *Email on* off. Anything still queued is recorded `email_off` at the next
+tick and never sent. *Clear* forgets the key and the settings and turns the
+switch off with them.
+
+---
+
 ## The frontend as its own resource, on one domain
 
 The default image serves the API and the SPA together. To run the frontend as

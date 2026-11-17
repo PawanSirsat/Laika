@@ -7637,3 +7637,84 @@ could it wear a logo.
 image put to the store and never completed stays there — at most 1 MiB, and only an owner or
 admin can make one. A sweep can find them by the `p/<project_id>/icon/` prefix if it is ever
 worth it.
+
+## D-153 — Laika sends email: SMTP in organisation settings, an outbox, and a switch that ships off
+
+**Date:** 2026-11-18 · **Decided by:** Pawan (owner), after the LAI-1310 research. He chose
+all four options, saying: "implement everything and workable but I don't want to enable this
+email thing on ksage 2.0 right now, will do that later at one click". Recorded by the builder
+CHIEF dispatched for LAI-1312 (Belka). Tasks LAI-1312 (part A) and LAI-1313 (part B). Amends
+§4.11 and §4.60 ("Laika sends no email") and the note in §14 q11. **It amends nothing in §1.1.**
+
+**Context.** `orgs.smtp_json_enc` has existed since the first schema and nothing wrote it. Three
+places waited on it:
+- §13.4 and D-009 already list "an SMTP server the org configured" among Laika's outbound
+  destinations.
+- D-039 item 2 sequenced email rather than refusing it: "When SMTP exists for invites it can
+  carry mentions too".
+- D-053 named invite mail as what would reopen its refusal design.
+
+The old KSage built a full email pipeline that never sent a message: no provider was ever
+configured (LAI-1310). Kvell's SolidTime already sends through Brevo, and port 587 to Brevo is
+open from the Ksage server (measured 2026-11-18).
+
+**Decision.**
+
+1. **SMTP, set in organisation settings rather than the environment, signed in only.** It sits
+   on an *Email* card on Organisation › Integrations: host, port, login, key, From address and
+   From name.
+   - **Configuring email is session only.** It uses a new §3.1 row, *Configure the
+     organisation's email* (`org.email.configure`), carried by *Change organisation settings*.
+     No token may hold it, whatever its scope. Every invite and reset link goes wherever these
+     settings point, so a token that could set the relay or flip the switch could have them
+     all mailed to a server it chose. That's the reason `user.reset_password` is session only,
+     reached another way. (CHIEF's LAI-1312 review; it narrows the older *Org settings (AI
+     provider, SMTP, signup mode)* row for email.)
+   - **A new host needs the key again.** Saving without the key keeps the stored one only for
+     the same host, port and login; otherwise it's `422 key_required`. The stored key is never
+     sent, in a test or otherwise, to a server it wasn't given for.
+   - **The key** is stored in `smtp_json_enc` under `LAIKA_SECRET` (§12).
+   - **Everything a screen shows**, plus the key's last four characters, is in a plain
+     `smtp_settings` column, so building a view never decrypts anything. This is LAI-447's rule.
+   - **Pre-filled** with Brevo's relay, `587` and Kvell's sender `ksage@kvelld.com` / *Ksage*.
+   - **Transport:** SMTP through `nodemailer`. Port 465 is implicit TLS, and every other port
+     requires STARTTLS.
+2. **One switch, `orgs.email_enabled`, which defaults off.**
+   - Off: nothing is mailed, and every message that would have been is recorded as suppressed
+     with the reason `email_off`.
+   - The switch cannot turn on before a key is saved.
+   - *Send test email* is the only send that works while the switch is off. It goes to whoever
+     pressed it, and its answer carries the server's code.
+   - `OrgView.email = { enabled, configured }` is readable by everyone.
+3. **Every message goes through an outbox (`email_outbox`, §4.93).** This is KSage's delivery
+   design, ported rather than its code:
+   - nothing is sent inside the request that caused it;
+   - enqueueing is idempotent, by key;
+   - a message that isn't sent is a row with a reason, checked at enqueue and again at send
+     time;
+   - the body is encrypted (`email_body`) and cleared once the row is final, because it
+     carries a one-time link;
+   - a 5xx fails, a 4xx or a failure where nothing could have left is retried, and a timeout
+     once the session was underway is `unconfirmed` and **never retried**;
+   - a 7-day horizon, or the link's own expiry if sooner;
+   - a message whose link stops working before it goes — the invite revoked, re-issued or
+     accepted, or the reset link replaced or used — is `superseded` and never sent.
+
+   The sender runs every 30 seconds under §3.4's `system.email.send` and asks the switch again
+   before each message. Rows are deleted after 90 days under `system.email.prune`, daily and
+   once at boot.
+4. **What is mailed.**
+   - **Transactional mail (LAI-1312):** an invite's link, to its address, on create and
+     re-issue; and an admin-issued reset link, to the person it's for. The copy-link flow
+     stays the same whether email is on or off. Links are built from `LAIKA_PUBLIC_URL`; with
+     none set, a message is suppressed as `no_public_url`.
+   - **Notification mail (LAI-1313):** assignments and @mentions instantly, the rest in one
+     daily digest per person, with each person's own preferences. All of it goes through the
+     same outbox and switch.
+5. **Email stays a delivery channel, not an interface.** §1.1's non-goal, email as a
+   *primary* interface, stands. Inbound email-to-task is its own decision (D-155, LAI-1315).
+   There is still no self-serve *Forgot password* (§14 q11).
+
+**Turning it on** is in `docs/OPERATIONS.md` (*Email: turning it on*): paste a key made for
+Laika alone, send a test, then flip the switch. The release ships with the switch off on every
+board.

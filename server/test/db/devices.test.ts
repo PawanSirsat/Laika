@@ -77,6 +77,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0081_hr_source',
     '0082_attachments',
     '0083_project_icons',
+    '0084_email_outbox',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -93,7 +94,8 @@ function folderBefore0070(): { dir: string; restore: () => void } {
       // LAI-1165's 0080 rebuilds 0077's table, so it stays out with it.
       // LAI-1181's 0081 adds four tables, which the check would count too,
       // and LAI-1300's 0082 one more, with a rebuild of `activity`. LAI-1311's
-      // 0083 adds four columns to `projects`, whose rows the check reads.
+      // 0083 adds four columns to `projects`, whose rows the check reads, and
+      // LAI-1312's 0084 a table and two columns on `orgs`.
       const later = new Set([
         '0075_task_deliverables',
         '0076_user_availability',
@@ -102,6 +104,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
         '0081_hr_source',
         '0082_attachments',
         '0083_project_icons',
+        '0084_email_outbox',
       ]);
       journal.entries.push(...dropped.filter((e) => !later.has(e.tag)));
       writeFileSync(journalPath, JSON.stringify(journal));

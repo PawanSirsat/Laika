@@ -2813,6 +2813,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_attachments$/),
         // LAI-1311's space icons: four nullable columns on `projects`.
         expect.stringMatching(/_project_icons$/),
+        // LAI-1312's email outbox: one new table, two columns on `orgs`.
+        expect.stringMatching(/_email_outbox$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2972,6 +2974,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0081_hr_source',
       '0082_attachments',
       '0083_project_icons',
+      '0084_email_outbox',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3069,6 +3072,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0081_hr_source',
       '0082_attachments',
       '0083_project_icons',
+      '0084_email_outbox',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3097,8 +3101,9 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
 
         runMigrations(db);
 
-        // LAI-1181's 0081 rides along and adds its four HR tables, and
-        // LAI-1300's 0082 its attachments; nothing else appears.
+        // LAI-1181's 0081 rides along and adds its four HR tables,
+        // LAI-1300's 0082 its attachments and LAI-1312's 0083 the email
+        // outbox; nothing else appears.
         expect(tables()).toEqual(
           [
             ...before,
@@ -3108,6 +3113,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'org_holidays',
             'org_hr_source',
             'attachments',
+            'email_outbox',
           ].sort(),
         );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
@@ -3156,6 +3162,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0081_hr_source',
       '0082_attachments',
       '0083_project_icons',
+      '0084_email_outbox',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3271,6 +3278,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0081_hr_source',
       '0082_attachments',
       '0083_project_icons',
+      '0084_email_outbox',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3352,6 +3360,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0081_hr_source',
       '0082_attachments',
       '0083_project_icons',
+      '0084_email_outbox',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3430,10 +3439,15 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
     };
     const at = journal.entries.findIndex((e) => e.tag === '0082_attachments');
     const dropped = journal.entries.splice(at);
-    // The guard on this guard: a later migration lands here and says so.
+    // The guard on this guard: a later migration lands here and says so —
     // LAI-1311's 0083 adds four nullable columns to `projects` and touches no
-    // `activity` row.
-    expect(dropped.map((e) => e.tag)).toEqual(['0082_attachments', '0083_project_icons']);
+    // `activity` row; LAI-1312's 0084 adds the email outbox and two columns on
+    // `orgs`. The full `runMigrations` below applies both with 0082.
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0082_attachments',
+      '0083_project_icons',
+      '0084_email_outbox',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3507,6 +3521,94 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
           'attachments_uploaded_by_idx',
           'sqlite_autoindex_attachments_1',
         ]);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0084 adds the email outbox and two orgs columns to a populated 0083 database (LAI-1312)', () => {
+  function folderAt0083(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0084_email_outbox');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0084_email_outbox']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps the organisation as it was, rebuilds nothing, ships the switch off, and the outbox holds its rules',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0083() });
+        const s = seed(db);
+        db.run(
+          sql`UPDATE orgs SET ai_key_last4 = 'abcd', smtp_json_enc = 'v1.legacy' WHERE id = ${s.orgId}`,
+        );
+        const orgRows = () =>
+          db.all(
+            sql`SELECT id, name, owner_user_id, presence_enabled, developer_insights, ai_key_last4, smtp_json_enc, created_at, updated_at FROM orgs ORDER BY id`,
+          );
+        const before = orgRows();
+        const rootpage = () =>
+          db.get<{ rootpage: number }>(
+            sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = 'orgs'`,
+          )?.rootpage;
+        const pageBefore = rootpage();
+
+        runMigrations(db);
+
+        expect(rootpage(), 'orgs was rebuilt').toBe(pageBefore);
+        expect(orgRows()).toEqual(before);
+        // **Off**, whatever was there before: the owner's one click turns it on.
+        expect(
+          db.get<{ email_enabled: number; smtp_settings: string | null }>(
+            sql`SELECT email_enabled, smtp_settings FROM orgs WHERE id = ${s.orgId}`,
+          ),
+        ).toEqual({ email_enabled: 0, smtp_settings: null });
+
+        expect(db.all(sql`SELECT * FROM email_outbox`)).toEqual([]);
+        const insert = (state: string, reason: string | null, key = newId()) =>
+          db.run(sql`
+            INSERT INTO email_outbox (id, kind, idempotency_key, subject, state, suppressed_reason, send_before, created_at, updated_at)
+            VALUES (${newId()}, 'invite', ${key}, 's', ${state}, ${reason}, 1, 1, 1)
+          `);
+        insert('suppressed', 'email_off', 'k1');
+        expectSqliteError(() => insert('suppressed', null), /email_outbox_suppressed_check/);
+        expectSqliteError(() => insert('queued', 'email_off'), /email_outbox_suppressed_check/);
+        expectSqliteError(() => insert('delivered', null), /email_outbox_state_check/);
+        expectSqliteError(() => insert('queued', null, 'k1'), /UNIQUE/);
+
+        const fks = db.all<{ from: string; table: string; on_delete: string }>(
+          sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('email_outbox') ORDER BY "from"`,
+        );
+        expect(fks).toEqual([
+          { from: 'created_by', table: 'users', on_delete: 'SET NULL' },
+          { from: 'recipient_user_id', table: 'users', on_delete: 'SET NULL' },
+        ]);
+        const indexes = db.all<{ name: string }>(
+          sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'email_outbox' ORDER BY name`,
+        );
+        expect(indexes.map((i) => i.name)).toEqual([
+          'email_outbox_created_at_idx',
+          'email_outbox_due_idx',
+          'email_outbox_idempotency_key_unique',
+          'email_outbox_recipient_idx',
+          'sqlite_autoindex_email_outbox_1',
+        ]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });
