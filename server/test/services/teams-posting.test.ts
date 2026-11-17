@@ -24,6 +24,7 @@ import {
   SLOT_GRACE_MS,
   TEAMS_POSTS_KEPT_MS,
   teamsTick,
+  titleOf,
   type TeamsPostingDeps,
 } from '../../src/services/teams-posting.ts';
 import {
@@ -578,6 +579,38 @@ describe('another space', () => {
     expect(JSON.stringify(posts())).not.toContain('SEC-');
   });
 
+  it('counts a blocker per blocker, however many another space’s entry stands for', async () => {
+    connect();
+    turnOn();
+    createProject(t.sqlite, t.db, owner, {
+      name: 'Secret',
+      slug: 'secret',
+      prefix: 'SEC',
+      visibility: 'private',
+      now: QUIET - 600_000,
+    });
+    const own = task('Our own blocker', Date.parse('2026-11-17T09:00:00Z'));
+    const waiting = task('Waits on four', Date.parse('2026-11-17T09:30:00Z'));
+    addTaskDependency(t.sqlite, t.db, owner, waiting, own, Date.parse('2026-11-17T10:00:00Z'));
+    for (const n of [1, 2, 3]) {
+      const secret = createTask(t.sqlite, t.db, owner, 'secret', {
+        title: `Confidential ${String(n)}`,
+        now: QUIET - 500_000,
+      }).id;
+      addTaskDependency(t.sqlite, t.db, owner, waiting, secret, Date.parse('2026-11-17T10:05:00Z'));
+    }
+    // 07:01 UTC on the 18th: the morning stand-up and the 17th's digest are both due.
+    await teamsTick(t.db, SECRET, deps(Date.parse('2026-11-18T07:01:00Z')));
+
+    const [standup, digest] = fake.texts();
+    expect(standup).toContain('waiting on LAI-1 and 3 more');
+    expect(digest).toContain('LAI-2 — waiting on LAI-1, 3 tasks in other spaces');
+    for (const text of [standup, digest]) {
+      expect(text).not.toContain('Confidential');
+      expect(text).not.toContain('SEC-');
+    }
+  });
+
   it('is named as another space in the stand-up and the digest too', async () => {
     connect();
     turnOn();
@@ -596,6 +629,18 @@ describe('another space', () => {
       expect(text).not.toContain('Confidential');
       expect(text).not.toContain('SEC-');
     }
+  });
+});
+
+describe('the record', () => {
+  it('cuts a long headline by code point, never through an emoji', () => {
+    // The emoji straddles the cut: units 299 and 300 by UTF-16, one code point.
+    const title = `${'x'.repeat(298)}😀${'y'.repeat(20)}`;
+    const cut = titleOf({ title, lines: [] });
+    expect(cut).toBe(`${'x'.repeat(298)}😀…`);
+    expect([...cut]).toHaveLength(300);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(cut)).toBe(false);
+    expect(titleOf({ title: '   ', lines: [] })).toBe('(untitled)');
   });
 });
 
