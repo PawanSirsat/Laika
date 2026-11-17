@@ -247,29 +247,28 @@ void describe('the space bar', () => {
     }
   });
 
-  void test('the agent count comes from presence, not from a fixture', async () => {
+  /*
+   * **No Agents chip, and no presence read for it** (LAI-1233). The board
+   * made a `/presence` request on every load to fill a chip the owner asked
+   * to remove; the board itself draws no presence.
+   */
+  void test('the board draws no Agents chip and never asks for presence', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      // Wait for presence itself, not for the chip: the chip renders at once
-      // with no number and would be read before the fetch lands. This waited
-      // for WORKING NOW's first chip until LAI-727 removed the row; the number
-      // arriving is the same signal, read where it is shown.
-      const agents = h.page.locator('.space-chip', { hasText: 'Agents' });
-      await agents.waitFor({ timeout: 20_000 });
-      await h.page
-        .waitForFunction(
-          () =>
-            /Agents\s*\d/.test(
-              [...document.querySelectorAll('.space-chip')]
-                .map((e) => e.textContent ?? '')
-                .join(' '),
-            ),
-          undefined,
-          { timeout: 10_000 },
-        )
-        .catch(() => undefined);
-      // One of the two present sessions is an agent.
-      assert.match(await agents.innerText(), /Agents 1/);
+      // The positive control: the space bar did render, with its menu.
+      await h.page.locator('.space-bar .space-menu-trigger').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.space-bar .space-chip', { hasText: /^Agents/ }).count(),
+        0,
+        'the Agents chip is back in the space bar',
+      );
+      // Long enough for a live frame's settle (1.5s) to have fired a read.
+      await h.page.waitForTimeout(2_000);
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/presence').length,
+        0,
+        'the board asked for presence it does not draw',
+      );
     } finally {
       await h.close();
     }
@@ -278,12 +277,7 @@ void describe('the space bar', () => {
   void test('the controls write the URL, so a filtered space is a link', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-chip').first().waitFor({ timeout: 20_000 });
-
-      await h.page.locator('.space-chip', { hasText: 'Agents' }).click();
-      await h.page.waitForFunction(() => window.location.search.includes('agent=true'), undefined, {
-        timeout: 5000,
-      });
+      await h.page.locator('.bt-button', { hasText: 'Filter' }).waitFor({ timeout: 20_000 });
 
       /*
        * **A dropdown since LAI-270**, as the reference has it — selecting is

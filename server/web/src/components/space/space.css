@@ -668,15 +668,6 @@
   order: 3;
 }
 
-/* LAI-737: a hairline between the people count and the agents' marks, so the
-   two numbers do not read as one. */
-.space-agents-sep {
-  align-self: stretch;
-  width: 1px;
-  margin: var(--space-0-5) var(--space-0-5);
-  background: var(--border-default);
-}
-
 /* ---- the space's ⋯ menu (LAI-977): one item, Space settings. Tokens only. */
 
 .space-menu-trigger {
@@ -707,7 +698,9 @@
 }
 
 .space-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-chip);
   color: var(--text-primary);
@@ -720,6 +713,16 @@
 .space-menu-item:focus-visible {
   background: var(--bg-card-hover);
   outline: none;
+}
+
+.space-menu-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.space-menu-item:hover .space-menu-icon,
+.space-menu-item:focus-visible .space-menu-icon {
+  color: var(--text-primary);
 }
 
 /* ------------------------------------------------- one header (LAI-1198) */
@@ -975,15 +978,6 @@
   .space-live {
     position: relative;
     padding: var(--space-1-5);
-  }
-
-  .space-agents-word {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   .space-bar-right .space-chip {

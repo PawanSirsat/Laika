@@ -19,7 +19,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { capacityFor, NOW, orgStub, PRESENCE } from './capacity-org.ts';
+import { capacityFor, NOW, orgStub } from './capacity-org.ts';
 import { pick, valueOf } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 import { tipText, tipTexts } from './tooltip-probe.ts';
@@ -678,37 +678,26 @@ void describe('links out', () => {
 });
 
 /*
- * The chip is the space bar's, not Capacity's: since LAI-754 Capacity has no
- * space frame, so this is asserted on a space tab with presence like Capacity's.
+ * **The space bar has no Agents chip** (LAI-1233, the owner): it repeated the
+ * board Filter's *Agent-created only* and read `/presence` on every tab.
+ * Presence is now read only by Activity, the screen that draws it.
  */
-void describe('the space bar’s Agents chip (LAI-737)', () => {
-  void test('says what its number counts, and which agents', async () => {
-    const stub: ApiStub = {
-      ...orgStub('owner'),
-      '/api/v1/presence': {
-        enabled: true,
-        present: [
-          ...PRESENCE.present,
-          {
-            user_id: 'u3',
-            name: 'Cal Mokoena',
-            matched_task_id: null,
-            project_ids: [],
-            is_agent: true,
-            client: 'cursor',
-            clients: ['cursor'],
-            last_seen: NOW - 30_000,
-          },
-        ],
-      },
-    };
-    const h = await open('/activity?project=laika', stub);
+void describe('presence is read where it is drawn (LAI-1233)', () => {
+  void test('no Agents chip on a space; Activity still asks for presence', async () => {
+    const h = await open('/activity?project=laika', orgStub('owner'));
     try {
-      const chip = h.page.locator('.space-agents-start');
-      await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
-      const text = (await chip.textContent()) ?? '';
-      assert.match(text, /2 people with agent sessions/, text);
-      assert.match(text, /Claude Code, Codex, Cursor/, text);
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await until(() => h.calls.some((c) => c.path === '/api/v1/presence'));
+      assert.ok(
+        h.calls.some((c) => c.path === '/api/v1/presence'),
+        'Activity drew presence without asking for it',
+      );
+      assert.equal(await h.page.locator('.space-agents-start').count(), 0);
+      assert.equal(
+        await h.page.locator('.space-bar .space-chip', { hasText: /^Agents/ }).count(),
+        0,
+        'the Agents chip is back in the space bar',
+      );
     } finally {
       await h.close();
     }

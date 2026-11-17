@@ -964,6 +964,9 @@ void describe('ways in', () => {
       await h.page.getByRole('button', { name: 'Space menu' }).click();
       const item = h.page.getByRole('menuitem', { name: 'Space settings' });
       assert.equal(await item.getAttribute('href'), SETTINGS);
+      // A gear before the words (LAI-1233), decoration beside its label.
+      assert.equal(await item.locator('.space-menu-icon').count(), 1, 'the gear is missing');
+      assert.equal((await item.innerText()).trim(), 'Space settings');
       await item.click();
       await until(() => new URL(h.page.url()).pathname === SETTINGS);
       await settled(h);
