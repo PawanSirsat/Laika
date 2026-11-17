@@ -158,11 +158,25 @@ export function createAuth(options: CreateAuthOptions) {
        * Trusting Microsoft's email for that is safe only because the tenant is
        * one directory (`sso.ts` refuses `common`/`organizations`/`consumers`):
        * the address comes from a directory this organisation runs.
+       *
+       * **`requireLocalEmailVerified: false`** — better-auth otherwise refuses
+       * to link unless the *local* account's email is marked verified
+       * (`account_not_linked`), and Laika never verifies one: every account is
+       * made by an invite or by first boot, so every existing person — the owner
+       * first — would be locked out the first time they used Microsoft. What
+       * that check guards against is someone registering a victim's address
+       * ahead of them; on an SSO-only, invite-only instance nobody can register
+       * at all, so the guard protects nothing here and costs everyone.
        */
       accountLinking:
         sso === null
           ? { enabled: false }
-          : { enabled: true, trustedProviders: ['microsoft'], allowDifferentEmails: false },
+          : {
+              enabled: true,
+              trustedProviders: ['microsoft'],
+              allowDifferentEmails: false,
+              requireLocalEmailVerified: false,
+            },
     },
     verification: { modelName: 'verifications' },
 

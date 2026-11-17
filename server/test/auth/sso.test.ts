@@ -355,6 +355,29 @@ describe('a Microsoft sign-in joins only with an invite for that address', () =>
   });
 });
 
+describe('an existing person links their Microsoft account by email', () => {
+  /*
+   * Found against a real tenant (account_not_linked): better-auth links only
+   * when the local email is verified, and Laika verifies none. The link
+   * itself runs in Microsoft's callback, which cannot run here, so the
+   * options better-auth reads at that moment are what is asserted.
+   */
+  it('trusts Microsoft and does not wait on a local verification Laika never does', () => {
+    const harness = sso();
+    expect(harness.auth.options.account?.accountLinking).toMatchObject({
+      enabled: true,
+      trustedProviders: ['microsoft'],
+      allowDifferentEmails: false,
+      requireLocalEmailVerified: false,
+    });
+  });
+
+  it('links nothing on a password instance (the control)', () => {
+    h = authHarness();
+    expect(h.auth.options.account?.accountLinking?.enabled).toBe(false);
+  });
+});
+
 describe('a deactivated account gets no session from Microsoft', () => {
   it('refuses the session, and allows an active one', async () => {
     const harness = sso();
