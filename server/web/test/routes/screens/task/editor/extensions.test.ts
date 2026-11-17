@@ -104,9 +104,9 @@ void describe('the image is Laika’s attachment and nothing else (D-150)', () =
   void test('typing `![…](…)` makes no image: the input rule is gone', () => {
     const image = MARKDOWN_EXTENSIONS.find((extension) => extension.name === 'image');
     assert.ok(image, 'no image extension');
-    const rules = image.config.addInputRules?.call(
-      image as unknown as ThisParameterType<NonNullable<typeof image.config.addInputRules>>,
-    );
+    // Called bare: the override needs no editor, and the library's rule would.
+    const addInputRules = image.config.addInputRules as (() => unknown) | undefined;
+    const rules = addInputRules?.call({});
     assert.deepEqual(rules, []);
   });
 });
