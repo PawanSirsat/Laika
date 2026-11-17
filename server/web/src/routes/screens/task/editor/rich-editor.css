@@ -460,6 +460,115 @@ img.ProseMirror-separator {
   color: var(--text-muted);
 }
 
+/* ------------------------------------------------------- attachments */
+
+/*
+ * D-150, LAI-1301. An attachment's image in the document, drawn as the
+ * reading view draws it; where an upload will land while it is on its way;
+ * and a row per file below the text, with how far it has got or why it
+ * failed. Tokens only, so both themes follow.
+ */
+.rich-editor-doc img.rte-image {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 28rem;
+  height: auto;
+  vertical-align: middle;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.rte-uploading {
+  display: inline-block;
+  margin: 0 var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px dashed var(--accent-border);
+  border-radius: var(--radius-chip);
+  background: var(--accent-bg);
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  user-select: none;
+}
+
+.rte-uploads {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) 0.75rem;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rte-upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+}
+
+.rte-upload-name {
+  min-width: 0;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+}
+
+.rte-upload-bar {
+  flex: 1 1 6rem;
+  max-width: 12rem;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+}
+
+.rte-upload-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 120ms ease;
+}
+
+.rte-upload-error {
+  flex: 1 1 12rem;
+  font-weight: var(--weight-semibold);
+  color: var(--overdue);
+}
+
+.rte-upload-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-reading);
+  cursor: pointer;
+}
+
+.rte-upload-dismiss:hover {
+  background: var(--bg-column);
+  color: var(--text-primary);
+}
+
+.rte-upload-dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* -------------------------------------------------- Save, Cancel, errors */
 
 .rich-editor-actions,
