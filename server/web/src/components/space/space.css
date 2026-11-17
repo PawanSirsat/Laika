@@ -121,14 +121,8 @@
 
 .space-icon {
   flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-card);
-  /* The prototype's mark: ink block, card-coloured glyph — not the accent. */
-  background: var(--text-primary);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  /* The tile is `SpaceBadge`'s (LAI-1234); this only places it. */
 }
 
 .space-name {
@@ -668,61 +662,17 @@
   order: 3;
 }
 
-/* ---- the space's ⋯ menu (LAI-977): one item, Space settings. Tokens only. */
+/* ---- Space settings, one press from the space (LAI-1234). Tokens only. */
 
-.space-menu-trigger {
-  width: 32px;
-  justify-content: center;
-  padding: 0;
-  font-size: var(--text-heading-sm);
-  letter-spacing: 0.05em;
-}
-
-.space-menu-catcher {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-}
-
-.space-menu {
-  position: fixed;
-  z-index: 61;
-  min-width: 12rem;
-  margin: 0;
-  padding: var(--space-1);
-  list-style: none;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-modal);
-}
-
-.space-menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2-5);
-  border-radius: var(--radius-chip);
-  color: var(--text-primary);
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
+.space-settings-link {
+  /* A link, not a button: without this its border adds 2px to the chip's height. */
+  box-sizing: border-box;
   text-decoration: none;
 }
 
-.space-menu-item:hover,
-.space-menu-item:focus-visible {
-  background: var(--bg-card-hover);
-  outline: none;
-}
-
-.space-menu-icon {
-  flex: none;
-  color: var(--text-secondary);
-}
-
-.space-menu-item:hover .space-menu-icon,
-.space-menu-item:focus-visible .space-menu-icon {
-  color: var(--text-primary);
+.space-settings-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------- one header (LAI-1198) */
@@ -939,6 +889,16 @@
 @media (max-width: 640px) {
   .space-icon {
     display: none;
+  }
+
+  /* The gear stays, the words go and are still its name (LAI-1234). */
+  .space-settings-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .space-name {

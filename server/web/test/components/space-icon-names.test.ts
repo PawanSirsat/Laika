@@ -121,7 +121,7 @@ void describe('the area is found by walking it', () => {
       'routes/screens/board/LaneRow.tsx',
       'routes/screens/list/ListView.tsx',
       'routes/screens/workroom/Workroom.tsx',
-      'components/space/SpaceMenu.tsx',
+      'components/space/SpaceSettingsLink.tsx',
       'components/CopyButton.tsx',
     ]) {
       assert.ok(files.includes(file), `${file} is not in the area`);

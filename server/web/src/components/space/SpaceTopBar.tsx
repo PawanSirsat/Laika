@@ -1,7 +1,8 @@
 import { useLive } from './SpaceLive.tsx';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { useShell } from '../shell/shell-context.ts';
-import { SpaceMenu } from './SpaceMenu.tsx';
+import { SpaceSettingsLink } from './SpaceSettingsLink.tsx';
+import { SpaceBadge } from '../SpaceBadge.tsx';
 
 /**
  * Row one of a space: **who and what, and nothing else** (LAI-1198) — in the
@@ -15,7 +16,7 @@ import { SpaceMenu } from './SpaceMenu.tsx';
  * review — the tabs dropped ~35px and Create moved from tab to tab (visual
  * audit, findings 3 and 4). Those controls now live in `SpaceToolbar`, the row
  * under the tabs, and Create with them, so this row is the same on every tab:
- * the space's name and key, the live indicator and the space menu.
+ * the space's name and key, the live indicator and Space settings.
  *
  * **No Agents chip** (LAI-1233, the owner): it repeated the board Filter's
  * *Agent-created only* and cost a `/presence` read on every tab of every
@@ -68,18 +69,17 @@ export function SpaceTopBar() {
             rail names the product, and below 900px it is off-canvas entirely,
             so this headline is the only place the space is named.
           */}
-          <span className="space-icon" aria-hidden="true">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--bg-card)"
-              strokeWidth="2.2"
-            >
-              <path d="M5 20V9M12 20V4M19 20v-7" />
-            </svg>
-          </span>
+          {/*
+            **The space's own letter, as the rail draws it** (LAI-1234): the
+            same `SpaceBadge`, colour and letter, so the space looks like
+            itself in the rail and on its page. It was a fixed ink block with
+            a bar-chart glyph — the same mark for every space.
+          */}
+          {slug !== undefined && (
+            <span className="space-icon" aria-hidden="true">
+              <SpaceBadge slug={slug} name={spaceName ?? slug} size="md" />
+            </span>
+          )}
           <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>
           {/* The key every task in it carries (`LC` for `LC-42`), from the same read. */}
           {spaceKey !== undefined && (
@@ -110,7 +110,9 @@ export function SpaceTopBar() {
         </span>
       </div>
 
-      <div className="space-bar-right">{slug !== undefined && <SpaceMenu slug={slug} />}</div>
+      <div className="space-bar-right">
+        {slug !== undefined && <SpaceSettingsLink slug={slug} />}
+      </div>
     </>
   );
 }

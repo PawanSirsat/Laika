@@ -221,10 +221,10 @@ void describe('the header at 390', () => {
         const m = await h.page.evaluate(() => ({
           bottom: document.querySelector('.space-bar')?.getBoundingClientRect().bottom ?? 9999,
           overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          // The title row is one line: the name and the space menu share a top.
+          // The title row is one line: the name and Space settings share a top.
           nameTop: document.querySelector('.space-name')?.getBoundingClientRect().top ?? -1,
           menuTop:
-            document.querySelector('.space-menu-trigger')?.getBoundingClientRect().top ?? -99,
+            document.querySelector('.space-settings-link')?.getBoundingClientRect().top ?? -99,
         }));
         assert.ok(
           m.bottom <= PHONE.height * 0.2,

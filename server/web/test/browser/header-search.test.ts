@@ -199,7 +199,7 @@ void describe('one header on every screen', () => {
         );
         assert.match(await h.page.locator('.space-bar .space-key').innerText(), /LC/);
         assert.equal(
-          await h.page.locator('.space-bar .space-bar-right .space-menu-trigger').count(),
+          await h.page.locator('.space-bar .space-bar-right .space-settings-link').count(),
           1,
         );
         assert.equal(await h.page.locator(`${HEADER} .space-name, ${HEADER} nav`).count(), 0);

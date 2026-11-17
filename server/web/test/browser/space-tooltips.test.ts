@@ -170,13 +170,14 @@ void describe('every screen of a space names its icon-only controls and tooltips
 });
 
 void describe('the board and the space header (LAI-1213)', () => {
-  void test('the space ⋯ shows its name on hover after the delay, and on focus', async () => {
+  void test('Space settings shows its name on hover after the delay, and on focus', async () => {
     const h = await at(`/board?${Q}`, space());
     try {
-      const menu = h.page.getByRole('button', { name: 'Space menu' });
-      await menu.waitFor({ timeout: 20_000 });
-      assert.equal(await menu.locator('svg[data-icon="more"]').count(), 1, 'the ⋯ is typed');
-      await showsOnHoverAndFocus(h.page, menu, /^Space menu$/);
+      // A gear and the words since LAI-1234, where the ⋯ was.
+      const link = h.page.locator('.space-bar').getByRole('link', { name: 'Space settings' });
+      await link.waitFor({ timeout: 20_000 });
+      assert.equal(await link.locator('svg[data-icon="gear"]').count(), 1, 'the gear is typed');
+      await showsOnHoverAndFocus(h.page, link, /^Space settings$/);
     } finally {
       await h.close();
     }
@@ -401,7 +402,7 @@ void describe('screenshots, light and dark, 1440 and 390 (LAI-1213)', () => {
           try {
             await b.page.locator('.space-bar').waitFor({ timeout: 20_000 });
             await setTheme(b.page, theme);
-            const menu = b.page.getByRole('button', { name: 'Space menu' });
+            const menu = b.page.locator('.space-bar').getByRole('link', { name: 'Space settings' });
             await menu.focus();
             await settled(menu);
             await b.page.screenshot({ path: name('board') });

@@ -330,12 +330,9 @@ void describe('the shared tooltip (LAI-1193)', () => {
       await insightsTip.waitFor({ state: 'hidden', timeout: 2_000 });
 
       // Every icon-only control on the toolbar and the space bar has a name and a tooltip.
+      // (Space settings is not one since LAI-1234: a gear with its words beside it.)
       const unlabelled = await h.page.evaluate(() =>
-        [
-          ...document.querySelectorAll(
-            '.bt .bt-icon, .bt .bt-member, .space-menu-trigger, .space-member',
-          ),
-        ]
+        [...document.querySelectorAll('.bt .bt-icon, .bt .bt-member, .space-member')]
           .filter(
             (el) =>
               (el.getAttribute('aria-label') ?? '') === '' ||
