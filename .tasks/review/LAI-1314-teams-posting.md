@@ -177,3 +177,12 @@ master's 0084 snapshot, its SQL byte-identical to the old 0083 (three
 its tables are **§4.94 `org_teams_settings`, §4.95 `project_teams_channels`,
 §4.96 `teams_posts`**. Earlier notes in this file that say 0083 or §4.93 –
 §4.95 are as they were written.
+
+### Review round 2 (review-1314, via CHIEF, 2026-11-18)
+
+- The stand-up's *and N more* counts every blocker: `waitingWords` answers the
+  true total beside the words (`waitingTotal`), and another space's entry now
+  comes last, so a first entry that has company is always one key. One of the
+  space's own blockers and three elsewhere reads `waiting on LAI-1 and 3 more`.
+- A record's headline is cut by code point, as a comment is (`titleOf`).
+- LAI-1320 is mirrored on the board as LAIKA-1089.
