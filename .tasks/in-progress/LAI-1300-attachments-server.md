@@ -5,9 +5,8 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: review
+status: in-progress
 started: 2026-11-17T09:37:55Z
-finished: 2026-11-17T10:20:48Z
 ---
 
 ## Goal
@@ -117,7 +116,7 @@ running Garage beside Laika (bucket, key, `PutBucketCors`, the env).
       GET example (`AKIAIOSFODNN7EXAMPLE`, `examplebucket`, `test.txt`, `20130524T000000Z`,
       86400 s → `aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404`, virtual-
       host style, so host and path are inputs) and the header-signed GET Object example.
-- [x] Route tests over a fake store (`test/helpers/fake-s3.ts`, the `fake-clan.ts` shape):
+- [ ] Route tests over a fake store (`test/helpers/fake-s3.ts`, the `fake-clan.ts` shape):
       ask → PUT → complete → content 302 → list → delete; 413 at max + 1; 409 on a size
       mismatch and on another person's complete; 503 `attachments_off` when off; 403 for a
       viewer and a read-only token; member deletes own, not another's; lead deletes any.
@@ -171,4 +170,63 @@ the PR body and the log:
 - **`markOneTimeSecret` is not independently tested**: while the route is off
   `CACHEABLE_ROUTES` (which the route test asserts), removing the call changes
   nothing observable. Said in the test rather than implied.
+
+## Review notes (CHIEF, 2026-11-17)
+
+Sent back from review of PR #352 at `78dc9eb78`. The criterion on rights and
+deletes (the route tests' *member deletes own, not another's*) is unticked:
+the blocker below breaks it.
+
+**MUST FIX (CONFIRMED): a comment delete removes files the deleter may not delete.**
+- Where: `services/attachments.ts:601-604` (`fillComment`), `:638-695`
+  (`removeCommentAttachments`, which calls no `can()`), called from
+  `services/comments.ts:363`.
+- `linkAttachmentRefs` fills a null `comment_id` on any ready file of the same
+  task, including one that came to the task through the upload itself
+  (`task_id` named at create, which is what the panel's Attach files and drop
+  zone do).
+- Failing case: Alice (member) uploads `spec.pdf` to task T; Bob (member)
+  embeds it in his comment, so its `comment_id` becomes Bob's comment; Bob
+  deletes his comment, and Alice's file is soft-deleted and purged.
+- This bypasses §3.2 "Remove an attachment | own" and contradicts §4.92:
+  "`comment_id` — the comment whose text first linked it".
+- Fix both parts: **(a)** set `comment_id` only when the same save also fills
+  `task_id` (`fillComment = commentId !== null && row.commentId === null &&
+  fillTask`), so a comment owns only files it was first to link; **(b)** in
+  `removeCommentAttachments`, skip a row unless `can(withProject(actor,
+  projectId), 'attachment.delete', {projectId, ownerId: row.uploadedBy})`.
+- Add the missing test with two members: A uploads with `task_id`; B embeds
+  A's file in a comment, then deletes the comment; assert A's file still has
+  `deletedAt` null and no `attachment.removed` row was written. Also keep a
+  case proving B's own comment-first-linked file is still removed with the
+  comment.
+- Update §4.92 / D-150 item 6 wording if needed: "deleting a comment deletes
+  the files it first linked and the deleter may remove".
+
+**FOLLOW-UPS (same round):**
+1. **Sweep overlap** (`attachments.ts:731-741`, `:763-771`): stop the run at
+   the first `StoreUnavailableError`. Otherwise a hung store makes it run for
+   hours (15 s × up to 500 rows × 2) while the scheduler starts another run
+   every hour (`scheduler.ts:244` has no guard against a run still in
+   progress).
+2. **Complete racing the sweep:** refuse `complete` once the row is older than
+   1 h (`409`, a new reason such as `upload_expired`; the PUT only lives 10
+   min). Measure case 2 of the sweep (never-linked) from `ready_at`, not
+   `created_at`.
+3. **HEAD with no Content-Length** (`s3-client.ts:432`): `Number(null) === 0`,
+   so that case answers `size_mismatch` instead of store-unavailable, and the
+   comment there claims otherwise. Check null and `/^\d+$/` first, and add a
+   test.
+4. **Filename whitespace** (`attachments.ts:193`): collapse runs of whitespace
+   in the ASCII fallback, so SigV4's folding cannot desync it from what the
+   browser sends. Add a test with "a  b.png".
+5. **`docs/OPERATIONS.md`:** one line that the bucket must stay private (no
+   public-read, no website mode), because objects keep their declared type and
+   only the presigned GET override makes them safe.
+
+**Record only, no code** (a sentence in §4.92 or the log): the presigned PUT
+stays usable for the rest of its 10 minutes after a complete or delete. That is
+bounded, and the forced `response-content-type` keeps it safe. The 403-versus-
+404 difference on complete, delete and list matches the comment routes'
+convention.
 
