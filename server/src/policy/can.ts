@@ -259,6 +259,8 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.notices.prune',
   'system.hr.sync',
   'system.attachment.prune',
+  'system.email.send',
+  'system.email.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',

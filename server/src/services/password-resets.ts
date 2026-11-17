@@ -48,6 +48,10 @@ export interface IssuedResetLink {
   /** The plaintext token. Returned once, here; only its hash is stored. */
   token: string;
   expiresAt: number;
+  /** The `password_resets` row: the email it may be sent in is keyed by it (D-153). */
+  id: string;
+  /** Whose password it resets — who the email goes to, when email is on (D-153). */
+  user: { id: string; name: string; email: string };
 }
 
 /**
@@ -68,7 +72,13 @@ export function issueResetLink(
   now: number = Date.now(),
 ): IssuedResetLink {
   const target = db
-    .select({ id: users.id, orgRole: users.orgRole, isActive: users.isActive })
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      orgRole: users.orgRole,
+      isActive: users.isActive,
+    })
     .from(users)
     .where(eq(users.id, userId))
     .get();
@@ -85,6 +95,7 @@ export function issueResetLink(
 
   const token = randomBytes(RESET_TOKEN_BYTES).toString('base64url');
   const expiresAt = now + RESET_LINK_TTL_MS;
+  const id = newId();
 
   db.transaction(() => {
     db.update(passwordResets)
@@ -101,7 +112,7 @@ export function issueResetLink(
 
     db.insert(passwordResets)
       .values({
-        id: newId(),
+        id,
         userId,
         tokenHash: hashResetToken(token),
         createdBy: actor.userId,
@@ -111,7 +122,7 @@ export function issueResetLink(
       .run();
   });
 
-  return { token, expiresAt };
+  return { token, expiresAt, id, user: { id: target.id, name: target.name, email: target.email } };
 }
 
 export interface ConsumeResetLinkInput {

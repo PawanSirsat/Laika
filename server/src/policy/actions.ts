@@ -210,6 +210,10 @@ export const SYSTEM_ACTIONS = [
   // §11.6: uploads nobody finished, files nothing linked, and the objects of
   // removed files, swept from the store hourly (D-150 item 6, LAI-1300).
   'system.attachment.prune',
+  // §11.6: the outbox's queued mail sent, and its rows deleted after 90 days
+  // (D-153, LAI-1312) — nobody sends a queued email, so nobody is the actor.
+  'system.email.send',
+  'system.email.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

@@ -16,6 +16,7 @@ import { encryptSecret } from '../secrets.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { type OrgAttachmentsView } from './attachments.ts';
+import { isEmailConfigured, orgEmailView, type OrgEmailView } from './email-settings.ts';
 import { pendingOwnerInvites } from './invites.ts';
 import { extraOwners } from './users.ts';
 
@@ -144,6 +145,14 @@ export interface OrgView {
    * limit before choosing a file.
    */
   attachments: OrgAttachmentsView | null;
+  /**
+   * Outbound email (D-153, LAI-1312): whether the *Email on* switch is on and
+   * whether SMTP is configured. **Readable by everyone**, as `attachments` is:
+   * an inviter needs to know whether a link will also be mailed, and a person
+   * whether Laika will ever email them. The settings themselves are
+   * `GET /org/email`, `org.settings.edit` only.
+   */
+  email: OrgEmailView;
 }
 
 /**
@@ -181,6 +190,7 @@ export function getOrg(
     created_at: row.createdAt,
     updated_at: row.updatedAt,
     attachments,
+    email: orgEmailView(row),
   };
 
   // Field-level, and the only gate on it. A Viewer gets the org and no `ai` key
@@ -337,6 +347,13 @@ export interface UpdateOrgInput {
   ai_base_url?: string | null | undefined;
   /** Write-only. Never read back, at any grade (§12). */
   ai_api_key?: string | null | undefined;
+  /**
+   * The *Email on* switch (D-153, LAI-1312). Turning it on with no SMTP
+   * configured is `422 email_not_configured`: a switch that reads as on with
+   * nothing behind it would suppress every message while looking like it works.
+   * Writes no `activity` row: §4.8 has no verb for it, as for `developer_insights`.
+   */
+  email_enabled?: boolean | undefined;
 }
 
 /**
@@ -438,6 +455,25 @@ export function updateOrg(
 
   const orgId = requireOrgId(db);
 
+  if (input.email_enabled === true) {
+    const row = db
+      .select({
+        emailEnabled: orgs.emailEnabled,
+        smtpSettings: orgs.smtpSettings,
+        smtpJsonEnc: orgs.smtpJsonEnc,
+      })
+      .from(orgs)
+      .where(eq(orgs.id, orgId))
+      .get();
+    if (row === undefined || !isEmailConfigured(row)) {
+      throw new ApiError(
+        'unprocessable',
+        'Save the SMTP settings and the key before turning email on',
+        { field: 'email_enabled', reason: 'email_not_configured' },
+      );
+    }
+  }
+
   // One transaction, so a request refused by the AI settings' check below
   // changes nothing — not even the name or presence given beside it.
   db.transaction(() => {
@@ -455,6 +491,13 @@ export function updateOrg(
     if (input.developer_insights !== undefined) {
       db.update(orgs)
         .set({ developerInsights: input.developer_insights ? 1 : 0, updatedAt: now })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
+
+    if (input.email_enabled !== undefined) {
+      db.update(orgs)
+        .set({ emailEnabled: input.email_enabled ? 1 : 0, updatedAt: now })
         .where(eq(orgs.id, orgId))
         .run();
     }

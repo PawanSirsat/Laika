@@ -725,3 +725,43 @@ export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
  */
 export const ATTACHMENT_STATES = ['pending', 'ready'] as const;
 export type AttachmentState = (typeof ATTACHMENT_STATES)[number];
+
+/**
+ * `email_outbox`' `kind` (§4.93, D-153, LAI-1312): what a message is. `test`
+ * is the settings card's *Send test email*; the other two carry a one-time
+ * link an admin issued. Part B (LAI-1313) adds the notification kinds.
+ */
+export const EMAIL_KINDS = ['test', 'invite', 'password_reset'] as const;
+export type EmailKind = (typeof EMAIL_KINDS)[number];
+
+/**
+ * `email_outbox`' `state` (§4.93, D-153). `queued` and `sending` are the two
+ * live states; the other four are final. `unconfirmed` is a send that may have
+ * arrived — a timeout once the session was underway, or a worker that died
+ * mid-send — and it is **never retried**, because an email sent twice cannot
+ * be unsent.
+ */
+export const EMAIL_STATES = [
+  'queued',
+  'sending',
+  'sent',
+  'failed',
+  'unconfirmed',
+  'suppressed',
+] as const;
+export type EmailState = (typeof EMAIL_STATES)[number];
+
+/**
+ * Why a message was not sent (§4.93, D-153): the switch was off, no SMTP is
+ * configured, there was nobody to send to, there was no public URL to build its
+ * link from, or it waited past its horizon. Recorded on the row rather than
+ * skipped, so silence is auditable.
+ */
+export const EMAIL_SUPPRESSED_REASONS = [
+  'email_off',
+  'email_not_configured',
+  'no_address',
+  'no_public_url',
+  'too_old',
+] as const;
+export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];

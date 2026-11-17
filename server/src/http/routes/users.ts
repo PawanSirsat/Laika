@@ -16,6 +16,7 @@ import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
 import { OpenTasksSchema, parseBody, strictObject, z } from '../validation.ts';
+import { type EmailDispatchView, queueResetEmail } from '../../services/email-outbox.ts';
 
 /**
  * `GET /api/v1/users` (SPEC §6.4). Transport only — §3.1's cell and §4.1's
@@ -60,6 +61,11 @@ function parseIncludeInactive(raw: string | undefined): boolean {
 export interface ResetLinkView {
   url: string;
   expires_at: number;
+  /**
+   * Whether the link was also queued to the person's address (D-153,
+   * LAI-1312), and if not, why — `email_off` while the switch is off.
+   */
+  email: EmailDispatchView;
 }
 
 /** Where the web app's reset page lives (LAI-988), with the token for it. */
@@ -68,9 +74,15 @@ export function resetUrlFor(publicUrl: string | undefined, token: string): strin
   return `${base}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
-export function userRoutes(options: { db: Db; publicUrl?: string | undefined }): Hono<AppEnv> {
+export function userRoutes(options: {
+  db: Db;
+  publicUrl?: string | undefined;
+  /** `LAIKA_SECRET`: a queued email's body is encrypted under it (D-153). */
+  serverSecret?: string | undefined;
+}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
+  const publicUrl = options.publicUrl ?? '';
 
   app.get('/', (c) => {
     const actor = requireActor(c);
@@ -146,10 +158,23 @@ export function userRoutes(options: { db: Db; publicUrl?: string | undefined }):
    * LAI-983). `201`, because a link exists that did not before.
    */
   app.post('/:id/reset-link', (c) => {
-    const issued = issueResetLink(db, requireActor(c), c.req.param('id'));
+    const actor = requireActor(c);
+    const issued = issueResetLink(db, actor, c.req.param('id'));
+    // Also queued to the person when email is on (D-153); an absolute link only.
+    const email = queueResetEmail(
+      db,
+      {
+        resetId: issued.id,
+        user: issued.user,
+        expiresAt: issued.expiresAt,
+        resetUrl: publicUrl === '' ? null : resetUrlFor(publicUrl, issued.token),
+        issuer: { userId: actor.userId, name: actor.name },
+      },
+      options.serverSecret ?? '',
+    );
     markOneTimeSecret(c);
     return c.json<ResetLinkView>(
-      { url: resetUrlFor(options.publicUrl, issued.token), expires_at: issued.expiresAt },
+      { url: resetUrlFor(options.publicUrl, issued.token), expires_at: issued.expiresAt, email },
       201,
     );
   });
