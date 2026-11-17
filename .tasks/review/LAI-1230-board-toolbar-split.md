@@ -5,8 +5,9 @@ area: web
 assignee: shell
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T10:00:00Z
+finished: 2026-11-17T11:30:00Z
 ---
 
 ## Goal
@@ -22,18 +23,18 @@ changes, no new dependencies. Local commits only, not pushed.
 
 ## Acceptance criteria
 
-- [ ] The ⋯ menu and its dot are gone from the board toolbar. View settings,
+- [x] The ⋯ menu and its dot are gone from the board toolbar. View settings,
       Insights, Refresh and Hidden columns are separate icon buttons again,
       in the pre-LAI-1198 order (Hidden columns, Insights, View settings,
       Refresh), each with its accessible name and the shared Tooltip.
-- [ ] Hidden columns shows its count on its own button, and is drawn only
+- [x] Hidden columns shows its count on its own button, and is drawn only
       when there is a hidden column the reader may restore.
-- [ ] On phone widths the toolbar stays usable and does not widen the page.
-- [ ] Menus, popovers and dropdowns use an elevation token from `theme.css`
+- [x] On phone widths the toolbar stays usable and does not widen the page.
+- [x] Menus, popovers and dropdowns use an elevation token from `theme.css`
       (light, dark and black), applied in the shared surfaces, with no
       per-screen raw box-shadow; reduced-transparency / high-contrast
       fallbacks still work.
-- [ ] Tests that asserted the ⋯ menu assert the separate buttons, their
+- [x] Tests that asserted the ⋯ menu assert the separate buttons, their
       names, and that the shadow token is used.
-- [ ] Typecheck, lint, format, the structure test, the affected browser
+- [x] Typecheck, lint, format, the structure test, the affected browser
       tests and the web build exit 0.
