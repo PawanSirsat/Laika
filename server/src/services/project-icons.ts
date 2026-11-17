@@ -56,9 +56,10 @@ import { requireReadableProjectBySlug } from './projects.ts';
  *
  * ## Off without a store
  *
- * A deployment with no `LAIKA_S3_*` (the AWS board) answers the image routes
- * `503 unavailable` with `details.reason: 'attachments_off'`; emoji and letter
- * work everywhere.
+ * A deployment with no `LAIKA_S3_*` (the AWS board) answers asking,
+ * completing and reading an image `503 unavailable` with
+ * `details.reason: 'attachments_off'`; removing still clears the icon, and
+ * emoji and letter work everywhere.
  */
 
 /** The largest icon image (D-152). An icon is drawn at most a few dozen pixels across. */
@@ -174,7 +175,8 @@ export interface CompleteProjectIconInput {
  * (`409 size_mismatch`), and its first bytes must prove the declared type
  * (`422 type_mismatch`). Then it is the space's icon: any emoji is cleared,
  * the image it replaces is deleted from the store, and `project.updated` is
- * written.
+ * written. Completing the upload that already is the icon changes nothing
+ * and checks nothing, so it can never delete the live object.
  */
 export async function completeProjectIcon(
   db: Db,
@@ -200,6 +202,9 @@ export async function completeProjectIcon(
   }
 
   const key = iconKeyFor(row.id, input.upload_id);
+  // The icon already is this upload: nothing to check, and above all nothing
+  // to delete — a wrong type below would remove the object the row points at.
+  if (key === row.iconKey) return row;
   const found = await store.head(key);
   if (found === null) {
     throw new ApiError('conflict', 'The image has not reached the store', {
@@ -316,8 +321,8 @@ export interface ProjectIconBytes {
 
 /**
  * An icon image's bytes (`GET /projects/:slug/icon`), read from the store
- * and answered by Laika. A space the caller cannot read, or one with no
- * image, is the same `404`.
+ * and answered by Laika. A space the caller cannot read, one with no image,
+ * and one whose object the store no longer has are the same `404`.
  */
 export async function readProjectIcon(
   db: Db,
@@ -331,8 +336,12 @@ export async function readProjectIcon(
   if (row.iconKey === null || row.iconType === null) {
     throw ApiError.notFound(`Space "${slug}" has no icon image`);
   }
+  // `HEAD` first: a ranged `GET` of a missing object is the store failing to
+  // answer to `readRange`, a 503, where a missing image is this route's 404.
+  if ((await store.head(row.iconKey)) === null) {
+    throw ApiError.notFound(`Space "${slug}" has no icon image`);
+  }
   const body = await store.readRange(row.iconKey, 0, PROJECT_ICON_MAX_BYTES - 1);
-  if (body.length === 0) throw ApiError.notFound(`Space "${slug}" has no icon image`);
   return {
     body,
     contentType: row.iconType,

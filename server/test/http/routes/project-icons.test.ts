@@ -369,6 +369,29 @@ describe('the image, asked for, uploaded, completed, read and removed', () => {
     );
   });
 
+  it('completing the upload that already is the icon changes nothing, and deletes nothing', async () => {
+    const { ticket, project } = await upload();
+    const again = await must<ProjectBody>(
+      call('POST', '/projects/laika/icon/complete', {
+        upload_id: ticket.upload_id,
+        // Wrong on purpose: were it checked, the live object would be deleted.
+        content_type: 'image/webp',
+        size_bytes: 1,
+      }),
+      200,
+    );
+    expect(again.icon).toEqual(project.icon);
+    expect(fake.objects.has(keyOf(ticket))).toBe(true);
+    expect(fake.of('DELETE')).toEqual([]);
+  });
+
+  it('an image whose object the store lost is the read route’s 404, not a 503', async () => {
+    const { ticket } = await upload();
+    fake.objects.delete(keyOf(ticket));
+    const error = await refused(call('GET', '/projects/laika/icon'), 404);
+    expect(error.code).toBe('not_found');
+  });
+
   it('a malformed upload id names nothing', async () => {
     const error = await refused(
       call('POST', '/projects/laika/icon/complete', {
@@ -392,7 +415,7 @@ describe('who may change and read an icon image', () => {
     await boot();
   });
 
-  it('refuses a member, a viewer, a lead who is not an admin, and a read-only token', async () => {
+  it('refuses a member, a viewer, a lead who is not an admin, and a read-only token — ask, complete and remove', async () => {
     const member = await person('mo@example.test', 'member', 'member');
     const viewer = await person('vi@example.test', 'viewer', 'viewer');
     const lead = await person('lee@example.test', 'member', 'lead');
@@ -414,6 +437,13 @@ describe('who may change and read an icon image', () => {
         (await ask({ content_type: 'image/png', size_bytes: 10 }, headers)).status,
         label,
       ).toBe(403);
+      const complete = await call(
+        'POST',
+        '/projects/laika/icon/complete',
+        { upload_id: '01M7NB3PN15NBHEPSNB8VPBTZJ', content_type: 'image/png', size_bytes: 10 },
+        headers,
+      );
+      expect(complete.status, label).toBe(403);
       expect((await call('DELETE', '/projects/laika/icon', undefined, headers)).status, label).toBe(
         403,
       );
