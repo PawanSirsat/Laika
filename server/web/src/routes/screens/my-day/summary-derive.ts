@@ -22,9 +22,15 @@ export interface SplitSegment {
   readonly pct: number;
 }
 
-/** What a block is for the split: its kind, else Building's — a draft has none yet. */
+/**
+ * What a block is for the split: its kind, else Building's — a draft has none
+ * yet. A meeting the Outlook sync logged (D-157, LAI-1316) is a meeting even
+ * when the person has cleared its kind: it came from their calendar.
+ */
 export function splitKeyOf(block: TimeEntry | TimeDraft): SplitKey {
-  return ('kind' in block ? block.kind : null) ?? 'work';
+  const kind = 'kind' in block ? block.kind : null;
+  if (kind !== null && kind !== undefined) return kind;
+  return block.source === 'calendar' ? 'meeting' : 'work';
 }
 
 /** The slice's word, the design's: *Building*, *Meetings*, then each kind's own. */

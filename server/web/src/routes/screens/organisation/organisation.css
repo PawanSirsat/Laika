@@ -3043,6 +3043,121 @@
   }
 }
 
+/*
+ * D-157's Outlook calendar (LAI-1316), a card on Integrations after the HR
+ * system. Tokens only — no Microsoft colours. The missing permission is the
+ * orange of "act before it works"; a failed sync is the overdue red, as the
+ * HR card's.
+ */
+.org-cal-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-2);
+  min-width: 0;
+}
+
+.org-cal-switch-label {
+  font-weight: var(--weight-semibold);
+}
+
+.org-cal-switch > .org-fact-note {
+  flex: 1 1 100%;
+}
+
+/* Wider than the HR sign-in form: a rule is three controls on one line. */
+.org-cal-form {
+  max-width: 44rem;
+}
+
+.org-cal-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.org-cal-rules-head {
+  padding: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.org-cal-rule-list {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.org-cal-rule {
+  display: grid;
+  grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr) minmax(9rem, 14rem) auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.org-cal-rule-problem {
+  grid-column: 1 / -1;
+}
+
+.org-cal-check {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.org-cal-check-head {
+  font-weight: var(--weight-semibold);
+}
+
+.org-cal-verdict {
+  overflow-wrap: anywhere;
+}
+
+.org-cal-verdict[data-tone='warning'] {
+  color: var(--chip-orange);
+}
+
+.org-cal-roles {
+  overflow-wrap: anywhere;
+}
+
+/* A phone: the match and the remove button share a line, then the words and
+   the space each take the card's full width. */
+@media (max-width: 640px) {
+  .org-cal-rule {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .org-cal-rule-text,
+  .org-cal-rule-space.dd-field {
+    grid-column: 1 / -1;
+  }
+
+  .org-cal-rule-kind.dd-field {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .org-cal-rule-remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 .org-holiday-year {
   display: flex;
   flex-direction: column;

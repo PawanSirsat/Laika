@@ -150,6 +150,25 @@ void describe('gapsOf — unaccounted time between blocks', () => {
 });
 
 void describe('dayLine — the day placed on its lane', () => {
+  void test('an Outlook meeting is placed and may be moved; an import is locked (D-157)', () => {
+    const line = dayLine(
+      view({
+        entries: [
+          entry('o1', at(9), 30, { source: 'calendar', kind: 'meeting' }),
+          entry('i1', at(10), 30, { source: 'import' }),
+        ],
+      }),
+      at(20),
+    );
+    assert.deepEqual(
+      line.blocks.map((b) => [b.id, b.kind, b.locked]),
+      [
+        ['o1', 'confirmed', false],
+        ['i1', 'confirmed', true],
+      ],
+    );
+  });
+
   void test('places what has a time, counts what has none, and marks what needs a card', () => {
     const line = dayLine(
       view({

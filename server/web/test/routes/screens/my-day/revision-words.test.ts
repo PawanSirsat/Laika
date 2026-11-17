@@ -49,6 +49,23 @@ void describe('who changed it, in words (D-143)', () => {
     );
   });
 
+  void test('an Outlook meeting’s first revision says it came from Outlook (D-157)', () => {
+    // The sync writes it in the person's own name.
+    assert.equal(revisionWords(rev(), 'calendar', true, 'u2'), 'From Outlook · 30 min');
+    assert.equal(revisionWords(rev(), 'calendar', true), 'From Outlook · 30 min');
+    // A later sync's update, or the person's own change, is an edit.
+    assert.equal(
+      revisionWords(rev({ change: 'edited', minutes: 45 }), 'calendar', false, 'u2'),
+      'Edited · 45 min',
+    );
+    assert.equal(revisionWords(rev({ change: 'deleted' }), 'calendar', false, 'u2'), 'Deleted');
+    // An owner who changes it is named, as on any entry.
+    assert.equal(
+      revisionWords(rev({ ...ADA, change: 'edited', minutes: 15 }), 'calendar', false, 'u2'),
+      'Changed by Ada Lovelace · 15 min',
+    );
+  });
+
   void test('an import’s first revision is Solidtime’s; an owner’s change to it is named', () => {
     assert.equal(revisionWords(rev(ADA), 'import', true, 'u2'), 'Imported from Solidtime');
     assert.equal(revisionBy(rev(ADA), 'import', true, 'u2'), undefined);

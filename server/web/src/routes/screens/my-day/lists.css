@@ -122,6 +122,13 @@
   color: var(--text-secondary);
 }
 
+/* A meeting the Outlook sync logged (D-157, LAI-1316): its own hue, so it
+   reads apart from an import and from time the person typed. */
+.myday-source-calendar {
+  background: var(--chip-purple-bg);
+  color: var(--chip-purple);
+}
+
 /* The head's hint: orange while some have no task. */
 .myday-caption-warn {
   color: var(--chip-orange);

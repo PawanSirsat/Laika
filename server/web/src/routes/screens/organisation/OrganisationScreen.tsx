@@ -31,6 +31,7 @@ import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
+import { CalendarSourceSection } from './CalendarSourceSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
@@ -144,6 +145,8 @@ export function OrganisationScreen({
   const canSetTime = gates.org('org.time.set');
   /** D-149 (LAI-1182): connecting Clan is its own §3.1 row, owners and admins by default. */
   const canConfigureHr = gates.org('org.hr.configure');
+  /** D-157 (LAI-1316): the Outlook calendar connection, its own §3.1 row, owners and admins. */
+  const canConfigureCalendar = gates.org('org.calendar.configure');
   const canListTokens = gates.org('token.list_any');
   /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
   const canRevokeTokens = gates.org('token.revoke_any');
@@ -740,6 +743,14 @@ export function OrganisationScreen({
                 beside the other connection GitHub is — its holder's alone. */}
             {canConfigureHr && (
               <HrSourceSection members={state.people.filter((p) => p.is_active)} />
+            )}
+
+            {/* D-157 (LAI-1316): Outlook meetings logged as time on My day,
+                after the HR card — the other connection held for everyone. */}
+            {canConfigureCalendar && (
+              <CalendarSourceSection
+                spaces={projects.projects.filter((p) => p.archived_at === null)}
+              />
             )}
 
             {/* LAI-773: the prices every cost on Usage is computed with — read by

@@ -60,6 +60,15 @@ void describe('splitKeyOf', () => {
     assert.equal(splitKeyOf(entry({ project: { slug: 'atlas' } as never })), 'work');
     assert.equal(splitKeyOf(entry({})), 'work');
   });
+
+  void test('a meeting the Outlook sync logged is a meeting, even with its kind cleared (D-157)', () => {
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: 'meeting' })), 'meeting');
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: null })), 'meeting');
+    // The person's own word still wins: a kind they chose is the kind.
+    assert.equal(splitKeyOf(entry({ source: 'calendar', kind: 'pairing' })), 'pairing');
+    // Every other source with no kind is still Building's.
+    assert.equal(splitKeyOf(entry({ source: 'manual', kind: null })), 'work');
+  });
 });
 
 void describe('daySplit', () => {
@@ -81,6 +90,24 @@ void describe('daySplit', () => {
     );
   });
 
+  void test('Outlook meetings count as meeting time in the split (D-157)', () => {
+    const split = daySplit(
+      [
+        entry({ id: 'o', minutes: 30, source: 'calendar', kind: 'meeting' }),
+        entry({ id: 'p', minutes: 30, source: 'calendar', kind: null }),
+        entry({ id: 'w', minutes: 60, source: 'manual' }),
+      ],
+      [],
+    );
+    assert.deepEqual(
+      split.map((s) => [s.key, s.minutes]),
+      [
+        ['work', 60],
+        ['meeting', 60],
+      ],
+    );
+  });
+
   void test('nothing yields no segment', () => {
     assert.deepEqual(daySplit([], []), []);
   });
@@ -92,6 +119,8 @@ void describe('offScreen and noteOf', () => {
     assert.deepEqual(offScreen([entry({ id: 'x' }), typed, entry({ id: 'i', source: 'import' })]), [
       typed,
     ]);
+    // An Outlook meeting is not off-screen: Laika read it from the calendar (D-157).
+    assert.deepEqual(offScreen([typed, entry({ id: 'o', source: 'calendar' })]), [typed]);
     assert.equal(noteOf({ day_note: null }), '');
     assert.equal(
       noteOf({ day_note: { day: '2026-10-22', note: 'Long day', updated_at: 1 } }),

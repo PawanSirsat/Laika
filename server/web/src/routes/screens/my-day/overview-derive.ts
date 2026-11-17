@@ -97,6 +97,8 @@ export function summaryOfDay(view: Pick<MyDay, 'day' | 'drafts' | 'entries'>): T
     add(e.task, e.project, e.minutes, true);
     const kind = e.kind ?? null;
     kinds.set(kind, (kinds.get(kind) ?? 0) + e.minutes);
+    // By kind, as the server's summary counts it: a meeting the Outlook sync
+    // logged is `meeting` (D-157), so it is meeting time here and there.
     if (e.kind === 'meeting') meeting += e.minutes;
     if (e.source === 'manual') manual += e.minutes;
   }
