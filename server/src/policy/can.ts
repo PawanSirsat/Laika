@@ -684,6 +684,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'org.hr.configure':
       return granted(actor, action);
 
+    // | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
+    // *Email on* switch. Carried by *Change organisation settings, Time and
+    // breaks*, as the HR connection is; session only, because every invite
+    // and reset link goes wherever this points.
+    case 'org.email.configure':
+      return granted(actor, action);
+
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |
     // | Set own Draft my time | ✓ (session only) | … | ✓ (session only) |
     // | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |

@@ -8,6 +8,7 @@ import { accounts, passwordResets, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { endEverySession } from './users.ts';
+import { resetEmailKey, supersedeEmail } from './email-outbox.ts';
 
 /**
  * Admin-issued one-time password-reset links (§4.60, §6.4, D-104 item 4,
@@ -98,7 +99,8 @@ export function issueResetLink(
   const id = newId();
 
   db.transaction(() => {
-    db.update(passwordResets)
+    const replaced = db
+      .update(passwordResets)
       .set({ revokedAt: now })
       .where(
         and(
@@ -108,7 +110,14 @@ export function issueResetLink(
           gt(passwordResets.expiresAt, now),
         ),
       )
-      .run();
+      .returning({ id: passwordResets.id })
+      .all();
+    // Their mails, if still waiting, would carry dead links (D-153, LAI-1312 review).
+    supersedeEmail(
+      db,
+      replaced.map((r) => resetEmailKey(r.id)),
+      now,
+    );
 
     db.insert(passwordResets)
       .values({
@@ -242,6 +251,8 @@ export async function consumeResetLink(
       )
       .run().changes;
     if (claimed === 0) return null;
+    // Used: a mail still waiting would carry a link that no longer works (D-153).
+    supersedeEmail(db, [resetEmailKey(link.id)], now);
 
     const updated = db
       .update(accounts)

@@ -754,8 +754,8 @@ export type EmailState = (typeof EMAIL_STATES)[number];
 /**
  * Why a message was not sent (§4.93, D-153): the switch was off, no SMTP is
  * configured, there was nobody to send to, there was no public URL to build its
- * link from, or it waited past its horizon. Recorded on the row rather than
- * skipped, so silence is auditable.
+ * link from, it waited past its horizon, or its link was superseded. Recorded
+ * on the row rather than skipped, so silence is auditable.
  */
 export const EMAIL_SUPPRESSED_REASONS = [
   'email_off',
@@ -763,5 +763,9 @@ export const EMAIL_SUPPRESSED_REASONS = [
   'no_address',
   'no_public_url',
   'too_old',
+  // The link it carries stopped working before it went: the invite was
+  // revoked, re-issued or accepted, or a newer reset link replaced it, or it
+  // was used (LAI-1312 review). Nobody gets a dead link, or two mails.
+  'superseded',
 ] as const;
 export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];

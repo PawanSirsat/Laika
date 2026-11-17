@@ -163,6 +163,36 @@ describe('saving the settings', () => {
     expect(readSmtpConfig(t.db, SECRET)?.password).toBe(FAKE_SMTP_KEY);
   });
 
+  it('refuses a new host, port or login without the key: the stored key goes only where it was given', () => {
+    setEmailSettings(t.db, actor(ownerId), SMTP_SETTINGS, SECRET);
+    const { password: _drop, ...rest } = SMTP_SETTINGS;
+    for (const change of [{ host: 'smtp.attacker.example' }, { port: 25 }, { username: 'x' }]) {
+      const err = refusal(() => setEmailSettings(t.db, actor(ownerId), { ...rest, ...change }, SECRET));
+      expect(err.code, JSON.stringify(change)).toBe('unprocessable');
+      expect(err.details).toEqual({ field: 'password', reason: 'key_required' });
+    }
+    expect(readSmtpConfig(t.db, SECRET)?.host).toBe('smtp-relay.brevo.com');
+  });
+
+  it('refuses a token, signed in only — even the owner’s', () => {
+    const owner = actor(ownerId);
+    const viaToken: ResolvedActor = {
+      ...owner,
+      token: { id: 'tok_full', scope: 'full', projectIds: null },
+    };
+    for (const call of [
+      () => getEmailSettings(t.db, viaToken),
+      () => setEmailSettings(t.db, viaToken, SMTP_SETTINGS, SECRET),
+      () => clearEmailSettings(t.db, viaToken),
+      () => updateOrg(t.db, viaToken, { email_enabled: false }, SECRET),
+    ]) {
+      expect(refusal(call).details).toEqual({
+        action: 'org.email.configure',
+        reason: 'session_required',
+      });
+    }
+  });
+
   it('saves without a key, and is then not configured', () => {
     const { password: _drop, ...rest } = SMTP_SETTINGS;
     const view = setEmailSettings(t.db, actor(ownerId), rest, SECRET);

@@ -150,7 +150,7 @@ export interface OrgView {
    * whether SMTP is configured. **Readable by everyone**, as `attachments` is:
    * an inviter needs to know whether a link will also be mailed, and a person
    * whether Laika will ever email them. The settings themselves are
-   * `GET /org/email`, `org.settings.edit` only.
+   * `GET /org/email`, `org.email.configure` only.
    */
   email: OrgEmailView;
 }
@@ -351,7 +351,8 @@ export interface UpdateOrgInput {
    * The *Email on* switch (D-153, LAI-1312). Turning it on with no SMTP
    * configured is `422 email_not_configured`: a switch that reads as on with
    * nothing behind it would suppress every message while looking like it works.
-   * Writes no `activity` row: §4.8 has no verb for it, as for `developer_insights`.
+   * `org.email.configure`, signed in only, as the settings are. Writes no
+   * `activity` row: §4.8 has no verb for it, as for `developer_insights`.
    */
   email_enabled?: boolean | undefined;
 }
@@ -452,6 +453,8 @@ export function updateOrg(
   // Asked before anything is written, so a token's request that also carries
   // another setting changes nothing at all (D-079, LAI-751 review).
   if (input.developer_insights !== undefined) assertCan(actor, 'org.developer_insights.set');
+  // The *Email on* switch is configuring email, signed in only (D-153, LAI-1312 review).
+  if (input.email_enabled !== undefined) assertCan(actor, 'org.email.configure');
 
   const orgId = requireOrgId(db);
 

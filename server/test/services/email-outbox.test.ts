@@ -16,6 +16,7 @@ import {
   queueResetEmail,
   runEmailOutbox,
   sendDueEmail,
+  supersedeEmail,
 } from '../../src/services/email-outbox.ts';
 import { clearEmailSettings, setEmailSettings } from '../../src/services/email-settings.ts';
 import { updateOrg } from '../../src/services/orgs.ts';
@@ -280,6 +281,44 @@ describe('with the switch on', () => {
     t.db.update(orgs).set({ emailEnabled: 1 }).run();
     expect(await run(NOW + 1)).toMatchObject({ suppressed: 1 });
     expect(rows()[0]?.suppressedReason).toBe('email_not_configured');
+  });
+
+  it('stops at the next message when the switch goes off mid-run', async () => {
+    queueEmail(t.db, message(), SECRET, NOW);
+    queueEmail(t.db, message(), SECRET, NOW + 1);
+    // The first send turns email off, as an admin would while a run is going.
+    const flipping = {
+      send: () => {
+        t.db.update(orgs).set({ emailEnabled: 0 }).run();
+        return Promise.resolve({ kind: 'sent' as const });
+      },
+    };
+    const result = await sendDueEmail(t.db, SECRET, { transport: flipping, now: () => NOW + 2 });
+    expect(result).toMatchObject({ sent: 1, suppressed: 1 });
+    expect(
+      rows()
+        .map((r) => [r.state, r.suppressedReason])
+        .sort(),
+    ).toEqual([
+      ['sent', null],
+      ['suppressed', 'email_off'],
+    ]);
+  });
+
+  it('supersedes only what is still queued, by key', () => {
+    const waiting = message();
+    const other = message();
+    queueEmail(t.db, waiting, SECRET, NOW);
+    queueEmail(t.db, other, SECRET, NOW);
+    expect(supersedeEmail(t.db, [waiting.idempotencyKey, 'invite:none'], NOW + 1)).toBe(1);
+    const byKey = Object.fromEntries(rows().map((r) => [r.idempotencyKey, r]));
+    expect(byKey[waiting.idempotencyKey]).toMatchObject({
+      state: 'suppressed',
+      suppressedReason: 'superseded',
+      bodyEnc: null,
+    });
+    expect(byKey[other.idempotencyKey]?.state).toBe('queued');
+    expect(supersedeEmail(t.db, [], NOW)).toBe(0);
   });
 
   it('joins a run already going rather than starting a second', async () => {

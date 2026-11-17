@@ -65,6 +65,8 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     'org.time.set',
     'org.developer_insights.set',
     'org.hr.configure',
+    // D-153 (LAI-1312 review): outbound email, beside the HR connection.
+    'org.email.configure',
   ],
 };
 

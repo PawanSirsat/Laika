@@ -175,6 +175,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'notices.own': 'YYYY',
   // D-149 (LAI-1181): the HR connection, under *Change organisation settings*.
   'org.hr.configure': 'YYNN',
+  // D-153 (LAI-1312 review): outbound email, under the same grant.
+  'org.email.configure': 'YYNN',
   'developer_setup.read_own': 'YYYY',
 
   'project.members.manage': 'YNN',
@@ -420,6 +422,7 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'org.time.set')).toBe('YNNN');
     // D-149 (LAI-1181): carried by the same grant as the Time setting.
     expect(cells(view, 'org.hr.configure')).toBe('YNNN');
+    expect(cells(view, 'org.email.configure')).toBe('YNNN');
     // Grantable since LAI-985: *Create and archive spaces*, *Manage anyone's tokens*.
     expect(cells(view, 'project.create')).toBe('YNNN');
     expect(cells(view, 'token.revoke_any')).toBe('YNNN');

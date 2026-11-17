@@ -179,12 +179,15 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
         return { changed: emailChangedBy(result) };
       },
     },
-    // Outbox rows 90 days after they were written, under `system.email.prune`.
-    // No `activity` row: nobody did it.
+    // Outbox rows 90 days after they were written, under `system.email.prune`,
+    // daily and once at boot: deploys restart more often than daily, so a daily
+    // interval alone might never come round (CHIEF's LAI-1312 review). No
+    // `activity` row: nobody did it.
     {
       name: 'email.retention',
       everyMs: DAY,
       run: (now) => ({ changed: pruneEmailOutbox(db, now) }),
+      atStart: true,
     },
     // Claims whose lease lapsed become `expired` (§9.1, proposal §4.2,
     // LAI-541), every `LAIKA_CLAIM_SCAN_SECONDS`. Not `atStart`: the boot

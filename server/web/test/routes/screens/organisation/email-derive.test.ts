@@ -14,6 +14,8 @@ import {
   emailFormFrom,
   emailFormInput,
   emailOn,
+  keyIsStored,
+  movesTheKey,
   failureMeaning,
   nextStep,
   testLine,
@@ -77,10 +79,23 @@ void describe('the form', () => {
     });
   });
 
-  void test('asks for the key only while none is stored', () => {
+  void test('asks for the key while none is stored, and not for the same host after', () => {
     const form = { ...emailFormFrom(settings()), username: 'login' };
-    assert.deepEqual(emailFormErrors(form, false), { password: 'Paste the SMTP key' });
-    assert.deepEqual(emailFormErrors(form, true), {});
+    assert.deepEqual(emailFormErrors(form, settings()), { password: 'Paste the SMTP key' });
+    assert.deepEqual(emailFormErrors(emailFormFrom(SAVED), SAVED), {});
+  });
+
+  void test('asks for the key again before the stored one is pointed at a new host, port or login', () => {
+    for (const change of [{ host: 'smtp.attacker.example' }, { port: '25' }, { username: 'x' }]) {
+      const form = { ...emailFormFrom(SAVED), ...change };
+      assert.equal(movesTheKey(form, SAVED), true, JSON.stringify(change));
+      assert.deepEqual(emailFormErrors(form, SAVED), {
+        password: 'Paste the key again to change the host, port or login',
+      });
+      assert.deepEqual(emailFormErrors({ ...form, password: 'new-key' }, SAVED), {});
+    }
+    assert.equal(keyIsStored(SAVED), true);
+    assert.equal(keyIsStored(settings()), false);
   });
 
   void test('says what the server would refuse, by field', () => {
@@ -93,7 +108,7 @@ void describe('the form', () => {
         from_address: 'nope',
         from_name: '',
       },
-      true,
+      SAVED,
     );
     assert.deepEqual(Object.keys(errors).sort(), [
       'from_address',

@@ -142,6 +142,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['View own developer setup', ['developer_setup.read_own']],
   // D-149 (LAI-1181): Clan, connected once, synced, and its people mapped.
   ["Connect the organisation's HR system", ['org.hr.configure']],
+  // D-153 (LAI-1312 review): SMTP, the test send and the switch.
+  ["Configure the organisation's email", ['org.email.configure']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

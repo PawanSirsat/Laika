@@ -7603,10 +7603,19 @@ open from the Ksage server (measured 2026-11-18).
 
 **Decision.**
 
-1. **SMTP, set in organisation settings rather than the environment.** It sits on §3.1's
-   existing *Org settings (AI provider, SMTP, signup mode)* row (`org.settings.edit`), on an
-   *Email* card on Organisation › Integrations: host, port, login, key, From address and From
-   name.
+1. **SMTP, set in organisation settings rather than the environment, signed in only.** It sits
+   on an *Email* card on Organisation › Integrations: host, port, login, key, From address and
+   From name.
+   - **Configuring email is session only.** It uses a new §3.1 row, *Configure the
+     organisation's email* (`org.email.configure`), carried by *Change organisation settings*.
+     No token may hold it, whatever its scope. Every invite and reset link goes wherever these
+     settings point, so a token that could set the relay or flip the switch could have them
+     all mailed to a server it chose. That's the reason `user.reset_password` is session only,
+     reached another way. (CHIEF's LAI-1312 review; it narrows the older *Org settings (AI
+     provider, SMTP, signup mode)* row for email.)
+   - **A new host needs the key again.** Saving without the key keeps the stored one only for
+     the same host, port and login; otherwise it's `422 key_required`. The stored key is never
+     sent, in a test or otherwise, to a server it wasn't given for.
    - **The key** is stored in `smtp_json_enc` under `LAIKA_SECRET` (§12).
    - **Everything a screen shows**, plus the key's last four characters, is in a plain
      `smtp_settings` column, so building a view never decrypts anything. This is LAI-447's rule.
@@ -7630,10 +7639,13 @@ open from the Ksage server (measured 2026-11-18).
      carries a one-time link;
    - a 5xx fails, a 4xx or a failure where nothing could have left is retried, and a timeout
      once the session was underway is `unconfirmed` and **never retried**;
-   - a 7-day horizon, or the link's own expiry if sooner.
+   - a 7-day horizon, or the link's own expiry if sooner;
+   - a message whose link stops working before it goes — the invite revoked, re-issued or
+     accepted, or the reset link replaced or used — is `superseded` and never sent.
 
-   The sender runs every 30 seconds under §3.4's `system.email.send`. Rows are deleted after 90
-   days under `system.email.prune`.
+   The sender runs every 30 seconds under §3.4's `system.email.send` and asks the switch again
+   before each message. Rows are deleted after 90 days under `system.email.prune`, daily and
+   once at boot.
 4. **What is mailed.**
    - **Transactional mail (LAI-1312):** an invite's link, to its address, on create and
      re-issue; and an admin-issued reset link, to the person it's for. The copy-link flow

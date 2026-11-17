@@ -41,12 +41,31 @@ export function emailFormFrom(settings: EmailSettings): EmailForm {
   };
 }
 
+/** The saved settings a form is checked against. */
+export type EmailSaved = Pick<EmailSettings, 'host' | 'port' | 'username' | 'key_last4' | 'configured'>;
+
+/** Whether a key is stored, which an empty key field then keeps. */
+export function keyIsStored(saved: EmailSaved): boolean {
+  return saved.key_last4 !== null || saved.configured;
+}
+
+/**
+ * Whether the form points the stored key somewhere new: a different host, port
+ * or login. The server refuses that without the key (`key_required`), so the
+ * stored key is only ever sent where it was given for.
+ */
+export function movesTheKey(form: EmailForm, saved: EmailSaved): boolean {
+  return (
+    form.host.trim() !== (saved.host ?? '') ||
+    form.port.trim() !== String(saved.port ?? '') ||
+    form.username.trim() !== (saved.username ?? '')
+  );
+}
+
 /** What would be refused, by field — the server's rules, said before a round trip. */
-export function emailFormErrors(
-  form: EmailForm,
-  keyStored: boolean,
-): Partial<Record<EmailField, string>> {
+export function emailFormErrors(form: EmailForm, saved: EmailSaved): Partial<Record<EmailField, string>> {
   const errors: Partial<Record<EmailField, string>> = {};
+  const keyStored = keyIsStored(saved);
   if (!/^[A-Za-z0-9.:-]+$/.test(form.host.trim()) || form.host.trim().startsWith('-')) {
     errors.host = 'A host name, such as smtp-relay.brevo.com';
   }
@@ -55,8 +74,11 @@ export function emailFormErrors(
     errors.port = 'A port from 1 to 65535 — Brevo uses 587';
   }
   if (form.username.trim() === '') errors.username = 'The SMTP login Brevo shows';
-  if (!keyStored && form.password.trim() === '') {
-    errors.password = 'Paste the SMTP key';
+  if (form.password.trim() === '') {
+    if (!keyStored) errors.password = 'Paste the SMTP key';
+    else if (movesTheKey(form, saved)) {
+      errors.password = 'Paste the key again to change the host, port or login';
+    }
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.from_address.trim())) {
     errors.from_address = 'An address the relay will send as';

@@ -19,6 +19,7 @@ import {
   emailFormErrors,
   emailFormFrom,
   emailFormInput,
+  keyIsStored,
   nextStep,
   testLine,
 } from './email-derive.ts';
@@ -91,8 +92,8 @@ export function EmailSection({ onChanged }: EmailSectionProps) {
     );
   }
 
-  const keyStored = settings.key_last4 !== null || settings.configured;
-  const errors = emailFormErrors(form, keyStored);
+  const keyStored = keyIsStored(settings);
+  const errors = emailFormErrors(form, settings);
   const invalid = Object.keys(errors).length > 0;
   const badge = emailBadge(settings);
   const shown = (field: keyof EmailForm): string | undefined =>
@@ -273,14 +274,14 @@ export function EmailSection({ onChanged }: EmailSectionProps) {
           required
         />
         <PasswordInput
-          label={keyStored ? 'SMTP key — leave empty to keep it' : 'SMTP key'}
+          label={keyStored ? 'SMTP key — leave empty to keep the saved one' : 'SMTP key'}
           value={form.password}
           onChange={set('password')}
           autoComplete="new-password"
           help={
             settings.key_last4 === null
               ? 'A key made for Laika alone. Laika keeps it encrypted and shows only its last four.'
-              : `The saved key ends ···${settings.key_last4}. Paste a new one to replace it.`
+              : `The saved key ends ···${settings.key_last4}, and is only sent to the host it was saved with — a new host, port or login needs it pasted again.`
           }
           error={shown('password')}
           required={!keyStored}

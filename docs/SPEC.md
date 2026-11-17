@@ -141,7 +141,7 @@ organisation's grants for exactly these actions and no others.
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
 | *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
-| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149) |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.email.configure` (D-153) |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
@@ -261,6 +261,7 @@ be obvious because someone will be asking for it.
 | Read and set own plan limit | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
 | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
+| Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
 | Read own time settings | ✓ | ✓ | ✓ | ✓ |
 | Set own Draft my time | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
@@ -400,6 +401,18 @@ themselves are the organisation's Time setting** — adding or removing one is
 holiday is not private. **Leave is read with the person's availability**
 (D-137), its type only by the person, owners, admins and *See everyone's
 analytics* (D-149 item 5).
+
+**"Configure the organisation's email" is `org.email.configure`** (D-153,
+LAI-1312 review), behind §6.4's `/org/email` routes and `PATCH /org`'s
+`email_enabled`: the SMTP settings, *Send test email* and the *Email on* switch.
+**Session only**, because every invite and reset link goes wherever it points:
+a token that could set the relay or turn email on could have them all mailed to
+a server it chose, which is the reason *Issue a password-reset link* is session
+only, reached another way. Saving without the key keeps the stored one **only
+for the same host, port and login** — a new one is `422 key_required`, so the
+stored key is never sent to a server it was not given for. §3.1's *Org settings
+(AI provider, SMTP, signup mode)* row still names SMTP; this is the narrower row
+that guards it.
 
 **"Change a member's confirmed time" is `time_entries.write_member`** (D-143,
 LAI-1165, amending D-102 rule 4 and D-088 items 2 and 6), behind §6.4's
@@ -3981,7 +3994,7 @@ request writes a row and returns; §11.6's `email.send` sends what is queued, so
 | `subject` | |
 | `body_enc` | nullable — §12's `email_body` ciphertext of `{text, html}`, **present only while `queued` or `sending`**: an invite or a reset carries a working link, and §13.1 stores no token in the clear. Cleared the moment the row is final; a suppressed row never has one |
 | `state` | `queued` \| `sending` \| `sent` \| `failed` \| `unconfirmed` \| `suppressed` (CHECK) |
-| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` (CHECK), **set exactly when `suppressed`** (CHECK) |
+| `suppressed_reason` | nullable — `email_off` \| `email_not_configured` \| `no_address` \| `no_public_url` \| `too_old` \| `superseded` (CHECK), **set exactly when `suppressed`** (CHECK). `superseded`: the link it carries stopped working before it went — the invite was revoked, re-issued or accepted, or the reset link was replaced or used (LAI-1312 review) |
 | `attempts` | default 0 |
 | `next_attempt_at` | nullable — when a `queued` row is next due |
 | `send_before` | the horizon: the earlier of seven days and the link's own expiry. Past it, `too_old` |
@@ -4426,7 +4439,7 @@ PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects } 
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
                                              every read carries attachments: { max_bytes } | null — null when the board has no store (D-150)
-                                             and email: { enabled, configured } — the *Email on* switch and whether SMTP is set, read by everyone (D-153); PATCH takes email_enabled, true refused 422 reason email_not_configured until a key is saved
+                                             and email: { enabled, configured } — the *Email on* switch and whether SMTP is set, read by everyone (D-153); PATCH takes email_enabled — org.email.configure, session only — true refused 422 reason email_not_configured until a key is saved
                                              the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
                                              and owner_invites_pending: [{ id, email, expires_at }] — owner invites from before D-104 still unaccepted and unexpired, to revoke (LAI-982)
 POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged; only the owner orgs.owner_user_id names may — another owner from before D-104 is 403 reason not_recorded_owner   (owner only; session only; LAI-982)
@@ -4438,8 +4451,8 @@ POST   /api/v1/org/hr/connect/verify         body { method, code } — finishes 
 POST   /api/v1/org/hr/sync                   syncs now, or joins the sync already running → the connection; 409 conflict reason hr_not_connected   (owner, admin; session only; its own rate-limit bucket)
 PUT    /api/v1/org/hr/people                 body { people: [{ external_id, user_id | null }] } (1–500) — map a person, or null for not on Laika → the connection; 422 reasons duplicate_person, duplicate_user, unknown_user; 409 conflict reason user_mapped_elsewhere when another owner mapping holds that member (an email match gives way); a remap stamps that person's live leave removed at once   (owner, admin; session only)
 DELETE /api/v1/org/hr                        disconnect: the token goes, synced days stay (204)   (owner, admin; session only)
-GET    /api/v1/org/email                     the Email card → { enabled, configured, host, port, username, from_address, from_name, key_last4, defaults: { host, port, from_address, from_name }, public_url, last_test: { at, ok, to, code } | null, last_7_days: { queued, sending, sent, failed, unconfirmed, suppressed } } — never the key   (Change organisation settings: owner, admin; D-153, LAI-1312)
-PUT    /api/v1/org/email                     body { host, port, username, password?, from_address, from_name } — the key (`password`) is write-only, absent keeps the stored one; host a host name, port 1–65535, from_address an address, no line breaks anywhere → the card; 422 naming the field   (same)
+GET    /api/v1/org/email                     the Email card → { enabled, configured, host, port, username, from_address, from_name, key_last4, defaults: { host, port, from_address, from_name }, public_url, last_test: { at, ok, to, code } | null, last_7_days: { queued, sending, sent, failed, unconfirmed, suppressed } } — never the key   (Configure the organisation's email: owner, admin; session only; D-153, LAI-1312)
+PUT    /api/v1/org/email                     body { host, port, username, password?, from_address, from_name } — the key (`password`) is write-only, absent keeps the stored one **for the same host, port and username only** (a change without it is 422 field password reason key_required); host a host name, port 1–65535, from_address an address, no line breaks anywhere → the card; 422 naming the field   (same)
 DELETE /api/v1/org/email                     forget the settings and the key and turn the switch off (204)   (same)
 POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
@@ -8171,12 +8184,13 @@ One interval-driven scheduler in the same process:
   `unconfirmed`, a queued row past `send_before` is `suppressed` / `too_old`,
   and — the switch and the settings asked again — every queued row is
   `suppressed` (`email_off`, `email_not_configured`) or up to 50 are sent, each
-  outcome recorded as §4.93 says. **A run never overlaps another**; a tick joins
+  outcome recorded as §4.93 says — **the switch asked again before each one**,
+  so turning email off mid-run stops it at the next message. **A run never overlaps another**; a tick joins
   the one going. No `activity` row. Nothing without a transport, and nothing
   mailed while the organisation's switch is off — the default
-- **email retention** (§4.93) — daily, under `system.email.prune`: outbox rows
-  written more than 90 days ago, never a `queued` or `sending` one. No
-  `activity` row
+- **email retention** (§4.93) — daily **and once at boot**, under
+  `system.email.prune`: outbox rows written more than 90 days ago, never a
+  `queued` or `sending` one. No `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.

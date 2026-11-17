@@ -70,6 +70,15 @@ const saved = (patch: Record<string, unknown> = {}) => ({
   ...patch,
 });
 
+/** The server's default grants for this role, plus `org.email.configure` for an owner or admin. */
+function permissionsFor(role: string): unknown {
+  const base = defaultPermissions({ org_role: role, memberships: [] }) as {
+    readonly me: { readonly actions: readonly string[] };
+  };
+  const email = role === 'owner' || role === 'admin' ? ['org.email.configure'] : [];
+  return { ...base, me: { ...base.me, actions: [...base.me.actions, ...email] } };
+}
+
 /** The org, readable by everyone; `ai` only for an owner or admin, as the server does. */
 function org(role: string, email: { enabled: boolean; configured: boolean }) {
   return {
@@ -119,7 +128,7 @@ function emailServer(role: string, initial: Record<string, unknown> = UNSET) {
             : { queued: false, reason: 'email_off' },
       });
     },
-    '/api/v1/permissions': defaultPermissions({ org_role: role, memberships: [] }),
+    '/api/v1/permissions': permissionsFor(role),
     '/api/v1/org/model-prices': { as_of: '2026-10-18', can_set: false, entries: [] },
     '/api/v1/org': (call: StubCall) => {
       if (call.method === 'PATCH') {

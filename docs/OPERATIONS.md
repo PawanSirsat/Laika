@@ -238,6 +238,10 @@ alone**, so that it can be revoked without touching SolidTime. Paste it into
   `smtp_json`), and the card shows only its last four characters.
 - **Rotating `LAIKA_SECRET`** makes it unreadable. The card then says so, and
   you paste the key again.
+- **Changing the host, port or login needs the key pasted again.** The stored
+  key is only ever sent to the server it was saved for.
+- **This page needs a signed-in owner or admin.** No API token can change
+  these settings or turn email on.
 
 ### 2. Send a test email
 

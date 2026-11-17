@@ -178,7 +178,7 @@ export function queueInviteEmail(
     db,
     {
       kind: 'invite',
-      idempotencyKey: `invite:${input.inviteId}`,
+      idempotencyKey: inviteEmailKey(input.inviteId),
       to: input.email,
       recipientUserId: null,
       createdBy: input.inviter.userId,
@@ -219,7 +219,7 @@ export function queueResetEmail(
     db,
     {
       kind: 'password_reset',
-      idempotencyKey: `password_reset:${input.resetId}`,
+      idempotencyKey: resetEmailKey(input.resetId),
       to: input.user.email,
       recipientUserId: input.user.id,
       createdBy: input.issuer.userId,
@@ -230,6 +230,41 @@ export function queueResetEmail(
     serverSecret,
     now,
   );
+}
+
+/**
+ * The links these messages carry stopped working before they went — an invite
+ * revoked, re-issued or accepted, a reset link replaced by a newer one or used
+ * (CHIEF's LAI-1312 review). A message still `queued` is `suppressed` /
+ * `superseded`, so nobody is mailed a dead link, or two. One already being
+ * sent is left to finish: it cannot be recalled, and the next run would not
+ * see it as queued anyway.
+ */
+export function supersedeEmail(db: Db, idempotencyKeys: readonly string[], now: number): number {
+  if (idempotencyKeys.length === 0) return 0;
+  return db
+    .update(emailOutbox)
+    .set({
+      state: 'suppressed',
+      suppressedReason: 'superseded',
+      bodyEnc: null,
+      nextAttemptAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(eq(emailOutbox.state, 'queued'), inArray(emailOutbox.idempotencyKey, [...idempotencyKeys])),
+    )
+    .run().changes;
+}
+
+/** The outbox key an invite's mail is queued under. */
+export function inviteEmailKey(inviteId: string): string {
+  return `invite:${inviteId}`;
+}
+
+/** The outbox key a reset link's mail is queued under. */
+export function resetEmailKey(resetId: string): string {
+  return `password_reset:${resetId}`;
 }
 
 /** Which of these invites' mails have actually been sent (`InviteView.email_sent`). */
@@ -346,6 +381,19 @@ export async function sendDueEmail(
     .all();
 
   for (const row of due) {
+    // Asked again before every row (CHIEF's LAI-1312 review): an admin who
+    // turns email off while a slow run is half-way through stops it at the
+    // next message, not at the next tick.
+    const now = emailSwitch(db);
+    if (!now.enabled || !now.configured) {
+      result.suppressed += suppressQueued(
+        db,
+        now.enabled ? 'email_not_configured' : 'email_off',
+        clock(),
+      );
+      break;
+    }
+
     const claimedAt = clock();
     const claimed = db
       .update(emailOutbox)

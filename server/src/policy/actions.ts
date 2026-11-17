@@ -109,6 +109,9 @@ export const ORG_ACTIONS = [
   // D-149 (LAI-1181): connect, sync and disconnect the organisation's HR
   // system, and map its people to Laika's.
   'org.hr.configure',
+  // D-153 (LAI-1312 review): the SMTP settings, *Send test email* and the
+  // *Email on* switch.
+  'org.email.configure',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -435,6 +438,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // must neither connect one, nor point the organisation's at another account,
   // nor say whose leave is whose.
   'org.hr.configure',
+  // **Email is where every invite and reset link goes** (D-153, LAI-1312
+  // review): a token that could set the relay, or turn email on, could have
+  // every one of them mailed to a server it chose — the reason
+  // `user.reset_password` is session only, reached another way.
+  'org.email.configure',
 ]);
 
 /**

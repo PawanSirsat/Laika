@@ -185,3 +185,41 @@ Part B, assignment and @mention mail plus the digest, is LAI-1313 and comes afte
   the body once final each turned their tests red; the file was restored and checksummed.
 - **Screenshots:** the card in light and dark (not set up, and off · ready) were sent to
   CHIEF.
+
+## Review round 1 (CHIEF, 2026-11-18): what was asked and what was done
+
+**Must fix**
+1. **Repointing the host leaked the stored key.**
+   - **Fixed:** `PUT /org/email` without `password` keeps the key only for the same host, port
+     and username. Any other change is `422 { field: 'password', reason: 'key_required' }`.
+   - **Card:** asks for the key again before saving such a change ("Paste the key again to
+     change the host, port or login"). The label is "leave empty to keep the saved one", and
+     the help text says the key is only sent to the host it was saved with.
+   - **Tests:** the service and the route; the route test proves the test send never reaches
+     the new host. Removing the check turns them red.
+2. **Configuring email is session only.**
+   - **Done:** a new action `org.email.configure` in `SESSION_ONLY_ACTIONS`, carried by
+     *Change organisation settings*. It guards GET/PUT/DELETE `/org/email`, the test send and
+     `PATCH /org { email_enabled }`.
+   - **§3.1:** a row *Configure the organisation's email*, plus the capability mapping and
+     prose.
+   - **Guards:** `can.test` (every token refused, `session_required`), `matrix`, `grants`,
+     `permissions`, `policy-spec-drift`, and the route test, which refuses the owner's own
+     token on all five verbs.
+   - **Card:** shown on `gates.org('org.email.configure')`.
+   - **D-153 item 1** says so. Taking the action out of the session-only list turns the route
+     test red.
+
+**Also included**
+3. The switch is asked again before each row is claimed, so turning it off mid-run stops the
+   run at the next message (a service test).
+4. `email.retention` is `atStart: true` (scheduler test; §11.6).
+5. **A new reason, `superseded`**, in the enum and the CHECK, with 0083 regenerated.
+   - **What it covers:** an invite revoked, re-issued or accepted, or a reset link replaced
+     or used, suppresses its still-queued mail.
+   - **Tests:** service; route (re-issue plus revoke, then the newer reset link plus use);
+     the old re-issue expectation now sends only the new link.
+
+**Filed:** LAI-1340 (card LAIKA-1088), the AI key's identical "repoint the URL, keep the key"
+shape. **Later, as CHIEF said:** a per-org daily cap, the internal-address class of
+`host`/`ai_base_url`, and the frozen clock.

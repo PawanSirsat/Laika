@@ -26,9 +26,21 @@ import { z } from 'zod';
  *
  * ## Who
  *
- * §3.1's *Org settings (AI provider, SMTP, signup mode)* row, which has named
- * SMTP since the matrix was written — `org.settings.edit`, owners and the
- * admins the matrix grants it to. No new action: the row was always this.
+ * §3.1's *Configure the organisation's email* — `org.email.configure`, owners
+ * and the admins *Change organisation settings* is granted to, **signed in
+ * only** (CHIEF's LAI-1312 review). Every invite and reset link goes wherever
+ * these settings point, so a token that could set the relay or flip the switch
+ * could have them all mailed to a server it chose: the reason
+ * `user.reset_password` is session only, reached another way. §3.1's older
+ * *Org settings (AI provider, SMTP, signup mode)* row still names SMTP; this
+ * row is the narrower one that guards it.
+ *
+ * ## A new host needs the key again
+ *
+ * Saving the settings without a key keeps the stored one — **but not for a
+ * different host, port or login** (`key_required`). Otherwise an admin could
+ * point the card at a server of their own, press *Send test email*, and the
+ * stored key would be sent there in the SMTP `AUTH` (CHIEF's LAI-1312 review).
  *
  * ## Two columns, so a view never decrypts
  *
@@ -96,7 +108,7 @@ export interface EmailCountsView {
   suppressed: number;
 }
 
-/** `GET /org/email` (§6.4): the Email card, for `org.settings.edit`. */
+/** `GET /org/email` (§6.4): the Email card, for `org.email.configure`, signed in. */
 export interface EmailSettingsView {
   /** The *Email on* switch. */
   enabled: boolean;
@@ -178,7 +190,7 @@ export function getEmailSettings(
   publicUrl = '',
   now: number = Date.now(),
 ): EmailSettingsView {
-  assertCan(actor, 'org.settings.edit');
+  assertCan(actor, 'org.email.configure');
   const row = readColumns(db);
   const settings = parseSettings(row.smtpSettings);
 
@@ -303,14 +315,29 @@ export function setEmailSettings(
   publicUrl = '',
   now: number = Date.now(),
 ): EmailSettingsView {
-  assertCan(actor, 'org.settings.edit');
+  assertCan(actor, 'org.email.configure');
   assertSettings(input);
   if (input.password !== undefined && serverSecret === '') {
     throw new ApiError('internal', 'This server cannot store secrets');
   }
 
   const orgId = requireOrgId(db);
-  const current = parseSettings(readColumns(db).smtpSettings);
+  const columns = readColumns(db);
+  const current = parseSettings(columns.smtpSettings);
+  const keyStored = (columns.smtpJsonEnc ?? '') !== '';
+  // Where the stored key was given for; nothing saved is nowhere.
+  const samePlace =
+    current?.host === input.host &&
+    current.port === input.port &&
+    current.username === input.username;
+  if (input.password === undefined && keyStored && !samePlace) {
+    // The stored key goes only where it was given for: see the module comment.
+    throw new ApiError(
+      'unprocessable',
+      'Paste the key again to change the host, port or login — the saved key is only sent where it was given for',
+      { field: 'password', reason: 'key_required' },
+    );
+  }
   const keyLast4 =
     input.password === undefined ? (current?.key_last4 ?? null) : input.password.slice(-4);
 
@@ -348,7 +375,7 @@ export function setEmailSettings(
  * off with them: a switch on with nothing behind it would read as working.
  */
 export function clearEmailSettings(db: Db, actor: ResolvedActor, now: number = Date.now()): void {
-  assertCan(actor, 'org.settings.edit');
+  assertCan(actor, 'org.email.configure');
   db.update(orgs)
     .set({ smtpSettings: null, smtpJsonEnc: null, emailEnabled: 0, updatedAt: now })
     .where(eq(orgs.id, requireOrgId(db)))
@@ -446,7 +473,7 @@ export async function sendTestEmail(
   transport: MailTransport,
   now: () => number = Date.now,
 ): Promise<EmailTestView> {
-  assertCan(actor, 'org.settings.edit');
+  assertCan(actor, 'org.email.configure');
 
   let config: SmtpConfig | null;
   try {

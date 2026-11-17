@@ -146,6 +146,8 @@ export function OrganisationScreen({
   const canSetTime = gates.org('org.time.set');
   /** D-149 (LAI-1182): connecting Clan is its own §3.1 row, owners and admins by default. */
   const canConfigureHr = gates.org('org.hr.configure');
+  // D-153 (LAI-1312 review): email is its own session-only grant.
+  const canConfigureEmail = gates.org('org.email.configure');
   const canListTokens = gates.org('token.list_any');
   /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
   const canRevokeTokens = gates.org('token.revoke_any');
@@ -745,10 +747,9 @@ export function OrganisationScreen({
               <HrSourceSection members={state.people.filter((p) => p.is_active)} />
             )}
 
-            {/* D-153 (LAI-1312): outbound email, the same §3.1 row as the AI
-                provider — `ai` is present exactly when the reader passes
-                `org.settings.edit`, so its presence is the gate here too. */}
-            {org?.ai !== undefined && (
+            {/* D-153 (LAI-1312): outbound email — `org.email.configure`,
+                signed in only, as the server asks. */}
+            {canConfigureEmail && (
               <EmailSection
                 onChanged={(email) => {
                   setOrg((current) => (current === undefined ? current : { ...current, email }));

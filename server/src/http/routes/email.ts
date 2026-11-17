@@ -17,9 +17,10 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * The organisation's Email card (§6.4, D-153, LAI-1312), mounted on
  * `/api/v1/org`.
  *
- * Transport only (CONVENTIONS §2): who may — `org.settings.edit` — and every
- * rule are the service's. `POST /email/test` spends a small bucket of its own
- * (`email-test:<who>`), because each one opens a connection to the mail server.
+ * Transport only (CONVENTIONS §2): who may — `org.email.configure`, signed in
+ * only — and every rule are the service's. `POST /email/test` spends a small
+ * bucket of its own (`email-test:<who>`), because each one opens a connection
+ * to the mail server.
  *
  * **The key is in one request body and nowhere else**: validated, handed to the
  * service, and never logged — the request logger records the path and status.

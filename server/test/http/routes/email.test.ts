@@ -157,6 +157,73 @@ describe('the card', () => {
   });
 });
 
+describe('signed in only (org.email.configure, CHIEF’s LAI-1312 review)', () => {
+  it('refuses the owner’s own token every verb, and the switch', async () => {
+    await configure();
+    const minted = await h.app.request('/api/v1/tokens', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ name: 'An agent', scope: 'full' }),
+    });
+    expect(minted.status, await minted.clone().text()).toBe(201);
+    const { secret } = (await minted.json()) as { secret: string };
+    const bearer = { Authorization: `Bearer ${secret}` };
+
+    for (const [method, path, body] of [
+      ['GET', '/org/email', undefined],
+      ['PUT', '/org/email', { ...SMTP_SETTINGS, host: 'smtp.attacker.example' }],
+      ['DELETE', '/org/email', undefined],
+      ['POST', '/org/email/test', undefined],
+      ['PATCH', '/org', { email_enabled: true }],
+    ] as const) {
+      const res = await call(method, path, body, bearer);
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect((await errorOf(res)).details, `${method} ${path}`).toEqual({
+        action: 'org.email.configure',
+        reason: 'session_required',
+      });
+    }
+    expect(mail.sent).toHaveLength(0);
+    const view = await ok<{ host: string; enabled: boolean }>(await call('GET', '/org/email'));
+    expect(view).toMatchObject({ host: 'smtp-relay.brevo.com', enabled: false });
+  });
+});
+
+describe('a new host needs the key again (CHIEF’s LAI-1312 review)', () => {
+  it('refuses a new host, port or login without the key, and the test never reaches it', async () => {
+    await configure();
+    const { password: _key, ...withoutKey } = SMTP_SETTINGS;
+    for (const change of [
+      { host: 'smtp.attacker.example' },
+      { port: 2525 },
+      { username: 'someone-else@smtp-brevo.com' },
+    ]) {
+      const res = await call('PUT', '/org/email', { ...withoutKey, ...change });
+      expect(res.status, JSON.stringify(change)).toBe(422);
+      expect((await errorOf(res)).details, JSON.stringify(change)).toMatchObject({
+        field: 'password',
+        reason: 'key_required',
+      });
+    }
+    await ok(await call('POST', '/org/email/test'));
+    expect(mail.sent.map((s) => s.config.host)).toEqual(['smtp-relay.brevo.com']);
+  });
+
+  it('keeps the key for the same host, and takes a new host with a new key', async () => {
+    await configure();
+    const { password: _key, ...withoutKey } = SMTP_SETTINGS;
+    await ok(await call('PUT', '/org/email', { ...withoutKey, from_name: 'Kvell' }));
+    const moved = await ok<{ host: string; key_last4: string }>(
+      await call('PUT', '/org/email', {
+        ...SMTP_SETTINGS,
+        host: 'smtp.example.test',
+        password: 'another-key-WXYZ',
+      }),
+    );
+    expect(moved).toMatchObject({ host: 'smtp.example.test', key_last4: 'WXYZ' });
+  });
+});
+
 describe('the switch', () => {
   it('cannot turn on before the key is saved: 422 email_not_configured', async () => {
     const res = await call('PATCH', '/org', { email_enabled: true });
@@ -268,6 +335,41 @@ describe('invites', () => {
     expect(created.email).toEqual({ queued: false, reason: 'no_address' });
   });
 
+  it('a revoked, re-issued or accepted invite’s waiting mail is superseded, never sent', async () => {
+    await switchOn();
+    const first = await ok<CreatedInvite>(
+      await call('POST', '/invites', { email: 'ada@example.test', org_role: 'member' }),
+      201,
+    );
+    const second = await ok<CreatedInvite>(
+      await call('POST', '/invites', { email: 'bob@example.test', org_role: 'member' }),
+      201,
+    );
+    // Re-issue the first, revoke the second, before the sender runs.
+    const again = await ok<CreatedInvite>(
+      await call('POST', `/invites/${first.invite.id}/reissue`),
+      201,
+    );
+    expect((await call('DELETE', `/invites/${second.invite.id}`)).status).toBe(204);
+
+    const byKey = () =>
+      Object.fromEntries(
+        h.db
+          .select()
+          .from(emailOutbox)
+          .all()
+          .map((r) => [r.idempotencyKey, [r.state, r.suppressedReason, r.bodyEnc === null]]),
+      );
+    expect(byKey()).toEqual({
+      [`invite:${first.invite.id}`]: ['suppressed', 'superseded', true],
+      [`invite:${second.invite.id}`]: ['suppressed', 'superseded', true],
+      [`invite:${again.invite.id}`]: ['queued', null, false],
+    });
+
+    await drain();
+    expect(mail.sent.map((s) => s.message.idempotencyKey)).toEqual([`invite:${again.invite.id}`]);
+  });
+
   it('a re-issue mails the new link under the new invite', async () => {
     await switchOn();
     const first = await ok<CreatedInvite>(
@@ -280,10 +382,9 @@ describe('invites', () => {
     );
     expect(again.email).toEqual({ queued: true, reason: null });
     await drain();
-    expect(mail.sent.map((s) => s.message.idempotencyKey).sort()).toEqual(
-      [`invite:${first.invite.id}`, `invite:${again.invite.id}`].sort(),
-    );
-    expect(mail.sent.some((s) => s.message.text.includes(again.accept_url))).toBe(true);
+    // Only the new link goes: the old one was dead before the sender came round.
+    expect(mail.sent.map((s) => s.message.idempotencyKey)).toEqual([`invite:${again.invite.id}`]);
+    expect(mail.sent[0]?.message.text).toContain(again.accept_url);
   });
 });
 
@@ -297,6 +398,40 @@ describe('reset links', () => {
     );
     expect(link.email).toEqual({ queued: false, reason: 'email_off' });
     expect(link.url).toMatch(new RegExp(`^${TEST_ORIGIN}/reset-password\\?token=`));
+  });
+
+  it('a newer link, or using the link, supersedes the mail still waiting', async () => {
+    await switchOn();
+    await join('ada@example.test', 'member');
+    const ada = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()!;
+    await ok(await call('POST', `/users/${ada.id}/reset-link`), 201);
+    const newer = await ok<{ url: string }>(await call('POST', `/users/${ada.id}/reset-link`), 201);
+    const states = () =>
+      h.db
+        .select()
+        .from(emailOutbox)
+        .all()
+        .map((r) => [r.state, r.suppressedReason])
+        .sort();
+    expect(states()).toEqual([
+      ['queued', null],
+      ['suppressed', 'superseded'],
+    ]);
+
+    // Used before the sender came round: its mail would carry a dead link.
+    const token = new URL(newer.url).searchParams.get('token')!;
+    const used = await h.app.request('/api/v1/password-resets/consume', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ token, new_password: 'a-new-password-long-enough' }),
+    });
+    expect(used.status, await used.clone().text()).toBe(200);
+    expect(states()).toEqual([
+      ['suppressed', 'superseded'],
+      ['suppressed', 'superseded'],
+    ]);
+    await drain();
+    expect(mail.sent).toHaveLength(0);
   });
 
   it('queue the link to the person when it is on', async () => {

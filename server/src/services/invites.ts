@@ -12,7 +12,7 @@ import { immediateTransaction } from '../db/numbering.ts';
 import { invites, orgs, projectMemberships, projects, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
-import { invitesEmailed } from './email-outbox.ts';
+import { inviteEmailKey, invitesEmailed, supersedeEmail } from './email-outbox.ts';
 
 /**
  * Invites (SPEC §4.11, §6.4, D-004).
@@ -397,6 +397,8 @@ export function revokeInvite(db: Db, actor: ResolvedActor, id: string): void {
   }
 
   db.delete(invites).where(eq(invites.id, id)).run();
+  // Its mail, if still waiting, would carry a dead link (D-153, LAI-1312 review).
+  supersedeEmail(db, [inviteEmailKey(id)], Date.now());
 }
 
 export interface ReissueInviteInput {
@@ -441,6 +443,8 @@ export function reissueInvite(
       }
 
       db.delete(invites).where(eq(invites.id, id)).run();
+      // The old link is dead: its mail, if still waiting, goes no further (D-153).
+      supersedeEmail(db, [inviteEmailKey(id)], input.now ?? Date.now());
 
       return createInvite(db, actor, {
         email: row.email,
@@ -679,6 +683,9 @@ export function consumeInvite(
     if (marked.changes !== 1) {
       throw new ApiError('forbidden', 'That invite has already been used');
     }
+    // Accepted: a mail still waiting would invite them to an account they
+    // already have (D-153, LAI-1312 review).
+    supersedeEmail(db, [inviteEmailKey(row.id)], now);
 
     db.update(users)
       .set({ orgRole: row.orgRole, updatedAt: new Date(now) })
