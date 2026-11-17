@@ -121,19 +121,24 @@ export interface BoardToolbarProps {
    * filters — can put focus somewhere real instead of on `<body>`.
    */
   readonly filterButtonRef: RefObject<HTMLButtonElement | null>;
-  /** The four right-hand actions. Each does something real or is not drawn. */
   /**
-   * Opens the `⋯` menu, anchored under it (LAI-1198). View settings,
-   * Insights, Refresh and Hidden columns live there now, each with its word.
+   * The right-hand actions, **each its own button again** (LAI-1230 undoes
+   * LAI-1198's `⋯` menu): Hidden columns, Insights, View settings, Refresh —
+   * the order they had before the fold. Each does something real or is not
+   * drawn, and each has its name and the shared Tooltip.
    */
-  readonly onOverflow: (anchor: { top: number; right: number }) => void;
-  /** Whether that menu is open, for the `⋯`'s `aria-expanded`. */
-  readonly overflowOpen?: boolean | undefined;
+  readonly onInsights: () => void;
+  /** Opens View settings, anchored under its button. */
+  readonly onViewSettings: (anchor: { top: number; right: number }) => void;
+  /** Whether View settings is open, for its button's `aria-expanded`. */
+  readonly viewSettingsOpen?: boolean | undefined;
+  readonly onRefresh: () => void;
   /**
-   * Hidden columns, counted on the `⋯` (review round 1 asked for them to be
-   * seen, not only listed): a dot on it and the number in its name.
+   * Hidden columns on this board (LAI-739). The button is drawn only when
+   * there are any and `onHiddenColumns` is given, with the count on it.
    */
   readonly hiddenColumns?: number | undefined;
+  readonly onHiddenColumns?: (() => void) | undefined;
   /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
   readonly scope?: ReactNode;
 }
@@ -280,9 +285,12 @@ export function BoardToolbar({
   chips,
   onRemoveFilter,
   filterButtonRef,
-  onOverflow,
-  overflowOpen = false,
+  onInsights,
+  onViewSettings,
+  viewSettingsOpen = false,
+  onRefresh,
   hiddenColumns = 0,
+  onHiddenColumns,
   scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
@@ -634,7 +642,7 @@ export function BoardToolbar({
 
         {/*
         Click-away closes the popover (owner). The catcher sits under the pop
-        (z 30 vs 31) and above everything else, the same shape the ⋯ menu uses.
+        (z 30 vs 31) and above everything else.
       */}
         {open !== undefined && (
           <button
@@ -958,39 +966,97 @@ export function BoardToolbar({
         <span id="board-stats-slot" className="bt-stats-slot" />
 
         {/*
-          **One labelled overflow, not four bare icons** (LAI-1198). View
-          settings, Insights, Refresh and Hidden columns are in the menu this
-          opens, each with its word; a hidden column still shows here as a dot,
-          and in the button's name.
+          **Four buttons, not a `⋯`** (LAI-1230). LAI-1198 folded these into
+          a menu; the owner wanted them back where they can be seen and
+          reached in one click. Each keeps its accessible name and the shared
+          Tooltip; on a phone the group scrolls sideways rather than widening
+          the page (`.bt-actions`).
         */}
-        <Tooltip content="More board actions">
-          <button
-            type="button"
-            className="bt-icon"
-            data-board-more=""
-            aria-label={
-              hiddenColumns > 0
-                ? `More board actions — ${String(hiddenColumns)} hidden ${hiddenColumns === 1 ? 'column' : 'columns'}`
-                : 'More board actions'
-            }
-            aria-haspopup="menu"
-            aria-expanded={overflowOpen}
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              onOverflow({
-                top: rect.bottom + 6,
-                right: Math.max(8, window.innerWidth - rect.right),
-              });
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="1.7" />
-              <circle cx="12" cy="12" r="1.7" />
-              <circle cx="19" cy="12" r="1.7" />
-            </svg>
-            {hiddenColumns > 0 && <span className="bt-more-dot" aria-hidden="true" />}
-          </button>
-        </Tooltip>
+        <span className="bt-actions" data-board-actions="">
+          {/* **Hidden columns (N)**, where it can be seen (review round 1): an
+              icon and the count. Cancelled starts hidden, so this is on most
+              boards and must cost little width. */}
+          {hiddenColumns > 0 && onHiddenColumns !== undefined && (
+            <Tooltip content="Show a hidden column again">
+              <button
+                type="button"
+                className="bt-icon bt-hidden-columns"
+                data-hidden-columns=""
+                aria-label={`Hidden columns (${String(hiddenColumns)})`}
+                onClick={onHiddenColumns}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
+                </svg>
+                <span className="bt-hidden-count" aria-hidden="true">
+                  {hiddenColumns}
+                </span>
+              </button>
+            </Tooltip>
+          )}
+
+          <Tooltip content="Throughput and cycle time for this board">
+            <button
+              type="button"
+              className="bt-icon"
+              data-board-action="insights"
+              aria-label="Insights"
+              aria-haspopup="dialog"
+              onClick={onInsights}
+            >
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+                <path d="M3 17l5-5 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M15 8h5v5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </Tooltip>
+
+          <Tooltip content="Fields, grouping and what the board hides">
+            <button
+              type="button"
+              className="bt-icon"
+              data-board-action="view-settings"
+              aria-label="View settings"
+              aria-haspopup="dialog"
+              aria-expanded={viewSettingsOpen}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                onViewSettings({
+                  top: rect.bottom + 6,
+                  right: Math.max(8, window.innerWidth - rect.right),
+                });
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+                <circle cx="9" cy="6" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="8" cy="18" r="2" />
+              </svg>
+            </button>
+          </Tooltip>
+
+          <Tooltip content="Refresh the board">
+            <button
+              type="button"
+              className="bt-icon"
+              data-board-action="refresh"
+              aria-label="Refresh"
+              onClick={onRefresh}
+            >
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.3 5.7" strokeLinecap="round" />
+                <path d="M20 5v6h-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </Tooltip>
+        </span>
       </div>
 
       {/*

@@ -48,7 +48,7 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-popover);
 }
 
 .rte-menu-item {

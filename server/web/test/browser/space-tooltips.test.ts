@@ -33,6 +33,7 @@ import {
 import { PROJECT, SPACE_TABS, TASKS, spaceStub } from './space-header-fixture.ts';
 import { cspViolations, strictCsp, tooltipOf } from './tooltip-probe.ts';
 import { STUB as WORKROOM } from './workroom-fixtures.ts';
+import { boardAction } from './board-menu.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 const Q = `project=${PROJECT.slug}`;
@@ -221,10 +222,7 @@ void describe('the board and the space header (LAI-1213)', () => {
       }),
     );
     try {
-      const more = h.page.locator('[data-board-more]');
-      await more.waitFor({ timeout: 20_000 });
-      await more.click();
-      await h.page.getByRole('menuitem', { name: 'Insights' }).click();
+      await boardAction(h.page, 'Insights');
       const hint = h.page.getByRole('button', { name: 'About throughput' });
       await hint.waitFor({ timeout: 10_000 });
       // The essential figure stays on screen; the why moved behind the (i).
@@ -248,10 +246,7 @@ void describe('the board and the space header (LAI-1213)', () => {
   void test('a locked field in View settings says why, and Tab reaches it', async () => {
     const h = await at(`/board?${Q}`, space());
     try {
-      const more = h.page.locator('[data-board-more]');
-      await more.waitFor({ timeout: 20_000 });
-      await more.click();
-      await h.page.getByRole('menuitem', { name: 'View settings' }).click();
+      await boardAction(h.page, 'View settings');
       const locked = h.page.locator('.vs-remove[data-field="title"]');
       await locked.waitFor({ timeout: 5_000 });
       assert.equal(await locked.getAttribute('aria-disabled'), 'true');

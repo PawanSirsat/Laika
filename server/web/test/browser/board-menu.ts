@@ -1,14 +1,15 @@
 /**
- * The board's `⋯` menu (LAI-1198). View settings, Insights, Refresh and
- * Hidden columns were icons in the toolbar row; they are labelled items in
- * this menu now, so a test reaches them the way a person does.
+ * The board's toolbar actions. LAI-1198 folded View settings, Insights,
+ * Refresh and Hidden columns into a `⋯` menu; LAI-1230 put them back as
+ * buttons of their own, so a test reaches each by its accessible name, the
+ * way a person (or a screen reader) does.
  */
 
 import type { Page } from 'playwright';
 
-/** Open the board's `⋯` and choose the item with this label. */
+/** Press the board toolbar's action button with this accessible name. */
 export async function boardAction(page: Page, label: string | RegExp): Promise<void> {
-  await page.locator('.board-bar [data-board-more]').click();
-  await page.locator('.bt-menu').waitFor({ timeout: 5_000 });
-  await page.getByRole('menuitem', { name: label }).click();
+  const button = page.locator('.board-bar .bt-actions').getByRole('button', { name: label });
+  await button.waitFor({ timeout: 10_000 });
+  await button.click();
 }

@@ -335,9 +335,8 @@
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-column);
-  /* The design's 0 18px 44px drop, coloured by the theme's own border token
-     rather than a raw rgba — colours live in tokens.css and nowhere else. */
-  box-shadow: 0 18px 44px var(--border-default);
+  /* The popover elevation (LAI-1230), not a drop of its own. */
+  box-shadow: var(--shadow-popover);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;

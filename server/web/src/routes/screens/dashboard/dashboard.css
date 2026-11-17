@@ -944,7 +944,7 @@ thead .dash-contrib-n {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-popover);
   padding: var(--space-3) var(--space-3-5) var(--space-3-5);
   text-align: left;
 }

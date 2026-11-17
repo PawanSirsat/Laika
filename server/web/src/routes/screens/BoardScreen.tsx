@@ -7,7 +7,6 @@ import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { useCreateTask } from '../../components/create-task/use-create-task.ts';
 import { SpaceBarSlot, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
-import { BoardMenu, type BoardMenuItem } from './board/BoardMenu.tsx';
 import { SprintScope } from './board/SprintScope.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
@@ -556,9 +555,6 @@ export function BoardScreen({
     () => new Map(agentChoices.map((agent) => [agent.id, agent])),
     [agentChoices],
   );
-  const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
-    undefined,
-  );
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
@@ -889,91 +885,8 @@ export function BoardScreen({
       />
     );
 
-  /** Hidden columns, for the `⋯`'s dot and its menu — the List has none to hide. */
+  /** Hidden columns, for their own toolbar button — the List has none to hide. */
   const hiddenColumnCount = view === 'list' || !mayAddColumn ? 0 : statuses.hidden.length;
-  const moreButton = (): HTMLElement | null =>
-    document.querySelector<HTMLElement>('.board-bar [data-board-more]');
-
-  /*
-   * The `⋯` menu (LAI-1198). **Only actions that exist** — an overflow with a
-   * greyed list of things Laika cannot do is the decoration the icons were
-   * supposed to avoid. View settings, Insights and Refresh were bare icons in
-   * the row; Hidden columns was an icon with a count. Each is a word here.
-   */
-  const overflowItems: BoardMenuItem[] = [
-    {
-      id: 'view-settings',
-      label: 'View settings',
-      onSelect: () => {
-        const at = overflowAt;
-        setOverflowAt(undefined);
-        // Hangs where the menu did, under the `⋯` that opened both.
-        setSettingsAt(at);
-      },
-    },
-    {
-      id: 'insights',
-      label: 'Insights',
-      onSelect: () => {
-        setOverflowAt(undefined);
-        setInsightsOpen(true);
-      },
-    },
-    {
-      id: 'refresh',
-      label: 'Refresh',
-      onSelect: () => {
-        setOverflowAt(undefined);
-        refresh();
-        statuses.reload();
-        moreButton()?.focus();
-      },
-    },
-    /*
-     * **Hidden columns (N)** (LAI-739): the way back for a column somebody
-     * hid. Only for a reader who may configure the board, and only when there
-     * is one.
-     */
-    ...(hiddenColumnCount > 0
-      ? [
-          {
-            id: 'hidden-columns',
-            label: `Hidden columns (${String(hiddenColumnCount)})`,
-            data: { 'data-hidden-columns': '' },
-            onSelect: () => {
-              setOverflowAt(undefined);
-              setHiddenOpen(true);
-            },
-          },
-        ]
-      : []),
-    {
-      id: 'space-settings',
-      label: 'Space settings',
-      onSelect: () => {
-        setOverflowAt(undefined);
-        onParamsChange(new URLSearchParams({ project: slug ?? '' }), { push: true });
-        window.location.assign(`/projects?project=${encodeURIComponent(slug ?? '')}`);
-      },
-    },
-    /*
-     * **Not on `/list`** (LAI-488): the tab bar has been the view switch since
-     * LAI-256. On `/board` — including a legacy `/board?view=list` link — it
-     * still works and stays.
-     */
-    ...(path !== '/list'
-      ? [
-          {
-            id: 'view',
-            label: view === 'list' ? 'Show as board' : 'Show as list',
-            onSelect: () => {
-              setOverflowAt(undefined);
-              setParam('view', view === 'list' ? undefined : 'list');
-            },
-          },
-        ]
-      : []),
-  ];
 
   /*
    * **The drawer reads the board's own list** (LAI-1190), offered to the
@@ -1285,12 +1198,22 @@ export function BoardScreen({
             chips={chips}
             filterButtonRef={filterButtonRef}
             onRemoveFilter={removeFilter}
-            onOverflow={(anchor) => {
-              setOverflowAt((at) => (at === undefined ? anchor : undefined));
+            onInsights={() => {
+              setInsightsOpen(true);
             }}
-            overflowOpen={overflowAt !== undefined}
+            onViewSettings={(anchor) => {
+              setSettingsAt((at) => (at === undefined ? anchor : undefined));
+            }}
+            viewSettingsOpen={settingsAt !== undefined}
+            onRefresh={() => {
+              refresh();
+              statuses.reload();
+            }}
             // The board's own entry; the List has no columns to hide.
             hiddenColumns={hiddenColumnCount}
+            onHiddenColumns={() => {
+              setHiddenOpen(true);
+            }}
             scope={sprintScopeLine}
           />
           <SprintStats
@@ -1346,22 +1269,6 @@ export function BoardScreen({
           }}
           onClearFilters={() => {
             onParamsChange(withoutFilters(params));
-          }}
-        />
-      )}
-
-      {/*
-        The `⋯` menu. **Only actions that exist** — an overflow with a greyed
-        list of things Laika cannot do is the decoration the four icons were
-        supposed to avoid.
-      */}
-      {overflowAt !== undefined && (
-        <BoardMenu
-          anchor={overflowAt}
-          items={overflowItems}
-          onClose={(returnFocus) => {
-            setOverflowAt(undefined);
-            if (returnFocus) moreButton()?.focus();
           }}
         />
       )}
@@ -1433,10 +1340,11 @@ export function BoardScreen({
           onClose={() => {
             setHiddenOpen(false);
           }}
-          // Back to the entry that opened it, or the ⋯ when it is gone.
+          // Back to the button that opened it, or View settings beside it
+          // once the last hidden column is shown and that button is gone.
           restoreFocus={() =>
-            document.querySelector<HTMLElement>('[data-hidden-columns]') ??
-            document.querySelector<HTMLElement>('.board-bar [aria-haspopup="menu"]')
+            document.querySelector<HTMLElement>('.board-bar [data-hidden-columns]') ??
+            document.querySelector<HTMLElement>('.board-bar [data-board-action="view-settings"]')
           }
         />
       )}
