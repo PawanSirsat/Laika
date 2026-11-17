@@ -198,6 +198,57 @@ export function inviteButtonLabel(count: number): string {
   return count === 1 ? 'Send invite' : `Send ${String(count)} invites`;
 }
 
+/** One line of an invite send, as the toast reads it. */
+export type InviteResult =
+  | { readonly email: string | null; readonly url: string; readonly emailed: boolean }
+  | { readonly email: string | null; readonly error: string };
+
+/** What a send's toast says (LAI-1310): a headline, its tone, and why when it failed. */
+export interface InviteOutcome {
+  readonly text: string;
+  readonly tone: 'success' | 'error';
+  readonly detail?: string;
+}
+
+/**
+ * The toast for one send of the Invite dialog. *Sent* only when the server
+ * says it emailed; otherwise the link on screen is the invite, so it was
+ * *created*. A refusal is an error, with the server's sentence when it was
+ * the only one, and a pointer to the list when some went through — the list
+ * stays on screen, because it holds links a toast cannot.
+ */
+export function inviteOutcome(results: readonly InviteResult[]): InviteOutcome {
+  const made = results.filter((r): r is Extract<InviteResult, { url: string }> => 'url' in r);
+  const refused = results.filter(
+    (r): r is Extract<InviteResult, { error: string }> => 'error' in r,
+  );
+  const first = refused[0];
+  if (first !== undefined) {
+    if (made.length === 0) {
+      return {
+        text: results.length === 1 ? 'Couldn’t create the invite' : 'Couldn’t create the invites',
+        tone: 'error',
+        ...(refused.length === 1 ? { detail: first.error } : {}),
+      };
+    }
+    return {
+      text: `${String(refused.length)} of ${String(results.length)} invites refused`,
+      tone: 'error',
+      detail: 'The rest were created — each is listed with why.',
+    };
+  }
+  const only = made.length === 1 ? made[0] : undefined;
+  if (only !== undefined) {
+    if (only.email === null) return { text: 'Invite link created', tone: 'success' };
+    return {
+      text: only.emailed ? `Invite sent to ${only.email}` : `Invite created for ${only.email}`,
+      tone: 'success',
+    };
+  }
+  const sent = made.every((r) => r.emailed);
+  return { text: `${String(made.length)} invites ${sent ? 'sent' : 'created'}`, tone: 'success' };
+}
+
 /** `in 6 days`, `tomorrow`, `today`, or `expired` — the invite's own clock. */
 export function expiryLabel(expiresAt: number, now: number): string {
   const ms = expiresAt - now;

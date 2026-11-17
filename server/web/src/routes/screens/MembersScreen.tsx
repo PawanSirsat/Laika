@@ -6,6 +6,8 @@ import { EmptyPanel } from '../../components/EmptyPanel.tsx';
 import { Skeleton, SkeletonAvatar, SkeletonText } from '../../components/Skeleton.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { Dropdown } from '../../components/Dropdown.tsx';
+import { failureToast } from '../../components/toast/action-model.ts';
+import { useToast } from '../../components/toast/ToastProvider.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useMembers } from '../../api/use-members.ts';
@@ -34,6 +36,10 @@ export interface MembersScreenProps {
  * nothing in the API lists the org's users, so the only add form buildable today
  * is a raw-id field — which is not a feature. Filed as LAI-060; the add flow is
  * its own task once there is a way to pick a person.
+ *
+ * Adding, a role change and a removal each toast (LAI-1310); a removal offers
+ * Undo, which adds them back with the role they had — as Space settings ›
+ * Members does. A refusal stays in the panel above the list and also toasts.
  */
 export function MembersScreen({ slug, me }: MembersScreenProps) {
   const { theme } = useTheme();
@@ -43,14 +49,25 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   /**
-   * Removal asks first. It is destructive and, until LAI-060 lands, it is
-   * **irreversible from this screen** — there is no way to add anyone back,
-   * so a mis-click strands a person off the project until someone edits the
-   * database. Two clicks, inline: a modal would need a focus trap for one
-   * yes/no question.
+   * Removal asks first: it takes the person off the project at once, and the
+   * toast's Undo is the only quick way back. Two clicks, inline: a modal would
+   * need a focus trap for one yes/no question.
    */
   const [confirming, setConfirming] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const toast = useToast();
+
+  // `useMembers` keeps a refusal as `actionError` and resolves `false`, so the
+  // toast is said from here, once per refusal — each is a new error object.
+  const { actionError } = members;
+  useEffect(() => {
+    if (actionError === null) return;
+    const said = failureToast(
+      { success: null, failure: 'Couldn’t change the members' },
+      actionError,
+    );
+    if (said !== null) toast.show({ ...said, mark: 'members-result' });
+  }, [actionError, toast]);
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -121,7 +138,18 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
           <AddMemberForm
             existingIds={members.members.map((m) => m.user_id)}
             busy={members.pendingId !== undefined}
-            onAdd={members.add}
+            onAdd={(userId, role) =>
+              members.add(userId, role).then((ok) => {
+                if (ok) {
+                  toast.show({
+                    text: `${projectRoleLabel(role)} added to ${project?.name ?? slug}`,
+                    tone: 'success',
+                    mark: 'members-result',
+                  });
+                }
+                return ok;
+              })
+            }
             onCancel={() => {
               setAdding(false);
             }}
@@ -195,7 +223,15 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
                         value={member.role}
                         disabled={busy}
                         onChange={(value) => {
-                          void members.setRole(member.user_id, value as ProjectRole);
+                          const role = value as ProjectRole;
+                          void members.setRole(member.user_id, role).then((ok) => {
+                            if (!ok) return;
+                            toast.show({
+                              text: `${member.name} is now ${projectRoleLabel(role)}`,
+                              tone: 'success',
+                              mark: 'members-result',
+                            });
+                          });
                         }}
                         options={PROJECT_ROLES.map((role) => ({
                           value: role,
@@ -217,7 +253,21 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
                           disabled={busy}
                           onClick={() => {
                             setConfirming(null);
-                            void members.remove(member.user_id);
+                            const role = member.role as ProjectRole;
+                            void members.remove(member.user_id).then((ok) => {
+                              if (!ok) return;
+                              toast.show({
+                                text: `${member.name} removed`,
+                                tone: 'success',
+                                mark: 'members-result',
+                                // A real reversal: they are added back with the role they had.
+                                undo: async () => {
+                                  const back = await members.add(member.user_id, role);
+                                  if (!back) throw new Error(`${member.name} was not added back.`);
+                                  return `${member.name} is back, as ${projectRoleLabel(role)}`;
+                                },
+                              });
+                            });
                           }}
                         >
                           Yes, remove

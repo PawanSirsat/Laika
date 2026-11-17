@@ -19,6 +19,9 @@ import {
   type TokenView,
 } from '../../../api/tokens.ts';
 import { Switch } from '../../../components/Switch.tsx';
+import { failureToast } from '../../../components/toast/action-model.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { TokenRow } from '../../../components/TokenRow.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
 import { updateUser } from '../../../api/users.ts';
@@ -183,29 +186,54 @@ export function OrganisationScreen({
    */
   const [roleError, setRoleError] = useState<string | undefined>(undefined);
 
-  /** D-079's organisation switch, while its change is in flight, and why it failed. */
+  /**
+   * Every action here ends in a toast (LAI-1310). People's own success lines,
+   * and their Undo, are `PeopleTab`'s; this screen says the rest.
+   */
+  const { run } = useAction();
+  const toast = useToast();
+
+  /**
+   * An owner invite from before D-104, revoked: toasted here, and still
+   * rejected on a refusal, because `OwnerInvites` keeps its dialog open with
+   * the reason in it.
+   */
+  const revokeOwnerInvite = (id: string): Promise<void> =>
+    revokeInvite(id).then(
+      () => {
+        toast.show({ text: 'Owner invite revoked', tone: 'success', mark: 'people-result' });
+      },
+      (cause: unknown) => {
+        const said = failureToast({ success: null, failure: 'Couldn’t revoke the invite' }, cause);
+        if (said !== null) toast.show(said);
+        throw cause;
+      },
+    );
+
+  /** D-079's organisation switch, while its change is in flight. */
   const [insightsBusy, setInsightsBusy] = useState(false);
-  const [insightsError, setInsightsError] = useState<string | undefined>(undefined);
 
   const setInsights = (on: boolean): void => {
     setInsightsBusy(true);
-    setInsightsError(undefined);
-    updateOrg({ developer_insights: on })
-      .then(setOrg)
-      .catch((cause: unknown) => {
-        setInsightsError(cause instanceof Error ? cause.message : 'That change was refused.');
-      })
-      .finally(() => {
-        setInsightsBusy(false);
-      });
+    void run({
+      do: () => updateOrg({ developer_insights: on }),
+      success: on ? 'Developer insights turned on' : 'Developer insights turned off',
+      // A setting, not a deletion: switching it back really reverses it.
+      undo: async () => {
+        setOrg(await updateOrg({ developer_insights: !on }));
+        return on ? 'Developer insights off again' : 'Developer insights on again';
+      },
+      failure: 'Couldn’t change developer insights',
+      mark: 'org-insights',
+    }).then((saved) => {
+      setInsightsBusy(false);
+      if (saved !== undefined) setOrg(saved);
+    });
   };
 
   /** Whose token panel is open, or `undefined` for none. One at a time. */
   const [tokensFor, setTokensFor] = useState<string | undefined>(undefined);
   const { state: tokens, reload: reloadTokens } = useUserTokens(tokensFor);
-  const [tokenError, setTokenError] = useState<string | undefined>(undefined);
-  /** What the last revoke did, said once the server took it (LAI-1194). */
-  const [tokenResult, setTokenResult] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -250,22 +278,24 @@ export function OrganisationScreen({
   };
 
   const revokeNow = (owner: { id: string; name: string }, token: TokenView): void => {
-    setTokenError(undefined);
-    setTokenResult(undefined);
     // **The owner's id, not just the token's.** The service refuses a token that
     // does not belong to the user in the path, which is what stops an admin
     // revoking anybody's token through anybody's URL — passing the id this token
     // was listed under is what keeps that check meaningful rather than a formality.
-    revokeUserToken(owner.id, token.id)
-      .then(() => {
-        setTokenResult(
-          `Revoked “${token.name}”. Anything that used it has stopped working; ${owner.name} can make a new one.`,
-        );
-        reloadTokens();
-      })
-      .catch((cause: unknown) => {
-        setTokenError(revokeRefusal(cause, 'Could not revoke that token.'));
-      });
+    // No Undo: a revoked token cannot be restored (LAI-1194's toast, LAI-1310).
+    void run({
+      do: async () => {
+        await revokeUserToken(owner.id, token.id).catch((cause: unknown) => {
+          throw new Error(revokeRefusal(cause, 'Could not revoke that token.'));
+        });
+        return true;
+      },
+      success: `“${token.name}” revoked`,
+      failure: 'Couldn’t revoke the token',
+      mark: 'token-result',
+    }).then((done) => {
+      if (done !== undefined) reloadTokens();
+    });
   };
 
   /** `true` when the server took it — People offers Undo only then (LAI-999). */
@@ -275,18 +305,29 @@ export function OrganisationScreen({
   ): Promise<boolean> => {
     setChanging(id);
     setRoleError(undefined);
-    return updateUser(id, patch)
-      .then(() => {
-        reload();
-        return true;
-      })
-      .catch((cause: unknown) => {
+    let took = false;
+    return run({
+      do: async () => {
+        await updateUser(id, patch);
+        took = true;
+      },
+      // People says what took, with Undo where there is one; here only the
+      // refusal, which is also kept under the table, verbatim.
+      success: null,
+      failure:
+        patch.is_active === false
+          ? 'Couldn’t deactivate them'
+          : patch.is_active === true
+            ? 'Couldn’t reactivate them'
+            : 'Couldn’t change the role',
+      onError: (cause) => {
         setRoleError(cause instanceof Error ? cause.message : 'That change was refused.');
-        return false;
-      })
-      .finally(() => {
-        setChanging(undefined);
-      });
+      },
+    }).then(() => {
+      setChanging(undefined);
+      if (took) reload();
+      return took;
+    });
   };
 
   const tabStrip = (
@@ -585,11 +626,6 @@ export function OrganisationScreen({
                             What developers see: Developer access · Activity
                           </a>
                         </span>
-                        {insightsError !== undefined && (
-                          <span className="org-fact-error" role="alert">
-                            {insightsError}
-                          </span>
-                        )}
                       </dd>
                     </div>
                   </dl>
@@ -667,7 +703,19 @@ export function OrganisationScreen({
             {canChangeRoles && (org?.extra_owners ?? []).length > 0 && (
               <ExtraOwners
                 owners={org?.extra_owners ?? []}
-                onMakeAdmin={(id) => change(id, { org_role: 'admin' })}
+                onMakeAdmin={(id) =>
+                  change(id, { org_role: 'admin' }).then((ok) => {
+                    const name = org?.extra_owners?.find((o) => o.id === id)?.name ?? 'They';
+                    if (ok) {
+                      toast.show({
+                        text: `${name} is now an admin`,
+                        tone: 'success',
+                        mark: 'people-result',
+                      });
+                    }
+                    return ok;
+                  })
+                }
               />
             )}
             {/* Served to the owner alone, so its presence is the gate (LAI-181). */}
@@ -675,7 +723,7 @@ export function OrganisationScreen({
               <OwnerInvites
                 invites={org?.owner_invites_pending ?? []}
                 onRevoke={(id) =>
-                  revokeInvite(id).then(() => {
+                  revokeOwnerInvite(id).then(() => {
                     setOrg((current) =>
                       current?.owner_invites_pending === undefined
                         ? current
@@ -922,8 +970,6 @@ export function OrganisationScreen({
                             : `Show ${person.name}’s tokens`
                         }
                         onClick={() => {
-                          setTokenError(undefined);
-                          setTokenResult(undefined);
                           setTokensFor((open) => (open === person.id ? undefined : person.id));
                         }}
                       >
@@ -1023,15 +1069,6 @@ export function OrganisationScreen({
                             );
                           })
                         ))}
-
-                      {tokenError !== undefined && (
-                        <p className="org-error" role="alert">
-                          {tokenError}
-                        </p>
-                      )}
-                      <p className="org-tokens-result" role="status" data-token-result>
-                        {tokenResult}
-                      </p>
                     </div>
                   )}
                 </li>

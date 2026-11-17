@@ -739,6 +739,14 @@ void describe('Access', () => {
       const error = h.page.locator('[data-error="agents_allowed"]');
       await error.waitFor({ timeout: 5_000 });
       assert.equal(await error.innerText(), 'Not saved: You may not change this space');
+      // And a persistent error toast with the server's sentence (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-space-access]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getAttribute('data-tone'), 'error');
+      assert.equal(
+        await toast.locator('.toast-detail').innerText(),
+        'You may not change this space',
+      );
       assert.equal(
         await h.page
           .getByRole('switch', { name: 'Coding tools may work here' })
@@ -793,8 +801,27 @@ void describe('Danger zone', () => {
         /Laika is archived[\s\S]*Spaces › Archived/,
       );
       assert.match(await h.page.locator('.screen-page').innerText(), /ARCHIVED/);
+      // The archive toasts, with Undo (LAI-1310); the note above keeps the link.
+      const archivedToast = h.page.locator('[data-toast][data-space-archive]');
+      await archivedToast.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await archivedToast.locator('.toast-text').innerText()).trim(),
+        'Laika archived',
+      );
+      assert.equal(await archivedToast.getByRole('button', { name: 'Undo' }).count(), 1);
+      await archivedToast.locator('.toast-close').click();
       await h.page.locator('[data-action="restore"]').click();
       await h.page.locator('[data-action="archive"]').waitFor({ timeout: 5_000 });
+      const restoredToast = h.page
+        .locator('[data-toast][data-space-archive]')
+        .filter({ hasText: 'Laika restored' });
+      await restoredToast.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await restoredToast.locator('.toast-text').innerText()).trim(),
+        'Laika restored',
+      );
+      assert.equal(await restoredToast.getByRole('button', { name: 'Undo' }).count(), 0);
+      assert.equal(await h.page.locator('[data-danger-result]').count(), 0, 'a restored note');
       assert.deepEqual(
         h.calls.filter((c) => c.method === 'PATCH').map((c) => c.body),
         [{ archived: true }, { archived: false }],

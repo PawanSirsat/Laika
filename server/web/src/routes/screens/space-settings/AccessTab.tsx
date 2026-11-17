@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { InlineConfirm } from '../../../components/InlineConfirm.tsx';
 import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { Switch } from '../../../components/Switch.tsx';
 import type { Project } from '../../../api/projects.ts';
 import { updateSpace, type SpaceSettingsPatch } from '../../../api/space-settings.ts';
@@ -53,29 +54,34 @@ export function AccessTab({
   const [failed, setFailed] = useState<{ readonly setting: Setting; readonly message: string }>();
   const [confirmingPublic, setConfirmingPublic] = useState(false);
   const status = useSaveStatus();
+  const { run } = useAction();
   const publicCard = useRef<HTMLButtonElement | null>(null);
 
-  // The whole save — its answer handled too — is what Retry runs again.
+  // The whole save — its answer handled too — is what Retry runs again. It
+  // saves as it changes, so *Saved* is the status's to say; a refusal also
+  // toasts (LAI-1310), persistent, as well as beside the control.
   const save = (setting: Setting, patch: SpaceSettingsPatch): void => {
-    status
-      .run(() => {
-        setPending(setting);
-        setFailed(undefined);
-        return updateSpace(project.slug, patch)
-          .then(onSaved, (cause: unknown) => {
-            setFailed({
-              setting,
-              message: cause instanceof Error ? cause.message : 'The change was not saved',
+    void run({
+      do: () =>
+        status.run(() => {
+          setPending(setting);
+          setFailed(undefined);
+          return updateSpace(project.slug, patch)
+            .then(onSaved, (cause: unknown) => {
+              setFailed({
+                setting,
+                message: cause instanceof Error ? cause.message : 'The change was not saved',
+              });
+              throw cause;
+            })
+            .finally(() => {
+              setPending(undefined);
             });
-            throw cause;
-          })
-          .finally(() => {
-            setPending(undefined);
-          });
-      })
-      .catch(() => {
-        // Said beside the control that was refused, and by the status.
-      });
+        }),
+      success: null,
+      failure: 'Couldn’t save the access setting',
+      mark: 'space-access',
+    });
   };
 
   const errorFor = (setting: Setting) =>

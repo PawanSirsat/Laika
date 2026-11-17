@@ -4,6 +4,7 @@ import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import {
   contextBudget,
   getProjectContext,
@@ -42,6 +43,11 @@ export interface ProjectContextPanelProps {
  * every agent session on the project, so what is typed is what ships — a
  * rich-text layer would put a rendering step between the author and the thing
  * the agent actually reads, and would need a dependency no task authorises.
+ *
+ * A save toasts (LAI-1310): *Context saved*, with Undo — the text it replaced
+ * is saved back as the next revision, which the history keeps either way —
+ * or the refusal, persistent, beside the conflict box or the error line that
+ * still say it in place.
  */
 export function ProjectContextPanel({
   slug,
@@ -57,6 +63,7 @@ export function ProjectContextPanel({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [savedAt, setSavedAt] = useState<number | undefined>(undefined);
+  const { run } = useAction();
   /**
    * The newest revision known to exist, when it is newer than the one being
    * edited: from a save refused as stale, or from a `project.context_updated`
@@ -163,29 +170,45 @@ export function ProjectContextPanel({
 
   /** `base` is the revision this text replaces — normally the one opened. */
   const save = (base = loaded?.revision ?? 0): void => {
+    const replaced = loaded?.context_md;
     setSaving(true);
     setSaveError(undefined);
-    updateProjectContext(slug, draft, base)
-      .then((doc) => {
-        settle(doc);
-        setSavedAt(Date.now());
-      })
-      .catch((cause: unknown) => {
-        // Refused as stale: nothing was written and the draft is untouched.
-        // The conflict box below says so and offers the comparison.
-        const refusal = staleContextOf(cause);
-        if (refusal !== null) {
-          setNewest((was) => Math.max(was ?? 0, refusal.current_revision));
-          setStale(true);
-          return;
-        }
-        // The length is passed because the client knows it and the server's
-        // zod refusal does not carry it — see `readableContextError`.
-        setSaveError(readableContextError(cause, draft.length));
-      })
-      .finally(() => {
-        setSaving(false);
-      });
+    void run({
+      do: () =>
+        updateProjectContext(slug, draft, base).catch((cause: unknown) => {
+          // Refused as stale: nothing was written and the draft is untouched.
+          // The conflict box below says so and offers the comparison.
+          const refusal = staleContextOf(cause);
+          if (refusal !== null) {
+            setNewest((was) => Math.max(was ?? 0, refusal.current_revision));
+            setStale(true);
+            throw new Error('Somebody saved a newer version while you were editing.');
+          }
+          // The length is passed because the client knows it and the server's
+          // zod refusal does not carry it — see `readableContextError`.
+          const words = readableContextError(cause, draft.length);
+          setSaveError(words);
+          throw new Error(words);
+        }),
+      success: 'Context saved',
+      ...(replaced === undefined
+        ? {}
+        : {
+            undo: async (doc: ProjectContext) => {
+              // A real reversal: the old text becomes the next revision, and is
+              // refused as stale if anyone saved since.
+              settle(await updateProjectContext(slug, replaced, doc.revision));
+              return 'Context put back';
+            },
+          }),
+      failure: 'Couldn’t save the context',
+      mark: 'context-saved',
+    }).then((doc) => {
+      setSaving(false);
+      if (doc === undefined) return;
+      settle(doc);
+      setSavedAt(Date.now());
+    });
   };
 
   /** Throw the draft away and take the newest revision, after asking. */

@@ -444,6 +444,10 @@ void describe('a stale save', () => {
         /Not saved: somebody saved a newer version \(r3\) while you were editing r2\. Your text is still here\./,
       );
       assert.equal(await editor.inputValue(), mine, 'the refused text was not kept');
+      // And a persistent error toast (LAI-1310); the box above keeps the remedy.
+      const refused = h.page.locator('[data-toast][data-context-saved][data-tone="error"]');
+      await refused.waitFor({ timeout: 5_000 });
+      assert.match(await refused.innerText(), /Couldn’t save the context/);
 
       await conflict.getByRole('button', { name: 'Compare with the newer version' }).click();
       await conflict.locator('[data-diff-line="added"]').first().waitFor({ timeout: 10_000 });
@@ -470,6 +474,9 @@ void describe('a stale save', () => {
       await conflict.waitFor({ state: 'detached', timeout: 10_000 });
       assert.equal(await editor.inputValue(), mine);
       assert.equal(server.state.revision, 4);
+      const saved = h.page.locator('[data-toast][data-context-saved][data-tone="success"]');
+      await saved.waitFor({ timeout: 5_000 });
+      assert.equal((await saved.locator('.toast-text').innerText()).trim(), 'Context saved');
     } finally {
       await h.close();
     }

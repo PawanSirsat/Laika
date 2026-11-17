@@ -7,6 +7,7 @@ import {
 } from '../../../api/handoffs.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { HandoffPolicyForm } from '../../../components/agent/HandoffPolicyForm.tsx';
 import type { HandoffPolicy } from '../../../components/agent/agent-states.ts';
 import { handoffSummary } from './space-settings-model.ts';
@@ -36,6 +37,10 @@ type Read =
  * read from `GET /projects/:slug/handoff-policy` and, for a lead, saved on
  * each change — the Access tab's rule. A refusal is said beside the form,
  * which then shows what the server still holds.
+ *
+ * Each save also toasts (LAI-1310): *Hand-off policy saved*, with Undo — the
+ * policy is put whole, so putting the previous one back really reverses it —
+ * or the refusal, persistent, as well as beside the form.
  */
 export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProps) {
   const [read, setRead] = useState<Read>({ kind: 'loading' });
@@ -43,6 +48,7 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<string | undefined>(undefined);
   const [settled, setSettled] = useState(0);
+  const { run } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -60,24 +66,45 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
   }, [slug, attempt]);
 
   const save = (next: HandoffPolicy): void => {
+    const previous = read.kind === 'ready' ? read.policy : undefined;
     setSaving(true);
     setFailed(undefined);
-    putHandoffPolicy(slug, {
-      allow_other_owners: next.allowOtherOwners,
-      cross_owner_requires_approval: next.crossOwnerRequiresApproval,
-      max_handoffs: next.maxHandoffs,
-      offer_ttl_minutes: next.offerTtlMinutes,
-    })
-      .then((policy) => {
-        setRead({ kind: 'ready', policy });
-      })
-      .catch((cause: unknown) => {
-        setFailed(handoffRefusal(cause));
-      })
-      .finally(() => {
-        setSaving(false);
-        setSettled((n) => n + 1);
-      });
+    void run({
+      do: () =>
+        putHandoffPolicy(slug, {
+          allow_other_owners: next.allowOtherOwners,
+          cross_owner_requires_approval: next.crossOwnerRequiresApproval,
+          max_handoffs: next.maxHandoffs,
+          offer_ttl_minutes: next.offerTtlMinutes,
+        }).catch((cause: unknown) => {
+          // Said beside the form in the hand-off words; the toast carries them too.
+          const words = handoffRefusal(cause);
+          setFailed(words);
+          throw new Error(words);
+        }),
+      success: 'Hand-off policy saved',
+      ...(previous === undefined
+        ? {}
+        : {
+            undo: async () => {
+              const back = await putHandoffPolicy(slug, {
+                allow_other_owners: previous.allow_other_owners,
+                cross_owner_requires_approval: previous.cross_owner_requires_approval,
+                max_handoffs: previous.max_handoffs,
+                offer_ttl_minutes: previous.offer_ttl_minutes,
+              });
+              setRead({ kind: 'ready', policy: back });
+              setSettled((n) => n + 1);
+              return 'Hand-off policy put back';
+            },
+          }),
+      failure: 'Couldn’t save the hand-off policy',
+      mark: 'handoff-policy-saved',
+    }).then((policy) => {
+      if (policy !== undefined) setRead({ kind: 'ready', policy });
+      setSaving(false);
+      setSettled((n) => n + 1);
+    });
   };
 
   return (

@@ -1,5 +1,13 @@
 import { dateLabel } from '../../../api/date-only.ts';
-import type { HrPerson, HrSource, HrSyncResult, OrgHoliday } from '../../../api/hr.ts';
+import { ApiError } from '../../../api/errors.ts';
+import {
+  hrRefusal,
+  syncErrorWords,
+  type HrPerson,
+  type HrSource,
+  type HrSyncResult,
+  type OrgHoliday,
+} from '../../../api/hr.ts';
 
 /**
  * The words and lists the Organisation screen's *HR system* and *Holidays*
@@ -126,6 +134,37 @@ export function countsLine(result: HrSyncResult): string {
     count(result.leave_days, 'leave day', 'leave days'),
     `${String(result.matched)} of ${String(result.people)} people matched`,
   ].join(' · ');
+}
+
+/** A sync's toast (LAI-1310): `Synced — 3 holidays, 2 leave days`. */
+export function syncedLine(result: HrSyncResult | null): string {
+  if (result === null) return 'Synced with Clan';
+  return `Synced — ${count(result.holidays, 'holiday', 'holidays')}, ${count(result.leave_days, 'leave day', 'leave days')}`;
+}
+
+/** `1 person mapped`, `3 people mapped` — a saved people map's toast. */
+export function mappedLine(n: number): string {
+  return `${count(n, 'person', 'people')} mapped`;
+}
+
+/**
+ * A refusal in the HR words `hrRefusal` gives it, for the error toast's
+ * detail (LAI-1310): Clan's reasons read better than the server's sentence
+ * for them. Not a field refusal any more — no HR form puts a server message
+ * under a field — and anything that is not the server's answer is left as it
+ * is, so a network failure still reads as one and an abort is still silent.
+ */
+export function hrCause(cause: unknown): unknown {
+  return cause instanceof ApiError ? new Error(hrRefusal(cause)) : cause;
+}
+
+/**
+ * A sync that answered but did not succeed, as an error to throw: the server
+ * answers `200` with the view either way, and `last_error` set says this one
+ * failed. `undefined` when the last attempt went through.
+ */
+export function syncFailure(view: HrSource): Error | undefined {
+  return view.last_error === null ? undefined : new Error(`${syncErrorWords(view.last_error)}.`);
 }
 
 type MethodKind = 'email' | 'app' | 'text' | 'other';

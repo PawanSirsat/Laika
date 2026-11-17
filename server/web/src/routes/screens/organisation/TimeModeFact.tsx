@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ApiError } from '../../../api/errors.ts';
 import { getTimeSettings, setOrgTimeMode, TIME_MODES, type TimeMode } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { MODE_LABELS, MODE_NOTES } from '../my-day/my-day-derive.ts';
 
 export interface TimeModeFactProps {
@@ -18,11 +18,13 @@ export interface TimeModeFactProps {
  *
  * Read from `GET /me/time-settings`, which every signed-in person may ask —
  * they are who it is about — and set by an owner or admin, signed in.
+ * A change toasts either way (LAI-1310). No Undo: leaving *drafts* deletes
+ * the drafts, which switching back cannot return.
  */
 export function TimeModeFact({ canManage }: TimeModeFactProps) {
   const [mode, setMode] = useState<TimeMode | undefined>(undefined);
   const [pending, setPending] = useState<TimeMode | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,17 +45,15 @@ export function TimeModeFact({ canManage }: TimeModeFactProps) {
   const choose = (next: TimeMode): void => {
     if (next === mode) return;
     setPending(next);
-    setError(undefined);
-    setOrgTimeMode(next)
-      .then((answer) => {
-        setMode(answer.mode);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof ApiError ? cause.message : 'That change was refused.');
-      })
-      .finally(() => {
-        setPending(undefined);
-      });
+    void run({
+      do: () => setOrgTimeMode(next),
+      success: (answer) => `Time set to ${MODE_LABELS[answer.mode]}`,
+      failure: 'Couldn’t change the Time setting',
+      mark: 'org-time',
+    }).then((answer) => {
+      if (answer !== undefined) setMode(answer.mode);
+      setPending(undefined);
+    });
   };
 
   return (
@@ -85,11 +85,6 @@ export function TimeModeFact({ canManage }: TimeModeFactProps) {
           {MODE_NOTES[mode]} Per-person hours are never shown as a score. Leaving Drafts deletes
           every draft held; confirmed time stays.
         </span>
-        {error !== undefined && (
-          <span className="org-fact-error" role="alert">
-            {error}
-          </span>
-        )}
       </dd>
     </div>
   );

@@ -509,6 +509,11 @@ void describe('invites', () => {
       assert.match(await refused.innerText(), /already has a pending invite/);
       assert.equal(await ok.getByRole('button', { name: /copy/i }).count(), 1);
       assert.match(await dialog.innerText(), /1 of 2 invites created/);
+      // A refusal is a persistent error toast pointing back at the list (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-invite-sent]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getAttribute('data-tone'), 'error');
+      assert.match(await toast.innerText(), /1 of 2 invites refused/);
     } finally {
       await h.close();
     }

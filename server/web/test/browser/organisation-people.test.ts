@@ -371,6 +371,11 @@ void describe('the People tab (LAI-893)', () => {
       assert.match(said, /2 invites created/);
       assert.match(said, /http:\/\/laika\.test\/accept\/t\d+/);
       assert.match(said, /send each link yourself/);
+      // The send toasts too (LAI-1310); the links stay in the dialog.
+      const toast = h.page.locator('[data-toast][data-invite-sent]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getAttribute('data-tone'), 'success');
+      assert.equal((await toast.locator('.toast-text').innerText()).trim(), '2 invites created');
       await done.click();
       await until(async () => (await h.page.locator('[data-invite-dialog]').count()) === 0);
 

@@ -7,6 +7,7 @@ import type { OrgRole } from '../../../api/invites.ts';
 import type { OrgUser } from '../../../api/users.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
+import { useAction } from '../../../components/toast/use-action.ts';
 import { newOwnerCandidates } from './people-derive.ts';
 
 export interface TransferOwnershipProps {
@@ -30,6 +31,9 @@ const reloadPage = (): void => {
  * or member and types that person's email. The server makes them owner and the
  * reader an admin in one transaction, and checks the email itself — the typed
  * confirmation here is what it will ask, not the only check.
+ *
+ * It toasts either way (LAI-1310), with no Undo: only the new owner can hand
+ * it back. A refusal also stays in the dialog, under the typed email.
  */
 export function TransferOwnership({
   me,
@@ -41,6 +45,7 @@ export function TransferOwnership({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const { run } = useAction();
   const target = candidates.find((p) => p.id === chosen);
 
   return (
@@ -104,17 +109,23 @@ export function TransferOwnership({
           onConfirm={(typed) => {
             setBusy(true);
             setError(undefined);
-            transferOwnership(target.id, typed.trim())
-              .then(() => {
-                setOpen(false);
-                onTransferred();
-              })
-              .catch((cause: unknown) => {
+            void run({
+              do: async () => {
+                await transferOwnership(target.id, typed.trim());
+                return true;
+              },
+              success: `${target.name} is now the owner`,
+              failure: 'Couldn’t transfer ownership',
+              mark: 'ownership-transferred',
+              onError: (cause) => {
                 setError(cause instanceof Error ? cause.message : 'The transfer was refused.');
-              })
-              .finally(() => {
-                setBusy(false);
-              });
+              },
+            }).then((done) => {
+              setBusy(false);
+              if (done === undefined) return;
+              setOpen(false);
+              onTransferred();
+            });
           }}
           onClose={() => {
             setOpen(false);

@@ -454,7 +454,8 @@ void describe('revoking', () => {
         .click();
       await answerConfirm(h.page, true);
 
-      const error = row.locator('.org-error');
+      // A persistent error toast (LAI-1310), the server's sentence as its detail.
+      const error = h.page.locator('[data-toast][data-token-result] .toast-detail');
       await error.waitFor({ timeout: 20_000 });
       assert.equal(await error.innerText(), MESSAGE, 'the refusal was reworded');
     } finally {
@@ -521,7 +522,7 @@ void describe("the owner's tokens, read by an admin", () => {
         .locator('.tok-revoke')
         .click();
       await answerConfirm(h.page, true);
-      const error = row.locator('.org-error');
+      const error = h.page.locator('[data-toast][data-token-result] .toast-detail');
       await error.waitFor({ timeout: 20_000 });
       assert.equal(
         await error.innerText(),

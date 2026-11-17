@@ -1,4 +1,4 @@
-import type { Grants, PermissionRow, Permissions } from '../../../api/permissions.ts';
+import type { Capability, Grants, PermissionRow, Permissions } from '../../../api/permissions.ts';
 
 /**
  * What the Roles & permissions tab draws, derived from the response alone
@@ -96,6 +96,39 @@ export function sameGrants(a: Grants, b: Grants): boolean {
     const capabilities = new Set([...Object.keys(left), ...Object.keys(right)]);
     return [...capabilities].every((c) => (left[c] ?? false) === (right[c] ?? false));
   });
+}
+
+/**
+ * What a saved grid says in its toast (LAI-1310): the one cell that changed,
+ * in the server's words — *Admins can now create and archive spaces* — or how
+ * many did. The role and the label are the response's; only *can now* and
+ * *can no longer* are this module's.
+ */
+export function grantsChangeLine(
+  before: Grants,
+  after: Grants,
+  capabilities: readonly Pick<Capability, 'id' | 'label'>[],
+): string {
+  const changed: { role: string; capability: string; on: boolean }[] = [];
+  const roles = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const role of roles) {
+    const left = before[role] ?? {};
+    const right = after[role] ?? {};
+    for (const capability of new Set([...Object.keys(left), ...Object.keys(right)])) {
+      const on = right[capability] ?? false;
+      if ((left[capability] ?? false) !== on) changed.push({ role, capability, on });
+    }
+  }
+  const only = changed.length === 1 ? changed[0] : undefined;
+  if (only === undefined) {
+    return changed.length === 0
+      ? 'Permissions saved'
+      : `${String(changed.length)} permissions changed`;
+  }
+  const label = capabilities.find((c) => c.id === only.capability)?.label ?? only.capability;
+  const who = `${only.role.charAt(0).toUpperCase()}${only.role.slice(1)}s`;
+  const what = `${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+  return `${who} can ${only.on ? 'now' : 'no longer'} ${what}`;
 }
 
 /**

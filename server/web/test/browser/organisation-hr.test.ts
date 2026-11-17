@@ -363,7 +363,7 @@ void describe('HR system: connecting Clan', () => {
       assert.equal(await codeForm.getByRole('group').count(), 0);
       await codeForm.getByRole('textbox', { name: 'Code' }).fill('000000');
       await codeForm.getByRole('button', { name: 'Verify' }).click();
-      const alert = fact.locator('[role="alert"]');
+      const alert = h.page.locator('[data-toast][data-hr-toast-verify] .toast-detail');
       await alert.waitFor({ timeout: 5_000 });
       assert.equal(await alert.innerText(), 'The sign-in code expired. Connect again.');
       const form = fact.getByRole('form', { name: 'Connect Clan' });
@@ -400,10 +400,15 @@ void describe('HR system: connecting Clan', () => {
         const fact = hrCard(h);
         await fact.getByRole('button', { name: 'Connect Clan' }).click();
         await fillConnect(h, 'https://codesage.clan.biz');
-        const alert = fact.locator('[role="alert"]');
+        // A persistent error toast (LAI-1310), in the HR words.
+        const alert = h.page.locator('[data-toast][data-hr-toast-connect] .toast-detail');
         await alert.waitFor({ timeout: 5_000 });
         assert.equal(await alert.innerText(), words);
         assert.doesNotMatch(await fact.innerText(), /Clan said/);
+        assert.doesNotMatch(
+          await h.page.locator('[data-toast][data-hr-toast-connect]').innerText(),
+          /Clan said/,
+        );
         const form = fact.getByRole('form', { name: 'Connect Clan' });
         assert.equal(await form.locator('input[type="password"]').inputValue(), '');
         // What was typed otherwise stays, to correct.
@@ -548,7 +553,7 @@ void describe('HR system: pasting a token', () => {
       await form.getByLabel('Clan address').fill('https://codesage.clan.biz');
       await form.locator('input[type="password"]').fill(TOKEN);
       await form.getByRole('button', { name: 'Connect', exact: true }).click();
-      const alert = card.locator('[role="alert"]');
+      const alert = h.page.locator('[data-toast][data-hr-toast-connect] .toast-detail');
       await alert.waitFor({ timeout: 5_000 });
       assert.equal(
         await alert.innerText(),
@@ -702,6 +707,13 @@ void describe('HR system: connected', () => {
       assert.equal(syncs.length, 1, 'Sync now posted more than once');
       assert.equal(syncs[0]?.method, 'POST');
       assert.equal(await button.isDisabled(), false);
+      // And a toast says what it brought (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-hr-toast-sync]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await toast.locator('.toast-text').innerText()).trim(),
+        'Synced — 13 holidays, 351 leave days',
+      );
     } finally {
       await h.close();
     }
@@ -973,6 +985,11 @@ void describe('Holidays', () => {
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-holiday'))),
         ['h3', 'h9'],
       );
+      // The add toasts, with Undo: a day added here is removed again (LAI-1310).
+      const added = h.page.locator('[data-toast][data-holiday-added]');
+      await added.waitFor({ timeout: 5_000 });
+      assert.equal((await added.locator('.toast-text').innerText()).trim(), 'Youth Day added');
+      assert.equal(await added.getByRole('button', { name: 'Undo' }).count(), 1);
 
       await fact.getByRole('button', { name: /^Remove Company day/ }).click();
       await until(() => writes.length === 2);
@@ -987,7 +1004,7 @@ void describe('Holidays', () => {
       await form.getByLabel('Day').fill(`${String(YEAR)}-12-25`);
       await form.getByLabel('Name').fill('Christmas');
       await form.getByRole('button', { name: 'Add holiday' }).click();
-      const alert = fact.locator('[role="alert"]');
+      const alert = h.page.locator('[data-toast][data-holiday-added] .toast-detail');
       await alert.waitFor({ timeout: 5_000 });
       assert.equal(await alert.innerText(), 'There is already a holiday on that day.');
       assert.equal(await form.getByLabel('Name').inputValue(), 'Christmas');

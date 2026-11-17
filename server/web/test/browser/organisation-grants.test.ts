@@ -233,6 +233,14 @@ void describe('the owner switches capabilities on and off', () => {
         'true',
       );
       assert.equal(await save.isDisabled(), true, 'Save stays enabled after saving');
+      // The toast names the one cell that changed, with Undo (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-grants-saved]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(
+        (await toast.locator('.toast-text').innerText()).trim(),
+        'Members can now fly the kite',
+      );
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 1);
     } finally {
       await h.close();
     }
@@ -253,12 +261,16 @@ void describe('the owner switches capabilities on and off', () => {
         .locator(`${grid} tr[data-capability="mend_kites"] td[data-role="member"] [role="switch"]`)
         .click();
       await h.page.locator(`${grid} button`, { hasText: 'Save' }).click();
-      const alert = h.page.locator(`${grid} [role="alert"]`);
-      await alert.waitFor({ timeout: 10_000 });
+      // A persistent error toast (LAI-1310), the server's sentence as its detail.
+      const toast = h.page.locator('[data-toast][data-grants-saved]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.equal(await toast.getAttribute('data-tone'), 'error');
+      assert.equal(await toast.locator('[role="alert"]').count(), 1);
       assert.equal(
-        await alert.innerText(),
+        await toast.locator('.toast-detail').innerText(),
         '"kite.burn" is the owner\'s alone and cannot be granted',
       );
+      assert.match(await toast.innerText(), /Couldn’t save the permissions/);
     } finally {
       await h.close();
     }

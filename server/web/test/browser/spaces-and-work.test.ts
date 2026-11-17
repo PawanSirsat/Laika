@@ -274,6 +274,14 @@ void describe('Spaces: create a space (LAI-1196)', () => {
         await form.locator('[role="alert"]').first().innerText(),
         /The space was not created\. Fix the fields marked below/,
       );
+      // The toast points at the field rather than repeating it (LAI-1310).
+      const toast = h.page.locator('[data-toast][data-space-created]');
+      await toast.waitFor({ timeout: 5_000 });
+      assert.equal(await toast.getAttribute('data-tone'), 'error');
+      assert.equal(
+        (await toast.locator('.toast-text').innerText()).trim(),
+        'Couldn’t save — see the highlighted field',
+      );
       assert.equal(
         await form.getByRole('textbox', { name: 'Name', exact: true }).inputValue(),
         'Alpha',
@@ -318,10 +326,13 @@ void describe('Spaces: archive asks first (LAI-1196)', () => {
       assert.equal(patch?.path, '/api/v1/projects/alpha');
       assert.deepEqual(patch?.body, { archived: true });
 
-      const notice = h.page.locator('.projects-notice');
-      await until(async () => (await notice.innerText()).includes('archived'));
-      assert.equal(await notice.getAttribute('role'), 'status');
-      assert.match(await notice.innerText(), /Alpha is archived\. Find it under Archived/);
+      // Said in the app's toast (LAI-1310), with Undo: restoring asks nothing.
+      const toast = h.page.locator('[data-toast][data-space-action]');
+      await toast.waitFor({ timeout: 10_000 });
+      assert.equal(await toast.locator('[role="status"]').count(), 1);
+      assert.equal((await toast.locator('.toast-text').innerText()).trim(), 'Alpha archived');
+      assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 1);
+      assert.equal(await h.page.locator('.projects-notice').count(), 0, 'the old notice line');
       await until(async () => !(await cardNames(h.page)).includes('Alpha'));
       assert.ok(!(await cardNames(h.page)).includes('Alpha'), 'the archived space is still listed');
     } finally {

@@ -14,7 +14,15 @@ import {
 import { projectRoleLabel } from '../../../api/members.ts';
 import type { Project } from '../../../api/projects.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
-import { inviteButtonLabel, parseEmails, rejectedEmails, spaceRolesFor } from './people-derive.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import {
+  inviteButtonLabel,
+  inviteOutcome,
+  parseEmails,
+  rejectedEmails,
+  spaceRolesFor,
+  type InviteResult,
+} from './people-derive.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
@@ -35,9 +43,7 @@ export interface InviteDialogProps {
 }
 
 /** One line of a send: its link, or the server's refusal for that address (LAI-999). */
-type Issued =
-  | { readonly email: string | null; readonly url: string; readonly emailed: boolean }
-  | { readonly email: string | null; readonly error: string };
+type Issued = InviteResult;
 
 /** The server's default lifetime; sent only when another is chosen. */
 const DEFAULT_EXPIRY: InviteExpiryDays = 7;
@@ -52,6 +58,11 @@ const DEFAULT_EXPIRY: InviteExpiryDays = 7;
  * **The links are shown once.** The server keeps only a hash, so each accept
  * link stays on screen until *Done* — and with no mail configured (LAI-206)
  * nothing was emailed, so the link is the invite.
+ *
+ * A send also toasts how it went (LAI-1310, `inviteOutcome`): one send is
+ * several requests, each with its own answer, so this says the sum through
+ * `useToast` rather than one `useAction` per address. No Undo — revoking is
+ * Pending's, and an emailed invite cannot be unsent.
  */
 export function InviteDialog({
   orgName,
@@ -73,6 +84,7 @@ export function InviteDialog({
   const [expiry, setExpiry] = useState<InviteExpiryDays>(DEFAULT_EXPIRY);
   const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<readonly Issued[] | undefined>(undefined);
+  const toast = useToast();
   const emails = parseEmails(text);
   const rejected = rejectedEmails(text);
   const spaceRoles = spaceRolesFor(role);
@@ -106,6 +118,7 @@ export function InviteDialog({
         }
       }
       setIssued(made);
+      toast.show({ ...inviteOutcome(made), mark: 'invite-sent' });
       if (made.some((i) => 'url' in i)) onIssued();
       setBusy(false);
     })();
