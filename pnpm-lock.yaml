@@ -93,6 +93,9 @@ importers:
       '@fontsource-variable/commissioner':
         specifier: 5.3.0
         version: 5.3.0
+      '@fontsource-variable/hanken-grotesk':
+        specifier: 5.3.0
+        version: 5.3.0
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -786,6 +789,9 @@ packages:
 
   '@fontsource-variable/commissioner@5.3.0':
     resolution: {integrity: sha512-0IEvi8SO1slc5Pc9tA4OtA01I8UiCcEq/uh12oNjfHuABU9Lnz61l2V8o2cMPUUo3BAo5MbISVK2I/DSpBRw7Q==}
+
+  '@fontsource-variable/hanken-grotesk@5.3.0':
+    resolution: {integrity: sha512-DOd0FqL+3cH2dfNy0JtSq9tUfxBz5mLmHMjTU0DOr3E9Zo6wxuatCl53DIPNrSPgCsnuKyM739BTIG5glCLirw==}
 
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
@@ -3699,6 +3705,8 @@ snapshots:
     optional: true
 
   '@fontsource-variable/commissioner@5.3.0': {}
+
+  '@fontsource-variable/hanken-grotesk@5.3.0': {}
 
   '@fontsource-variable/inter@5.3.0': {}
 

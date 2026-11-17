@@ -188,6 +188,41 @@ void describe('font.ts, theme.css and index.css agree', () => {
     for (const spec of added) assert.match(spec ?? '', /\/latin-\d00\.css$/, spec);
     assert.doesNotMatch(INDEX_CSS, /@fontsource-variable\/commissioner['/](?!files\/)/);
     assert.match(INDEX_CSS, /commissioner-latin-wght-normal\.woff2/);
+    assert.doesNotMatch(INDEX_CSS, /@fontsource-variable\/hanken-grotesk['/](?!files\/)/);
+  });
+
+  void test('Hanken Grotesk: latin upright and italic on the full 100–900 axis, nothing else', () => {
+    // LAI-1228. Real italic and the whole weight axis, so neither bold nor
+    // italic is synthesised — and only the two latin files, never latin-ext.
+    const faces = [
+      ...INDEX_CSS.matchAll(/@font-face\s*\{[^}]*font-family:\s*'Hanken Grotesk Variable'[^}]*\}/g),
+    ].map((m) => m[0]);
+    assert.equal(faces.length, 2, 'one upright and one italic @font-face');
+    const styles = faces.map((f) => /font-style:\s*(\w+);/.exec(f)?.[1]).sort();
+    assert.deepEqual(styles, ['italic', 'normal']);
+    for (const face of faces) {
+      assert.match(face, /font-weight:\s*100 900;/);
+      assert.match(face, /hanken-grotesk-latin-wght-(normal|italic)\.woff2/);
+      assert.doesNotMatch(face, /latin-ext/);
+      const file = /url\('([^']+)'\)/.exec(face)?.[1];
+      assert.ok(file !== undefined, 'no url() in the face');
+      assert.doesNotThrow(() => require.resolve(file), `${file} is not in the package`);
+    }
+    // A real italic and real weights: the block must not switch synthesis off,
+    // and the picker has no caveat to make.
+    const body = block(THEME_CSS, `:root[data-font='hanken-grotesk']`) ?? '';
+    assert.doesNotMatch(body, /font-synthesis/);
+    const entry = FONTS.find((f) => f.id === 'hanken-grotesk');
+    assert.ok(entry !== undefined, 'hanken-grotesk is not in FONTS');
+    assert.equal(entry.name, 'Hanken Grotesk');
+    assert.equal('note' in entry, false);
+  });
+
+  void test('the dependency is pinned exactly', () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { dependencies: Record<string, string> };
+    assert.equal(pkg.dependencies['@fontsource-variable/hanken-grotesk'], '5.3.0');
   });
 
   void test('--font-mono is untouched by every font block', () => {

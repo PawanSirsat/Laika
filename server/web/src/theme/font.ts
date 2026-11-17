@@ -42,6 +42,7 @@ export const FONTS = [
     note: 'Wider letters — long titles cut off a little sooner.',
   },
   { id: 'commissioner', name: 'Commissioner', token: '--font-face-commissioner' },
+  { id: 'hanken-grotesk', name: 'Hanken Grotesk', token: '--font-face-hanken-grotesk' },
   {
     id: 'average-sans',
     name: 'Average Sans',
