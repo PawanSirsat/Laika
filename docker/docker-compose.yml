@@ -29,6 +29,11 @@ services:
       # value that quietly points at localhost in production fails as a mail
       # problem days later rather than as a startup error now.
       LAIKA_PUBLIC_URL: ${LAIKA_PUBLIC_URL:?set LAIKA_PUBLIC_URL in docker/.env — the URL your users type, e.g. https://laika.example.com}
+      # Optional: Microsoft SSO (LAI-1238). All three or none; set, Microsoft
+      # becomes the only way to sign in. Empty is off. See docker/env.example.
+      LAIKA_MICROSOFT_CLIENT_ID: ${LAIKA_MICROSOFT_CLIENT_ID:-}
+      LAIKA_MICROSOFT_CLIENT_SECRET: ${LAIKA_MICROSOFT_CLIENT_SECRET:-}
+      LAIKA_MICROSOFT_TENANT_ID: ${LAIKA_MICROSOFT_TENANT_ID:-}
 
     ports:
       - '${LAIKA_PORT:-3000}:3000'
