@@ -88,6 +88,16 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     body: `Your day is drafted on your own machine by the Laika collector when Draft my time is on. Until you confirm it, it can be read by you and by ${DRAFT_READERS} — and you can see who looked. Add a meeting or a call by hand at any time.`,
   },
   /*
+   * Meetings (LAI-1312): the reader's own Teams meetings. Empty is ordinary —
+   * the sync reads two weeks back and one ahead — and the words say so, so it
+   * is not read as broken. Not Meeting review's line: that page is about
+   * transcripts waiting on a decision, this one about meetings at all.
+   */
+  '/meetings': {
+    headline: 'No Teams meetings to show',
+    body: 'Meetings you were invited to or joined in the last two weeks, and the week ahead, appear here once Microsoft has reported them. The list refreshes every 15 minutes.',
+  },
+  /*
    * Developer access (LAI-796): connecting an agent and your tokens, on one
    * page — four tabs since LAI-507, the wizard the first of them.
    */
