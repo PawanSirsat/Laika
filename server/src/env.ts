@@ -76,6 +76,7 @@ export interface Env {
    * hand-built `Env`s in tests need no edit; `readEnv` always sets it.
    */
   readonly sso?: MicrosoftSso | null;
+  /**
    * Attachments (D-150, LAI-1300): the operator's S3-compatible store and the
    * largest file, or `null` — off — when no `LAIKA_S3_*` variable is set.
    */
