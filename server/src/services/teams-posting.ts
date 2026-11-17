@@ -158,9 +158,13 @@ interface PostRecord {
 
 const TITLE_MAX = 300;
 
-function titleOf(notice: TeamsNotice): string {
-  const title = notice.title.trim();
-  return title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title || '(untitled)';
+/** The headline, cut by code point — as a comment is — so an emoji at the cut stays whole. */
+export function titleOf(notice: TeamsNotice): string {
+  const points = [...notice.title.trim()];
+  if (points.length === 0) return '(untitled)';
+  return points.length > TITLE_MAX
+    ? `${points.slice(0, TITLE_MAX - 1).join('')}…`
+    : points.join('');
 }
 
 /**
@@ -584,26 +588,21 @@ function openBlockers(
 /**
  * What a space's post may say its task waits on: its own space's keys, in
  * order, and **any blocker in another space only as that** — never its key or
- * title (D-154 item 1). Several there are one entry, where the first was.
+ * title (D-154 item 1). Several there are one entry, **last**, so the first
+ * entry is always one blocker whenever there is more than one entry; and the
+ * true number of blockers beside the words, because an entry may stand for
+ * several (review of LAI-1314: *"and 1 more"* for three).
  */
 function waitingWords(
   blockers: readonly { key: string; projectId: string }[],
   projectId: string,
-): string[] {
-  const elsewhere = blockers.filter((b) => b.projectId !== projectId).length;
+): { words: string[]; total: number } {
+  const own = blockers.filter((b) => b.projectId === projectId).map((b) => b.key);
+  const elsewhere = blockers.length - own.length;
+  if (elsewhere === 0) return { words: own, total: blockers.length };
   const phrase =
     elsewhere === 1 ? OTHER_SPACE_BLOCKER : `${String(elsewhere)} tasks in other spaces`;
-  const words: string[] = [];
-  let said = false;
-  for (const b of blockers) {
-    if (b.projectId === projectId) {
-      words.push(b.key);
-    } else if (!said) {
-      words.push(phrase);
-      said = true;
-    }
-  }
-  return words;
+  return { words: [...own, phrase], total: blockers.length };
 }
 
 /**
@@ -900,13 +899,15 @@ function blockedOf(
   db: Db,
   projectId: string,
   open: readonly SpaceTask[],
-): { task: SpaceTask; waitingOn: string[]; since: number }[] {
+): { task: SpaceTask; waitingOn: string[]; waitingTotal: number; since: number }[] {
   return open
     .map((task) => {
       const blockers = openBlockers(db, task.id);
+      const waiting = waitingWords(blockers, projectId);
       return {
         task,
-        waitingOn: waitingWords(blockers, projectId),
+        waitingOn: waiting.words,
+        waitingTotal: waiting.total,
         since: Math.min(...blockers.map((b) => b.addedAt)),
       };
     })
@@ -944,6 +945,7 @@ export function standupData(db: Db, projectId: string, run: StandupRun, now: num
       title: b.task.title,
       assignee: b.task.assignee,
       waitingOn: b.waitingOn,
+      waitingTotal: b.waitingTotal,
       days: (now - b.since) / DAY_MS,
     })),
     stale: open

@@ -37,6 +37,7 @@ function sample(): StandupData {
         title: 'Deployment on Kvell infrastructure',
         assignee: 'Suhit Telang',
         waitingOn: ['RMB-40'],
+        waitingTotal: 1,
         days: 4.2,
       },
     ],
@@ -203,6 +204,25 @@ describe('the stand-up', () => {
     expect(status({ inFlight: s.inFlight })).toBe('🟢 On Track');
     expect(status({ inReview: 1 })).toBe('🟢 On Track');
     expect(status({})).toBe('⚪ Not Started');
+  });
+
+  it('counts every blocker, including the ones another space’s entry stands for', () => {
+    const waiting = (waitingOn: string[], waitingTotal: number) =>
+      noticeText(
+        buildStandup(SPACE, 'evening', ist('2026-10-21', 18), null, {
+          ...empty(),
+          blocked: [{ key: 'RMB-52', title: 't', assignee: 'a', waitingOn, waitingTotal, days: 2 }],
+        }),
+      );
+    // One of this space's and three elsewhere, folded into one entry: 3 more, not 1.
+    expect(waiting(['RMB-40', '3 tasks in other spaces'], 4)).toContain(
+      'waiting on RMB-40 and 3 more',
+    );
+    expect(waiting(['RMB-40', 'RMB-41'], 2)).toContain('waiting on RMB-40 and 1 more');
+    // A single entry says everything it waits on, with nothing after it.
+    const elsewhere = waiting(['3 tasks in other spaces'], 3);
+    expect(elsewhere).toContain('waiting on 3 tasks in other spaces');
+    expect(elsewhere).not.toContain('more');
   });
 
   it('writes out 25 stale tasks and counts the rest', () => {
