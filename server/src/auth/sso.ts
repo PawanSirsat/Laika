@@ -22,6 +22,12 @@ export interface MicrosoftSso {
    * directory as a Laika member, through Graph. Off unless asked for.
    */
   readonly directorySync: boolean;
+  /**
+   * `LAIKA_MICROSOFT_MEETINGS_SYNC` (LAI-1311): read each member's Teams
+   * meetings — calendar, attendance, whether a transcript exists — through
+   * Graph, for the Meetings page. Off unless asked for: it reads calendars.
+   */
+  readonly meetingsSync: boolean;
 }
 
 /** How someone signs in to this instance — what `GET /setup/status` reports. */
@@ -74,20 +80,28 @@ export function parseMicrosoftSso(
   const clientSecret = read('LAIKA_MICROSOFT_CLIENT_SECRET');
   const tenantId = read('LAIKA_MICROSOFT_TENANT_ID');
 
-  const syncRaw = read('LAIKA_MICROSOFT_DIRECTORY_SYNC').toLowerCase();
-  if (syncRaw !== '' && syncRaw !== 'true' && syncRaw !== 'false') {
-    return {
-      problem: { variable: 'LAIKA_MICROSOFT_DIRECTORY_SYNC', message: 'is true or false' },
-    };
+  // The two Graph switches share one shape: `true`, `false` or unset, and
+  // `true` only on top of SSO — a sync with no app to read through is a
+  // mistake to say at boot, not a job that fails quietly every 15 minutes.
+  const switches = ['LAIKA_MICROSOFT_DIRECTORY_SYNC', 'LAIKA_MICROSOFT_MEETINGS_SYNC'] as const;
+  const on = new Map<string, boolean>();
+  for (const variable of switches) {
+    const raw = read(variable).toLowerCase();
+    if (raw !== '' && raw !== 'true' && raw !== 'false') {
+      return { problem: { variable, message: 'is true or false' } };
+    }
+    on.set(variable, raw === 'true');
   }
-  const directorySync = syncRaw === 'true';
+  const directorySync = on.get('LAIKA_MICROSOFT_DIRECTORY_SYNC') === true;
+  const meetingsSync = on.get('LAIKA_MICROSOFT_MEETINGS_SYNC') === true;
 
   const given = [clientId, clientSecret, tenantId].filter((v) => v !== '').length;
   if (given === 0) {
-    if (directorySync) {
+    const asked = switches.find((variable) => on.get(variable) === true);
+    if (asked !== undefined) {
       return {
         problem: {
-          variable: 'LAIKA_MICROSOFT_DIRECTORY_SYNC',
+          variable: asked,
           message: 'needs Microsoft SSO — set the three LAIKA_MICROSOFT_* variables too',
         },
       };
@@ -123,6 +137,7 @@ export function parseMicrosoftSso(
       clientSecret,
       tenantId: tenantId.trim(),
       directorySync,
+      meetingsSync,
     },
   };
 }
