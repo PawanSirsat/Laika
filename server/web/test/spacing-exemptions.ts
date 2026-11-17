@@ -274,9 +274,7 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
     'gap: 1px',
     'padding: 0 0.1875rem',
     'padding: 0.0625rem 0.4375rem',
-    'padding: 0.1875rem var(--space-2)',
     'padding: var(--space-1) 0.3125rem',
-    'padding: var(--space-1) 0.4375rem',
   ],
   'routes/screens/calendar/calendar.css': [
     'gap: 1px',
