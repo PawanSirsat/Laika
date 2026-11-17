@@ -56,14 +56,20 @@ function sameIcon(a: ProjectIcon | null, b: ProjectIcon | null): boolean {
 export function rememberProjects(rows: readonly LookSource[]): void {
   let changed = false;
   for (const row of rows) {
+    // An answer that is not a space — a stub, an empty body — teaches nothing.
+    const maybe = row as Partial<LookSource> | null | undefined;
+    if (typeof maybe?.slug !== 'string') continue;
     const held = looks.get(row.slug);
     const updatedAt = row.updated_at ?? null;
     const heldAt = held?.updatedAt ?? null;
     if (heldAt !== null && updatedAt !== null && updatedAt < heldAt) continue;
     const icon = row.icon === undefined ? (held?.icon ?? null) : row.icon;
-    if (held?.name === row.name && held.color === row.color && sameIcon(held.icon, icon)) {
-      continue;
-    }
+    // Not `held?.name === row.name`: with neither present that is `true`.
+    const unchanged =
+      held === undefined
+        ? false
+        : held.name === row.name && held.color === row.color && sameIcon(held.icon, icon);
+    if (unchanged) continue;
     looks.set(row.slug, { name: row.name, color: row.color, icon, updatedAt });
     changed = true;
   }

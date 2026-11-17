@@ -107,6 +107,15 @@ void describe('rememberProjects', () => {
     heard.stop();
   });
 
+  void test('an answer that is not a space — a stub, an empty body — is skipped, not a throw', () => {
+    const heard = counting();
+    rememberProjects([undefined, null, {}, { ok: true }] as unknown as Parameters<
+      typeof rememberProjects
+    >[0]);
+    assert.equal(heard.count(), 0);
+    heard.stop();
+  });
+
   void test('an unsubscribed listener is not told, and forgetLooks clears and tells', () => {
     rememberProjects([{ slug: 'core', name: 'Core', color: null, icon: null }]);
     const heard = counting();

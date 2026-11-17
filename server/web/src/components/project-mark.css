@@ -23,7 +23,7 @@
 .project-mark-xs {
   --mark-size: 1rem;
 
-  font-size: var(--text-tiny);
+  font-size: var(--text-small);
 }
 
 .project-mark-sm {
@@ -101,8 +101,32 @@
   --mark-wash: var(--space-violet);
 
   background: color-mix(in srgb, var(--mark-wash) 18%, transparent);
-  font-size: calc(var(--mark-size) * 0.7);
   font-weight: normal;
+}
+
+/* An emoji a step larger than a letter in the same box, so it fills the tile as a letter does. */
+.project-mark-md.project-mark-emoji {
+  font-size: var(--text-heading-sm);
+}
+
+.project-mark-lg.project-mark-emoji {
+  font-size: var(--text-heading-md);
+}
+
+.project-mark-xl.project-mark-emoji,
+.project-mark-2xl.project-mark-emoji {
+  font-size: var(--text-heading-lg);
+}
+
+/*
+ * The type scale stops at heading-lg, which leaves an emoji small in the two
+ * big tiles. The glyph is an icon there, not text, so it is scaled as a
+ * picture would be — its font-size stays a step of the scale.
+ */
+.project-mark-xl.project-mark-emoji::before,
+.project-mark-2xl.project-mark-emoji::before {
+  display: inline-block;
+  transform: scale(1.5);
 }
 
 .project-mark-emoji[data-color='black'] {

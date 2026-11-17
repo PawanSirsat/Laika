@@ -35,15 +35,14 @@ export function isIconType(type: string): type is IconType {
   return (ICON_TYPES as readonly string[]).includes(type);
 }
 
-function iconPath(slug: string): string {
-  return `/projects/${encodeURIComponent(slug)}/icon`;
-}
-
 export function askProjectIcon(
   slug: string,
   input: { readonly content_type: IconType; readonly size_bytes: number },
 ): Promise<ProjectIconUpload> {
-  return request<ProjectIconUpload>(iconPath(slug), { method: 'POST', body: input });
+  return request<ProjectIconUpload>(`/projects/${encodeURIComponent(slug)}/icon`, {
+    method: 'POST',
+    body: input,
+  });
 }
 
 export function completeProjectIcon(
@@ -54,14 +53,17 @@ export function completeProjectIcon(
     readonly size_bytes: number;
   },
 ): Promise<Project> {
-  return request<Project>(`${iconPath(slug)}/complete`, { method: 'POST', body: input }).then(
-    remembered,
-  );
+  return request<Project>(`/projects/${encodeURIComponent(slug)}/icon/complete`, {
+    method: 'POST',
+    body: input,
+  }).then(remembered);
 }
 
 /** Take the icon away — image and emoji alike — so the space shows its letter. */
 export function removeProjectIcon(slug: string): Promise<Project> {
-  return request<Project>(iconPath(slug), { method: 'DELETE' }).then(remembered);
+  return request<Project>(`/projects/${encodeURIComponent(slug)}/icon`, {
+    method: 'DELETE',
+  }).then(remembered);
 }
 
 /** Make one emoji the space's icon, or clear it with `null`. */
