@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-1300]
 status: review
-finished: 2026-11-17T10:24:38Z
+finished: 2026-11-17T12:09:50Z
 started: 2026-11-17T09:38:34Z
 ---
 
@@ -81,5 +81,13 @@ none of this appears and the editor behaves exactly as today.
 - Beyond the criteria: Save (and Create task) waits while a file is uploading; a paste that also
   carries text is the text (a spreadsheet's picture is not uploaded); the Markdown-view snippet
   is written by the bridge so the text still opens rich; a `doc` glyph besides the five named.
-- CI on PR #353: every Gate job pass (cli, lint/format, server 1–4, web 1–4) at `310c5dcf6`.
+- Rebuilt on #350's UI and on `master` after #351 and #352 (`ec95f5ac8`): *Attach files* is a
+  tier-1 tool in #350's toolbar list; #350's guards asked for motion tokens, the shared
+  `Tooltip`, the close icon, a space token and `attachments.css` in `screen-styles.ts`.
+- After LAI-1300's review: the comment editors upload with no `task_id`, so a comment owns the
+  files it first links; `complete`'s `upload_expired` reads "attach it again".
+- CHIEF's phone answer: no drop zone on a coarse pointer or at 600px and below; *Attach files*
+  stays. The doc glyph for `.txt`/`.md` stays.
+- `jira-header.test.ts`: two reads of the Create task *Space* field wait for the spaces, as the
+  file's other reads did — red on `master` too.
 
