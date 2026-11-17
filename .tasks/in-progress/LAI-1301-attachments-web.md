@@ -2,10 +2,11 @@
 id: LAI-1301
 title: 'Attachments (web): attach, paste and drop files in the editor, images inline, an Attachments section on the task (D-150)'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-1300]
-status: backlog
+status: in-progress
+started: 2026-11-17T09:38:34Z
 ---
 
 ## Goal
