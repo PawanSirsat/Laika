@@ -2815,6 +2815,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_project_icons$/),
         // LAI-1312's email outbox: one new table, two columns on `orgs`.
         expect.stringMatching(/_email_outbox$/),
+        // LAI-1314's Teams posting: three new tables, nothing rebuilt.
+        expect.stringMatching(/_teams_posting$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2975,6 +2977,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0082_attachments',
       '0083_project_icons',
       '0084_email_outbox',
+      '0085_teams_posting',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3073,6 +3076,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0082_attachments',
       '0083_project_icons',
       '0084_email_outbox',
+      '0085_teams_posting',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3102,8 +3106,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
         runMigrations(db);
 
         // LAI-1181's 0081 rides along and adds its four HR tables,
-        // LAI-1300's 0082 its attachments and LAI-1312's 0083 the email
-        // outbox; nothing else appears.
+        // LAI-1300's 0082 its attachments, LAI-1312's 0084 the email outbox
+        // and LAI-1314's 0085 its three Teams tables; nothing else appears.
         expect(tables()).toEqual(
           [
             ...before,
@@ -3114,6 +3118,9 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'org_hr_source',
             'attachments',
             'email_outbox',
+            'org_teams_settings',
+            'project_teams_channels',
+            'teams_posts',
           ].sort(),
         );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
@@ -3163,6 +3170,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0082_attachments',
       '0083_project_icons',
       '0084_email_outbox',
+      '0085_teams_posting',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3279,6 +3287,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0082_attachments',
       '0083_project_icons',
       '0084_email_outbox',
+      '0085_teams_posting',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3361,6 +3370,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0082_attachments',
       '0083_project_icons',
       '0084_email_outbox',
+      '0085_teams_posting',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3442,11 +3452,13 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
     // The guard on this guard: a later migration lands here and says so —
     // LAI-1311's 0083 adds four nullable columns to `projects` and touches no
     // `activity` row; LAI-1312's 0084 adds the email outbox and two columns on
-    // `orgs`. The full `runMigrations` below applies both with 0082.
+    // `orgs`; LAI-1314's 0085 adds three Teams tables. The full
+    // `runMigrations` below applies all three with 0082.
     expect(dropped.map((e) => e.tag)).toEqual([
       '0082_attachments',
       '0083_project_icons',
       '0084_email_outbox',
+      '0085_teams_posting',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3539,8 +3551,9 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
     };
     const at = journal.entries.findIndex((e) => e.tag === '0084_email_outbox');
     const dropped = journal.entries.splice(at);
-    // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0084_email_outbox']);
+    // The guard on this guard: a later migration lands here and says so —
+    // LAI-1314's 0085 adds three Teams tables and touches nothing 0084 made.
+    expect(dropped.map((e) => e.tag)).toEqual(['0084_email_outbox', '0085_teams_posting']);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }

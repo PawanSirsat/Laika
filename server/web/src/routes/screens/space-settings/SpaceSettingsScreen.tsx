@@ -17,6 +17,7 @@ import { GeneralTab } from './GeneralTab.tsx';
 import { MembersTab } from './MembersTab.tsx';
 import { AccessTab } from './AccessTab.tsx';
 import { HandoffPolicySection } from './HandoffPolicySection.tsx';
+import { TeamsChannelSection } from './TeamsChannelSection.tsx';
 import { DangerTab } from './DangerTab.tsx';
 import './space-settings.css';
 
@@ -253,14 +254,19 @@ export function SpaceSettingsScreen({
         ) : current === 'danger' ? (
           <DangerTab project={project} mayArchive={mayArchive} onSaved={saved} onNavigate={go} />
         ) : (
-          <GeneralTab
-            project={project}
-            counts={summary?.task_counts}
-            mayEdit={mayEdit}
-            mayChangeIcon={gates.org('project.icon.write')}
-            onSaved={saved}
-            onDirtyChange={setGeneralDirty}
-          />
+          <>
+            <GeneralTab
+              project={project}
+              counts={summary?.task_counts}
+              mayEdit={mayEdit}
+              mayChangeIcon={gates.org('project.icon.write')}
+              onSaved={saved}
+              onDirtyChange={setGeneralDirty}
+            />
+            {/* D-154 (LAI-1314): the space's Teams channel — an owner's or
+                admin's, by `org.teams.configure`, not the space's own lead. */}
+            {gates.org('org.teams.configure') && <TeamsChannelSection slug={project.slug} />}
+          </>
         )}
       </div>
     </div>
