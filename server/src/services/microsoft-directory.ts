@@ -153,7 +153,7 @@ export async function readDirectory(
   return members;
 }
 
-export interface DirectorySyncResult {
+export interface DirectorySyncCounts {
   /** People added this run. */
   readonly added: number;
   /** Directory members Laika already had. */
@@ -170,7 +170,7 @@ export function addDirectoryMembers(
   db: Db,
   members: readonly DirectoryMember[],
   now: number,
-): DirectorySyncResult {
+): DirectorySyncCounts {
   const org = db.select({ id: orgs.id }).from(orgs).limit(1).get();
   if (org === undefined) return { added: 0, existing: 0 };
 
@@ -220,13 +220,48 @@ export function addDirectoryMembers(
   return { added, existing };
 }
 
-/** The scheduled run: nothing unless directory sync is switched on. */
+/** How the last run went, for the SSO settings page (LAI-1239). */
+export interface DirectoryRun {
+  readonly at: number;
+  readonly ok: boolean;
+  readonly added: number;
+  readonly existing: number;
+  /** A `DirectoryError` code when it failed; never a token or Graph's body. */
+  readonly error: string | null;
+}
+
+/**
+ * The last run, in memory. Not stored: the job runs at boot, so a restart
+ * has an answer within moments, and a stale "last synced" from before a
+ * restart would describe a process that no longer exists.
+ */
+let lastRun: DirectoryRun | null = null;
+
+export function lastDirectoryRun(): DirectoryRun | null {
+  return lastRun;
+}
+
+/** For the tests, which each start from no run. */
+export function resetDirectoryRun(): void {
+  lastRun = null;
+}
+
+/** The scheduled run, and *Sync now*: nothing unless directory sync is on. */
 export async function runDirectorySync(
   db: Db,
   sso: MicrosoftSso | null,
   deps: DirectoryDeps = {},
-): Promise<DirectorySyncResult> {
+): Promise<DirectorySyncCounts> {
   if (sso?.directorySync !== true) return { added: 0, existing: 0 };
-  const members = await readDirectory(sso, deps);
-  return addDirectoryMembers(db, members, (deps.now ?? Date.now)());
+  const now = (deps.now ?? Date.now)();
+  try {
+    const members = await readDirectory(sso, deps);
+    const result = addDirectoryMembers(db, members, now);
+    lastRun = { at: now, ok: true, ...result, error: null };
+    return result;
+  } catch (err) {
+    const code = err instanceof DirectoryError ? err.code : 'sync_failed';
+    lastRun = { at: now, ok: false, added: 0, existing: 0, error: code };
+    throw err;
+  }
 }

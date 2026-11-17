@@ -48,6 +48,7 @@ import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
+import { ssoRoutes } from './http/routes/sso.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -446,6 +447,11 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(
       `${API_BASE}/org`,
       hrRoutes({ db, serverSecret: options.serverSecret ?? '', hrSync: options.hrSync }),
+    );
+    // How people sign in, for Organisation → Security (LAI-1239).
+    app.route(
+      `${API_BASE}/org`,
+      ssoRoutes({ db, sso: options.sso ?? null, publicUrl: options.publicUrl ?? '' }),
     );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
