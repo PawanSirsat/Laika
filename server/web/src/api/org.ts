@@ -96,6 +96,14 @@ export interface Org {
    * everyone, so the limit is known before a file is chosen.
    */
   readonly attachments: OrgAttachments | null;
+  /** Outbound email (D-153): the switch and whether SMTP is configured. Everyone reads it. */
+  readonly email: OrgEmail;
+}
+
+/** `OrgView.email` (D-153, LAI-1312). */
+export interface OrgEmail {
+  readonly enabled: boolean;
+  readonly configured: boolean;
 }
 
 /** `GET /org`'s `attachments` when they are on (D-150). */
@@ -133,6 +141,8 @@ export interface OrgPatch {
   readonly ai_base_url?: string | null;
   /** Write-only. It is accepted and never appears in any response (§12). */
   readonly ai_api_key?: string | null;
+  /** The *Email on* switch (D-153); refused `email_not_configured` until a key is saved. */
+  readonly email_enabled?: boolean;
 }
 
 export function getOrg(signal?: AbortSignal): Promise<Org> {

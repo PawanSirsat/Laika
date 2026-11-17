@@ -12,6 +12,7 @@ import { openDb } from './db/client.ts';
 import { dirname, join } from 'node:path';
 import { runMigrations } from './db/migrate.ts';
 import { startScheduler } from './jobs/scheduler.ts';
+import { smtpTransport } from './services/email-transport.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
@@ -75,6 +76,8 @@ function main(): void {
     warmStaticCache: true,
     // The operator's store, or null — off (D-150, LAI-1300).
     attachments: { config: env.attachments },
+    // Only *Send test email* uses it here; queued mail goes from the scheduler.
+    emailTransport: smtpTransport(),
   });
 
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
@@ -132,6 +135,9 @@ function main(): void {
     sso: env.sso ?? null,
     // The attachments sweep deletes from the store with it (D-150, LAI-1300).
     attachments: { config: env.attachments },
+    // The outbox's sender (D-153, LAI-1312). Nothing goes while the
+    // organisation's *Email on* switch is off — the default.
+    email: { transport: smtpTransport() },
   });
 
   const shutdown = createRuntimeShutdown({

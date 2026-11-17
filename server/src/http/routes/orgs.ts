@@ -69,6 +69,9 @@ const OrgPatchBody = strictObject({
   // be LAI-159's shadowing all over again.
   ai_base_url: z.string().trim().min(1).max(2000).nullable().optional(),
   ai_api_key: z.string().trim().min(1).max(500).nullable().optional(),
+  // D-153 (LAI-1312): the *Email on* switch; the service refuses `true` with
+  // nothing configured.
+  email_enabled: z.boolean().optional(),
 });
 
 /**

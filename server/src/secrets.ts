@@ -78,7 +78,10 @@ export type SecretPurpose =
   | 'github_webhook_secret'
   | 'transcript_webhook_secret'
   // D-149 (LAI-1181): the HR system's API token, in `org_hr_source.token_enc`.
-  | 'clan_api_token';
+  | 'clan_api_token'
+  // D-153 (LAI-1312): a queued email's body, in `email_outbox.body_enc` — it
+  // carries a one-time link, so it is never stored in the clear.
+  | 'email_body';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.

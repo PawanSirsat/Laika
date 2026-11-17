@@ -144,6 +144,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ["Connect the organisation's HR system", ['org.hr.configure']],
   // D-152 (LAI-1311): a space's image or emoji, owners and admins.
   ["Change a space's icon", ['project.icon.write']],
+  // D-153 (LAI-1312 review): SMTP, the test send and the switch.
+  ["Configure the organisation's email", ['org.email.configure']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
