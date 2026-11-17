@@ -100,6 +100,9 @@ async function openPopover(page: Page) {
   await trigger.click();
   const panel = page.getByRole('region', { name: /My availability/ });
   await panel.waitFor({ timeout: 10_000 });
+  // The panel opens on "Reading your availability…" and fills its form from
+  // the saved record a render later; a read of its text waits for the form.
+  await panel.getByRole('radio', { name: /Open to more work/ }).waitFor({ timeout: 10_000 });
   return panel;
 }
 
@@ -408,6 +411,15 @@ void describe('My availability on My day (frames 2a–2c)', () => {
           await h.page.setViewportSize({ width: 1366, height: 900 });
           await setTheme(h.page, theme);
           await h.page.setViewportSize({ width, height: 900 });
+          // On a phone the pill is the bar's, which My day draws a render
+          // after the resize (`usePhone`, then the bar's portal); until then
+          // the header's whole pill is the visible one (LAI-1309).
+          if (width < 600) {
+            await h.page
+              .locator('.shell-head[data-myday-bar] [data-avail-pill]')
+              .filter({ visible: true })
+              .waitFor({ timeout: 10_000 });
+          }
           const pill = h.page.locator('[data-my-availability] [data-avail-pill]').filter({
             visible: true,
           });

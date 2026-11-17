@@ -18,9 +18,13 @@ export const HSTS_VALUE = 'max-age=63072000; includeSubDomains';
  * matching the moment someone edits the document, and the symptom is an unstyled
  * page nobody looks at until a deploy goes wrong. Deriving it means it cannot
  * drift by construction.
+ *
+ * Comments go first (LAI-1309): a comment that names `<style>` and `</style>`
+ * is not a style block, and hashing it would allow a style nobody wrote.
  */
 export function extractStyleHashes(html: string): string[] {
-  return [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(
+  const markup = html.replace(/<!--[\s\S]*?-->/g, '');
+  return [...markup.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(
     (match) =>
       `'sha256-${createHash('sha256')
         .update(match[1] ?? '', 'utf8')

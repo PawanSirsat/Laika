@@ -5,7 +5,8 @@ area: web
 assignee: chief
 priority: p1
 depends-on: []
-status: review
+status: done
+accepted: 2026-11-17T13:48:17Z
 started: 2026-11-17T09:40:00Z
 finished: 2026-11-17T10:45:00Z
 ---

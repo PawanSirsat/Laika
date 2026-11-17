@@ -5,8 +5,10 @@ area: docker
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: done
+accepted: 2026-11-17T13:48:17Z
 started: 2026-11-17T13:40:00Z
+finished: 2026-11-17T13:24:52Z
 ---
 
 ## Goal
@@ -23,15 +25,15 @@ so the AWS build and every existing deployment are unchanged.
 
 ## Acceptance criteria
 
-- [ ] `docker/Dockerfile` gains `FROM <pinned nginx unprivileged image> AS web-serve`, placed
+- [x] `docker/Dockerfile` gains `FROM <pinned nginx unprivileged image> AS web-serve`, placed
       **before** `runtime` so `runtime` stays the last stage and the default build target; it copies
       `--from=web /out` and a config template from `docker/web/`; listens on 8080 as a non-root
       user; `HEALTHCHECK` on `/healthz`.
-- [ ] The nginx config: SPA fallback (`try_files $uri /index.html`); `/assets/` immutable for a
+- [x] The nginx config: SPA fallback (`try_files $uri /index.html`); `/assets/` immutable for a
       year; `index.html` no-cache; `/api`, `/mcp`, `/webhooks` (and anything under them) answer 404
       rather than the SPA document, so a routing mistake is loud; `server_tokens off`; gzip for
       text types.
-- [ ] Every response carries the server's headers, values identical to
+- [x] Every response carries the server's headers, values identical to
       `server/src/http/middleware/security-headers.ts` and `buildContentSecurityPolicy`:
       `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
       `X-Permitted-Cross-Domain-Policies`, `Cross-Origin-Opener-Policy`,
@@ -39,13 +41,13 @@ so the AWS build and every existing deployment are unchanged.
       The attachment store's origin comes from an env var (`LAIKA_STORAGE_ORIGIN`, substituted at
       start by nginx's template mechanism) and is added to `img-src` and `connect-src` exactly as
       the server does when attachments are on; unset, the CSP is the server's attachments-off CSP.
-- [ ] A drift guard test asserts the template's CSP equals `buildContentSecurityPolicy([], …)` for
+- [x] A drift guard test asserts the template's CSP equals `buildContentSecurityPolicy([], …)` for
       both the on and off cases and that the header set matches the middleware's, so the two can
       never diverge silently. It also asserts the built `index.html` carries no inline `<style>` or
       `<script>` (the static CSP has no hashes; the server's would).
-- [ ] `docker/README.md` and `docs/OPERATIONS.md` describe running the frontend as its own
+- [x] `docker/README.md` and `docs/OPERATIONS.md` describe running the frontend as its own
       resource on one domain (path routing, strip-prefix off, `LAIKA_STORAGE_ORIGIN`).
-- [ ] CI gate green on the PR (test, lint, format each exit 0).
+- [x] CI gate green on the PR (test, lint, format each exit 0).
 
 ## Notes / context
 

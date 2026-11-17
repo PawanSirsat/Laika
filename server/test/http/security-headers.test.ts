@@ -152,6 +152,28 @@ describe('style-src is split, not loosened (LAI-205)', () => {
     expect(extractStyleHashes('<p>no styles here</p>')).toEqual([]);
     expect(buildContentSecurityPolicy([])).toContain("style-src-elem 'self'");
   });
+
+  describe('a comment is not a style block (LAI-1309)', () => {
+    const REAL = extractStyleHashes('<style>body{color:red}</style>');
+
+    it('hashes nothing for a comment that names <style> and </style>, over several lines', () => {
+      const html =
+        '<p>x</p>\n<!-- no inline <style>\n  body{color:red}\n</style> here -->\n<p>y</p>';
+
+      expect(extractStyleHashes(html)).toEqual([]);
+    });
+
+    it('still hashes a real <style> element', () => {
+      expect(REAL).toHaveLength(1);
+      expect(REAL[0]).toMatch(/^'sha256-[A-Za-z0-9+/]{43}='$/);
+    });
+
+    it('hashes exactly the real block when both are in one document', () => {
+      const html = '<!-- <style>a{}</style> --><style>body{color:red}</style><!--\n</style> -->';
+
+      expect(extractStyleHashes(html)).toEqual(REAL);
+    });
+  });
 });
 
 describe('the attachments store in the policy (D-150, LAI-1300)', () => {
