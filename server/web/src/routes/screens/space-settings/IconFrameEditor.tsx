@@ -4,17 +4,21 @@ import { Dialog } from '../../../components/overlay/Dialog.tsx';
 import { spaceColor, type SpaceColor } from '../../../theme/space-color.ts';
 import {
   backgroundLabel,
+  describePlacement,
   drawRect,
+  exportPlan,
   FRAME_BACKGROUNDS,
   FRAME_PX,
   type FrameBackground,
+  ICON_LIMIT_BYTES,
   type ImageSize,
+  isReduced,
   keyPlacement,
   MAX_ZOOM,
   moveBy,
   outputSize,
   type Placement,
-  smallerExport,
+  smallestUnder,
   START,
   zoomTo,
 } from './icon-frame.ts';
@@ -25,9 +29,17 @@ export interface IconFrameEditorProps {
   readonly file: Blob;
   /** The space, for the Space colour background and the previews. */
   readonly space: { readonly slug: string; readonly color: string | null };
+  /**
+   * The most bytes the board takes for an image: its attachment limit, when
+   * that is under the icon's megabyte (LAI-1321 review).
+   */
+  readonly maxBytes?: number | undefined;
   readonly onCancel: () => void;
-  /** The cropped square, PNG or WebP, at most 512 pixels and 1 MiB. */
-  readonly onUse: (image: Blob) => void;
+  /**
+   * The cropped square, PNG or WebP, at most 512 pixels and `maxBytes`;
+   * `reduced` when it had to be made smaller or lower quality to fit.
+   */
+  readonly onUse: (image: Blob, reduced: boolean) => void;
 }
 
 /**
@@ -67,9 +79,9 @@ function paint(
   ctx.drawImage(image, at.x, at.y, at.width, at.height);
 }
 
-function toBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
+function toBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
   return new Promise((resolve) => {
-    canvas.toBlob(resolve, type, 0.92);
+    canvas.toBlob(resolve, type, quality);
   });
 }
 
@@ -85,7 +97,13 @@ function toBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
  * and hands it to the Icon row, which stages it until Save changes. Cancel
  * changes nothing. The geometry is `icon-frame.ts`, tested on its own.
  */
-export function IconFrameEditor({ file, space, onCancel, onUse }: IconFrameEditorProps) {
+export function IconFrameEditor({
+  file,
+  space,
+  maxBytes = ICON_LIMIT_BYTES,
+  onCancel,
+  onUse,
+}: IconFrameEditorProps) {
   const [image, setImage] = useState<ImageBitmap | null>(null);
   const [unreadable, setUnreadable] = useState(false);
   const [placement, setPlacement] = useState<Placement>(START);
@@ -157,7 +175,10 @@ export function IconFrameEditor({ file, space, onCancel, onUse }: IconFrameEdito
     if (was === undefined || image === null) return;
     const now = { x: event.clientX, y: event.clientY };
     if (held.size === 1) {
-      setPlacement((p) => moveBy(p, now.x - was.x, now.y - was.y, image));
+      // In frame pixels: the box is FRAME_PX wide by its CSS, but a zoomed
+      // page or a narrower layout must still move the image with the pointer.
+      const scale = FRAME_PX / (event.currentTarget.clientWidth || FRAME_PX);
+      setPlacement((p) => moveBy(p, (now.x - was.x) * scale, (now.y - was.y) * scale, image));
     } else if (held.size === 2) {
       // A pinch: the zoom follows the distance between the two fingers.
       const other = [...held.entries()].find(([id]) => id !== event.pointerId)?.[1];
@@ -180,21 +201,41 @@ export function IconFrameEditor({ file, space, onCancel, onUse }: IconFrameEdito
     setProblem(undefined);
     try {
       const out = document.createElement('canvas');
-      paint(out, outputSize(image, placement.zoom), image, placement, fillOf(background, color));
-      const png = await toBlob(out, 'image/png');
-      if (png === null) throw new Error('no image');
-      const best = smallerExport(png, await toBlob(out, 'image/webp'));
-      if (best === null) {
-        setProblem('That image is too detailed to fit in 1 MB — zoom in, or pick a simpler one.');
-        return;
+      const first = outputSize(image, placement.zoom);
+      const fill = fillOf(background, color);
+      // The first tier with an encoding under the limit wins (`exportPlan`).
+      // Painted again only when the size changes — tracked here, not read off
+      // the canvas, whose width starts at 300 whatever was asked.
+      let painted = 0;
+      for (const tier of exportPlan(first)) {
+        const size = tier[0]?.size ?? first;
+        if (painted !== size) {
+          paint(out, size, image, placement, fill);
+          painted = size;
+        }
+        const made: { blob: Blob; step: (typeof tier)[number] }[] = [];
+        for (const step of tier) {
+          const blob = await toBlob(out, step.type, step.quality);
+          if (blob !== null) made.push({ blob, step });
+        }
+        const fits = smallestUnder(
+          made.map((m) => ({ ...m, size: m.blob.size })),
+          maxBytes,
+        );
+        if (fits !== null) {
+          onUse(fits.blob, isReduced(fits.step, first));
+          return;
+        }
       }
-      onUse(best);
+      setProblem(
+        'That image is too detailed to fit this board’s limit, even small — pick a simpler one.',
+      );
     } catch {
       setProblem('The image could not be prepared. Try another one.');
     } finally {
       setBusy(false);
     }
-  }, [image, placement, background, color, onUse]);
+  }, [image, placement, background, color, maxBytes, onUse]);
 
   return (
     <Dialog
@@ -258,6 +299,10 @@ export function IconFrameEditor({ file, space, onCancel, onUse }: IconFrameEdito
             </div>
             <p className="ss-help" id={helpId}>
               Drag, or use the arrow keys, to move it; + and − zoom; 0 starts again.
+            </p>
+            {/* Where it is now, said as it moves (LAI-1321 review). */}
+            <p className="visually-hidden" aria-live="polite" data-frame-status>
+              {image === null ? '' : describePlacement(placement)}
             </p>
           </div>
 

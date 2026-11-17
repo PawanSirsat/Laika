@@ -1,12 +1,18 @@
 import { useId, useRef, useState, useSyncExternalStore } from 'react';
 import { ApiError } from '../../../api/errors.ts';
-import { isIconType, isOneEmoji, stageProjectIcon } from '../../../api/project-icons.ts';
+import {
+  ICON_MAX_BYTES,
+  isIconType,
+  isOneEmoji,
+  stageProjectIcon,
+} from '../../../api/project-icons.ts';
 import { lookOf, subscribeLooks } from '../../../api/project-looks.ts';
 import type { Project } from '../../../api/projects.ts';
 import { useAttachmentLimit } from '../../../api/use-attach.ts';
 import { Button } from '../../../components/forms/Button.tsx';
 import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { emojiLabel, ICON_EMOJIS } from './icon-choices.ts';
+import { imageSize, MAX_PICK_PIXELS } from './icon-frame.ts';
 import { IconFrameEditor } from './IconFrameEditor.tsx';
 import { type HeldIcon, heldIconPreview, holdIcon } from './space-settings-model.ts';
 
@@ -15,6 +21,11 @@ export interface IconSectionProps {
   /** The icon change waiting for Save changes, or `null` for none (LAI-1321). */
   readonly held: HeldIcon | null;
   readonly onHold: (held: HeldIcon | null) => void;
+  /**
+   * Told when an image starts and stops going to the store, so General keeps
+   * Save off meanwhile (LAI-1321 review): a save must not race an upload.
+   */
+  readonly onStaging?: ((staging: boolean) => void) | undefined;
   /** While General saves: nothing here may change under it. */
   readonly saving?: boolean;
 }
@@ -52,7 +63,13 @@ function asDataUrl(blob: Blob): Promise<string> {
  * Upload is offered only on a board with a file store (`GET /org`'s
  * `attachments`); without one, emoji and letter are the choices.
  */
-export function IconSection({ project, held, onHold, saving = false }: IconSectionProps) {
+export function IconSection({
+  project,
+  held,
+  onHold,
+  onStaging,
+  saving = false,
+}: IconSectionProps) {
   const look = useSyncExternalStore(subscribeLooks, () => lookOf(project.slug));
   const current = look !== undefined ? look.icon : project.icon;
   const shown = heldIconPreview(current, held);
@@ -61,6 +78,7 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
   const [staging, setStaging] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [note, setNote] = useState<string | undefined>(undefined);
   const [picking, setPicking] = useState(false);
   const [typed, setTyped] = useState('');
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -74,12 +92,19 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
 
   const hold = (change: HeldIcon): void => {
     setFailure(undefined);
+    setNote(undefined);
     onHold(holdIcon(current, change));
   };
 
-  const pickFile = (file: File | undefined): void => {
+  /**
+   * A picked file, checked before anything decodes it: its type, its bytes,
+   * and — read from its header — its pixels (LAI-1321 review: a small file
+   * can hold a picture that decodes into gigabytes).
+   */
+  const pickFile = async (file: File | undefined): Promise<void> => {
     if (file === undefined) return;
     setFailure(undefined);
+    setNote(undefined);
     if (!isIconType(file.type)) {
       setFailure('An icon is a PNG, JPEG or WebP image.');
       return;
@@ -88,15 +113,30 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
       setFailure('That picture is too large to open — 25 MB at most.');
       return;
     }
+    const size = imageSize(new Uint8Array(await file.arrayBuffer()));
+    if (size === null) {
+      setFailure('That file could not be read as an image.');
+      return;
+    }
+    if (size.width * size.height > MAX_PICK_PIXELS) {
+      setFailure(
+        `That picture is ${String(size.width)} × ${String(size.height)} — too large to work with. 40 megapixels at most.`,
+      );
+      return;
+    }
     setPicked(file);
   };
 
   /** The cropped square, into the store at once and held until Save. */
-  const stage = (image: Blob): void => {
+  const stage = (image: Blob, reduced: boolean): void => {
     setPicked(null);
     setStaging(true);
+    onStaging?.(true);
     setProgress(0);
     setFailure(undefined);
+    setNote(
+      reduced ? 'Made smaller to fit this board’s file limit — check it looks right.' : undefined,
+    );
     Promise.all([
       stageProjectIcon(project.slug, image, (fraction) => {
         setProgress(fraction);
@@ -104,13 +144,16 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
       asDataUrl(image),
     ])
       .then(([staged, preview]) => {
-        hold({ kind: 'image', staged, preview });
+        // Not `hold`: that clears the note, and the note is about this image.
+        setFailure(undefined);
+        onHold(holdIcon(current, { kind: 'image', staged, preview }));
       })
       .catch((cause: unknown) => {
         setFailure(failureText(cause));
       })
       .finally(() => {
         setStaging(false);
+        onStaging?.(false);
         setProgress(null);
       });
   };
@@ -159,7 +202,7 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
                     event.currentTarget.value = '';
-                    pickFile(file);
+                    void pickFile(file);
                   }}
                 />
               </>
@@ -285,6 +328,11 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
         <p className="ss-help" role="status" data-icon-status>
           {staging && progress !== null ? `Uploading — ${String(Math.round(progress * 100))}%` : ''}
         </p>
+        {note !== undefined && (
+          <p className="ss-help" data-icon-note>
+            {note}
+          </p>
+        )}
         {failure !== undefined && (
           <p className="ss-field-error" role="alert" data-icon-error>
             {failure}
@@ -296,6 +344,7 @@ export function IconSection({ project, held, onHold, saving = false }: IconSecti
         <IconFrameEditor
           file={picked}
           space={{ slug: project.slug, color: project.color }}
+          maxBytes={Math.min(ICON_MAX_BYTES, limit ?? ICON_MAX_BYTES)}
           onCancel={() => {
             setPicked(null);
           }}

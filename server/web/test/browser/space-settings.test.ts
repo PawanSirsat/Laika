@@ -1006,8 +1006,16 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
   function iconStub(
     me: Record<string, unknown>,
     attachments: { max_bytes: number } | null,
+    options: {
+      /** The space's icon to start with. */
+      readonly icon?: Record<string, unknown> | null;
+      /** Refuse completing an image, or removing the icon, with this. */
+      readonly refuseComplete?: boolean;
+      readonly refuseDelete?: boolean;
+    } = {},
   ): { stub: ApiStub; served: () => Record<string, unknown> } {
-    let current: Record<string, unknown> = { ...PROJECT, icon: null };
+    let current: Record<string, unknown> = { ...PROJECT, icon: options.icon ?? null };
+    const storeDown = () => refuse(503, 'unavailable', 'The file store could not be reached');
     const base = stub(me);
     return {
       served: () => current,
@@ -1028,6 +1036,7 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
         },
         [`/api/v1/projects/${SLUG}/icon`]: (call: StubCall) => {
           if (call.method === 'DELETE') {
+            if (options.refuseDelete === true) return storeDown();
             current = { ...current, icon: null };
             return current;
           }
@@ -1048,6 +1057,7 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
           });
         },
         [`/api/v1/projects/${SLUG}/icon/complete`]: () => {
+          if (options.refuseComplete === true) return storeDown();
           current = { ...current, icon: IMAGE };
           return current;
         },
@@ -1056,14 +1066,30 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
   }
 
   /** The store, which the stub API is not: every `PUT` kept, by path. */
-  async function fakeStore(page: Page, puts: Map<string, Buffer>): Promise<void> {
+  async function fakeStore(page: Page, puts: Map<string, Buffer>, delayMs = 0): Promise<void> {
     await page.route('**/store/**', async (route) => {
       const request = route.request();
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
       if (request.method() === 'PUT') {
         puts.set(new URL(request.url()).pathname, request.postDataBuffer() ?? Buffer.alloc(0));
       }
       await route.fulfill({ status: 200, body: '' });
     });
+  }
+
+  /** Pick `buffer` as a PNG, wait for the frame, and press Use this. */
+  async function frameAndUse(h: Harness, buffer: Buffer): Promise<void> {
+    await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
+    await h.page.locator('[data-icon-file]').setInputFiles({
+      name: 'logo.png',
+      mimeType: 'image/png',
+      buffer,
+    });
+    await h.page.locator('[data-frame]').waitFor({ timeout: 5_000 });
+    await until(
+      async () => (await h.page.locator('[data-action="frame-use"]').isDisabled()) === false,
+    );
+    await h.page.locator('[data-action="frame-use"]').click();
   }
 
   const header = (h: Harness) => h.page.locator('.ss-avatar');
@@ -1192,6 +1218,24 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       assert.equal(await frame.getAttribute('data-x'), '20.0');
       assert.equal(await frame.getAttribute('data-y'), '30.0');
 
+      // A box drawn at half the frame's size: the image still follows the
+      // pointer, so 10 pixels of drag is 20 of frame (LAI-1321 review).
+      await frame.evaluate((el) => {
+        (el as HTMLElement).style.width = '120px';
+        (el as HTMLElement).style.height = '120px';
+      });
+      const half = await frame.boundingBox();
+      assert.ok(half !== null);
+      await h.page.mouse.move(half.x + 60, half.y + 60);
+      await h.page.mouse.down();
+      await h.page.mouse.move(half.x + 70, half.y + 60, { steps: 4 });
+      await h.page.mouse.up();
+      assert.equal(await frame.getAttribute('data-x'), '40.0');
+      await frame.evaluate((el) => {
+        (el as HTMLElement).style.width = '';
+        (el as HTMLElement).style.height = '';
+      });
+
       await h.page.locator('[data-frame-background="black"]').click();
       await h.page.locator('[data-action="frame-use"]').click();
 
@@ -1278,6 +1322,10 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       // Three steps right and one down at zoom 1, scaled ×1.2 by the two zooms.
       assert.equal(await frame.getAttribute('data-x'), '14.4');
       assert.equal(await frame.getAttribute('data-y'), '4.8');
+      // Said, too: a polite live region with the zoom and the offset.
+      const status = h.page.locator('[data-frame-status]');
+      assert.equal(await status.getAttribute('aria-live'), 'polite');
+      assert.equal(await status.innerText(), 'Zoom 1.2×, 14 right, 5 down.');
       // Focus is drawn, not just held.
       assert.notEqual(
         await frame.evaluate((el) => getComputedStyle(el).outlineStyle),
@@ -1299,6 +1347,172 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       await h.page.keyboard.press('Enter');
       await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1);
       assert.equal(puts.size, 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused complete after the fields saved: the fields count as saved, only the icon stays held', async () => {
+    const { stub: answers, served } = iconStub(
+      ME,
+      { max_bytes: 26_214_400 },
+      { refuseComplete: true },
+    );
+    const puts = new Map<string, Buffer>();
+    const h = await open(SETTINGS, answers, { before: (page) => fakeStore(page, puts) });
+    try {
+      await settled(h);
+      await h.page.locator('#ss-name').fill('Laika Two');
+      await h.page.locator('#ss-prefix').fill('LKT');
+      await frameAndUse(h, WIDE);
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1);
+
+      await save(h).click();
+      await until(async () => (await h.page.locator('.ss-foot-error').count()) === 1);
+      assert.match(
+        await h.page.locator('.ss-foot-error').innerText(),
+        /^Saved\. The icon was not saved: .+\. Try Save again\.$/,
+      );
+      // The server has the new name and key; the page counts them as saved.
+      assert.equal(served().name, 'Laika Two');
+      await until(
+        async () => (await h.page.locator('.screen-page-title').innerText()) === 'Laika Two',
+      );
+      assert.equal(await h.page.locator('#ss-name').inputValue(), 'Laika Two');
+      // Only the icon is still held, and Save is still on for it.
+      assert.equal(await h.page.locator('[data-icon-held]').count(), 1);
+      assert.equal(await save(h).isDisabled(), false);
+
+      // Discard drops only the icon: the saved name stays.
+      await h.page.getByRole('button', { name: 'Discard' }).click();
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 0);
+      assert.equal(await h.page.locator('#ss-name').inputValue(), 'Laika Two');
+      assert.equal(await h.page.locator('#ss-prefix').inputValue(), 'LKT');
+      assert.equal(await save(h).isDisabled(), true);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused remove after the fields saved: the fields count as saved, the removal stays held', async () => {
+    const { stub: answers, served } = iconStub(ME, null, {
+      icon: { emoji: '🚀' },
+      refuseDelete: true,
+    });
+    const h = await open(SETTINGS, answers);
+    try {
+      await settled(h);
+      await h.page.locator('#ss-name').fill('Laika Two');
+      await h.page.locator('[data-action="icon-remove"]').click();
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1);
+
+      await save(h).click();
+      await until(async () => (await h.page.locator('.ss-foot-error').count()) === 1);
+      assert.match(
+        await h.page.locator('.ss-foot-error').innerText(),
+        /^Saved\. The icon was not saved/,
+      );
+      assert.equal(served().name, 'Laika Two');
+      assert.deepEqual(served().icon, { emoji: '🚀' });
+      assert.equal(await h.page.locator('[data-icon-held]').count(), 1);
+
+      await h.page.getByRole('button', { name: 'Discard' }).click();
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 0);
+      assert.equal(await h.page.locator('#ss-name').inputValue(), 'Laika Two');
+      assert.equal(await preview(h).getAttribute('data-glyph'), '🚀');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Save stays off while an image uploads, and the image it then sends is that one', async () => {
+    const { stub: answers, served } = iconStub(ME, { max_bytes: 26_214_400 });
+    const puts = new Map<string, Buffer>();
+    // The store takes a second and a half: long enough to press Save during it.
+    const h = await open(SETTINGS, answers, { before: (page) => fakeStore(page, puts, 1_500) });
+    try {
+      await settled(h);
+      await h.page.locator('#ss-name').fill('Laika Two');
+      assert.equal(await save(h).isDisabled(), false);
+      await frameAndUse(h, WIDE);
+      // Uploading: Save is off, and a press does nothing.
+      await until(async () => (await save(h).isDisabled()) === true);
+      await save(h).click({ force: true });
+      assert.equal(h.calls.filter((c) => c.method === 'PATCH').length, 0);
+      assert.equal(puts.size, 0);
+
+      // Uploaded: held, and Save is back.
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1, 10_000);
+      assert.equal(await save(h).isDisabled(), false);
+      await save(h).click();
+      await until(() => h.calls.some((c) => c.path.endsWith('/icon/complete')));
+      assert.deepEqual(
+        (h.calls.find((c) => c.path.endsWith('/icon/complete'))?.body as { upload_id: string })
+          .upload_id,
+        ID,
+      );
+      assert.equal(served().name, 'Laika Two');
+      assert.deepEqual(served().icon, IMAGE);
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a picture over 40 megapixels is refused from its header, before it is decoded', async () => {
+    const { stub: answers } = iconStub(ME, { max_bytes: 26_214_400 });
+    const h = await open(SETTINGS, answers);
+    try {
+      await settled(h);
+      await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
+      // A PNG's signature and IHDR saying 10 000 × 5 000 — and nothing a decoder could use.
+      const ihdr = Buffer.alloc(13);
+      ihdr.writeUInt32BE(10_000, 0);
+      ihdr.writeUInt32BE(5_000, 4);
+      const header = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]),
+        Buffer.from('IHDR'),
+        ihdr,
+        Buffer.alloc(4),
+      ]);
+      await h.page.locator('[data-icon-file]').setInputFiles({
+        name: 'huge.png',
+        mimeType: 'image/png',
+        buffer: header,
+      });
+      await until(async () => (await h.page.locator('[data-icon-error]').count()) === 1);
+      assert.match(
+        await h.page.locator('[data-icon-error]').innerText(),
+        /10000 × 5000 — too large to work with\. 40 megapixels at most\./,
+      );
+      assert.equal(await h.page.locator('[data-frame]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a board whose file limit is small still takes an icon, made smaller, and says so', async () => {
+    const LIMIT = 12_000;
+    const { stub: answers } = iconStub(ME, { max_bytes: LIMIT });
+    const puts = new Map<string, Buffer>();
+    const h = await open(SETTINGS, answers, { before: (page) => fakeStore(page, puts) });
+    try {
+      await settled(h);
+      // Noise does not compress: at 512 pixels it is far over the limit.
+      let seed = 7;
+      const noise = png(600, 600, () => {
+        seed = (seed * 1103515245 + 12345) >>> 0;
+        return [seed & 255, (seed >>> 8) & 255, (seed >>> 16) & 255, 255];
+      });
+      await frameAndUse(h, noise);
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1, 10_000);
+      assert.match(await h.page.locator('[data-icon-note]').innerText(), /Made smaller to fit/);
+      const stored = [...puts.values()][0];
+      assert.ok(stored !== undefined);
+      assert.ok(
+        stored.length <= LIMIT,
+        `${String(stored.length)} bytes is over the board's ${String(LIMIT)}`,
+      );
     } finally {
       await h.close();
     }
@@ -1353,6 +1567,11 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       assert.equal(await outline(), 'solid', 'no ring on a dark theme');
       await setTheme(h.page, 'light');
       assert.equal(await outline(), 'none', 'a ring on the light theme, which needs none');
+      // The black theme is a dark one: ringed there too.
+      await h.page.evaluate(() => {
+        document.documentElement.setAttribute('data-theme', 'black');
+      });
+      assert.equal(await outline(), 'solid', 'no ring on the black theme');
     } finally {
       await h.close();
     }
