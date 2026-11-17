@@ -11,6 +11,7 @@
  * does.
  */
 
+import type { OffDay } from '../../src/api/off-days.ts';
 import type {
   TimeDraft,
   TimeEntry,
@@ -144,7 +145,7 @@ export function todayEntries(): Entry[] {
   ];
 }
 
-const settledEntries = (day: string): Entry[] => [
+export const settledEntries = (day: string): Entry[] => [
   entry(`${day}-1`, day, [9, 0], 150, { task: CARD_A, project: ATLAS }),
   entry(`${day}-2`, day, [12, 0], 45, { source: 'manual', note: 'Design review' }),
   entry(`${day}-3`, day, [13, 30], 180, { task: CARD_C, project: ATLAS, revision: 3 }),
@@ -166,6 +167,8 @@ export interface DayData {
   drafts: Draft[];
   entries: Entry[];
   breaks?: Break[];
+  /** A holiday covering the reader, or their leave (D-149, LAI-1184); none when absent. */
+  off?: OffDay | null;
 }
 
 /** What each day holds; anything not named is empty. */
@@ -223,6 +226,7 @@ export function viewOf(day: string, data: Map<string, DayData> = weekData()): un
     drafts_held: { count: held.length, minutes: sum(held) },
     agent: day === TODAY ? AGENT : NO_AGENT,
     state: stateOf(day, own),
+    off: own?.off ?? null,
     week: Array.from({ length: 7 }, (_, i) => {
       const d = addDays(monday, i);
       const w = data.get(d);
@@ -231,6 +235,7 @@ export function viewOf(day: string, data: Map<string, DayData> = weekData()): un
         confirmed_minutes: sum(w?.entries ?? []),
         drafted_minutes: sum(w?.drafts ?? []),
         state: stateOf(d, w),
+        off: w?.off ?? null,
       };
     }),
     timer: null,

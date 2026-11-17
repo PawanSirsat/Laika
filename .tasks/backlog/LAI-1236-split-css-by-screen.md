@@ -1,5 +1,5 @@
 ---
-id: LAI-1186
+id: LAI-1236
 title: 'Split the stylesheet by screen, once each screen imports the CSS it uses'
 area: web
 assignee: unclaimed
@@ -43,3 +43,11 @@ visits to the same page.
       and `bundle-budget.test.ts` gains a CSS budget for the entry.
 - [ ] Browser tests pass in both themes; the screens LAI-1219's sweep flagged
       are checked by a test or by recorded screenshots.
+
+## Renumbered
+
+Filed as LAI-1186 on the UI branches (commit 357c8b64, 2026-11-16 11:45). `master`
+used LAI-1186 for a different task 30 minutes later, and that one is done, with
+commits that carry it, so this one moved to LAI-1236 when the two lines met in
+the combined UI branch (2026-11-17). The filing commit still says LAI-1186; it is
+not that task's.

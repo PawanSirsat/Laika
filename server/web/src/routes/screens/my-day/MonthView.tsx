@@ -1,8 +1,10 @@
 import { memo, useMemo } from 'react';
+import { offDescription, offKind, offLabel } from '../../../api/off-days.ts';
 import type { DaysDay } from '../../../api/time.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { compact, duration } from './format.ts';
 import { isoWeek, monthKey, monthWeeks } from './span.ts';
-import { barOf, busiest, cellKind, pct, totalOf } from './span-derive.ts';
+import { barOf, busiest, cellKind, offMark, pct, totalOf } from './span-derive.ts';
 import { dayLong } from './week-derive.ts';
 
 export interface MonthViewProps {
@@ -27,6 +29,10 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
  * that opens the week, and a cell per day — its total, its two largest
  * tasks, and a bar that is a share of the month's busiest day. A day nothing
  * reached says `—`; days outside the month are drawn faint.
+ *
+ * A day off (D-149, LAI-1184) says its name in a chip in its tone — in place
+ * of `—`, or beside the time — and a day off with no time is tinted, so a
+ * phone, which has no room for chips, still sees it.
  */
 export const MonthView = memo(function MonthView({
   days,
@@ -105,18 +111,24 @@ function MonthCell({
   const kind = pending ? 'pending' : row === undefined ? 'future' : cellKind(row);
   const all = row === undefined ? 0 : totalOf(row);
   const bar = row === undefined ? { confirmed: 0, drafted: 0 } : barOf(row, top);
-  const said =
-    kind === 'future' || kind === 'pending'
-      ? ''
-      : kind === 'no_signal'
-        ? 'no signal'
-        : duration(all);
+  const off = pending || row === undefined ? null : row.off;
+  const tone = offKind(off);
+  const name = offLabel(off);
+  const about = offDescription(off);
+  const said = [
+    kind === 'time' ? duration(all) : kind === 'no_signal' ? 'no signal' : '',
+    about ?? '',
+  ]
+    .filter((p) => p !== '')
+    .join(', ');
   return (
     <button
       type="button"
       className="span-month-cell"
       data-zk={`d:${day}`}
       data-kind={kind}
+      data-off={tone ?? undefined}
+      data-mark={pending || row === undefined ? undefined : (offMark(row) ?? undefined)}
       data-out={inMonth ? undefined : ''}
       data-today={day === today ? '' : undefined}
       aria-label={`${dayLong(day)}${said === '' ? '' : `, ${said}`}`}
@@ -130,10 +142,17 @@ function MonthCell({
           <span className="span-month-total span-pending-bone" aria-hidden="true" />
         ) : (
           <span className="span-month-total">
-            {kind === 'time' ? compact(all) : kind === 'no_signal' ? '—' : ''}
+            {kind === 'time' ? compact(all) : kind === 'no_signal' && tone === null ? '—' : ''}
           </span>
         )}
       </span>
+      {name !== null && tone !== null && (
+        <Tooltip content={about ?? name} lazy>
+          <span className="span-month-off" data-off={tone}>
+            {name}
+          </span>
+        </Tooltip>
+      )}
       {row?.top_tasks.slice(0, 2).map((t, i) => (
         <span
           key={t.task?.id ?? `${t.untied ? 'untied' : 'none'}-${String(i)}`}

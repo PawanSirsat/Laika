@@ -28,7 +28,7 @@ const SHEET = 'styles/breakpoints.css';
  * Viewport widths that differ from every named one, by file, with what
  * reflows there and how far the nearest named width is. Collapsing one onto
  * the scale moves where its screen reflows, which is a visible change and a
- * design decision, not a tidy-up — LAI-1187 takes them one screen at a time.
+ * design decision, not a tidy-up — LAI-1237 takes them one screen at a time.
  */
 const BREAKPOINT_EXEMPT: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'components/availability/availability.css': {
@@ -81,8 +81,8 @@ const BREAKPOINT_EXEMPT: Readonly<Record<string, Readonly<Record<string, string>
     'max-width: 960px': '.mr-body reflows here; the nearest named width, 900px, is 60px away',
   },
   'routes/screens/my-day/phone.css': {
-    'max-width: 379px':
-      '.shell-head[data-myday-bar] .myday-viewing-label reflows here; the nearest named width, 390px, is 11px away',
+    'max-width: 419px':
+      '.shell-head[data-myday-bar] .myday-viewing-label reflows here; the nearest named width, 390px, is 29px away',
   },
   'routes/screens/organisation/organisation.css': {
     'max-width: 560px':

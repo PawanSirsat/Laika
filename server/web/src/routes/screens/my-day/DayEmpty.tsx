@@ -1,9 +1,12 @@
+import { offKind, type OffDay } from '../../../api/off-days.ts';
 import { hourName } from './format.ts';
+import { offEmpty } from './off-words.ts';
 import { weekdayOf } from './summary-derive.ts';
 import { shortDay } from './week-derive.ts';
 import './day-states.css';
 
-export type EmptyKind = 'today' | 'past' | 'future' | 'draftOff';
+/** `off`: a holiday or whole-day leave with nothing on it — never *no signal* (D-149, LAI-1184). */
+export type EmptyKind = 'today' | 'past' | 'future' | 'draftOff' | 'off';
 
 /** What a past day with nothing on it says: no signal is not zero hours (LAI-831). */
 export const NO_SIGNAL =
@@ -39,7 +42,9 @@ export type WorkHours =
  * day's hours along a short track — shaded outside the person's working
  * hours **only when they set them, and then with a key that says so**, and a
  * now line on today — and under it, in the card's own flow rather than
- * floating over the grid, why it is empty and what to do.
+ * floating over the grid, why it is empty and what to do — a day not begun, a
+ * day nothing was recorded on, drafting off, today before anything reached the
+ * board, or a day off (LAI-1184).
  */
 export function DayEmpty({
   day,
@@ -47,6 +52,8 @@ export function DayEmpty({
   actions,
   nowMinute,
   workHours,
+  off = null,
+  ahead = false,
 }: {
   readonly day: string;
   readonly kind: EmptyKind;
@@ -54,26 +61,35 @@ export function DayEmpty({
   /** Minutes after the day's midnight, on today only. */
   readonly nowMinute?: number | undefined;
   readonly workHours?: WorkHours | undefined;
+  /** The day off, for `off`: its name is the card's. */
+  readonly off?: OffDay | null;
+  /** The day has not begun: a day off to come offers no time to add. */
+  readonly ahead?: boolean;
 }) {
   const weekday = weekdayOf(day);
+  const free = kind === 'off' ? offEmpty(off, ahead) : undefined;
   const title =
-    kind === 'future'
-      ? `${weekday} hasn’t started`
-      : kind === 'draftOff'
-        ? 'Nothing drafted'
-        : kind === 'today'
-          ? 'Nothing yet today'
-          : `Nothing recorded on ${weekday}`;
+    free !== undefined
+      ? free.title
+      : kind === 'future'
+        ? `${weekday} hasn’t started`
+        : kind === 'draftOff'
+          ? 'Nothing drafted'
+          : kind === 'today'
+            ? 'Nothing yet today'
+            : `Nothing recorded on ${weekday}`;
   const body =
-    kind === 'future'
-      ? 'Time appears here once the day begins. Nothing can be confirmed ahead of time.'
-      : kind === 'draftOff'
-        ? 'Draft my time is off, so Laika only shows time you add or record with a timer.'
-        : kind === 'past'
-          ? NO_SIGNAL
-          : 'As you work, your collector drafts time from prompts, commits and agent sessions. Start the timer above, or add time yourself.';
+    free !== undefined
+      ? free.body
+      : kind === 'future'
+        ? 'Time appears here once the day begins. Nothing can be confirmed ahead of time.'
+        : kind === 'draftOff'
+          ? 'Draft my time is off, so Laika only shows time you add or record with a timer.'
+          : kind === 'past'
+            ? NO_SIGNAL
+            : 'As you work, your collector drafts time from prompts, commits and agent sessions. Start the timer above, or add time yourself.';
   // The shaded stretches: before and after the working hours, or all of a day off.
-  const off: { readonly from: number; readonly to: number }[] =
+  const shaded: { readonly from: number; readonly to: number }[] =
     workHours === undefined
       ? []
       : workHours.kind === 'off'
@@ -95,11 +111,16 @@ export function DayEmpty({
       ? undefined
       : along(nowMinute);
   return (
-    <section className="myday-card dstate-empty" aria-label="Timeline" data-day-empty={kind}>
+    <section
+      className="myday-card dstate-empty"
+      aria-label="Timeline"
+      data-day-empty={kind}
+      data-off={kind === 'off' ? (offKind(off) ?? undefined) : undefined}
+    >
       <div className="dstate-empty-head">
         <span className="dstate-skel-title">Timeline</span>
         <span className="dstate-empty-date">{shortDay(day)}</span>
-        {key !== undefined && off.length > 0 && (
+        {key !== undefined && shaded.length > 0 && (
           <span className="dstate-empty-key" data-off-hours-key>
             <span className="dstate-empty-swatch" aria-hidden="true" />
             {key}
@@ -118,7 +139,7 @@ export function DayEmpty({
           {EMPTY_HOURS.map((h) => (
             <span key={h} className="dstate-empty-cell" />
           ))}
-          {off.map((band) => (
+          {shaded.map((band) => (
             <span
               key={band.from}
               className="dstate-empty-off"

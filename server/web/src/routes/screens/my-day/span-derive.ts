@@ -1,3 +1,4 @@
+import { offKind, offOwes, type OffKind } from '../../../api/off-days.ts';
 import type { DaysDay } from '../../../api/time.ts';
 import { stackOf, type LaneBlock } from './timeline-derive.ts';
 
@@ -12,6 +13,13 @@ import { stackOf, type LaneBlock } from './timeline-derive.ts';
  * of the **busiest day in the period**, the year's heat is the day's place
  * among the period's own working days, and a day nothing reached is *no
  * signal* — `—`, never an empty bar that reads as zero hours.
+ *
+ * ## A day off is not no signal (D-149, LAI-1184)
+ *
+ * A day a holiday covers, or approved whole-day leave, owes nothing: with no
+ * time on it, it is *off* — drawn in its own tone, never `—`. A day off with
+ * time keeps its figure and carries a mark. Pending leave changes nothing it
+ * owes, so it is only ever an outline.
  */
 
 /** A share as a CSS percentage, held to 0–100 %. */
@@ -60,13 +68,48 @@ export function heatScale(totals: readonly number[]): (minutes: number) => HeatL
   };
 }
 
-/** What a day cell says about its time: a figure, *no signal* or nothing yet. */
-export type CellKind = 'time' | 'no_signal' | 'future';
+/** What a day cell says about its time: a figure, a day off, *no signal* or nothing yet. */
+export type CellKind = 'time' | 'off' | 'no_signal' | 'future';
 
-export function cellKind(d: Pick<DaysDay, 'state'>): CellKind {
+/** A day's state and, when served, its day off — a row from a fixture may lack it. */
+type Cell = Pick<DaysDay, 'state'> & Partial<Pick<DaysDay, 'off'>>;
+
+/**
+ * Time wins: a day with any is `time`. Without, a day that owes nothing — a
+ * holiday, approved whole-day leave — is `off`, past or to come; otherwise
+ * *no signal* or *future*, as the server said.
+ */
+export function cellKind(d: Cell): CellKind {
+  if (d.state === 'confirmed' || d.state === 'drafted') return 'time';
+  if (d.off !== undefined && d.off !== null && offOwes(d.off) === 'nothing') return 'off';
   if (d.state === 'future') return 'future';
-  if (d.state === 'no_signal') return 'no_signal';
-  return 'time';
+  return 'no_signal';
+}
+
+/**
+ * How a day's tile carries its day off, when it has one:
+ *
+ *  - `tint` — an `off` day: filled in the tone, edged in its border;
+ *  - `dot` — a day with time: its heat, and a corner dot in the tone;
+ *  - `half` — approved half-day leave with no time: half filled;
+ *  - `dash` — pending leave: a dashed outline only, never the fill.
+ */
+export type OffMark = 'tint' | 'dot' | 'half' | 'dash';
+
+export function offMark(d: Cell): OffMark | null {
+  const tone: OffKind | null = offKind(d.off);
+  if (tone === null) return null;
+  if (tone === 'requested') return 'dash';
+  const kind = cellKind(d);
+  if (kind === 'time') return 'dot';
+  if (kind === 'off') return 'tint';
+  return 'half';
+}
+
+/** The tones a set of days holds, in the legend's order: what its key names. */
+export function offTones(days: readonly Partial<Pick<DaysDay, 'off'>>[]): OffKind[] {
+  const held = new Set(days.map((d) => offKind(d.off)));
+  return (['holiday', 'leave', 'requested'] as const).filter((t) => held.has(t));
 }
 
 /** A period's figure: total and what is still to review, or *no signal* / *not started*. */

@@ -6,7 +6,7 @@
  * LAI-1220 moved every padding, margin and gap literal that a `--space-*`
  * token matches exactly (1990 declarations) and left these, because the
  * nearest token is 1px or more away and moving them would shift a layout the
- * task was told not to change. LAI-1187 picks them off screen by screen with
+ * task was told not to change. LAI-1237 picks them off screen by screen with
  * a visual check. Taking one onto a token means deleting its line here; the
  * guard goes red until you do, and red again if anything new appears.
  */
@@ -207,9 +207,6 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
     'padding: 0 0.4375rem',
     'padding: 0 0.6875rem',
     'padding: 0.0625rem 0.4375rem',
-    'padding: 0.1875rem',
-    'padding: 0.3125rem 0.4375rem',
-    'padding: 0.4375rem var(--space-2-5)',
     'padding: var(--space-2) 1.125rem',
   ],
   'routes/screens/board/board.css': [
@@ -352,6 +349,7 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
   ],
   'routes/screens/developer/v3/v3.css': ['margin: var(--space-4) 1.125rem 0'],
   'routes/screens/insights/time-logging.css': [
+    'margin-left: 0.0625rem',
     'padding: 0.1875rem var(--space-2-5)',
     'padding: var(--space-4) 1.125rem 1.125rem',
   ],
@@ -446,6 +444,7 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
     'gap: 1px',
     'gap: 3px',
     'gap: 3px',
+    'padding: 1px var(--space-1)',
     'padding: 1px var(--space-1)',
     'padding: 3px',
     'padding: 3px 5px',

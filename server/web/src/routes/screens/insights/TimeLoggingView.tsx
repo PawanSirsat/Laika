@@ -25,7 +25,9 @@ import {
   monthHref,
   monthKey,
   monthLabel,
+  offMarks,
   rowTotals,
+  sharedHoliday,
   stepMonth,
   weekdayShort,
   type MonthDay,
@@ -61,6 +63,11 @@ const ROLE_WORDS: Readonly<Record<string, string>> = {
  * - **The verdict is drawn from the server's facts** — `threshold_minutes`,
  *   each person's zone, joining day, today and working days — and never from
  *   a number typed here. A cell is a glyph and a figure, never colour alone.
+ * - **Holidays and leave** (D-149 item 6, LAI-1185) are the server's facts too:
+ *   a holiday or approved whole-day leave is not due, half-day leave owes half
+ *   the threshold, leave requested changes nothing — each drawn with a glyph
+ *   or a mark and said in words, and a column's head names a holiday everyone
+ *   shown shares.
  * - **A cell is a door** to that person's Day; a name opens their profile.
  * - **People are A–Z** as the server sends them (D-088 item 1); a cut list
  *   says so.
@@ -113,6 +120,10 @@ export function TimeLoggingView({
         ? 'People in the spaces you lead'
         : `Everyone in ${orgName ?? 'the organisation'}`;
   const threshold = view?.threshold_minutes;
+  const marks = useMemo(
+    () => (view === undefined ? undefined : offMarks(view.people, days, view.threshold_minutes)),
+    [view, days],
+  );
 
   return (
     <section className="tlg" aria-labelledby={`${id}-title`} data-time-logging>
@@ -197,6 +208,51 @@ export function TimeLoggingView({
               not due — a day off, before they joined, not yet, no longer here, or today so far; the
               hours in grey when there are any
             </li>
+            {marks?.holiday === true && (
+              <li data-tlg-legend="holiday">
+                <span className="tlg-swatch" data-state="holiday" aria-hidden="true">
+                  {CELL_GLYPHS.holiday}
+                </span>
+                a holiday — not due
+              </li>
+            )}
+            {marks?.leave === true && (
+              <li data-tlg-legend="leave">
+                <span className="tlg-swatch" data-state="leave" aria-hidden="true">
+                  {CELL_GLYPHS.leave}
+                </span>
+                on leave — not due
+              </li>
+            )}
+            {marks?.half === true && (
+              <li data-tlg-legend="half">
+                <span className="tlg-swatch tlg-swatch-mark" data-off="leave" aria-hidden="true" />
+                half a day on leave — {hoursCompact(threshold / 2)} due
+              </li>
+            )}
+            {marks?.requested === true && (
+              <li data-tlg-legend="requested">
+                <span
+                  className="tlg-swatch tlg-swatch-mark"
+                  data-off="requested"
+                  aria-hidden="true"
+                />
+                leave requested — still due
+              </li>
+            )}
+            {marks !== undefined && marks.quiet.length > 0 && (
+              <li data-tlg-legend="quiet">
+                {marks.quiet.map((kind) => (
+                  <span
+                    key={kind}
+                    className="tlg-swatch tlg-swatch-mark"
+                    data-off={kind}
+                    aria-hidden="true"
+                  />
+                ))}
+                a holiday or leave on a day otherwise not due — named on hover
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -230,21 +286,38 @@ export function TimeLoggingView({
                   <th scope="col" className="tlg-who">
                     Person
                   </th>
-                  {days.map((d) => (
-                    <th
-                      key={d.day}
-                      scope="col"
-                      data-weekend={d.weekend ? 'true' : undefined}
-                      data-tlg-day={d.day}
-                    >
-                      <Tooltip content={dayWords(d.day)} lazy>
-                        <abbr className="tlg-head">
-                          <span className="tlg-date">{d.date}</span>
-                          <span className="tlg-dow">{weekdayShort(d.day)}</span>
-                        </abbr>
-                      </Tooltip>
-                    </th>
-                  ))}
+                  {days.map((d) => {
+                    const holiday = sharedHoliday(view.people, d.day);
+                    return (
+                      <th
+                        key={d.day}
+                        scope="col"
+                        data-weekend={d.weekend ? 'true' : undefined}
+                        data-holiday={holiday ?? undefined}
+                        data-tlg-day={d.day}
+                      >
+                        <Tooltip
+                          content={
+                            holiday === null ? dayWords(d.day) : `${dayWords(d.day)} · ${holiday}`
+                          }
+                          lazy
+                        >
+                          <abbr className="tlg-head">
+                            <span className="tlg-date">
+                              {d.date}
+                              {holiday !== null && (
+                                <span className="tlg-head-off" aria-hidden="true">
+                                  {CELL_GLYPHS.holiday}
+                                </span>
+                              )}
+                            </span>
+                            <span className="tlg-dow">{weekdayShort(d.day)}</span>
+                          </abbr>
+                        </Tooltip>
+                        {holiday !== null && <span className="visually-hidden">{holiday}</span>}
+                      </th>
+                    );
+                  })}
                   <th scope="col" className="tlg-total">
                     Total
                   </th>
@@ -302,7 +375,7 @@ function Row({
         const cell = cellState(person, d.day, threshold);
         const href = dayHref(person.user.id, d.day);
         return (
-          <td key={d.day} data-state={cell.state} data-day={d.day}>
+          <td key={d.day} data-state={cell.state} data-off={cell.off ?? undefined} data-day={d.day}>
             {isDoor(cell) ? (
               <Tooltip content={cell.aria} lazy>
                 <a className="tlg-cell" href={href} aria-label={cell.aria} onClick={go(href)}>

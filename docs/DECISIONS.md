@@ -7501,3 +7501,9 @@ lapsed token leaves the last synced days in place and says so. A holiday's scope
 good as Clan's: when Clan sends none, a synced holiday is everyone's *in Clan*, never the
 rest of the organisation's. The colours of leave types
 in Clan are not used; Laika draws holidays and leave in its own tokens.
+
+**Addendum (2026-11-13, LAI-1183).** Two answers the reads needed: *On leave until …*
+runs to the last day of the person's leave **across their non-working days and the
+holidays that cover them**, so two weeks off with a weekend between read as one stretch;
+and *Open to more work* (`open_only`) **leaves out anyone on approved whole-day leave
+today**. Both are CHIEF's, from build-1183's open questions.

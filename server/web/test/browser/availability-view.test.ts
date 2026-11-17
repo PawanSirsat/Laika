@@ -66,6 +66,7 @@ const OWNER_ROWS = [
       note: 'Happy to pick up front-end work',
       tags: ['Front-end', 'Maps'],
       away: null,
+      on_leave: null,
       hours_per_week: 10,
       away_periods: [],
       work_week: null,
@@ -82,6 +83,7 @@ const OWNER_ROWS = [
       note: null,
       tags: ['Back-end'],
       away: null,
+      on_leave: null,
       hours_per_week: null,
       away_periods: [],
       work_week: null,
@@ -99,6 +101,7 @@ const OWNER_ROWS = [
       note: 'Back on the 16th',
       tags: ['Accessibility'],
       away: { until: '2026-11-16' },
+      on_leave: null,
       hours_per_week: null,
       away_periods: [{ from: '2026-11-02', to: '2026-11-16' }],
       work_week: null,
@@ -118,6 +121,7 @@ const LEAD_ROWS = OWNER_ROWS.map(({ last_2_weeks_minutes: _, availability, ...ro
     note: availability.note,
     tags: availability.tags,
     away: availability.away,
+    on_leave: availability.on_leave,
     hours_per_week: availability.hours_per_week,
     away_periods: availability.away_periods,
   },
@@ -293,7 +297,7 @@ void describe('who has room (frames 2g–2i)', () => {
       );
       assert.match(
         await empty.innerText(),
-        /Availability is set by each person from My day\. People at capacity or away are still listed when the filter is off\./,
+        /Availability is set by each person from My day\. People at capacity, away or on leave are still listed when the filter is off\./,
       );
       await shoot(h.page, 'availability-empty');
       await empty.getByRole('button', { name: 'Show everyone in all spaces' }).click();
@@ -302,6 +306,132 @@ void describe('who has room (frames 2g–2i)', () => {
         await h.page.locator('[data-availability-empty]').innerText(),
         /Nobody matches these filters\./,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * Leave from the HR system (D-149 item 5, LAI-1185): Amara is on approved
+ * annual leave, though she said she is open; Lindiwe has asked for leave;
+ * Riya is away and on leave, which wins. An owner is sent the type; a space
+ * admin never is, so the server sends `type: null`.
+ */
+const LEAVE_ROWS = (typed: boolean) => {
+  const leave = [
+    { until: '2026-11-23', status: 'approved', type: typed ? 'Annual' : null },
+    { until: '2026-11-12', status: 'pending', type: typed ? 'Sick' : null },
+    { until: '2026-11-20', status: 'approved', type: null },
+  ];
+  const rows = typed ? OWNER_ROWS : LEAD_ROWS;
+  return rows.map((row, i) => ({
+    ...row,
+    availability: { ...row.availability, on_leave: leave[i] ?? null },
+  }));
+};
+
+/** Every pill that leaves its box, or whose words are cut — the label ellipsised. */
+async function pillsUnfit(page: Page, box: string): Promise<string[]> {
+  return page.evaluate((within) => {
+    const out: string[] = [];
+    for (const pill of Array.from(document.querySelectorAll(`${within} .avail-pill`))) {
+      if (!(pill instanceof HTMLElement) || pill.offsetParent === null) continue;
+      const name = `“${pill.innerText.trim()}”`;
+      const outer = pill.closest(within);
+      if (outer === null) continue;
+      const a = pill.getBoundingClientRect();
+      const b = outer.getBoundingClientRect();
+      if (a.left < b.left - 1 || a.right > b.right + 1) out.push(`${name} leaves its ${within}`);
+      for (const part of Array.from(pill.children)) {
+        if (part instanceof HTMLElement && part.scrollWidth > part.clientWidth + 1) {
+          out.push(
+            `${name} is cut: ${String(part.scrollWidth)}px in ${String(part.clientWidth)}px`,
+          );
+        }
+      }
+    }
+    return out;
+  }, box);
+}
+
+void describe('leave from the HR system (D-149 item 5)', () => {
+  for (const theme of ['Light', 'Dark'] as const) {
+    for (const width of [1440, 390]) {
+      void test(`${theme} at ${String(width)}: On leave beats away and the status, Leave requested is outlined, each pill whole`, async () => {
+        const h = await view({ role: 'owner', rows: () => ({ data: LEAVE_ROWS(true) }) }, width);
+        try {
+          await setTheme(h.page, theme);
+          const phone = width < 760;
+          const row = (id: string) =>
+            phone
+              ? h.page.locator(`[data-person-card="${id}"]`)
+              : h.page.locator(`tr[data-person="${id}"]`);
+          const pill = (id: string) => row(id).locator('.avail-pill');
+          await pill('u4').waitFor({ timeout: 20_000 });
+          const said = async (id: string) => [
+            await pill(id).getAttribute('data-avail-pill'),
+            (await pill(id).innerText()).replace(/\s+/g, ' ').trim(),
+          ];
+          assert.deepEqual(await said('u2'), ['leave', '◐ On leave until Mon 23 Nov · Annual']);
+          assert.deepEqual(await said('u3'), ['requested', '◌ Leave requested']);
+          assert.deepEqual(await said('u4'), ['leave', '◐ On leave until Fri 20 Nov']);
+          // Drawn in leave's own tokens: the fill when approved, a dashed
+          // outline and no fill when only requested.
+          const look = (id: string) =>
+            pill(id).evaluate((el) => {
+              const s = getComputedStyle(el);
+              const probe = document.createElement('span');
+              probe.style.color = 'var(--leave)';
+              probe.style.backgroundColor = 'var(--leave-bg)';
+              el.append(probe);
+              const t = getComputedStyle(probe);
+              const want = { ink: t.color, fill: t.backgroundColor };
+              probe.remove();
+              return {
+                ink: s.color === want.ink,
+                fill: s.backgroundColor === want.fill,
+                clear: s.backgroundColor === 'rgba(0, 0, 0, 0)',
+                border: s.borderTopStyle,
+              };
+            });
+          assert.deepEqual(await look('u2'), {
+            ink: true,
+            fill: true,
+            clear: false,
+            border: 'solid',
+          });
+          assert.deepEqual(await look('u3'), {
+            ink: true,
+            fill: false,
+            clear: true,
+            border: 'dashed',
+          });
+          assert.deepEqual(await pillsUnfit(h.page, phone ? '[data-person-card]' : 'td'), []);
+          const sideways = await h.page.evaluate(() => document.documentElement.scrollWidth);
+          assert.ok(sideways <= width, `the page scrolls sideways: ${String(sideways)}px`);
+          await shoot(h.page, `availability-leave-${theme}-${String(width)}`);
+        } finally {
+          await h.close();
+        }
+      });
+    }
+  }
+
+  void test('a space admin is never told why: On leave, with no type', async () => {
+    const h = await view({
+      role: 'member',
+      leads: ['p1'],
+      rows: () => ({ data: LEAVE_ROWS(false) }),
+    });
+    try {
+      const pill = h.page.locator('tr[data-person="u2"] .avail-pill');
+      await pill.waitFor({ timeout: 20_000 });
+      assert.equal(
+        (await pill.innerText()).replace(/\s+/g, ' ').trim(),
+        '◐ On leave until Mon 23 Nov',
+      );
+      assert.equal(await pill.getAttribute('title'), 'On leave until Mon 23 Nov');
     } finally {
       await h.close();
     }

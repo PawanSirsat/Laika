@@ -39,6 +39,10 @@ const MANAGE_MEMBERS = 'project.members.manage';
  *   came is not drawn, so nobody reads an empty column as a zero.
  * - **No free hours** (plan frame 2m, owner answer d): there is no such column.
  * - Deactivated people are not on the list; the server leaves them out.
+ * - **Leave is the HR system's** (D-149 item 5): the pill says *On leave
+ *   until …* or *Leave requested*, its type only where the server sent it,
+ *   and *Open to more work only* leaves out whoever is on approved whole-day
+ *   leave today — the server's filter, said in the empty state.
  */
 export function AvailabilityView({ now = Date.now() }: { readonly now?: number }) {
   const gates = useGates();
@@ -180,8 +184,8 @@ export function AvailabilityView({ now = Date.now() }: { readonly now?: number }
               : 'Nobody matches these filters.'}
           </p>
           <p className="avail-quiet">
-            Availability is set by each person from My day. People at capacity or away are still
-            listed when the filter is off.
+            Availability is set by each person from My day. People at capacity, away or on leave are
+            still listed when the filter is off.
           </p>
           {filtered && (
             <button

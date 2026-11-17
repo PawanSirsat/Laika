@@ -1,9 +1,10 @@
 import { memo, useMemo, useSyncExternalStore } from 'react';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { offDescription, offKind, offLabel } from '../../../api/off-days.ts';
 import type { MyDay } from '../../../api/time.ts';
 import { compact, duration, hourName } from './format.ts';
 import { addDays, dayTotals } from './my-day-derive.ts';
-import { barOf, boxDetail, busiest, pct, weekBoxes, weekHours } from './span-derive.ts';
+import { barOf, boxDetail, busiest, cellKind, pct, weekBoxes, weekHours } from './span-derive.ts';
 import { dayLine, type LaneBlock } from './timeline-derive.ts';
 import { dayLong, shortDay } from './week-derive.ts';
 
@@ -54,6 +55,10 @@ const WEEKDAYS = Array.from({ length: 7 }, (_, i) => i);
  * fill — fitted to them, never clamped into slivers at a fixed 7 to 8 — each
  * block where it happened, two at once side by side. A column's head is its
  * day, its total and a bar that is a share of the week's busiest day.
+ *
+ * A day off (D-149, LAI-1184): with no time, its column says the holiday or
+ * the leave in its tone, in place of *No signal*; with time, its head wears a
+ * corner dot in the tone and its name says why.
  */
 export const WeekView = memo(function WeekView({
   monday,
@@ -90,8 +95,11 @@ export const WeekView = memo(function WeekView({
       <div className="span-week-head" role="row">
         <span className="span-week-corner" aria-hidden="true" />
         {WEEKDAYS.map((i) => {
-          const day = days?.[i]?.day ?? addDays(monday, i);
-          const state = days?.[i]?.state ?? (day > today ? 'future' : undefined);
+          const view = days?.[i];
+          const day = view?.day ?? addDays(monday, i);
+          const state = view?.state ?? (day > today ? 'future' : undefined);
+          const kind = view === undefined ? undefined : cellKind(view);
+          const about = offDescription(view?.off);
           const t = totals[i];
           const all = t === undefined ? 0 : t.confirmed_minutes + t.drafted_minutes;
           const bar = t === undefined ? { confirmed: 0, drafted: 0 } : barOf(t, top);
@@ -102,8 +110,10 @@ export const WeekView = memo(function WeekView({
               className="span-week-day"
               data-zk={`d:${day}`}
               data-state={state}
+              // With time, the head carries the day off as a dot; without, the column says it.
+              data-off={kind === 'time' ? (offKind(view?.off) ?? undefined) : undefined}
               data-today={day === today ? '' : undefined}
-              aria-label={`Open ${dayLong(day)}`}
+              aria-label={`Open ${dayLong(day)}${about === null ? '' : `, ${about}`}`}
               onClick={() => {
                 onOpenDay(day);
               }}
@@ -116,7 +126,9 @@ export const WeekView = memo(function WeekView({
                   <span className="span-week-total">{state === 'future' ? '' : compact(all)}</span>
                 </Tooltip>
               ) : (
-                <span className="span-week-total">{state === 'future' ? '' : '—'}</span>
+                <span className="span-week-total">
+                  {state === 'future' || kind === 'off' ? '' : '—'}
+                </span>
               )}
               <span className="span-bar" aria-hidden="true">
                 <span className="span-bar-c" style={{ width: pct(bar.confirmed) }} />
@@ -182,6 +194,9 @@ function WeekColumn({
 }) {
   const boxes = weekBoxes(blocks, hours);
   const span = (hours.to - hours.from) * 60;
+  const tone = offKind(view.off);
+  const name = offLabel(view.off);
+  const timed = cellKind(view) === 'time';
   return (
     <div
       className="span-week-col"
@@ -192,7 +207,16 @@ function WeekColumn({
         if (event.target === event.currentTarget) onOpenDay(view.day);
       }}
     >
-      {view.state === 'no_signal' && <span className="span-week-nosignal">No signal</span>}
+      {/* A day off says so in place of No signal; with time, only a phone has room for it here. */}
+      {tone !== null && name !== null ? (
+        <Tooltip content={offDescription(view.off) ?? name} lazy>
+          <span className="span-week-off" data-off={tone} data-timed={timed ? '' : undefined}>
+            {name}
+          </span>
+        </Tooltip>
+      ) : (
+        view.state === 'no_signal' && <span className="span-week-nosignal">No signal</span>
+      )}
       {blocks.map((b, i) => {
         const box = boxes[i];
         if (box === undefined) return null;

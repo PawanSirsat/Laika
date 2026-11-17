@@ -70,12 +70,14 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  /* Seven controls in 390px: 6px between them leaves *Me* whole (LAI-1187). */
+  gap: var(--space-1-5);
 }
 
 .myday-bar-brand {
   flex: 1;
-  min-width: 0;
+  /* Never narrower than the mark: squeezed past it, the next control lands on the mark (LAI-1187). */
+  min-width: 1.5rem;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -134,11 +136,19 @@
   display: none;
 }
 
-/* Under 380px the bar keeps whose day it is and lets the word go, before the name. */
-@media (max-width: 379px) {
+/*
+ * Under 420px the bar keeps whose day it is and lets the word go, before the
+ * name: at 390 *Viewing Me* ran under the avatar (LAI-1187).
+ */
+@media (max-width: 419px) {
   .shell-head[data-myday-bar] .myday-viewing-label {
     display: none;
   }
+}
+
+/* The pill's room beside the desktop title is not the bar's. */
+.shell-head[data-myday-bar] .avail-pop {
+  margin-left: 0;
 }
 
 .myday-bar-avatar {
@@ -402,6 +412,28 @@
   border-color: var(--text-muted);
 }
 
+/* A day off with nothing on it, in its tone; leave still requested, a dashed ring (D-149). */
+.myday-phone-dot-holiday {
+  border-color: var(--holiday-border);
+  background: var(--holiday);
+}
+
+.myday-phone-dot-leave {
+  border-color: var(--leave-border);
+  background: var(--leave);
+}
+
+.myday-phone-dot-requested {
+  border-style: dashed;
+  border-color: var(--leave);
+}
+
+/* Half-day leave with nothing on it: half filled, as Year's tile is. */
+.myday-phone-dot-half-leave {
+  border-color: var(--leave);
+  background: linear-gradient(90deg, var(--leave) 50%, transparent 50%);
+}
+
 /* -------------------------------------------------------- the summary */
 
 .myday-page[data-phone] .myday-phone-summary {
@@ -430,9 +462,13 @@
   color: var(--text-primary);
 }
 
-/* Confirm and the day note: 44px, the design's one big button. */
+/*
+ * Confirm and the day note: 44px, the design's one big button — as wide as
+ * its words, never the header's square icon width (LAI-1187).
+ */
 .myday-page[data-phone] .myday-phone-summary .myday-chip {
   flex: none;
+  width: auto;
   min-height: 2.75rem;
   padding: 0 var(--space-4);
   border-radius: var(--radius-card);

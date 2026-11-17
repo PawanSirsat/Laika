@@ -26,6 +26,10 @@ const pct = (minutes: number): string =>
  * accent; a day with no signal shows — on a hatched track, never zero hours;
  * a day not yet happened is faded. Every tile opens its day. **Never a target
  * or a score**: per-person hours are not scored.
+ *
+ * A day off (D-149, LAI-1184) is marked as Year marks it: tinted in its tone
+ * with nothing on it, a corner dot with time, half filled for half-day leave,
+ * a dashed edge while the leave is only requested. Its name is the tile's.
  */
 export function WeekStrip({ week, selected, today, locked = false, onPick }: WeekStripProps) {
   const first = week[0]?.day ?? selected;
@@ -95,6 +99,8 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
                   .join(' ')}
                 data-day={tile.day}
                 data-state={tile.state}
+                data-off={tile.off ?? undefined}
+                data-mark={tile.mark ?? undefined}
                 {...(tile.isToday ? { 'data-today': '' } : {})}
                 aria-pressed={isSelected}
                 aria-label={[

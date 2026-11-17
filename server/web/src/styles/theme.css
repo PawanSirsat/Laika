@@ -186,6 +186,16 @@
   --kind-admin-bg: #232329;
   --kind-admin-border: #34343d;
 
+  /* ---- a day off (D-149, LAI-1184): a holiday teal, leave blue as *Away* —
+     ink, fill, border, opaque so the ink is checked on its fill; clear of the
+     Year's violet heat and the grid's green, orange and pink verdicts ---- */
+  --holiday: #5eead4;
+  --holiday-bg: #0f4a43;
+  --holiday-border: #2a8f82;
+  --leave: #8fb1ff;
+  --leave-bg: #1a3370;
+  --leave-border: #4a6fd0;
+
   /* ---- space colours (D-103 item 4, LAI-978): the eight a space may be
      painted, solid under a white letter in both themes, so a space keeps its
      colour when the theme flips; black lifts to stay a tile on a dark card ---- */
@@ -391,6 +401,14 @@
   --kind-admin-bg: #eceef4;
   --kind-admin-border: #d6d9e3;
 
+  /* ---- a day off (D-149, LAI-1184), light ---- */
+  --holiday: #0b625b;
+  --holiday-bg: #cdeee8;
+  --holiday-border: #5fbcb0;
+  --leave: #1d4fcc;
+  --leave-bg: #d3e1ff;
+  --leave-border: #8aa9ef;
+
   --space-black: #171a21;
   --space-violet: #7c3aed;
   --space-teal: #0f766e;
@@ -570,6 +588,14 @@
   --kind-admin: #9d9daa;
   --kind-admin-bg: #1a1a1f;
   --kind-admin-border: #34343d;
+
+  /* ---- a day off (D-149, LAI-1184): the dark inks, on opaque fills ---- */
+  --holiday: #5eead4;
+  --holiday-bg: #0f4a43;
+  --holiday-border: #2a8f82;
+  --leave: #8fb1ff;
+  --leave-bg: #1a3370;
+  --leave-border: #4a6fd0;
 
   --space-black: #3f3f46;
   --space-violet: #7c3aed;

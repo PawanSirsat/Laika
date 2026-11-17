@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../api/errors.ts';
+import { offLabel } from '../../../api/off-days.ts';
 import {
   addBreak,
   addEntry,
@@ -90,6 +91,7 @@ import {
   isDay,
   plural,
 } from './my-day-derive.ts';
+import { offLines } from './off-words.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
 import { ShortcutSheet } from './ShortcutSheet.tsx';
@@ -117,6 +119,7 @@ import { WeekStrip } from './WeekStrip.tsx';
 import { SpanStage, type BlockPick } from './SpanStage.tsx';
 import { periodLabel, startsAfter, stepPeriod, zoomSpan, type Span as ViewSpan } from './span.ts';
 import { spanCache } from './span-cache.ts';
+import { cellKind } from './span-derive.ts';
 import { warm, warmPlan } from './span-prefetch.ts';
 import { ViewSwitch } from './ViewSwitch.tsx';
 import { dayLong } from './week-derive.ts';
@@ -871,8 +874,13 @@ export function MyDayScreen({
   const orgOff = settings.org_mode === 'off';
   const nothingOn =
     view.drafts.length === 0 && view.entries.length === 0 && view.breaks.length === 0;
-  const emptyKind: EmptyKind | undefined =
-    view.state === 'future'
+  // A holiday or whole-day leave with nothing on it owes nothing: it is a day
+  // off, said by name, never *no signal* (D-149, LAI-1184).
+  const dayOff = nothingOn && cellKind(view) === 'off';
+  const ahead = view.state === 'future';
+  const emptyKind: EmptyKind | undefined = dayOff
+    ? 'off'
+    : view.state === 'future'
       ? 'future'
       : nothingOn
         ? draftOff
@@ -1201,28 +1209,37 @@ export function MyDayScreen({
   // What an empty Timeline offers (LAI-513), by why it is empty.
   const emptyActions: readonly EmptyAction[] = notOwn
     ? [
-        ...(emptyKind === 'future' || emptyKind === 'past'
+        ...(emptyKind === 'future' ||
+        emptyKind === 'past' ||
+        (emptyKind === 'off' && view.day !== view.today)
           ? [{ label: 'Back to today', go: () => onDay(view.today) }]
           : []),
         // D-143: an owner or admin may add to somebody else's day.
-        ...(canEdit && addable && emptyKind !== 'future'
+        ...(canEdit && addable && emptyKind !== 'future' && !ahead
           ? [{ label: 'Add time', go: addTime }]
           : []),
       ]
-    : emptyKind === 'future'
-      ? [{ label: 'Back to today', go: () => onDay(view.today) }]
-      : emptyKind === 'draftOff'
-        ? [
-            { label: 'Turn drafting on', primary: true, go: turnDraftingOn },
-            { label: 'Add time', go: addTime },
-          ]
-        : emptyKind === 'past'
+    : emptyKind === 'off'
+      ? [
+          ...(view.day === view.today
+            ? []
+            : [{ label: 'Back to today', go: () => onDay(view.today) }]),
+          ...(ahead ? [] : [{ label: 'Add time', go: addTime }]),
+        ]
+      : emptyKind === 'future'
+        ? [{ label: 'Back to today', go: () => onDay(view.today) }]
+        : emptyKind === 'draftOff'
           ? [
-              { label: 'Back to today', go: () => onDay(view.today) },
+              { label: 'Turn drafting on', primary: true, go: turnDraftingOn },
               { label: 'Add time', go: addTime },
             ]
-          : // Start timer is the toolbar's, as the page's one primary (LAI-1223).
-            [{ label: 'Add time', go: addTime }];
+          : emptyKind === 'past'
+            ? [
+                { label: 'Back to today', go: () => onDay(view.today) },
+                { label: 'Add time', go: addTime },
+              ]
+            : // Start timer is the toolbar's, as the page's one primary (LAI-1223).
+              [{ label: 'Add time', go: addTime }];
 
   const actions: InspectorActions = {
     confirm: confirmOne,
@@ -1766,6 +1783,8 @@ export function MyDayScreen({
           actions={emptyActions}
           nowMinute={emptyNow}
           workHours={emptyWork}
+          off={view.off}
+          ahead={ahead}
         />
       ) : phone ? (
         <TimelineMobile
@@ -1937,18 +1956,23 @@ export function MyDayScreen({
                     <span className="myday-figure" data-day-total>
                       <span className="myday-figure-total">
                         {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
-                        {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+                        {emptyKind === 'past' || (emptyKind === 'off' && !ahead)
+                          ? '—'
+                          : duration(totals.confirmed + totals.drafted)}
                       </span>
-                      <span className="myday-figure-sub">
-                        {view.state === 'future'
-                          ? 'not started'
-                          : emptyKind === 'past'
-                            ? 'no signal'
-                            : totals.drafted > 0
-                              ? `${duration(totals.drafted)} to review`
-                              : totals.confirmed > 0
-                                ? `${duration(totals.confirmed)} confirmed`
-                                : 'nothing yet'}
+                      <span className="myday-figure-sub" data-day-total-sub>
+                        {/* A day off with nothing on it says why (D-149, LAI-1184). */}
+                        {emptyKind === 'off'
+                          ? (offLabel(view.off) ?? 'a day off')
+                          : view.state === 'future'
+                            ? 'not started'
+                            : emptyKind === 'past'
+                              ? 'no signal'
+                              : totals.drafted > 0
+                                ? `${duration(totals.drafted)} to review`
+                                : totals.confirmed > 0
+                                  ? `${duration(totals.confirmed)} confirmed`
+                                  : 'nothing yet'}
                       </span>
                     </span>
                   )}
@@ -2367,6 +2391,18 @@ export function MyDayScreen({
             </button>
           </p>
         )}
+        {/* The day off, a line a fact, on the day it is about (D-149, LAI-1184). */}
+        {!wide &&
+          offLines(view.off).map((line) => (
+            <p
+              key={line.kind}
+              className="myday-viewing-banner myday-off-banner"
+              data-off-banner={line.kind}
+            >
+              <strong>{line.head}</strong>
+              {line.tail}
+            </p>
+          ))}
         {notOwn && view.day_note !== null && (
           <p className="myday-viewing-banner myday-day-note" data-day-note>
             <strong>

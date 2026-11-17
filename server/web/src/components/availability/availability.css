@@ -40,6 +40,21 @@
   color: var(--chip-blue);
 }
 
+/* Leave from the HR system (D-149): its own tokens, never Clan's colours. */
+.avail-pill[data-avail-pill='leave'] {
+  border-color: var(--leave-border);
+  background: var(--leave-bg);
+  color: var(--leave);
+}
+
+/* Requested and not yet approved: the outline only, dashed. */
+.avail-pill[data-avail-pill='requested'] {
+  border-style: dashed;
+  border-color: var(--leave-border);
+  background: transparent;
+  color: var(--leave);
+}
+
 .avail-pill[data-avail-pill='none'] {
   border-style: dashed;
   background: transparent;
@@ -418,7 +433,12 @@
     transform: none;
   }
 
-  .shell-head[data-myday-bar] .avail-pill-hours {
+  /*
+   * The bar has room for the pill's head only — *On leave*, *Away* (LAI-1185):
+   * the date and the type are in its title and the trigger's name.
+   */
+  .shell-head[data-myday-bar] .avail-pill-hours,
+  .shell-head[data-myday-bar] .avail-pill-rest {
     display: none;
   }
 }

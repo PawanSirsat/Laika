@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import type { OrgRole } from './invites.ts';
+import type { OffDayEntry } from './off-days.ts';
 
 /**
  * The Time logging grid (SPEC §6.4, D-148; LAI-1175): everyone's days beside
@@ -11,7 +12,9 @@ import type { OrgRole } from './invites.ts';
  * **The server sends facts, the client the verdict.** `threshold_minutes` is
  * served and never assumed; each person carries their zone, the day they
  * joined and today in that zone, and their working days, so the client does
- * no zone arithmetic to say which days were due.
+ * no zone arithmetic to say which days were due. Each person's `off_days` are
+ * the holidays that cover them and their leave (D-149, LAI-1183); what such a
+ * day owes is still the client's to say (LAI-1185).
  */
 
 /** One day with time on it; a day with none has no row. Mirrors `TimeLoggingDayView`. */
@@ -46,6 +49,8 @@ export interface TimeLoggingPerson {
   readonly work_days: readonly number[];
   /** Ascending. */
   readonly days: readonly TimeLoggingDay[];
+  /** The stretch's days a holiday covers them or they are on leave, ascending; no other day (D-149). */
+  readonly off_days: readonly OffDayEntry[];
 }
 
 /** `GET /time/days`. Mirrors `TimeLoggingView`. */

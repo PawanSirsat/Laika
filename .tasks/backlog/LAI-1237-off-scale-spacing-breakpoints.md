@@ -1,5 +1,5 @@
 ---
-id: LAI-1187
+id: LAI-1237
 title: 'Off-scale spacing and breakpoints: take the LAI-1220 exemptions onto the scale, a screen at a time'
 area: shell
 assignee: unclaimed
@@ -47,3 +47,11 @@ named in two exemption lists, and this task works them down.
 Highest counts first is a reasonable order (my-day, task panel, board,
 developer v3 design, profile). The board toolbar's and the timeline's 760px
 are 8px from `tabletSm` (768): the cheapest breakpoint wins.
+
+## Renumbered
+
+Filed as LAI-1187 on the UI branches (commit 357c8b64, 2026-11-16 11:45). `master`
+used LAI-1187 for a different task 30 minutes later, and that one is done, with
+commits that carry it, so this one moved to LAI-1237 when the two lines met in
+the combined UI branch (2026-11-17). The filing commit still says LAI-1187; it is
+not that task's.
