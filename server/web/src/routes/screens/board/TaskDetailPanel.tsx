@@ -32,6 +32,8 @@ import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { StateHero } from '../task/StateHero.tsx';
 import { DeliversPanel } from '../task/DeliversPanel.tsx';
 import { ActivityFeed } from '../task/ActivityFeed.tsx';
+import { AttachmentsSection } from '../task/AttachmentsSection.tsx';
+import { useEditorAttach } from '../../../api/use-attach.ts';
 import { heroKind, mayDecideReview } from '../task/hero-derive.ts';
 import { reviewSince, statusSubline } from '../task/rail-derive.ts';
 import { checklistProgress } from '../task/acceptance-derive.ts';
@@ -590,6 +592,15 @@ export function TaskDetailPanel({
   const projectRole =
     permissions?.me.projects.find((p) => p.project_id === task.project_id)?.role ?? null;
   const leads = projectRole === 'lead' || implicitlyLeads(permissions, task.project_id);
+  /*
+   * **Files** (D-150, LAI-1301): one uploader, aimed at this task, for the
+   * description, acceptance and comment editors and the Attachments section —
+   * absent where the board has no store, and for a reader who may not attach
+   * (`attachment.create`, member and up), so none of them offers it.
+   */
+  const boardAttach = useEditorAttach(slug, task.id);
+  const mayAttach = holdsProjectAction(permissions, task.project_id, 'attachment.create');
+  const attach = mayAttach ? boardAttach : undefined;
   const isAssignee = meId !== undefined && task.assignee_id === meId;
   /*
    * The receiver's owner is known only from the reader's own agents: until
@@ -949,6 +960,7 @@ export function TaskDetailPanel({
                     people={people}
                     meId={meId}
                     cards={cards}
+                    attach={attach}
                     onOpen={() => {
                       editedFrom.current.description = text.version;
                     }}
@@ -1059,6 +1071,7 @@ export function TaskDetailPanel({
                     people={people}
                     meId={meId}
                     cards={cards}
+                    attach={attach}
                     onOpen={() => {
                       editedFrom.current.acceptance = text.version;
                     }}
@@ -1096,6 +1109,23 @@ export function TaskDetailPanel({
           {/* Effort, Tokens, Subtasks and Linked tasks are the rail's Estimate
               and Links & dates cards since LAI-1122. */}
 
+          {/*
+            Every file on the task (D-150, LAI-1301): after the proof, before
+            the activity. Not drawn at all where the board has no store.
+          */}
+          <AttachmentsSection
+            slug={slug}
+            taskId={task.id}
+            attach={boardAttach}
+            mayAttach={mayAttach}
+            reader={{
+              meId,
+              leads,
+              holdsDelete: holdsProjectAction(permissions, task.project_id, 'attachment.delete'),
+            }}
+            nameOf={(id) => personName(id, members)}
+          />
+
           <ActivityFeed
             detail={detail}
             task={task}
@@ -1107,6 +1137,7 @@ export function TaskDetailPanel({
             meId={meId}
             rounds={rounds?.rounds ?? []}
             leads={leads}
+            attach={attach}
           />
         </div>
 

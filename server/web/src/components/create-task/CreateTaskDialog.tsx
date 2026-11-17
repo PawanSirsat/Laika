@@ -252,6 +252,19 @@ export function CreateTaskDialog({
         return;
       }
     }
+    // A file still on its way would not be linked by what the editor says
+    // now (D-150): the form waits for it rather than creating without it.
+    for (const [field, editor] of [
+      ['description', descriptionRef.current],
+      ['acceptance', acceptanceRef.current],
+    ] as const) {
+      if (editor?.uploading() === true) {
+        setErrors({
+          fields: { [field]: 'A file is still uploading — create the task when it has arrived.' },
+        });
+        return;
+      }
+    }
     // The editors, read now: one that cannot write its document has dropped
     // to Markdown with the reason, and the field says so beside it.
     const description = descriptionRef.current?.read() ?? { ok: true as const, markdown: '' };

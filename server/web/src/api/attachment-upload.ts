@@ -1,3 +1,4 @@
+import { completeAttachment, createAttachment, type Attachment } from './attachments.ts';
 import { ApiError, NetworkError } from './errors.ts';
 
 /**
@@ -27,15 +28,10 @@ export interface StoreUpload {
 }
 
 /** The part of an attachment the text needs. */
-export interface UploadedAttachment {
-  readonly id: string;
-  readonly filename: string;
-  readonly content_type: string;
-  /** The server read its first bytes: a png, jpeg, gif, webp or pdf it will show. */
-  readonly inline: boolean;
-  /** `/api/v1/attachments/<id>/content` — Laika's own, never the store's. */
-  readonly url: string;
-}
+export type UploadedAttachment = Pick<
+  Attachment,
+  'id' | 'filename' | 'content_type' | 'inline' | 'url'
+>;
 
 /** A file the text links: its name, Laika's URL for it, and whether it is drawn. */
 export interface AttachedFile {
@@ -314,4 +310,15 @@ export async function uploadAttachment(
 export interface EditorAttach {
   readonly maxBytes: number;
   readonly upload: (file: File, options: UploadOptions) => Promise<AttachedFile>;
+}
+
+/** The real three steps: Laika's two calls and the store's `PUT`. */
+const STEPS: UploadSteps = { ask: createAttachment, put: putToStore, complete: completeAttachment };
+
+/** An uploader aimed at a project and, once it exists, a task. */
+export function attachTo(slug: string, taskId: string | undefined, maxBytes: number): EditorAttach {
+  return {
+    maxBytes,
+    upload: (file, options) => uploadAttachment({ slug, taskId, maxBytes }, file, options, STEPS),
+  };
 }

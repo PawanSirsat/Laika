@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { effortWord, SIZE_LEVELS } from '../../api/estimates.ts';
+import { useEditorAttach } from '../../api/use-attach.ts';
 import type { Sprint } from '../../api/sprints.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
 import type { ProjectTag } from '../../api/tags.ts';
@@ -118,6 +119,13 @@ export function CreateTaskFields({
   const agentErrorId = useId();
   const deliverablesErrorId = useId();
   const prio = priorityWords(draft.priority);
+  /*
+   * Files in the description and acceptance (D-150): no task yet, so the
+   * upload names the project only and the server links each file to the task
+   * when it is created from text that embeds it. Whoever may create a task
+   * may attach (§3.2: both member and up); the server decides again.
+   */
+  const attach = useEditorAttach(slug, undefined);
 
   const candidates = openTasks(tasks);
   const parents = candidates.filter((t) => t.parent_task_id === null);
@@ -173,6 +181,7 @@ export function CreateTaskFields({
               people={people}
               meId={meId}
               cards={[]}
+              attach={attach}
             />
           </div>
         )}
@@ -374,6 +383,7 @@ export function CreateTaskFields({
                   people={people}
                   meId={meId}
                   cards={[]}
+                  attach={attach}
                 />
               </div>
             )}
