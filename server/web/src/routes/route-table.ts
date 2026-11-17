@@ -129,7 +129,16 @@ export interface Route {
    * Connect wizard is reached from Developer access and lights it.
    */
   readonly section?: string;
+  /**
+   * Offered in the ⌘K palette's *Go to* although it has no sidebar entry
+   * (LAI-1212), with the extra words a query may match. Still subject to
+   * `status` and `requires`, exactly as a sidebar entry is.
+   */
+  readonly palette?: readonly string[];
 }
+
+/** The Appearance page (LAI-1212): the top bar's gear (LAI-1231) and the palette link here. */
+export const APPEARANCE_PATH = '/settings/appearance';
 
 export const ROUTES: readonly Route[] = [
   // WORK
@@ -317,6 +326,37 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 2',
   },
+  /*
+   * **A task's own page, the Workroom** (LAI-1199). The drawer stays the quick
+   * look over a view; this is the same task as a page, by key, reached from
+   * the drawer's *Expand* or a pasted link. Org-level for the nav: its key
+   * names its space already.
+   */
+  {
+    orgLevel: true,
+    path: '/task/:key',
+    label: 'Task',
+    group: null,
+    status: 'ready',
+    phase: 'Phase C',
+  },
+  /*
+   * **Appearance** (LAI-1212): the theme — Light, Dark, Black or System — and
+   * the interface font, both of this device. It was a side panel off the
+   * person menu (LAI-1125); the owner asked for a page. Open to anyone signed
+   * in, with no permission: it reads and writes nothing on the server. Not in
+   * the sidebar — the person menu and the palette reach it.
+   */
+  {
+    orgLevel: true,
+    path: APPEARANCE_PATH,
+    label: 'Appearance',
+    group: null,
+    status: 'ready',
+    phase: 'Phase C',
+    // Not 'theme', 'dark' or 'light': those find *Switch theme*, the one-step action.
+    palette: ['font', 'black', 'system', 'oled', 'settings', 'colour', 'color'],
+  },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   // D-104 item 4 (LAI-988): an admin-issued link sets a new password here.
@@ -334,6 +374,8 @@ export const ROUTES: readonly Route[] = [
   // required them — but out of the product nav, since they are not product.
   { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
   { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
+  // LAI-1131: the deliverable design trial. Illustrative fixtures, lazily loaded.
+  { public: true, path: '/design/documents', label: 'Documents', group: null, phase: 'reference' },
 ];
 
 /**
@@ -481,7 +523,104 @@ export function routesInGroup(
   return ROUTES.filter((r) => r.group === group && isShipped(r) && permitted(r, holds));
 }
 
+/** Routes the palette offers beyond the nav (LAI-1212): shipped, permitted, marked `palette`. */
+export function paletteRoutes(holds?: (permission: string) => boolean): readonly Route[] {
+  return ROUTES.filter((r) => r.palette !== undefined && isShipped(r) && permitted(r, holds));
+}
+
 /** Every route offered in the nav, in table order. */
 export function navRoutes(holds?: (permission: string) => boolean): readonly Route[] {
   return ROUTES.filter((r) => r.group !== null && isShipped(r) && permitted(r, holds));
+}
+
+/**
+ * **Which chunk each route's screen ships in** (LAI-1219).
+ *
+ * Every screen loads on demand: the entry chunk carries the shell, the
+ * sidebar, the session gate, the theme, the API client, the stores and the
+ * SSE hub, and nothing a single page needs alone. This table is the one place
+ * a screen's chunk is chosen; `screen-chunks.ts` holds the `import()` for each
+ * name, and `screen-chunks.test.ts` checks the two agree with `ROUTES`.
+ *
+ * **A chunk is one screen unless splitting it would only add a waterfall:**
+ *
+ * - `board` — `/board` and `/list` are the same `BoardScreen` in two modes.
+ * - `inbox` — Inbox, Review and Unlisted work: the two queues are Inbox's
+ *   tabs, rendered as its children, so apart they would load one after the
+ *   other on every visit.
+ * - `insights` — Insights with Capacity, Usage & cost and Time, its tabs, for
+ *   the same reason.
+ * - `auth` — sign in, accept invite, reset password and first boot: small,
+ *   pre-auth, and reached from one another.
+ * - `reference` — the three design reference pages, which are not product.
+ *
+ * The space tabs each have their own chunk and share `space-frame` — the space
+ * bar, the task drawer and the create-task dialog — which loads **beside**
+ * the tab's chunk, never after it (`chunksFor`).
+ */
+export const SCREEN_CHUNKS = [
+  'space-frame',
+  'board',
+  'timeline',
+  'calendar',
+  'sprints',
+  'dashboard',
+  'activity',
+  'meeting-review',
+  'projects',
+  'my-day',
+  'inbox',
+  'insights',
+  'organisation',
+  'developer',
+  'members',
+  'space-settings',
+  'workroom',
+  'profile',
+  'appearance',
+  'auth',
+  'reference',
+] as const;
+export type ScreenChunk = (typeof SCREEN_CHUNKS)[number];
+
+export const ROUTE_CHUNKS: Readonly<Record<string, Exclude<ScreenChunk, 'space-frame'>>> = {
+  '/board': 'board',
+  '/list': 'board',
+  '/timeline': 'timeline',
+  '/calendar': 'calendar',
+  '/sprints': 'sprints',
+  '/dashboard': 'dashboard',
+  '/activity': 'activity',
+  '/meeting-review': 'meeting-review',
+  '/projects': 'projects',
+  '/my-day': 'my-day',
+  '/inbox': 'inbox',
+  '/insights': 'insights',
+  '/organisation': 'organisation',
+  '/developer': 'developer',
+  '/members': 'members',
+  '/spaces/:slug/settings': 'space-settings',
+  '/task/:key': 'workroom',
+  '/people': 'profile',
+  [APPEARANCE_PATH]: 'appearance',
+  '/login': 'auth',
+  '/invite': 'auth',
+  '/reset-password': 'auth',
+  '/setup': 'auth',
+  '/design/tokens': 'reference',
+  '/design/states': 'reference',
+  '/design/documents': 'reference',
+};
+
+/**
+ * Every chunk a route's screen needs, the frame first: a space tab needs the
+ * space frame too, and asking for both at once is what keeps them parallel.
+ * Empty for a path no route matches.
+ */
+export function chunksFor(path: string): readonly ScreenChunk[] {
+  const route = matchRoute(path);
+  if (route === undefined) return [];
+  const own = ROUTE_CHUNKS[route.path];
+  if (own === undefined) return [];
+  return SPACE_TAB_PATHS.includes(route.path) ? ['space-frame', own] : [own];
 }

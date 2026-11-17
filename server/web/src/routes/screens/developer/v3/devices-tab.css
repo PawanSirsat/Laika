@@ -168,7 +168,7 @@
 
 .dv3-dialog-list {
   margin: var(--space-2) 0 0;
-  padding-left: 1.25rem;
+  padding-left: var(--space-4-5);
   overflow-wrap: anywhere;
 }
 
@@ -418,4 +418,10 @@
   .dv3-row .dx-record-end {
     order: 1;
   }
+}
+
+/* Why *Disconnect device* is unavailable (LAI-1191): its own line under it. */
+.side-panel-foot [data-disconnect-why] {
+  flex-basis: 100%;
+  margin: 0;
 }

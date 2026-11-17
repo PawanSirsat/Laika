@@ -10,6 +10,12 @@ export interface TokenRowProps {
    * controls follow, for the same reason.
    */
   readonly onRevoke?: ((token: TokenView) => void) | undefined;
+  /**
+   * Short notes a screen adds about this token — Security's *Never used* or
+   * *Expires within 7 days* (LAI-1210). Each is drawn as a flag on the row's
+   * meta line; the row itself decides nothing about them.
+   */
+  readonly flags?: readonly string[] | undefined;
 }
 
 /**
@@ -31,7 +37,7 @@ export interface TokenRowProps {
  * because the admin view is where the temptation would arrive: *"an admin should
  * be able to see it"* is a sentence that sounds reasonable and is unsatisfiable.
  */
-export function TokenRow({ token, now, onRevoke }: TokenRowProps) {
+export function TokenRow({ token, now, onRevoke, flags }: TokenRowProps) {
   const state = tokenState(token, now);
   // An agent's credential is named as the agent is, *Claude Code · Belka*
   // (D-120), and says what it is; never by the name its owner registered.
@@ -63,6 +69,11 @@ export function TokenRow({ token, now, onRevoke }: TokenRowProps) {
             ? 'No expiry'
             : `Expires ${new Date(token.expires_at).toLocaleDateString()}`}
         </span>
+        {(flags ?? []).map((flag) => (
+          <span key={flag} className="tok-flag" data-token-flag={flag}>
+            {flag}
+          </span>
+        ))}
       </div>
 
       {/* A revoked token stays on the list — it is audit history, and removing

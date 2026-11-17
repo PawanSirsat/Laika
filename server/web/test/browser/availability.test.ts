@@ -474,12 +474,16 @@ void describe('My availability on My day (frames 2a–2c)', () => {
     });
   }
 
-  void test('nobody has set anything: Set availability, never a guessed pill', async () => {
+  void test('nobody has set anything: Availability · Not set, never a guessed pill', async () => {
     const h = await myDay({});
     try {
+      // One control that says what it is and what it holds (LAI-1223, was a bare *Set availability*).
       const trigger = h.page.locator('[data-my-availability] > button');
-      await until(async () => (await trigger.innerText()) === 'Set availability');
-      assert.equal(await trigger.innerText(), 'Set availability');
+      const words = async () => (await trigger.innerText()).replace(/\s+/g, ' ').trim();
+      await until(async () => (await words()) === 'Availability Not set');
+      assert.equal(await words(), 'Availability Not set');
+      assert.equal(await trigger.getAttribute('aria-label'), 'My availability: not set. Set it');
+      assert.equal(await trigger.locator('[data-avail-unset]').count(), 1);
       assert.equal(await trigger.locator('[data-avail-pill]').count(), 0);
     } finally {
       await h.close();

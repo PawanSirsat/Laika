@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import { breakKind } from '../break-kinds.ts';
 import { kindGlyph } from './entry-kinds.ts';
 import { agentDuration, clock, compact, duration, hourName, span as spanOf } from './format.ts';
@@ -26,6 +27,7 @@ import {
   signalMark,
   type MobileZoom,
 } from './timeline-mobile-derive.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface TimelineMobileProps {
   readonly view: MyDay;
@@ -209,38 +211,60 @@ export function TimelineMobile({
         </ul>
         <div className="tlm-tools">
           <div className="tlm-steps" role="group" aria-label="Move along the day">
-            <button
-              type="button"
-              className="tlm-tool"
-              aria-label="Previous block"
-              disabled={line.blocks.length === 0}
-              onClick={() => {
-                step(-1);
-              }}
+            <Tooltip
+              content={
+                line.blocks.length === 0
+                  ? 'No blocks on this day to step through'
+                  : 'Previous block'
+              }
+              shortcut="ArrowLeft"
             >
-              ‹
-            </button>
-            <button
-              type="button"
-              className="tlm-tool tlm-now"
-              data-mobile-go-now
-              disabled={line.now === undefined}
-              onClick={goNow}
+              <button
+                type="button"
+                className="tlm-tool"
+                aria-label="Previous block"
+                data-mobile-step="previous"
+                aria-disabled={line.blocks.length === 0 || undefined}
+                onClick={() => {
+                  if (line.blocks.length > 0) step(-1);
+                }}
+              >
+                <Icon name="chevron-left" size="small" />
+              </button>
+            </Tooltip>
+            <Tooltip content={line.now === undefined ? 'Now is not on this day' : 'Scroll to now'}>
+              <button
+                type="button"
+                className="tlm-tool tlm-now"
+                data-mobile-go-now
+                aria-disabled={line.now === undefined || undefined}
+                onClick={() => {
+                  if (line.now !== undefined) goNow();
+                }}
+              >
+                <span className="tlm-now-dot" aria-hidden="true" />
+                Now
+              </button>
+            </Tooltip>
+            <Tooltip
+              content={
+                line.blocks.length === 0 ? 'No blocks on this day to step through' : 'Next block'
+              }
+              shortcut="ArrowRight"
             >
-              <span className="tlm-now-dot" aria-hidden="true" />
-              Now
-            </button>
-            <button
-              type="button"
-              className="tlm-tool"
-              aria-label="Next block"
-              disabled={line.blocks.length === 0}
-              onClick={() => {
-                step(1);
-              }}
-            >
-              ›
-            </button>
+              <button
+                type="button"
+                className="tlm-tool"
+                aria-label="Next block"
+                data-mobile-step="next"
+                aria-disabled={line.blocks.length === 0 || undefined}
+                onClick={() => {
+                  if (line.blocks.length > 0) step(1);
+                }}
+              >
+                <Icon name="chevron" size="small" />
+              </button>
+            </Tooltip>
           </div>
           <div className="tlm-zoom" role="radiogroup" aria-label="Zoom">
             {ZOOMS.map(([key, label]) => (
@@ -338,20 +362,20 @@ export function TimelineMobile({
             .map((s) => {
               const said = `${s.label}, ${rangeOf(s.start, s.end)} — the organisation’s break`;
               return (
-                <div
-                  key={`scheduled-${String(s.start)}`}
-                  className="tlm-scheduled"
-                  data-scheduled-break={s.start}
-                  role="note"
-                  aria-label={said}
-                  title={said}
-                  style={{ top: y(s.start), height: Math.max(2, y(s.end) - y(s.start)) }}
-                >
-                  <span className="tlm-scheduled-name">
-                    <BreakGlyph kind={breakKind(s.label)} />
-                    {s.label}
-                  </span>
-                </div>
+                <Tooltip key={`scheduled-${String(s.start)}`} content={said}>
+                  <div
+                    className="tlm-scheduled"
+                    data-scheduled-break={s.start}
+                    role="note"
+                    aria-label={said}
+                    style={{ top: y(s.start), height: Math.max(2, y(s.end) - y(s.start)) }}
+                  >
+                    <span className="tlm-scheduled-name">
+                      <BreakGlyph kind={breakKind(s.label)} />
+                      {s.label}
+                    </span>
+                  </div>
+                </Tooltip>
               );
             })}
 
@@ -362,18 +386,22 @@ export function TimelineMobile({
                 const top = y(s.start);
                 const mark = signalMark(s.kind, s.count, y(s.start + SIGNAL_MINUTES) - top);
                 return (
-                  <span
+                  <Tooltip
                     key={`${s.kind}-${String(s.start)}`}
-                    className={`tlm-signal tlm-${s.kind}`}
-                    data-mobile-signal={s.kind}
-                    title={`${String(s.count)} ${s.kind}${s.count === 1 ? '' : 's'} · ${rangeOf(s.start, s.start + SIGNAL_MINUTES)}`}
-                    style={{
-                      top: top + mark.top,
-                      left: mark.left,
-                      width: mark.width,
-                      height: mark.height,
-                    }}
-                  />
+                    content={`${String(s.count)} ${s.kind}${s.count === 1 ? '' : 's'} · ${rangeOf(s.start, s.start + SIGNAL_MINUTES)}`}
+                  >
+                    <span
+                      key={`${s.kind}-${String(s.start)}`}
+                      className={`tlm-signal tlm-${s.kind}`}
+                      data-mobile-signal={s.kind}
+                      style={{
+                        top: top + mark.top,
+                        left: mark.left,
+                        width: mark.width,
+                        height: mark.height,
+                      }}
+                    />
+                  </Tooltip>
                 );
               })}
           </div>

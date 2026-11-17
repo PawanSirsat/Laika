@@ -12,6 +12,13 @@ export interface PermissionDeniedProps {
    * action: the reader knows who to ask and for what.
    */
   readonly requiredRole: Role;
+  /**
+   * The grant that would allow it, in the Roles & permissions grid's words
+   * (LAI-1191). Named instead of the role where the owner can give it to any
+   * role: *needs admin* would be untrue of an organisation that granted it.
+   * The role stays the default grant's, for the screens that ask it.
+   */
+  readonly grant?: string | undefined;
   /** Set when the resource is project-scoped, so the copy can say so. */
   readonly scope?: 'organisation' | 'project';
 }
@@ -28,21 +35,31 @@ export interface PermissionDeniedProps {
 export function PermissionDenied({
   resource,
   requiredRole,
+  grant,
   scope = 'project',
 }: PermissionDeniedProps) {
+  const where = scope === 'project' ? ' on this project' : ' in this organisation';
   return (
     <div className="state state-forbidden" role="alert">
       <div className="state-icon">
         <StateIcon name="forbidden" />
       </div>
       <p className="state-headline">You do not have access to {resource}</p>
-      <p className="state-body">
-        This needs at least the{' '}
-        <span className="state-role">{requiredRole === 'lead' ? 'Space admin' : requiredRole}</span>{' '}
-        role
-        {scope === 'project' ? ' on this project' : ' in this organisation'}. Ask an Owner or Admin
-        if you should have it.
-      </p>
+      {grant !== undefined ? (
+        <p className="state-body">
+          This needs the <span className="state-role">{grant}</span> permission{where}. Ask an Owner
+          if you should have it — they grant it under Roles &amp; permissions.
+        </p>
+      ) : (
+        <p className="state-body">
+          This needs at least the{' '}
+          <span className="state-role">
+            {requiredRole === 'lead' ? 'Space admin' : requiredRole}
+          </span>{' '}
+          role
+          {where}. Ask an Owner or Admin if you should have it.
+        </p>
+      )}
     </div>
   );
 }

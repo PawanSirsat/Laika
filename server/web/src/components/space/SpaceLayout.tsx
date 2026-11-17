@@ -1,22 +1,22 @@
 import { everyPage } from '../../api/every-page.ts';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
 import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
-import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
-import { CreateTaskProvider } from '../create-task/CreateTaskProvider.tsx';
-import { useCreateTask } from '../create-task/use-create-task.ts';
+import { TaskDrawerHost } from '../drawer/TaskDrawerHost.tsx';
+import { TaskSourceProvider, type TaskSource } from '../drawer/TaskSourceProvider.tsx';
 import { SpaceLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
 import { SpaceFilterClaim } from './SpaceSlot.tsx';
-import { BAND_SLOT_ID, SLOT_ID } from './SpaceSlot.tsx';
+import { BAND_SLOT_ID } from './SpaceSlot.tsx';
+import { SpaceToolbar } from './SpaceToolbar.tsx';
 import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
 import './space.css';
-import { useGates, usePermissions } from '../../api/permissions.ts';
+import { usePermissions } from '../../api/permissions.ts';
 
 /**
  * The bar shows only values the board applies (LAI-724): a refused
@@ -92,9 +92,6 @@ function SpaceFrame({
   children: view,
 }: SpaceFrameProps) {
   const { permissions } = usePermissions(signedIn);
-  // Whether Create is drawn: this space's `task.create`, as the server says (LAI-178).
-  const gates = useGates(signedIn);
-  const { spaceId } = useShell();
   /**
    * The space's display name.
    *
@@ -111,6 +108,8 @@ function SpaceFrame({
    */
   const [pendingReviews, setPendingReviews] = useState<number | undefined>(undefined);
   const [tags, setTags] = useState<readonly ProjectTag[]>([]);
+  /** The view's live task set, when it offers one — Board and List (LAI-1190). */
+  const [taskSource, setTaskSource] = useState<TaskSource | undefined>(undefined);
 
   useEffect(() => {
     if (slug === undefined) {
@@ -169,24 +168,34 @@ function SpaceFrame({
   }, [slug]);
 
   /** One writer for the URL, so every control agrees about what clearing means. */
-  const setParam = (key: string, value: string | undefined): void => {
+  const setParam = (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ): void => {
     const next = new URLSearchParams(params);
     if (value === undefined || value === '') next.delete(key);
     else next.set(key, value);
-    setParams(next);
+    setParams(next, options);
   };
 
-  const mayCreate = spaceId !== undefined && gates.project(spaceId, 'task.create');
+  /*
+   * A key rewritten as its id, in place: the link was the history entry, so
+   * this must not be a second one Back would have to step over. Read through
+   * `location` rather than `params`, so the callback is stable and the host's
+   * effect does not re-run on every render.
+   */
+  const resolveTask = useCallback(
+    (taskId: string) => {
+      const next = new URLSearchParams(window.location.search);
+      next.set('task', taskId);
+      setParams(next);
+    },
+    [setParams],
+  );
 
   return (
-    <CreateTaskProvider
-      slug={slug}
-      spaceId={spaceId}
-      mayCreate={mayCreate}
-      settled={gates.settled}
-      members={members}
-      tags={tags}
-    >
+    <TaskSourceProvider onSource={setTaskSource}>
       <SpaceFrameBody
         path={path}
         slug={slug}
@@ -196,12 +205,13 @@ function SpaceFrame({
         members={members}
         tags={tags}
         pendingReviews={pendingReviews}
-        mayCreate={mayCreate}
         holds={permissionHolder(permissions?.me.actions)}
+        taskSource={taskSource}
+        onResolveTask={resolveTask}
       >
         {view}
       </SpaceFrameBody>
-    </CreateTaskProvider>
+    </TaskSourceProvider>
   );
 }
 
@@ -210,20 +220,24 @@ interface SpaceFrameBodyProps {
   readonly slug: string | undefined;
   readonly params: URLSearchParams;
   readonly navigate: (to: string) => void;
-  readonly setParam: (key: string, value: string | undefined) => void;
+  readonly setParam: (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ) => void;
   readonly members: readonly Member[];
   readonly tags: readonly ProjectTag[];
   readonly pendingReviews: number | undefined;
-  readonly mayCreate: boolean;
   readonly holds: ReturnType<typeof permissionHolder>;
+  readonly taskSource: TaskSource | undefined;
+  readonly onResolveTask: (taskId: string) => void;
   readonly children: ReactNode;
 }
 
 /**
- * The frame's markup, under the Create task provider so the bar's *+ Create*
- * can open the dialog (LAI-1167) — the same dialog the List's row and the
- * `c` key open, rather than a navigation to the board with a form the board
- * never had.
+ * The frame's markup. Creating a task is the app's (LAI-1227): the header's
+ * *+ Create*, a lane's +, the List's row and the `c` key all open the one
+ * dialog the shell mounts, in this space.
  */
 function SpaceFrameBody({
   path,
@@ -234,58 +248,24 @@ function SpaceFrameBody({
   members,
   tags,
   pendingReviews,
-  mayCreate,
   holds,
+  taskSource,
+  onResolveTask,
   children,
 }: SpaceFrameBodyProps) {
-  const createTask = useCreateTask();
-
   return (
     <SpaceFilterClaim>
       <div className="space">
         <div className="space-bar">
           {/*
-            **Identity and tabs on one line** (LAI-292). The owner asked for the
-            project name to move up so the row it had can be used for something
-            else — and with the board's own controls moving below the bar,
-            what is left of the bar is narrow enough to sit beside the tabs.
+            **One header, three rows, the same on every tab** (LAI-1198): who
+            and what (`SpaceTopBar` — since LAI-1227 in the page, under a
+            *Spaces /* breadcrumb, as Jira's project header), the views
+            (`ViewTabs`), then the one toolbar (`SpaceToolbar`) — search and
+            filters and the view's own controls. Create is the top bar's.
           */}
           <div className="space-bar-top">
-            <SpaceTopBar
-              members={members}
-              query={params.get('q') ?? ''}
-              priority={validPriority(params.get('priority'))}
-              agentOnly={params.get('agent') === 'true'}
-              tags={tags}
-              tag={validTag(params.get('tag'))}
-              assignee={params.get('assignee') ?? undefined}
-              ready={params.get('ready') === 'true'}
-              onQuery={(value) => {
-                setParam('q', value);
-              }}
-              onPriority={(value) => {
-                setParam('priority', value);
-              }}
-              onAgentOnly={(value) => {
-                setParam('agent', value ? 'true' : undefined);
-              }}
-              onTag={(value) => {
-                setParam('tag', value);
-              }}
-              onAssignee={(value) => {
-                setParam('assignee', value);
-              }}
-              onReady={(value) => {
-                setParam('ready', value ? 'true' : undefined);
-              }}
-              {...(mayCreate
-                ? {
-                    onCreate: () => {
-                      createTask.open();
-                    },
-                  }
-                : {})}
-            />
+            <SpaceTopBar />
 
             <ViewTabs
               currentPath={path}
@@ -297,8 +277,30 @@ function SpaceFrameBody({
             />
           </div>
 
-          {/* Where each view puts its own context line and controls. */}
-          <div id={SLOT_ID} className="space-slot" />
+          <SpaceToolbar
+            members={members}
+            query={params.get('q') ?? ''}
+            priority={validPriority(params.get('priority'))}
+            tags={tags}
+            tag={validTag(params.get('tag'))}
+            assignee={params.get('assignee') ?? undefined}
+            ready={params.get('ready') === 'true'}
+            onQuery={(value) => {
+              setParam('q', value);
+            }}
+            onPriority={(value) => {
+              setParam('priority', value);
+            }}
+            onTag={(value) => {
+              setParam('tag', value);
+            }}
+            onAssignee={(value) => {
+              setParam('assignee', value);
+            }}
+            onReady={(value) => {
+              setParam('ready', value ? 'true' : undefined);
+            }}
+          />
         </div>
 
         {/*
@@ -311,8 +313,8 @@ function SpaceFrameBody({
         {/*
         **No WORKING NOW row** (LAI-727). It sat here on the board only, from
         the design's `boardLive` band (prototype line 2273); the owner asked for
-        it to go. The header's `Agents` count still reads presence through
-        `SpaceLive`, which is why that read stays; Activity reads its own.
+        it to go. The header's `Agents` count went too (LAI-1233), and with it
+        the frame's presence read; Activity reads its own (`usePresence`).
       */}
 
         {children}
@@ -322,16 +324,28 @@ function SpaceFrameBody({
         the screen underneath keeps its scroll and its data — a drawer that
         replaced the view would have to rebuild the board on every close.
       */}
-        {params.get('task') !== null && (
-          <TaskDrawer
-            taskId={params.get('task') ?? ''}
-            onClose={() => {
-              // `push`ed open, so Back closes it; closing is a replace, or Back
-              // from here would step through the open state again.
-              setParam('task', undefined);
-            }}
-          />
-        )}
+        {/*
+          **The host renders the content too** (LAI-1190, B1): every view of
+          the space gets the full panel, not only the board.
+        */}
+        <TaskDrawerHost
+          slug={slug}
+          taskRef={params.get('task') ?? undefined}
+          // The board and the list offer their store; until it arrives the
+          // host waits rather than reading the same set a second time.
+          source={taskSource}
+          awaitSource={path === '/board' || path === '/list'}
+          members={members}
+          onOpen={(taskId) => {
+            setParam('task', taskId, { push: true });
+          }}
+          onResolved={onResolveTask}
+          onClose={() => {
+            // `push`ed open, so Back closes it; closing is a replace, or Back
+            // from here would step through the open state again.
+            setParam('task', undefined);
+          }}
+        />
       </div>
     </SpaceFilterClaim>
   );

@@ -289,7 +289,7 @@ void describe('creating a credential', () => {
       assert.ok(days > 89.9 && days < 90.1, `expires in ${String(days)} days, not 90`);
 
       assert.equal(await h.page.locator('.tok-secret').innerText(), 'lai_secret_shown_once');
-      await h.page.getByRole('button', { name: 'Done' }).click();
+      await h.page.getByRole('button', { name: 'I’ve saved it' }).click();
       await until(async () => (await h.page.locator('.tok-reveal').count()) === 0);
       assert.equal(await h.page.getByText('lai_secret_shown_once').count(), 0);
       await until(async () =>

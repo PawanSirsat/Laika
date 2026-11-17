@@ -31,6 +31,8 @@ import {
   type StubCall,
 } from './harness.ts';
 import { pick } from './dropdown.ts';
+import { boardAction } from './board-menu.ts';
+import { answerConfirm } from './confirm.ts';
 
 const SLUG = 'laika';
 const SETTINGS = `/spaces/${SLUG}/settings`;
@@ -210,7 +212,9 @@ void describe('the route', () => {
       await settled(h);
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Laika');
       assert.equal(await h.page.title(), 'Space settings · Laika');
-      assert.equal(await h.page.locator('.ss-key').innerText(), 'LAIKA · PawanSirsat/Laika');
+      // The key as a chip, the repository beside it (LAI-1211).
+      assert.equal(await h.page.locator('[data-key-chip]').innerText(), 'LAIKA');
+      assert.equal(await h.page.locator('.ss-repo').innerText(), 'PawanSirsat/Laika');
       assert.equal(await h.page.locator('.ss-badge').first().innerText(), 'PRIVATE');
       assert.equal(await h.page.locator('.ss-avatar').getAttribute('data-color'), 'violet');
       assert.equal(
@@ -224,7 +228,7 @@ void describe('the route', () => {
       );
       // Open board, and ← Spaces.
       assert.equal(
-        await h.page.locator('.ss-open-board').getAttribute('href'),
+        await h.page.locator('.ss-open-board-wide').getAttribute('href'),
         '/board?project=laika',
       );
       assert.equal(await h.page.locator('.ss-back').getAttribute('href'), '/projects');
@@ -258,8 +262,9 @@ void describe('General', () => {
       assert.equal(await h.page.locator('#ss-repo').inputValue(), 'PawanSirsat/Laika');
       await until(async () => (await h.page.locator('[data-next-key]').count()) === 1);
       assert.equal(await h.page.locator('[data-next-key]').innerText(), 'Next task: LAIKA-721');
+      // An editable setting is a `Field` in its row layout since LAI-1204.
       const help = await h.page
-        .locator('.ss-row', { has: h.page.locator('#ss-prefix') })
+        .locator('.field-row', { has: h.page.locator('#ss-prefix') })
         .innerText();
       assert.match(help, /Existing tasks keep their numbers\./);
       assert.match(help, /Old keys keep working\./);
@@ -348,6 +353,20 @@ void describe('General', () => {
         await error.waitFor({ timeout: 5_000 });
         assert.equal(await error.innerText(), message);
         assert.equal(await h.page.locator('#ss-prefix').getAttribute('aria-invalid'), 'true');
+        // The refusal takes the focus to the field it names (LAI-1204), not
+        // leaving it on Save, below and out of sight of the problem.
+        await until(async () => h.page.evaluate(() => document.activeElement?.id === 'ss-prefix'));
+        assert.equal(
+          await h.page.evaluate(() => document.activeElement?.id),
+          'ss-prefix',
+          'focus did not move to the refused field',
+        );
+        assert.ok(
+          ((await h.page.locator('#ss-prefix').getAttribute('aria-describedby')) ?? '')
+            .split(' ')
+            .includes('ss-prefix-error'),
+          'the field is not described by its error',
+        );
         // The typed key stays, so it can be corrected rather than retyped.
         assert.equal(await h.page.locator('#ss-prefix').inputValue(), 'ONR');
       } finally {
@@ -356,6 +375,8 @@ void describe('General', () => {
     });
   }
 
+  // A value the client's own check accepts (LAI-1211 catches `9X` before any
+  // request), so this is the server's refusal arriving, in the server's words.
   void test('a 422 lands on its field', async () => {
     const h = await open(
       SETTINGS,
@@ -382,7 +403,7 @@ void describe('General', () => {
     );
     try {
       await settled(h);
-      await h.page.locator('#ss-prefix').fill('9X');
+      await h.page.locator('#ss-prefix').fill('XY');
       await h.page.getByRole('button', { name: 'Save changes' }).click();
       const error = h.page.locator('#ss-prefix-error');
       await error.waitFor({ timeout: 5_000 });
@@ -605,7 +626,7 @@ void describe('Access', () => {
       );
       assert.match(
         await h.page.locator('[data-visibility="public"]').innerText(),
-        /Anyone in Kvelld can find it and join\./,
+        /Anyone in Kvelld can find it, read its board and join it themselves\./,
       );
 
       // Who can create tasks.
@@ -749,18 +770,28 @@ void describe('Danger zone', () => {
       await settled(h);
       assert.equal(await h.page.locator('.ss-danger-title').innerText(), 'Danger zone');
       assert.match(
-        await h.page.locator('.ss-danger').innerText(),
-        /The board becomes read-only\. Members keep access to its history\./,
+        await h.page.locator('[data-consequences="archive"]').innerText(),
+        /Its board becomes read-only[\s\S]*Agents stop picking up its work[\s\S]*Nothing is deleted[\s\S]*restored at any time/,
       );
-      assert.equal(await h.page.getByText(/delete/i).count(), 0, 'a delete row is drawn');
+      assert.equal(await h.page.getByText(/\bdelete\b/i).count(), 0, 'a delete row is drawn');
       await h.page.locator('[data-action="archive"]').click();
+      // The typed confirmation (LAI-1211): Archive waits for the key.
+      const confirmArchive = h.page.locator('[data-action="confirm-archive"]');
+      assert.equal(await confirmArchive.getAttribute('aria-disabled'), 'true');
+      // Pressed anyway — it stays focusable so its reason is read — and does nothing.
+      await confirmArchive.click({ force: true });
       assert.equal(
         h.calls.filter((c) => c.method === 'PATCH').length,
         0,
-        'archived without asking',
+        'archived without the key typed',
       );
-      await h.page.locator('[data-action="confirm-archive"]').click();
+      await h.page.locator('#ss-archive-key').fill('laika');
+      await confirmArchive.click();
       await h.page.locator('[data-action="restore"]').waitFor({ timeout: 5_000 });
+      assert.match(
+        await h.page.locator('[data-danger-result="archived"]').innerText(),
+        /Laika is archived[\s\S]*Spaces › Archived/,
+      );
       assert.match(await h.page.locator('.screen-page').innerText(), /ARCHIVED/);
       await h.page.locator('[data-action="restore"]').click();
       await h.page.locator('[data-action="archive"]').waitFor({ timeout: 5_000 });
@@ -834,6 +865,8 @@ void describe('a change to the reader’s own membership reaches their controls'
       const before = h.calls.filter((c) => c.path === '/api/v1/permissions').length;
 
       await pick(h.page.locator('[data-member="u2"] [role="combobox"]'), 'member');
+      // Demoting yourself asks first, because the controls go with it (LAI-1211).
+      assert.match(await answerConfirm(h.page, true), /stop being a space admin of Laika/);
       await until(() => h.calls.some((c) => c.method === 'PATCH'));
       await until(() => h.calls.filter((c) => c.path === '/api/v1/permissions').length > before);
       await remove.first().waitFor({ state: 'detached', timeout: 10_000 });
@@ -905,7 +938,7 @@ void describe('readers who may not change the space never see a control', () => 
 });
 
 void describe('ways in', () => {
-  void test('the space bar’s ⋯ opens Space settings, and View settings links there instead of Visibility', async () => {
+  void test('the space bar’s Space settings opens it, and View settings links there instead of Visibility', async () => {
     const h = await open(`/board?project=${SLUG}`, {
       ...stub(ME),
       [`/api/v1/projects/${SLUG}/tasks`]: { data: [], next_cursor: null },
@@ -915,9 +948,8 @@ void describe('ways in', () => {
       '/api/v1/presence': { data: [], next_cursor: null },
     });
     try {
-      const trigger = h.page.locator('.bt-icon[title="View settings"]');
-      await trigger.waitFor({ timeout: 20_000 });
-      await trigger.click();
+      // Its own toolbar button again (LAI-1230), named.
+      await boardAction(h.page, 'View settings');
       const panel = h.page.getByRole('dialog', { name: 'View settings' });
       await panel.waitFor();
       assert.equal(
@@ -929,9 +961,12 @@ void describe('ways in', () => {
       assert.equal(await link.getAttribute('href'), SETTINGS);
       await h.page.keyboard.press('Escape');
 
-      await h.page.getByRole('button', { name: 'Space menu' }).click();
-      const item = h.page.getByRole('menuitem', { name: 'Space settings' });
+      // In front, not behind a ⋯ (LAI-1234): a gear and the words, one press.
+      assert.equal(await h.page.getByRole('button', { name: 'Space menu' }).count(), 0);
+      const item = h.page.locator('.space-bar').getByRole('link', { name: 'Space settings' });
       assert.equal(await item.getAttribute('href'), SETTINGS);
+      assert.equal(await item.locator('svg[data-icon="gear"]').count(), 1, 'the gear is missing');
+      assert.equal((await item.innerText()).trim(), 'Space settings');
       await item.click();
       await until(() => new URL(h.page.url()).pathname === SETTINGS);
       await settled(h);

@@ -1,25 +1,28 @@
 /*
  * The confirmation (LAI-522): a card over a dimmed page, the mark in a
- * tinted circle, the words, the thing affected, and the two buttons. Above
- * every other layer (the drawer and the sheet are 60–61). Tokens only.
+ * tinted circle, the words, the thing affected, and the two buttons. On the
+ * dialog layer (`overlay.css`, LAI-1205), above any modal it was asked from.
+ * Tokens only.
  */
 
 .confirm-layer {
+  /* Modals beneath it; `ConfirmDialog` sets it from the stack. */
+  --overlay-depth: 0;
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: calc(var(--layer-dialog) + var(--overlay-depth) * 2);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
 }
 
 .confirm-scrim {
   position: absolute;
   inset: 0;
-  background: var(--scrim);
-  backdrop-filter: blur(2px);
-  animation: confirm-fade 140ms ease-out;
+  /* Darker, and frosted by `glass.css` (LAI-1132), which took the 2px blur. */
+  background: var(--glass-scrim);
+  transition: opacity var(--overlay-scrim-in) var(--overlay-ease-out);
 }
 
 .confirm {
@@ -28,20 +31,27 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1.25rem 1.25rem 1rem;
-  border: 1px solid var(--border-card);
+  gap: var(--space-4);
+  padding: var(--space-4-5) var(--space-4-5) var(--space-4);
+  border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-column);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-modal);
+  /* Level-3 glass over the frosted scrim (LAI-1132). */
+  background: var(--glass-sheen), var(--glass-3);
+  box-shadow: var(--glass-highlight), var(--shadow-panel);
   color: var(--text-primary);
-  animation: confirm-in 160ms ease-out;
+  transition:
+    opacity var(--overlay-in) var(--overlay-ease-out),
+    transform var(--overlay-in) var(--overlay-ease-out);
+}
+
+.confirm:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .confirm-head {
   display: flex;
   align-items: flex-start;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
 }
 
 .confirm-mark {
@@ -51,7 +61,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--accent-bg);
   color: var(--accent);
 }
@@ -75,8 +85,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  padding-top: 0.125rem;
+  gap: var(--space-1-5);
+  padding-top: var(--space-0-5);
 }
 
 .confirm-title {
@@ -97,12 +107,12 @@
 }
 
 .confirm-body p + p {
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
 }
 
 /* The thing affected: a quiet card, as a row of the list it came from. */
 .confirm-detail {
-  padding: 0.625rem 0.75rem;
+  padding: var(--space-2-5) var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--bg-column);
@@ -120,11 +130,11 @@
 .confirm-detail-main strong {
   font-family: var(--font-mono);
   font-weight: var(--weight-semibold);
-  margin-right: 0.25rem;
+  margin-right: var(--space-1);
 }
 
 .confirm-detail-sub {
-  margin-top: 0.125rem;
+  margin-top: var(--space-0-5);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -132,7 +142,7 @@
 .confirm-field {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .confirm-field-label {
@@ -155,12 +165,12 @@
 .confirm-foot {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding-top: 0.25rem;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
 }
 
 /* On a phone the two are full width, the action above Cancel. */
-@media (max-width: 34rem) {
+@media (max-width: 544px) {
   .confirm-layer {
     align-items: flex-end;
   }
@@ -175,22 +185,18 @@
   }
 }
 
-@keyframes confirm-fade {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes confirm-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.5rem) scale(0.98);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .confirm,
+/*
+ * Open motion, the Dialog's (LAI-1205): a fade and a small rise, from a
+ * starting style so a reopen mid-entrance retargets rather than restarts.
+ * None under reduced motion. It leaves at once — the caller unmounts it.
+ */
+@starting-style {
   .confirm-scrim {
-    animation: none;
+    opacity: 0;
+  }
+
+  .confirm {
+    opacity: 0;
+    transform: translateY(var(--overlay-rise)) scale(var(--overlay-scale));
   }
 }

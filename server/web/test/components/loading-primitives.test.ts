@@ -49,13 +49,17 @@ void describe('the spinner', () => {
   /**
    * `.skeleton` already stops animating under `prefers-reduced-motion`. Once
    * skeletons are still, a spinner is the only moving thing on the page.
+   *
+   * The stopping is the global rule's (LAI-1208): the turn runs on
+   * `--duration-spinner`, which `styles/motion.css` zeroes under reduced
+   * motion (`motion-tokens.test.ts`). The local block only repaints.
    */
   void test('stops spinning under reduced motion, without disappearing', () => {
+    assert.match(css, /\.spinner \{[^}]*animation: spinner-turn var\(--duration-spinner\)/s);
     const reduced = /@media \(prefers-reduced-motion: reduce\) \{\s*\.spinner \{([^}]*)\}/s.exec(
       css,
     );
-    assert.ok(reduced, 'the spinner ignores prefers-reduced-motion');
-    assert.match(reduced[1] ?? '', /animation: none/);
+    assert.ok(reduced, 'the still spinner is not repainted under prefers-reduced-motion');
     // Still visible: removing it would take the feedback away, not the motion.
     assert.doesNotMatch(reduced[1] ?? '', /display:\s*none/);
     // A gapped ring that is not turning reads as broken, so the gap closes.
@@ -134,15 +138,24 @@ void describe('the button', () => {
   void test('shows a spinner and does not swap the label by default', () => {
     // It resized mid-click: "Create task" is 11 characters and "Creating…" is
     // 9, so the button moved under the cursor that had just pressed it.
-    assert.match(button, /\{busy && <Spinner size="sm" \/>\}/);
-    // The label is rendered unconditionally — there is no `busy ?` branch left
-    // around it, and no `busyLabel` prop for one to come back through.
-    assert.match(button, /\{busy && <Spinner size="sm" \/>\}\s*\n\s*\{children\}/);
+    //
+    // Re-aimed in LAI-1204, same intent: the spinner now takes the leading
+    // icon's slot (`busy ? <Spinner> : icon`), and the label is its own span —
+    // rendered unconditionally, outside that branch.
+    assert.match(button, /\{busy \? \(\s*<Spinner size="sm" \/>/);
+    assert.match(button, /\)\}\s*\n\s*<span className="button-label">\{children\}<\/span>/);
+    assert.doesNotMatch(button, /busy \?[^:]*\{children\}/, 'the label sits inside a busy branch');
     assert.doesNotMatch(button, /busyLabel/, 'the retired prop is still reachable');
   });
 
   void test('still blocks activation and still says why', () => {
-    assert.match(button, /disabled=\{disabled \|\| busy\}/);
-    assert.match(button, /aria-busy=\{busy \|\| undefined\}/);
+    // LAI-1204: busy refuses through `aria-disabled` and a swallowed click, so
+    // the focus stays on the pressed button; the rule is in button-model.ts and
+    // pinned by test/components/forms/button-model.test.ts. Here: the element
+    // wears what the model decided, and the click handler honours `inert`.
+    assert.match(button, /disabled=\{a\.disabled\}/);
+    assert.match(button, /aria-disabled=\{a\.ariaDisabled\}/);
+    assert.match(button, /aria-busy=\{a\.ariaBusy\}/);
+    assert.match(button, /if \(a\.inert\) \{\s*event\.preventDefault\(\);\s*return;/);
   });
 });

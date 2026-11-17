@@ -1,11 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
+// Three stylesheets first, before the palette's: where the single stylesheet
+// had them before screens were split, so its cascade is unchanged (LAI-1219 —
+// see `shell/screen-styles.ts`).
+import './tooltip/tooltip.css';
+import './icon/icon.css';
+import './states.css';
+import { CommandPaletteHost } from './command/CommandPaletteHost.tsx';
+import { CreateTaskProvider } from './create-task/CreateTaskProvider.tsx';
+import { ShortcutsHost } from './shell/ShortcutsHost.tsx';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
+import { ROUTES_WITH_THEIR_OWN_BRAND } from './Brand.tsx';
 import { ShellSidebar } from './shell/ShellSidebar.tsx';
 import { SessionGate } from './shell/SessionGate.tsx';
 import { ShellProvider } from './shell/ShellProvider.tsx';
 import { useShell } from './shell/shell-context.ts';
 import { showsAppNav } from './shell-chrome.ts';
+import { DEFAULT_PATH } from '../routes/route-table.ts';
+import { preloadPath } from '../routes/screen-chunks.ts';
 import {
   NARROW_QUERY,
   railCollapsed,
@@ -14,10 +26,11 @@ import {
   writeSidebar,
   type SidebarPreference,
 } from './sidebar/sidebar-state.ts';
+import { atOrBelow, below } from '../theme/breakpoints.ts';
 import './app-shell.css';
 
 /** Below this the sidebar is off-canvas, and the rail has no meaning (app-shell.css). */
-const OFF_CANVAS_QUERY = '(max-width: 900px)';
+const OFF_CANVAS_QUERY = atOrBelow('tablet');
 
 /**
  * My day's drawer (LAI-511) is a 400px column beside the page. Under 1280px
@@ -27,7 +40,7 @@ const OFF_CANVAS_QUERY = '(max-width: 900px)';
  * thing both can see.
  */
 const DRAWER_ATTR = 'data-myday-drawer-open';
-const DRAWER_TIGHT_QUERY = '(max-width: 1279px)';
+const DRAWER_TIGHT_QUERY = below('desktop');
 
 /** Local storage, or nothing — reading the property itself can throw. */
 function storage(): Storage | undefined {
@@ -135,7 +148,7 @@ function AppFrame() {
   } = useShell();
 
   const [navOpen, setNavOpen] = useState(false);
-  // The icon rail (LAI-796), toggled in the sidebar's head and remembered.
+  // The icon rail (LAI-796), toggled in the top bar (LAI-1227) and remembered.
   // Inert below 900px, where the sidebar is off-canvas at full width.
   const { collapsed: remembered, toggle: toggleRailState } = useRail();
   // My day's drawer takes the rail's room under 1280px (LAI-511); off-canvas
@@ -169,73 +182,104 @@ function AppFrame() {
    * session fails safe in both directions.
    */
   const signedIn = showsAppNav(session);
+
+  // The default screen — a space's board, where a nav link to a space lands —
+  // is fetched once the first page has painted (LAI-1219), so the most likely
+  // next page is already here. Signed in only: nothing is warmed for a
+  // visitor on the sign-in page. Already loading if that is where we are.
+  useEffect(() => {
+    if (!signedIn) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => {
+      timer = setTimeout(() => {
+        preloadPath(DEFAULT_PATH);
+      }, 0);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [signedIn]);
   // A full-page screen that draws its own brand and theme control gets no
   // header on top of it (LAI-075).
   const ownsChrome = path === '/setup';
 
   return (
-    <div
-      className={[
-        'shell',
-        signedIn ? '' : 'shell-preauth',
-        // The rail's width is a shell fact the task drawer's scrim reads
-        // (LAI-252) — see `--rail-width` in app-shell.css.
-        signedIn && navCollapsed ? 'shell-rail-mini' : '',
-      ]
-        .filter((c) => c !== '')
-        .join(' ')}
-    >
-      <a className="skip-link" href="#main">
-        Skip to content
-      </a>
+    <CreateTaskProvider>
+      <div
+        className={[
+          'shell',
+          signedIn ? '' : 'shell-preauth',
+          // The rail's width is a shell fact the task drawer's scrim reads
+          // (LAI-252) — see `--rail-width` in app-shell.css.
+          signedIn && navCollapsed ? 'shell-rail-mini' : '',
+        ]
+          .filter((c) => c !== '')
+          .join(' ')}
+      >
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
 
-      {signedIn && (
-        <ShellSidebar
-          open={navOpen}
-          onClose={() => {
-            setNavOpen(false);
-          }}
-          collapsed={navCollapsed}
-          onToggleCollapse={toggleRailState}
-        />
-      )}
-
-      {/* Click-catcher behind the off-canvas nav. `aria-hidden` and not
-          focusable: Escape and the toggle are the accessible ways out. */}
-      {signedIn && navOpen && (
-        <div
-          className="shell-scrim"
-          aria-hidden="true"
-          onClick={() => {
-            setNavOpen(false);
-          }}
-        />
-      )}
-
-      <div className="shell-body">
+        {/*
+          **The top bar spans the window** (LAI-1227, the owner's Jira
+          reference): it sits above the sidebar and the page alike, and holds
+          the sidebar's toggle and the brand, so the sidebar below it is the
+          navigation and nothing else.
+        */}
         {ownsChrome ? null : (
           <ShellHeader
             signedIn={signedIn}
+            brand={!ROUTES_WITH_THEIR_OWN_BRAND.includes(path)}
             navOpen={navOpen}
             onToggleNav={() => {
               setNavOpen((v) => !v);
             }}
+            railCollapsed={navCollapsed}
+            onToggleRail={toggleRailState}
           />
         )}
 
-        {/*
-          The space bar — identity, tabs, presence — belongs to the views of a
-          space, so `SpaceLayout` renders it around them (LAI-251). It was here
-          while it was only a tab strip; a bar that knows which project it is
-          about cannot live above the screen that chose the project.
-        */}
+        <div className="shell-frame">
+          {signedIn && (
+            <ShellSidebar
+              open={navOpen}
+              onClose={() => {
+                setNavOpen(false);
+              }}
+              collapsed={navCollapsed}
+            />
+          )}
 
-        <main id="main" className="shell-main" tabIndex={-1}>
-          <SessionGate>
-            <ScreenOutlet />
-          </SessionGate>
-        </main>
+          {/* Click-catcher behind the off-canvas nav. `aria-hidden` and not
+              focusable: Escape and the toggle are the accessible ways out. */}
+          {signedIn && navOpen && (
+            <div
+              className="shell-scrim"
+              aria-hidden="true"
+              onClick={() => {
+                setNavOpen(false);
+              }}
+            />
+          )}
+
+          <div className="shell-body">
+            {/*
+              The space bar — identity, tabs, presence — belongs to the views of
+              a space, so `SpaceLayout` renders it around them (LAI-251).
+            */}
+            <main id="main" className="shell-main" tabIndex={-1}>
+              <SessionGate>
+                <ScreenOutlet />
+              </SessionGate>
+            </main>
+          </div>
+        </div>
+
+        {/* ⌘K, and the palette it opens (LAI-1192): a signed-in tool. */}
+        {signedIn && <CommandPaletteHost />}
+        {signedIn && <ShortcutsHost />}
       </div>
-    </div>
+    </CreateTaskProvider>
   );
 }

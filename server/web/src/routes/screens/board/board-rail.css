@@ -5,7 +5,7 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .rail-card {
@@ -15,13 +15,13 @@
   padding: 0.6875rem 0.6875rem 0.5625rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .rail-head {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .rail-head h2 {
@@ -57,7 +57,7 @@
 
 .rail-dot-live {
   background: var(--chip-green);
-  animation: rail-pulse 2s ease-in-out infinite;
+  animation: rail-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 .rail-dot-connecting,
@@ -72,12 +72,6 @@
   }
   50% {
     opacity: 0.3;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rail-dot-live {
-    animation: none;
   }
 }
 
@@ -109,7 +103,7 @@
   /* The design's 7px, and its 6px 0 row padding with a hairline between. */
   gap: 0.4375rem;
   align-items: flex-start;
-  padding: 0.375rem 0;
+  padding: var(--space-1-5) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -140,7 +134,7 @@
   display: flex;
   width: 1.375rem;
   height: 1.375rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   align-items: center;
   justify-content: center;
   font-size: var(--text-tiny);
@@ -199,7 +193,7 @@
 .rail-session-who {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   margin: 0;
   font-size: var(--text-body);
   font-weight: var(--weight-bold);
@@ -211,7 +205,7 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.05em;
   border-radius: var(--radius-chip);
-  padding: 0.0625rem 0.25rem;
+  padding: 0.0625rem var(--space-1);
   background: var(--bg-column);
   color: var(--text-muted);
 }
@@ -234,7 +228,7 @@
 .rail-bar {
   display: block;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
   background: var(--bg-column);
   overflow: hidden;
 }
@@ -248,7 +242,7 @@
 .rail-stale li {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
 }
 
 .rail-stale-title {
@@ -263,7 +257,7 @@
 .rail-stale-meta {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
   color: var(--text-muted);
 }
@@ -303,7 +297,7 @@
  */
 .board-main {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--space-3);
   /*
    * **`stretch`, so the lanes reach the bottom** (LAI-283). With `flex-start`
    * the row was as tall as its tallest child, and its tallest child was a lane
@@ -359,7 +353,7 @@
    * last card in the tallest lane. `scrollbar-gutter` alone would not do it:
    * macOS overlay scrollbars reserve nothing and appear *on* the content.
    */
-  padding-top: 0.875rem;
+  padding-top: var(--space-3-5);
   padding-bottom: 1.125rem;
 }
 

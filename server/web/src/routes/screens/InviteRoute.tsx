@@ -4,6 +4,7 @@ import { useShell } from '../../components/shell/shell-context.ts';
 import { acceptInvite } from '../../api/invites.ts';
 import { useInvite } from '../../api/use-invite.ts';
 import { ApiError } from '../../api/errors.ts';
+import { fieldErrors } from '../../api/setup.ts';
 
 /**
  * Accepting an invite (LAI-250), lifted out of `AppShell`.
@@ -27,6 +28,7 @@ export function InviteRoute() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [fields, setFields] = useState<Readonly<Record<string, string>>>({});
 
   const submit = useCallback(
     async (values: InviteSubmit) => {
@@ -34,6 +36,7 @@ export function InviteRoute() {
 
       setSubmitting(true);
       setError(undefined);
+      setFields({});
 
       try {
         await acceptInvite({
@@ -45,6 +48,14 @@ export function InviteRoute() {
         retry();
         navigate('/board');
       } catch (cause) {
+        // A `422` names its fields (§6.3): each complaint goes under the
+        // field it is about, and the summary says only that some need fixing.
+        const named = fieldErrors(cause);
+        if (Object.keys(named).length > 0) {
+          setFields(named);
+          setError('Some details need fixing before your account can be created.');
+          return;
+        }
         // `403` is the token being refused between the preview and the submit —
         // it expired while the form was open, or someone else spent a link
         // invite first. The server's own wording is used rather than a reworded
@@ -75,6 +86,7 @@ export function InviteRoute() {
       }}
       submitting={submitting}
       serverError={error}
+      fieldErrors={fields}
     />
   );
 }

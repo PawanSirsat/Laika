@@ -31,6 +31,7 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 const MIN = 60_000;
@@ -581,7 +582,7 @@ void describe('the card states, from the task list alone', () => {
       await until(async () => (await stateOf(h.page, 't2')) !== null, 20_000);
       const line = card(h.page, 't2').locator('[data-exec-state]');
       const meaning = 'The saved work could not be fetched or did not match. A person has to look.';
-      assert.equal(await line.getAttribute('title'), meaning);
+      assert.equal(await tipText(line), meaning);
 
       const button = card(h.page, 't2').locator('.card-open');
       const describedBy = (await button.getAttribute('aria-describedby')) ?? '';
@@ -787,7 +788,7 @@ void describe('LAI-1006 review fixes', () => {
       await h.page.locator('.drawer [data-exec-panel]').waitFor({ timeout: 20_000 });
       assert.match(h.page.url(), /task=t2/);
       // The tooltip survived the fix.
-      assert.match((await line.getAttribute('title')) ?? '', /A person has to look/);
+      assert.match(await tipText(line), /A person has to look/);
     } finally {
       await h.close();
     }

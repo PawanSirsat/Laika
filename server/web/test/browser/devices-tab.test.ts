@@ -35,6 +35,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { answerConfirm, confirmSettled } from './confirm.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -347,11 +348,8 @@ void describe('Your devices', () => {
       await time.waitFor({ timeout: 20_000 });
       const exact = group(page, 'kestrel-mk2').locator('.devices-seen-exact');
       assert.equal(await exact.isVisible(), false);
-      const full = await time.getAttribute('title');
-      assert.ok(
-        full !== null && /\d{4}, \d/.test(full),
-        `title is the exact time: ${String(full)}`,
-      );
+      const full = await tipText(time);
+      assert.ok(/\d{4}, \d/.test(full), `title is the exact time: ${String(full)}`);
 
       // Reached by Tab, from the control before it.
       await page.locator('.devices-intro').click();

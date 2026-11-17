@@ -333,8 +333,12 @@ void describe('the state panel complete (LAI-1122)', () => {
       assert.equal(await runs.getByText('node --test e.test.ts').count(), 0);
       assert.match(
         await runs.locator('.hero-run').first().innerText(),
-        /✓\s+node --test a\.test\.ts\s+exit 0/,
+        /node --test a\.test\.ts\s+exit 0/,
       );
+      // The pass mark is the registry's check, named for a screen reader (LAI-1213).
+      const mark = runs.locator('.hero-run').first().locator('.hero-run-mark');
+      assert.equal(await mark.getAttribute('aria-label'), 'Passed');
+      assert.equal(await mark.locator('svg').getAttribute('data-icon'), 'check');
 
       await runs.getByRole('button', { name: 'Show all 6 runs' }).click();
       await until(async () => (await commands()).length === 6);
@@ -351,7 +355,7 @@ void describe('the state panel complete (LAI-1122)', () => {
     const h = await openTask('Launcher runs visible');
     try {
       const link = h.page.locator('[data-hero="review"]').getByRole('link', {
-        name: 'Full summary in activity ↓',
+        name: 'Full summary in activity',
       });
       await link.waitFor({ timeout: 10_000 });
       assert.equal(await link.getAttribute('href'), '#activity');

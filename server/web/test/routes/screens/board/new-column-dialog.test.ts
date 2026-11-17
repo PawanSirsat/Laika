@@ -76,12 +76,15 @@ void describe('the dialog', () => {
     assert.doesNotMatch(dialog, /Status category/);
   });
 
-  void test('Escape and the scrim both close it', () => {
-    assert.match(dialog, /event\.key === 'Escape'/);
-    assert.match(dialog, /column-dialog-scrim[\s\S]{0,120}onClick=\{onClose\}/);
+  void test('Escape and the scrim both close it — the shared Dialog does both (LAI-1205)', () => {
+    // Escape (top layer only) and a backdrop that closes are `Dialog`'s, and
+    // its defaults; `test/browser/overlays.test.ts` drives both. This dialog
+    // must be on it, with `onClose`, and must not turn the backdrop off.
+    assert.match(dialog, /<Dialog\b[\s\S]{0,200}onClose=\{onClose\}/);
+    assert.doesNotMatch(dialog, /backdropCloses=\{false\}/);
   });
 
   void test('the name field takes focus on open', () => {
-    assert.match(dialog, /nameRef\.current\?\.focus\(\)/);
+    assert.match(dialog, /initialFocus=\{\(\) => nameRef\.current\}/);
   });
 });

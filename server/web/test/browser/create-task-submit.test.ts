@@ -37,8 +37,22 @@ async function openDialog(path = '/board?project=laika-core', extra = {}): Promi
     stub(ADA, { '/api/v1/projects/laika-core/tasks': tasksRoute(reply(201, NEW_TASK)), ...extra }),
   );
   await h.page.setViewportSize({ width: 1440, height: 900 });
-  await h.page.locator('.space-create').waitFor({ timeout: 20_000 });
-  await h.page.locator('.space-create').click();
+  await h.page.locator('[data-header-create]').waitFor({ timeout: 20_000 });
+  /*
+   * **The board first, then the dialog** (LAI-1306). + Create sat in the
+   * board's toolbar, so waiting for it waited for the board; in the header
+   * (LAI-1227) it is drawn before the board's sprints land. The board then
+   * opens on the active sprint and writes `&sprint=` into the URL — a
+   * same-document navigation, which "nothing navigates" below counted on CI
+   * when it landed after the dialog opened. Every caller's fixture has one
+   * active sprint.
+   */
+  await h.page.waitForFunction(
+    () => new URL(window.location.href).searchParams.has('sprint'),
+    undefined,
+    { timeout: 20_000 },
+  );
+  await h.page.locator('[data-header-create]').click();
   await h.page.locator(DIALOG).waitFor({ timeout: 5_000 });
   await h.page.locator(`${DIALOG} .ct-title-input`).waitFor({ timeout: 5_000 });
   return h;
@@ -308,7 +322,7 @@ void describe('Create another', () => {
       const d = box(h);
       await d.locator('.ct-title-input').fill('First');
       // Enter on the Create another box toggles nothing and sends nothing (review).
-      await d.getByLabel('Create another').focus();
+      await d.getByLabel('Create another', { exact: true }).focus();
       await h.page.keyboard.press('Enter');
       await new Promise((r) => setTimeout(r, 300));
       assert.equal(
@@ -316,7 +330,7 @@ void describe('Create another', () => {
         0,
         'Enter on the checkbox submitted',
       );
-      assert.equal(await d.getByLabel('Create another').isChecked(), false);
+      assert.equal(await d.getByLabel('Create another', { exact: true }).isChecked(), false);
       await pick(d.getByLabel('Priority', { exact: true }), 'p1');
       await pick(d.getByLabel('Status', { exact: true }), 'st-in_progress');
       await pick(d.getByLabel('Assignee', { exact: true }), 'u2');
@@ -324,7 +338,7 @@ void describe('Create another', () => {
       await d.getByLabel('Due date', { exact: true }).fill('2026-11-20');
       await d.locator('.ct-more-summary').click();
       await d.getByLabel('Outside id', { exact: true }).fill('JIRA-1');
-      await d.getByLabel('Create another').check();
+      await d.getByLabel('Create another', { exact: true }).check();
       await d.getByRole('button', { name: 'Create', exact: true }).click();
 
       await until(() => posts(h, '/projects/laika-core/tasks').length === 1);

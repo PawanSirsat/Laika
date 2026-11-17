@@ -8,14 +8,37 @@
   min-width: 0;
 }
 
-.unl-sub,
 .unl-error {
   margin: 0 var(--space-4);
   font-size: var(--text-body);
 }
 
-.unl-sub {
-  color: var(--text-secondary);
+/* The figures and the bar (LAI-1222), in the list's gutter. */
+.unl > .kpi-row,
+.unl > .fbar,
+.unl-empty-toggle {
+  margin: 0 var(--space-4);
+}
+
+.unl-filter {
+  width: 14rem;
+  max-width: 100%;
+}
+
+.unl-clear {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-1);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.unl-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .unl-error {
@@ -42,6 +65,10 @@
   overflow: hidden;
 }
 
+.unl-row {
+  position: relative;
+}
+
 .unl-row + .unl-row {
   border-top: 1px solid var(--border-subtle);
 }
@@ -54,11 +81,11 @@
 
 .unl-line {
   display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 8rem) 6.5rem minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 8rem) minmax(0, 1fr) 6.5rem 4.5rem auto;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: 0.5rem var(--space-3);
+  padding: var(--space-2) var(--space-3);
   font: inherit;
   text-align: left;
   color: var(--text-primary);
@@ -103,39 +130,69 @@
   font-size: var(--text-small);
 }
 
-.unl-tag {
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-chip);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
+/* A decided row's chip, in its own column so an open row leaves it empty. */
+.unl-line > .unl-tag {
+  grid-column: 4;
+  justify-self: end;
 }
 
-.unl-tag-promoted {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
+/* `3h`, `2d 4h`: right-aligned so the ages read down the column. */
+.unl-when {
+  grid-column: 5;
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Promote… and Dismiss on an open row, laid over the line's right end on
+   hover or focus (LAI-1222), as Review's rows carry Accept and Send back. */
+.unl-actions {
+  position: absolute;
+  top: 50%;
+  right: var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding-left: var(--space-4);
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, var(--bg-column) var(--space-4));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.unl-row:hover > .unl-actions,
+.unl-row:focus-within > .unl-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .unl-actions {
+    position: static;
+    justify-content: flex-end;
+    padding: 0 var(--space-3) var(--space-2);
+    transform: none;
+    background: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* A chevron drawn with borders — no icon font, no literal colour. */
 .unl-caret {
+  grid-column: 6;
   width: 0.4rem;
   height: 0.4rem;
   border-right: 1.5px solid var(--text-muted);
   border-bottom: 1.5px solid var(--text-muted);
   transform: rotate(-45deg);
-  transition: transform 0.12s ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .unl-row-open .unl-caret {
   transform: rotate(45deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .unl-caret {
-    transition: none;
-  }
 }
 
 .unl-row-open .unl-line {
@@ -241,8 +298,31 @@
 
 .unl-form-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-left: auto;
+}
+
+/* Why Create task is greyed (LAI-1128): a disabled control that says nothing
+   reads as a broken one. */
+.unl-hint {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* The shared bar control has no disabled look; a greyed Create task must read
+   as greyed, beside the reason it is. */
+.unl-form .bar-control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A failed refresh of the queue, above the rows. */
+.unl > .state-stale {
+  margin: 0 var(--space-4);
 }
 
 .unl-more {
@@ -278,10 +358,27 @@
  * shares the top line and the note's first line takes the one under it —
  * still one row per note, two short lines rather than one cut to nothing.
  */
-@media (max-width: 40rem) {
-  .unl-sub,
-  .unl-error {
+@media (max-width: 640px) {
+  .unl-error,
+  .unl > .state-stale,
+  .unl > .kpi-row,
+  .unl > .fbar,
+  .unl-empty-toggle {
     margin: 0 var(--space-3);
+  }
+
+  .unl-filter {
+    width: 100%;
+  }
+
+  .unl-actions {
+    position: static;
+    justify-content: flex-end;
+    padding: 0 var(--space-3) var(--space-2);
+    transform: none;
+    background: none;
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .unl-list {
@@ -297,7 +394,7 @@
     grid-template-areas:
       'repo who when tag caret'
       'first first first first first';
-    row-gap: 0.25rem;
+    row-gap: var(--space-1);
     column-gap: var(--space-2);
   }
 
@@ -313,7 +410,7 @@
     grid-area: when;
   }
 
-  .unl-tag {
+  .unl-line > .unl-tag {
     grid-area: tag;
   }
 

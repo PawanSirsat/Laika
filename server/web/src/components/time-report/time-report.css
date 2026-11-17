@@ -10,8 +10,8 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.125rem 1.125rem;
+  gap: var(--space-4);
+  padding: var(--space-4) 1.125rem 1.125rem;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
@@ -31,14 +31,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .trep-titles {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -58,10 +58,10 @@
 .trep-lock {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.375rem;
+  gap: var(--space-1-5);
+  margin-top: var(--space-1-5);
   align-self: flex-start;
-  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  padding: 0.1875rem var(--space-2-5) 0.1875rem var(--space-2);
   font-size: var(--text-small);
   line-height: 1rem;
   font-weight: var(--weight-bold);
@@ -81,8 +81,8 @@
 
 .trep-segments {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-0-5);
+  padding: var(--space-0-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   background: var(--bg-column);
@@ -90,7 +90,7 @@
 
 .trep-segment {
   height: 1.75rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -114,45 +114,17 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .trep-stepper {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-}
-
-.trep-step {
-  width: 2rem;
-  height: 2rem;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-pill);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.trep-step:hover:not(:disabled) {
-  color: var(--text-primary);
-  border-color: var(--border-default);
-}
-
-.trep-step:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.trep-step svg {
-  width: 14px;
-  height: 14px;
+  gap: var(--space-1);
 }
 
 .trep-range-label {
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   font-size: var(--text-body);
   line-height: 1.25rem;
   font-weight: var(--weight-bold);
@@ -163,7 +135,7 @@
 .trep-divider {
   width: 1px;
   height: 1.25rem;
-  margin: 0 0.25rem;
+  margin: 0 var(--space-1);
   background: var(--border-card);
 }
 
@@ -172,7 +144,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .trep-chip-wrap {
@@ -182,9 +154,9 @@
 .trep-chip {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   height: 1.9375rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: var(--bg-card);
@@ -233,7 +205,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 0.375rem;
+  padding: var(--space-1-5);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-column);
@@ -248,9 +220,9 @@
 .trep-option {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 2.25rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-control);
   font-size: var(--text-body);
   cursor: pointer;
@@ -279,19 +251,19 @@
 .trep-pop-foot {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-  padding: 0.375rem 0.25rem 0.125rem;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding: var(--space-1-5) var(--space-1) var(--space-0-5);
   border-top: 1px solid var(--border-subtle);
 }
 
 .trep-pop-empty {
   margin: 0;
-  padding: 0.5rem;
+  padding: var(--space-2);
 }
 
 .trep-link-button {
-  padding: 0.25rem 0.375rem;
+  padding: var(--space-1) var(--space-1-5);
   border: 0;
   border-radius: var(--radius-xs);
   background: none;
@@ -310,7 +282,7 @@
   display: flex;
   align-items: center;
   min-height: 2.125rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
@@ -332,38 +304,6 @@
   color: var(--accent);
 }
 
-.trep-export {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  height: 1.9375rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.trep-export:hover:not(:disabled) {
-  border-color: var(--accent-border);
-  background: var(--accent-bg);
-}
-
-.trep-export:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.trep-export svg {
-  width: 14px;
-  height: 14px;
-}
-
 /* --------------------------------------------------------- the range */
 
 .trep-picker {
@@ -371,8 +311,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem 1rem;
-  padding: 0.75rem;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--bg-column) 45%, transparent);
@@ -381,12 +321,12 @@
 .trep-presets {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .trep-preset {
   height: 1.875rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -407,7 +347,7 @@
 .trep-dates {
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .trep-dates > .trep-quiet {
@@ -417,7 +357,7 @@
 .trep-date {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .trep-date-label {
@@ -428,7 +368,7 @@
 
 .trep-date-input {
   height: 2rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color-scheme: light dark;
@@ -447,7 +387,7 @@
 
 .trep-note {
   margin: 0;
-  padding: 0.625rem 0.875rem;
+  padding: var(--space-2-5) var(--space-3-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   font-size: var(--text-body);
@@ -473,8 +413,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-  padding: 0.875rem 1rem;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3-5) var(--space-4);
   border: 1px solid var(--overdue-border);
   border-radius: var(--radius-card);
   background: var(--blocked-bg);
@@ -495,7 +435,7 @@
 .trep-pill-button {
   display: inline-flex;
   align-items: center;
-  padding: 0.3125rem 0.875rem;
+  padding: 0.3125rem var(--space-3-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-pill);
   background: var(--bg-card);
@@ -530,13 +470,13 @@
 .trep-reading {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--space-4-5);
 }
 
 .trep-bone-bars {
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
   height: 10rem;
   padding-left: 2.75rem;
   border-bottom: 1px solid var(--border-subtle);
@@ -557,15 +497,15 @@
   list-style: none;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .trep-stat {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
   min-width: 0;
-  padding: 0.75rem 0.875rem;
+  padding: var(--space-3) var(--space-3-5);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   background: var(--bg-card);
@@ -595,7 +535,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
   font-size: var(--text-small);
   line-height: 1rem;
   color: var(--text-muted);
@@ -611,7 +551,7 @@
   align-items: center;
   justify-content: center;
   height: 1.125rem;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-chip);
   font-family: var(--font-mono);
@@ -625,7 +565,7 @@
 .trep-chart {
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .trep-chart-head {
@@ -633,7 +573,7 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  gap: var(--space-2) var(--space-4);
 }
 
 .trep-h3 {
@@ -649,7 +589,7 @@
 .trep-legend {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
+  gap: var(--space-3-5);
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
@@ -657,7 +597,7 @@
 .trep-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .trep-swatch {
@@ -665,7 +605,7 @@
   display: inline-block;
   width: 0.625rem;
   height: 0.625rem;
-  border-radius: 3px;
+  border-radius: var(--radius-chip);
 }
 
 .trep-swatch-confirmed {
@@ -681,8 +621,8 @@
 .trep-plot {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr);
-  column-gap: 0.5rem;
-  padding-top: 0.5rem;
+  column-gap: var(--space-2);
+  padding-top: var(--space-2);
 }
 
 .trep-axis {
@@ -721,15 +661,15 @@
 }
 
 .trep-bars-wide {
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .trep-bars-mid {
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .trep-bars-dense {
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .trep-col {
@@ -758,7 +698,7 @@
   width: 100%;
   max-width: 2.75rem;
   min-height: 2px;
-  border-radius: 4px 4px 1px 1px;
+  border-radius: var(--radius-chip) var(--radius-chip) var(--radius-hairline) var(--radius-hairline);
   overflow: hidden;
   background: var(--border-default);
 }
@@ -786,8 +726,8 @@
   pointer-events: none;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
-  padding: 0.5rem 0.625rem;
+  gap: var(--space-0-5);
+  padding: var(--space-2) var(--space-2-5);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
@@ -819,14 +759,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
-  padding: 1rem;
+  gap: var(--space-1-5);
+  padding: var(--space-4);
   text-align: center;
 }
 
 .trep-empty-title {
   margin: 0;
-  padding: 0.25rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-xs);
   background: var(--bg-card);
   font-size: var(--text-heading-sm);
@@ -835,7 +775,7 @@
 
 .trep-empty-sub {
   margin: 0;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-xs);
   background: var(--bg-card);
   font-size: var(--text-body);
@@ -845,7 +785,7 @@
 
 .trep-day-names {
   display: flex;
-  padding-top: 0.375rem;
+  padding-top: var(--space-1-5);
 }
 
 .trep-day-name {
@@ -883,7 +823,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 1.5rem 2rem;
+  gap: var(--space-5) var(--space-6);
 }
 
 .trep-table-wrap {
@@ -891,14 +831,14 @@
   min-width: min(100%, 18rem);
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: var(--space-2-5);
 }
 
 .trep-group-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: var(--text-body);
   color: var(--text-secondary);
 }
@@ -913,9 +853,9 @@
 .trep-swap {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   height: 1.9375rem;
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   background: transparent;
@@ -952,7 +892,7 @@
 .trep-sort {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   padding: 0;
   border: 0;
   background: transparent;
@@ -1021,17 +961,17 @@
 .trep-row {
   display: grid;
   grid-template-columns: var(--tr-cols);
-  column-gap: 0.75rem;
+  column-gap: var(--space-3);
   align-items: center;
   min-height: 2.75rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .trep-row-head {
   min-height: 0;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-muted);
@@ -1055,18 +995,18 @@
 .trep-cell-child {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0 0.375rem 2.25rem;
+  gap: var(--space-2);
+  padding: var(--space-1-5) 0 var(--space-1-5) 2.25rem;
 }
 
 /* A long group shows ten rows, then *Show N more* (LAI-1162). */
 .trep-row-more > .trep-cell-child {
   grid-column: 1 / -1;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .trep-more {
-  padding: 0.25rem 0;
+  padding: var(--space-1) 0;
   border: 0;
   background: transparent;
   font: inherit;
@@ -1089,7 +1029,7 @@
 .trep-row-toggle {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 100%;
   min-width: 0;
   min-height: 2.75rem;
@@ -1112,7 +1052,7 @@
   flex: none;
   stroke-width: 2.4;
   color: var(--text-muted);
-  transition: transform 120ms ease;
+  transition: transform var(--duration-fast) var(--ease-standard);
 }
 
 .trep-chev-open {
@@ -1181,7 +1121,7 @@
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
 }
 
 .trep-dashed {
@@ -1237,14 +1177,14 @@
   min-width: min(100%, 16rem);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .trep-donut-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 1rem 1.25rem;
+  gap: var(--space-4) var(--space-4-5);
 }
 
 .trep-donut {
@@ -1252,13 +1192,13 @@
   flex: none;
   width: 9.25rem;
   height: 9.25rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
 }
 
 .trep-donut-hole {
   position: absolute;
   inset: 0.875rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--bg-card);
   display: flex;
   flex-direction: column;
@@ -1275,7 +1215,7 @@
 }
 
 .trep-donut-caption {
-  margin-top: 0.125rem;
+  margin-top: var(--space-0-5);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
@@ -1289,15 +1229,15 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .trep-slice {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 1.75rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-radius: var(--radius-control);
   font-size: var(--text-small);
   cursor: default;
@@ -1331,7 +1271,7 @@
 .trep-weeks {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .trep-week-list {
@@ -1347,9 +1287,9 @@
   display: grid;
   grid-template-columns: 11rem minmax(0, 1fr) 13rem;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   min-height: 2.75rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-body);
 }
@@ -1376,7 +1316,7 @@
 .trep-week-figure {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
   white-space: nowrap;
 }
 
@@ -1403,7 +1343,7 @@
   }
 
   .trep {
-    padding: 0.875rem;
+    padding: var(--space-3-5);
   }
 
   .trep-head .trep-segments,
@@ -1445,7 +1385,7 @@
 
   .trep-week {
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 0.5rem 0.375rem;
+    padding: var(--space-2) var(--space-1-5);
   }
 
   .trep-week-track {

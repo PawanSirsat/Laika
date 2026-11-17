@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { Tooltip } from './tooltip/Tooltip.tsx';
+import { Icon } from './icon/Icon.tsx';
 import './copy-button.css';
 
 /**
@@ -156,7 +158,12 @@ export interface CopyButtonProps {
    */
   readonly what?: string | undefined;
   readonly disabled?: boolean | undefined;
-  /** Why it is disabled — rendered as the title, so the reason is reachable. */
+  /**
+   * Why it is disabled — in the shared tooltip, with the button kept
+   * focusable (`aria-disabled`) so a keyboard reaches the reason too
+   * (LAI-1213; it was a bare `title` on a natively disabled button, which
+   * neither a keyboard nor a touch screen could ever read).
+   */
   readonly disabledReason?: string | undefined;
   readonly className?: string | undefined;
 }
@@ -191,15 +198,17 @@ export function CopyButton({
       ? undefined
       : `${outcome === 'copied' ? 'Copied' : label} ${what}`;
 
-  return (
+  const explained = disabled && disabledReason !== undefined && disabledReason !== '';
+  const button = (
     <button
       type="button"
       className={className === undefined ? 'copy-button' : `copy-button ${className}`}
       data-outcome={outcome ?? 'idle'}
-      disabled={disabled}
+      disabled={disabled && !explained}
+      aria-disabled={explained ? true : undefined}
       {...(named !== undefined ? { 'aria-label': named } : {})}
-      {...(disabled && disabledReason !== undefined ? { title: disabledReason } : {})}
       onClick={(event) => {
+        if (explained) return;
         const from = event.currentTarget;
         void copyText(text, from).then((result) => {
           if (result === 'select') selectText(selects?.current ?? showing(from, text));
@@ -208,10 +217,16 @@ export function CopyButton({
       }}
     >
       {shown}
-      {outcome === 'copied' && <span aria-hidden="true"> ✓</span>}
+      {outcome === 'copied' && (
+        <>
+          {' '}
+          <Icon name="check" size="tiny" />
+        </>
+      )}
       {outcome === 'select' && (
         <span className="visually-hidden"> — the text is selected, press Command or Control C</span>
       )}
     </button>
   );
+  return explained ? <Tooltip content={disabledReason}>{button}</Tooltip> : button;
 }

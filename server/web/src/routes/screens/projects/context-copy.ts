@@ -34,4 +34,4 @@ export const CONTEXT_EXCLUDED: readonly { readonly what: string; readonly why: s
  * it is not a private note, and it is not documentation for humans to browse.
  */
 export const CONTEXT_PURPOSE =
-  'One markdown document per project, served to every agent session on it. Write it once instead of re-explaining the same architecture to each teammate’s agent.';
+  'One markdown document per space, served to every agent session on it. Write it once instead of re-explaining the same architecture to each teammate’s agent.';

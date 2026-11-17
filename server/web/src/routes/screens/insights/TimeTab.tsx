@@ -4,6 +4,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
+import type { ReportAddress } from '../../../components/time-report/report-address.ts';
 import { dayIn } from '../my-day/my-day-derive.ts';
 import { AvailabilityView } from './AvailabilityView.tsx';
 import { TimeLoggingView } from './TimeLoggingView.tsx';
@@ -22,6 +23,10 @@ export interface TimeTabProps {
   /** `&month=YYYY-MM` for the Time logging grid (D-148); its current month when absent. */
   readonly month?: string | undefined;
   readonly onNavigate?: (to: string) => void;
+  /** The report's period and filters, from the address (LAI-1189). */
+  readonly address?: ReportAddress | undefined;
+  /** The report changed: write its period and filters to the address. */
+  readonly onAddress?: ((address: ReportAddress) => void) | undefined;
 }
 
 /**
@@ -36,6 +41,8 @@ export function TimeTab({
   subview = 'report',
   month,
   onNavigate = () => undefined,
+  address,
+  onAddress,
 }: TimeTabProps) {
   if (view === 'none') {
     return <PermissionDenied resource="the Time report" requiredRole="lead" scope="project" />;
@@ -49,7 +56,13 @@ export function TimeTab({
       ) : subview === 'days' ? (
         <TimeLoggingView month={month} orgName={orgName} onNavigate={onNavigate} />
       ) : (
-        <TimeReportView view={view} leads={leads} orgName={orgName} />
+        <TimeReportView
+          view={view}
+          leads={leads}
+          orgName={orgName}
+          address={address}
+          onAddress={onAddress}
+        />
       )}
     </div>
   );
@@ -59,14 +72,28 @@ function TimeReportView({
   view,
   leads,
   orgName,
+  address,
+  onAddress,
 }: {
   readonly view: 'org' | 'space';
   readonly leads: readonly string[];
   readonly orgName?: string | undefined;
+  readonly address?: ReportAddress | undefined;
+  readonly onAddress?: ((address: ReportAddress) => void) | undefined;
 }) {
   const today = dayIn(readerZone(), Date.now());
   const projects = useProjects();
-  if (view === 'org') return <TimeReport scope="org" today={today} orgName={orgName} />;
+  if (view === 'org') {
+    return (
+      <TimeReport
+        scope="org"
+        today={today}
+        orgName={orgName}
+        address={address}
+        onAddress={onAddress}
+      />
+    );
+  }
   if (projects.status === 'loading') {
     return <LoadingState shape="card" count={1} label="Loading the spaces you lead" />;
   }
@@ -84,5 +111,7 @@ function TimeReportView({
     .filter((p) => leads.includes(p.id))
     .map((p) => ({ slug: p.slug, name: p.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return <TimeReport scope="org" today={today} ledSpaces={led} />;
+  return (
+    <TimeReport scope="org" today={today} ledSpaces={led} address={address} onAddress={onAddress} />
+  );
 }

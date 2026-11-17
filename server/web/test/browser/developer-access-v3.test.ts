@@ -23,6 +23,7 @@ import {
 } from '../../src/routes/screens/developer/v3/overview-state.ts';
 import { closeBrowser, open, refuse, setTheme, type ApiStub, type Harness } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { tipText } from './tooltip-probe.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -392,7 +393,9 @@ void describe('the tab bars (plan §I)', () => {
       const link = advancedLink(h.page);
       assert.equal(await link.getAttribute('href'), '/developer?tab=advanced');
       assert.equal(await link.getAttribute('aria-current'), null);
-      assert.equal((await link.innerText()).replace(/\s+/g, ' ').trim(), 'Advanced ›');
+      assert.equal((await link.innerText()).replace(/\s+/g, ' ').trim(), 'Advanced');
+      // Drawn, not typed (LAI-1214): the chevron is the registry's.
+      assert.equal(await link.locator('[data-icon="chevron"]').count(), 1);
       // After the tabs, in the same row, and quieter than a tab.
       const [strip, after] = await Promise.all([
         h.page.locator('.dx-tabrow .page-tabs').boundingBox(),
@@ -682,8 +685,17 @@ async function readJourney(page: Page) {
           line: el.querySelector('.dx-flow-line')?.textContent ?? '',
           action: action?.childNodes[0]?.textContent ?? '',
           href: action?.getAttribute('href') ?? null,
-          disabled: action instanceof HTMLButtonElement ? action.disabled : false,
-          why: action?.getAttribute('title') ?? null,
+          // Off with a reason (LAI-1214): aria-disabled, still focusable, and
+          // the reason in the shared tooltip it is described by.
+          disabled:
+            action instanceof HTMLButtonElement
+              ? action.disabled || action.getAttribute('aria-disabled') === 'true'
+              : false,
+          why:
+            (action?.getAttribute('aria-describedby') ?? '')
+              .split(/\s+/)
+              .map((id) => (id === '' ? null : document.getElementById(id)))
+              .find((tip) => tip?.getAttribute('role') === 'tooltip')?.textContent ?? null,
         };
       }),
     ),
@@ -745,7 +757,7 @@ const TOOLS_HREF = OVERVIEW_ADDRESSES.tools;
  */
 const WIZARD_HREF = '/developer?tab=projects&view=wizard';
 
-const NEW_SETUP_ROW = `new | Set up a new repository | Choose an existing Laika project, your connected tool, then copy a safe prompt into your agent. | Set up repository → ${WIZARD_HREF}`;
+const NEW_SETUP_ROW = `new | Set up a new repository | Choose an existing Laika project, your connected tool, then copy a safe prompt into your agent. | Set up repository ${WIZARD_HREF}`;
 
 /** The design's lines for the steps still to do (LAI-1096). */
 const LINE = {
@@ -791,7 +803,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         kind: 'no-device',
         eyebrow: 'START HERE',
         title: 'Start by connecting your device',
-        links: [['Add a device →', OVERVIEW_ADDRESSES.addDevice]],
+        links: [['Add a device', OVERVIEW_ADDRESSES.addDevice]],
       });
       assert.deepEqual(await readJourney(h.page), {
         chip: '0 of 3 complete',
@@ -827,8 +839,15 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       });
       // A locked step says why in words, not only by being greyed out.
       assert.equal(
-        await h.page.locator('[data-step="tool"] button').getAttribute('title'),
+        await tipText(h.page.locator('[data-step="tool"] button')),
         'Add a device first',
+      );
+      // Off with a reason, it is still reached by Tab (LAI-1214: it was `disabled`).
+      await h.page.locator('[data-step="tool"] button').focus();
+      assert.ok(
+        await h.page
+          .locator('[data-step="tool"] button')
+          .evaluate((el) => document.activeElement === el),
       );
       assert.match(
         (await h.page.locator('[data-step="tool"] button .visually-hidden').textContent()) ?? '',
@@ -850,9 +869,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       );
       assert.match(await distinction.innerText(), /never carries a credential/);
       assert.equal(
-        await distinction
-          .getByRole('link', { name: 'Explore project setup →' })
-          .getAttribute('href'),
+        await distinction.getByRole('link', { name: 'Explore project setup' }).getAttribute('href'),
         '/developer?tab=projects',
       );
       assert.equal(
@@ -866,13 +883,13 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       for (let i = 0; i < 60; i++) {
         await h.page.keyboard.press('Tab');
         const onIt = await h.page.evaluate(
-          () => document.activeElement?.textContent === 'Add a device →',
+          () => document.activeElement?.textContent === 'Add a device',
         );
         if (onIt) break;
       }
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.textContent),
-        'Add a device →',
+        'Add a device',
         'Add a device is not reachable by Tab',
       );
       await h.page.keyboard.press('Enter');
@@ -892,7 +909,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         kind: 'no-tool',
         eyebrow: 'START HERE',
         title: 'Connect a coding tool',
-        links: [['Add your first tool →', OVERVIEW_ADDRESSES.addTool]],
+        links: [['Add your first tool', OVERVIEW_ADDRESSES.addTool]],
       });
       const journey = await readJourney(h.page);
       assert.equal(journey.chip, '1 of 3 complete');
@@ -923,7 +940,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         kind: 'finish-tool',
         eyebrow: 'YOUR NEXT STEP',
         title: 'Finish connecting Codex · Belka',
-        links: [['Continue setup →', toolAddress('a1')]],
+        links: [['Continue setup', toolAddress('a1')]],
       });
       assert.equal(
         await hero(h.page).locator('.dx-hero-sub').innerText(),
@@ -941,7 +958,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       });
       assert.equal(journey.rows[2]?.why, 'Connect a tool first');
       // The tool by name alone; its chip is the button that lists it (LAI-1096).
-      assert.deepEqual((await readStatus(h.page))[1], 'tools | 1 tool | Codex | 1 needs setup▾');
+      assert.deepEqual((await readStatus(h.page))[1], 'tools | 1 tool | Codex | 1 needs setup');
       // Nothing under the hero: the hero is about it, and the chip lists it.
       assert.equal(await heroThenJourney(h.page), true);
       const { items } = await openAttention(h.page);
@@ -950,12 +967,12 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
           'a1',
           'Codex · Belka',
           'credential created, never used',
-          'Finish setup →',
+          'Finish setup',
           toolAddress('a1'),
         ],
       ]);
 
-      await hero(h.page).getByRole('link', { name: 'Continue setup →' }).click();
+      await hero(h.page).getByRole('link', { name: 'Continue setup' }).click();
       await h.page.waitForURL((url) => `${url.pathname}${url.search}` === toolAddress('a1'), {
         timeout: 20_000,
       });
@@ -972,7 +989,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         eyebrow: 'YOUR NEXT STEP',
         title: 'Set up your project repository',
         links: [
-          ['Set up a project →', WIZARD_HREF],
+          ['Set up a project', WIZARD_HREF],
           ['Manage tools', TOOLS_HREF],
         ],
       });
@@ -987,21 +1004,21 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
           'a3',
           'Claude Code · Strelka',
           'credential created, never used',
-          'Finish setup →',
+          'Finish setup',
           toolAddress('a3'),
         ],
         [
           'a2',
           'Codex · Strelka',
           'credential created, never used',
-          'Finish setup →',
+          'Finish setup',
           toolAddress('a2'),
         ],
       ]);
       // Each link names its tool for a screen reader.
-      await list.getByRole('link', { name: /^Finish setup →\s*: Codex · Strelka$/ }).waitFor();
+      await list.getByRole('link', { name: /^Finish setup\s*: Codex · Strelka$/ }).waitFor();
       // Escape closes it and puts focus back on the chip.
-      await list.getByRole('link', { name: /^Finish setup →\s*: Codex · Strelka$/ }).focus();
+      await list.getByRole('link', { name: /^Finish setup\s*: Codex · Strelka$/ }).focus();
       await h.page.keyboard.press('Escape');
       await list.waitFor({ state: 'detached' });
       assert.equal(await chip.getAttribute('aria-expanded'), 'false');
@@ -1024,7 +1041,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       await (
         await openAttention(h.page)
       ).list
-        .getByRole('link', { name: /^Finish setup →\s*: Codex · Strelka$/ })
+        .getByRole('link', { name: /^Finish setup\s*: Codex · Strelka$/ })
         .click();
       await h.page.waitForURL((url) => `${url.pathname}${url.search}` === toolAddress('a2'), {
         timeout: 20_000,
@@ -1043,7 +1060,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       );
       assert.deepEqual(await readStatus(h.page), [
         'devices | 2 devices | Belka, Strelka | 1 imported',
-        'tools | 3 tools | Claude Code, Codex, Omnigent | 2 need setup▾',
+        'tools | 3 tools | Claude Code, Codex, Omnigent | 2 need setup',
         'setups | 0 repositories set up | Project prompts and instructions files | Next step',
       ]);
       // Never Ready, never a claim beyond the evidence.
@@ -1052,7 +1069,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         /\bReady\b/,
       );
 
-      await hero(h.page).getByRole('link', { name: 'Set up a project →' }).click();
+      await hero(h.page).getByRole('link', { name: 'Set up a project' }).click();
       await h.page.waitForURL(/tab=projects/, { timeout: 20_000 });
       // It lands on Project setup's wizard (LAI-1082), not just its address.
       await h.page.locator('.dev-setup[data-view="wizard"]').waitFor({ timeout: 20_000 });
@@ -1071,7 +1088,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         eyebrow: 'YOUR NEXT STEP',
         title: 'Set up another repository',
         links: [
-          ['Set up a repository →', WIZARD_HREF],
+          ['Set up a repository', WIZARD_HREF],
           ['Manage tools', TOOLS_HREF],
         ],
       });
@@ -1209,7 +1226,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       );
 
       // A reader with setups still reaches the wizard from here, not their list.
-      await h.page.getByRole('link', { name: 'Set up repository →' }).click();
+      await h.page.getByRole('link', { name: 'Set up repository' }).click();
       await h.page.locator('.dev-setup[data-view="wizard"]').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), WIZARD_HREF);
       assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
@@ -1245,11 +1262,11 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
     try {
       const { items } = await openAttention(h.page);
       assert.deepEqual(items, [
-        ['a1', 'Claude Code · Belka', 'update required', 'Open details →', toolAddress('a1')],
+        ['a1', 'Claude Code · Belka', 'update required', 'Open details', toolAddress('a1')],
       ]);
       assert.equal(
         await h.page.locator('[data-status] [data-attention] > button').textContent(),
-        '1 needs an update▾',
+        '1 needs an update',
       );
       assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
       // No notice of its own (LAI-1096): how to update is in the tool's Details.
@@ -1285,7 +1302,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
     );
     try {
       const region = h.page.locator('[data-testid="dev-overview"] > p[aria-live="polite"]');
-      const add = hero(h.page).getByRole('link', { name: 'Add a device →' });
+      const add = hero(h.page).getByRole('link', { name: 'Add a device' });
       await add.waitFor({ timeout: 20_000 });
       // Mounted empty: the first answer is what the page shows, not news.
       assert.equal(await region.getAttribute('role'), 'status');
@@ -1308,7 +1325,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       );
       // The link went with the old step; focus is on the new main action, not body.
       await h.page.waitForFunction(
-        () => document.activeElement?.textContent === 'Set up a project →',
+        () => document.activeElement?.textContent === 'Set up a project',
         undefined,
         { timeout: 10_000 },
       );
@@ -1329,7 +1346,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       }),
     );
     try {
-      await hero(h.page).getByRole('link', { name: 'Add a device →' }).waitFor({ timeout: 20_000 });
+      await hero(h.page).getByRole('link', { name: 'Add a device' }).waitFor({ timeout: 20_000 });
       await advancedLink(h.page).focus();
       await h.page.evaluate(() => {
         document.dispatchEvent(new Event('visibilitychange'));

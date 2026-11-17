@@ -6,6 +6,7 @@ import { initials } from '../../../theme/initials.ts';
 import { spaceColor, spaceColorVar } from '../../../theme/space-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { progressLine, progressOf } from './spaces-model.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * The pieces a space is drawn from on the Spaces page (D-103 item 12,
@@ -23,6 +24,8 @@ export interface SpaceHandlers {
   readonly onSettings: (space: Project) => void;
   readonly onJoin: (space: Project) => void;
   readonly onRestore: (space: Project) => void;
+  /** Ask first, then archive (LAI-1196). The screen owns the question. */
+  readonly onArchive: (space: Project) => void;
 }
 
 export interface SpaceItemProps {
@@ -30,9 +33,13 @@ export interface SpaceItemProps {
   readonly kind: SpaceKind;
   /** Holds `project.settings.edit` in this space: the ⚙ and Settings show. */
   readonly maySettings: boolean;
-  /** Holds `project.archive`: an archived space offers Restore. */
+  /**
+   * Holds the org's `project.archive` and this space's `project.settings.edit`,
+   * as the server answers both: an archived space offers Restore, a live one
+   * Archive (LAI-1196) — the same `PATCH`, so the same two grants.
+   */
   readonly mayRestore: boolean;
-  /** A join or restore for this space is in flight. */
+  /** A join, archive or restore for this space is in flight. */
   readonly busy: boolean;
   readonly theme: Theme;
   readonly now: number;
@@ -95,19 +102,26 @@ const FACES = 4;
 export function SpaceFaces({ space, theme }: { space: Project; theme: Theme }) {
   const shown = space.members.slice(0, FACES);
   const overflow = space.member_count - shown.length;
+  // One name for the whole stack (LAI-1196): the faces are initials, which a
+  // screen reader would otherwise spell out letter by letter.
+  const label = `${String(space.member_count)} ${space.member_count === 1 ? 'member' : 'members'}${
+    shown.length > 0
+      ? `: ${shown.map((m) => m.name).join(', ')}${overflow > 0 ? ' and others' : ''}`
+      : ''
+  }`;
   return (
-    <span className="space-faces">
+    <span className="space-faces" role="img" aria-label={label}>
       {shown.map((member) => {
         const colour = avatarColor(member.user_id, theme);
         return (
-          <span
-            key={member.user_id}
-            className="space-face"
-            style={{ background: colour.background, color: colour.foreground }}
-            title={member.name}
-          >
-            {initials(member.name)}
-          </span>
+          <Tooltip key={member.user_id} content={member.name}>
+            <span
+              className="space-face"
+              style={{ background: colour.background, color: colour.foreground }}
+            >
+              {initials(member.name)}
+            </span>
+          </Tooltip>
         );
       })}
       {overflow > 0 && <span className="space-face space-face-more">+{overflow}</span>}
@@ -116,8 +130,9 @@ export function SpaceFaces({ space, theme }: { space: Project; theme: Theme }) {
 }
 
 /**
- * Context · Members · ⚙ for a space of yours, Join for a public one you are
- * not in, Restore for an archived one — each only for whoever may use it.
+ * Context · Members · Archive · ⚙ for a space of yours, Join for a public one
+ * you are not in, Restore for an archived one — each only for whoever may use
+ * it.
  */
 export function SpaceActions({
   space,
@@ -189,25 +204,42 @@ export function SpaceActions({
       >
         Members
       </button>
-      {maySettings && (
-        <a
-          className={settingsLabel === 'icon' ? 'space-link space-gear' : 'space-link'}
-          href={`/spaces/${encodeURIComponent(space.slug)}/settings`}
-          title={`${space.name} settings`}
-          onClick={(event) => {
-            event.preventDefault();
-            handlers.onSettings(space);
+      {mayRestore && (
+        <button
+          type="button"
+          className="space-link space-archive"
+          data-action="archive"
+          data-space={space.slug}
+          aria-label={`Archive ${space.name}`}
+          disabled={busy}
+          onClick={() => {
+            handlers.onArchive(space);
           }}
         >
-          {settingsLabel === 'icon' ? (
-            <>
-              <NavIcon name="gear" size={16} />
-              <span className="visually-hidden">Settings</span>
-            </>
-          ) : (
-            'Settings'
-          )}
-        </a>
+          {busy && <Spinner size="sm" />}
+          Archive
+        </button>
+      )}
+      {maySettings && (
+        <Tooltip content={`${space.name} settings`}>
+          <a
+            className={settingsLabel === 'icon' ? 'space-link space-gear' : 'space-link'}
+            href={`/spaces/${encodeURIComponent(space.slug)}/settings`}
+            onClick={(event) => {
+              event.preventDefault();
+              handlers.onSettings(space);
+            }}
+          >
+            {settingsLabel === 'icon' ? (
+              <>
+                <NavIcon name="gear" size={16} />
+                <span className="visually-hidden">Settings</span>
+              </>
+            ) : (
+              'Settings'
+            )}
+          </a>
+        </Tooltip>
       )}
     </>
   );

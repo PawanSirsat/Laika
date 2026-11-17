@@ -112,6 +112,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No projects yet',
     body: 'Create the first one and point it at a repo.',
   },
+  '/settings/appearance': {
+    headline: 'Appearance',
+    body: 'Theme and interface font for this device — Light, Dark, Black or System.',
+  },
   '/people': {
     headline: 'No person chosen',
     body: 'A profile opens from a person’s name — on Organisation, a Capacity card or the Dashboard’s Contributors.',
@@ -123,6 +127,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   '/spaces/:slug/settings': {
     headline: 'No such space',
     body: 'Space settings open from a space: its ⋯ menu, or the gear on its card under Spaces.',
+  },
+  '/task/:key': {
+    headline: 'No such task',
+    body: 'A task page opens by its key, as in /task/LAI-42, or from Expand in a task drawer.',
   },
   '/login': {
     headline: 'Sign-in did not load',

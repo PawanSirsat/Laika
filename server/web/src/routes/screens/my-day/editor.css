@@ -38,15 +38,15 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.875rem 1.25rem;
+  gap: var(--space-2-5);
+  padding: var(--space-3-5) var(--space-4-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .editor-head-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 1.75rem;
 }
 
@@ -66,11 +66,11 @@
 .editor-nav {
   display: inline-flex;
   align-items: center;
-  gap: 0.125rem;
+  gap: var(--space-0-5);
 }
 
 .editor-nav-text {
-  margin-right: 0.25rem;
+  margin-right: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-secondary);
@@ -103,7 +103,7 @@
 }
 
 .editor-key {
-  margin-right: 0.5rem;
+  margin-right: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
@@ -131,8 +131,8 @@
 
 .editor-banner {
   flex: none;
-  margin: 0.75rem 1.25rem 0;
-  padding: 0.625rem 0.75rem;
+  margin: var(--space-3) var(--space-4-5) 0;
+  padding: var(--space-2-5) var(--space-3);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-card);
   background: var(--accent-bg);
@@ -154,7 +154,7 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  padding: 0 1.25rem 0.5rem;
+  padding: 0 var(--space-4-5) var(--space-2);
   display: flex;
   flex-direction: column;
 }
@@ -162,8 +162,8 @@
 .editor-section {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem 0;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -183,7 +183,7 @@
 .editor-label-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .editor-label-row .editor-label {
@@ -193,7 +193,7 @@
 .editor-check {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   font-size: var(--text-small);
   color: var(--text-secondary);
   cursor: pointer;
@@ -248,7 +248,7 @@
 .editor-fields {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .editor-fields-one {
@@ -262,7 +262,7 @@
 .editor-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -276,8 +276,8 @@
   min-width: 0;
   min-height: 2.25rem;
   box-sizing: border-box;
-  padding: 0 0.625rem;
-  border-radius: 0.4375rem;
+  padding: 0 var(--space-2-5);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
@@ -299,8 +299,8 @@
 .editor-textarea {
   box-sizing: border-box;
   min-height: 3.5rem;
-  padding: 0.5rem 0.625rem;
-  border-radius: 0.4375rem;
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-sm);
   font-size: var(--text-small);
   line-height: var(--leading-body);
   resize: vertical;
@@ -318,7 +318,7 @@
 .editor-presets {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .editor-chip,
@@ -326,7 +326,7 @@
 .editor-preset {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
   min-height: 1.75rem;
   margin: 0;
   padding: 0 0.5625rem;
@@ -358,12 +358,12 @@
 }
 
 .editor-kind {
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   font-weight: var(--weight-medium);
 }
 
 .editor-preset {
-  padding: 0 0.625rem;
+  padding: 0 var(--space-2-5);
   border-radius: var(--radius-pill);
 }
 
@@ -416,7 +416,7 @@
 }
 
 .editor-task-line > * + * {
-  margin-left: 0.5rem;
+  margin-left: var(--space-2);
 }
 
 .editor-task-key {
@@ -432,9 +432,9 @@
 
 .editor-notask {
   margin: 0;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--chip-orange-border);
-  border-radius: 0.4375rem;
+  border-radius: var(--radius-sm);
   background: var(--chip-orange-bg);
   font-size: var(--text-small);
   line-height: var(--leading-body);
@@ -450,7 +450,7 @@
 .editor-search {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .editor-search-box {
@@ -479,7 +479,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-card);
-  border-radius: 0.4375rem;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   max-height: 14rem;
   overflow-y: auto;
@@ -490,7 +490,7 @@
 }
 
 .editor-result-quiet {
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
@@ -498,10 +498,10 @@
 .editor-result {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 100%;
   margin: 0;
-  padding: 0.5rem 0.625rem;
+  padding: var(--space-2) var(--space-2-5);
   border: none;
   background: transparent;
   font: inherit;
@@ -515,6 +515,9 @@
 }
 
 .editor-result-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
@@ -535,7 +538,7 @@
 .editor-dates {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .editor-date {
@@ -549,7 +552,7 @@
   margin: 0;
   padding: 0;
   border: 1px solid var(--border-card);
-  border-radius: 0.4375rem;
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
   font: inherit;
   color: var(--text-primary);
@@ -562,7 +565,8 @@
   color: var(--accent);
 }
 
-.editor-date:disabled {
+.editor-date:disabled,
+.editor-date[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -592,7 +596,7 @@
 .editor-gap {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .editor-gap-range {
@@ -608,14 +612,14 @@
 .editor-bar-block {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-top: 0.25rem;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
 }
 
 .editor-bar {
   position: relative;
   height: 1.875rem;
-  border-radius: 0.4375rem;
+  border-radius: var(--radius-sm);
   background: var(--bg-column);
   overflow: hidden;
   cursor: pointer;
@@ -627,7 +631,7 @@
   position: absolute;
   top: 0.5rem;
   bottom: 0.5rem;
-  border-radius: 0.1875rem;
+  border-radius: var(--radius-chip);
   background: var(--border-default);
 }
 
@@ -650,7 +654,7 @@
   min-width: 6px;
   box-sizing: border-box;
   border: 1.5px solid var(--accent);
-  border-radius: 0.3125rem;
+  border-radius: var(--radius-xs);
   background: var(--accent-bg);
   cursor: grab;
 }
@@ -674,7 +678,7 @@
 .editor-tiles {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .editor-tiles-one {
@@ -685,8 +689,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 0.375rem 0.5rem;
-  border-radius: 0.375rem;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
   background: var(--bg-column);
 }
 
@@ -710,7 +714,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: var(--text-body);
   color: var(--text-primary);
 }
@@ -727,13 +731,13 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-1-5);
 }
 
 .editor-history-row {
   display: grid;
   grid-template-columns: 4.25rem minmax(0, 1fr);
-  gap: 0.625rem;
+  gap: var(--space-2-5);
   font-size: var(--text-small);
   line-height: var(--leading-small);
   color: var(--text-primary);
@@ -756,8 +760,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4-5);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-card);
 }
@@ -766,10 +770,10 @@
 .editor-act {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 2.25rem;
   margin: 0;
-  padding: 0 0.75rem;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   background: var(--bg-card);
@@ -783,7 +787,7 @@
 }
 
 .editor-primary {
-  padding: 0 0.875rem;
+  padding: 0 var(--space-3-5);
   border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
@@ -828,6 +832,6 @@
   }
 
   .editor-foot {
-    padding-bottom: 1rem;
+    padding-bottom: var(--space-4);
   }
 }

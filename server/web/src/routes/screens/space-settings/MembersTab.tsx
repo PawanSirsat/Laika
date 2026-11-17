@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { InlineConfirm } from '../../../components/InlineConfirm.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
+import { Button } from '../../../components/forms/Button.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { IconButton } from '../../../components/forms/IconButton.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   PROJECT_ROLES,
   ROLE_SUMMARY,
@@ -20,6 +25,9 @@ import { listAllUsers, type OrgUser } from '../../../api/users.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { filterMembers, roleSummary } from './space-settings-model.ts';
+import { onRadioGroupKeyDown, radioTabIndex } from './radio-keys.ts';
 
 export interface MembersTabProps {
   readonly project: Project;
@@ -36,12 +44,6 @@ export interface MembersTabProps {
 /** The order the design's segmented control reads in. */
 const ADD_ROLES: readonly ProjectRole[] = ['member', 'lead', 'viewer'];
 
-interface Toast {
-  readonly id: number;
-  readonly text: string;
-  readonly undo?: () => void;
-}
-
 /**
  * Who is in the space and what they may do (D-103; the owner's Members
  * screenshot).
@@ -51,8 +53,14 @@ interface Toast {
  * the list as it really stands. Removal goes through the **offboarding
  * dialog** (D-104 item 5, LAI-988) — the one deactivation uses — which asks
  * what happens to their open tasks here when they hold any, then offers
- * **Undo**, which adds the person back with the role they had. Undo restores
- * the membership, not the tasks' assignee.
+ * **Undo** in the app's toast (LAI-1129), which adds the person back with the
+ * role they had. Undo restores the membership, not the tasks' assignee.
+ *
+ * LAI-1211: **a list you can find someone in** — a filter over name and email,
+ * the role counts above it, a no-match state with a way back — and **every
+ * role change answered** in the toast, in the server's terms once it has the
+ * new list. Demoting yourself from Space admin asks first, because the
+ * controls go with it; your own row offers *Leave space* rather than Remove.
  */
 export function MembersTab({
   project,
@@ -74,29 +82,43 @@ export function MembersTab({
     if (userId === me.id) refresh();
   };
   const [removing, setRemoving] = useState<Member | undefined>(undefined);
-  const [toast, setToast] = useState<Toast | undefined>(undefined);
-  const toastSeq = useRef(0);
+  const toast = useToast();
+  const leaveButton = useRef<HTMLButtonElement | null>(null);
   const [leaving, setLeaving] = useState<'ask' | 'busy' | undefined>(undefined);
   const [leaveError, setLeaveError] = useState<string | undefined>(undefined);
   const [leftNotice, setLeftNotice] = useState<string | undefined>(undefined);
 
-  const say = (text: string, undo?: () => void): void => {
-    toastSeq.current += 1;
-    setToast(
-      undo === undefined ? { id: toastSeq.current, text } : { id: toastSeq.current, text, undo },
+  const say = (text: string): void => {
+    toast.show({ text, tone: 'success' });
+  };
+  const confirm = useConfirm();
+  const [query, setQuery] = useState('');
+  const shown = filterMembers(members.members, query);
+  const findInput = useRef<HTMLInputElement | null>(null);
+
+  const changeRole = async (member: Member, role: ProjectRole): Promise<void> => {
+    if (role === member.role) return;
+    const self = member.user_id === me.id;
+    if (self && member.role === 'lead' && role !== 'lead') {
+      const yes = await confirm({
+        title: `Make yourself ${projectRoleLabel(role)}?`,
+        body: `You will stop being a space admin of ${project.name}. Unless your organisation role opens every space, its settings and members become read only for you, and only another space admin can make you one again.`,
+        confirmLabel: `Make me ${projectRoleLabel(role)}`,
+        cancelLabel: 'Stay space admin',
+        danger: true,
+        icon: 'warning',
+      });
+      if (!yes) return;
+    }
+    const ok = await members.setRole(member.user_id, role);
+    if (!ok) return;
+    touchedSelf(member.user_id);
+    say(
+      self
+        ? `You are now ${projectRoleLabel(role)} in ${project.name}.`
+        : `${member.name} is now ${projectRoleLabel(role)} in ${project.name}.`,
     );
   };
-
-  // A toast says its piece and goes; ten seconds is long enough to reach Undo.
-  useEffect(() => {
-    if (toast === undefined) return;
-    const timer = setTimeout(() => {
-      setToast(undefined);
-    }, 10_000);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [toast]);
 
   const isMember = members.members.some((m) => m.user_id === me.id);
 
@@ -120,13 +142,16 @@ export function MembersTab({
   const removed = (member: Member): void => {
     setRemoving(undefined);
     const role = member.role as ProjectRole;
-    say(`Removed ${member.name} from ${project.name}.`, () => {
-      setToast(undefined);
-      void members.add(member.user_id, role).then((back) => {
-        if (!back) return;
+    toast.show({
+      text: `Removed ${member.name} from ${project.name}.`,
+      tone: 'success',
+      // A real reversal: the server adds them back with the role they had.
+      undo: async () => {
+        const back = await members.add(member.user_id, role);
+        if (!back) throw new Error(`${member.name} could not be added back.`);
         touchedSelf(member.user_id);
-        say(`${member.name} is back, as ${projectRoleLabel(role)}.`);
-      });
+        return `${member.name} is back, as ${projectRoleLabel(role)}.`;
+      },
     });
   };
 
@@ -197,77 +222,151 @@ export function MembersTab({
           onRetry={members.reload}
         />
       ) : (
-        <ul className="ss-members">
-          {members.members.map((member) => {
-            const colour = avatarColor(member.user_id, theme);
-            const busy = members.pendingId === member.user_id;
-            const self = member.user_id === me.id;
-            return (
-              <li key={member.user_id} className="ss-member" data-member={member.user_id}>
-                <span
-                  className="ss-member-avatar"
-                  style={{
-                    background: colour.background,
-                    color: colour.foreground,
-                    borderColor: colour.border,
+        <>
+          {members.members.length > 0 && (
+            <div className="ss-members-tools">
+              <div className="ss-find" role="search">
+                <Icon name="search" size="small" />
+                <input
+                  ref={findInput}
+                  type="search"
+                  className="ss-find-input"
+                  placeholder="Find a member by name or email"
+                  aria-label={`Find a member of ${project.name}`}
+                  aria-controls="ss-member-list"
+                  value={query}
+                  data-find-member
+                  onChange={(event) => {
+                    setQuery(event.target.value);
                   }}
-                  aria-hidden="true"
-                >
-                  {initials(member.name)}
-                </span>
-                <div className="ss-member-who">
-                  <span className="ss-member-name">
-                    {member.name}
-                    {self && <span className="ss-you">YOU</span>}
-                  </span>
-                  <span className="ss-member-email">{member.email}</span>
-                </div>
-                {mayManage ? (
-                  <div className="ss-member-actions">
-                    <label className="ss-member-role">
-                      <span className="visually-hidden">Role for {member.name}</span>
-                      <Dropdown
-                        variant="bare"
-                        noun="roles"
-                        value={member.role}
-                        disabled={busy}
-                        onChange={(value) => {
-                          void members.setRole(member.user_id, value as ProjectRole).then(() => {
-                            touchedSelf(member.user_id);
-                          });
-                        }}
-                        options={PROJECT_ROLES.map((role) => ({
-                          value: role,
-                          label: projectRoleLabel(role),
-                          title: ROLE_SUMMARY[role],
-                        }))}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="ss-btn ss-btn-quiet"
-                      data-action="remove"
-                      disabled={busy}
-                      aria-label={`Remove ${member.name}`}
-                      onClick={() => {
-                        setRemoving(member);
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <span
-                    className="ss-member-role-static"
-                    title={ROLE_SUMMARY[member.role as ProjectRole]}
-                  >
-                    {projectRoleLabel(member.role)}
-                  </span>
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && query !== '') {
+                      event.preventDefault();
+                      setQuery('');
+                    }
+                  }}
+                />
+                {query !== '' && (
+                  <IconButton
+                    label="Clear the search"
+                    icon="close"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setQuery('');
+                      findInput.current?.focus();
+                    }}
+                  />
                 )}
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+              <p className="ss-role-summary" aria-live="polite" data-role-summary>
+                {query.trim() === ''
+                  ? roleSummary(members.members)
+                  : `${String(shown.length)} of ${String(members.members.length)} match`}
+              </p>
+            </div>
+          )}
+          {members.members.length === 0 ? (
+            <p className="ss-members-empty" data-members-empty>
+              Nobody is in {project.name} yet.
+              {mayManage ? ' Add people from the organisation above.' : ''}
+            </p>
+          ) : shown.length === 0 ? (
+            <p className="ss-members-empty" data-members-no-match>
+              Nobody here matches “{query.trim()}”.
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuery('');
+                  findInput.current?.focus();
+                }}
+              >
+                Clear search
+              </Button>
+            </p>
+          ) : (
+            <ul className="ss-members" id="ss-member-list">
+              {shown.map((member) => {
+                const colour = avatarColor(member.user_id, theme);
+                const busy = members.pendingId === member.user_id;
+                const self = member.user_id === me.id;
+                return (
+                  <li key={member.user_id} className="ss-member" data-member={member.user_id}>
+                    <span
+                      className="ss-member-avatar"
+                      style={{
+                        background: colour.background,
+                        color: colour.foreground,
+                        borderColor: colour.border,
+                      }}
+                      aria-hidden="true"
+                    >
+                      {initials(member.name)}
+                    </span>
+                    <div className="ss-member-who">
+                      <span className="ss-member-name">
+                        <span className="ss-member-name-text" title={member.name}>
+                          {member.name}
+                        </span>
+                        {self && <span className="ss-you">YOU</span>}
+                      </span>
+                      <span className="ss-member-email" title={member.email}>
+                        {member.email}
+                      </span>
+                    </div>
+                    {mayManage ? (
+                      <div className="ss-member-actions">
+                        <label className="ss-member-role">
+                          <span className="visually-hidden">Role for {member.name}</span>
+                          <Dropdown
+                            variant="bare"
+                            noun="roles"
+                            value={member.role}
+                            disabled={busy}
+                            onChange={(value) => {
+                              void changeRole(member, value as ProjectRole);
+                            }}
+                            options={PROJECT_ROLES.map((role) => ({
+                              value: role,
+                              label: projectRoleLabel(role),
+                              title: ROLE_SUMMARY[role],
+                            }))}
+                          />
+                        </label>
+                        {self ? (
+                          <p className="ss-self-note" data-self-note>
+                            You — use Leave space below
+                          </p>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-action="remove"
+                            disabled={busy}
+                            aria-label={`Remove ${member.name}`}
+                            onClick={() => {
+                              setRemoving(member);
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <span
+                        className="ss-member-role-static"
+                        title={ROLE_SUMMARY[member.role as ProjectRole]}
+                      >
+                        {projectRoleLabel(member.role)}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       {removing !== undefined && (
@@ -302,9 +401,9 @@ export function MembersTab({
         </p>
         {isMember &&
           (leaving === undefined ? (
-            <button
-              type="button"
-              className="ss-btn ss-btn-danger"
+            <Button
+              ref={leaveButton}
+              variant="danger"
               data-action="leave"
               onClick={() => {
                 setLeaving('ask');
@@ -312,37 +411,25 @@ export function MembersTab({
               }}
             >
               Leave space
-            </button>
+            </Button>
           ) : (
-            <div className="ss-confirm" role="alertdialog" aria-label={`Leave ${project.name}?`}>
-              <p>Leave {project.name}? Someone will have to add you back.</p>
-              {leaveError !== undefined && (
-                <p className="ss-field-error" role="alert" data-error="leave">
-                  {leaveError}
-                </p>
-              )}
-              <div className="ss-confirm-actions">
-                <button
-                  type="button"
-                  className="ss-btn ss-btn-danger-solid"
-                  data-action="confirm-leave"
-                  disabled={leaving === 'busy'}
-                  onClick={leave}
-                >
-                  Leave space
-                </button>
-                <button
-                  type="button"
-                  className="ss-btn"
-                  onClick={() => {
-                    setLeaving(undefined);
-                    setLeaveError(undefined);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+            <InlineConfirm
+              className="ss-confirm"
+              question={`Leave ${project.name}? Someone will have to add you back.`}
+              confirmLabel="Leave space"
+              confirmClassName="button button-danger button-md"
+              cancelClassName="button button-secondary button-md"
+              confirmAction="confirm-leave"
+              busy={leaving === 'busy'}
+              error={leaveError}
+              errorMark="leave"
+              onConfirm={leave}
+              onCancel={() => {
+                setLeaving(undefined);
+                setLeaveError(undefined);
+              }}
+              returnFocus={() => leaveButton.current}
+            />
           ))}
         {leftNotice !== undefined && (
           <p className="ss-notice" role="status" data-left-notice>
@@ -350,29 +437,6 @@ export function MembersTab({
           </p>
         )}
       </footer>
-
-      <div className="ss-toasts">
-        {toast !== undefined && (
-          <div key={toast.id} className="ss-toast" data-toast>
-            <span role="status">{toast.text}</span>
-            {toast.undo !== undefined && (
-              <button type="button" className="ss-toast-undo" onClick={toast.undo}>
-                Undo
-              </button>
-            )}
-            <button
-              type="button"
-              className="ss-toast-close"
-              aria-label="Dismiss"
-              onClick={() => {
-                setToast(undefined);
-              }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          </div>
-        )}
-      </div>
     </section>
   );
 }
@@ -463,7 +527,7 @@ function AddPeople({
                 setChosen((current) => current.filter((u) => u.id !== person.id));
               }}
             >
-              {person.name} <span aria-hidden="true">×</span>
+              {person.name} <Icon name="close" size="tiny" />
               <span className="visually-hidden"> — remove from the people to add</span>
             </button>
           ))}
@@ -485,13 +549,19 @@ function AddPeople({
             }}
           />
         </div>
-        <div className="ss-segmented" role="radiogroup" aria-label="Role for the people added">
-          {ADD_ROLES.map((value) => (
+        <div
+          className="ss-segmented"
+          role="radiogroup"
+          aria-label="Role for the people added"
+          onKeyDown={onRadioGroupKeyDown}
+        >
+          {ADD_ROLES.map((value, index) => (
             <button
               key={value}
               type="button"
               role="radio"
               aria-checked={role === value}
+              tabIndex={radioTabIndex(role === value, index, true)}
               data-add-role={value}
               title={ROLE_SUMMARY[value]}
               onClick={() => {
@@ -551,9 +621,7 @@ function AddPeople({
 
       {chosen.length > 0 && (
         <div className="ss-add-go">
-          <button
-            type="button"
-            className="ss-btn ss-btn-primary"
+          <Button
             data-action="add-people"
             disabled={busy}
             onClick={() => {
@@ -566,16 +634,15 @@ function AddPeople({
             }}
           >
             {`Add ${chosen.length === 1 ? (chosen[0]?.name ?? '1 person') : `${String(chosen.length)} people`} as ${projectRoleLabel(role)}`}
-          </button>
-          <button
-            type="button"
-            className="ss-btn"
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => {
               setChosen([]);
             }}
           >
             Clear
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -668,9 +735,7 @@ function CopyMembers({
         </p>
       )}
       <div className="ss-confirm-actions">
-        <button
-          type="button"
-          className="ss-btn ss-btn-primary"
+        <Button
           data-action="confirm-copy"
           disabled={busy || incoming.length === 0}
           onClick={() => {
@@ -683,17 +748,16 @@ function CopyMembers({
           {incoming.length === 0
             ? 'Copy members'
             : `Copy ${String(incoming.length)} ${incoming.length === 1 ? 'person' : 'people'}`}
-        </button>
-        <button
-          type="button"
-          className="ss-btn"
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => {
             setOpen(false);
             setSource('');
           }}
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );

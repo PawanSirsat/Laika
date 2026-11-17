@@ -208,6 +208,62 @@ void describe('frames reach every consumer', () => {
     offB();
   });
 
+  /*
+   * `open` and `ready` are said once per connection, so a consumer who joins
+   * an established one must be told (LAI-1306): the space's LIVE pill joins
+   * after the header's notifications and read CONNECTING on a healthy stream.
+   */
+  void test('a late subscriber to a live connection hears open and ready, once', async () => {
+    const offA = subscribeToEvents('laika-core', () => undefined);
+    built[0]?.onopen?.();
+    built[0]?.handlers.get('ready')?.({ data: '{}', lastEventId: '' });
+
+    const late: StreamFrame[] = [];
+    const offB = subscribeToEvents('laika-core', (f) => late.push(f));
+    await Promise.resolve();
+    assert.deepEqual(late, [{ kind: 'open' }, { kind: 'ready' }]);
+    assert.equal(built.length, 1, 'the late subscriber opened its own connection');
+
+    built[0]?.handlers.get('task.created')?.({ data: '{}', lastEventId: '3' });
+    assert.deepEqual(
+      late.map((f) => f.kind),
+      ['open', 'ready', 'activity'],
+      'the late subscriber was told twice, or missed the next frame',
+    );
+    offA();
+    offB();
+  });
+
+  void test('…open alone before ready, and nothing on a connection that dropped', async () => {
+    const offA = subscribeToEvents('laika-core', () => undefined);
+    built[0]?.onopen?.();
+    const opened: StreamFrame[] = [];
+    const offB = subscribeToEvents('laika-core', (f) => opened.push(f));
+    await Promise.resolve();
+    assert.deepEqual(opened, [{ kind: 'open' }], 'ready was claimed before the server said it');
+
+    built[0]?.handlers.get('ready')?.({ data: '{}', lastEventId: '' });
+    const source = built[0];
+    assert.ok(source);
+    source.readyState = 0;
+    source.onerror?.();
+    const dropped: StreamFrame[] = [];
+    const offC = subscribeToEvents('laika-core', (f) => dropped.push(f));
+    await Promise.resolve();
+    assert.deepEqual(dropped, [], 'a dropped connection was reported live to a new subscriber');
+    offA();
+    offB();
+    offC();
+  });
+
+  void test('the first subscriber is not told anything it has not heard', async () => {
+    const seen: StreamFrame[] = [];
+    const off = subscribeToEvents('laika-core', (f) => seen.push(f));
+    await Promise.resolve();
+    assert.deepEqual(seen, []);
+    off();
+  });
+
   void test('it subscribes by name, because onmessage never fires', () => {
     // The server names every activity frame with its §4.8 type, so a client
     // that listens only for `message` receives nothing while looking connected.

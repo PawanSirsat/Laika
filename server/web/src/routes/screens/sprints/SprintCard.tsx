@@ -9,6 +9,9 @@ import {
 import { LockIcon } from '../../../components/LockIcon.tsx';
 import { formatRange, sprintDays, type SprintProgress } from './sprint-derive.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
+import { SprintKey } from './SprintKey.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 
 export interface SprintCardProps {
   readonly sprint: Sprint;
@@ -83,7 +86,7 @@ export function SprintCard(props: SprintCardProps) {
         design fits in a third of one.
       */}
       <div className="sprint-row">
-        <span className="sprint-id">S{props.index}</span>
+        <SprintKey index={props.index} className="sprint-id" />
 
         <span className={`sprint-status sprint-status-${sprint.status}`}>{sprint.status}</span>
 
@@ -91,6 +94,7 @@ export function SprintCard(props: SprintCardProps) {
           <span className="sprint-headline-top">
             <h3 className="sprint-name">{sprint.name}</h3>
             <time className="sprint-range" dateTime={new Date(sprint.starts_on).toISOString()}>
+              <Icon name="calendar" size="tiny" className="section-mark" />
               {formatRange(sprint.starts_on, sprint.ends_on)} · {days} days
             </time>
           </span>
@@ -113,13 +117,12 @@ export function SprintCard(props: SprintCardProps) {
                 : `${String(progress.percent)}%${sprint.status === 'completed' ? ' done now' : ''}`}
             </span>
             {props.blocked > 0 && (
-              <span
-                className="sprint-blocked"
-                title={`${String(props.blocked)} blocked by unfinished work`}
-              >
-                <LockIcon />
-                {props.blocked}
-              </span>
+              <Tooltip content={`${String(props.blocked)} blocked by unfinished work`} lazy>
+                <span className="sprint-blocked">
+                  <LockIcon />
+                  {props.blocked}
+                </span>
+              </Tooltip>
             )}
           </span>
 
@@ -147,20 +150,31 @@ export function SprintCard(props: SprintCardProps) {
               incl. {props.subtasks} {props.subtasks === 1 ? 'subtask' : 'subtasks'}
             </span>
           )}
+          {/* Labelled only when it is a forecast; the no-forecast line
+              already starts with the word. */}
+          {line !== null && (forecast?.forecast ?? null) !== null && (
+            <span className="sprint-forecast-label" aria-hidden="true">
+              Forecast
+            </span>
+          )}
           {line !== null && forecast !== undefined && (
-            <span
-              className={
-                forecast.forecast === null
-                  ? 'sprint-forecast sprint-forecast-none'
-                  : 'sprint-forecast'
-              }
-              data-forecast={forecast.forecast === null ? 'none' : 'range'}
-              title={`From what this project finished in the last ${String(forecast.basis.days)} days (${String(
+            <Tooltip
+              content={`From what this project finished in the last ${String(forecast.basis.days)} days (${String(
                 forecast.basis.tasks_done,
               )} tasks) and the effort left — not story points`}
+              lazy
             >
-              {line}
-            </span>
+              <span
+                className={
+                  forecast.forecast === null
+                    ? 'sprint-forecast sprint-forecast-none'
+                    : 'sprint-forecast'
+                }
+                data-forecast={forecast.forecast === null ? 'none' : 'range'}
+              >
+                {line}
+              </span>
+            </Tooltip>
           )}
         </span>
 
@@ -206,14 +220,20 @@ export function SprintCard(props: SprintCardProps) {
                 className="sprint-button"
                 onClick={props.onEdit}
                 disabled={busy}
+                aria-label={`Edit ${sprint.name}`}
               >
                 Edit
               </button>
+              {/* Quiet until it is asked for (LAI-1195): a red button on every
+                  row, the running sprint included, read as an alarm. The
+                  confirm that follows is where the danger is said. */}
               <button
                 type="button"
-                className="sprint-button sprint-button-danger"
+                className="sprint-button sprint-button-quiet"
                 onClick={props.onDelete}
                 disabled={busy}
+                data-delete-for={sprint.id}
+                aria-label={`Delete ${sprint.name}`}
               >
                 {pending === `remove:${sprint.id}` && <Spinner size="sm" />}
                 Delete
@@ -224,16 +244,16 @@ export function SprintCard(props: SprintCardProps) {
 
         {/* Scopes the board, the timeline and the strip to this sprint — which
             is what the design's footnote says this row does. */}
-        <button
-          type="button"
-          className="sprint-open"
-          onClick={props.onScope}
-          aria-label={`Show ${sprint.name} on the board`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="m9 6 6 6-6 6" stroke="currentColor" strokeWidth="2" />
-          </svg>
-        </button>
+        <Tooltip content="Show on the board">
+          <button
+            type="button"
+            className="sprint-open"
+            onClick={props.onScope}
+            aria-label={`Show ${sprint.name} on the board`}
+          >
+            <Icon name="chevron" size="small" />
+          </button>
+        </Tooltip>
       </div>
 
       {props.expanded && (

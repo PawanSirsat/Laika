@@ -1,4 +1,6 @@
 import './toast.css';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** What the page last said, and what Undo would take back (LAI-831). */
 export interface ToastState {
@@ -62,14 +64,16 @@ export function Toast({ toast, busy, onUndo, onClose }: ToastProps) {
               Undo
             </button>
           )}
-          <button
-            type="button"
-            className="myday-toast-close"
-            aria-label="Dismiss"
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <Tooltip content="Dismiss">
+            <button
+              type="button"
+              className="myday-toast-close"
+              aria-label="Dismiss"
+              onClick={onClose}
+            >
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
         </div>
       )}
     </div>

@@ -17,6 +17,7 @@ import { AgentPicker, NO_AGENT, type AgentChoice } from '../agent/AgentPicker.ts
 import { Dropdown } from '../Dropdown.tsx';
 import { Field } from '../forms/Field.tsx';
 import { PriorityIcon } from '../PriorityIcon.tsx';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import type { CreateTaskDraft, FieldKey } from './create-task-form.ts';
 
 export interface CreateTaskFieldsProps {
@@ -179,7 +180,7 @@ export function CreateTaskFields({
       </Labelled>
 
       <div className="ct-row">
-        <Field label="Status" error={errors.status}>
+        <Field label="Status" icon="status" error={errors.status}>
           {({ inputId, describedBy, invalid }) => (
             <Dropdown
               id={inputId}
@@ -196,7 +197,7 @@ export function CreateTaskFields({
             />
           )}
         </Field>
-        <Field label="Priority" error={errors.priority}>
+        <Field label="Priority" icon="flag" error={errors.priority}>
           {({ inputId, describedBy, invalid }) => (
             <Dropdown
               id={inputId}
@@ -225,7 +226,15 @@ export function CreateTaskFields({
       </div>
 
       <div className="ct-row">
-        <Field label="Assignee" error={errors.assignee}>
+        <Field
+          label="Assignee"
+          icon="person"
+          error={errors.assignee}
+          hint={{
+            label: 'About Assignee',
+            text: 'The person accountable for this task. An agent can do the work; the assignee answers for it.',
+          }}
+        >
           {({ inputId, describedBy, invalid }) => (
             <Dropdown
               id={inputId}
@@ -252,6 +261,11 @@ export function CreateTaskFields({
             aria-invalid={errors.agent === undefined ? undefined : true}
           >
             <AgentPicker
+              icon="agent"
+              hint={{
+                label: 'About Agent',
+                text: 'A coding agent you ask to do the work. The request waits until the agent accepts it, and the assignee stays accountable.',
+              }}
               agents={agents ?? []}
               value={draft.agentId ?? NO_AGENT}
               disabled={busy || agents === undefined}
@@ -267,7 +281,7 @@ export function CreateTaskFields({
       </div>
 
       <div className="ct-row">
-        <Field label="Sprint" error={errors.sprint}>
+        <Field label="Sprint" icon="sprint" error={errors.sprint}>
           {({ inputId, describedBy, invalid }) => (
             <Dropdown
               id={inputId}
@@ -293,7 +307,7 @@ export function CreateTaskFields({
             />
           )}
         </Field>
-        <Field label="Due date" error={errors.dueOn}>
+        <Field label="Due date" icon="calendar" error={errors.dueOn}>
           {({ inputId, describedBy, invalid }) => (
             <input
               id={inputId}
@@ -406,17 +420,21 @@ export function CreateTaskFields({
                           });
                         }}
                       />
-                      <button
-                        type="button"
-                        className="ct-ships-remove"
-                        aria-label={`Remove ${item.title || 'this item'}`}
-                        disabled={busy}
-                        onClick={() => {
-                          onChange({ deliverables: draft.deliverables.filter((_, j) => j !== i) });
-                        }}
-                      >
-                        ×
-                      </button>
+                      <Tooltip content={`Remove ${item.title || 'this item'}`}>
+                        <button
+                          type="button"
+                          className="ct-ships-remove"
+                          aria-label={`Remove ${item.title || 'this item'}`}
+                          disabled={busy}
+                          onClick={() => {
+                            onChange({
+                              deliverables: draft.deliverables.filter((_, j) => j !== i),
+                            });
+                          }}
+                        >
+                          <span aria-hidden="true">×</span>
+                        </button>
+                      </Tooltip>
                     </li>
                   ))}
                 </ol>
@@ -570,17 +588,19 @@ export function CreateTaskFields({
                         return (
                           <li key={id} className="ct-chip" title={task?.title}>
                             {name}
-                            <button
-                              type="button"
-                              className="ct-chip-remove"
-                              aria-label={`Remove ${name}`}
-                              disabled={busy}
-                              onClick={() => {
-                                onChange({ blockedBy: draft.blockedBy.filter((b) => b !== id) });
-                              }}
-                            >
-                              ×
-                            </button>
+                            <Tooltip content={`Remove ${name}`}>
+                              <button
+                                type="button"
+                                className="ct-chip-remove"
+                                aria-label={`Remove ${name}`}
+                                disabled={busy}
+                                onClick={() => {
+                                  onChange({ blockedBy: draft.blockedBy.filter((b) => b !== id) });
+                                }}
+                              >
+                                <span aria-hidden="true">×</span>
+                              </button>
+                            </Tooltip>
                           </li>
                         );
                       })}

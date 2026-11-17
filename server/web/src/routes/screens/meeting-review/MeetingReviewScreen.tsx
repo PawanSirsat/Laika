@@ -2,9 +2,9 @@ import { everyPage } from '../../../api/every-page.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useMemo, useState } from 'react';
-import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
-import { EmptyState } from '../../../components/EmptyState.tsx';
-import { LoadingState } from '../../../components/LoadingState.tsx';
+import { ApiErrorPanel } from '../../../components/ApiErrorPanel.tsx';
+import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
+import { Skeleton, SkeletonTableRow } from '../../../components/Skeleton.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import {
   applyMeetingReview,
@@ -28,6 +28,7 @@ import {
   landedState,
   whyNotActionable,
 } from './review-derive.ts';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './meeting-review.css';
 
 export interface MeetingReviewScreenProps {
@@ -94,6 +95,8 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
   const [result, setResult] = useState<ApplyResult | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
+  /** Bumped by Retry on a failed read, which asks for the list again (LAI-1207). */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -119,7 +122,7 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
     return () => {
       controller.abort();
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
   useEffect(() => {
     if (openId === undefined) return;
@@ -142,13 +145,36 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
   }, [openId]);
 
   if (slug === undefined) {
-    return <EmptyState headline="Pick a project" body="Meeting reviews belong to a project." />;
+    return (
+      <EmptyPanel
+        variant="first-use"
+        icon="empty"
+        title="Pick a project"
+        why="Meeting reviews belong to a project."
+      />
+    );
   }
   if (error !== null) {
-    return <ApiErrorState error={error} resource="meeting reviews" scope="project" />;
+    return (
+      <ApiErrorPanel
+        error={error}
+        resource="meeting reviews"
+        scope="project"
+        onRetry={() => {
+          setError(null);
+          setAttempt((n) => n + 1);
+        }}
+      />
+    );
   }
   if (reviews === undefined) {
-    return <LoadingState shape="row" count={3} label="Loading meeting reviews" />;
+    return (
+      <Skeleton label="Loading meeting reviews">
+        {[0, 1, 2].map((row) => (
+          <SkeletonTableRow key={row} columns={['30%', '50%']} />
+        ))}
+      </Skeleton>
+    );
   }
 
   const toggle = (id: string): void => {
@@ -216,9 +242,10 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
       />
 
       {reviews.length === 0 ? (
-        <EmptyState
-          headline="No meeting has been submitted"
-          body="A meeting reaches Laika through the transcript webhook. What comes back is a set of proposals to review — nothing is written to the board until somebody accepts them."
+        <EmptyPanel
+          variant="first-use"
+          title="No meeting has been submitted"
+          why="A meeting reaches Laika through the transcript webhook. What comes back is a set of proposals to review — nothing is written to the board until somebody accepts them."
         />
       ) : (
         <div className="mr-body">
@@ -247,7 +274,11 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
 
           <section className="mr-detail">
             {detail === undefined ? (
-              <LoadingState shape="row" count={3} label="Loading proposals" />
+              <Skeleton label="Loading proposals">
+                {[0, 1, 2].map((row) => (
+                  <SkeletonTableRow key={row} columns={['70%', '20%']} />
+                ))}
+              </Skeleton>
             ) : (
               <>
                 {blocked !== undefined && (
@@ -295,7 +326,7 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                     </button>
 
                     <div className="mr-apply-group">
-                      <span className="mr-count" aria-live="polite">
+                      <span className="mr-count" id="mr-count" aria-live="polite">
                         {accepted.size === 0
                           ? 'Nothing accepted yet'
                           : `${String(accepted.size)} of ${String(detail.proposals.length)} accepted`}
@@ -307,6 +338,8 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                            the control says so by being unavailable rather than
                            by sending nothing and reporting success. */
                         disabled={busy || accepted.size === 0}
+                        // Why it is off is the count beside it (LAI-1213).
+                        aria-describedby={accepted.size === 0 ? 'mr-count' : undefined}
                         onClick={apply}
                       >
                         {busy && <Spinner size="sm" />}
@@ -382,7 +415,7 @@ function ProposalRow({
                   <>
                     <span className="mr-change-from">{change.from}</span>
                     <span className="mr-change-arrow" aria-hidden="true">
-                      →
+                      <Icon name="arrow-right" size="tiny" />
                     </span>
                   </>
                 )}

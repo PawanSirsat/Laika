@@ -1,5 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 
@@ -33,6 +33,7 @@ export function AssignTasksPanel({
   onClose,
 }: AssignTasksPanelProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const reasonId = useId();
 
   const toggle = (id: string): void => {
     const next = new Set(selected);
@@ -87,6 +88,7 @@ export function AssignTasksPanel({
               type="button"
               className="sprint-button sprint-button-primary"
               disabled={busy || selected.size === 0}
+              aria-describedby={selected.size === 0 ? reasonId : undefined}
               onClick={() => {
                 void onAssign([...selected]).then((ok) => {
                   if (ok) {
@@ -99,6 +101,12 @@ export function AssignTasksPanel({
               {busy && <Spinner size="sm" />}
               {`Add ${String(selected.size)} task${selected.size === 1 ? '' : 's'}`}
             </button>
+            {/* Why Add is off, beside it (LAI-1213). */}
+            {selected.size === 0 && (
+              <span className="sprint-hint" id={reasonId}>
+                Tick the tasks to add first.
+              </span>
+            )}
           </div>
         </>
       )}

@@ -25,6 +25,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { DEACTIVATES } from './row-menu.ts';
 
 const user = (id: string, name: string, org_role: string) => ({
   id,
@@ -343,7 +344,7 @@ void describe('People: only the owner changes a role', () => {
       assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 0);
       const tomas = h.page.locator('.org-person', { hasText: 'Tomas Nel' });
       assert.equal(await tomas.locator('.org-person-role').innerText(), 'Member');
-      assert.equal(await tomas.locator('button.org-deactivate').count(), 1);
+      assert.equal(await tomas.locator(DEACTIVATES).count(), 1);
     } finally {
       await h.close();
     }

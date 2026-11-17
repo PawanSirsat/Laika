@@ -3,6 +3,9 @@ import { type AgentClient } from '../../api/agent-clients.ts';
 import { harnessName } from '../../api/selected-agent.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { Dropdown, type DropdownOption } from '../Dropdown.tsx';
+import { Icon } from '../icon/Icon.tsx';
+import type { IconName } from '../icon/icon-paths.ts';
+import { InfoHint } from '../tooltip/InfoHint.tsx';
 import { AVAILABILITY_WORDS } from './agent-states.ts';
 import './agent.css';
 
@@ -53,6 +56,10 @@ export interface AgentPickerProps {
   readonly value: string;
   readonly onChange: (id: string) => void;
   readonly disabled?: boolean | undefined;
+  /** A decorative mark before *Agent*, where a form gives its labels one (LAI-1209). */
+  readonly icon?: IconName | undefined;
+  /** Secondary help behind an (i) beside *Agent* (LAI-1209); the line under the field stays. */
+  readonly hint?: { readonly label: string; readonly text: string } | undefined;
 }
 
 /**
@@ -90,7 +97,7 @@ export function choiceDetail(agent: AgentChoice): string {
  * Picking an agent is a work request, not a claim (proposal §3): the line under
  * the field says so, so nobody reads a selection as work having started.
  */
-export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerProps) {
+export function AgentPicker({ agents, value, onChange, disabled, icon, hint }: AgentPickerProps) {
   const labelId = useId();
   const helpId = useId();
   const options: DropdownOption[] = [
@@ -111,12 +118,25 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
     })),
   ];
   const selected = agents.find((a) => a.id === value);
+  const label = (
+    <span id={labelId} className="agent-row-label">
+      {icon !== undefined && <Icon name={icon} size="small" className="field-label-icon" />}
+      Agent
+    </span>
+  );
 
   return (
     <div className="agent-picker" data-agent-picker>
-      <span id={labelId} className="agent-row-label">
-        Agent
-      </span>
+      {/* The (i) is beside the label, never inside it: the label names the
+          field by aria-labelledby, and a button inside would join that name. */}
+      {hint === undefined ? (
+        label
+      ) : (
+        <span className="agent-row-label-row">
+          {label}
+          <InfoHint label={hint.label}>{hint.text}</InfoHint>
+        </span>
+      )}
       <div className="agent-picker-field">
         <Dropdown
           value={value}

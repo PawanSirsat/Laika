@@ -22,7 +22,7 @@
 .switch:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .switch-track {
@@ -30,7 +30,7 @@
   flex: none;
   width: 2.25rem;
   height: 1.25rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-column);
   border: 1px solid var(--border-default);
   transition: var(--transition);
@@ -42,7 +42,7 @@
   left: 1px;
   width: 1rem;
   height: 1rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--text-muted);
   transition: var(--transition);
 }

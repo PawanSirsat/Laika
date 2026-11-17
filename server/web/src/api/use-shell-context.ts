@@ -35,6 +35,11 @@ export interface ShellContext {
    */
   readonly spaceName: string | undefined;
   /**
+   * The open project's key — its task prefix, `LC` for `LC-42` — from the
+   * same read, for the space header's title row (LAI-1198).
+   */
+  readonly spaceKey: string | undefined;
+  /**
    * The open project's id, from the same read as its name (LAI-178): the
    * space bar asks the permissions store about *this* project — whether the
    * reader may create a task here — and the store is keyed by id.
@@ -89,6 +94,7 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
    */
   const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
   const [spaceId, setSpaceId] = useState<string | undefined>(undefined);
+  const [spaceKey, setSpaceKey] = useState<string | undefined>(undefined);
   /**
    * Bumped whenever the stream says this project changed, which re-runs the
    * count below (LAI-122).
@@ -142,6 +148,7 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     if (!enabled || slug === undefined) {
       setSpaceName(undefined);
       setSpaceId(undefined);
+      setSpaceKey(undefined);
       return;
     }
 
@@ -149,12 +156,16 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     // A new space's id, not the last one's: a gate read against the previous
     // project's grants for one frame is the LAI-970 bug.
     setSpaceId(undefined);
+    setSpaceKey(undefined);
 
     getProject(slug, controller.signal)
       .then((project) => {
         if (controller.signal.aborted) return;
         setSpaceName(project.name);
         setSpaceId(project.id);
+        // A fixture or an older server may send no prefix; no key beats a throw.
+        const prefix = typeof project.prefix === 'string' ? project.prefix.trim() : '';
+        setSpaceKey(prefix === '' ? undefined : prefix);
       })
       .catch(() => {
         // The rail falls back to the listed name and then to the product name;
@@ -212,6 +223,7 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
   return {
     spaceName,
     spaceId,
+    spaceKey,
     version,
     sprintCount,
     orgName,

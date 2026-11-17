@@ -10,7 +10,7 @@ import {
 import { everyPage } from '../../../api/every-page.ts';
 import { applyProjectRows, listProjects, type Project } from '../../../api/projects.ts';
 import type { OrgUser } from '../../../api/users.ts';
-import { dateTime } from '../../../api/time-label.ts';
+import { clockTime } from '../../../api/time-label.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -20,9 +20,11 @@ import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import { plainClick, taskHref } from '../my-day/task-link.ts';
 import {
+  dayGroups,
   filtersFrom,
   historyQuery,
   withFilter,
+  withoutFilters,
   type HistoryFilter,
   type HistoryFilters,
 } from './org-history.ts';
@@ -126,6 +128,10 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
   ];
 
   const now = Date.now();
+  const filtered = Object.keys(filters).length > 0;
+  const clearFilters = (): void => {
+    setParams(withoutFilters(params));
+  };
 
   return (
     <section className="org-card oh" aria-labelledby="org-activity">
@@ -207,6 +213,17 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
             }}
           />
         </label>
+        {filtered && (
+          // One way back to everything, wherever the filters came from (LAI-1210).
+          <button
+            type="button"
+            className="bar-control oh-clear"
+            data-history-clear
+            onClick={clearFilters}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {state.status === 'loading' && (
@@ -228,87 +245,106 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
           <EmptyState
             headline="No activity"
             body={
-              Object.keys(filters).length === 0
-                ? 'Nothing has happened in this organisation yet.'
-                : 'Nothing matches these filters.'
+              filtered
+                ? 'Nothing matches these filters.'
+                : 'Nothing has happened in this organisation yet.'
             }
+            {...(filtered ? { action: { label: 'Clear filters', onClick: clearFilters } } : {})}
           />
         ) : (
           <>
             <ol className="oh-list">
-              {state.rows.map((event) => {
-                const space = event.project_id === null ? undefined : spaces.get(event.project_id);
-                const move = statusMoveNames(event);
-                const key = taskKey(event);
-                const who =
-                  event.actor_kind === 'system'
-                    ? 'Laika'
-                    : event.actor_id === null
-                      ? 'Someone'
-                      : (names.get(event.actor_id) ?? 'Someone');
-                const via = agentVia(event, agentNames);
-                return (
-                  <li key={event.id} className="oh-row">
-                    <time
-                      className="oh-when"
-                      dateTime={new Date(event.created_at).toISOString()}
-                      title={new Date(event.created_at).toLocaleString()}
-                    >
-                      {dateTime(event.created_at, now)}
-                    </time>
-                    <span className="oh-who">
-                      {event.actor_kind === 'system' || event.actor_id === null ? (
-                        who
-                      ) : (
-                        // Their profile, for a reader who may open it (LAI-959).
-                        <PersonLink
-                          userId={event.actor_id}
-                          className="oh-person"
-                          label={`${who}’s profile`}
-                        >
-                          {who}
-                        </PersonLink>
-                      )}
-                      {via !== undefined && <span className="oh-via">via {via}</span>}
-                      {event.actor_kind === 'agent' && <span className="org-chip">Agent</span>}
-                    </span>
-                    <span className="oh-what">{pushSummary(event) ?? describeEvent(event)}</span>
-                    {move !== undefined && (
-                      <span className="oh-detail">
-                        {move.from} → {move.to}
-                      </span>
-                    )}
-                    <span className="oh-where">
-                      {event.project_id === null ? (
-                        'Organisation'
-                      ) : space === undefined ? (
-                        'A space'
-                      ) : (
-                        <>
-                          <a
-                            className="oh-space"
-                            href={`/board?project=${encodeURIComponent(space.slug)}`}
-                            onClick={follow(`/board?project=${encodeURIComponent(space.slug)}`)}
+              {dayGroups(state.rows, now).map((day) => (
+                // One day under one heading (LAI-1210); each row keeps its time.
+                <li key={day.key} className="oh-day" data-history-day={day.key}>
+                  <h3 className="oh-day-head">{day.label}</h3>
+                  <ol className="oh-day-rows">
+                    {day.rows.map((event) => {
+                      const space =
+                        event.project_id === null ? undefined : spaces.get(event.project_id);
+                      const move = statusMoveNames(event);
+                      const key = taskKey(event);
+                      const who =
+                        event.actor_kind === 'system'
+                          ? 'Laika'
+                          : event.actor_id === null
+                            ? 'Someone'
+                            : (names.get(event.actor_id) ?? 'Someone');
+                      const via = agentVia(event, agentNames);
+                      return (
+                        <li key={event.id} className="oh-row">
+                          <time
+                            className="oh-when"
+                            dateTime={new Date(event.created_at).toISOString()}
+                            title={new Date(event.created_at).toLocaleString()}
                           >
-                            {space.name}
-                          </a>
-                          {event.task_id !== null && (
-                            <a
-                              className="oh-task"
-                              href={taskHref({ id: event.task_id, key: key ?? '' }, space.slug)}
-                              onClick={follow(
-                                taskHref({ id: event.task_id, key: key ?? '' }, space.slug),
-                              )}
-                            >
-                              {key ?? 'Open task'}
-                            </a>
+                            {clockTime(event.created_at)}
+                          </time>
+                          <span className="oh-who">
+                            {event.actor_kind === 'system' || event.actor_id === null ? (
+                              who
+                            ) : (
+                              // Their profile, for a reader who may open it (LAI-959).
+                              <PersonLink
+                                userId={event.actor_id}
+                                className="oh-person"
+                                label={`${who}’s profile`}
+                              >
+                                {who}
+                              </PersonLink>
+                            )}
+                            {via !== undefined && <span className="oh-via">via {via}</span>}
+                            {event.actor_kind === 'agent' && (
+                              <span className="org-chip">Agent</span>
+                            )}
+                          </span>
+                          <span className="oh-what">
+                            {pushSummary(event) ?? describeEvent(event)}
+                          </span>
+                          {move !== undefined && (
+                            <span className="oh-detail">
+                              {move.from} → {move.to}
+                            </span>
                           )}
-                        </>
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
+                          <span className="oh-where">
+                            {event.project_id === null ? (
+                              'Organisation'
+                            ) : space === undefined ? (
+                              'A space'
+                            ) : (
+                              <>
+                                <a
+                                  className="oh-space"
+                                  href={`/board?project=${encodeURIComponent(space.slug)}`}
+                                  onClick={follow(
+                                    `/board?project=${encodeURIComponent(space.slug)}`,
+                                  )}
+                                >
+                                  {space.name}
+                                </a>
+                                {event.task_id !== null && (
+                                  <a
+                                    className="oh-task"
+                                    href={taskHref(
+                                      { id: event.task_id, key: key ?? '' },
+                                      space.slug,
+                                    )}
+                                    onClick={follow(
+                                      taskHref({ id: event.task_id, key: key ?? '' }, space.slug),
+                                    )}
+                                  >
+                                    {key ?? 'Open task'}
+                                  </a>
+                                )}
+                              </>
+                            )}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </li>
+              ))}
             </ol>
 
             {state.next !== null && (

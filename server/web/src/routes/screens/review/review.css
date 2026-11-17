@@ -1,6 +1,6 @@
 /*
- * The review queue (D-082, LAI-758). The summary card and its tiles are the
- * member profile's (`prof-card`, `prof-stat`); these rules are the list.
+ * The review queue (D-082, LAI-758). The figures and the bar are the shared
+ * KpiRow and FilterBar (LAI-1222); these rules are the list.
  * Tokens only, so both themes come from `theme.css`.
  */
 
@@ -14,22 +14,37 @@
   margin-inline: 1.125rem;
 }
 
-.rev-summary .prof-stats {
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-}
-
-.rev-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* The dropdown's field is full-width by default; beside the toggles it is a
-   control of its own width. */
-.rev-filters .rev-filter {
-  width: 15rem;
+/* The bar under the figures: the dropdowns are controls of their own width. */
+.rev-bar .rev-filter {
+  width: 13rem;
   max-width: 100%;
+}
+
+.rev-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rev-clear {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-1);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.rev-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .rev-list {
@@ -55,14 +70,14 @@
 
 .rev-line {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto 5.5rem;
   grid-template-areas:
-    'key title wait'
-    'meta meta proof';
-  gap: var(--space-1) var(--space-3);
+    'key title proof wait'
+    '. meta proof wait';
+  gap: var(--space-0-5) var(--space-3);
   align-items: center;
   width: 100%;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2-5) var(--space-4);
   border: 0;
   background: none;
   color: inherit;
@@ -98,12 +113,21 @@
   white-space: nowrap;
 }
 
+/* `12d 2h`, right-aligned in its own column so the ages read down the page. */
 .rev-wait {
   grid-area: wait;
+  justify-self: end;
   font-family: var(--font-mono);
   font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/* Two days and over: the one age that is a problem gets the colour. */
+.rev-wait-stale {
+  color: var(--chip-orange);
+  font-weight: var(--weight-semibold);
 }
 
 .rev-meta {
@@ -113,64 +137,50 @@
   gap: var(--space-1) var(--space-3);
   min-width: 0;
   font-size: var(--text-small);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .rev-agent {
-  color: var(--chip-pink);
+  color: var(--text-secondary);
   font-weight: var(--weight-semibold);
 }
 
 .rev-proof {
   grid-area: proof;
   display: flex;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-1);
 }
 
-.rev-chip {
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  padding: 0.0625rem 0.5rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--chip-neutral-border);
-  background: var(--chip-neutral-bg);
-  color: var(--chip-neutral);
+/* The row's own Accept and Send back…: laid over the right end of the row on
+   hover or focus, so they cost no width the rest of the time. A touch screen,
+   which has no hover, draws them under the line instead (below). */
+.rev-actions {
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding-left: var(--space-4);
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, var(--bg-card-hover) var(--space-4));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
-.rev-chip-pass {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
+.rev-actions:empty {
+  display: none;
 }
 
-.rev-chip-fail {
-  color: var(--overdue);
-  background: color-mix(in srgb, var(--overdue) 12%, transparent);
-  border-color: var(--overdue-border);
+.rev-row:hover > .rev-actions,
+.rev-row:focus-within > .rev-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.rev-chip-none {
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border-color: var(--chip-orange-border);
-}
-
-/* GitHub's CI verdict (D-083): the agent's exit codes say what it ran, this
-   says what CI found. Pending is the neutral chip. */
-.rev-chip-ci-confirmed {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
-}
-
-.rev-chip-ci-failed {
-  color: var(--overdue);
-  background: color-mix(in srgb, var(--overdue) 12%, transparent);
-  border-color: var(--overdue-border);
+.rev-row-selected > .rev-actions {
+  background: linear-gradient(to right, transparent, var(--accent-bg) var(--space-4));
 }
 
 .rev-open {
@@ -197,17 +207,12 @@
   }
 
   .rev-line {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      'key wait'
-      'title title'
-      'meta meta'
-      'proof proof';
+      'key title wait'
+      'meta meta meta'
+      'proof proof proof';
     padding: var(--space-3);
-  }
-
-  .rev-wait {
-    justify-self: end;
   }
 
   .rev-title {
@@ -218,28 +223,26 @@
     justify-content: flex-start;
   }
 
-  .rev-filters .rev-filter {
-    width: auto;
-    min-width: 0;
-    flex: 1 1 8rem;
+  .rev-bar .rev-filter {
+    width: 100%;
   }
 }
 
-/* LAI-772: "check this one" — finished far faster than forecast, nothing
-   confirmed. About the task, so purple rather than the failure red. */
-.rev-chip-check {
-  color: var(--chip-purple);
-  background: var(--chip-purple-bg);
-  border-color: var(--chip-purple-border);
-}
+/* No hover to reveal them: the row's actions sit under its line, always. */
+@media (hover: none), (max-width: 640px) {
+  .rev-actions {
+    position: static;
+    grid-column: 2;
+    padding: 0 var(--space-3) var(--space-3) 0;
+    transform: none;
+    background: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
 
-/* ------------------------------------------------- the decision queue (D-146) */
-
-/* The view toggle sits first in the filter row, its two buttons as one unit. */
-.rev-views {
-  display: inline-flex;
-  gap: var(--space-1);
-  margin-right: var(--space-2);
+  .rev-row-selected > .rev-actions {
+    background: none;
+  }
 }
 
 .rev-groups {
@@ -280,7 +283,7 @@
 }
 
 .rev-row > .rev-cell {
-  padding-top: calc(var(--space-3) + 0.125rem);
+  padding-top: calc(var(--space-3) + var(--space-0-5));
 }
 
 .rev-check {
@@ -294,6 +297,7 @@
 }
 
 .rev-row {
+  position: relative;
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr);
   align-items: start;
@@ -322,9 +326,9 @@
   max-width: calc(100% - 2.25rem);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
-  border-radius: 0.625rem;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-modal);
-  padding: 0.4375rem 0.625rem;
+  padding: 0.4375rem var(--space-2-5);
 }
 
 .rev-bulk-row {
@@ -340,8 +344,8 @@
 .rev-bulk-count {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0 0.375rem;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-1-5);
   color: var(--text-primary);
   white-space: nowrap;
 }
@@ -352,7 +356,7 @@
   justify-content: center;
   min-width: 1.375rem;
   height: 1.375rem;
-  padding: 0 0.375rem;
+  padding: 0 var(--space-1-5);
   border-radius: var(--radius-xs);
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);
@@ -371,7 +375,7 @@
   background: none;
   border: none;
   border-radius: var(--radius-xs);
-  padding: 0.25rem 0.4375rem;
+  padding: var(--space-1) 0.4375rem;
   cursor: pointer;
 }
 
@@ -405,8 +409,8 @@
 
 .rev-bulk-row + .rev-bulk-progress,
 .rev-bulk-row + .rev-bulk-report {
-  margin-top: 0.375rem;
-  padding-top: 0.375rem;
+  margin-top: var(--space-1-5);
+  padding-top: var(--space-1-5);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -418,7 +422,7 @@
   color: var(--accent);
   background: none;
   border: none;
-  padding: 0.125rem 0.25rem;
+  padding: var(--space-0-5) var(--space-1);
   border-radius: var(--radius-xs);
   cursor: pointer;
 }
@@ -443,15 +447,6 @@
 }
 
 @media (max-width: 640px) {
-  .rev-views {
-    flex-basis: 100%;
-    margin-right: 0;
-  }
-
-  .rev-views .bar-control {
-    flex: 1 1 auto;
-  }
-
   .rev-bulk {
     max-width: calc(100% - var(--space-4) * 2);
   }
@@ -460,7 +455,7 @@
 /* ------------------------------------------- the dialog's neighbours (LAI-1169) */
 
 /* The Send back dialog opens over the Review dialog (scrim 60, box 61), so
-   its own pair sits one layer up; the dropdown menus and the toast stay at 70. */
+   its own pair sits one layer up; the dropdown menus stay at 70, the toast at 90. */
 .rev-scrim {
   z-index: 62;
 }
@@ -485,6 +480,9 @@
 }
 
 .rev-approvals-all {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--accent);

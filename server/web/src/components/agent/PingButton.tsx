@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PING_WAIT_MS, getCapacityPing, pingAgent, type CapacityPing } from '../../api/capacity.ts';
 import { clockTime, timeLabel } from '../../api/time-label.ts';
 import { PING_WORDS, answerItems, answeredAgo, isStale, pingRefusal } from './capacity-derive.ts';
+import { Tooltip } from '../tooltip/Tooltip.tsx';
 import './agent.css';
 
 /** How often a ping that got no answer within the wait is asked about again. */
@@ -302,9 +303,9 @@ function AnswerAge({
     <p className="agent-ping-line agent-ping-age">
       {stale ? 'Stale: ' : ''}
       {target}{' '}
-      <time dateTime={at.iso} title={at.full}>
-        {answeredAgo(ping.answered_at, now)}
-      </time>
+      <Tooltip content={at.full} lazy>
+        <time dateTime={at.iso}>{answeredAgo(ping.answered_at, now)}</time>
+      </Tooltip>
       {stale && ' — ping again for its state now'}
     </p>
   );

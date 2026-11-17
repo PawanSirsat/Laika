@@ -200,6 +200,19 @@ export function useUnreadNotices(enabled: boolean): number | undefined {
   );
 }
 
+/**
+ * The same count, read and never polled (LAI-1221): the header's bell shows
+ * it beside the rail's badge, and a second `useUnreadNotices` would start a
+ * second poll for the one number.
+ */
+export function useUnreadNoticeCount(): number | undefined {
+  return useSyncExternalStore(
+    subscribe,
+    () => unread,
+    () => unread,
+  );
+}
+
 // ------------------------------------------------------------- the card
 
 export type NoticesState =

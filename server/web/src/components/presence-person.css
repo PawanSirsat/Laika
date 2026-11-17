@@ -124,7 +124,7 @@
   width: 5px;
   height: 5px;
   flex: none;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--chip-green);
 }
 

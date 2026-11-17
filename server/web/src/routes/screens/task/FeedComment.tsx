@@ -6,6 +6,8 @@ import { CommentBody } from './CommentBody.tsx';
 import { foldLabel, type CommentKind } from './feed-groups.ts';
 import { REVEAL_FINISH_EVENT, roundOf } from './reveal-finish.ts';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './feed.css';
 
 export interface FeedCommentProps {
@@ -66,20 +68,12 @@ export function FeedComment({
   const body = saved?.from === comment.updated_at ? saved.body : comment.body_md;
 
   /*
-   * The confirmation's Escape closes the dialog and not the drawer under it:
-   * spent before anything else hears it, as `WhoDidThis` and the send-back
-   * dialog spend theirs.
+   * The confirmation's Escape closes the dialog and not the drawer under it.
+   * That is ConfirmDialog's own since LAI-1205 (`useModalLayer`): the top
+   * layer spends the key and stops it before the drawer's window listener.
+   * The window-capture `preventDefault` that used to stand in for it here
+   * now read to the dialog as "already spent", so it is gone.
    */
-  useEffect(() => {
-    if (!confirming) return;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') event.preventDefault();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [confirming]);
 
   const remove = (): void => {
     setDeleting(true);
@@ -138,9 +132,9 @@ export function FeedComment({
 
   const edited =
     comment.edited_at === null ? null : (
-      <span className="cmt-edited" title={`Edited ${timeLabel(comment.edited_at, now).full}`}>
-        Edited
-      </span>
+      <Tooltip content={`Edited ${timeLabel(comment.edited_at, now).full}`} lazy>
+        <span className="cmt-edited">Edited</span>
+      </Tooltip>
     );
 
   const actions = mayChange ? (
@@ -191,7 +185,7 @@ export function FeedComment({
         <div className={`cmt-card cmt-card-${variant}`} data-comment-kind={variant}>
           {variant === 'reason' && (
             <span className="cmt-sent-back">
-              <span aria-hidden="true">↩</span> Sent back
+              <Icon name="reply" size="tiny" /> Sent back
             </span>
           )}
           <CommentBody body={body} people={people} meId={meId} />

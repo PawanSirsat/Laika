@@ -9,10 +9,12 @@ import type { Project } from '../../../../src/api/projects.ts';
 import {
   ago,
   matchesSearch,
+  openWork,
   progressLine,
   progressOf,
   readSpacesQuery,
   sectionsFor,
+  sortSpaces,
   spaceCounts,
   spaceSubline,
   splitSpaces,
@@ -57,20 +59,32 @@ void describe('the URL carries the chip, the view and the search', () => {
       filter: 'all',
       view: 'grid',
       q: '',
+      sort: 'name',
     });
-    assert.deepEqual(readSpacesQuery(new URLSearchParams('filter=bogus&view=table')), {
+    assert.deepEqual(readSpacesQuery(new URLSearchParams('filter=bogus&view=table&sort=random')), {
       filter: 'all',
       view: 'grid',
       q: '',
+      sort: 'name',
     });
   });
 
   void test('a change is written, a default is removed, other parameters stay', () => {
     const start = new URLSearchParams('other=1');
-    const listed = writeSpacesQuery(start, { view: 'list', filter: 'archived', q: 'rock' });
-    assert.equal(listed.toString(), 'other=1&filter=archived&view=list&q=rock');
-    assert.deepEqual(readSpacesQuery(listed), { filter: 'archived', view: 'list', q: 'rock' });
-    const back = writeSpacesQuery(listed, { view: 'grid', filter: 'all', q: '' });
+    const listed = writeSpacesQuery(start, {
+      view: 'list',
+      filter: 'archived',
+      q: 'rock',
+      sort: 'open',
+    });
+    assert.equal(listed.toString(), 'other=1&filter=archived&view=list&q=rock&sort=open');
+    assert.deepEqual(readSpacesQuery(listed), {
+      filter: 'archived',
+      view: 'list',
+      q: 'rock',
+      sort: 'open',
+    });
+    const back = writeSpacesQuery(listed, { view: 'grid', filter: 'all', q: '', sort: 'name' });
     assert.equal(back.toString(), 'other=1');
   });
 });
@@ -151,6 +165,40 @@ void describe('sections and counts', () => {
   });
 });
 
+void describe('sort (LAI-1196)', () => {
+  const counts = (open: number) => ({
+    backlog: open,
+    todo: 0,
+    in_progress: 0,
+    review: 0,
+    done: 9,
+    cancelled: 4,
+  });
+  const a = space('a', { name: 'beta', task_counts: counts(1), last_activity_at: 300 });
+  const b = space('b', { name: 'Alpha', task_counts: counts(5), last_activity_at: 100 });
+  const c = space('c', { name: 'gamma', task_counts: counts(5), last_activity_at: 200 });
+
+  void test('name is case-blind, updated is newest first, open is most first then name', () => {
+    const order = (sort: 'name' | 'updated' | 'open') =>
+      sortSpaces([a, b, c], sort).map((p) => p.id);
+    assert.deepEqual(order('name'), ['b', 'a', 'c']);
+    assert.deepEqual(order('updated'), ['a', 'c', 'b']);
+    assert.deepEqual(order('open'), ['b', 'c', 'a']);
+  });
+
+  void test('open work leaves done and cancelled out', () => {
+    assert.equal(openWork(a), 1);
+  });
+
+  void test('sections are sorted too', () => {
+    const s = splitSpaces([a, b, c], [], () => true);
+    assert.deepEqual(
+      sectionsFor(s, 'all', '', 'updated').yours.map((p) => p.id),
+      ['a', 'c', 'b'],
+    );
+  });
+});
+
 void describe('the numbers on a card', () => {
   void test('progress counts every task but cancelled, from the served counts', () => {
     const p = progressOf(
@@ -183,8 +231,9 @@ void describe('the numbers on a card', () => {
   });
 
   void test('the sub-line is key · repository, or key · slug', () => {
-    assert.equal(spaceSubline(OPEN), 'OPEN-1 · acme/rocket');
-    assert.equal(spaceSubline(MINE), 'MINE-1 · mine');
+    assert.equal(spaceSubline(OPEN), 'OPEN · acme/rocket');
+    // No repository: the key alone, never the slug (LAI-1196).
+    assert.equal(spaceSubline(space('slugonly', { prefix: 'SO' })), 'SO');
   });
 
   void test('updated reads short', () => {

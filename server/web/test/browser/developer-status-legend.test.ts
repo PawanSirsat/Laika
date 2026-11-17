@@ -329,7 +329,7 @@ void describe('each chip explains its own row', () => {
       assert.equal(await paired.innerText(), 'Paired');
       assert.match(
         await description(paired),
-        /^Paired: Belka holds a key this board approved .+\. Nothing\. Add tool → puts a coding tool on it\.$/,
+        /^Paired: Belka holds a key this board approved .+\. Nothing\. Add tool puts a coding tool on it\.$/,
       );
       const imported = anchorIn(h.page.locator('.dv3-device[data-device="d2"] [data-device-chip]'));
       assert.equal(await imported.innerText(), 'Imported');

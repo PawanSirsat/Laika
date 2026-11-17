@@ -23,7 +23,8 @@ export interface SpaceSlotProps {
 
 /**
  * A view's own context line and controls, rendered up in the space bar
- * (LAI-251).
+ * (LAI-251) — in the header's one toolbar since LAI-1198, after the view's
+ * `SpaceBarSlot` controls and before + Create.
  *
  * The design has **one** bar per space, so a screen cannot draw its own header
  * — that is the double chrome this task exists to remove. But the lines those
@@ -83,11 +84,12 @@ export function SpaceBand({ children }: SpaceBandProps) {
 export const BAR_SLOT_ID = 'space-bar-actions';
 
 /**
- * Portal a view-specific control into the space bar.
+ * Portal a view's controls into the space bar's toolbar (LAI-266, LAI-1198):
+ * the board's whole toolbar row goes here, so the header is one shape on
+ * every tab.
  *
- * Distinct from {@link SpaceSlot}, which renders the row *below* the bar and is
- * hidden when empty. Anything permanent belongs here, or that row stops
- * collapsing and the board grows a band the design does not have.
+ * Distinct from {@link SpaceSlot}, which carries a view's context line and
+ * actions after these and is hidden when empty.
  */
 export function SpaceBarSlot({ children }: { readonly children: ReactNode }) {
   const [host, setHost] = useState<HTMLElement | null>(null);

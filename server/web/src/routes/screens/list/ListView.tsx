@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { EmptyState } from '../../../components/EmptyState.tsx';
+import { EmptyPanel } from '../../../components/EmptyPanel.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
+import { Chip } from '../../../components/chip/Chip.tsx';
+import { sprintGlyphLabel } from '../../../components/chip/chip-model.ts';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -16,6 +18,8 @@ import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentDevice, agentProductName, selectedHarness } from '../../../api/selected-agent.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import './list.css';
 
 /**
@@ -37,7 +41,12 @@ export interface ListViewProps {
   readonly showAgent?: boolean | undefined;
   readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
-  readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
+  readonly sprintLabels: ReadonlyMap<
+    string,
+    { readonly label: string; readonly active?: boolean | undefined }
+  >;
+  /** The task open in the drawer: its row wears the open state (LAI-1206). */
+  readonly selectedId?: string | undefined;
   /** The project's statuses, so STATUS says what the board says (LAI-490, LAI-739). */
   readonly statuses: readonly ProjectStatus[];
   readonly sprints: readonly Sprint[];
@@ -114,6 +123,7 @@ export function ListView({
   byId,
   members,
   sprintLabels,
+  selectedId,
   statuses,
   sprints,
   theme,
@@ -231,15 +241,23 @@ export function ListView({
     return (
       <div className="list-pane">
         <div className="list-scroll list-scroll-empty">
-          <EmptyState
-            headline={filtered ? 'Nothing here for this filter' : 'No tasks in this project yet'}
-            {...(filtered
-              ? {
-                  body: 'Widen the range or switch the filter.',
-                  action: { label: 'Clear filters', onClick: onClearFilters },
-                }
-              : {})}
-          />
+          {/* LAI-1207: the kit's two variants. Filtered keeps its wording and
+              gains the reason; first use points at the Create row beneath it,
+              which is the action, so it carries no button of its own. */}
+          {filtered ? (
+            <EmptyPanel
+              variant="filtered"
+              title="Nothing here for this filter"
+              why="Widen the range or switch the filter."
+              onClearFilters={onClearFilters}
+            />
+          ) : (
+            <EmptyPanel
+              variant="first-use"
+              title="No tasks in this project yet"
+              why="Add the first one below, and it appears here and on the board."
+            />
+          )}
           {createRow}
         </div>
       </div>
@@ -300,24 +318,26 @@ export function ListView({
                           : 'none'
                       }
                     >
-                      <button
-                        type="button"
-                        className="list-sort"
-                        title={`Sort by ${column.label}`}
-                        onClick={() => {
-                          onSort(nextSort(sort, column.key));
-                        }}
-                      >
-                        {column.label}
-                        {/* The active arrow is text; the resting glyph on every
+                      <Tooltip content={`Sort by ${column.label}`} lazy>
+                        <button
+                          type="button"
+                          className="list-sort"
+
+                          onClick={() => {
+                            onSort(nextSort(sort, column.key));
+                          }}
+                        >
+                          {column.label}
+                          {/* The active arrow is text; the resting glyph on every
                         other sortable header is CSS (`list.css`), so it never
                         enters a header's name for a screen reader or a test. */}
-                        {sort.key === column.key && (
-                          <span className="list-sort-arrow" aria-hidden="true">
-                            {sort.ascending ? '▲' : '▼'}
-                          </span>
-                        )}
-                      </button>
+                          {sort.key === column.key && (
+                            <span className="list-sort-arrow" aria-hidden="true">
+                              <Icon name={sort.ascending ? 'arrow-up' : 'arrow-down'} size="tiny" />
+                            </span>
+                          )}
+                        </button>
+                      </Tooltip>
                     </th>
                   ),
                 )}
@@ -338,10 +358,12 @@ export function ListView({
                       'list-row',
                       row.muted ? 'list-row-muted' : '',
                       isSelected ? 'list-row-selected' : '',
+                      row.id === selectedId ? 'list-row-open' : '',
                     ]
                       .filter((c) => c !== '')
                       .join(' ')}
                     aria-selected={mayEdit ? isSelected : undefined}
+                    aria-current={row.id === selectedId ? 'true' : undefined}
                     onClick={() => {
                       onOpen(row.id);
                     }}
@@ -390,16 +412,19 @@ export function ListView({
                             🔒
                           </span>
                         )}
-                        <span className="list-title" title={row.title}>
-                          {row.title}
-                        </span>
+                        <Tooltip content={row.title} lazy>
+                          <span className="list-title">{row.title}</span>
+                        </Tooltip>
                       </span>
                       {(row.labels !== '' || row.blockedBy !== '' || row.parentKey !== '') && (
                         <span className="list-sub">
                           {row.parentKey !== '' && (
-                            <span className="list-parent" title="Subtask of">
-                              {row.parentKey}
-                            </span>
+                            <Tooltip
+                              content={`Subtask of ${row.parentKey.replace(/^↳\s*/, '')}`}
+                              lazy
+                            >
+                              <span className="list-parent">{row.parentKey}</span>
+                            </Tooltip>
                           )}
                           {row.labels !== '' && <span className="list-labels">{row.labels}</span>}
                           {row.blockedBy !== '' && (
@@ -411,26 +436,28 @@ export function ListView({
 
                     <td>
                       {mayEdit ? (
-                        <button
-                          type="button"
-                          className={`list-status list-status-button list-tone-${row.statusTone}`}
-                          aria-haspopup="menu"
-                          aria-expanded={statusMenu?.id === row.id}
-                          aria-busy={moving || undefined}
-                          disabled={moving}
-                          title="Change status"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
-                          }}
-                        >
-                          {/* The label stays while the move is in flight and a
+                        <Tooltip content="Change status" lazy>
+                          <button
+                            type="button"
+                            className={`list-status list-status-button list-tone-${row.statusTone}`}
+                            aria-haspopup="menu"
+                            aria-expanded={statusMenu?.id === row.id}
+                            aria-busy={moving || undefined}
+                            disabled={moving}
+
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
+                            }}
+                          >
+                            {/* The label stays while the move is in flight and a
                             spinner joins it (LAI-293): a pill that swaps its
                             word resizes under the pointer. The caret is CSS,
                             so it never enters the pill's text. */}
-                          {moving && <Spinner />}
-                          {row.status}
-                        </button>
+                            {moving && <Spinner />}
+                            {row.status}
+                          </button>
+                        </Tooltip>
                       ) : (
                         <span className={`list-status list-tone-${row.statusTone}`}>
                           {row.status}
@@ -469,9 +496,9 @@ export function ListView({
                         >
                           {row.initials}
                         </span>
-                        <span className="list-who" title={row.who}>
-                          {row.who}
-                        </span>
+                        <Tooltip content={row.who} lazy>
+                          <span className="list-who">{row.who}</span>
+                        </Tooltip>
                       </span>
                     </td>
 
@@ -482,64 +509,83 @@ export function ListView({
                     {showAgent && (
                       <td className="list-agent">
                         {row.agent !== null && (
-                          <span
-                            className="list-agent-cell"
-                            title={`${row.agentLabel} — ${row.agent.owner.name}’s agent`}
+                          <Tooltip
+                            content={`${row.agentLabel} — ${row.agent.owner.name}’s agent`}
+                            lazy
                           >
-                            <AgentMark client={selectedHarness(row.agent)} size="sm" />
-                            <span className="list-agent-text">
-                              <span className="visually-hidden">
-                                {agentProductName(row.agent)} ·{' '}
+                            <span className="list-agent-cell">
+                              <AgentMark client={selectedHarness(row.agent)} size="sm" />
+                              <span className="list-agent-text">
+                                <span className="visually-hidden">
+                                  {agentProductName(row.agent)} ·{' '}
+                                </span>
+                                {row.agentTwin === undefined ? (
+                                  agentDevice(row.agent)
+                                ) : (
+                                  // Two here share a harness and a device: the
+                                  // cell shows what differs, which an
+                                  // ellipsis would cut from the end (LAI-583).
+                                  <>
+                                    <span className="visually-hidden">{row.agentPlace} (</span>
+                                    {row.agentTwin}
+                                    <span className="visually-hidden">)</span>
+                                  </>
+                                )}
                               </span>
-                              {row.agentTwin === undefined ? (
-                                agentDevice(row.agent)
-                              ) : (
-                                // Two here share a harness and a device: the
-                                // cell shows what differs, which an
-                                // ellipsis would cut from the end (LAI-583).
-                                <>
-                                  <span className="visually-hidden">{row.agentPlace} (</span>
-                                  {row.agentTwin}
-                                  <span className="visually-hidden">)</span>
-                                </>
-                              )}
                             </span>
-                          </span>
+                          </Tooltip>
                         )}
                       </td>
                     )}
 
-                    <td className="list-spr">{row.sprintTag}</td>
+                    {/* The card's sprint pill (LAI-1206), so the two cannot drift. */}
+                    <td className="list-spr">
+                      {row.sprintTag !== '' && (
+                        <SprintCell
+                          label={row.sprintTag}
+                          active={sprintActive(byId.get(row.id)?.sprint_id ?? null, sprintLabels)}
+                        />
+                      )}
+                    </td>
 
                     {/* A <time> with the whole moment on hover (LAI-486): the
                       cell says "27 Sep, 14:05", the tooltip says which year
                       and second. */}
                     <td className={`list-due list-tone-${row.dueTone}`}>
                       {row.due !== '' && (
-                        <span title={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}>
-                          {row.dueTone === 'bad' && <span aria-hidden="true">⚠ </span>}
-                          {row.due}
-                        </span>
+                        <Tooltip
+                          content={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}
+                          lazy
+                        >
+                          <span>
+                            {row.dueTone === 'bad' && (
+                              <>
+                                <Icon name="alert" size="tiny" label="Past due" />{' '}
+                              </>
+                            )}
+                            {row.due}
+                          </span>
+                        </Tooltip>
                       )}
                     </td>
 
                     <td className={`list-created list-tone-${row.createdTone}`}>
-                      <time dateTime={row.created.iso} title={row.created.full}>
-                        {row.created.text}
-                      </time>
+                      <Tooltip content={row.created.full} lazy>
+                        <time dateTime={row.created.iso}>{row.created.text}</time>
+                      </Tooltip>
                     </td>
 
                     <td className={`list-updated list-tone-${row.updatedTone}`}>
-                      <time
-                        dateTime={row.updated.iso}
-                        title={
+                      <Tooltip
+                        content={
                           row.updatedNote === ''
                             ? row.updated.full
                             : `${row.updated.full} · ${row.updatedNote}`
                         }
+                        lazy
                       >
-                        {row.updated.text}
-                      </time>
+                        <time dateTime={row.updated.iso}>{row.updated.text}</time>
+                      </Tooltip>
                     </td>
                   </tr>
                 );
@@ -667,5 +713,27 @@ export function ListView({
         />
       )}
     </div>
+  );
+}
+
+function sprintActive(
+  sprintId: string | null,
+  labels: ReadonlyMap<string, { readonly active?: boolean | undefined }>,
+): boolean {
+  return sprintId === null ? false : labels.get(sprintId)?.active === true;
+}
+
+/** The sprint as the card draws it: the round pill with the iteration mark. */
+function SprintCell({ label, active }: { readonly label: string; readonly active: boolean }) {
+  return (
+    <Chip
+      variant="sprint"
+      tone={active ? 'accent' : 'neutral'}
+      glyphLabel={sprintGlyphLabel(active)}
+      title={`${sprintGlyphLabel(active)} ${label}`}
+      className="list-sprint"
+    >
+      {label}
+    </Chip>
   );
 }

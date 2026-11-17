@@ -5,6 +5,7 @@ import { Donut } from '../../../components/Donut.tsx';
 import { percentLabel, roundedPercents } from '../../../components/donut-arcs.ts';
 import type { StatusBreakdown } from './dashboard-derive.ts';
 import { DashLink, listHref } from './DashLink.tsx';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /**
  * The board's lane colours (`board.css`), so a status is the same colour on
@@ -70,9 +71,15 @@ export function StatusOverview({
           Status overview
         </h2>
         <span className="dash-card-tools">
-          <span className="dash-card-meta" title={scope}>
-            {scope ?? `${String(breakdown.live)} ${breakdown.live === 1 ? 'task' : 'tasks'}`}
-          </span>
+          {scope === undefined ? (
+            <span className="dash-card-meta">
+              {`${String(breakdown.live)} ${breakdown.live === 1 ? 'task' : 'tasks'}`}
+            </span>
+          ) : (
+            <Tooltip content={scope} lazy>
+              <span className="dash-card-meta">{scope}</span>
+            </Tooltip>
+          )}
           {filter}
         </span>
       </header>

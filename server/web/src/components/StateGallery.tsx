@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { BrandSpinner } from './brand/BrandSpinner.tsx';
 import { ConnectionBanner } from './ConnectionBanner.tsx';
 import { EmptyState } from './EmptyState.tsx';
 import { ErrorState } from './ErrorState.tsx';
@@ -15,6 +16,12 @@ const AgentStateGallery = lazy(() => import('./agent-states/AgentStateGallery.ts
 
 /** Developer access V3's shared parts (LAI-1044), in their own chunk for the same reason. */
 const WizardGallery = lazy(() => import('./wizard/WizardGallery.tsx'));
+
+/** The LAI-1207 state kit's specimens, in their own chunk for the same reason. */
+const StateKitGallery = lazy(() => import('./StateKitGallery.tsx'));
+
+/** Button, fields and Icon in every state (LAI-1204), in their own chunk too. */
+const ControlsGallery = lazy(() => import('./forms/ControlsGallery.tsx'));
 
 /**
  * Every state on one page (LAI-020 AC7), so they can be reviewed — and their
@@ -78,6 +85,17 @@ const SPECIMENS: readonly Specimen[] = [
     render: () => <LoadingState shape="row" count={4} label="Loading activity" />,
   },
   {
+    title: 'Loading — whole panel',
+    note: 'The brand loader (LAI-1126), for a panel with no shape to stand in for. Stills under reduced motion.',
+    render: () => (
+      <div className="gallery-brand-spinners">
+        <BrandSpinner size="sm" label="Loading, small" />
+        <BrandSpinner size="md" label="Loading, medium" />
+        <BrandSpinner size="lg" label="Loading, large" />
+      </div>
+    ),
+  },
+  {
     title: 'Error — retryable',
     note: 'Says what failed, that retrying helps, and carries the request_id (SPEC §13.2).',
     render: () => (
@@ -134,9 +152,10 @@ export function StateGallery() {
 
   return (
     <section className="gallery" aria-labelledby="gallery-heading">
-      <h2 id="gallery-heading" className="gallery-heading">
+      {/* The page's one heading (LAI-1227): the top bar names no page. */}
+      <h1 id="gallery-heading" className="gallery-heading">
         States
-      </h2>
+      </h1>
       <p className="gallery-sub">
         Empty, loading, error, permission-denied and connection-lost. Switch the theme above — all
         five are rendered from tokens. Actions fired: {clicks}
@@ -169,6 +188,14 @@ export function StateGallery() {
         fallback={<LoadingState shape="card" count={1} label="Loading Developer access parts" />}
       >
         <WizardGallery />
+      </Suspense>
+
+      <Suspense fallback={<LoadingState shape="card" count={2} label="Loading the state kit" />}>
+        <StateKitGallery />
+      </Suspense>
+
+      <Suspense fallback={<LoadingState shape="card" count={1} label="Loading controls" />}>
+        <ControlsGallery />
       </Suspense>
     </section>
   );

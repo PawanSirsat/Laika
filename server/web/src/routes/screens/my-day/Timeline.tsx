@@ -12,6 +12,7 @@ import {
 } from 'react';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
 import { breakKind } from '../break-kinds.ts';
 import { kindGlyph } from './entry-kinds.ts';
 import { placeOf } from '../places.ts';
@@ -58,6 +59,7 @@ import {
 import { keepBlockPx, readBlockPx } from './timeline-prefs.ts';
 import { trayDrag } from './tray-drag.ts';
 import './timeline.css';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 /** What the reader has in hand: a block, a gap they picked, or a break. */
 export type Selection =
@@ -1117,20 +1119,21 @@ export function Timeline({
         <span className="dayline-lane-sub">of work · {compact(figures.confirmed)} confirmed</span>
         <label className="dayline-row-height">
           <span className="dayline-row-height-name">Row height</span>
-          <input
-            type="range"
-            className="dayline-row-height-slider"
-            data-row-slider
-            min={BLOCK_MIN_PX}
-            max={BLOCK_MAX_PX}
-            step={BLOCK_STEP_PX}
-            value={blockPx}
-            aria-valuetext={`${String(blockPx)} px`}
-            title="Drag to make the rows taller or shorter"
-            onChange={(event) => {
-              setBlockPx(clampBlockHeight(Number(event.target.value)));
-            }}
-          />
+          <Tooltip content="Drag to make the rows taller or shorter">
+            <input
+              type="range"
+              className="dayline-row-height-slider"
+              data-row-slider="lanes"
+              min={BLOCK_MIN_PX}
+              max={BLOCK_MAX_PX}
+              step={BLOCK_STEP_PX}
+              value={blockPx}
+              aria-valuetext={`${String(blockPx)} px`}
+              onChange={(event) => {
+                setBlockPx(clampBlockHeight(Number(event.target.value)));
+              }}
+            />
+          </Tooltip>
         </label>
       </div>
       {hasAgents && (
@@ -1186,64 +1189,81 @@ export function Timeline({
                 <strong>{legend(figures.gaps)}</strong>
               </span>
             ) : (
-              <button
-                type="button"
-                className="dayline-total dayline-total-gaps"
-                data-stat="gaps"
-                title={
+              <Tooltip
+                content={
                   readOnly
                     ? `${String(line.gaps.length)} unaccounted · click to see the first`
                     : `${String(line.gaps.length)} unaccounted · click to fill the first`
                 }
-                onClick={() => {
-                  const gap = line.gaps[0];
-                  if (gap !== undefined) onSelect({ kind: 'gap', start: gap.start, end: gap.end });
-                }}
               >
-                <span className="dayline-key dayline-key-gap" aria-hidden="true" />
-                <span>Gaps</span>
-                <strong>{compact(figures.gaps)}</strong>
-              </button>
+                <button
+                  type="button"
+                  className="dayline-total dayline-total-gaps"
+                  data-stat="gaps"
+                  onClick={() => {
+                    const gap = line.gaps[0];
+                    if (gap !== undefined)
+                      onSelect({ kind: 'gap', start: gap.start, end: gap.end });
+                  }}
+                >
+                  <span className="dayline-key dayline-key-gap" aria-hidden="true" />
+                  <span>Gaps</span>
+                  <strong>{compact(figures.gaps)}</strong>
+                </button>
+              </Tooltip>
             )}
           </li>
         </ul>
         <div className="dayline-nav">
           <div className="dayline-steps" role="group" aria-label="Move along the day">
-            <button
-              type="button"
-              className="dayline-tool"
-              aria-label="Previous block"
-              title="Previous block"
-              disabled={line.blocks.length === 0}
-              onClick={() => {
-                step(-1);
-              }}
+            <Tooltip
+              content={
+                line.blocks.length === 0
+                  ? 'No blocks on this day to step through'
+                  : 'Previous block'
+              }
+              shortcut="ArrowLeft"
             >
-              <span aria-hidden="true">‹</span>
-            </button>
-            {line.now !== undefined && (
               <button
                 type="button"
-                className="dayline-tool dayline-tool-now"
-                title="Scroll to now"
-                onClick={goNow}
+                className="dayline-tool"
+                aria-label="Previous block"
+                data-block-step="previous"
+                aria-disabled={line.blocks.length === 0 || undefined}
+                onClick={() => {
+                  if (line.blocks.length > 0) step(-1);
+                }}
               >
-                <span className="dayline-now-dot" aria-hidden="true" />
-                Now
+                <Icon name="chevron-left" size="tiny" />
               </button>
+            </Tooltip>
+            {line.now !== undefined && (
+              <Tooltip content="Scroll to now">
+                <button type="button" className="dayline-tool dayline-tool-now" onClick={goNow}>
+                  <span className="dayline-now-dot" aria-hidden="true" />
+                  Now
+                </button>
+              </Tooltip>
             )}
-            <button
-              type="button"
-              className="dayline-tool"
-              aria-label="Next block"
-              title="Next block"
-              disabled={line.blocks.length === 0}
-              onClick={() => {
-                step(1);
-              }}
+            <Tooltip
+              content={
+                line.blocks.length === 0 ? 'No blocks on this day to step through' : 'Next block'
+              }
+              shortcut="ArrowRight"
             >
-              <span aria-hidden="true">›</span>
-            </button>
+              <button
+                type="button"
+                className="dayline-tool"
+                aria-label="Next block"
+                data-block-step="next"
+                aria-disabled={line.blocks.length === 0 || undefined}
+                onClick={() => {
+                  if (line.blocks.length > 0) step(1);
+                }}
+              >
+                <Icon name="chevron" size="tiny" />
+              </button>
+            </Tooltip>
           </div>
           <div className="dayline-zooms">
             <div
@@ -1251,81 +1271,90 @@ export function Timeline({
               role="group"
               aria-label="Zoom in steps"
             >
-              <button
-                type="button"
-                className="dayline-tool"
-                data-zoom-step="out"
-                aria-label="Zoom out"
-                title={
+              <Tooltip
+                content={
                   zoomStep(zoom, -1) === undefined
                     ? 'As far out as it goes'
-                    : pxAnHour(zoomStep(zoom, -1) ?? zoom)
+                    : `Zoom out to ${pxAnHour(zoomStep(zoom, -1) ?? zoom)}`
                 }
-                disabled={zoomStep(zoom, -1) === undefined}
-                onClick={() => {
-                  const next = zoomStep(zoom, -1);
-                  if (next !== undefined) changeZoom(next);
-                }}
               >
-                <span aria-hidden="true">−</span>
-              </button>
-              <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
-                {zoomLabel(zoom)}
-              </span>
-              <input
-                type="range"
-                className={
-                  zoom === 'fit'
-                    ? 'dayline-zoom-slider dayline-zoom-slider-fit'
-                    : 'dayline-zoom-slider'
-                }
-                data-zoom-slider
-                min={0}
-                max={ZOOM_STEPS.length - 1}
-                step={1}
-                value={sliderAt}
-                aria-label="Zoom, from half to five times"
-                aria-valuetext={zoomLabel(zoom)}
-                title="Drag to zoom"
-                onChange={(event) => {
-                  const next = ZOOM_STEPS[Number(event.target.value)];
-                  if (next !== undefined && next !== zoom) changeZoom(next);
-                }}
-              />
-              <button
-                type="button"
-                className="dayline-tool"
-                data-zoom-step="in"
-                aria-label="Zoom in"
-                title={
+                <button
+                  type="button"
+                  className="dayline-tool"
+                  data-zoom-step="out"
+                  aria-label="Zoom out"
+                  aria-disabled={zoomStep(zoom, -1) === undefined || undefined}
+                  onClick={() => {
+                    const next = zoomStep(zoom, -1);
+                    if (next !== undefined) changeZoom(next);
+                  }}
+                >
+                  <Icon name="minus" size="tiny" />
+                </button>
+              </Tooltip>
+              <Tooltip content={pxAnHour(zoom)}>
+                <span className="dayline-zoom-level" data-zoom-level={zoom}>
+                  {zoomLabel(zoom)}
+                </span>
+              </Tooltip>
+              <Tooltip content="Drag to zoom">
+                <input
+                  type="range"
+                  className={
+                    zoom === 'fit'
+                      ? 'dayline-zoom-slider dayline-zoom-slider-fit'
+                      : 'dayline-zoom-slider'
+                  }
+                  data-zoom-slider
+                  min={0}
+                  max={ZOOM_STEPS.length - 1}
+                  step={1}
+                  value={sliderAt}
+                  aria-label="Zoom, from half to five times"
+                  aria-valuetext={zoomLabel(zoom)}
+                  onChange={(event) => {
+                    const next = ZOOM_STEPS[Number(event.target.value)];
+                    if (next !== undefined && next !== zoom) changeZoom(next);
+                  }}
+                />
+              </Tooltip>
+              <Tooltip
+                content={
                   zoomStep(zoom, 1) === undefined
                     ? 'As far in as it goes'
-                    : pxAnHour(zoomStep(zoom, 1) ?? zoom)
+                    : `Zoom in to ${pxAnHour(zoomStep(zoom, 1) ?? zoom)}`
                 }
-                disabled={zoomStep(zoom, 1) === undefined}
-                onClick={() => {
-                  const next = zoomStep(zoom, 1);
-                  if (next !== undefined) changeZoom(next);
-                }}
               >
-                <span aria-hidden="true">+</span>
-              </button>
+                <button
+                  type="button"
+                  className="dayline-tool"
+                  data-zoom-step="in"
+                  aria-label="Zoom in"
+                  aria-disabled={zoomStep(zoom, 1) === undefined || undefined}
+                  onClick={() => {
+                    const next = zoomStep(zoom, 1);
+                    if (next !== undefined) changeZoom(next);
+                  }}
+                >
+                  <Icon name="plus" size="tiny" />
+                </button>
+              </Tooltip>
             </div>
             <div className="dayline-zoom" role="group" aria-label="Zoom">
               {ZOOMS.map(([key, label, title]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className="dayline-zoom-option"
-                  data-zoom={key}
-                  aria-pressed={zoom === key}
-                  title={title}
-                  onClick={() => {
-                    changeZoom(key);
-                  }}
-                >
-                  {label}
-                </button>
+                <Tooltip key={key} content={title}>
+                  <button
+                    type="button"
+                    className="dayline-zoom-option"
+                    data-zoom={key}
+                    aria-pressed={zoom === key}
+                    onClick={() => {
+                      changeZoom(key);
+                    }}
+                  >
+                    {label}
+                  </button>
+                </Tooltip>
               ))}
             </div>
           </div>
@@ -1415,46 +1444,46 @@ export function Timeline({
                     style={{ left: x(s.start), width: bandW }}
                     role="note"
                     aria-label={`${s.label}, ${range} — the organisation’s break`}
-                    title={`${s.label}, ${range} — the organisation’s break`}
                   >
-                    <span
-                      className="dayline-scheduled-pill"
-                      data-scheduled-pill
-                      data-worked={w.worked}
-                      style={{ width: pillW }}
-                      title={tip}
-                    >
-                      <BreakGlyph kind={breakKind(s.label)} />
-                      <span className="dayline-scheduled-name">{s.label}</span>
-                      {showRange && <span className="dayline-scheduled-range">{range}</span>}
-                      {showWorked && (
-                        <span
-                          className={
-                            w.worked > 0
-                              ? 'dayline-scheduled-worked dayline-scheduled-worked-on'
-                              : 'dayline-scheduled-worked'
-                          }
-                          data-scheduled-worked
-                        >
-                          {worked}
-                        </span>
-                      )}
-                      <span className="dayline-scheduled-bar" aria-hidden="true">
-                        {w.runs.map((r) => (
+                    <Tooltip content={tip}>
+                      <span
+                        className="dayline-scheduled-pill"
+                        data-scheduled-pill
+                        data-worked={w.worked}
+                        style={{ width: pillW }}
+                      >
+                        <BreakGlyph kind={breakKind(s.label)} />
+                        <span className="dayline-scheduled-name">{s.label}</span>
+                        {showRange && <span className="dayline-scheduled-range">{range}</span>}
+                        {showWorked && (
                           <span
-                            key={r.start}
                             className={
-                              r.worked
-                                ? 'dayline-scheduled-seg dayline-scheduled-seg-work'
-                                : 'dayline-scheduled-seg'
+                              w.worked > 0
+                                ? 'dayline-scheduled-worked dayline-scheduled-worked-on'
+                                : 'dayline-scheduled-worked'
                             }
-                            style={{
-                              width: `${String(((r.end - r.start) / Math.max(1, s.end - s.start)) * 100)}%`,
-                            }}
-                          />
-                        ))}
+                            data-scheduled-worked
+                          >
+                            {worked}
+                          </span>
+                        )}
+                        <span className="dayline-scheduled-bar" aria-hidden="true">
+                          {w.runs.map((r) => (
+                            <span
+                              key={r.start}
+                              className={
+                                r.worked
+                                  ? 'dayline-scheduled-seg dayline-scheduled-seg-work'
+                                  : 'dayline-scheduled-seg'
+                              }
+                              style={{
+                                width: `${String(((r.end - r.start) / Math.max(1, s.end - s.start)) * 100)}%`,
+                              }}
+                            />
+                          ))}
+                        </span>
                       </span>
-                    </span>
+                    </Tooltip>
                   </div>
                 );
               })}
@@ -1566,7 +1595,6 @@ export function Timeline({
                             className="dayline-prompt"
                             data-signal="prompt"
                             data-signal-start={start}
-                            title={`${plural(b.prompts, 'prompt', 'prompts')}, ${rangeOf({ start, end: start + SIGNAL_MINUTES })}`}
                             style={{ left: lx(barW), width: barW, height: barH, top: 15 - barH }}
                           />
                         )}
@@ -1575,7 +1603,6 @@ export function Timeline({
                             className="dayline-commit"
                             data-signal="commit"
                             data-signal-start={start}
-                            title={`${plural(b.commits, 'commit', 'commits')}, ${rangeOf({ start, end: start + SIGNAL_MINUTES })}`}
                             style={{
                               left: lx(dot),
                               width: dot,
@@ -1694,11 +1721,6 @@ export function Timeline({
                           ? `Unaccounted ${rangeOf(gap)}, ${duration(minutes)}`
                           : `Unaccounted ${rangeOf(gap)}, ${duration(minutes)} — add time or mark a break`
                       }
-                      title={
-                        readOnly
-                          ? `Unaccounted ${rangeOf(gap)}`
-                          : `Unaccounted ${rangeOf(gap)} — click to fill`
-                      }
                       aria-pressed={on}
                       onClick={() => {
                         // The click a drag begun here ends with, in a browser that sends one.
@@ -1734,7 +1756,6 @@ export function Timeline({
                     }
                     style={{ left: left(b.start, b.end), width: wide(b.start, b.end) }}
                     aria-label={`Break ${rangeOf(b)} — not counted`}
-                    title={`Break ${rangeOf(b)} — not counted`}
                     onClick={() => {
                       onSelect({ kind: 'break', id: b.id });
                     }}
@@ -1827,8 +1848,14 @@ export function Timeline({
                           className="dayline-block-body"
                           data-block-select={block.id}
                           aria-pressed={selected}
-                          aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
-                          title={`${range} · ${top}${title === '' ? '' : ` ${title}`}`}
+                          // Its state first, so a screen reader hears draft from confirmed as the eye sees it (LAI-1215).
+                          aria-label={`${
+                            block.kind === 'drafted'
+                              ? block.needsCard
+                                ? 'Draft, no task yet'
+                                : 'Draft'
+                              : 'Confirmed'
+                          }, ${range}, ${top}, ${duration(shape.minutes)}`}
                           onClick={() => {
                             // A drag that just ended is not a click.
                             if (suppressClick.current) {
@@ -1920,38 +1947,41 @@ export function Timeline({
 
                 {/* The running timer (LAI-512): from where it started to now, striped; a click opens it. */}
                 {timer !== undefined && (
-                  <button
-                    type="button"
-                    className={
-                      timer.paused ? 'dayline-timer dayline-timer-paused' : 'dayline-timer'
-                    }
-                    data-timer-block
-                    data-timer-state={timer.paused ? 'paused' : 'running'}
-                    style={{
-                      left: left(timer.start, timer.end),
-                      width: wide(timer.start, timer.end),
-                    }}
-                    aria-label={`Timer ${timer.paused ? 'paused' : 'running'}, ${duration(timer.minutes)}`}
-                    title={`Timer ${timer.paused ? 'paused' : 'running'} · ${duration(timer.minutes)}`}
-                    onClick={onTimerClick}
+                  <Tooltip
+                    content={`Timer ${timer.paused ? 'paused' : 'running'} · ${duration(timer.minutes)}`}
                   >
-                    <span className="dayline-block-line">
-                      <span className="dayline-icon" aria-hidden="true">
-                        ●
+                    <button
+                      type="button"
+                      className={
+                        timer.paused ? 'dayline-timer dayline-timer-paused' : 'dayline-timer'
+                      }
+                      data-timer-block
+                      data-timer-state={timer.paused ? 'paused' : 'running'}
+                      style={{
+                        left: left(timer.start, timer.end),
+                        width: wide(timer.start, timer.end),
+                      }}
+                      aria-label={`Timer ${timer.paused ? 'paused' : 'running'}, ${duration(timer.minutes)}`}
+                      onClick={onTimerClick}
+                    >
+                      <span className="dayline-block-line">
+                        <span className="dayline-icon" aria-hidden="true">
+                          ●
+                        </span>
+                        <span className="dayline-block-top">
+                          <FitLabel options={[timerLabel, '']} />
+                        </span>
                       </span>
-                      <span className="dayline-block-top">
-                        <FitLabel options={[timerLabel, '']} />
+                      <span className="dayline-block-sub">
+                        <FitLabel
+                          options={[
+                            `${compact(timer.minutes)} · ${timer.paused ? 'paused' : 'running'}`,
+                            compact(timer.minutes),
+                          ]}
+                        />
                       </span>
-                    </span>
-                    <span className="dayline-block-sub">
-                      <FitLabel
-                        options={[
-                          `${compact(timer.minutes)} · ${timer.paused ? 'paused' : 'running'}`,
-                          compact(timer.minutes),
-                        ]}
-                      />
-                    </span>
-                  </button>
+                    </button>
+                  </Tooltip>
                 )}
 
                 {/* A block in hand (LAI-512): where it was, dashed; and where it is, in words. */}
@@ -2066,7 +2096,6 @@ export function Timeline({
                   aria-valuemax={BLOCK_MAX_PX}
                   aria-valuenow={blockPx}
                   aria-orientation="vertical"
-                  title="Drag to make the rows taller or shorter"
                   {...grip}
                 >
                   <span className="dayline-grip-bar" aria-hidden="true">
@@ -2103,7 +2132,6 @@ export function Timeline({
                         data-agent-run={run.onCard ? 'card' : 'none'}
                         data-agent-start={run.start}
                         style={{ left: left(run.start, run.end), width: wide(run.start, run.end) }}
-                        title={`Agent working ${rangeOf(run)} · ${minutes}${run.onCard ? '' : ' · on no card'}`}
                         onMouseEnter={enter('agent', String(run.start))}
                       >
                         <span className="dayline-agent-chip" aria-hidden="true">

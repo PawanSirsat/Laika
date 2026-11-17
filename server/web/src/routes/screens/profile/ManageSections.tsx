@@ -234,10 +234,37 @@ function Confirm({
   readonly onYes: () => void;
   readonly onNo: () => void;
 }) {
+  // An inline confirmation takes focus when it appears, and Escape backs out
+  // (LAI-1194, audit B12): a keyboard user who opened it is standing on it.
+  const yesButton = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    const yes = yesButton.current;
+    const row = yes?.closest('.prof-admin-row') ?? null;
+    yes?.focus();
+    return () => {
+      // When it goes, focus goes back to the row's control rather than being
+      // dropped on the page.
+      requestAnimationFrame(() => {
+        if (document.activeElement !== document.body || !row?.isConnected) return;
+        row.querySelector<HTMLElement>('button:not(:disabled), [role="combobox"]')?.focus();
+      });
+    };
+  }, []);
   return (
-    <span className="prof-admin-confirm" role="group" aria-label={question}>
+    <span
+      className="prof-admin-confirm"
+      role="group"
+      aria-label={question}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !busy) {
+          event.stopPropagation();
+          onNo();
+        }
+      }}
+    >
       <span>{question}</span>
       <button
+        ref={yesButton}
         type="button"
         className={
           danger ? 'prof-admin-btn prof-admin-btn-danger' : 'prof-admin-btn prof-admin-btn-primary'

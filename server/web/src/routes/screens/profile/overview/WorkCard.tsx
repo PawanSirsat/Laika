@@ -4,6 +4,7 @@ import type { ProfileCurrentWork, ProfileDelivery, ProfileTask } from '../../../
 import { durationLabel, workTab } from '../profile-derive.ts';
 import { capNote, deliveredLine, moreLabel, WORK_ROWS, type WorkList } from './overview-derive.ts';
 import { CardLink, follow, OverviewCard } from './OverviewCard.tsx';
+import { Tabs, tabId } from '../../../../components/tabs/Tabs.tsx';
 
 const TILES: readonly (readonly [WorkList, string])[] = [
   ['in_progress', 'In progress'],
@@ -105,49 +106,39 @@ export function WorkCard({
         </CardLink>
       }
     >
-      <div className="ov-work-tiles" role="tablist" aria-label="Which work">
-        {TILES.map(([id, label]) => {
+      <Tabs
+        label="Which work"
+        className="ov-work-tiles"
+        tabClassName="ov-work-tile"
+        idBase="prof-work-tab"
+        panelId={panelId}
+        selected={list}
+        onSelect={(id) => {
+          setList(id);
+          setAll(false);
+        }}
+        items={TILES.map(([id, label]) => {
           const n = counts[id];
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`prof-work-tab-${id}`}
-              className="ov-work-tile"
-              data-work-tab={id}
-              aria-selected={list === id}
-              aria-controls={panelId}
-              tabIndex={list === id ? 0 : -1}
-              onClick={() => {
-                setList(id);
-                setAll(false);
-              }}
-              onKeyDown={(event) => {
-                const at = TILES.findIndex(([t]) => t === id);
-                const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-                if (step === 0) return;
-                event.preventDefault();
-                const next = TILES[(at + step + TILES.length) % TILES.length]?.[0] ?? id;
-                setList(next);
-                setAll(false);
-                document.getElementById(`prof-work-tab-${next}`)?.focus();
-              }}
-            >
-              <span className="ov-work-tile-label">{label}</span>
-              <span className="ov-work-tile-n">
-                {n === undefined ? '—' : n.toLocaleString('en-GB')}
-              </span>
-            </button>
-          );
+          return {
+            id,
+            data: { 'data-work-tab': id },
+            label: (
+              <>
+                <span className="ov-work-tile-label">{label}</span>
+                <span className="ov-work-tile-n">
+                  {n === undefined ? '—' : n.toLocaleString('en-GB')}
+                </span>
+              </>
+            ),
+          };
         })}
-      </div>
+      />
 
       <div
         className="ov-work-panel"
         id={panelId}
         role="tabpanel"
-        aria-labelledby={`prof-work-tab-${list}`}
+        aria-labelledby={tabId('prof-work-tab', list)}
         data-expanded={all}
         tabIndex={all ? 0 : undefined}
       >

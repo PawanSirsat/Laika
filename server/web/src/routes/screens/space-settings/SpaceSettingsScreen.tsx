@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
@@ -50,9 +51,42 @@ export function SpaceSettingsScreen({
   const gates = useGates(true);
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
+  /** Bumped by Retry on a failed load, to read the space again. */
+  const [attempt, setAttempt] = useState(0);
   /** Every space the reader can see, archived too — counts for *Next task*, and Copy members' list. */
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const members = useMembers(slug);
+  /** General holds unsaved changes: leaving it asks first (B11, LAI-1129). */
+  const [generalDirty, setGeneralDirty] = useState(false);
+  const confirm = useConfirm();
+
+  /**
+   * Every way out that this screen draws — another tab, *← Spaces*, *Open
+   * board* — goes through here, so unsaved General changes are never thrown
+   * away without a yes. Reloading or closing the page gets the browser's
+   * warning, which GeneralTab arms itself.
+   */
+  const go = useCallback(
+    (to: string): void => {
+      if (!generalDirty) {
+        onNavigate(to);
+        return;
+      }
+      void confirm({
+        title: 'Discard your changes?',
+        body: 'General has changes that are not saved. Leaving it throws them away.',
+        confirmLabel: 'Discard changes',
+        cancelLabel: 'Keep editing',
+        danger: true,
+        icon: 'warning',
+      }).then((yes) => {
+        if (!yes) return;
+        setGeneralDirty(false);
+        onNavigate(to);
+      });
+    },
+    [generalDirty, confirm, onNavigate],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,7 +101,7 @@ export function SpaceSettingsScreen({
     return () => {
       controller.abort();
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
   const reloadSpaces = useCallback((signal?: AbortSignal) => {
     everyPage((cursor) => listProjects({ cursor, limit: 200, archived: 'include' }, signal))
@@ -92,12 +126,18 @@ export function SpaceSettingsScreen({
     return (
       <div className="ss-page">
         <div className="ss-backbar">
-          <BackLink onNavigate={onNavigate} />
+          <BackLink onNavigate={go} />
         </div>
         <ScreenHeader variant="page" title="Space settings" context={slug} />
         <div className="ss">
           {error !== null ? (
-            <ApiErrorState error={error} resource={`the space “${slug}”`} />
+            <ApiErrorState
+              error={error}
+              resource={`the space “${slug}”`}
+              onRetry={() => {
+                setAttempt((n) => n + 1);
+              }}
+            />
           ) : (
             <LoadingState shape="row" count={4} label="Loading space settings" />
           )}
@@ -126,7 +166,9 @@ export function SpaceSettingsScreen({
   return (
     <div className="ss-page" data-space={project.slug}>
       <div className="ss-backbar">
-        <BackLink onNavigate={onNavigate} />
+        <BackLink onNavigate={go} />
+        {/* On a phone the header's Open board would take a row of its own; it sits here instead. */}
+        <OpenBoardLink href={openBoard} go={go} className="ss-open-board ss-open-board-compact" />
       </div>
       <ScreenHeader
         variant="page"
@@ -152,8 +194,14 @@ export function SpaceSettingsScreen({
         description={
           <>
             <span className="ss-key">
-              {project.prefix}
-              {project.repo !== null && <> · {project.repo}</>}
+              <span className="ss-key-chip" title="Task key prefix" data-key-chip>
+                {project.prefix}
+              </span>
+              {project.repo !== null && (
+                <span className="ss-repo" title={project.repo}>
+                  {project.repo}
+                </span>
+              )}
             </span>
             <span className="ss-reader" data-reader={mayEdit ? 'manager' : 'reader'}>
               {gates.settled
@@ -176,21 +224,11 @@ export function SpaceSettingsScreen({
               members: members.status === 'ready' ? members.members.length : undefined,
             }}
             countNoun="people"
-            onNavigate={onNavigate}
+            onNavigate={go}
           />
         }
       >
-        <a
-          className="ss-open-board"
-          href={openBoard}
-          onClick={(event) => {
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            onNavigate(openBoard);
-          }}
-        >
-          Open board
-        </a>
+        <OpenBoardLink href={openBoard} go={go} className="ss-open-board ss-open-board-wide" />
       </ScreenHeader>
 
       <div className="ss">
@@ -215,6 +253,7 @@ export function SpaceSettingsScreen({
               mayEdit={mayEdit}
               onSaved={saved}
               onNavigate={onNavigate}
+              memberCount={members.status === 'ready' ? members.members.length : undefined}
             />
             <HandoffPolicySection
               slug={project.slug}
@@ -222,17 +261,42 @@ export function SpaceSettingsScreen({
             />
           </>
         ) : current === 'danger' ? (
-          <DangerTab project={project} mayArchive={mayArchive} onSaved={saved} />
+          <DangerTab project={project} mayArchive={mayArchive} onSaved={saved} onNavigate={go} />
         ) : (
           <GeneralTab
             project={project}
             counts={summary?.task_counts}
             mayEdit={mayEdit}
             onSaved={saved}
+            onDirtyChange={setGeneralDirty}
           />
         )}
       </div>
     </div>
+  );
+}
+
+function OpenBoardLink({
+  href,
+  go,
+  className,
+}: {
+  readonly href: string;
+  readonly go: (to: string) => void;
+  readonly className: string;
+}) {
+  return (
+    <a
+      className={className}
+      href={href}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        go(href);
+      }}
+    >
+      Open board
+    </a>
   );
 }
 

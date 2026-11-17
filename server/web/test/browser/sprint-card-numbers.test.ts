@@ -13,6 +13,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const today = new Date();
@@ -166,7 +167,7 @@ void describe('a sprint card’s numbers (LAI-819)', () => {
         'LC-3, held by LC-6 in s3',
       );
       assert.equal(
-        await active.locator('.sprint-blocked').getAttribute('title'),
+        await tipText(active.locator('.sprint-blocked')),
         '1 blocked by unfinished work',
       );
       assert.equal(await active.locator('.sprint-subtasks').textContent(), 'incl. 1 subtask');

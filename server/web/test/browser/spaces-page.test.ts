@@ -191,7 +191,7 @@ void describe('the header and the chips', () => {
       assert.match(await h.page.locator('.screen-page-context').innerText(), /^5 spaces$/);
       assert.match(
         await h.page.locator('.screen-page-desc').innerText(),
-        /Spaces you can see\. Opening one loads its board; the choice lives in the URL\./,
+        /Every space you are in, and the public ones you can join\. Open one to see its board\./,
       );
       const chip = (f: string) => h.page.locator(`.spaces-chip[data-filter="${f}"]`);
       await until(async () => (await chip('archived').innerText()).includes('1'));
@@ -313,7 +313,7 @@ void describe('the grid card', () => {
       const card = h.page.locator('[data-space="laika"]');
       assert.equal(
         await card.locator('.project-card-sub').innerText(),
-        'LAIKA-1 · PawanSirsat/Laika',
+        'LAIKA · PawanSirsat/Laika',
       );
       assert.equal(await card.locator('.project-chip').innerText(), 'PRIVATE');
       assert.equal(await card.locator('.project-card-updated').innerText(), 'updated 3m ago');

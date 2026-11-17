@@ -86,6 +86,14 @@ function webPatternExempt(rel: string): boolean {
 
 const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   [
+    'components/drawer/use-space-reads.ts',
+    'React hooks moved unchanged out of TaskDrawerHost (LAI-1199); no renderer in this package — exercised by test/browser/task-drawer-host.test.ts and workroom.test.ts',
+  ],
+  [
+    'routes/screens/task/use-task-review.ts',
+    'React hooks moved unchanged out of TaskDetailPanel (LAI-1199); no renderer in this package — exercised by test/browser/task-hero.test.ts and workroom.test.ts',
+  ],
+  [
     'routes/screens/board/tag-colors.ts',
     'covered by the TAG_COLORS suite in test/routes/screens/board/task-card.test.ts — the map and the card that wears it are one subject',
   ],
@@ -93,6 +101,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'components/use-dismiss.ts',
+    'a React hook on document listeners — no renderer in this package (CONVENTIONS §4); task-drawer-host.test.ts and filter-popover.test.ts drive it in a browser',
+  ],
   [
     'components/create-task/use-create-task.ts',
     'a React context and its hook — no renderer in this package (CONVENTIONS §4); its rules are create-task-form.ts, tested, and test/browser/create-task-dialog.test.ts drives the three ways in (LAI-1167)',
@@ -106,6 +118,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook on a media query — no renderer in this package (CONVENTIONS §4); my-day-phone.test.ts drives it in a browser',
   ],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'components/forms/use-first-focus.ts',
+    'a React hook — no renderer in this package (CONVENTIONS §4); dead-ends.test.ts drives it on Sign in in a browser (LAI-1191)',
+  ],
   ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-statuses.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
@@ -188,6 +204,12 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ],
   ['theme/theme.ts', 'DOM-bound theme application; asserted in a browser under LAI-018'],
   ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
+  [
+    'theme/use-font.ts',
+    // LAI-1125. The store's storage half is `theme/font.ts`, mirrored by
+    // `test/theme/font.test.ts`; the hook is asserted in a browser.
+    'a React hook; its live switch and persistence are asserted in test/browser/appearance-font.test.ts',
+  ],
   ['api/use-shell-context.ts', 'a React hook — no renderer in this package'],
   ['theme/avatar-color.ts', 'derivation asserted through the token reference page in LAI-018'],
   [

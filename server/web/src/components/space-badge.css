@@ -20,6 +20,6 @@
 .space-badge-md {
   width: 1.75rem;
   height: 1.75rem;
-  border-radius: 0.4375rem;
+  border-radius: var(--radius-sm);
   font-size: var(--text-body);
 }

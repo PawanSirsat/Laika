@@ -10,7 +10,14 @@
 .shell {
   /* The sidebar, 212px — the prototype's (LAI-249, kept by LAI-796). */
   --rail-width: 13.25rem;
+  /*
+   * The app header's height (LAI-1188), the shell's contract with a screen
+   * that sizes itself to the window: a space is the window less this bar.
+   */
+  --app-head-height: 3.25rem;
+  /* The top bar, then the frame below it (LAI-1227): the bar spans the window. */
   display: flex;
+  flex-direction: column;
   /*
    * **`height`, not `min-height`** (LAI-601).
    *
@@ -24,7 +31,8 @@
    */
   height: 100vh;
   overflow: hidden;
-  background: var(--bg-canvas);
+  /* Transparent (LAI-1132): the ambient layer behind it is the ground. */
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-body);
@@ -60,7 +68,7 @@
   border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   font-weight: var(--weight-semibold);
-  transition: top 120ms ease;
+  /* No transition: it is reached by Tab, and `top` is a layout property (LAI-1208). */
 }
 
 .skip-link:focus-visible {
@@ -71,29 +79,27 @@
 
 /* ------------------------------------------------------------- identity */
 
-/* Rendered by `Brand`, which appears in the pre-auth header and on the auth
-   cards as well as the sidebar head — so these stay shell-level. */
+/* Rendered by `Brand` (the lockup, LAI-1126) in the pre-auth header and the
+   first-boot rail — so it stays shell-level. */
 .sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5625rem;
   min-width: 0;
 }
 
-/* 28px here, 30px on the auth card — the prototype uses both. */
-.sidebar-brand .brand-tile {
-  width: 1.75rem;
-  height: 1.75rem;
-}
-
+/* The sidebar head's drawn wordmark (LAI-1126): the box hugs the drawing. */
 .sidebar-wordmark {
-  font-weight: var(--weight-heavy);
-  font-size: var(--text-body);
+  display: flex;
+  align-items: center;
   line-height: 1;
-  letter-spacing: -0.02em;
 }
 
 /* ---------------------------------------------------------------- body */
+
+/* Below the top bar: the sidebar and the page, side by side (LAI-1227). */
+.shell-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
 
 .shell-body {
   flex: 1;
@@ -120,8 +126,12 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  border-bottom: 1px solid var(--glass-border);
+  /* Level-1 glass (LAI-1132): the pane is `glass.css`'s ::before. */
+  position: relative;
+  isolation: isolate;
+  z-index: var(--layer-header);
+  background: transparent;
 }
 
 .shell-head-right {
@@ -202,25 +212,271 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .skip-link {
-    transition: none;
-  }
-}
-
 /* Session gate — the shell renders one of LAI-020's states while /me resolves. */
 .shell-gate {
   padding: var(--space-5);
   max-width: 32rem;
 }
 
-/* Collapsed where the nav toggle it exists for is itself hidden. */
-.shell-head-quiet {
-  display: none;
+/*
+ * **The top bar** (LAI-1188; Jira's since LAI-1227): one height on every
+ * signed-in screen, the full width of the window. Three columns, the outer two
+ * equal, so the search and + Create sit on the bar's true centre whatever the
+ * brand and the right-hand cluster weigh; the centre grows to 45rem — the
+ * search fills it, Create keeps its own width — and gives way first as the
+ * window narrows.
+ */
+.shell-app-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 45rem) minmax(0, 1fr);
+  align-items: center;
+  height: var(--app-head-height);
+  box-sizing: border-box;
+  flex: none;
+  padding: 0 var(--space-4) 0 var(--space-3);
+  gap: var(--space-4);
 }
 
+.shell-head-start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.shell-head-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The search fills the centre; Create sits straight after it. */
+.shell-head-search > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── The brand: mark, wordmark, the organisation — home to My day ─────── */
+
+.shell-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.shell-brand:hover {
+  background: var(--bg-card-hover);
+}
+
+.shell-brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The brand mark (LAI-1126): the glass L on the bar's own ground. */
+.sidebar-logo {
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+/* The org's real name — never the prototype's fixture. */
+.sidebar-orgline {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The rail's fold (LAI-796), in the top bar since LAI-1227: a quiet square. */
+.sidebar-toggle {
+  position: relative;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * My day's phone bar portals its own row into this bar and lays it out as a
+ * row (LAI-518, `my-day/phone.css`), so while it holds the bar the bar is a
+ * flex row again; the search and the actions sit at its end, in that order.
+ */
+.shell-app-head[data-myday-bar] {
+  display: flex;
+}
+
+.shell-app-head[data-myday-bar] .shell-head-search {
+  order: 1;
+  flex: none;
+}
+
+.shell-head-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* ── Viewing: <name> ─────────────────────────────────────────────────── */
+
+.shell-viewing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 2.25rem;
+  box-sizing: border-box;
+  max-width: 16rem;
+  padding: 0 var(--space-1) 0 var(--space-2-5);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+}
+
+.shell-viewing-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-viewing-label {
+  color: var(--text-secondary);
+}
+
+.shell-viewing-name {
+  font-weight: var(--weight-semibold);
+}
+
+.shell-viewing-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: 1.75rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.shell-viewing-back:hover {
+  color: var(--text-primary);
+}
+
+.shell-viewing-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Below a laptop the columns stop being equal: the brand keeps its width, the
+ * search takes what is left, and the cluster its own.
+ */
+@media (max-width: 1180px) {
+  .shell-app-head {
+    grid-template-columns: auto minmax(10rem, 1fr) auto;
+    gap: var(--space-3);
+  }
+}
+
+/*
+ * Below a tablet the sidebar is off-canvas: the rail's fold gives way to the
+ * menu button, and the brand to its mark.
+ */
 @media (max-width: 900px) {
-  .shell-head-quiet {
-    display: flex;
+  .shell-app-head {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .shell-head-tools {
+    gap: var(--space-1-5);
+  }
+}
+
+/*
+ * A phone: the bar is 48px, as My day's phone bar always was (LAI-518), and
+ * keeps whose view it is while letting the word go.
+ */
+@media (max-width: 600px) {
+  .shell {
+    --app-head-height: 3rem;
+  }
+
+  .shell-viewing {
+    max-width: 9rem;
+  }
+
+  /* The mark alone: the menu, the search, Create and the person need the room. */
+  .sidebar-identity {
+    display: none;
+  }
+
+  .shell-brand {
+    padding: var(--space-1);
+  }
+
+  /* The search is its icon (PaletteTrigger) and Create its plus, side by side at the end. */
+  .shell-head-search {
+    justify-content: flex-end;
+  }
+
+  .shell-head-search > :first-child {
+    flex: none;
+  }
+
+  .shell-viewing-label,
+  .shell-viewing-me {
+    display: none;
   }
 }

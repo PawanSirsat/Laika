@@ -127,10 +127,3 @@
 .dv3-fold-body > * + * {
   margin-top: var(--space-3);
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .dv3-fold-title,
-  .dv3-fold-chevron::before {
-    transition: none;
-  }
-}

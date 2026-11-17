@@ -18,6 +18,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -558,10 +559,7 @@ void describe('the figures count every page of tasks (LAI-702)', () => {
     const h = await open('/board?project=laika-core&sprint=s3', endless);
     try {
       await h.page.locator('.bstats-partial').waitFor({ timeout: 20_000 });
-      assert.match(
-        (await h.page.locator('.bstats-partial').getAttribute('title')) ?? '',
-        /partial|first/i,
-      );
+      assert.match(await tipText(h.page.locator('.bstats-partial')), /partial|first/i);
     } finally {
       await h.close();
     }

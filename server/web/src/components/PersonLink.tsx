@@ -3,6 +3,7 @@ import { PEOPLE_ANALYTICS } from '../api/people-analytics.ts';
 import { useGates } from '../api/permissions.ts';
 import { profileHref } from '../api/profiles.ts';
 import { useShell } from './shell/shell-context.ts';
+import { Tooltip } from './tooltip/Tooltip.tsx';
 
 export interface PersonLinkProps {
   readonly userId: string;
@@ -45,20 +46,22 @@ export function PersonLink({
 
   const href = profileHref(userId);
   return (
-    <a
-      href={href}
-      className={className}
-      aria-label={label}
-      title={label}
-      data-person-link={userId}
-      onClick={(event) => {
-        // Modified clicks stay the browser's — new tab, new window.
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        event.preventDefault();
-        route.navigate(href);
-      }}
-    >
-      {children}
-    </a>
+    // The name on hover and focus, in the shared tooltip (LAI-1213).
+    <Tooltip content={label ?? ''} lazy>
+      <a
+        href={href}
+        className={className}
+        aria-label={label}
+        data-person-link={userId}
+        onClick={(event) => {
+          // Modified clicks stay the browser's — new tab, new window.
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault();
+          route.navigate(href);
+        }}
+      >
+        {children}
+      </a>
+    </Tooltip>
   );
 }
