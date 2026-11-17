@@ -166,6 +166,9 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Assign a task to someone else', ['task.assign_other']],
   ['Add comment', ['comment.create']],
   ['Edit / delete comment', ['comment.edit', 'comment.delete']],
+  // D-150 (LAI-1300).
+  ['Attach a file', ['attachment.create']],
+  ['Remove an attachment', ['attachment.delete']],
   ['Cancel / delete task', ['task.delete']],
   ['Add / remove dependencies', ['task.dependency.write']],
   ['Read tasks, comments, activity, capacity', ['project.read']],

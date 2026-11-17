@@ -223,6 +223,10 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   // A capacity ping (D-126, LAI-1038). Worded so the vocabulary is whole, and
   // declined in FEED_SILENT below.
   'agent.capacity_requested': 'asked an agent whether it can take work',
+  // A file put on a task or taken off one (D-150, LAI-1300). Shown: a person
+  // did it, on the project's work, which is what this feed narrates.
+  'attachment.added': 'attached a file to a task',
+  'attachment.removed': 'removed a file from a task',
 };
 
 /**

@@ -76,4 +76,8 @@ export const STREAM_TYPES: readonly string[] = [
   // row carries no answer — that comes back on the ping's own request — so a
   // reader sees only that the agent was asked.
   'agent.capacity_requested',
+  // A file came to belong to a task, or was removed from one (D-150,
+  // LAI-1300). Both reach the task panel live, so its Attachments follow.
+  'attachment.added',
+  'attachment.removed',
 ];

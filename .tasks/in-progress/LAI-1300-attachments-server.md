@@ -2,10 +2,11 @@
 id: LAI-1300
 title: 'Attachments (server + docs): presigned uploads to an S3-compatible store, linked from markdown, off unless configured (D-150)'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-17T09:37:55Z
 ---
 
 ## Goal
