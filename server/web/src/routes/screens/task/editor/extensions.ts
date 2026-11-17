@@ -7,19 +7,23 @@ import type {
   MarkdownToken,
 } from '@tiptap/core';
 import { renderNestedMarkdownContent } from '@tiptap/core';
+import { Image } from '@tiptap/extension-image';
 import { Link } from '@tiptap/extension-link';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { StarterKit } from '@tiptap/starter-kit';
+import { boardOrigin, escapeAlt, isAttachmentUrl } from './attach.ts';
 import { startsBlock, writesFaithfully } from './markdown-bridge.ts';
 
 /**
  * What the task panel's editor can hold (LAI-827): exactly what markdown can
  * store, and nothing a markdown column would lose.
  *
- * - **No underline, no colour, no image.** Markdown has no underline or colour,
- *   and Laika loads no images (SPEC §13.4). StarterKit's underline is switched
- *   off so `⌘U` cannot make something a save would drop.
+ * - **No underline, no colour, and only Laika's own images.** Markdown has no
+ *   underline or colour, and Laika loads no image from anywhere else (SPEC
+ *   §13.4) — an attachment is its own (D-150, {@link AttachmentImage}).
+ *   StarterKit's underline is switched off so `⌘U` cannot make something a
+ *   save would drop.
  * - **No trailing node.** It appends an empty paragraph the moment the editor
  *   opens on a document ending in a list or a table — a change nobody made,
  *   which would make an untouched Save send something.
@@ -91,6 +95,7 @@ const Kit = StarterKit.extend({
   addExtensions() {
     return (this.parent?.() ?? []).map((extension) => {
       if (extension.name === 'code') return extension.extend({ excludes: '' });
+      if (extension.name === 'paragraph') return keepImageInParagraph(extension);
       if (extension.name !== 'italic') return extension;
       return extension.extend({
         // Italic has no attributes of its own in the pinned 3.32.0.
@@ -110,6 +115,78 @@ const Kit = StarterKit.extend({
       });
     });
   },
+});
+
+/**
+ * A paragraph that is only an image stays a paragraph (D-150).
+ *
+ * The library's paragraph hands a lone image to the image node as a block,
+ * which is right for a block image and wrong here: {@link AttachmentImage} is
+ * inline, so a paragraph of one screenshot parsed into a document the schema
+ * refused, and the whole text opened as Markdown. Every other paragraph is
+ * the library's.
+ */
+function keepImageInParagraph<T extends AnyExtension>(extension: T): T {
+  const parent = extension.config.parseMarkdown;
+  return extension.extend({
+    parseMarkdown(token: MarkdownToken, helpers: MarkdownParseHelpers) {
+      const tokens = token.tokens ?? [];
+      if (tokens.length === 1 && tokens[0]?.type === 'image') {
+        return helpers.createNode('paragraph', undefined, helpers.parseInline(tokens));
+      }
+      return parent === undefined ? [] : parent.call(this, token, helpers);
+    },
+  }) as T;
+}
+
+/**
+ * An attachment, drawn where it was put (D-150, LAI-1301): an inline image
+ * whose `src` is **Laika's own** `/api/v1/attachments/<id>/content` and
+ * nothing else.
+ *
+ * - **Any other image is not one.** Its markdown parses to nothing, so the
+ *   document no longer writes back as it was and opens as Markdown with the
+ *   reason (`markdown-bridge.ts`, "an image from outside Laika"); its HTML is
+ *   not read, and the `![…](…)` input rule is gone, so typing one makes text,
+ *   not a request to somebody else's server.
+ * - **Inline**, so a screenshot sits in the sentence it illustrates and a
+ *   paragraph of only an image stays a paragraph ({@link keepImageInParagraph}).
+ * - **Alt text escaped** where the library wrote it bare: a `]` in a file's
+ *   name ended the alt early and the rest read as text.
+ */
+export const AttachmentImage = Image.extend({
+  parseHTML() {
+    return [
+      {
+        tag: 'img[src]',
+        getAttrs: (element: HTMLElement) =>
+          isAttachmentUrl(element.getAttribute('src'), boardOrigin()) ? null : false,
+      },
+    ];
+  },
+  parseMarkdown(token: MarkdownToken, helpers: MarkdownParseHelpers) {
+    const src = typeof token.href === 'string' ? token.href : '';
+    if (!isAttachmentUrl(src, boardOrigin())) return [];
+    return helpers.createNode('image', {
+      src,
+      alt: typeof token.text === 'string' ? token.text : '',
+      title: typeof token.title === 'string' && token.title !== '' ? token.title : null,
+    });
+  },
+  renderMarkdown(node: JSONContent) {
+    const src = typeof node.attrs?.src === 'string' ? node.attrs.src : '';
+    const alt = typeof node.attrs?.alt === 'string' ? node.attrs.alt : '';
+    const title = typeof node.attrs?.title === 'string' ? node.attrs.title : '';
+    return title === ''
+      ? `![${escapeAlt(alt)}](${src})`
+      : `![${escapeAlt(alt)}](${src} "${title.replace(/["\\]/g, (c) => `\\${c}`)}")`;
+  },
+  addInputRules() {
+    return [];
+  },
+}).configure({
+  inline: true,
+  HTMLAttributes: { class: 'rte-image', loading: 'lazy', decoding: 'async' },
 });
 
 /** A task item's first line: indentation, marker, box, and its text. */
@@ -237,6 +314,7 @@ export const MARKDOWN_EXTENSIONS: readonly AnyExtension[] = [
     heading: { levels: [1, 2, 3, 4, 5, 6] },
   }),
   FaithfulLink,
+  AttachmentImage,
   WrappingTaskList,
   WrappingTaskItem.configure({ nested: true }),
   TableKit.configure({ table: { resizable: false } }),

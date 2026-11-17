@@ -1,6 +1,8 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import Markdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { boardOrigin, fileKind, isAttachmentUrl } from './editor/attach.ts';
+import { FileGlyph } from './FileGlyph.tsx';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { findMentions, mentionClass, mentionKind, type MentionDirectory } from './mentions.ts';
 import './task-markdown.css';
@@ -21,13 +23,18 @@ import './task-markdown.css';
  *   installed and must not be. A `<script>` in a description arrives as text.
  * - Every URL goes through `defaultUrlTransform`, which empties `javascript:`,
  *   `data:` and other non-web schemes.
- * - **Images are not loaded.** A self-hosted board makes no third-party
- *   requests (SPEC §13.4), and an image URL in a description is exactly that.
- *   The alt text stands in for it.
+ * - **Only Laika's own images are loaded.** A self-hosted board makes no
+ *   third-party requests (SPEC §13.4), and an image URL in a description is
+ *   exactly that: the alt text stands in for it. The one exception is this
+ *   board's attachment, `/api/v1/attachments/<id>/content` (D-150) — the
+ *   server decides who may read it and answers with a short-lived link to the
+ *   operator's own store, which serves it inline only when its first bytes
+ *   say it is an image. A link to one is drawn as a file chip.
  *
  * Comments use it too (LAI-734), through `CommentBody`, which adds a class
  * and a `pre` of its own. A caller can add elements but never replace the
- * three above: they are merged last, so the safety rules hold on every surface.
+ * renderers below: they are merged last, so the safety rules hold on every
+ * surface.
  *
  * **A caller cannot pass a tree transform.** A rehype plugin runs before
  * react-markdown escapes raw HTML and before the components map, so an
@@ -62,12 +69,95 @@ function mentionOf(node: ExtraProps['node']): string | undefined {
   return typeof handle === 'string' ? handle : undefined;
 }
 
+/** The words of a link, as written: a file chip's name. */
+function textOf(node: HastNode | undefined): string {
+  if (node === undefined) return '';
+  if (node.type === 'text') return node.value ?? '';
+  return (node.children ?? []).map(textOf).join('');
+}
+
+/**
+ * A link to an attachment (D-150): the file's glyph and its name, opening in
+ * a new tab — the server answers a download for anything it will not show.
+ */
+function FileChip({
+  href,
+  name,
+  children,
+}: {
+  readonly href: string;
+  readonly name: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <a
+      className="md-file"
+      data-kind={fileKind(name)}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <FileGlyph kind={fileKind(name)} size={14} />
+      <span className="md-file-name">{children}</span>
+    </a>
+  );
+}
+
+/**
+ * An attachment's image (D-150), loaded lazily and opened full size in a new
+ * tab. One the browser cannot draw — a file that is not an image after all —
+ * becomes its file chip rather than a broken frame.
+ */
+function AttachmentImage({ src, alt }: { readonly src: string; readonly alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <FileChip href={src} name={alt}>
+        {alt === '' ? 'Attached file' : alt}
+      </FileChip>
+    );
+  }
+  return (
+    <a
+      className="md-image"
+      href={src}
+      target="_blank"
+      rel="noopener noreferrer"
+      // The image's alt text names the link; one with none still says what it opens.
+      aria-label={alt === '' ? 'Open the image' : undefined}
+    >
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        onError={() => {
+          setFailed(true);
+        }}
+      />
+    </a>
+  );
+}
+
 const COMPONENTS: Components = {
-  // Links leave the board in a new tab rather than replacing it.
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-  // Alt text in place of the request.
-  img: ({ alt }) =>
-    alt !== undefined && alt !== '' ? <span className="md-img-alt">{alt}</span> : null,
+  // Links leave the board in a new tab rather than replacing it; a link to an
+  // attachment is its file chip (D-150).
+  a: ({ node, ...props }) =>
+    typeof props.href === 'string' && isAttachmentUrl(props.href, boardOrigin()) ? (
+      <FileChip href={props.href} name={textOf(node)}>
+        {props.children}
+      </FileChip>
+    ) : (
+      <a {...props} target="_blank" rel="noopener noreferrer" />
+    ),
+  // Laika's own attachment is drawn (D-150); any other image is its alt text
+  // in place of the request.
+  img: ({ src, alt }) =>
+    typeof src === 'string' && isAttachmentUrl(src, boardOrigin()) ? (
+      <AttachmentImage src={src} alt={alt ?? ''} />
+    ) : alt !== undefined && alt !== '' ? (
+      <span className="md-img-alt">{alt}</span>
+    ) : null,
   // A wide table scrolls inside the column instead of widening the panel.
   table: ({ node: _node, ...props }) => (
     <div className="md-table-wrap">

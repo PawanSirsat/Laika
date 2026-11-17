@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import { deleteComment, editComment, type Comment } from '../../../api/comments.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
@@ -26,6 +27,8 @@ export interface FeedCommentProps {
   readonly onChanged: () => void;
   /** Deleted: the thread stops drawing it before the read comes back. */
   readonly onDeleted: (commentId: string) => void;
+  /** Attach files while editing (D-150); absent where the board has no store. */
+  readonly attach?: EditorAttach | undefined;
 }
 
 /** How tall a folded finish summary stands (the design's 112px). */
@@ -54,6 +57,7 @@ export function FeedComment({
   now,
   onChanged,
   onDeleted,
+  attach,
 }: FeedCommentProps) {
   const [editing, setEditing] = useState(false);
   /** What the server answered a save with, until the thread's read catches up. */
@@ -105,6 +109,7 @@ export function FeedComment({
             people={people}
             meId={meId}
             cards={cards}
+            attach={attach}
             onClose={() => {
               setEditing(false);
               editButton.current?.focus();

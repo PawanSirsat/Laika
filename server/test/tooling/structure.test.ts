@@ -143,6 +143,13 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, openUnlistedCount, is tested in test/api/unlisted.test.ts and the sidebar badge in test/browser/capacity.test.ts.',
   ],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'api/use-attach.ts',
+    // LAI-1301 (D-150): reads the board's attachment limit from the cached
+    // `/org` and aims `attachTo` at a task. The upload it hands out is
+    // attachment-upload.ts, mirrored; the hook is driven in a browser.
+    'a React hook — no renderer in this package (CONVENTIONS §4). What it hands out is attachTo in api/attachment-upload.ts, tested in test/api/attachment-upload.test.ts; the on and off states are asserted in test/browser/attachments.test.ts.',
+  ],
   ['api/use-task-handoffs.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
     'api/use-handoff-counts.ts',

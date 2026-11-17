@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { describeEvent, pushSummary, type ActivityEvent } from '../../../api/activity.ts';
 import { sessionHarnessName, sessionWordsAfter } from '../../../api/agent-session.ts';
+import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import { isAgentComment, mayChangeComment, type Comment } from '../../../api/comments.ts';
 import type { Round } from '../../../api/review.ts';
 import { agentVia, type AgentNaming } from '../../../api/selected-agent.ts';
@@ -42,6 +43,12 @@ export interface ActivityFeedProps {
   readonly rounds: readonly Round[];
   /** The reader leads the space: Edit and Delete on every comment (§3.2). */
   readonly leads: boolean;
+  /**
+   * Attach files to a comment, new or edited (D-150); absent with no store.
+   * Aimed at the project only: the comment's save links each file to the task
+   * and to the comment, so the comment owns it (LAI-1300).
+   */
+  readonly attach?: EditorAttach | undefined;
 }
 
 type Tab = 'all' | 'comments' | 'history' | 'changes';
@@ -105,6 +112,7 @@ export function ActivityFeed({
   meId,
   rounds,
   leads,
+  attach,
 }: ActivityFeedProps) {
   const { theme } = useTheme();
   const now = Date.now();
@@ -369,6 +377,7 @@ export function ActivityFeed({
             meId={meId}
             cards={cards}
             mayChange={mayChangeComment(comment, meId, leads)}
+            attach={attach}
             now={now}
             onChanged={detail.refresh}
             onDeleted={(id) => {
@@ -463,7 +472,13 @@ export function ActivityFeed({
           {initials(personName(meId, members))}
         </span>
       )}
-      <CommentComposer people={people} meId={meId} cards={cards} onPost={detail.post} />
+      <CommentComposer
+        people={people}
+        meId={meId}
+        cards={cards}
+        onPost={detail.post}
+        attach={attach}
+      />
     </div>
   );
 

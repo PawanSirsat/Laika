@@ -2,6 +2,7 @@ import type { AnyExtension, JSONContent } from '@tiptap/core';
 import { getSchema } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
 import type { Node as ProseNode, Schema } from '@tiptap/pm/model';
+import { boardOrigin, isAttachmentUrl } from './attach.ts';
 
 /**
  * Markdown in, markdown out, and nothing the person did not touch changes
@@ -13,8 +14,10 @@ import type { Node as ProseNode, Schema } from '@tiptap/pm/model';
  * `@tiptap/markdown`, and **it is only shown in the rich view when writing it
  * straight back gives the same markdown** (after {@link normaliseMarkdown},
  * and blank lines between blocks aside: {@link sameMarkdown}).
- * Anything else — HTML an agent wrote, `* bullets`, an image — opens as
- * Markdown source with the reason, so a Save there sends the person's own text.
+ * Anything else — HTML an agent wrote, `* bullets`, an image from outside
+ * Laika — opens as Markdown source with the reason, so a Save there sends the
+ * person's own text. An attachment's image is Laika's own and round-trips
+ * (D-150).
  *
  * ## A save writes only the blocks that changed
  *
@@ -740,6 +743,12 @@ interface TokenLike {
   readonly text?: unknown;
 }
 
+/** A link's or an image's address, if the token has one. */
+function hrefOf(token: TokenLike): string | undefined {
+  const href = (token as { readonly href?: unknown }).href;
+  return typeof href === 'string' ? href : undefined;
+}
+
 /** Every token marked produced, depth first. */
 function* walkTokens(value: unknown): Generator<TokenLike> {
   if (Array.isArray(value)) {
@@ -1126,8 +1135,9 @@ function explain(bridge: Bridge, source: string, written: string | null): string
         const tag = /<\/?([a-zA-Z][\w-]*)/.exec(token.raw)?.[1];
         return `It contains HTML${tag === undefined ? '' : ` (<${tag}>)`}, which the rich editor would not keep as written.`;
       }
-      if (token.type === 'image') {
-        return 'It contains an image, which Laika does not show, so the rich editor would drop it.';
+      // Laika's own attachment is an image the editor holds (D-150); any other is not.
+      if (token.type === 'image' && !isAttachmentUrl(hrefOf(token), boardOrigin())) {
+        return 'It contains an image from outside Laika, which Laika does not show, so the rich editor would drop it.';
       }
     }
   } catch {

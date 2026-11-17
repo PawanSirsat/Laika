@@ -38,6 +38,7 @@ import '../../routes/screens/usage/usage.css';
 import '../../routes/screens/task/tokens.css';
 import '../../routes/screens/profile/profile.css';
 import '../../routes/screens/task/evidence.css';
+import '../../routes/screens/task/attachments.css';
 import '../../routes/screens/task/hero.css';
 import '../../routes/screens/task/delivers.css';
 import '../../routes/screens/task/feed.css';

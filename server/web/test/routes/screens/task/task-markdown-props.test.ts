@@ -57,3 +57,31 @@ void describe('TaskMarkdown props', () => {
     );
   });
 });
+
+/**
+ * D-150: the reading view loads one kind of image, Laika's own attachment.
+ * An `<img>` is built in exactly one place, and the `img` renderer reaches it
+ * only past `isAttachmentUrl`; anything else is still the alt text.
+ */
+void describe('TaskMarkdown loads no image but an attachment (D-150)', () => {
+  void test('one <img> element in the file, inside AttachmentImage', () => {
+    const images = [...SOURCE.matchAll(/<img\b/g)];
+    assert.equal(images.length, 1, 'an <img> is built somewhere else too');
+    const body = /function AttachmentImage\([\s\S]*?\n\}/.exec(SOURCE)?.[0] ?? '';
+    assert.match(body, /<img\b/, 'AttachmentImage not found — the check cannot see it');
+    assert.match(body, /loading="lazy"/);
+  });
+
+  void test('the img renderer asks isAttachmentUrl first, and otherwise draws the alt text', () => {
+    const start = SOURCE.indexOf('  img: ({ src, alt }) =>');
+    const end = SOURCE.indexOf('  table: ', start);
+    const text = start === -1 || end === -1 ? '' : SOURCE.slice(start, end);
+    assert.ok(text !== '', 'the img renderer was not found — the check cannot see it');
+    assert.match(
+      text,
+      /=>\s*typeof src === 'string' && isAttachmentUrl\(src, boardOrigin\(\)\) \?/,
+    );
+    assert.match(text, /<AttachmentImage /);
+    assert.match(text, /md-img-alt/);
+  });
+});

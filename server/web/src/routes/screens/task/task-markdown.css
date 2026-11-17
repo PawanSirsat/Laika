@@ -167,6 +167,93 @@
 }
 
 /*
+ * An attachment (D-150, LAI-1301). An image is drawn where it was put, at
+ * most the column's width and a screen's worth of height, framed so a white
+ * screenshot has an edge in light; it opens full size in a new tab. A link
+ * to any other file is a chip: the glyph for its kind, then its name.
+ */
+.md-image {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  border-radius: var(--radius-control);
+}
+
+.md-image img {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 28rem;
+  height: auto;
+  vertical-align: middle;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.md-image:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.md a.md-file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  text-decoration: none;
+  vertical-align: baseline;
+}
+
+.md a.md-file:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.md a.md-file:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.md-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-glyph {
+  flex: none;
+}
+
+.file-glyph[data-kind='image'] {
+  color: var(--chip-purple);
+}
+
+.file-glyph[data-kind='sheet'] {
+  color: var(--chip-green);
+}
+
+.file-glyph[data-kind='pdf'] {
+  color: var(--chip-pink);
+}
+
+.file-glyph[data-kind='doc'] {
+  color: var(--chip-blue);
+}
+
+.file-glyph[data-kind='file'],
+.file-glyph[data-kind='paperclip'] {
+  color: var(--text-secondary);
+}
+
+/*
  * Reading text (LAI-827): the description, acceptance and comments are read
  * like a document — Jira's issue view, which the owner set beside ONR-516 —
  * not scanned like a board. The size and leading are the scale's `reading`

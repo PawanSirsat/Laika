@@ -1,4 +1,5 @@
 import { Component, lazy, Suspense, type ErrorInfo, type ReactNode, type Ref } from 'react';
+import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 
@@ -48,6 +49,11 @@ export interface RichEditorHandle {
   readonly focus: () => void;
   /** Nothing written yet — so a close need not ask. */
   readonly empty: () => boolean;
+  /**
+   * A file is still on its way (D-150): what the form reads now would not
+   * link it, so the form waits rather than sending without it.
+   */
+  readonly uploading: () => boolean;
 }
 
 interface RichEditorBaseProps {
@@ -75,6 +81,13 @@ interface RichEditorBaseProps {
    * and spring back when the editor arrives.
    */
   readonly holding?: ReactNode;
+  /**
+   * Attach files here (D-150, LAI-1301): the paperclip, a pasted screenshot
+   * and a dropped file upload through it, and the text gets an image or a
+   * link. **Absent where the board has no store** — no paperclip, and a
+   * dropped file is refused as it always was.
+   */
+  readonly attach?: EditorAttach | undefined;
 }
 
 /** The editor as the task panel opens it: it saves and closes itself. */

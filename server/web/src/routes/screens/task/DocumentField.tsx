@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import './task-panel.css';
@@ -25,6 +26,8 @@ export interface DocumentFieldProps {
   /** The reader, whose own mention is the stronger pill. */
   readonly meId?: string | undefined;
   readonly cards: readonly CardCandidate[];
+  /** Attach files while editing (D-150); absent where the board has no store. */
+  readonly attach?: EditorAttach | undefined;
 }
 
 /**
@@ -42,7 +45,8 @@ export interface DocumentFieldProps {
  *
  * **What is shown is always `TaskMarkdown`** — the same safe renderer before
  * and after a save: raw HTML as text, `javascript:` links emptied, no image
- * loaded. The editor is only ever the editing surface.
+ * loaded but Laika's own attachment (D-150). The editor is only ever the
+ * editing surface.
  */
 export function DocumentField({
   name,
@@ -55,6 +59,7 @@ export function DocumentField({
   people,
   meId,
   cards,
+  attach,
 }: DocumentFieldProps) {
   /** The text editing opened on, kept: a newer one arriving does not change it. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -86,6 +91,7 @@ export function DocumentField({
         people={people}
         meId={meId}
         cards={cards}
+        attach={attach}
         onClose={() => {
           setEditing(null);
         }}

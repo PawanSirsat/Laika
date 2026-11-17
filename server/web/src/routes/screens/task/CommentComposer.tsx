@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { EditorAttach } from '../../../api/attachment-upload.ts';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
 import './task-panel.css';
 import './feed.css';
@@ -11,6 +12,8 @@ export interface CommentComposerProps {
   readonly cards: readonly CardCandidate[];
   /** Posts the markdown; rejects to keep the draft open with the reason. */
   readonly onPost: (bodyMd: string) => Promise<void>;
+  /** Attach files to the comment (D-150); absent where the board has no store. */
+  readonly attach?: EditorAttach | undefined;
 }
 
 /**
@@ -29,7 +32,7 @@ export interface CommentComposerProps {
  * read it, and `GET /projects/:slug/mentionable` is where that is decided; the
  * panel only adds each person's handle, which is what the server resolves.
  */
-export function CommentComposer({ people, meId, cards, onPost }: CommentComposerProps) {
+export function CommentComposer({ people, meId, cards, onPost, attach }: CommentComposerProps) {
   const [open, setOpen] = useState(false);
 
   /*
@@ -68,6 +71,7 @@ export function CommentComposer({ people, meId, cards, onPost }: CommentComposer
         people={people}
         meId={meId}
         cards={cards}
+        attach={attach}
         onClose={() => {
           setOpen(false);
         }}
