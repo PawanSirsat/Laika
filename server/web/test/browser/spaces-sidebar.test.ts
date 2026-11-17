@@ -860,7 +860,7 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('the user menu: profile, theme, Appearance (LAI-1125, a page since LAI-1212), Developer access, sign out — and its keys', async () => {
+  void test('the user menu: profile, theme, sign out — Appearance and Developer access are the gear’s (LAI-1231) — and its keys', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/auth/sign-out': {},
@@ -882,13 +882,10 @@ void describe('the prototype geometry (LAI-249)', () => {
       const items = menu.locator('[role="menuitem"]');
       const firstLines = async () =>
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|');
-      await until(
-        async () =>
-          (await firstLines()) === 'My profile|Switch to dark|Appearance|Developer access|Sign out',
-      );
+      await until(async () => (await firstLines()) === 'My profile|Switch to dark|Sign out');
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Appearance', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Sign out'],
       );
       assert.equal(
         await menu.locator('a', { hasText: 'My profile' }).getAttribute('href'),
@@ -939,10 +936,16 @@ void describe('the prototype geometry (LAI-249)', () => {
       await h.page.mouse.click(900, 400);
       assert.equal(await menu.count(), 0, 'a click outside must close the menu');
 
-      // Developer access.
+      // Not here: the gear holds them, and two menus side by side in the bar
+      // listing the same pages is what the owner reported (LAI-1231).
       await trigger.click();
-      await menu.locator('a', { hasText: 'Developer access' }).click();
-      await h.page.waitForURL((url) => url.pathname === '/developer', { timeout: 10_000 });
+      await menu.waitFor({ timeout: 5000 });
+      assert.equal(await menu.locator('[role="menuitem"]', { hasText: 'Appearance' }).count(), 0);
+      assert.equal(
+        await menu.locator('[role="menuitem"]', { hasText: 'Developer access' }).count(),
+        0,
+      );
+      await h.page.keyboard.press('Escape');
       assert.equal(await menu.count(), 0);
 
       // Sign out, and the browser goes to sign-in.
@@ -972,11 +975,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await until(
         async () =>
           (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
-          'My profile|Switch to dark|Appearance|Developer access|Sign out',
+          'My profile|Switch to dark|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Appearance', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Sign out'],
       );
     } finally {
       await h.close();

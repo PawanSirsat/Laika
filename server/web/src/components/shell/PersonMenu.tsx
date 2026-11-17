@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGates } from '../../api/permissions.ts';
-import { APPEARANCE_PATH } from '../../routes/route-table.ts';
 import { toggledTheme } from '../../theme/theme.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
@@ -19,14 +18,13 @@ export interface PersonMenuProps {
  * The person, at the right end of the app's top bar, and their menu (LAI-796,
  * the owner's reference; in the top bar since LAI-1227, Jira's place for it —
  * it was the sidebar's foot until then): **My profile**, **Switch to dark /
- * light**, **Appearance**, **Developer access** and **Sign out**. The avatar
- * alone is drawn; the name is the button's accessible name, and the menu's
- * head says it in full.
+ * light** and **Sign out**. The avatar alone is drawn; the name is the
+ * button's accessible name, and the menu's head says it in full.
  *
- * *Appearance* opens the Appearance page — every theme, System's dark
- * variant and the interface font (LAI-1212; a side panel until then,
- * LAI-1125). The quick theme row stays, as one click is still what most
- * readers want.
+ * *Appearance* and *Developer access* are the gear's, not this menu's
+ * (LAI-1231): both menus listed them, side by side in the bar. The quick theme
+ * row stays here, as one click is still what most readers want; the full
+ * Appearance page is one press away under the gear.
  *
  * *My profile* is drawn for a reader who may open their own profile —
  * `profile.read_own`, every role since D-139 (LAI-1150), or `profile.read` —
@@ -155,22 +153,6 @@ export function PersonMenu({ user }: PersonMenuProps) {
             <Icon name={next === 'light' ? 'sun' : 'moon'} className="user-menu-glyph" />
             <span className="visually-hidden"> theme — currently {theme}</span>
           </button>
-          <a
-            role="menuitem"
-            className="user-menu-item user-menu-appearance"
-            href={APPEARANCE_PATH}
-            onClick={follow(APPEARANCE_PATH)}
-          >
-            Appearance
-          </a>
-          <a
-            role="menuitem"
-            className="user-menu-item"
-            href="/developer"
-            onClick={follow('/developer')}
-          >
-            Developer access
-          </a>
           <div className="user-menu-rule" role="separator" />
           <button
             type="button"
