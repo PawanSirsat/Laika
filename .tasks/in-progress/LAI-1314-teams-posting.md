@@ -62,3 +62,84 @@ Two of six projects have a channel. That stops when KSage is switched off. Laika
 - Reserved decision numbers: D-152 icons (laika-c4), D-153 email (laika-59), D-154 this,
   D-155 email-to-task.
 - Avoid a new activity verb; a verb needs three owners (CLAUDE.md §4.4).
+
+## Build notes (CHIEF's builder, Belka, 2026-11-18)
+
+### What KSage sends, ported byte for byte
+
+Read from `sgirikvelldcodesage/ksage` (`apps/api/src/notify.rs`, `routes/scheduled.rs`,
+`routes/items.rs`, `routes/comments.rs`, `routes/projects_admin.rs`, `routes/delivery.rs`,
+`migrations/0037_digest_runs.sql`):
+
+- **One request per post**: `POST <the project's webhook>`, header
+  `content-type: application/json; charset=utf-8`, body `{"text":"<html>"}` — the only field
+  the flow reads (`triggerBody()?['text']`, *"Post message in a chat or channel"*). Built by
+  hand with **every non-ASCII UTF-16 unit escaped `\uXXXX`** (the gateway refuses raw
+  multi-byte characters `400`). Any `2xx` is sent (Power Automate answers `202`). Timeout 10 s.
+- **The HTML** (`Notice::to_html`): `<b>title</b>`, `<b>label</b>`, `<b>Key:</b> value` fields,
+  lines joined with `<br>` (an unindented line ending in `:` is bold; leading spaces become
+  `&nbsp;`), tables as `<br><br><b>heading</b><br>note<table style="border-collapse:collapse;margin-top:6px" border="1" cellpadding="6">`
+  with `<th align="left" style="background:#f2f5f8">` and `<td align="left">` (an empty
+  section keeps heading and note, no grid), `<br><br><b>Actions / next steps</b><ul><li>…</li></ul>`,
+  then `<br><br><a href="…">Open in Laika</a>` (KSage: *Open in KSage*). `&`, `<`, `>` escaped.
+- **Stand-up** (`build_update`): title `{name} ({PREFIX}) — Daily Update`, label
+  `11:00 AM IST Run Update` / `06:00 PM IST Run Update`; fields Run, Status
+  (🔴 Blocked / 🟡 At Risk / 🟢 On Track / ⚪ Not Started), As of (`Wed 21 Oct 2026, 11:00 IST`),
+  Owner; a counts strip; tables Key updates (since the previous run; Monday's reaches back to
+  Friday 18:00), Blocked, Stale (KSage's On hold), Past their date, In flight (per person);
+  actions; `Next update: …`. At 05:30 and 12:30 UTC, Monday to Friday (IST calendar).
+- **Nightly digest** (`send_digest`, COL-007): title `{name} ({PREFIX}) — {YYYY-MM-DD}` for the
+  SAST day before; `Blocked (n):`, `Waiting for review: n`, `Moved (n):` — sent only when
+  something moved or is blocked. At 07:00 UTC daily.
+- **Notices** (`item_notice`, comment notice), each ending `Space: {name}` and a task link:
+  `{to} — {KEY} is yours` / `Handed over by {by}.`; `{assignee} — {KEY} came back from {from}` /
+  `Now in {to}.`; `{KEY} is waiting for review`; `{KEY} is done — {by}`;
+  `{KEY} is blocked — {assignee}` / `Waiting on: {KEY} {title}`; `{KEY} is unblocked — {assignee}`;
+  `New comment on {KEY}` / title / `{author} · {role}` / body (cut at 1000 characters).
+- **Test post** (`notify-test`): `Laika is connected to this channel — {name} ({PREFIX})`.
+
+### KSage → Laika
+
+| KSage | Laika |
+| --- | --- |
+| project, its code `RMB` | space, its key prefix `LAI` |
+| work item `RMB-52` | task `LAI-52` |
+| owner | assignee (`Unassigned` when none) |
+| project lead, else an administrator | the space's `lead` membership, else `(no space lead set)` |
+| blocked (a pause with a cause) | an open task with a `blocked_by` that is not done |
+| on hold (our own choice) | stale: `in_progress` and flagged by §11.6 |
+| in progress, unit testing, QA | `in_progress` |
+| UAT, *with the client* | `review` |
+| due date | `due_on` |
+| signed off | `done` |
+| the audit log's `item.*` rows | `activity`'s `task.*` rows |
+| `Assigned` | `task.assigned` to somebody else (not a self-assignment, not offboarding) |
+| `SentBack` | `task.status_changed` from `review` to `in_progress`, `todo` or `backlog` |
+| `AwaitingSignOff` | `task.status_changed` into `review` |
+| `SignedOff` | `task.status_changed` into `done` |
+| `Blocked` | `task.dependency_added` while the blocker was not done |
+| `Unblocked` | the last open blocker done, or removed — as the board stood at that moment |
+| comment notice | `comment.added` by a person (never an agent) |
+| `digest_runs (project, run_key, run_on)` | `teams_posts.slot`, partial unique index |
+| `projects.teams_webhook_url` | `project_teams_channels.webhook_url_enc` (encrypted, write-only) |
+
+**Not ported — follow-ups:** *Shipped* (Laika has no deployments), the agent pull-request
+Adaptive Card (no approval tokens), and the per-person inbox delivered to email and Teams (no
+inbox). Agents' comments are skipped on purpose.
+
+### Routes and actions
+
+- `GET`/`PUT /api/v1/org/teams` — the switch; `GET`/`PUT`/`DELETE /api/v1/projects/:slug/teams`
+  — the channel; `POST /api/v1/projects/:slug/teams/test` — a test post (own rate-limit bucket,
+  6 a minute). All `org.teams.configure`, session only.
+- `system.teams.post` — the `teams.post` job, every minute.
+
+### Importing KSage's two flows (CHIEF, after release)
+
+Inside the backend container, a one-off node script: read the two webhook URLs from KSage's
+database with `SELECT` only, then for each space call
+`setProjectTeamsChannel(db, loadActor(db, ownerUserId)!, slug, { webhook_url }, process.env.LAIKA_SECRET)`
+(`server/src/services/teams.ts`; `loadActor` from `server/src/auth/resolve-actor.ts`). It
+checks the host (`*.powerplatform.com`, `*.logic.azure.com`, `*.webhook.office.com`), encrypts,
+and returns the view with host and last four only — never print the URL. Then the space's
+*Send test post* proves the flow, and the switch is turned on when the owner says.
