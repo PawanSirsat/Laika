@@ -5,8 +5,9 @@ area: web
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T09:40:00Z
+finished: 2026-11-17T10:45:00Z
 ---
 
 ## Goal
@@ -20,10 +21,10 @@ branch is merged; GitHub then shows #350 as merged.
 
 ## Acceptance criteria
 
-- [ ] Every failing test classified: a regression of an accepted decision (fix the code — master's
+- [x] Every failing test classified: a regression of an accepted decision (fix the code — master's
       tests encode LAI-727, D-149 and the rest) or an intended UI change the PR's own task files
       describe (update the test, quoting that task).
-- [ ] The full CI gate green on this branch's PR (test, lint, format each exit 0).
+- [x] The full CI gate green on this branch's PR (test, lint, format each exit 0).
 - [ ] Merged into master; the CI / Deploy run on master green; AWS health shows the merge SHA.
 
 ## Notes / context
@@ -38,3 +39,14 @@ over Open" (My availability on My day), "sort, search and the list view survive 
 the page is its URL, LAI-1196); shard 4 — "/board" and "/list: no sprint strip and no WORKING NOW"
 (LAI-727), "1024px/920px, sidebar open: … land without a shift", "one stream for the space, not one
 per consumer" (the space bar).
+
+## Builder notes (LAI-1306, 2026-11-17)
+
+PR #351 (`LAI-1306-ui-combined-green`) carries #350's head 9c4fda337 plus
+eleven commits; CI run 44065979691 on b7a991634 is green in every gate job.
+Verdict per failure is in the PR body and the log. Two product fixes
+(`api/event-stream.ts`: a late subscriber hears `open`/`ready`; My day's
+phone bar keeps *On leave* whole, D-149 item 5), the rest tests made stale
+by this PR's own tasks (LAI-1214, LAI-1219, LAI-1227, LAI-1233), fixtures
+older than LAI-1185's `on_leave`, and one test leak that hung web shard 2
+for 60 minutes. The merge criterion stays open for CHIEF.
