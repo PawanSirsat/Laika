@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-17T09:37:55Z
+finished: 2026-11-17T10:49:10Z
 ---
 
 ## Goal
@@ -116,7 +117,7 @@ running Garage beside Laika (bucket, key, `PutBucketCors`, the env).
       GET example (`AKIAIOSFODNN7EXAMPLE`, `examplebucket`, `test.txt`, `20130524T000000Z`,
       86400 s → `aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404`, virtual-
       host style, so host and path are inputs) and the header-signed GET Object example.
-- [ ] Route tests over a fake store (`test/helpers/fake-s3.ts`, the `fake-clan.ts` shape):
+- [x] Route tests over a fake store (`test/helpers/fake-s3.ts`, the `fake-clan.ts` shape):
       ask → PUT → complete → content 302 → list → delete; 413 at max + 1; 409 on a size
       mismatch and on another person's complete; 503 `attachments_off` when off; 403 for a
       viewer and a read-only token; member deletes own, not another's; lead deletes any.
@@ -229,4 +230,38 @@ stays usable for the rest of its 10 minutes after a complete or delete. That is
 bounded, and the forced `response-content-type` keeps it safe. The 403-versus-
 404 difference on complete, delete and list matches the comment routes'
 convention.
+
+## Review response (round 1)
+
+Every item fixed at `e9b8e819a`, `096c00dd2` and `e51507464`; the PR's CI passed
+every check at `e51507464`. Each fix has a test that fails without it, checked
+by reverting the fix alone.
+
+- **Blocker (a):** `linkAttachmentRefs` acts only on a file no task has yet,
+  and sets `comment_id` in that same save — so a comment owns only the files it
+  was first to link. Test: Alice uploads with `task_id`, Bob quotes it in a
+  comment (its `comment_id` stays null) and deletes the comment; her file keeps
+  `deleted_at` null and no `attachment.removed` is written — at the service and
+  end to end through the routes.
+- **Blocker (b):** `removeCommentAttachments` asks `can(attachment.delete,
+  { ownerId: uploaded_by })` per file. Test: Bob's comment first-links Alice's
+  task-less upload, Bob deletes it, her file stays; and Bob's own
+  comment-first-linked file is still removed with `attachment.removed`.
+- **1:** the sweep's store part ends at the first `StoreUnavailableError`, and a
+  run in progress is joined, never doubled (a per-db in-flight map, as
+  `runHrSync`).
+- **2:** `complete` answers `409 upload_expired` once the ask is over an hour
+  old; the sweep's never-linked case is measured from `ready_at`.
+- **3:** a HEAD with no `content-length`, or one that is not digits, is
+  `StoreUnavailableError('HEAD answered no size')`.
+- **4:** the ASCII `filename` folds runs of spaces (`a  b.png` →
+  `filename="a b.png"`).
+- **5:** `docs/OPERATIONS.md` says the bucket stays private — no public read,
+  no website mode.
+- **Recorded:** §4.92 says a presigned `PUT` stays usable for the rest of its
+  ten minutes after complete or remove, and why that is safe; the log records
+  the 403-versus-404 convention.
+- **Not edited:** `docs/DECISIONS.md`. D-150 item 6's *"Deleting a comment
+  deletes the files only it carries"* stays true of the new rule read narrowly,
+  and a decision is a record; §4.7 and §4.92 carry the exact wording.
 
