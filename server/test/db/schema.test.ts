@@ -123,7 +123,11 @@ describe('migrations', () => {
     // LAI-1181, D-149: leave days synced from the HR system.
     'leave_days',
     'local_activity_days',
+    // LAI-1311: who a Teams meeting was for and who came.
+    'meeting_attendance',
     'meeting_reviews',
+    // LAI-1311: Teams meetings read through Graph — never a transcript.
+    'meetings',
     // LAI-1136, D-134: a member's own notices, kept 90 days.
     'member_notices',
     'member_ratings',

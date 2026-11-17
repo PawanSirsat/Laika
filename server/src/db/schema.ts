@@ -1752,6 +1752,93 @@ export const attachments = sqliteTable(
   ],
 );
 
+// ------------------------------------------------------------ §4.93 meetings
+
+/**
+ * A Microsoft Teams or Outlook meeting, read through Graph (§4.93, LAI-1311):
+ * when it was scheduled, when it actually ran, and whether a transcript
+ * exists. **There is no transcript column, and there never is one** (D-005,
+ * D-056): the transcript is fetched from Graph when a participant opens it,
+ * and a review keeps only its hash. Rows are upserted by `graph_event_id` and
+ * never deleted by the sync — a meeting that leaves the window stays as it
+ * was last seen.
+ */
+export const meetings = sqliteTable(
+  'meetings',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** The organiser's calendar event id (`iCalUId`) — one row per meeting. */
+    graphEventId: text('graph_event_id').notNull(),
+    /** The Teams online meeting's id, once resolved from its join URL. */
+    onlineMeetingId: text('online_meeting_id'),
+    title: text('title').notNull(),
+    /** Lowercased. */
+    organiserEmail: text('organiser_email').notNull(),
+    joinUrl: text('join_url'),
+    scheduledStart: integer('scheduled_start').notNull(),
+    scheduledEnd: integer('scheduled_end').notNull(),
+    /** The first join and the last leave in Teams' attendance report. */
+    actualStart: integer('actual_start'),
+    actualEnd: integer('actual_end'),
+    hasTranscript: integer('has_transcript').notNull().default(0),
+    /** The space a participant linked it to, for a review. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    syncedAt: integer('synced_at').notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('meetings_graph_event_id_unique').on(t.graphEventId),
+    index('meetings_scheduled_start_idx').on(t.scheduledStart),
+    index('meetings_org_id_idx').on(t.orgId),
+    index('meetings_project_id_idx').on(t.projectId),
+    check('meetings_has_transcript_check', sql.raw('has_transcript IN (0, 1)')),
+    check('meetings_title_check', sql.raw('length(title) <= 255')),
+    check('meetings_scheduled_check', sql.raw('scheduled_end >= scheduled_start')),
+  ],
+);
+
+// -------------------------------------------------- §4.94 meeting_attendance
+
+/**
+ * Who a meeting was for and who came (§4.94, LAI-1311): one row per address,
+ * invited from the calendar, joined and left from Teams' attendance report.
+ * **Visibility is this table**: a person sees a meeting only through a row
+ * with their user id or their address. `time_entry_id` is the entry the
+ * person's own *Add to My day* made, so it is made once.
+ */
+export const meetingAttendance = sqliteTable(
+  'meeting_attendance',
+  {
+    id: text('id').primaryKey(),
+    meetingId: text('meeting_id')
+      .notNull()
+      .references(() => meetings.id, { onDelete: 'cascade' }),
+    /** Lowercased. */
+    email: text('email').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    displayName: text('display_name').notNull(),
+    invited: integer('invited').notNull().default(0),
+    joinedAt: integer('joined_at'),
+    leftAt: integer('left_at'),
+    minutes: integer('minutes').notNull().default(0),
+    timeEntryId: text('time_entry_id').references(() => timeEntries.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => [
+    uniqueIndex('meeting_attendance_meeting_email_unique').on(t.meetingId, t.email),
+    index('meeting_attendance_user_id_idx').on(t.userId),
+    index('meeting_attendance_email_idx').on(t.email),
+    index('meeting_attendance_time_entry_id_idx').on(t.timeEntryId),
+    check('meeting_attendance_invited_check', sql.raw('invited IN (0, 1)')),
+    check('meeting_attendance_minutes_check', sql.raw('minutes BETWEEN 0 AND 1440')),
+  ],
+);
+
 // --------------------------------------------- §4.67 recognised_agent_devices
 
 /** The owner's confirmed labels; no row means unrecognised (LAI-590). */
