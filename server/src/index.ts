@@ -126,6 +126,8 @@ function main(): void {
     backupDir,
     // The HR sync reads the stored token with it (D-149, LAI-1181).
     serverSecret: env.serverSecret,
+    // The directory sync reads Microsoft Graph with the SSO app (LAI-1239).
+    sso: env.sso ?? null,
   });
 
   const shutdown = createRuntimeShutdown({

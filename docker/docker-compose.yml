@@ -34,6 +34,8 @@ services:
       LAIKA_MICROSOFT_CLIENT_ID: ${LAIKA_MICROSOFT_CLIENT_ID:-}
       LAIKA_MICROSOFT_CLIENT_SECRET: ${LAIKA_MICROSOFT_CLIENT_SECRET:-}
       LAIKA_MICROSOFT_TENANT_ID: ${LAIKA_MICROSOFT_TENANT_ID:-}
+      # Optional, needs the three above: every enabled directory Member joins.
+      LAIKA_MICROSOFT_DIRECTORY_SYNC: ${LAIKA_MICROSOFT_DIRECTORY_SYNC:-false}
 
     ports:
       - '${LAIKA_PORT:-3000}:3000'

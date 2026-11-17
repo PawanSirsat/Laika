@@ -17,6 +17,11 @@ export interface MicrosoftSso {
   readonly clientSecret: string;
   /** One directory: a tenant GUID or one of its verified domains. */
   readonly tenantId: string;
+  /**
+   * `LAIKA_MICROSOFT_DIRECTORY_SYNC` (LAI-1239): add every enabled Member of the
+   * directory as a Laika member, through Graph. Off unless asked for.
+   */
+  readonly directorySync: boolean;
 }
 
 /** How someone signs in to this instance — what `GET /setup/status` reports. */
@@ -69,8 +74,26 @@ export function parseMicrosoftSso(
   const clientSecret = read('LAIKA_MICROSOFT_CLIENT_SECRET');
   const tenantId = read('LAIKA_MICROSOFT_TENANT_ID');
 
+  const syncRaw = read('LAIKA_MICROSOFT_DIRECTORY_SYNC').toLowerCase();
+  if (syncRaw !== '' && syncRaw !== 'true' && syncRaw !== 'false') {
+    return {
+      problem: { variable: 'LAIKA_MICROSOFT_DIRECTORY_SYNC', message: 'is true or false' },
+    };
+  }
+  const directorySync = syncRaw === 'true';
+
   const given = [clientId, clientSecret, tenantId].filter((v) => v !== '').length;
-  if (given === 0) return { sso: null };
+  if (given === 0) {
+    if (directorySync) {
+      return {
+        problem: {
+          variable: 'LAIKA_MICROSOFT_DIRECTORY_SYNC',
+          message: 'needs Microsoft SSO — set the three LAIKA_MICROSOFT_* variables too',
+        },
+      };
+    }
+    return { sso: null };
+  }
   if (given < 3) {
     const missing = (
       [
@@ -93,7 +116,15 @@ export function parseMicrosoftSso(
     return { problem: { variable: 'LAIKA_MICROSOFT_TENANT_ID', message: problem } };
   }
 
-  return { sso: { provider: 'microsoft', clientId, clientSecret, tenantId: tenantId.trim() } };
+  return {
+    sso: {
+      provider: 'microsoft',
+      clientId,
+      clientSecret,
+      tenantId: tenantId.trim(),
+      directorySync,
+    },
+  };
 }
 
 /** An unspent, unexpired invite addressed to exactly this email. */
