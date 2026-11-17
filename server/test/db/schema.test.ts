@@ -95,6 +95,8 @@ describe('migrations', () => {
     'agents',
     // LAI-957, D-102: who looked at a person's analytics.
     'analytics_views',
+    // LAI-1300, D-150: files in the operator's store, by project, task and comment.
+    'attachments',
     'board_activity_days',
     // LAI-1038, D-126: capacity pings and the one answer each got.
     'capacity_pings',

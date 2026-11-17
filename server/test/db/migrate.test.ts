@@ -2808,6 +2808,9 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_member_notices_time_changed$/),
         // LAI-1181's HR tables: four new tables, nothing rebuilt.
         expect.stringMatching(/_hr_source$/),
+        // LAI-1300's attachments: one new table, and `activity` rebuilt for
+        // its two verbs, every row kept.
+        expect.stringMatching(/_attachments$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2955,6 +2958,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
       '0081_hr_source',
+      '0082_attachments',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3050,6 +3054,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
       '0081_hr_source',
+      '0082_attachments',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3078,8 +3083,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
 
         runMigrations(db);
 
-        // LAI-1181's 0081 rides along and adds its four HR tables; nothing
-        // else appears.
+        // LAI-1181's 0081 rides along and adds its four HR tables, and
+        // LAI-1300's 0082 its attachments; nothing else appears.
         expect(tables()).toEqual(
           [
             ...before,
@@ -3088,6 +3093,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'leave_days',
             'org_holidays',
             'org_hr_source',
+            'attachments',
           ].sort(),
         );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
@@ -3134,6 +3140,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
       '0081_hr_source',
+      '0082_attachments',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3247,6 +3254,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0079_analytics_views_profile',
       '0080_member_notices_time_changed',
       '0081_hr_source',
+      '0082_attachments',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3326,6 +3334,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
     expect(dropped.map((e) => e.tag)).toEqual([
       '0080_member_notices_time_changed',
       '0081_hr_source',
+      '0082_attachments',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3385,6 +3394,99 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
           'member_notices_user_idx',
           // The primary key's own.
           'sqlite_autoindex_member_notices_1',
+        ]);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0082 adds attachments and two activity verbs to a populated 0081 database (LAI-1300)', () => {
+  function folderAt0081(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0082_attachments');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0082_attachments']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps every activity row, its rowid and the agent event that cascades from it, and accepts the verbs',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0081() });
+        const s = seed(db);
+        const now = Date.now();
+        const insertActivity = (type: string) => {
+          const id = newId();
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, actor_id, actor_kind, type, payload_json, created_at)
+            VALUES (${id}, ${s.orgId}, ${s.projectId}, ${s.userId}, 'user', ${type}, '{}', ${now})
+          `);
+          return id;
+        };
+        insertActivity('task.created');
+        const withEvent = insertActivity('task.handoff_offered');
+        insertActivity('agent.capacity_requested');
+        // An agent event hangs off an activity row with `ON DELETE cascade`:
+        // the rebuild drops `activity`, and the migrator's foreign keys being
+        // off is all that keeps this row (memory: the Drizzle migrator).
+        db.run(sql`
+          INSERT INTO agent_events (activity_id, seq, schema_version, offer_id, detail_json)
+          VALUES (${withEvent}, 1, 1, NULL, '{}')
+        `);
+        // Before 0082 the verb is refused: the CHECK is what the rebuild changes.
+        expectSqliteError(() => insertActivity('attachment.added'), /activity_type_check/);
+        const before = db.all(sql`SELECT rowid, * FROM activity ORDER BY rowid`);
+        expect(before.length).toBeGreaterThanOrEqual(3);
+        const eventsBefore = db.all(sql`SELECT * FROM agent_events ORDER BY activity_id`);
+        expect(eventsBefore).toHaveLength(1);
+
+        runMigrations(db);
+
+        expect(db.all(sql`SELECT rowid, * FROM activity ORDER BY rowid`)).toEqual(before);
+        expect(db.all(sql`SELECT * FROM agent_events ORDER BY activity_id`)).toEqual(eventsBefore);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        insertActivity('attachment.added');
+        insertActivity('attachment.removed');
+        expectSqliteError(() => insertActivity('attachment.renamed'), /activity_type_check/);
+        // Still append-only: `ensureActivityTriggers` put the triggers back.
+        expectSqliteError(() => db.run(sql`DELETE FROM activity`), /append-only/i);
+
+        const fks = db.all<{ from: string; table: string; on_delete: string }>(
+          sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('attachments') ORDER BY "from"`,
+        );
+        expect(fks).toEqual([
+          { from: 'comment_id', table: 'comments', on_delete: 'SET NULL' },
+          { from: 'deleted_by', table: 'users', on_delete: 'SET NULL' },
+          { from: 'project_id', table: 'projects', on_delete: 'CASCADE' },
+          { from: 'task_id', table: 'tasks', on_delete: 'SET NULL' },
+          { from: 'uploaded_by', table: 'users', on_delete: 'NO ACTION' },
+        ]);
+        const indexes = db.all<{ name: string }>(
+          sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'attachments' ORDER BY name`,
+        );
+        expect(indexes.map((i) => i.name)).toEqual([
+          'attachments_comment_id_idx',
+          'attachments_deleted_by_idx',
+          'attachments_project_id_idx',
+          'attachments_state_created_at_idx',
+          'attachments_storage_key_unique',
+          'attachments_task_id_idx',
+          'attachments_uploaded_by_idx',
+          'sqlite_autoindex_attachments_1',
         ]);
       } finally {
         sqlite.close();
