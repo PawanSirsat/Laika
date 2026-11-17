@@ -44,6 +44,9 @@ import { Icon } from '../../../components/icon/Icon.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { AgentStrip } from './AgentStrip.tsx';
+import { MeetingsToday } from './MeetingsToday.tsx';
+import { useMeetingsEnabled } from '../../../api/meetings.ts';
+import { useShell } from '../../../components/shell/shell-context.ts';
 import { CHIP_CAP, cardChips, cardChipsWhy } from './card-chips.ts';
 import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
@@ -338,6 +341,15 @@ export function MyDayScreen({
   /** A refused `?user=` is decided once the server has said what the reader holds. */
   const refused = notOwn && !holds && settled;
   const people = usePeople(holds && embedded === undefined);
+  const { signInMethod } = useShell();
+  /**
+   * Teams meetings (LAI-1313): asked only on a Microsoft instance and only on
+   * the reader's own page — the answer is shared with the sidebar's, so this
+   * adds no request, and a password instance never asks at all.
+   */
+  const meetingsOn = useMeetingsEnabled(
+    signInMethod === 'microsoft' && !notOwn && embedded === undefined,
+  );
   const subjectPerson =
     subjectId === undefined ? undefined : (people ?? []).find((p) => p.id === subjectId);
   const subjectName = embedded?.name ?? subjectPerson?.name ?? 'This person';
@@ -1767,6 +1779,15 @@ export function MyDayScreen({
   // page — embedded in a profile — it stands on its own, as it always did.
   const dayBody = (
     <>
+      {/* Today's Teams meetings not yet on the day (LAI-1313): today only, the reader's own, tracking on. */}
+      {meetingsOn && !orgOff && !notOwn && view.day === view.today && (
+        <MeetingsToday
+          today={view.today}
+          tz={view.tz}
+          onNavigate={onNavigate}
+          onDayChanged={reload}
+        />
+      )}
       {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
       {orgOff ? (
         <DayOff
