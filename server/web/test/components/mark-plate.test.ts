@@ -2,14 +2,13 @@
  * `src/components/mark-plate.ts` (LAI-1321): an image mark that would vanish
  * into a theme gets a ring (an opaque tile) or a plate (a cut-out) in that
  * theme, judged from its pixels — an opaque tile by its edge, a cut-out by
- * what is drawn — and a mid-tone or colourful one gets nothing.
+ * what is drawn — and a mid-tone one gets nothing, colourful or not.
  */
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 import {
   analyseMark,
-  COLOURFUL_FROM,
   coverSquare,
   DARK_BELOW,
   EDGE_BAND,
@@ -83,12 +82,22 @@ void describe('plateFor(analyseMark(…))', () => {
     assert.equal(plateOfPixels(tile([128, 128, 128, 255])), null);
   });
 
-  void test('a saturated colour reads on both themes, however dark or light: nothing', () => {
-    // Pure blue is dark by luminance (0.07) and pure yellow light (0.93), but both are colours.
-    assert.equal(plateOfPixels(tile([0, 0, 255, 255])), null);
-    assert.equal(plateOfPixels(tile([255, 0, 0, 255])), null);
-    assert.equal(plateOfPixels(tile([255, 255, 0, 255])), null);
-    assert.equal(plateOfPixels(figure(8, 24, [0, 0, 255, 255], CLEAR)), null);
+  void test('colour exempts nothing: a dark colour is ringed in dark, a light one in light', () => {
+    // The reviewer's case: a navy tile (#001f5b, 0.11) vanishes on a dark page.
+    assert.equal(plateOfPixels(tile([0, 31, 91, 255])), 'ring-in-dark');
+    // Pure blue (0.07) and red (0.21) are dark by luminance; pure yellow (0.93) is light.
+    assert.equal(plateOfPixels(tile([0, 0, 255, 255])), 'ring-in-dark');
+    assert.equal(plateOfPixels(tile([255, 0, 0, 255])), 'ring-in-dark');
+    assert.equal(plateOfPixels(tile([255, 255, 0, 255])), 'ring-in-light');
+    // A light pastel (#ffe5f1, 0.92) vanishes on a light page.
+    assert.equal(plateOfPixels(tile([255, 229, 241, 255])), 'ring-in-light');
+    assert.equal(plateOfPixels(figure(8, 24, [0, 0, 255, 255], CLEAR)), 'plate-in-dark');
+  });
+
+  void test('a saturated mid-tone reads on both themes: nothing, as a mid-grey', () => {
+    // Orange #ff8000 (0.57) and teal #0d9488 (0.47).
+    assert.equal(plateOfPixels(tile([255, 128, 0, 255])), null);
+    assert.equal(plateOfPixels(tile([13, 148, 136, 255])), null);
   });
 
   void test('an image with nothing visible gets nothing', () => {
@@ -112,14 +121,13 @@ void describe('plateFor(analyseMark(…))', () => {
 });
 
 void describe('the thresholds', () => {
-  const opaque = (luminance: number) => ({ transparent: false, luminance, colourful: false });
+  const opaque = (luminance: number) => ({ transparent: false, luminance });
 
   void test('dark is under DARK_BELOW, light over LIGHT_ABOVE, and between is nothing', () => {
     assert.equal(plateFor(opaque(DARK_BELOW - 0.001)), 'ring-in-dark');
     assert.equal(plateFor(opaque(DARK_BELOW)), null);
     assert.equal(plateFor(opaque(LIGHT_ABOVE)), null);
     assert.equal(plateFor(opaque(LIGHT_ABOVE + 0.001)), 'ring-in-light');
-    assert.equal(plateFor({ ...opaque(0), colourful: true }), null);
   });
 
   void test('the same lines, reached from pixels: grey 71 is dark, 72 is not; 209 is not light, 210 is', () => {
@@ -131,15 +139,6 @@ void describe('the thresholds', () => {
     assert.ok(209 / 255 < LIGHT_ABOVE && 210 / 255 > LIGHT_ABOVE);
     assert.equal(plateOfPixels(grey(209)), null);
     assert.equal(plateOfPixels(grey(210)), 'ring-in-light');
-  });
-
-  void test('colourful from a mean chroma of COLOURFUL_FROM: a dark green either side of it', () => {
-    assert.ok(89 / 255 < COLOURFUL_FROM && 90 / 255 >= COLOURFUL_FROM);
-    // Both are dark (0.25): only the chroma differs.
-    assert.equal(analyseMark(tile([0, 89, 0, 255]), N, N).colourful, false);
-    assert.equal(plateOfPixels(tile([0, 89, 0, 255])), 'ring-in-dark');
-    assert.equal(analyseMark(tile([0, 90, 0, 255]), N, N).colourful, true);
-    assert.equal(plateOfPixels(tile([0, 90, 0, 255])), null);
   });
 
   void test('a cut-out from TRANSPARENT_SHARE of see-through pixels, see-through under VISIBLE_ALPHA', () => {

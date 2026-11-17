@@ -82,6 +82,9 @@ function measurePlate(img: HTMLImageElement): Plate | null {
  * (LAI-1321): once it loads it is drawn small and read (`mark-plate.ts`), and
  * the answer goes on the mark as `data-plate` for the CSS. Until then it has
  * none; the answer is kept per URL, so a mark drawn again has it at once.
+ * **Except a `data:` preview's** (LAI-1321 review): a held image's preview is
+ * the whole file as a URL, so it is measured into this mark's own state and
+ * forgotten with it, never kept in the shared cache.
  */
 export function ProjectMark({
   project,
@@ -94,9 +97,15 @@ export function ProjectMark({
   const look = preview ? undefined : remembered;
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
   const mark = markOf(project, look, brokenUrl);
-  const plate = useSyncExternalStore(subscribePlates, () =>
-    mark.kind === 'image' ? plateOf(mark.url) : undefined,
+  const imageUrl = mark.kind === 'image' ? mark.url : null;
+  const isPreview = imageUrl?.startsWith('data:') ?? false;
+  const shared = useSyncExternalStore(subscribePlates, () =>
+    imageUrl !== null && !isPreview ? plateOf(imageUrl) : undefined,
   );
+  const [own, setOwn] = useState<{ readonly url: string; readonly plate: Plate | null } | null>(
+    null,
+  );
+  const plate = isPreview ? (own?.url === imageUrl ? own?.plate : undefined) : shared;
   const classes = ['project-mark', `project-mark-${size}`, `project-mark-${mark.kind}`, className]
     .filter((c) => c !== undefined && c !== '')
     .join(' ');
@@ -113,7 +122,9 @@ export function ProjectMark({
           decoding="async"
           draggable={false}
           onLoad={(event) => {
-            if (plateOf(mark.url) === undefined) {
+            if (isPreview) {
+              setOwn({ url: mark.url, plate: measurePlate(event.currentTarget) });
+            } else if (plateOf(mark.url) === undefined) {
               rememberPlate(mark.url, measurePlate(event.currentTarget));
             }
           }}

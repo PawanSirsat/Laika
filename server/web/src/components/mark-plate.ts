@@ -10,7 +10,12 @@
  * - **Opaque and light** — a dark ring, in the light theme.
  * - **Transparent, dark content** — a light plate behind it, in a dark theme.
  * - **Transparent, light content** — a dark plate behind it, in the light theme.
- * - **Mid-tone or colourful** — nothing: it already stands off both themes.
+ * - **Mid-tone** — nothing: it already stands off both themes.
+ *
+ * **Colour does not exempt a dark or light logo** (LAI-1321 review): a navy
+ * tile (#001f5b) is a colour and still vanishes on a dark page, and a pastel
+ * one on a light page. Only how light the edge or drawing is decides; a
+ * saturated mid-tone gets nothing because it is a mid-tone.
  *
  * Pure and DOM-free — the canvas read is `ProjectMark`'s — so the decision is
  * tested here on fixed pixels. The answer is remembered per image URL, which
@@ -46,13 +51,6 @@ export const DARK_BELOW = 0.28;
 /** Lighter than this, and the mark is lost on the light theme. */
 export const LIGHT_ABOVE = 0.82;
 
-/**
- * Mean chroma at or over this is a colour, not a shade of grey. A coloured
- * logo is left alone: its hue already separates it from both themes' near-grey
- * surfaces, and a ring would only frame a logo that was never lost.
- */
-export const COLOURFUL_FROM = 0.35;
-
 export interface MarkAnalysis {
   /** At least `TRANSPARENT_SHARE` of the pixels are see-through. */
   readonly transparent: boolean;
@@ -64,8 +62,6 @@ export interface MarkAnalysis {
    * `plateFor` reads as no plate.
    */
   readonly luminance: number;
-  /** The measured pixels' mean chroma — `(max − min) / 255` — is at least `COLOURFUL_FROM`. */
-  readonly colourful: boolean;
 }
 
 export type Plate = 'ring-in-dark' | 'ring-in-light' | 'plate-in-dark' | 'plate-in-light';
@@ -95,7 +91,6 @@ export function analyseMark(rgba: Uint8ClampedArray, width: number, height: numb
 
   let counted = 0;
   let light = 0;
-  let chroma = 0;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       if (!transparent && !onEdge(x, y, width, height)) continue;
@@ -105,21 +100,15 @@ export function analyseMark(rgba: Uint8ClampedArray, width: number, height: numb
       const g = rgba[i + 1] ?? 0;
       const b = rgba[i + 2] ?? 0;
       light += 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      chroma += Math.max(r, g, b) - Math.min(r, g, b);
       counted += 1;
     }
   }
-  if (counted === 0) return { transparent, luminance: Number.NaN, colourful: false };
-  return {
-    transparent,
-    luminance: light / counted / 255,
-    colourful: chroma / counted / 255 >= COLOURFUL_FROM,
-  };
+  if (counted === 0) return { transparent, luminance: Number.NaN };
+  return { transparent, luminance: light / counted / 255 };
 }
 
 /** The ring or plate an image needs, or `null` when it reads on both themes as it is. */
 export function plateFor(analysis: MarkAnalysis): Plate | null {
-  if (analysis.colourful) return null;
   if (analysis.luminance < DARK_BELOW) {
     return analysis.transparent ? 'plate-in-dark' : 'ring-in-dark';
   }
