@@ -55,3 +55,15 @@ Scope: area `cli`, plus whatever server route turns out to be needed (CHIEF, 202
 
 - **Testing on Belka:** single test files only; CI runs the gate.
 - **Where it stops:** at a green PR. CHIEF merges.
+
+## Review round 1 (review-1325, by CHIEF's message, 2026-11-18) — what was done
+
+No criterion changed.
+- **M1:** the three overclaiming comments are reworded.
+- **F1:** `on` says when Claude Code's metrics lack a credential the helper can read.
+- **F2:** a 401 in `status` gives the tool fix, and `otel` says when `$LAIKA_TOKEN` is empty.
+- **F3:** a tool's own token is named as that tool's, and the tool file beats a stale
+  environment copy.
+- **F5:** the reason given for keeping `findCredentials` personal is corrected.
+- **F6:** tests added.
+- **F4:** filed as LAI-1342 (LAIKA-1099).
