@@ -181,7 +181,7 @@ function PdfFrame({ item }: { readonly item: OutputItem }) {
     };
   }, []);
   if (blocked) return <OutputCard item={item} blocked />;
-  return <iframe ref={frame} className="ovw-frame" src={item.url} title={item.caption} />;
+  return <iframe ref={frame} className="ovw-frame" src={item.url} aria-label={item.caption} />;
 }
 
 /** A file the page does not show: what it is, and the way to get it. */

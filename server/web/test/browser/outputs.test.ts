@@ -649,7 +649,7 @@ void describe('the viewer', () => {
       const frame = viewer(h).locator('iframe.ovw-frame');
       await frame.waitFor({ timeout: 10_000 });
       assert.equal(await frame.getAttribute('src'), url(REPORT));
-      assert.equal(await frame.getAttribute('title'), 'Run report');
+      assert.equal(await frame.getAttribute('aria-label'), 'Run report');
       assert.equal(await viewer(h).locator('.ovw-card').count(), 0);
     } finally {
       await h.close();
