@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isScannedFile,
   SECRET_PATTERNS,
+  SECRET_SCAN_BYTES,
   type SecretPatternName,
   scanForSecrets,
 } from '../../src/services/secret-scan.ts';
@@ -123,6 +124,100 @@ describe('a clean file, and a masked one, pass', () => {
   });
 });
 
+describe('what D-162 tells an agent to write is not refused (LAI-1302 review)', () => {
+  // Each pair: the note or report an agent is told to attach in place of the
+  // secret, which must pass, and the same shape holding a real one, which
+  // must still be caught — so the fix narrowed the rule rather than removing it.
+  const cases: [string, string, string, SecretPatternName][] = [
+    [
+      'a note on where the password lives',
+      'Password: stored in the team vault',
+      'Password: Hunter2-but-longer',
+      'password_value',
+    ],
+    [
+      'a password column that says where it is',
+      'account,password\nprod db,see vault',
+      'account,password\nprod db,Hunter2!x',
+      'credential_column',
+    ],
+    [
+      'a CSV test report',
+      'suite,pass,fail\nunit,120,0',
+      'suite,api_token\nunit,abc123def456',
+      'credential_column',
+    ],
+    [
+      'a markdown test report',
+      '| Suite | Pass | Fail |\n|---|---|---|\n| unit | 120 | 0 |',
+      '| Suite | Password |\n|---|---|\n| unit | Welcome-1 |',
+      'credential_column',
+    ],
+  ];
+  for (const [what, clean, secret, pattern] of cases) {
+    it(`passes ${what}, and still catches a real one in the same shape`, () => {
+      expect(scanForSecrets(clean), clean).toBeNull();
+      expect(scanForSecrets(secret)?.pattern, secret).toBe(pattern);
+    });
+  }
+
+  it('takes a password value only as one secret-shaped token, not a word', () => {
+    for (const clean of [
+      'password: required',
+      'The password: see the runbook.',
+      '"password": "in 1Password"',
+    ]) {
+      expect(scanForSecrets(clean), clean).toBeNull();
+    }
+    for (const secret of [
+      '"password": "hunter22",',
+      'password = correcthorsebatterystaple',
+      "db.password='Pa55word' # local",
+    ]) {
+      expect(scanForSecrets(secret)?.pattern, secret).toBe('password_value');
+    }
+  });
+});
+
+/**
+ * Each rule's worst case at the full size the server reads. The scan runs
+ * synchronously inside the request that completes an upload, so a rule that
+ * goes quadratic on a crafted file holds the server for as long as it runs:
+ * the `url_credentials` rule this replaced took about 1.5 s on 80k characters
+ * of `a.` and, by its curve, some 18 minutes on 2 MiB.
+ */
+describe('every rule is linear on a crafted 2 MiB file (LAI-1302 review)', () => {
+  const fill = (unit: string, prefix = '') =>
+    (prefix + unit.repeat(Math.ceil(SECRET_SCAN_BYTES / unit.length))).slice(0, SECRET_SCAN_BYTES);
+
+  const WORST: Record<SecretPatternName, string> = {
+    private_key: fill('A ', '-----BEGIN '),
+    aws_access_key_id: fill('AKIA'),
+    aws_secret_access_key: fill(' ', 'aws_secret_access_key'),
+    laika_token: fill('lai_'),
+    github_token: fill('a', 'ghp_'),
+    sk_token: fill('sk-'),
+    password_value: fill('\t', 'password: abcd'),
+    env_secret: fill('A_A_A_A_A_A_A_A_A_A_A_A_A_A_A_A\n'),
+    url_credentials: fill('a.'),
+    credential_column: fill(',****\n', 'a,password\n'),
+  };
+
+  it('scans each in well under a second, and all of them within 1.5 s', () => {
+    expect(Object.keys(WORST).sort()).toEqual([...SECRET_PATTERNS].sort());
+    let total = 0;
+    for (const [pattern, text] of Object.entries(WORST)) {
+      expect(text.length, pattern).toBe(SECRET_SCAN_BYTES);
+      const started = performance.now();
+      scanForSecrets(text);
+      const took = performance.now() - started;
+      expect(took, `${pattern} took ${took.toFixed(0)} ms`).toBeLessThan(750);
+      total += took;
+    }
+    expect(total).toBeLessThan(1500);
+  });
+});
+
 describe('which files are scanned', () => {
   it('scans text types, and text by its name whatever it was declared as', () => {
     for (const [type, name] of [
@@ -136,12 +231,20 @@ describe('which files are scanned', () => {
       ['application/octet-stream', '.env'],
       ['application/octet-stream', '.env.production'],
       ['application/octet-stream', 'prod.env'],
+      // Keys and credential files, by name (LAI-1302 review).
+      ['application/octet-stream', 'id_rsa'],
+      ['application/octet-stream', 'id_ed25519'],
+      ['application/octet-stream', 'server.pem'],
+      ['application/octet-stream', 'server.key'],
+      ['application/octet-stream', 'credentials'],
+      ['application/octet-stream', '.npmrc'],
+      ['application/octet-stream', '.netrc'],
     ] as const) {
       expect(isScannedFile(type, name), `${type} ${name}`).toBe(true);
     }
   });
 
-  it('leaves images, documents and recordings alone', () => {
+  it('leaves images, documents and recordings alone by name — the server still reads any whose first bytes are text', () => {
     for (const [type, name] of [
       ['image/png', 'shot.png'],
       ['application/pdf', 'report.pdf'],

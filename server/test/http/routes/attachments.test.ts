@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
+import { loadActor } from '../../../src/auth/resolve-actor.ts';
 import { type AttachmentsEnv } from '../../../src/env.ts';
+import { logUnlistedWork } from '../../../src/services/unlisted.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { activity, attachments, idempotencyKeys, orgs, users } from '../../../src/db/schema.ts';
 import { cacheableRoute } from '../../../src/http/middleware/idempotency.ts';
@@ -598,6 +600,97 @@ describe('an agent’s outputs (D-162, LAI-1302)', () => {
       (await call('GET', `/attachments/${view.id}/content`)).headers.get('location')!,
     );
     expect(location.searchParams.get('response-content-type')).toBe('video/mp4');
+  });
+
+  /** Ask for and upload a file as given, and complete it: the answer. */
+  async function completeAs(
+    bytes: Uint8Array,
+    filename: string,
+    content_type: string,
+    headers?: Record<string, string>,
+  ): Promise<Response> {
+    const asked = await must<Upload>(
+      ask({ filename, content_type, size_bytes: bytes.length }, headers),
+      201,
+    );
+    expect((await browserPut(fake, asked.upload, bytes)).status).toBe(200);
+    return call('POST', `/attachments/${asked.attachment.id}/complete`, undefined, headers);
+  }
+
+  it('scans a file by what it holds, not what it was called (LAI-1302 review)', async () => {
+    const keyBlock = ['-----BEGIN ', 'OPENSSH ', 'PRIVATE KEY-----'].join('');
+    for (const [bytes, filename, type, pattern] of [
+      [csv(`${keyBlock}\nb3BlbnNzaC1rZXk\n`), 'id_rsa', 'application/octet-stream', 'private_key'],
+      [
+        csv('email,password\nada@example.test,Hunter2-x\n'),
+        'shot.png',
+        'image/png',
+        'credential_column',
+      ],
+      [
+        csv(
+          `registry=x\n//r.example/:_authToken=${'q'.repeat(30)}\nPASS_TOKEN=${'q'.repeat(12)}\n`,
+        ),
+        'npmrc-copy',
+        'application/octet-stream',
+        'env_secret',
+      ],
+    ] as const) {
+      const res = await completeAs(bytes, filename, type);
+      expect(res.status, filename).toBe(422);
+      expect((await errorOf(res)).details, filename).toMatchObject({
+        reason: 'secret_detected',
+        pattern,
+      });
+    }
+  });
+
+  it('leaves a binary file alone, by the NUL in its first bytes', async () => {
+    const binary = new Uint8Array([
+      0x50,
+      0x4b,
+      0x03,
+      0x04,
+      0x14,
+      0x00,
+      ...csv('password: Hunter2-x\n'),
+    ]);
+    const res = await completeAs(binary, 'sheet.bin', 'application/octet-stream');
+    expect(res.status, await res.clone().text()).toBe(200);
+    // One probe of its first bytes, and no read for a scan.
+    expect(fake.of('GET').map((r) => r.headers.get('range'))).toEqual([
+      `bytes=0-${String(binary.length - 1)}`,
+    ]);
+  });
+
+  it('probes a large file not declared as text, then reads 2 MiB of it for the scan', async () => {
+    const big = new Uint8Array(3 * 1024 * 1024).fill(0x61);
+    const res = await completeAs(big, 'dump.bin', 'application/octet-stream');
+    expect(res.status).toBe(200);
+    expect(fake.of('GET').map((r) => r.headers.get('range'))).toEqual([
+      'bytes=0-1023',
+      `bytes=0-${String(2 * 1024 * 1024 - 1)}`,
+    ]);
+  });
+
+  it('serves a file on an unlisted finding only to its uploader and to who reads the pile', async () => {
+    const mia = { Cookie: await join('mia@example.test', 'member') };
+    const vic = { Cookie: await join('vic@example.test', 'member') };
+    const miaId = h.db.select().from(users).where(eq(users.email, 'mia@example.test')).get()!.id;
+    const shot = await attach(PNG, {}, mia);
+    logUnlistedWork(h.db, loadActor(h.db, miaId)!, {
+      repo: 'kvell/laika',
+      note: 'n',
+      attachments: [{ attachment: shot.id, caption: 'c' }],
+    });
+
+    const read = (headers: Record<string, string>) =>
+      call('GET', `/attachments/${shot.id}/content`, undefined, headers);
+    expect((await read(mia)).status).toBe(302);
+    // Owner: `audit_log.export`, as `GET /unlisted` asks.
+    expect((await read({ Cookie: cookie })).status).toBe(302);
+    // Another member of the project it was uploaded under: as if it were not there.
+    expect((await read(vic)).status).toBe(404);
   });
 
   it('finishes a task over REST with captioned outputs, as finish_task does', async () => {
