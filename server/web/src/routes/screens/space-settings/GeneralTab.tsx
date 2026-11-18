@@ -416,7 +416,13 @@ export function GeneralTab({
                 : 'Unsaved changes'}
             </p>
           )}
-          <SaveStatus className="ss-save-status" state={status.state} onRetry={status.retry} />
+          {/*
+            Retry is Save as it stands now, not the last save replayed
+            (LAI-1321): that closure still holds the fields from before it
+            ran, so after the fields saved and the icon was refused it would
+            PATCH them again — over a rename made since.
+          */}
+          <SaveStatus className="ss-save-status" state={status.state} onRetry={save} />
           {failure !== undefined && (
             <p className="ss-field-error ss-foot-error" role="alert">
               {failure}
