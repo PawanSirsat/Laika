@@ -66,17 +66,40 @@ const TEXT_EXTENSIONS = new Set([
   'env',
   'sql',
   'sh',
+  // Keys and certificates, which are text: `server.pem`, `server.key`.
+  'pem',
+  'key',
+  'crt',
+  'cer',
+  'asc',
+  'ppk',
+]);
+
+/** Whole names that hold credentials, whatever they were declared as. */
+const SECRET_NAMES = new Set([
+  'credentials',
+  '.npmrc',
+  '.netrc',
+  '.pgpass',
+  '.git-credentials',
+  '.htpasswd',
+  '.dockercfg',
+  '.pypirc',
 ]);
 
 /**
- * Whether a file is scanned: a text type, or a name that says it is one —
- * `.env` and `prod.env` included, whatever they were declared as.
+ * Whether a file's name or declared type says it is text, so it is read for
+ * the scan at once: a text type; `.env` and `prod.env`; a key — `id_rsa`,
+ * `server.pem`, `server.key`; a credentials file — `credentials`, `.npmrc`.
+ * The server also scans any other file whose first bytes are text
+ * (`completeAttachment`), so this list decides only how soon it is read.
  */
 export function isScannedFile(contentType: string, filename: string): boolean {
   const type = contentType.toLowerCase();
   if (type.startsWith('text/') || TEXT_TYPES.has(type)) return true;
   const name = filename.toLowerCase();
   if (name === '.env' || name.startsWith('.env.')) return true;
+  if (SECRET_NAMES.has(name) || /^id_[a-z0-9]+$/.test(name)) return true;
   const dot = name.lastIndexOf('.');
   return dot >= 0 && TEXT_EXTENSIONS.has(name.slice(dot + 1));
 }
@@ -123,19 +146,47 @@ function isMasked(value: string): boolean {
 }
 
 /**
- * The line-level rules: a regex, and for the ones whose capture is a value,
- * the masked check on it. Built per call — each is `g`, so it carries state.
+ * Shaped like a secret rather than a word: six characters or more, and a
+ * digit, a symbol or both cases — or twelve or more of anything. `hunter22`
+ * and `Welcome-2026!` are; `required` and `vault` are not.
  */
-function lineRules(): { name: SecretPatternName; re: RegExp; value?: number }[] {
+function isSecretShaped(value: string): boolean {
+  if (value.length < 6) return false;
+  if (value.length >= 12) return true;
+  return (
+    /\d/.test(value) || /[^A-Za-z0-9]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value))
+  );
+}
+
+interface LineRule {
+  name: SecretPatternName;
+  re: RegExp;
+  /** The capture that is the value, when the rule has one. */
+  value?: number;
+  /** Whether that value is a secret; a masked one never is. */
+  secret?: (value: string) => boolean;
+}
+
+/**
+ * The line-level rules. Built per call — each is `g`, so it carries state.
+ *
+ * **Every quantifier is bounded, and no two adjacent ones overlap without a
+ * literal between them** (LAI-1302 review). The scan runs synchronously
+ * inside the request that completes an upload, over up to 2 MiB an agent
+ * chose: an unbounded `[a-z0-9+.-]*` before `://` was quadratic on a run of
+ * `a.a.a.`, minutes at 2 MiB. `secret-scan.test.ts` times each rule's worst
+ * case at the full size.
+ */
+function lineRules(): LineRule[] {
   return [
     {
       name: 'private_key',
-      re: /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g,
+      re: /-----BEGIN (?:[A-Z0-9]{1,16} ){0,4}PRIVATE KEY(?: BLOCK)?-----/g,
     },
     { name: 'aws_access_key_id', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
     {
       name: 'aws_secret_access_key',
-      re: /aws_?secret_?access_?key["']?\s*[:=]\s*["']?([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])/gi,
+      re: /aws_?secret_?access_?key["']?[ \t]{0,8}[:=][ \t]{0,8}["']?([A-Za-z0-9/+=]{40})(?![A-Za-z0-9/+=])/gi,
       value: 1,
     },
     { name: 'laika_token', re: /\blai_[0-9A-Za-z]{40}\b/g },
@@ -143,20 +194,26 @@ function lineRules(): { name: SecretPatternName; re: RegExp; value?: number }[] 
       name: 'github_token',
       re: /\b(?:(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{22,255})\b/g,
     },
-    { name: 'sk_token', re: /\bsk-[A-Za-z0-9_-]{20,}/g },
+    { name: 'sk_token', re: /\bsk-[A-Za-z0-9_-]{20,200}/g },
     {
+      // One secret-shaped token that ends its line, its quotes or its field:
+      // `password: hunter22`, `"password": "hunter22",` — never prose such as
+      // `Password: stored in the team vault`.
       name: 'password_value',
-      re: /\b(?:password|passwd|pwd|passphrase)\b["']?\s*[:=]\s*["']?([^\s"',;<>{}]{4,})/gi,
+      re: /\b(?:password|passwd|pwd|passphrase)\b["']?[ \t]{0,8}[:=][ \t]{0,8}["']?([^\s"',;<>{}#]{4,128})["']?[ \t]{0,8}(?=$|[,;}\]#])/gim,
       value: 1,
+      secret: isSecretShaped,
     },
     {
       name: 'env_secret',
-      re: /^[ \t]*(?:export[ \t]+)?(?:[A-Z][A-Z0-9_]*_)?(?:SECRET|SECRET_KEY|SECRET_ACCESS_KEY|PASSWORD|PASSWD|PASS|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET)[ \t]*=[ \t]*["']?([^\s"'#]{4,})/gm,
+      re: /^[ \t]{0,16}(?:export[ \t]{1,8})?(?:[A-Z][A-Z0-9_]{0,63}_)?(?:SECRET|SECRET_KEY|SECRET_ACCESS_KEY|PASSWORD|PASSWD|PASS|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET)[ \t]{0,8}=[ \t]{0,8}["']?([^\s"'#]{4,256})/gm,
       value: 1,
     },
     {
       name: 'url_credentials',
-      re: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:([^\s:/@]+)@[^\s/]+/gi,
+      // A scheme starts where no scheme character precedes it, so a run of
+      // `a.a.a.` is tried once, not once per letter.
+      re: /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]{0,31}:\/\/[^\s:/@]{1,256}:([^\s:/@]{1,256})@[^\s/]{1,256}/gi,
       value: 1,
     },
   ];
@@ -164,8 +221,10 @@ function lineRules(): { name: SecretPatternName; re: RegExp; value?: number }[] 
 
 /**
  * A header cell naming a credential — `password`, `Temp password`, `api_key`,
- * `clientSecret`. One or two words, so a sentence that mentions a password
- * is not read as a header.
+ * `clientSecret`, `access_token`. One or two words, so a sentence that
+ * mentions a password is not read as a header. **Not a bare `pass` or
+ * `token`**: a test report's `suite,pass,fail` and a word list's `token` are
+ * columns of results, not of credentials.
  */
 function isCredentialColumn(cell: string): boolean {
   const words = cell
@@ -175,17 +234,63 @@ function isCredentialColumn(cell: string): boolean {
   if (words.length === 0 || words.length > 2) return false;
   const n = words.join('');
   if (n.length > 30 || /[^a-z0-9]/.test(n)) return false;
-  if (n.includes('password') || n.includes('passwd')) return true;
-  if (['pwd', 'pass', 'passphrase', 'token', 'apikey', 'secretkey', 'privatekey'].includes(n)) {
+  if (n.includes('password') || n.includes('passwd') || n.includes('passphrase')) return true;
+  if (n === 'pwd') return true;
+  if (['apikey', 'secretkey', 'privatekey', 'accesskey'].some((end) => n.endsWith(end))) {
     return true;
   }
-  return n.endsWith('secret') || n.endsWith('accesskey') || n.endsWith('accesstoken');
+  // `access_token`, `api token`, `refreshToken` — a token of some kind.
+  return n.endsWith('secret') || (n.endsWith('token') && n !== 'token');
+}
+
+/** A cell under a credential column that is a result or a note, never a credential. */
+const NOT_A_SECRET = new Set([
+  'ok',
+  'yes',
+  'no',
+  'y',
+  'n',
+  'true',
+  'false',
+  'n/a',
+  'na',
+  'none',
+  'null',
+  'pass',
+  'passed',
+  'fail',
+  'failed',
+  'skip',
+  'skipped',
+  'done',
+  'todo',
+  '✓',
+  '✔',
+  '✗',
+  '✘',
+]);
+
+/**
+ * A credential column's cell that holds no secret: masked, empty, a number,
+ * a result word, shorter than four characters, or prose — more than one word,
+ * such as `see vault`.
+ */
+function isNotSecretCell(value: string): boolean {
+  const v = value.trim();
+  if (isMasked(v) || v.length < 4) return true;
+  if (/\s/.test(v)) return true;
+  if (/^[-+]?[\d.,:%]+$/.test(v)) return true;
+  return NOT_A_SECRET.has(v.toLowerCase());
 }
 
 const DELIMITERS = [',', '\t', ';', '|'] as const;
 
-function cells(line: string, delimiter: string): string[] {
-  const parts = line.split(delimiter).map((c) => c.trim().replace(/^"(.*)"$/, '$1'));
+/** A header row is short: a longer line is never read as one. */
+const MAX_HEADER = 1024;
+
+/** The first `limit` cells of a row — enough for the columns asked about, and no more. */
+function cells(line: string, delimiter: string, limit?: number): string[] {
+  const parts = line.split(delimiter, limit).map((c) => c.trim().replace(/^"(.*)"$/, '$1'));
   // A markdown table row starts and ends with its delimiter.
   if (delimiter === '|') {
     if (parts[0] === '') parts.shift();
@@ -200,26 +305,28 @@ function cells(line: string, delimiter: string): string[] {
  * a blank line ends it, so a table in the middle of a report is read too.
  */
 function credentialColumn(lines: readonly string[]): SecretHit | null {
-  let table: { delimiter: string; columns: number[] } | null = null;
+  let table: { delimiter: string; columns: number[]; limit: number } | null = null;
   for (const [i, line] of lines.entries()) {
     if (line.trim() === '') {
       table = null;
       continue;
     }
     if (table !== null) {
-      const row = cells(line, table.delimiter);
+      const row = cells(line, table.delimiter, table.limit);
       const values = table.columns.map((c) => row[c] ?? '');
-      if (values.some((value) => !isMasked(value))) {
+      if (values.some((value) => !isNotSecretCell(value))) {
         return { pattern: 'credential_column', line: i + 1 };
       }
       continue;
     }
+    if (line.length > MAX_HEADER) continue;
     for (const delimiter of DELIMITERS) {
       const header = cells(line, delimiter);
       if (header.length < 2 || header.some((name) => name.length > 40)) continue;
       const columns = header.flatMap((name, c) => (isCredentialColumn(name) ? [c] : []));
       if (columns.length > 0) {
-        table = { delimiter, columns };
+        // A markdown row's leading `|` is one more cell before the split drops it.
+        table = { delimiter, columns, limit: Math.max(...columns) + 2 };
         break;
       }
     }
@@ -236,6 +343,7 @@ export function scanForSecrets(text: string): SecretHit | null {
     for (const match of text.matchAll(rule.re)) {
       const value = rule.value === undefined ? undefined : match[rule.value];
       if (value !== undefined && isMasked(value)) continue;
+      if (value !== undefined && rule.secret !== undefined && !rule.secret(value)) continue;
       const line = text.slice(0, match.index).split(/\r\n|\r|\n/).length;
       if (first === null || line < first.line) first = { pattern: rule.name, line };
       break;

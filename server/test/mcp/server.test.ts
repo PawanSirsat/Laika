@@ -1,3 +1,5 @@
+import { request as httpRequest } from 'node:http';
+import { connect as netConnect } from 'node:net';
 import { serve } from '@hono/node-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -5,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
 import { handleMcpRequest, MCP_SERVER_NAME } from '../../src/mcp/server.ts';
-import { tokens, users } from '../../src/db/schema.ts';
+import { comments, tokens, users } from '../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
 /**
@@ -310,6 +312,13 @@ describe('the server tells any agent how to work the board (D-076)', () => {
     }
     expect(head).toMatch(/before .*code/i);
     expect(head).toMatch(/never .*done/i);
+    // Whole sentences, wrapped lines read as one: one task at a time, and
+    // D-162's show-your-work rule, word for word (LAI-1302).
+    const flat = head.replace(/\s+/g, ' ');
+    expect(flat).toContain('One task at a time.');
+    expect(flat).toContain(
+      'Show your work: when a person needs to see the result (UI changes, generated files), attach screenshots or outputs with `laika attach` or `request_upload`, captioned. Never upload secrets.',
+    );
 
     await client.close();
   });
@@ -554,5 +563,304 @@ describe('recording the call never fails it', () => {
       email: 'ada@example.test',
     });
     expect(warnings).toEqual([{ event: 'mcp.record_failed', fields: { message: 'disk on fire' } }]);
+  });
+});
+
+describe('a long body arrives whole, and one that does not says why (LAI-1350)', () => {
+  // Bodies past ~2–3.5 KB were answered `-32700 Parse error: Invalid JSON`,
+  // and the SDK's bare `catch` around `req.json()` said nothing more. These
+  // run over a real socket because framing is the thing under test.
+  const UNITS = {
+    ascii: 'Done - it is -> fine, measured. ',
+    'multi-byte': 'Done — it’s → fine, measured. ',
+    emoji: 'Done 🚀🎉 → it’s fine. ',
+  } as const;
+
+  /**
+   * About 12,000 characters of one kind, well past the size that failed.
+   * Trimmed, because `add_comment` trims and the stored body is compared whole.
+   */
+  const longText = (unit: string): string =>
+    unit
+      .repeat(Math.ceil(12_000 / unit.length))
+      .slice(0, 12_000)
+      .trim();
+
+  async function newTask(): Promise<string> {
+    const create = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+      const res = await h.app.request(path, {
+        method: 'POST',
+        headers: jsonHeaders({ Cookie: ownerCookie }),
+        body: JSON.stringify(body),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      return (await res.json()) as Record<string, unknown>;
+    };
+    await create('/api/v1/projects', { name: 'alpha', slug: 'alpha', prefix: 'ALP' });
+    return (await create('/api/v1/projects/alpha/tasks', { title: 'Work' })).key as string;
+  }
+
+  const comment = (task: string, body: string): string =>
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'add_comment', arguments: { task, body } },
+    });
+
+  const storedBodies = (): string[] =>
+    h.db
+      .select()
+      .from(comments)
+      .all()
+      .map((c) => c.bodyMd);
+
+  it.each(Object.entries(UNITS))(
+    'stores a 12,000-character %s comment exactly as sent by the MCP client',
+    async (_kind, unit) => {
+      const key = await newTask();
+      const text = longText(unit);
+      const client = await connect(await mint());
+
+      const result = (await client.callTool({
+        name: 'add_comment',
+        arguments: { task: key, body: text },
+      })) as { isError?: boolean };
+
+      expect(result.isError).not.toBe(true);
+      expect(storedBodies()).toEqual([text]);
+      await client.close();
+    },
+  );
+
+  it('stores one sent chunked, cut at odd byte offsets through its characters', async () => {
+    const key = await newTask();
+    const secret = await mint();
+    const text = longText(UNITS.emoji);
+    const payload = Buffer.from(comment(key, text));
+    // Written in 331-byte pieces, each its own chunk, so chunk boundaries fall
+    // inside characters: a byte at a cut is a UTF-8 continuation byte.
+    const PIECE = 331;
+    const cuts = Array.from({ length: Math.ceil(payload.length / PIECE) }, (_, i) => i * PIECE);
+    expect(cuts.some((at) => ((payload[at] ?? 0) & 0xc0) === 0x80)).toBe(true);
+
+    const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = httpRequest(new URL('/mcp', baseUrl), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+        },
+      });
+      req.on('error', reject);
+      req.on('response', (answer) => {
+        const parts: Buffer[] = [];
+        answer.on('data', (part: Buffer) => parts.push(part));
+        answer.on('end', () => {
+          resolve({ status: answer.statusCode ?? 0, body: Buffer.concat(parts).toString() });
+        });
+      });
+      for (const at of cuts) req.write(payload.subarray(at, at + PIECE));
+      req.end();
+    });
+
+    expect(res.status, res.body).toBe(200);
+    expect(res.body).not.toContain('-32700');
+    expect(storedBodies()).toEqual([text]);
+  });
+
+  it('refuses a body cut to a length counted in characters, and logs both lengths but never the body', async () => {
+    const key = await newTask();
+    const secret = await mint();
+    const message = comment(key, longText(UNITS['multi-byte']));
+    // What a hop that counts characters as bytes delivers: the first
+    // `message.length` bytes of a body that is longer than that in UTF-8.
+    const cut = Buffer.from(message).subarray(0, message.length);
+    expect(Buffer.byteLength(message)).toBeGreaterThan(cut.length);
+
+    const res = await fetch(new URL('/mcp', baseUrl), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'User-Agent': 'lai-1350-probe/1.0',
+      },
+      body: cut,
+    });
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: number } }).error.code).toBe(-32700);
+    expect(storedBodies()).toEqual([]);
+
+    const logged = h.log.records.filter((r) => r.event === 'mcp.transport_error');
+    expect(logged).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        error: 'Parse error: Invalid JSON',
+        reason: 'ends_early',
+        declared_bytes: cut.length,
+        received_bytes: cut.length,
+        client: 'lai-1350-probe/1.0',
+        request_id: res.headers.get('x-request-id'),
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain('measured');
+  });
+
+  it('logs a body that stops before its Content-Length, with how much arrived', async () => {
+    const secret = await mint();
+    const declared = 4096;
+
+    // A raw socket, because no HTTP client will send fewer bytes than it
+    // declared: the client half-closes after 1,000, as a dropped hop would.
+    await new Promise<void>((resolve, reject) => {
+      const socket = netConnect(Number(baseUrl.port), baseUrl.hostname, () => {
+        socket.write(
+          [
+            'POST /mcp HTTP/1.1',
+            `Host: ${baseUrl.host}`,
+            `Authorization: Bearer ${secret}`,
+            'Content-Type: application/json',
+            'Accept: application/json, text/event-stream',
+            'User-Agent: lai-1350-probe/1.0',
+            `Content-Length: ${String(declared)}`,
+            '',
+            '',
+          ].join('\r\n'),
+        );
+        socket.end(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":${'x'.repeat(940)}`);
+      });
+      socket.on('error', reject);
+      socket.on('close', () => {
+        resolve();
+      });
+      socket.resume();
+    });
+    await expect
+      .poll(() => h.log.records.find((r) => r.event === 'mcp.transport_error'))
+      .toMatchObject({
+        level: 'warn',
+        reason: 'read_failed',
+        declared_bytes: declared,
+        client: 'lai-1350-probe/1.0',
+      });
+    const logged = h.log.records.find((r) => r.event === 'mcp.transport_error');
+    expect(logged?.received_bytes).toBeLessThan(declared);
+    expect(JSON.stringify(logged)).not.toContain('xxxx');
+  });
+
+  it('refuses a body whose length disagrees with its Content-Length, without passing it on', async () => {
+    const secret = await mint();
+    const warnings: { event: string; fields?: Record<string, unknown> }[] = [];
+    const sent =
+      '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"laika_whoami","arguments":{}}}';
+
+    const res = await handleMcpRequest(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          'Content-Length': String(sent.length + 100),
+        },
+        body: sent,
+      }),
+      {
+        actor: resolveTokenActor(h.db, secret, Date.now()),
+        version: 'test',
+        db: h.db,
+        sqlite: h.t.sqlite,
+        log: {
+          debug: () => undefined,
+          info: () => undefined,
+          warn: (event, fields) => {
+            warnings.push(fields === undefined ? { event } : { event, fields });
+          },
+          error: () => undefined,
+        },
+      },
+    );
+
+    expect(res.status).toBe(400);
+    const answer = (await res.json()) as { error: { code: number; message: string } };
+    expect(answer.error.code).toBe(-32700);
+    expect(answer.error.message).toContain(
+      `${String(sent.length)} of ${String(sent.length + 100)} bytes`,
+    );
+    expect(warnings).toEqual([
+      {
+        event: 'mcp.transport_error',
+        fields: expect.objectContaining({
+          reason: 'length_mismatch',
+          declared_bytes: sent.length + 100,
+          received_bytes: sent.length,
+        }) as unknown,
+      },
+    ]);
+  });
+
+  /** One request over the socket, and the `mcp.transport_error` lines it left. */
+  async function refused(body: string, headers: Record<string, string> = {}) {
+    const res = await fetch(new URL('/mcp', baseUrl), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await mint()}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...headers,
+      },
+      body,
+    });
+    return {
+      status: res.status,
+      answer: (await res.json()) as { error?: { code: number } },
+      logged: h.log.records.filter((r) => r.event === 'mcp.transport_error'),
+    };
+  }
+
+  it('calls whole JSON with a fault in its middle not_json, not a cut body', async () => {
+    const { status, answer, logged } = await refused(
+      '{"jsonrpc":"2.0","id":1 "method":"tools/call","params":{"name":"laika_whoami"}}',
+    );
+
+    expect(status).toBe(400);
+    expect(answer.error?.code).toBe(-32700);
+    expect(logged).toEqual([
+      expect.objectContaining({ error: 'Parse error: Invalid JSON', reason: 'not_json' }),
+    ]);
+  });
+
+  it('calls valid JSON that is not a JSON-RPC message not_json_rpc', async () => {
+    const { status, answer, logged } = await refused('{"hello":"world","measured":true}');
+
+    expect(status).toBe(400);
+    expect(answer.error?.code).toBe(-32700);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        error: 'Parse error: Invalid JSON-RPC message',
+        reason: 'not_json_rpc',
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain('measured');
+  });
+
+  it('logs an unsupported protocol version as a fixed sentence, never the header it was sent', async () => {
+    const sent = `v<${'z'.repeat(4000)}>`;
+    const { status, logged } = await refused(
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      { 'MCP-Protocol-Version': sent },
+    );
+
+    expect(status).toBe(400);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        error: 'Bad Request: Unsupported protocol version',
+        protocol_version: `v?${'z'.repeat(38)}`,
+        protocol_version_length: sent.length,
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain('z'.repeat(41));
   });
 });

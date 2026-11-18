@@ -12,6 +12,7 @@ import {
   pruneAttachments,
   ATTACHMENT_GRACE_MS,
 } from '../../src/services/attachments.ts';
+import { addComment } from '../../src/services/comments.ts';
 import { createProject } from '../../src/services/projects.ts';
 import { listTaskRounds } from '../../src/services/rounds.ts';
 import { changeStatus, createTask, finishTask } from '../../src/services/tasks.ts';
@@ -354,6 +355,21 @@ describe('an unlisted finding’s files (D-162 item 8)', () => {
       (a) => (JSON.parse(a.payloadJson) as { attachment_id: string }).attachment_id,
     );
     expect(ids.sort()).toEqual([same, elsewhere].sort());
+  });
+
+  it('is never linked by text that embeds it — a pasted URL cannot take it round the finding (LAI-1302 review)', () => {
+    const shot = file();
+    const logged = logUnlistedWork(t.db, owner, {
+      repo: 'kvell/laika',
+      note: 'n',
+      attachments: [{ attachment: shot, caption: 'c' }],
+    });
+    addComment(t.db, owner, taskId, `Look: ![x](${url(shot)})`, 8000);
+    expect(row(shot)).toMatchObject({ taskId: null, commentId: null, unlistedWorkId: logged.id });
+
+    // So a dismissal still takes it, as it takes every file the finding holds.
+    dismissUnlisted(t.db, owner, logged.id, 9000);
+    expect(row(shot).deletedAt).toBe(9000);
   });
 
   it('removes them when it is dismissed, and the sweep then deletes the objects', async () => {

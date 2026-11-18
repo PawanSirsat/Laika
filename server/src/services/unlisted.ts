@@ -294,8 +294,8 @@ export function promoteUnlisted(
       .where(eq(unlistedWork.id, row.id))
       .run();
 
-    // Its files follow it (D-162 item 8). The description already linked any
-    // of the task's own project; the rest move with it.
+    // Its files follow it (D-162 item 8). The description embeds them but
+    // links none — a finding's file moves only here.
     moveUnlistedAttachments(
       db,
       actor,
