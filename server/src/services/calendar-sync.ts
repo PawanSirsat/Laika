@@ -1,9 +1,10 @@
-import { and, eq, gte, inArray, lt, or } from 'drizzle-orm';
+import { and, eq, gt, gte, inArray, lt, or } from 'drizzle-orm';
 import { loadActors } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type CalendarRuleKind, type CalendarSyncErrorCode } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import {
+  calendarAway,
   calendarEvents,
   orgCalendarSource,
   type OrgCalendarSource,
@@ -48,6 +49,10 @@ import { closedThrough } from './time-solidtime.ts';
  * focus time) is counted as `not_a_meeting` and left off (the owner's choice,
  * 2026-11-18). One that is tentative, declined, cancelled, shown as free or
  * out of office, or all day is not logged either.
+ * **Out of office is not time** (D-157 amended, LAI-1331): an event shown as
+ * out of office is never logged — it is kept apart as an away span
+ * (`calendar_away`, §4.107), its start and end only, which Capacity reads
+ * beside the person's own availability.
  * Each is a `time_entries` row with `source: 'calendar'`, `source_ref` the
  * event's Graph id, `kind: 'meeting'`, its span and minutes, and its subject
  * as the title — **`Busy` when the meeting is private, confidential or
@@ -129,6 +134,8 @@ export interface CalendarSyncResultView {
   kept_edits: number;
   /** Meetings not logged, changed or retired: the day already full, or in the closed period. */
   skipped: number;
+  /** Out-of-office spans read — kept as away (§4.107), never as time. */
+  away: number;
 }
 
 export type CalendarSyncOutcome =
@@ -482,6 +489,7 @@ function reconcile(
     unchanged: 0,
     kept_edits: 0,
     skipped: 0,
+    away: 0,
   };
   const rules = parseRules(source.rulesJson);
 
@@ -520,6 +528,7 @@ function reconcile(
         const usable = (projectId: string): boolean =>
           live.has(projectId) && actor !== undefined && canSeeProject(actor, projectId);
         reconcilePerson(tx, read, read.read.events, rules, usable, closed, now, result);
+        reconcileAway(tx, read, read.read.events, now, result);
       }
 
       tx.update(orgCalendarSource)
@@ -714,6 +723,87 @@ function reconcilePerson(
     const revision = retireEntry(tx, entry.id, userId, now);
     setLink(link.eventId, { entryRevisionSynced: revision });
     result.removed += 1;
+  }
+}
+
+/**
+ * Out of office (D-157 amended, LAI-1331): an event the person is shown out
+ * of office for, on their own calendar or accepted from someone else's — not
+ * cancelled. All day or not: a holiday is usually all day.
+ */
+export function isAway(e: GraphEvent): boolean {
+  if (e.isCancelled || e.showAs !== 'oof' || e.end <= e.start) return false;
+  return e.isOrganizer || e.response === 'organizer' || e.response === 'accepted';
+}
+
+/**
+ * A person's out-of-office spans, from a complete read of their window
+ * (§4.107): each one read is kept, or brought up to date, or **back** when
+ * it had been retired; each kept one overlapping the window that the read no
+ * longer has is retired. **Every** event read counts here, not only those
+ * that began inside the window as meetings do: the read returns whatever
+ * overlaps it, and a week away began days ago. Nothing becomes time.
+ */
+function reconcileAway(
+  tx: Tx,
+  read: PersonRead,
+  events: readonly GraphEvent[],
+  now: number,
+  result: CalendarSyncResultView,
+): void {
+  const { userId, window } = read;
+  // The last of each id: a calendar that shifted between pages may repeat one.
+  const away = [...new Map(events.filter(isAway).map((e) => [e.id, e])).values()];
+  const ids = away.map((e) => e.id);
+  const held = new Map(
+    tx
+      .select()
+      .from(calendarAway)
+      .where(
+        and(
+          eq(calendarAway.userId, userId),
+          or(
+            ...(ids.length === 0 ? [] : [inArray(calendarAway.eventId, ids)]),
+            and(lt(calendarAway.startsAt, window.to), gt(calendarAway.endsAt, window.from)),
+          ),
+        ),
+      )
+      .all()
+      .map((row) => [row.eventId, row]),
+  );
+  const seen = new Set<string>();
+  for (const e of away) {
+    seen.add(e.id);
+    result.away += 1;
+    const kept = held.get(e.id);
+    if (kept === undefined) {
+      tx.insert(calendarAway)
+        .values({
+          userId,
+          eventId: e.id,
+          startsAt: e.start,
+          endsAt: e.end,
+          lastSeenAt: now,
+          retiredAt: null,
+          createdAt: now,
+        })
+        .run();
+      continue;
+    }
+    // Moved, or back after it was retired: as Outlook has it now.
+    tx.update(calendarAway)
+      .set({ startsAt: e.start, endsAt: e.end, lastSeenAt: now, retiredAt: null })
+      .where(and(eq(calendarAway.userId, userId), eq(calendarAway.eventId, e.id)))
+      .run();
+  }
+  for (const row of held.values()) {
+    if (seen.has(row.eventId) || row.retiredAt !== null) continue;
+    // Only what this read could have seen: a span overlapping its window.
+    if (row.startsAt >= window.to || row.endsAt <= window.from) continue;
+    tx.update(calendarAway)
+      .set({ retiredAt: now })
+      .where(and(eq(calendarAway.userId, userId), eq(calendarAway.eventId, row.eventId)))
+      .run();
   }
 }
 

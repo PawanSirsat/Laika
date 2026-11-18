@@ -2,6 +2,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../src/db/ids.ts';
 import {
+  calendarAway,
   calendarEvents,
   orgCalendarSource,
   orgTimeSettings,
@@ -131,6 +132,15 @@ function revisionsOf(entryId: string) {
     .from(timeEntryRevisions)
     .where(eq(timeEntryRevisions.entryId, entryId))
     .orderBy(asc(timeEntryRevisions.revision))
+    .all();
+}
+
+function awayOf(userId: string) {
+  return t.db
+    .select()
+    .from(calendarAway)
+    .where(eq(calendarAway.userId, userId))
+    .orderBy(asc(calendarAway.startsAt))
     .all();
 }
 
@@ -485,6 +495,138 @@ describe('what is logged', () => {
       ['Yesterday', '2026-11-17'],
       ['Tomorrow', '2026-11-19'],
     ]);
+  });
+});
+
+describe('out of office (D-157 amended, LAI-1331)', () => {
+  /** Monday 16 to the end of Friday 20 November, all day: begun two days before the window. */
+  const week = (extra: Record<string, unknown> = {}) =>
+    graphEvent(Date.UTC(2026, 10, 16), {
+      subject: 'Leave',
+      isAllDay: true,
+      minutes: 5 * 1440,
+      showAs: 'oof',
+      responseStatus: { response: 'organizer' },
+      isOrganizer: true,
+      ...extra,
+    });
+
+  it('keeps out-of-office spans as away — all day, timed, or begun days ago — and never as time', async () => {
+    const leave = week();
+    const afternoon = graphEvent(Date.UTC(2026, 10, 18, 12), {
+      subject: 'Dentist',
+      minutes: 180,
+      showAs: 'oof',
+      responseStatus: { response: 'organizer' },
+      isOrganizer: true,
+    });
+    const offsite = graphEvent(Date.UTC(2026, 10, 19, 6), {
+      subject: 'Team offsite',
+      minutes: 480,
+      showAs: 'oof',
+    });
+    fake.calendars.set('ada@kvelld.example', [
+      leave,
+      afternoon,
+      // An invitation accepted that shows them out of office counts too.
+      offsite,
+      // Declined, unanswered or cancelled: not theirs to be away for.
+      graphEvent(Date.UTC(2026, 10, 18, 7), {
+        showAs: 'oof',
+        responseStatus: { response: 'declined' },
+      }),
+      graphEvent(Date.UTC(2026, 10, 18, 7), {
+        showAs: 'oof',
+        responseStatus: { response: 'none' },
+      }),
+      graphEvent(Date.UTC(2026, 10, 18, 7), {
+        showAs: 'oof',
+        isCancelled: true,
+        isOrganizer: true,
+      }),
+      // A meeting beside it is logged as before.
+      graphEvent(nineOn(18), { subject: 'Standup' }),
+    ]);
+    connect();
+    expect(synced(await sync())).toMatchObject({ away: 3, meetings: 1, created: 1 });
+
+    expect(
+      awayOf(ada).map((a) => [a.eventId, a.startsAt, a.endsAt, a.lastSeenAt, a.retiredAt]),
+    ).toEqual([
+      [leave.id, Date.UTC(2026, 10, 16), Date.UTC(2026, 10, 21), NOW, null],
+      [afternoon.id, Date.UTC(2026, 10, 18, 12), Date.UTC(2026, 10, 18, 15), NOW, null],
+      [offsite.id, Date.UTC(2026, 10, 19, 6), Date.UTC(2026, 10, 19, 14), NOW, null],
+    ]);
+    // Never time: the one entry is the meeting.
+    expect(entriesOf(ada).map((e) => e.title)).toEqual(['Standup']);
+    // Each person's own: Bea's calendar has none.
+    expect(awayOf(bea)).toEqual([]);
+    // Nothing of the event but its id and span is kept.
+    expect(Object.keys(awayOf(ada)[0]!).sort()).toEqual(
+      ['createdAt', 'endsAt', 'eventId', 'lastSeenAt', 'retiredAt', 'startsAt', 'userId'].sort(),
+    );
+  });
+
+  it('retires a span gone from a complete read, brings it back when it returns, and follows it when it moves', async () => {
+    const leave = week();
+    fake.calendars.set('ada@kvelld.example', [leave]);
+    connect();
+    synced(await sync());
+
+    fake.calendars.set('ada@kvelld.example', []);
+    expect(synced(await sync(NOW + 1))).toMatchObject({ away: 0 });
+    expect(awayOf(ada)).toEqual([
+      expect.objectContaining({ eventId: leave.id, retiredAt: NOW + 1 }),
+    ]);
+
+    // Back: the same row, standing again.
+    fake.calendars.set('ada@kvelld.example', [leave]);
+    expect(synced(await sync(NOW + 2))).toMatchObject({ away: 1 });
+    expect(awayOf(ada)).toEqual([
+      expect.objectContaining({ eventId: leave.id, retiredAt: null, lastSeenAt: NOW + 2 }),
+    ]);
+
+    // Shortened to end on Thursday: as Outlook has it now.
+    fake.calendars.set('ada@kvelld.example', [week({ id: leave.id, minutes: 4 * 1440 })]);
+    synced(await sync(NOW + 3));
+    expect(awayOf(ada)).toEqual([
+      expect.objectContaining({
+        eventId: leave.id,
+        endsAt: Date.UTC(2026, 10, 20),
+        retiredAt: null,
+      }),
+    ]);
+    expect(entriesOf(ada)).toEqual([]);
+  });
+
+  it('retires none that a read could not have seen: a span outside its window stays', async () => {
+    // Read on the 10th: two days away on the 11th and 12th.
+    const earlier = graphEvent(Date.UTC(2026, 10, 11), {
+      isAllDay: true,
+      minutes: 2 * 1440,
+      showAs: 'oof',
+      isOrganizer: true,
+      responseStatus: { response: 'organizer' },
+    });
+    fake.calendars.set('ada@kvelld.example', [earlier]);
+    connect();
+    synced(await sync(Date.UTC(2026, 10, 10, 12)));
+    expect(awayOf(ada)).toHaveLength(1);
+
+    // On the 18th it is long past and out of the window: absent, and left standing.
+    synced(await sync());
+    expect(awayOf(ada)).toEqual([
+      expect.objectContaining({ eventId: earlier.id, retiredAt: null }),
+    ]);
+  });
+
+  it('keeps nothing for a person whose mailbox was skipped, and each span under its own person', async () => {
+    fake.calendars.set('ada@kvelld.example', [week()]);
+    fake.calendars.delete('bea@kvelld.example');
+    connect();
+    synced(await sync());
+    expect(awayOf(ada)).toHaveLength(1);
+    expect(awayOf(bea)).toEqual([]);
   });
 });
 
