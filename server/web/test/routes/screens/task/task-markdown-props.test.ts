@@ -50,11 +50,20 @@ void describe('TaskMarkdown props', () => {
 
   void test('the plugins passed to the renderer are module constants', () => {
     assert.match(SOURCE, /remarkPlugins=\{\[remarkGfm\]\}/);
+    // Two booleans choose among the lists (LAI-1352 added the image row), and
+    // `pluginsFor` returns nothing but those constants.
+    assert.match(SOURCE, /rehypePlugins=\{pluginsFor\(singleHardBreaks, imageRow\)\}/);
+    const body = /function pluginsFor\([^)]*\) \{([\s\S]*?)\n\}/.exec(SOURCE)?.[1];
+    assert.ok(body !== undefined, 'pluginsFor not found — the test cannot see what it returns');
+    const returned = [...body.matchAll(/\b[A-Z][A-Z_]+\b/g)].map((m) => m[0]);
     // LAI-868: the mention step is always on, so the off case is `MENTIONS`.
-    assert.match(
-      SOURCE,
-      /rehypePlugins=\{singleHardBreaks \? MENTIONS_AND_SINGLE_HARD_BREAKS : MENTIONS\}/,
-    );
+    assert.deepEqual([...new Set(returned)].sort(), [
+      'IMAGE_ROW',
+      'IMAGE_ROW_AND_SINGLE_HARD_BREAKS',
+      'MENTIONS',
+      'MENTIONS_AND_SINGLE_HARD_BREAKS',
+    ]);
+    assert.doesNotMatch(body, /props|\bplugins\b|=>/, 'it returns a list it was given');
   });
 });
 

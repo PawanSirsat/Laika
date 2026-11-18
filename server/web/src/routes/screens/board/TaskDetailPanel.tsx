@@ -1147,6 +1147,7 @@ export function TaskDetailPanel({
               holdsDelete: holdsProjectAction(permissions, task.project_id, 'attachment.delete'),
             }}
             nameOf={(id) => personName(id, members)}
+            rounds={rounds?.rounds}
           />
 
           <ActivityFeed
