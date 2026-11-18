@@ -20,6 +20,7 @@ import { actorKey, commentKind, runPositions, type RunPosition } from './feed-gr
 import { FEED_ICONS, feedLines, feedMeta } from './feed-line.ts';
 import type { CardCandidate, MentionCandidate } from './LazyRichEditor.tsx';
 import { WhoDidThis } from './WhoDidThis.tsx';
+import { outputBy } from './outputs-derive.ts';
 import { Tabs } from '../../../components/tabs/Tabs.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -379,6 +380,10 @@ export function ActivityFeed({
             cards={cards}
             mayChange={!archived && mayChangeComment(comment, meId, leads)}
             attach={attach}
+            imagesBy={outputBy(
+              actor.name,
+              actor.row !== undefined ? chipLabel(actor.row) : (actor.plain ?? null),
+            )}
             now={now}
             onChanged={detail.refresh}
             onDeleted={(id) => {

@@ -7997,8 +7997,14 @@ anything missing sends the task back.
   Comments distinguish human from agent.
   **Attachments** (D-150, LAI-1301), only when `GET /org`'s `attachments` is
   not `null`: a section listing the task's files (`GET /tasks/:id/attachments`)
-  — an image or a pdf `inline` as a thumbnail, anything else as a named
-  download with its size — with remove for a reader `can()` lets; and an
+  under its count line, *Attachments · 3* — grouped **Outputs** (a round's
+  summary links them, D-162), **In comments** and **Other**, the headings
+  drawn only when a group other than *Other* has files (LAI-1352); each row a
+  preview that opens the **viewer** (below) — an image's own picture, scaled
+  down and loaded lazily, since the server makes no thumbnails (phase 1, which
+  would need an image library), or the file's glyph — then its name as a link
+  that opens it, its size, who added it and when — with remove for a reader
+  `can()` lets; and an
   **attach** control in the description, acceptance and comment editors that
   asks for the upload, `PUT`s the file to the store, completes it and inserts
   `/api/v1/attachments/<id>/content` at the cursor — an image as `![name](…)`,
@@ -8048,6 +8054,34 @@ anything missing sends the task back.
   checks passed*, *CI: lint failed*) — with earlier rounds folded. A comment that is a send-back's reason is
   marked *sent back*, and a card carrying a send-back wears a *sent back*
   marker with the reason as its tooltip.
+  **Outputs, per round** (D-162, LAI-1352): the files an agent chose to show
+  — the ones the round's `summary_md` links, a file belonging to the first
+  round whose summary links it, as `get_task_context` says — as one folded
+  line at the round's foot, *Outputs · 6 — 4 screenshots · 1 sheet · 1
+  report* (screenshots, recordings, sheets, reports and other files, each
+  counted in that order). It opens to a **strip** of tiles: an image's own
+  picture, scaled down and loaded lazily; any other file its glyph; the
+  caption under each and in full on hover; and a *+N* tile for the rest, as
+  an avatar group's overflow. On a phone the strip scrolls sideways and snaps
+  to a tile. A file since removed from the task is left out. When the
+  section folds to its one line in review, the latest round's Outputs line
+  sits directly under it. A round with no outputs shows no line.
+  **The viewer** (LAI-1352), opened by any tile or a preview: one file at a
+  time in the shared dialog — the caption as its title, *2 / 6* and *by
+  <owner>’s <agent>* (the agent as `<harness> · <device>`, *agent* where the
+  reader may not see it, nobody's agent for a person's file) under it; the
+  image, an mp4 or webm recording in `<video controls>`, or a PDF in a frame,
+  for a file the server serves inline; any other file a card with its name,
+  size and the way to get it; previous and next, which wrap, ← and →, Escape
+  closing it and focus going back to what opened it; **Open in a new tab**
+  and **Download** on every file. A PDF needs the board's `frame-src` to
+  name the store; refused, the frame gives way to the card. Both themes; on a
+  phone it is the whole screen.
+  **A comment with two or more of the board's images** draws them as one
+  row of the same tiles at its foot, which opens the viewer on them; a
+  paragraph or list item they leave empty goes, so an agent's `**Outputs**`
+  list leaves no empty bullets. One image is drawn where it was written, as
+  before.
   **An Effort section under Acceptance** (D-085, plain words since LAI-785):
   one headline — the effort in words and the build time as one plain range,
   *Small · about 40 min to 1.5 h*, with *rough estimate* beside it when the
@@ -8420,7 +8454,10 @@ anything missing sends the task back.
   when the tab returns and after each decision.
 - **Unlisted work** (Inbox's tab, `/inbox?tab=unlisted`, owners and admins, LAI-754) — **one line per
   note**: repo, who, when and the note's first line, newest first; a click opens
-  the full text with **Promote to task** and **Dismiss** under it; the first
+  the full text with **Promote to task** and **Dismiss** under it — and the
+  files an agent attached to it (D-162 item 8, the note's `**Attached**`
+  block) in the task panel's strip under the text, each opening the viewer,
+  *by <who>’s agent* (LAI-1352); the first
   page of lines and then *Show more*; a *Show dismissed* toggle; the open count
   on the tab and in the sidebar's Inbox count.
 - **Dashboard** — shaped like Jira's project Summary (D-072): **done, updated,

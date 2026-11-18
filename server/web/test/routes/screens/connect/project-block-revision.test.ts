@@ -1,6 +1,6 @@
 /**
- * The revision-2 instructions block and the Project setup prompt (LAI-1052,
- * plan LAI-1042 §G).
+ * The marked instructions block — revision 2 (LAI-1052, plan LAI-1042 §G),
+ * revision 3 since LAI-1352 — and the Project setup prompt.
  *
  * `replaceLaikaBlock` is the prompt's rules as a pure function, so each rule
  * is a fixture here: a file is created, appended to, updated from revision 1
@@ -19,13 +19,16 @@ import {
   BLOCK_END,
   BLOCK_MARKER,
   blockBegin,
+  machinePrompt,
   markedProjectBlock,
+  ONE_PARENT_PER_FEATURE,
   PLACEHOLDER_TOKEN,
   PROJECT_BLOCK_REVISION,
   projectBlock,
   projectPrompt,
   projectSetupPrompt,
   replaceLaikaBlock,
+  SHOW_THE_RESULT,
 } from '../../../../src/routes/screens/connect/connect-copy.ts';
 import { targetFor } from '../../../../src/routes/screens/developer/v3/project-setup.ts';
 
@@ -55,7 +58,7 @@ const phrase = (text: string) =>
       .join('\\s+'),
   );
 
-void describe('the revision-2 block', () => {
+void describe('the marked block', () => {
   void test('keeps the BLOCK_MARKER line byte-identical, on line 3 of the block proper', () => {
     const lines = BLOCK.split('\n');
     assert.equal(lines[0], blockBegin(PROJECT.slug));
@@ -71,9 +74,43 @@ void describe('the revision-2 block', () => {
   });
 
   void test('names its template revision, which is not the brief’s context_revision', () => {
-    assert.equal(PROJECT_BLOCK_REVISION, 2);
+    assert.equal(PROJECT_BLOCK_REVISION, 3);
     assert.ok(BLOCK.includes(`revision=${String(PROJECT_BLOCK_REVISION)} project=onroute`));
     assert.doesNotMatch(BLOCK, /context_revision/);
+  });
+
+  void test('revision 3 carries rule 7, Show the result, and rule 8, one parent per feature', () => {
+    // LAI-1352 (D-162, and the owner's parent and child rule of 2026-11-19).
+    // LAI-1351's CLI holds the same revision; these are the words it copies.
+    const [, , ...lines] = BLOCK.split('\n');
+    const body = lines.join('\n');
+    assert.ok(body.includes(SHOW_THE_RESULT), 'rule 7 is not in the block');
+    assert.ok(body.includes(ONE_PARENT_PER_FEATURE), 'rule 8 is not in the block');
+    assert.ok(
+      body.indexOf('6. **Stray findings**') < body.indexOf('7. **Show the result.**') &&
+        body.indexOf('7. **Show the result.**') < body.indexOf('8. **One parent per feature.**') &&
+        body.indexOf('8. **One parent per feature.**') <
+          body.indexOf('If the Laika tools are not available'),
+      'rules 7 and 8 follow rule 6, before the closing line',
+    );
+    for (const words of [
+      'When a person needs to see what you did — a UI change, a generated file — attach screenshots or outputs with `laika attach` or `request_upload`, each with a caption, and pass them to `finish_task` as `outputs`.',
+      'Skip it when tests are the whole proof.',
+      'Never upload a secret: attach a masked copy, and say where the real file is kept.',
+      'A new feature with several parts gets one parent task, with each part as a child task',
+      'Work on an existing feature becomes a new child of its parent.',
+      'A genuinely small one-off may stand alone.',
+      "The main outputs go on the parent, a child's own outputs on the child.",
+    ]) {
+      assert.match(BLOCK, phrase(words));
+    }
+  });
+
+  void test('the classic, unmarked block stays revision 1: no rule 7 or 8', () => {
+    const classic = projectBlock(ORIGIN, PROJECT);
+    assert.ok(!classic.includes('Show the result'));
+    assert.ok(!classic.includes('One parent per feature'));
+    assert.equal(projectBlock(ORIGIN, PROJECT, 1), classic);
   });
 
   void test('CONTROL: the classic block and prompt are byte-for-byte what master served', () => {
@@ -141,16 +178,28 @@ void describe('replaceLaikaBlock', () => {
     assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n\n${HUMAN_BOTTOM}`);
   });
 
-  void test('a revision-2 block for another project is replaced, not taken as current', () => {
-    const other = markedProjectBlock(ORIGIN, { slug: 'other', prefix: 'OTH', name: 'Other' });
-    const before = `${HUMAN_TOP}\n${other}\n\n${HUMAN_BOTTOM}`;
+  void test('a revision-2 block of this project is updated to revision 3 (LAI-1352)', () => {
+    // What a repository set up before rules 7 and 8 holds: the same text,
+    // markers at revision 2.
+    const two = `${blockBegin(PROJECT.slug, 2)}\n${projectBlock(ORIGIN, PROJECT)}\n${BLOCK_END}`;
+    const before = `${HUMAN_TOP}\n${two}\n\n${HUMAN_BOTTOM}`;
     const out = replaceLaikaBlock(before, BLOCK);
     assert.equal(out.outcome, 'updated');
     assert.equal(out.from, 2);
     assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n\n${HUMAN_BOTTOM}`);
+    assert.ok(out.text.includes(SHOW_THE_RESULT));
   });
 
-  void test('a revision-2 block written before a prefix change is replaced', () => {
+  void test('a current block for another project is replaced, not taken as current', () => {
+    const other = markedProjectBlock(ORIGIN, { slug: 'other', prefix: 'OTH', name: 'Other' });
+    const before = `${HUMAN_TOP}\n${other}\n\n${HUMAN_BOTTOM}`;
+    const out = replaceLaikaBlock(before, BLOCK);
+    assert.equal(out.outcome, 'updated');
+    assert.equal(out.from, PROJECT_BLOCK_REVISION);
+    assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n\n${HUMAN_BOTTOM}`);
+  });
+
+  void test('a current block written before a prefix change is replaced', () => {
     const stale = markedProjectBlock(ORIGIN, { ...PROJECT, prefix: 'OLD' });
     assert.ok(stale.includes(blockBegin(PROJECT.slug)), 'same slug, so only the prefix differs');
     const before = `${HUMAN_TOP}\n${stale}\n`;
@@ -203,7 +252,7 @@ void describe('the Project setup prompt', () => {
       prompt,
       /a line starting "<!-- laika:begin" and a\s+later "<!-- laika:end -->" line/,
     );
-    assert.match(prompt, /revision of\s+2 or more and project=onroute/);
+    assert.match(prompt, /revision of\s+3 or more and project=onroute/);
     assert.match(prompt, /task keys look like\s+`ONR-42`, it is already up to date/);
     assert.match(
       prompt,
@@ -422,11 +471,12 @@ void describe('the Project setup prompt', () => {
     // across any re-wrap. Two of its phrases changed on purpose: "Only the
     // Laika block … is yours to change" now names the confirmed exception,
     // and "up to date: tell me so and stop" now looks for a duplicate first.
+    // The revision it names is the template's, 3 since LAI-1352.
     for (const guarantee of [
       'Read ./CLAUDE.md first. Do not assume what is in it.',
       'everything else in it belongs to the people who wrote it.',
       'a line starting "<!-- laika:begin" and a later "<!-- laika:end -->" line',
-      'whose begin line says a revision of 2 or more and project=onroute, and whose task keys look like `ONR-42`, it is already up to date',
+      'whose begin line says a revision of 3 or more and project=onroute, and whose task keys look like `ONR-42`, it is already up to date',
       'show me the exact old and new text as a diff and wait for me to confirm. Then replace only that block.',
       'If I edited lines inside the old block, point them out in the diff so I can keep them.',
       'keeping everything already in the file. Create the file only if it does not exist.',
@@ -435,6 +485,11 @@ void describe('the Project setup prompt', () => {
     ]) {
       assert.match(prompt, phrase(guarantee));
     }
+  });
+
+  void test('it carries rules 7 and 8, in the block it hands over (LAI-1352)', () => {
+    assert.ok(prompt.includes(SHOW_THE_RESULT));
+    assert.ok(prompt.includes(ONE_PARENT_PER_FEATURE));
   });
 
   void test('CONTROL: zero secrets — no lai_ token, no placeholder, no command that mints one', () => {
@@ -470,6 +525,22 @@ void describe('the Project setup prompt', () => {
       ),
     );
     assert.doesNotMatch(step8(prompt), /step 5 starts a new file/);
+  });
+});
+
+void describe('the machine prompt (LAI-1352)', () => {
+  void test('ends with the two rules, worded as the block’s 7 and 8', () => {
+    const prompt = machinePrompt({ origin: ORIGIN, secret: undefined, insightsOn: false });
+    const tail = prompt.slice(prompt.search(/^Later, in a session that has the tools/m));
+    assert.ok(tail.length > 0 && tail !== prompt, 'no closing rules');
+    assert.match(tail, phrase('show the result a person needs to see'));
+    assert.match(tail, phrase('`laika attach` or `request_upload`, never a secret'));
+    assert.match(
+      tail,
+      phrase(
+        'give a feature with several parts one parent task, with each part a child task and the main outputs on the parent.',
+      ),
+    );
   });
 });
 

@@ -8,6 +8,8 @@ export interface CommentBodyProps {
   /** Whose `@` mention is a pill, and who is reading (LAI-868). */
   readonly people?: readonly MentionCandidate[] | undefined;
   readonly meId?: string | undefined;
+  /** Who its images came from, for the viewer its image row opens (LAI-1352). */
+  readonly imagesBy?: string | undefined;
 }
 
 /** The fence's tag, from the `language-…` class the renderer puts on `code`. */
@@ -44,8 +46,11 @@ const COMMENT_COMPONENTS: Components = {
  * hand-written parser, where every construct was new code to trust; they do
  * not apply to a renderer the description already trusts with the same
  * people's text. An unclosed fence still runs to the end, as CommonMark says.
+ *
+ * Two or more of the board's images are one row of thumbnails that opens the
+ * viewer (D-162, LAI-1352); one image is drawn where it was written.
  */
-export function CommentBody({ body, people, meId }: CommentBodyProps) {
+export function CommentBody({ body, people, meId, imagesBy }: CommentBodyProps) {
   return (
     <div className="panel-comment-body">
       <TaskMarkdown
@@ -55,6 +60,8 @@ export function CommentBody({ body, people, meId }: CommentBodyProps) {
         singleHardBreaks
         people={people}
         meId={meId}
+        imageRow
+        imagesBy={imagesBy}
       />
     </div>
   );

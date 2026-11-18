@@ -56,6 +56,14 @@
  * mapped React 18's, which ends that whole class (the third, fourth and this
  * regeneration were all it). Before regenerating, the failing runs differed
  * in `html_sha256` alone — every accessibility tree and style digest matched.
+ *
+ * And a sixth time, for **a rendering change on purpose** (LAI-1352): the
+ * machine prompt gained a closing paragraph — show the result, and one parent
+ * per feature. Only `step-3-automatic-minted` shows that prompt, and only its
+ * entry changed. Diffed against `LAIKA_GOLDEN_DUMP` dumps of the prompt
+ * without the paragraph: the markup gained exactly five `.conn-line` spans
+ * of the new text, the accessibility tree the same words, and each style dump
+ * five lines, one per new span, each the existing lines' style word for word.
  */
 
 import assert from 'node:assert/strict';
