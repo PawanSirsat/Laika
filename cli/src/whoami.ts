@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { detectAgents } from './agents.ts';
 import { normaliseUrl, whoAmI } from './api.ts';
 import { readSettings, SETTINGS_PATH } from './config.ts';
-import { pairCredentials } from './credential-pair.ts';
+import { pairCredentials, unpairedLines } from './credential-pair.ts';
 
 /**
  * `laika whoami` — who this machine is, to which board (LAI-623).
@@ -172,18 +172,11 @@ export async function whoami(io: WhoamiIo = CONSOLE): Promise<number> {
 
   if (token === undefined || token === '') {
     io.err('');
-    // A token held for another board is named, and not sent here (LAI-1343).
-    const elsewhere = sources.find(
-      (source) =>
-        (source.token?.trim() ?? '') !== '' &&
-        (source.url?.trim() ?? '') !== '' &&
-        normaliseUrl(source.url ?? '') !== base,
-    );
-    if (elsewhere !== undefined) {
-      io.err(
-        `No token for ${base}. ${elsewhere.from} holds one for ${normaliseUrl(elsewhere.url ?? '')}, which is not sent to another board.`,
-      );
-      io.err(`Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.`);
+    // A token held for another board, or with no URL beside it, is named —
+    // and not sent here (LAI-1343 and its review).
+    const why = paired === undefined ? undefined : unpairedLines(paired, sources);
+    if (why !== undefined) {
+      for (const line of why) io.err(line);
       return 1;
     }
     io.err(`LAIKA_TOKEN is not set, so ${base} will refuse every request.`);

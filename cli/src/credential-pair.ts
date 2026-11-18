@@ -54,3 +54,35 @@ export function pairCredentials(
     ? { url, from: first.from }
     : { url, from: first.from, token: holder.token.trim(), tokenFrom: holder.from };
 }
+
+/**
+ * **Why the board named has no token here** (LAI-1343 review): another place
+ * holds a token for another board, which is not sent here; or a place holds a
+ * token with no URL beside it, which names no board. Two lines naming the
+ * places and the boards, never a token; `undefined` when neither is so.
+ */
+export function unpairedLines(
+  paired: PairedCredential,
+  sources: readonly CredentialSource[],
+): readonly [string, string] | undefined {
+  const other = sources.find(
+    (source) =>
+      named(source.token) && named(source.url) && normaliseUrl(source.url.trim()) !== paired.url,
+  );
+  if (other !== undefined) {
+    return [
+      `No token for ${paired.url}. ${other.from} holds one for ${normaliseUrl(other.url?.trim() ?? '')}, which is not sent to another board.`,
+      paired.from === 'the environment'
+        ? 'Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.'
+        : `Put ${paired.url}'s token beside its URL in ${paired.from}, or remove that URL to use the other board.`,
+    ];
+  }
+  const orphan = sources.find((source) => named(source.token) && !named(source.url));
+  if (orphan !== undefined) {
+    return [
+      `No token for ${paired.url}. LAIKA_TOKEN in ${orphan.from} is not used: no LAIKA_URL beside it names its board.`,
+      `Set LAIKA_URL and LAIKA_TOKEN together in ${orphan.from}.`,
+    ];
+  }
+  return undefined;
+}
