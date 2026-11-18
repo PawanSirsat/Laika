@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T15:45:00Z
+finished: 2026-11-18T21:30:00Z
 ---
 
 ## Goal
@@ -60,13 +61,56 @@ inert there.
 
 ## Acceptance criteria
 
-- [ ] Tests with a fake Graph and a fake store:
-  - [ ] an unchanged ETag means no fetch;
-  - [ ] a removed photo is deleted;
-  - [ ] a mismatched type is refused;
-  - [ ] every leaver guard, including the breaker and the dry run;
-  - [ ] a per-person 403 or 404 skips only that person;
-  - [ ] the photo route's privacy and caching.
-- [ ] Screenshots in light and dark, at 1440 and 390: People with photos and titles,
+- [x] Tests with a fake Graph and a fake store:
+  - [x] an unchanged ETag means no fetch;
+  - [x] a removed photo is deleted;
+  - [x] a mismatched type is refused;
+  - [x] every leaver guard, including the breaker and the dry run;
+  - [x] a per-person 403 or 404 skips only that person;
+  - [x] the photo route's privacy and caching.
+- [x] Screenshots in light and dark, at 1440 and 390: People with photos and titles,
   Capacity, and the Microsoft 365 card with the dry-run list.
 - [ ] CI green on the PR, and an independent review.
+
+## Delivered (2026-11-18)
+
+- **Server.**
+  - `people.sync`, `services/people-sync.ts`.
+  - `services/people-sync-settings.ts` serves the card.
+  - `services/people-directory.ts` serves the directory and the photo.
+  - Graph client reads: `user` (with the `mail` fallback), `manager`, `photoTag`, and `photo`
+    through `readBinary`.
+  - `deactivateLeaver` and `leaverProtection` in `users.ts`. The offboarding steps now take
+    §3.4's principal.
+  - Migration 0090. Routes `/org/people-sync`, `/people/directory` and `/users/:id/photo`.
+- **Web.**
+  - `api/people-directory.ts`, a look-store, and its hooks.
+  - `api/people-sync.ts`.
+  - The card is renamed Microsoft 365, and `PeopleSyncPanel` adds the switches and the dry-run
+    list.
+  - `PersonFacts` on People, the profile and Capacity, and Capacity's *My team*
+    (`?team=mine`).
+  - Avatar draws the synced photo by user id. It gains sizes 28, 36 and 60 and a solid tone.
+- **Converged onto `Avatar`:**
+  - the header's own person;
+  - My day's bar and *Who looked*;
+  - the task panel's assignee and reporter, its comments, and the composer;
+  - People rows and the profile head;
+  - Capacity's cards and list;
+  - the board rail's activity feed and the presence chip.
+
+  Task cards already used it.
+- **Where this differs from the plan:**
+  - **A 404 counts toward the leaver rule only for someone the directory had before** (an
+    Entra id on the row). Otherwise two runs would deactivate anyone outside the tenant.
+  - **Directory entries also carry `manager_name`,** so "Reports to" needs no second read.
+  - **"My team" is a People dropdown on Capacity,** shown only to someone with reports, rather
+    than an eighth KPI tile.
+
+## Follow-up: initials still drawn by hand
+
+These go to a separate task: KanbanView's swimlanes, ListView (`initialsOf`), the timeline,
+BoardToolbar's dropdown and member stack, MembersPopover, SpaceToolbar, SubtasksSection (×3),
+DependenciesSection, ManageMemberPanel, ProfileWhoLooked, TimeReport's own Avatar, the
+dashboard's Contributors, TimeLoggingView, SpaceActions, space settings' MembersTab (×2),
+MembersScreen, AddMemberForm and InviteScreen.
