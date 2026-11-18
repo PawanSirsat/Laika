@@ -133,7 +133,8 @@ export function BoardArchived({
         {state.status === 'ready' &&
           (state.tasks.length === 0 ? (
             <p className="bi-note barch-empty">
-              Nothing archived. Archive a task from its ⋯ menu to put it away with its history.
+              Nothing archived. Open a task and choose Archive from its menu to put it away with
+              its history.
             </p>
           ) : (
             <ul className="barch-list">
