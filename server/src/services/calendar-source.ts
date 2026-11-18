@@ -3,7 +3,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type CalendarRuleKind, type CalendarSyncErrorCode } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { orgCalendarSource, type OrgCalendarSource, projects } from '../db/schema.ts';
+import { calendarAway, orgCalendarSource, type OrgCalendarSource, projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { decryptSecret, encryptSecret } from '../secrets.ts';
@@ -162,8 +162,17 @@ function viewOf(db: Db): CalendarSourceView {
     last_success_at: row.lastSuccessAt,
     last_error:
       row.lastErrorCode === null ? null : { code: row.lastErrorCode, message: row.lastError ?? '' },
-    last_result: jsonOf<CalendarSyncResultView>(row.lastResultJson),
+    last_result: resultOf(row.lastResultJson),
   };
+}
+
+/**
+ * The last run's counts, as served: a result stored before LAI-1331 counted
+ * no out-of-office spans, so its `away` is `0` rather than missing.
+ */
+function resultOf(json: string | null): CalendarSyncResultView | null {
+  const stored = jsonOf<CalendarSyncResultView>(json);
+  return stored === null ? null : { ...stored, away: stored.away ?? 0 };
 }
 
 /** `GET /api/v1/org/calendar`. */
@@ -391,9 +400,17 @@ export async function syncCalendarNow(
  * `DELETE /api/v1/org/calendar`: forget the credentials and stop syncing.
  * Meetings already logged stay as they are — they are people's time now —
  * and so do their links, so a connection made again never logs one twice.
+ * **Out-of-office spans go** (§4.107, LAI-1331): they are the sync's reading
+ * of a calendar it no longer reads, not anybody's time, and a connection made
+ * again reads them afresh. One transaction, so a sync finishing meanwhile —
+ * which writes only while the connection it read with is still there — never
+ * puts one back.
  */
 export function disconnectCalendar(db: Db, actor: ResolvedActor): void {
   assertCan(actor, 'org.calendar.configure');
-  db.delete(orgCalendarSource).run();
+  db.transaction((tx) => {
+    tx.delete(orgCalendarSource).run();
+    tx.delete(calendarAway).run();
+  });
   graphTokenCache(db).clear();
 }

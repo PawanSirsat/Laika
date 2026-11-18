@@ -27,6 +27,7 @@ import {
   type LostClaim,
   lostNotice,
   noteSelfReport,
+  ignoredAgentTokenNotice,
   readCredential,
   readProc,
   readSelfReport,
@@ -975,6 +976,12 @@ export async function hookResult(
     );
   }
   if (event === 'session-start' || state === undefined || state.status === 'starting' || reopen) {
+    // Once per session opened, so the switch to the tool's own credential can
+    // be found (LAI-1344): a token-only LAIKA_AGENT_TOKEN this hook did not use.
+    // Never the token itself.
+    if (identity === 'own' && ignoredAgentTokenNotice(io.env) !== undefined) {
+      log(io.home, `hook ${harness}: LAIKA_AGENT_TOKEN ignored: no LAIKA_AGENT_URL`);
+    }
     const opened = await open(
       io,
       harness,

@@ -10,6 +10,9 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  awayChips,
+  meetingsSortOffered,
+  meetingsText,
   barSegments,
   filterCounts,
   FILTERS,
@@ -425,5 +428,51 @@ void describe('filterCounts (LAI-1222)', () => {
     assert.equal(counts.overdue, 1);
     assert.equal(counts.none, 2);
     assert.equal(counts.never, 1);
+  });
+});
+
+void describe('away and meetings (LAI-1331)', () => {
+  void test('the person’s own period and Outlook’s, the Outlook one named when both are so', () => {
+    assert.deepEqual(awayChips(undefined), []);
+    assert.deepEqual(awayChips(null), []);
+    assert.deepEqual(
+      awayChips({ own: { until: '2026-11-20' }, outlook: null }).map((c) => [c.key, c.label]),
+      [['own', 'Away until Fri 20 Nov']],
+    );
+    assert.deepEqual(
+      awayChips({ own: null, outlook: { until: '2026-11-20' } }).map((c) => [c.key, c.label]),
+      [['outlook', 'Out of office until Fri 20 Nov']],
+    );
+    assert.deepEqual(
+      awayChips({ own: { until: '2026-11-20' }, outlook: { until: '2026-11-25' } }).map((c) => [
+        c.key,
+        c.label,
+      ]),
+      [
+        ['own', 'Away until Fri 20 Nov'],
+        ['outlook', 'Outlook · Out of office until Wed 25 Nov'],
+      ],
+    );
+  });
+
+  void test('meetings in hours, and nothing for none or none sent', () => {
+    assert.equal(meetingsText(undefined), undefined);
+    assert.equal(meetingsText(0), undefined);
+    assert.equal(meetingsText(45), '45 min in meetings this week');
+    assert.equal(meetingsText(360), '6 h in meetings this week');
+    assert.equal(meetingsText(390), '6 h 30 min in meetings this week');
+    assert.equal(meetingsText(31 * 60), '31 h in meetings this week');
+  });
+
+  void test('the meetings sort is offered only when the figures came for more than one person', () => {
+    const ada = person({ user_id: 'ada', name: 'Ada', meeting_minutes_week: 60 });
+    const bea = person({ user_id: 'bea', name: 'Bea', meeting_minutes_week: 300 });
+    const cal = person({ user_id: 'cal', name: 'Cal' });
+    assert.equal(meetingsSortOffered([ada, cal]), false);
+    assert.equal(meetingsSortOffered([ada, bea, cal]), true);
+    assert.deepEqual(
+      sortPeople([cal, ada, bea], 'meetings', null).map((p) => p.user_id),
+      ['bea', 'ada', 'cal'],
+    );
   });
 });

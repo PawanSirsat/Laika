@@ -196,6 +196,28 @@ export interface CapacityEntry {
   readonly activity_14d?: readonly number[];
   /** The same days by who did them, bookkeeping apart. Gated with `activity_14d`. */
   readonly activity_14d_split?: ActivitySplit;
+  /**
+   * Away now (LAI-1331), for a person whose availability the reader sees
+   * (D-137); `null` when neither is so. **Absent, not null**, for anyone else:
+   * render on the key being present.
+   */
+  readonly away?: CapacityAway | null;
+  /**
+   * Their meetings this week, in minutes, Monday to Sunday of their own week
+   * (LAI-1331). **Their time** (D-102): present only for *See everyone's
+   * analytics* — each one a logged look — and on the reader's own row.
+   */
+  readonly meeting_minutes_week?: number;
+}
+
+/**
+ * Why a person is away now (LAI-1331): the away period they set covering
+ * their today, and an Outlook out-of-office span covering now — each the last
+ * day of it, a calendar day in their own zone.
+ */
+export interface CapacityAway {
+  readonly own: { readonly until: string } | null;
+  readonly outlook: { readonly until: string } | null;
 }
 
 export interface CapacityView {

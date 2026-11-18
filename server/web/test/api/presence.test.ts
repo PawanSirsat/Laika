@@ -146,7 +146,18 @@ void describe('the capacity entry mirrors the server, optionality and all', () =
     // claim — "this person has logged nothing". Never `?? []`. The profile
     // kind, the 14-day series and its split follow `profile.read` and
     // `profile.activity.read` the same way (LAI-767, LAI-818).
-    const gated = ['activity_14d', 'activity_14d_split', 'profile_kind', 'unlisted'];
+    // LAI-1331's two follow D-137 and D-102 the same way: `away` is absent
+    // outside the reader's availability audience and `null` inside it when
+    // nobody is away; `meeting_minutes_week` is absent unless the reader may
+    // read that person's time.
+    const gated = [
+      'activity_14d',
+      'activity_14d_split',
+      'away',
+      'meeting_minutes_week',
+      'profile_kind',
+      'unlisted',
+    ];
     assert.deepEqual(optional(there), gated);
     assert.deepEqual(optional(here), gated);
   });
