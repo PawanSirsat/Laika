@@ -384,4 +384,36 @@ describe('the backfill (LAI-1335)', () => {
     });
     expect(h.db.select().from(timeEntries).all()).toHaveLength(1);
   });
+
+  it('a second request while one runs joins it — one run, both answered — and GET says it is running (review F1)', async () => {
+    fake.calendars.set('ada@example.test', [graphEvent(Date.UTC(2026, 10, 2, 9))]);
+    expect((await call('PUT', '/calendar', { ...SAVE, enabled: true })).status).toBe(200);
+    await settle();
+    const reads = fake.of('calendarView').length;
+    const release = fake.hold();
+    const first = call('POST', '/calendar/backfill', { days: 30 });
+    const running = async (): Promise<unknown> =>
+      ((await (await call('GET', '/calendar')).json()) as { backfill_running: unknown })
+        .backfill_running;
+    for (let i = 0; i < 50 && (await running()) === null; i += 1) {
+      await new Promise((done) => setTimeout(done, 0));
+    }
+    expect(await running()).toEqual({ days: 30, started_at: NOW });
+    const retry = call('POST', '/calendar/backfill', { days: 30 });
+    // Held until the retry has reached the service, which takes a few turns.
+    for (let i = 0; i < 20; i += 1) await new Promise((done) => setTimeout(done, 0));
+    release();
+    const [a, b] = await Promise.all([first, retry]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    const [one, two] = (await Promise.all([a.json(), b.json()])) as {
+      days: number;
+      result: unknown;
+      connection: { backfill_running: unknown };
+    }[];
+    expect(two?.result).toEqual(one?.result);
+    expect(one?.result).toMatchObject({ created: 1 });
+    expect(two?.connection.backfill_running).toBeNull();
+    expect(fake.of('calendarView')).toHaveLength(reads + 1);
+    expect(await running()).toBeNull();
+  });
 });

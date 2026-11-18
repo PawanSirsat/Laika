@@ -66,6 +66,18 @@ const MAX_PAGES = 20;
 
 const WEEK_MS = 7 * 86_400_000;
 
+function pagesFor(from: number, to: number): number {
+  return MAX_PAGES * Math.max(1, Math.ceil((to - from) / WEEK_MS));
+}
+
+/**
+ * The most events one read of `from`–`to` may return before it is refused —
+ * what the sync's links lookup may bind at once (LAI-1335 review F4).
+ */
+export function calendarViewMaxEvents(from: number, to: number): number {
+  return pagesFor(from, to) * PAGE_SIZE;
+}
+
 const LOGIN_ORIGIN = 'https://login.microsoftonline.com';
 const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 const GRAPH_ROOT = `${GRAPH_ORIGIN}/v1.0`;
@@ -455,7 +467,7 @@ export function graphClient(options: GraphClientOptions): GraphClient {
       let url: string | null =
         `${GRAPH_ROOT}/users/${encodeURIComponent(user)}/calendarView?${query.toString()}`;
       const events: GraphEvent[] = [];
-      const pages = MAX_PAGES * Math.max(1, Math.ceil((to - from) / WEEK_MS));
+      const pages = pagesFor(from, to);
       for (let n = 0; n < pages; n += 1) {
         if (url === null) return { events };
         const answer = await read(url, access);

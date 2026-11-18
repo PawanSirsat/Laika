@@ -11,6 +11,7 @@ import {
   CALENDAR_BACKFILL_MAX_DAYS,
   CALENDAR_RULES_MAX,
   CALENDAR_SYNC_EVERY_MINUTES,
+  calendarBackfillRunning,
   calendarSyncInFlight,
   type CalendarSyncDeps,
   type CalendarSyncResultView,
@@ -72,6 +73,14 @@ export interface CalendarTestView {
   roles: string[];
 }
 
+/** A backfill going now (LAI-1335 review F1). */
+export interface CalendarBackfillRunningView {
+  /** The days before today it reaches back. */
+  days: number;
+  /** When it began, unix ms. */
+  started_at: number;
+}
+
 /** `GET /api/v1/org/calendar`, and the answer of every write here (§6.4). */
 export interface CalendarSourceView {
   /** Tenant, client id and secret are saved. */
@@ -89,15 +98,24 @@ export interface CalendarSourceView {
   last_success_at: number | null;
   last_error: CalendarSyncErrorView | null;
   last_result: CalendarSyncResultView | null;
+  /**
+   * A backfill going now, or null: the card holds its own until it is done —
+   * a backfill asked for meanwhile joins it.
+   */
+  backfill_running: CalendarBackfillRunningView | null;
 }
 
 /** `POST /api/v1/org/calendar/backfill`'s answer (LAI-1335). */
 export interface CalendarBackfillView {
-  /** The days before today it reached back, as asked. */
+  /**
+   * The days before today it reached back: as asked, or more when it joined
+   * a backfill already running that reached further.
+   */
   days: number;
   /**
-   * What it did — `null` when a read failed, which the connection's
-   * `last_error` says, or the switch went off while it ran.
+   * What it did — what was written before it stopped, when the switch went
+   * off between two people (`last_error` `stopped_partway`) — or `null` when a
+   * read failed, which the connection's `last_error` says, or it wrote nothing.
    */
   result: CalendarSyncResultView | null;
   /** The connection afterwards, as `GET /org/calendar` answers it. */
@@ -149,6 +167,11 @@ function rulesView(db: Db, rules: readonly StoredRule[]): CalendarRuleView[] {
   }));
 }
 
+function backfillRunningOf(db: Db): CalendarBackfillRunningView | null {
+  const running = calendarBackfillRunning(db);
+  return running === null ? null : { days: running.days, started_at: running.startedAt };
+}
+
 function viewOf(db: Db): CalendarSourceView {
   const row = db.select().from(orgCalendarSource).get();
   if (row === undefined) {
@@ -165,6 +188,7 @@ function viewOf(db: Db): CalendarSourceView {
       last_success_at: null,
       last_error: null,
       last_result: null,
+      backfill_running: backfillRunningOf(db),
     };
   }
   const roles = jsonOf<string[]>(row.lastTestRolesJson);
@@ -185,16 +209,20 @@ function viewOf(db: Db): CalendarSourceView {
     last_error:
       row.lastErrorCode === null ? null : { code: row.lastErrorCode, message: row.lastError ?? '' },
     last_result: resultOf(row.lastResultJson),
+    backfill_running: backfillRunningOf(db),
   };
 }
 
 /**
  * The last run's counts, as served: a result stored before LAI-1331 counted
- * no out-of-office spans, so its `away` is `0` rather than missing.
+ * no out-of-office spans, and one before LAI-1335 no older entries kept, so
+ * each is `0` rather than missing.
  */
 function resultOf(json: string | null): CalendarSyncResultView | null {
   const stored = jsonOf<CalendarSyncResultView>(json);
-  return stored === null ? null : { ...stored, away: stored.away ?? 0 };
+  return stored === null
+    ? null
+    : { ...stored, away: stored.away ?? 0, kept_older: stored.kept_older ?? 0 };
 }
 
 /** `GET /api/v1/org/calendar`. */
@@ -422,8 +450,9 @@ export async function syncCalendarNow(
  * `POST /api/v1/org/calendar/backfill` (LAI-1335): the sync over the last
  * `days` days for every member — from the start of the day that many days
  * before today to the end of tomorrow, each in their own zone — under the
- * sync's every rule, and answer what it did. It waits for a sync already
- * running, never beside it.
+ * sync's every rule, only adding before yesterday, and answer what it did. It
+ * joins a backfill already running that reaches as far back, and otherwise
+ * waits for a sync already running, never beside it.
  *
  * `days` is a whole number from 1 to 90, or `422 days_out_of_range` (with
  * `min` and `max`); `409 calendar_off` unless the connection is saved and its
@@ -452,10 +481,11 @@ export async function backfillCalendar(
     throw new ApiError('conflict', 'The Outlook calendar sync is off', { reason: 'calendar_off' });
   }
   assertTimeOn(db);
-  const outcome = await runCalendarBackfill(db, serverSecret, days, deps);
+  const run = await runCalendarBackfill(db, serverSecret, days, deps);
   return {
-    days,
-    result: outcome.kind === 'synced' ? outcome.result : null,
+    days: run.days,
+    result:
+      run.outcome.kind === 'synced' || run.outcome.kind === 'stopped' ? run.outcome.result : null,
     connection: viewOf(db),
   };
 }

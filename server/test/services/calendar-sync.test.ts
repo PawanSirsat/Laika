@@ -15,6 +15,8 @@ import {
 } from '../../src/db/schema.ts';
 import { encryptSecret } from '../../src/secrets.ts';
 import {
+  CALENDAR_BACKFILL_MAX_DAYS,
+  calendarBackfillRunning,
   calendarSyncInFlight,
   type CalendarSyncOutcome,
   classify,
@@ -23,7 +25,7 @@ import {
   type StoredRule,
   windowFor,
 } from '../../src/services/calendar-sync.ts';
-import { type GraphEvent } from '../../src/services/microsoft-graph.ts';
+import { calendarViewMaxEvents, type GraphEvent } from '../../src/services/microsoft-graph.ts';
 import { patchEntry, retireEntry } from '../../src/services/time-entries.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 import {
@@ -121,13 +123,21 @@ function sync(now = NOW, f: FakeGraph = fake): Promise<CalendarSyncOutcome> {
   });
 }
 
-function backfill(days: number, now = NOW, f: FakeGraph = fake): Promise<CalendarSyncOutcome> {
+function backfillRun(days: number, now = NOW, f: FakeGraph = fake) {
   return runCalendarBackfill(t.db, SECRET, days, {
     fetchImpl: f.fetchImpl,
     now: () => now,
     sleep: () => Promise.resolve(),
     timeoutMs: 50,
   });
+}
+
+async function backfill(
+  days: number,
+  now = NOW,
+  f: FakeGraph = fake,
+): Promise<CalendarSyncOutcome> {
+  return (await backfillRun(days, now, f)).outcome;
 }
 
 function entriesOf(userId: string) {
@@ -1248,7 +1258,15 @@ describe('a backfill (LAI-1335)', () => {
     const most = windowFor('Europe/London', at, 90);
     expect(new Date(most.from).toISOString()).toBe('2026-08-19T23:00:00.000Z');
     expect(most.days.size).toBe(92);
-    expect(windowFor('Europe/London', at, 1)).toEqual(windowFor('Europe/London', at));
+    // A one-day backfill reads the regular window, and only adds before yesterday.
+    const one = windowFor('Europe/London', at, 1);
+    const regular = windowFor('Europe/London', at);
+    expect([one.from, one.to, [...one.days]]).toEqual([
+      regular.from,
+      regular.to,
+      [...regular.days],
+    ]);
+    expect([one.addOnlyBefore, regular.addOnlyBefore]).toEqual(['2026-11-17', null]);
   });
 
   it('holds back the closed period and a full day, and leaves a person’s edit and delete alone', async () => {
@@ -1326,7 +1344,52 @@ describe('a backfill (LAI-1335)', () => {
     expect(synced(await sync(NOW + 2))).toMatchObject({ created: 0, removed: 0, unchanged: 1 });
   });
 
-  it('retires only inside the window it read completely', async () => {
+  it('before yesterday only adds: an older entry whose meeting changed or went stays as it was; yesterday to tomorrow keep every rule (review F2)', async () => {
+    const series = 'series-planning';
+    const older = graphEvent(nineOn(2), { id: 'occ-2', iCalUId: series, subject: 'Planning' });
+    const olderGone = graphEvent(nineOn(5), { subject: 'Gone later' });
+    const yesterdayGone = graphEvent(nineOn(17), { subject: 'Yesterday, gone later' });
+    const tomorrow = graphEvent(nineOn(19), { subject: 'Tomorrow' });
+    fake.calendars.set('ada@kvelld.example', [older, olderGone, yesterdayGone, tomorrow]);
+    connect();
+    expect(synced(await backfill(30))).toMatchObject({ created: 4 });
+
+    // The organiser changes the series since; two meetings go; a new older one appears.
+    fake.calendars.set('ada@kvelld.example', [
+      {
+        ...older,
+        subject: 'Planning (new series)',
+        start: graphTime(nineOn(2) + 3_600_000),
+        end: graphTime(nineOn(2) + 7_200_000),
+      },
+      { ...tomorrow, subject: 'Tomorrow (moved)' },
+      graphEvent(nineOn(3), { subject: 'New, older' }),
+    ]);
+    expect(synced(await backfill(30, NOW + 1))).toMatchObject({
+      created: 1,
+      updated: 1,
+      removed: 1,
+      kept_older: 2,
+    });
+    expect(
+      entriesOf(ada).map((e) => [e.title, e.day, e.startedAt, e.deletedAt, e.revision]),
+    ).toEqual([
+      ['Planning', '2026-11-02', nineOn(2), null, 1],
+      ['New, older', '2026-11-03', nineOn(3), null, 1],
+      ['Gone later', '2026-11-05', nineOn(5), null, 1],
+      ['Yesterday, gone later', '2026-11-17', nineOn(17), NOW + 1, 2],
+      ['Tomorrow (moved)', '2026-11-19', nineOn(19), null, 2],
+    ]);
+    // Again: nothing more, the older two still counted as kept.
+    expect(synced(await backfill(30, NOW + 2))).toMatchObject({
+      created: 0,
+      updated: 0,
+      removed: 0,
+      kept_older: 2,
+    });
+  });
+
+  it('retires an out-of-office span only inside the window it read whole', async () => {
     const away = graphEvent(Date.UTC(2026, 9, 26), {
       isAllDay: true,
       minutes: 1440,
@@ -1334,29 +1397,73 @@ describe('a backfill (LAI-1335)', () => {
       isOrganizer: true,
       responseStatus: { response: 'organizer' },
     });
-    fake.calendars.set('ada@kvelld.example', [
-      graphEvent(nineInOctober(25), { subject: 'Older' }),
-      graphEvent(nineOn(1), { subject: 'Newer' }),
-      away,
-    ]);
+    fake.calendars.set('ada@kvelld.example', [away]);
     connect();
-    expect(synced(await backfill(30))).toMatchObject({ created: 2, away: 1 });
+    expect(synced(await backfill(30))).toMatchObject({ away: 1 });
 
     fake.calendars.set('ada@kvelld.example', []);
-    // Ten days back is 8 November: neither is in it, so neither is gone.
-    expect(synced(await backfill(10, NOW + 1))).toMatchObject({ removed: 0 });
-    expect(synced(await sync(NOW + 2))).toMatchObject({ removed: 0 });
+    // Ten days back is 8 November: the 26 October span is not in it, so not gone.
+    synced(await backfill(10, NOW + 1));
+    synced(await sync(NOW + 2));
     expect(awayOf(ada)).toEqual([expect.objectContaining({ retiredAt: null })]);
-    // Twenty days back is 29 October: 1 November's goes, 25 October's stays.
-    expect(synced(await backfill(20, NOW + 3))).toMatchObject({ removed: 1 });
-    expect(entriesOf(ada).map((e) => [e.title, e.deletedAt])).toEqual([
-      ['Older', null],
-      ['Newer', NOW + 3],
+    // Thirty days back reads 26 October whole: the span goes.
+    synced(await backfill(30, NOW + 3));
+    expect(awayOf(ada)).toEqual([expect.objectContaining({ retiredAt: NOW + 3 })]);
+  });
+
+  it('joins a backfill already running that reaches as far back, and answers its days; a longer one waits (review F1)', async () => {
+    fake.calendars.set('ada@kvelld.example', [graphEvent(nineOn(2))]);
+    connect();
+    const release = fake.hold();
+    const first = backfillRun(30);
+    expect(calendarBackfillRunning(t.db)).toEqual({ days: 30, startedAt: NOW });
+    // The retry a proxy's 504 makes, and a shorter one: both ride the first.
+    const retry = backfillRun(30);
+    const shorter = backfillRun(7);
+    const longer = backfillRun(60, NOW + 1);
+    await new Promise((done) => setTimeout(done, 0));
+    release();
+    const [a, b, c, d] = await Promise.all([first, retry, shorter, longer]);
+    expect(b.outcome).toBe(a.outcome);
+    expect(c.outcome).toBe(a.outcome);
+    expect([a.days, b.days, c.days, d.days]).toEqual([30, 30, 30, 60]);
+    expect(synced(a.outcome)).toMatchObject({ created: 1 });
+    expect(synced(d.outcome)).toMatchObject({ created: 0, unchanged: 1 });
+    // The first run's three reads, then the 60-day one's: one run each.
+    expect(starts().map((at) => at.slice(0, 7))).toEqual([
+      '2026-10',
+      '2026-10',
+      '2026-10',
+      '2026-09',
+      '2026-09',
+      '2026-09',
     ]);
-    expect(awayOf(ada)).toEqual([expect.objectContaining({ retiredAt: null })]);
-    // Thirty days back reads 26 October whole: the span goes too.
-    expect(synced(await backfill(30, NOW + 4))).toMatchObject({ removed: 1 });
-    expect(awayOf(ada)).toEqual([expect.objectContaining({ retiredAt: NOW + 4 })]);
+    expect(calendarBackfillRunning(t.db)).toBeNull();
+  });
+
+  it('keeps a 90-day read’s most events, plus the links lookup’s other bounds, under SQLite’s bound variables (review F4)', () => {
+    // Every zone a member may have, at a clock change and not: the widest window.
+    const most = Math.max(
+      ...[
+        'UTC',
+        'Africa/Johannesburg',
+        'Europe/London',
+        'Pacific/Kiritimati',
+        'Pacific/Pago_Pago',
+      ].map((zone) => {
+        const w = windowFor(zone, Date.UTC(2026, 9, 25, 12), CALENDAR_BACKFILL_MAX_DAYS);
+        return calendarViewMaxEvents(w.from, w.to);
+      }),
+    );
+    expect(most).toBe(28_000);
+    // The links lookup binds every id read, plus the person and the window's
+    // two ends. SQLite must take that many — and does refuse more than its
+    // limit, so this is a measure, not a hope: raise the days or the page cap
+    // past it and this fails.
+    const bound = (n: number) =>
+      `SELECT 1 WHERE 1 IN (${Array.from({ length: n }, () => '?').join(',')})`;
+    expect(() => t.sqlite.prepare(bound(most + 3))).not.toThrow();
+    expect(() => t.sqlite.prepare(bound(32_767))).toThrow(/too many SQL variables/);
   });
 
   it('waits for a regular run already going, then reads its own window — never beside it', async () => {
@@ -1434,7 +1541,7 @@ describe('a backfill (LAI-1335)', () => {
     expect(t.db.select().from(timeEntries).all()).toHaveLength(6);
   });
 
-  it('stops at the switch turned off between two people, keeping who was written, and records no counts', async () => {
+  it('stops at the switch turned off between two people, keeping who was written, and records stopped_partway with the counts so far (review F5)', async () => {
     for (const email of EMAILS) fake.calendars.set(email, [graphEvent(nineOn(2))]);
     connect();
     let on = true;
@@ -1448,9 +1555,34 @@ describe('a backfill (LAI-1335)', () => {
     setImmediate(look);
     const outcome = await backfill(30);
     on = false;
-    expect(outcome).toEqual({ kind: 'skipped' });
+    expect(outcome).toEqual({
+      kind: 'stopped',
+      result: expect.objectContaining({ people: 1, meetings: 1, created: 1 }) as unknown,
+    });
     expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
-    expect(sourceRow()).toMatchObject({ lastResultJson: null, lastSuccessAt: null });
+    const row = sourceRow();
+    expect(row).toMatchObject({
+      lastAttemptAt: NOW,
+      lastSuccessAt: null,
+      lastErrorCode: 'stopped_partway',
+    });
+    expect(row?.lastError).toMatch(/stopped part-way/);
+    expect(JSON.parse(row?.lastResultJson ?? 'null')).toEqual(
+      (outcome as { result: unknown }).result,
+    );
+  });
+
+  it('records nothing when the switch went off before anyone was written', async () => {
+    for (const email of EMAILS) fake.calendars.set(email, [graphEvent(nineOn(2))]);
+    connect();
+    const release = fake.hold();
+    const run = backfill(30);
+    await new Promise((done) => setTimeout(done, 0));
+    t.db.update(orgCalendarSource).set({ enabled: 0 }).run();
+    release();
+    expect(await run).toEqual({ kind: 'skipped' });
+    expect(t.db.select().from(timeEntries).all()).toEqual([]);
+    expect(sourceRow()).toMatchObject({ lastAttemptAt: null, lastErrorCode: null });
   });
 
   it('writes nothing when one person’s read fails, and records why', async () => {

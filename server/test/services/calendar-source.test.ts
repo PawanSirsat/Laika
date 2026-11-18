@@ -109,6 +109,7 @@ describe('reading it', () => {
       last_success_at: null,
       last_error: null,
       last_result: null,
+      backfill_running: null,
     });
   });
 
@@ -367,19 +368,23 @@ describe('sync now and disconnect', () => {
     expect(view.last_result).toMatchObject({ people: 1, no_mailbox: 0 });
   });
 
-  it('serves a result stored before LAI-1331 with no out-of-office count as 0, and a new one as counted', () => {
+  it('serves a result stored before LAI-1331 or LAI-1335 with no out-of-office or older-kept count as 0, and a new one as counted', () => {
     saveCalendarSource(t.db, owner, SECRET, SAVE);
     const old = { people: 2, no_mailbox: 0, mailbox_denied: 0, mailbox_refused: 0, meetings: 3 };
     t.db
       .update(orgCalendarSource)
       .set({ lastResultJson: JSON.stringify(old) })
       .run();
-    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 0 });
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 0, kept_older: 0 });
     t.db
       .update(orgCalendarSource)
-      .set({ lastResultJson: JSON.stringify({ ...old, away: 2 }) })
+      .set({ lastResultJson: JSON.stringify({ ...old, away: 2, kept_older: 3 }) })
       .run();
-    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 2 });
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({
+      ...old,
+      away: 2,
+      kept_older: 3,
+    });
   });
 
   it('forgets the credentials and keeps the meetings already logged', async () => {
@@ -477,5 +482,25 @@ describe('a backfill (LAI-1335)', () => {
     const failed = await backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps(fake, NOW + 1));
     expect(failed.result).toBeNull();
     expect(failed.connection.last_error).toMatchObject({ code: 'unreachable' });
+  });
+});
+
+describe('a backfill going (LAI-1335 review F1)', () => {
+  it('is served while it runs, a second one joins it, and it is gone when done', async () => {
+    fake.calendars.set('owner@example.test', [graphEvent(Date.UTC(2026, 10, 2, 9))]);
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    t.db.update(orgCalendarSource).set({ enabled: 1 }).run();
+    const release = fake.hold();
+    const first = backfillCalendar(t.db, owner, SECRET, { days: 30 }, deps());
+    expect(getCalendarSource(t.db, owner).backfill_running).toEqual({ days: 30, started_at: NOW });
+    const retry = backfillCalendar(t.db, owner, SECRET, { days: 14 }, deps());
+    release();
+    const [a, b] = await Promise.all([first, retry]);
+    expect(b.days).toBe(30);
+    expect(b.result).toEqual(a.result);
+    expect(a.result).toMatchObject({ created: 1 });
+    expect(fake.of('calendarView')).toHaveLength(1);
+    expect(a.connection.backfill_running).toBeNull();
+    expect(getCalendarSource(t.db, owner).backfill_running).toBeNull();
   });
 });

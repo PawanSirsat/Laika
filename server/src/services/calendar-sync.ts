@@ -98,12 +98,19 @@ import { closedThrough } from './time-solidtime.ts';
  * {@link runCalendarBackfill} (LAI-1335) is the same sync over a longer
  * window — the start of the day N days before today, N 1 to 90, to the end of
  * tomorrow — under every rule above: the closed period and a full day held
- * back, a person's edit or delete left alone, one entry per event. It shares
- * the one flight: it waits for a run already going and then runs, and a tick
- * or *Sync now* that comes meanwhile joins it, its window holding theirs. Its
- * reads are as whole as the regular run's; **its writes go a person at a
- * time**, with the server's turn between them, so 90 days of every member is
- * never one long blocking pass.
+ * back, a person's edit or delete left alone, one entry per event. **Before
+ * yesterday it only adds** (review F2, CHIEF's decision): a meeting with no
+ * entry gets one, and an entry already there is never changed or retired, so
+ * a series its organiser changed later cannot rewrite weeks nobody touched.
+ * Yesterday to tomorrow keep the regular run's every rule.
+ *
+ * It shares the one flight: it waits for a run already going and then runs;
+ * a tick or *Sync now* that comes meanwhile joins it, its window holding
+ * theirs; and **a backfill asked for while one reaching as far back runs
+ * joins that one** — a retry after a proxy gave up on the first request is
+ * that request, not a second run (review F1). Its reads are as whole as the
+ * regular run's; **its writes go a person at a time**, with the server's turn
+ * between them, so 90 days of every member is never one long blocking pass.
  */
 
 /** How often the scheduler syncs, and what `GET /org/calendar` says it does. */
@@ -152,6 +159,11 @@ export interface CalendarSyncResultView {
   unchanged: number;
   /** Entries the person changed themselves, left alone. */
   kept_edits: number;
+  /**
+   * A backfill's (review F2): entries before yesterday whose meeting has
+   * changed or gone since, left as they were — before yesterday it only adds.
+   */
+  kept_older: number;
   /** Meetings not logged, changed or retired: the day already full, or in the closed period. */
   skipped: number;
   /** Out-of-office spans read — kept as away (§4.107), never as time. */
@@ -162,7 +174,12 @@ export type CalendarSyncOutcome =
   /** Nothing to do: no connection, the switch off, no secret, Time off, or it changed mid-run. */
   | { kind: 'skipped' }
   | { kind: 'failed'; code: CalendarSyncErrorCode }
-  | { kind: 'synced'; result: CalendarSyncResultView };
+  | { kind: 'synced'; result: CalendarSyncResultView }
+  /**
+   * A backfill the switch stopped between two people (review F5): `result` is
+   * what was written before it, recorded as `stopped_partway`.
+   */
+  | { kind: 'stopped'; result: CalendarSyncResultView };
 
 export interface CalendarSyncDeps {
   /** Injected by every test: **no test makes a real call** to Microsoft. */
@@ -182,6 +199,8 @@ export const CALENDAR_ERROR_TEXT: Readonly<Record<CalendarSyncErrorCode, string>
     'The app may not read calendars: an admin grants it Calendars.Read in Microsoft Entra.',
   unreachable: 'Microsoft could not be reached. The next sync will try again.',
   bad_answer: 'Microsoft answered something Laika could not read. Nothing was changed.',
+  stopped_partway:
+    'A backfill stopped part-way: the switch was turned off while it ran. The people before that were written.',
 };
 
 /** `rules_json` as stored, defensively: a row that is not a rule is not one. */
@@ -207,8 +226,19 @@ export function parseRules(json: string): StoredRule[] {
   });
 }
 
-/** The run going against each database: the regular one or a backfill. */
-const inFlight = new WeakMap<Db, Promise<CalendarSyncOutcome>>();
+/** A backfill going now: the days it reaches back, and when it began (unix ms). */
+export interface CalendarBackfillRunning {
+  days: number;
+  startedAt: number;
+}
+
+/** The run going against each database: the regular one, or a backfill. */
+interface Flight {
+  run: Promise<CalendarSyncOutcome>;
+  backfill: CalendarBackfillRunning | null;
+}
+
+const inFlight = new WeakMap<Db, Flight>();
 
 /**
  * The app token, kept per database between runs — what the scheduler and the
@@ -226,11 +256,15 @@ export function graphTokenCache(db: Db): Map<string, GraphToken> {
   return cache;
 }
 
-function startRun(db: Db, sync: () => Promise<CalendarSyncOutcome>): Promise<CalendarSyncOutcome> {
+function startRun(
+  db: Db,
+  backfill: CalendarBackfillRunning | null,
+  sync: () => Promise<CalendarSyncOutcome>,
+): Promise<CalendarSyncOutcome> {
   const run = sync().finally(() => {
     inFlight.delete(db);
   });
-  inFlight.set(db, run);
+  inFlight.set(db, { run, backfill });
   return run;
 }
 
@@ -244,21 +278,28 @@ export function runCalendarSync(
   deps: CalendarSyncDeps = {},
 ): Promise<CalendarSyncOutcome> {
   const running = inFlight.get(db);
-  if (running !== undefined) return running;
-  return startRun(db, () => syncCalendars(db, serverSecret, deps));
+  if (running !== undefined) return running.run;
+  return startRun(db, null, () => syncCalendars(db, serverSecret, deps));
+}
+
+/** What a backfill answers: the days the run it rode reached back, and how it went. */
+export interface CalendarBackfillRun {
+  days: number;
+  outcome: CalendarSyncOutcome;
 }
 
 /**
- * Backfill the last `days` days (LAI-1335): wait for whatever run is going —
- * never beside it — then run the sync over the longer window. Joined, while
- * it runs, by the scheduler's tick and *Sync now*.
+ * Backfill the last `days` days (LAI-1335): join a backfill already going
+ * that reaches at least as far back (review F1), else wait for whatever run
+ * is going — never beside it — then run the sync over the longer window.
+ * Joined, while it runs, by the scheduler's tick and *Sync now*.
  */
 export async function runCalendarBackfill(
   db: Db,
   serverSecret: string,
   days: number,
   deps: CalendarSyncDeps = {},
-): Promise<CalendarSyncOutcome> {
+): Promise<CalendarBackfillRun> {
   if (!Number.isInteger(days) || days < 1 || days > CALENDAR_BACKFILL_MAX_DAYS) {
     throw new Error(`unreachable: a backfill of ${String(days)} days`);
   }
@@ -266,29 +307,51 @@ export async function runCalendarBackfill(
   for (;;) {
     const running = inFlight.get(db);
     if (running === undefined) {
-      return startRun(db, () => syncCalendars(db, serverSecret, deps, days));
+      const backfill = { days, startedAt: (deps.now ?? Date.now)() };
+      const run = startRun(db, backfill, () => syncCalendars(db, serverSecret, deps, days));
+      return { days, outcome: await run };
     }
-    await running.catch(() => undefined);
+    if (running.backfill !== null && running.backfill.days >= days) {
+      return { days: running.backfill.days, outcome: await running.run };
+    }
+    await running.run.catch(() => undefined);
   }
 }
 
 /** The run going now, if one is — so a caller can wait for it to finish. */
 export function calendarSyncInFlight(db: Db): Promise<CalendarSyncOutcome> | undefined {
-  return inFlight.get(db);
+  return inFlight.get(db)?.run;
+}
+
+/** The backfill going now, if one is — what the card says while it runs (review F1). */
+export function calendarBackfillRunning(db: Db): CalendarBackfillRunning | null {
+  return inFlight.get(db)?.backfill ?? null;
 }
 
 const DAY_MS = 86_400_000;
 
+/** One member's window, in their zone. */
+export interface CalendarWindow {
+  /** Unix ms: the start of the first day read. */
+  from: number;
+  /** Unix ms: the end of tomorrow. */
+  to: number;
+  /** Every day in it. */
+  days: Set<string>;
+  /**
+   * A backfill's: the days before this one it only adds to, never changing or
+   * retiring an entry there (review F2) — yesterday. Null for the regular run.
+   */
+  addOnlyBefore: string | null;
+}
+
 /**
- * One member's window: the start of the day `back` days before today — of
- * yesterday unless a backfill says otherwise — to the end of tomorrow, in
- * their zone.
+ * One member's window: the start of yesterday to the end of tomorrow, in
+ * their zone — or, for a backfill of `backfillDays`, from the start of the day
+ * that many days before today.
  */
-export function windowFor(
-  zone: string,
-  now: number,
-  back = 1,
-): { from: number; to: number; days: Set<string> } {
+export function windowFor(zone: string, now: number, backfillDays?: number): CalendarWindow {
+  const back = backfillDays ?? 1;
   const today = dayIn(zone, now);
   const todayStart = startOfDay(zone, now);
   // Any instant 36 hours into a day is inside the next one, whatever the
@@ -300,7 +363,7 @@ export function windowFor(
   const to = startOfDay(zone, tomorrow + 36 * 3_600_000);
   const days = new Set<string>();
   for (let n = -back; n <= 1; n += 1) days.add(addDays(today, n));
-  return { from, to, days };
+  return { from, to, days, addOnlyBefore: backfillDays === undefined ? null : addDays(today, -1) };
 }
 
 /**
@@ -425,7 +488,7 @@ function recordFailure(
 interface PersonRead {
   userId: string;
   zone: string;
-  window: { from: number; to: number; days: Set<string> };
+  window: CalendarWindow;
   /** Their events, or why their mailbox was skipped. */
   read: CalendarRead;
 }
@@ -567,6 +630,7 @@ function emptyResult(): CalendarSyncResultView {
     removed: 0,
     unchanged: 0,
     kept_edits: 0,
+    kept_older: 0,
     skipped: 0,
     away: 0,
   };
@@ -669,13 +733,20 @@ function yieldTurn(): Promise<void> {
   return new Promise((done) => setImmediate(done));
 }
 
+/** The connection the read was made with is still saved, on or off. */
+function sameConnection(tx: Tx, source: OrgCalendarSource): boolean {
+  return tx.select().from(orgCalendarSource).get()?.secretEnc === source.secretEnc;
+}
+
 /**
  * A backfill's (LAI-1335): **one transaction per person**, and the server's
  * turn between them — 90 days of everyone in one `BEGIN IMMEDIATE` would hold
  * the writer, and the event loop, for the whole of it. Each person's write
- * rests on their own complete read, so a person written is right on its own;
- * the switch turned off between two people stops the rest, and the counts are
- * recorded only when everyone was written.
+ * rests on their own complete read, so a person written is right on its own.
+ * The switch turned off between two people stops the rest: with anyone
+ * written, the connection records `stopped_partway` and the counts so far
+ * (review F5); with nobody, nothing, as the regular run. Disconnected, or
+ * saved with other credentials meanwhile, nothing is recorded.
  */
 async function reconcilePaced(
   db: Db,
@@ -684,16 +755,40 @@ async function reconcilePaced(
   now: number,
 ): Promise<CalendarSyncOutcome> {
   const result = emptyResult();
+  let written = 0;
   for (const read of reads) {
     await yieldTurn();
     const done = db.transaction((tx) => writeReads(tx, db, source, [read], now, result), {
       behavior: 'immediate',
     });
-    if (!done) return { kind: 'skipped' };
+    if (!done) {
+      if (written === 0) return { kind: 'skipped' };
+      const recorded = db.transaction(
+        (tx) => {
+          if (!sameConnection(tx, source)) return false;
+          tx.update(orgCalendarSource)
+            .set({
+              lastAttemptAt: now,
+              lastErrorCode: 'stopped_partway',
+              lastError: CALENDAR_ERROR_TEXT.stopped_partway,
+              lastResultJson: JSON.stringify(result),
+              updatedAt: now,
+            })
+            .where(eq(orgCalendarSource.orgId, source.orgId))
+            .run();
+          return true;
+        },
+        { behavior: 'immediate' },
+      );
+      return recorded ? { kind: 'stopped', result } : { kind: 'skipped' };
+    }
+    written += 1;
   }
+  // Everyone written: their counts are the last sync's, even were the switch
+  // turned off after the last of them.
   const done = db.transaction(
     (tx) => {
-      if (!stillOn(tx, source)) return false;
+      if (!sameConnection(tx, source)) return false;
       recordSuccess(tx, source, now, result);
       return true;
     },
@@ -714,6 +809,8 @@ function reconcilePerson(
 ): void {
   const { userId, zone, window } = read;
   const isClosed = (day: string): boolean => closed !== null && day <= closed;
+  const addOnly = (day: string): boolean =>
+    window.addOnlyBefore !== null && day < window.addOnlyBefore;
   // The last of each id: a calendar that shifted between pages may repeat one.
   const events = new Map(readEvents.map((e) => [e.id, e]));
 
@@ -841,6 +938,13 @@ function reconcilePerson(
       result.unchanged += 1;
       continue;
     }
+    // Before yesterday a backfill only adds (review F2): the entry stays as
+    // it is, moved or retired as it was, whatever the meeting says now.
+    if (addOnly(fields.day)) {
+      setLink(e.id, {});
+      result.kept_older += 1;
+      continue;
+    }
     if (isClosed(entry.day)) {
       result.skipped += 1;
       continue;
@@ -870,6 +974,10 @@ function reconcilePerson(
     if (entry.deletedAt !== null || !untouched(link, entry)) continue;
     if (isClosed(entry.day)) {
       result.skipped += 1;
+      continue;
+    }
+    if (addOnly(entry.day)) {
+      result.kept_older += 1;
       continue;
     }
     const revision = retireEntry(tx, entry.id, userId, now);
@@ -973,7 +1081,7 @@ function reconcileAway(
 
 /** What a run changed, for the scheduler's `cron.job_ran` line. */
 export function changedBy(outcome: CalendarSyncOutcome): number {
-  if (outcome.kind !== 'synced') return 0;
+  if (outcome.kind !== 'synced' && outcome.kind !== 'stopped') return 0;
   const { created, updated, removed } = outcome.result;
   return created + updated + removed;
 }
