@@ -378,8 +378,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   );
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
-  // The store's origin joins `img-src` and `connect-src` only when attachments
-  // are on: the browser shows its images and uploads to it (D-150).
+  // The store's origin joins `img-src`, `media-src` and `connect-src` only when
+  // attachments are on: the browser shows its images, plays its recordings
+  // (D-162) and uploads to it (D-150).
   app.use(
     '*',
     createSecurityHeaders(
