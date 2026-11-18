@@ -2,7 +2,7 @@
 
 The `laika` CLI (`laika init`, `laika whoami`, `laika version`, `laika doctor`,
 `laika update`, `laika device pair`, `laika tool add`, `laika connect`,
-`laika activity`). Installed on PATH by `plugin/scripts/install.sh` from a
+`laika activity`, `laika attach`). Installed on PATH by `plugin/scripts/install.sh` from a
 Laika checkout.
 
 If you need a change here, write a task file in `.tasks/backlog/` with
@@ -276,12 +276,51 @@ board's compatibility answer and the update status (**Up to date / Update
 available / Update required for** *feature* **/ Version unknown / Could not
 check**), each saved agent credential — by **file name only, never its value**
 — and whether the board still accepts it, the session hooks, the legacy
-personal token in `~/.laika/env`, and which tools have a laika MCP entry.
-`--offline` makes no request at all. A board URL that carries a user, password,
+personal token in `~/.laika/env`, which tools have a laika MCP entry, and
+whether `laika attach` would work: the board's largest file (or attachments
+off), whether the credential it would use leads or belongs to a project, and
+whether the file store the board names answers from this machine — with `GET`s
+only. `--offline` makes no request at all. A board URL that carries a user, password,
 query or fragment is reported and never fetched.
 
 Exit codes: `0` nothing needs doing; `1` something needs action; `2` something
 could not be checked; `64` a wrong option.
+
+## `laika attach` — show a person the result (D-162, LAI-1351)
+
+```
+laika attach <TASK-KEY> <file…> [--caption "…"]… [--comment "text"] [--harness <tool>] [--json]
+laika attach --unlisted <repo> --project <slug> <file…> --comment "note" [--caption "…"]…
+```
+
+Puts files a person should see — screenshots, a generated sheet, a report, a
+short recording — on a task, **one caption per file, in one comment** that
+links them all. 1–20 files, each up to the board's limit (`laika doctor` says
+what it is).
+
+- **Checked here first, before anything is sent.** Any file with no NUL byte
+  is text and is scanned whatever it is called; an `.xlsx` or `.docx` is opened
+  (with Node's own `zlib`) and its cells and paragraphs are scanned; a file
+  named as a key (`*.pem`, `*.key`, `id_rsa`, `id_*`) is refused by its name.
+  The rules are the board's own, `src/secret-scan.ts` mirroring
+  `server/src/services/secret-scan.ts` word for word. A secret refuses the
+  whole command, naming the file, the kind of secret and the line or row —
+  never the value. **There is no override**: attach a masked copy.
+- **All or none.** Each file is uploaded into the task's project (create,
+  a plain `PUT` to the presigned URL with exactly its headers, complete — where
+  the board scans text again), and only the one comment links them to the
+  task. Any failure deletes the uploads already made.
+- **The credential** is the tool's own (`--harness`, else `LAIKA_AGENT_TOKEN`
+  with `LAIKA_AGENT_URL`, else Claude Code's when run inside it, else the only
+  tool here), so the files are attributed to the agent; your own token is the
+  fallback.
+- `--unlisted` logs **a new** unlisted finding holding the files, with
+  `--comment` as its note: the board links files to a finding only as it is
+  logged.
+
+Exit codes: `0` every file attached; `1` nothing was linked (refused or
+failed, said on stderr — and as `{ "ok": false, … }` with `--json`); `64` a
+wrong option.
 
 ## `laika update` — the checkout the board was built from (LAI-1051)
 
