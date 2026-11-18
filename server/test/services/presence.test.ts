@@ -8,6 +8,7 @@ import {
   analyticsViews,
   calendarAway,
   heartbeats,
+  orgCalendarSource,
   orgs,
   projects,
   sessions,
@@ -292,6 +293,22 @@ describe('away and meetings on Capacity (LAI-1331)', () => {
     // Ada and Cal share Laika with the admin; Bea shares no space with anyone.
     addMember(t.db, actor(adminId), 'laika', ada, 'member');
     addMember(t.db, actor(adminId), 'laika', cal, 'member');
+    // The Outlook connection, on: out of office is told only while it is read.
+    const org = t.db.select({ id: orgs.id }).from(orgs).get();
+    t.db
+      .insert(orgCalendarSource)
+      .values({
+        orgId: org?.id ?? '',
+        tenantId: 'contoso.onmicrosoft.com',
+        clientId: '00000000-0000-4000-8000-000000000000',
+        secretEnc: 'not-a-secret',
+        secretLast4: 'cret',
+        enabled: 1,
+        configuredBy: adminId,
+        configuredAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
   });
 
   const read = (reader: ResolvedActor, at = NOW) =>
@@ -381,6 +398,30 @@ describe('away and meetings on Capacity (LAI-1331)', () => {
     const asBea = read(actor(bea));
     expect(asBea.get(bea)?.away).toEqual({ own: null, outlook: { until: TODAY } });
     expect('away' in (asBea.get(cal) ?? {})).toBe(false);
+  });
+
+  it('tells an agent’s token nobody’s away, its own person’s included: reading availability is session only (D-131)', () => {
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: cal,
+        eventId: 'oof-1',
+        startsAt: NOW - 3_600_000,
+        endsAt: NOW + 3_600_000,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+    // The same owner signed in is told — so the token's silence is the gate.
+    expect(read(actor(adminId)).get(cal)?.away).toEqual({
+      own: null,
+      outlook: { until: TODAY },
+    });
+    const asToken = read(withToken(adminId));
+    expect(asToken.size).toBeGreaterThan(0);
+    for (const id of [adminId, ada, bea, cal]) {
+      expect('away' in (asToken.get(id) ?? {})).toBe(false);
+    }
   });
 
   it('gives everyone’s meetings this week to *See everyone’s analytics*, each a logged time look (D-102)', () => {

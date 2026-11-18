@@ -834,7 +834,11 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
 
   // Away (LAI-1331): the people whose availability the reader sees (D-137),
   // and for them both their own away period and Outlook's out of office.
-  const awaySeen = availabilityVisibleAmong(db, actor, ids);
+  // Reading availability is session only (D-131) and the audience asks no
+  // `can()` of its own, so `capacity.read` on an agent's token is told nobody's.
+  const awaySeen = can(actor, 'availability.read')
+    ? availabilityVisibleAmong(db, actor, ids)
+    : new Set<string>();
   const ownAway = availabilityFor(db, actor, [...awaySeen], now);
   const outlookAway = outlookAwayFor(db, [...awaySeen], now);
   // Meetings this week are time (D-102): the reader's own, and anyone else's
