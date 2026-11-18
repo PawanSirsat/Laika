@@ -186,7 +186,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const disconnect = (): void => {
     void confirm({
       title: 'Disconnect Outlook?',
-      body: 'Laika forgets the tenant, client ID and secret, and stops reading calendars. Meetings already logged stay on people’s days as their time.',
+      body: 'Laika forgets the tenant, client ID and secret, stops reading calendars, and stops showing anyone out of office from Outlook. Meetings already logged stay on people’s days as their time.',
       confirmLabel: 'Disconnect',
       danger: true,
     }).then((yes) => {
