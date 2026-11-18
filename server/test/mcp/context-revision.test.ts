@@ -270,9 +270,10 @@ describe('context_revision on every answer (census over the registry)', () => {
       ['ping_agent', () => ({ project: 'alpha', agent: pingable.agent.id }), 'alpha'],
       ['get_agent_capacity', () => ({ project: 'alpha', agent: pingable.agent.id }), 'alpha'],
     ];
-    // Refused by design on this org (time drafts are off), so there is no
-    // answer to stamp — and a refusal must stay §6.3's envelope, unstamped.
-    const refusedHere = new Set(['propose_time_entry']);
+    // Refused by design on this org — time drafts are off, and so is the file
+    // store (D-162) — so there is no answer to stamp, and a refusal must stay
+    // §6.3's envelope, unstamped.
+    const refusedHere = new Set(['propose_time_entry', 'request_upload', 'complete_upload']);
 
     const registry = (await client.listTools()).tools.map((t) => t.name).sort();
     expect([...steps.map(([name]) => name), ...refusedHere, ...AGENT_ONLY_TOOLS].sort()).toEqual(
@@ -297,6 +298,19 @@ describe('context_revision on every answer (census over the registry)', () => {
     const refused = await call(client, 'propose_time_entry', { minutes: 5 });
     expect(refused.isError).toBe(true);
     expect(payload(refused)).not.toHaveProperty('context_revision');
+    for (const [name, args] of [
+      [
+        'request_upload',
+        { task: ctx.key, filename: 'a.png', content_type: 'image/png', size_bytes: 3 },
+      ],
+      ['complete_upload', { attachment: '01AAAAAAAAAAAAAAAAAAAAAAAA' }],
+    ] as const) {
+      const off = await call(client, name, args);
+      expect(payload(off), name).toMatchObject({
+        error: { details: { reason: 'attachments_off' } },
+      });
+      expect(payload(off), name).not.toHaveProperty('context_revision');
+    }
 
     await client.close();
   });

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { handleMcpRequest } from '../../mcp/server.ts';
+import { type AttachmentsDeps } from '../../services/attachments.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
@@ -44,6 +45,8 @@ export interface McpRouteOptions {
   version: string;
   db: Db;
   sqlite: Database.Database;
+  /** The file store, for `request_upload` and `complete_upload` (D-162); absent is off. */
+  attachments?: AttachmentsDeps | undefined;
 }
 
 /**
@@ -92,6 +95,7 @@ export function mcpRoutes(options: McpRouteOptions): Hono<AppEnv> {
       db: options.db,
       sqlite: options.sqlite,
       log: c.get('log'),
+      attachments: options.attachments,
     });
   });
 

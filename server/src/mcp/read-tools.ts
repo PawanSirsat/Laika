@@ -3,6 +3,12 @@ import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { listProjectActivity } from '../services/activity.ts';
+import {
+  type AttachmentsDeps,
+  describeTaskFiles,
+  listTaskAttachments,
+  type TaskFile,
+} from '../services/attachments.ts';
 import { commentViews, listComments } from '../services/comments.ts';
 import { diffProjectContext, recordContextDelivery } from '../services/context-revisions.ts';
 import {
@@ -99,6 +105,8 @@ export interface ReadToolContext {
   db: Db;
   actor: ResolvedActor;
   now?: () => number;
+  /** The file store (D-150); absent or off, a task lists no files. */
+  attachments?: AttachmentsDeps | undefined;
 }
 
 /**
@@ -311,7 +319,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     {
       title: 'Get task context',
       description:
-        'Everything needed to start on one task in a single call. If a person sent it back from review, `send_back` comes first with their reason: read it before anything else, it is what to fix. Then the task — what it delivers and where each item stands, what it solves and unlocks — the proof attached to its latest finish (`evidence`), what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
+        'Everything needed to start on one task in a single call. If a person sent it back from review, `send_back` comes first with their reason: read it before anything else, it is what to fix. Then the task — what it delivers and where each item stands, what it solves and unlocks — the proof attached to its latest finish (`evidence`), its files (`attachments`: name, type, size, caption, URL and the round each was attached on), what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
       inputSchema: z.strictObject({ task: TASK_REF }),
     },
     ({ task }) => {
@@ -408,6 +416,17 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         }));
         const { done: subtasksDone, total: subtasksTotal } = subtaskProgress(subtasks);
 
+        // Its files (D-162): with the caption and the round each was attached
+        // on, both read from the text that attached it. None when the board
+        // has no store.
+        const files = describeTaskFiles(
+          (context.attachments?.config ?? null) === null
+            ? []
+            : listTaskAttachments(db, actor, context.attachments, view.id).data,
+          [view.description_md, view.acceptance_md, ...comments.map((c) => c.body_md)],
+          review.rounds,
+        );
+
         const markdown = [
           ...(sendBack === null
             ? []
@@ -445,6 +464,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           ...similarText(similar),
           `### Proof (${evidence === null ? 'none' : `round ${String(evidence.number)}`})`,
           evidenceText(evidence),
+          '',
+          `### Files (${String(files.length)})`,
+          filesText(files),
           '',
           '### Blocked by',
           bullets(
@@ -502,6 +524,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           similar,
           evidence,
           rounds: review.rounds.length,
+          attachments: files,
           blocked_by: view.blocked_by.map((id) => summarise(related.get(id), id)),
           blocks: view.blocks.map((id) => summarise(related.get(id), id)),
           discovered_from_chain: chain.map((t) => ({ key: t.key, title: t.title, id: t.id })),
@@ -586,7 +609,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           `to another task. A task assigned to you that is not started yet: \`update_status\` ` +
           `to \`in_progress\`. Name the branch after the key — \`${prefix}-42-short-name\`. ` +
           `Laika ties the tokens your session spends to the task you marked; work before it, or ` +
-          `on a branch without a key, stays unattributed.`;
+          `on a branch without a key, stays unattributed. Show your work: when a person needs ` +
+          `to see the result (UI changes, generated files), attach screenshots or outputs with ` +
+          `\`laika attach\` or \`request_upload\`, captioned. Never upload secrets.`;
 
         const markdown = [
           `## ${project}`,
@@ -897,6 +922,29 @@ function evidenceText(round: RoundView | null): string {
     ...(round.ci === null ? [] : [ciLine(round.ci)]),
   ];
   return bullets(lines, 'Finished with no proof attached.');
+}
+
+/**
+ * A task's files (D-162), one line each: the caption as a link, then what
+ * the file is, and the round that attached it.
+ */
+function filesText(files: readonly TaskFile[]): string {
+  return bullets(
+    files.map(
+      (f) =>
+        `[${f.caption ?? f.filename}](${f.url}) — \`${f.filename}\`, ${f.content_type}, ${bytesText(f.size_bytes)}${
+          f.round === null ? '' : `, round ${String(f.round)}`
+        }`,
+    ),
+    'No files. `request_upload` attaches one.',
+  );
+}
+
+/** Bytes as a person reads them: `812 B`, `14 KB`, `3.2 MB`. */
+function bytesText(bytes: number): string {
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${String(Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
