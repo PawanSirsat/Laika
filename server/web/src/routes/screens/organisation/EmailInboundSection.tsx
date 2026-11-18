@@ -370,10 +370,16 @@ function Ready({
         <Checkbox
           label="Require authenticated senders"
           checked={form.require_authenticated}
+          // Turning it off is an owner's decision (M2); anyone may turn it on.
+          disabled={form.require_authenticated && !settings.can_allow_unauthenticated}
           onChange={(on) => {
             onEdit({ require_authenticated: on });
           }}
-          help="Drop mail unless the receiving server shows an aligned DMARC, DKIM or SPF pass for the sender."
+          help={
+            settings.can_allow_unauthenticated
+              ? 'Drop mail unless the receiving server shows a DMARC, DKIM or SPF pass for the sender’s own domain. That proves the domain, not the person: anyone who can send as that domain can be written as any member there.'
+              : 'Drop mail unless the receiving server shows a DMARC, DKIM or SPF pass for the sender’s own domain. Only an owner can turn this off.'
+          }
         />
         <TextInput
           label="Receiving server (Authentication-Results)"
@@ -384,7 +390,11 @@ function Ready({
           autoComplete="off"
           appearance="code"
           optional
-          help="Only this server’s verdicts count. Empty reads the topmost header."
+          help={
+            settings.authserv_seen.length > 0
+              ? `Only this server’s verdicts count; without it every mail is dropped. Seen in recent mail: ${settings.authserv_seen.join(', ')}.`
+              : 'Only this server’s verdicts count; without it every mail is dropped. Send one mail to a space while the switch is off, and the server it names shows here.'
+          }
           error={problem('authserv_id')}
         />
         <PasswordInput
@@ -569,6 +579,11 @@ function RecentMail({
                   <span className="org-inbound-from">{senderLabel(row)}</span>
                   {row.project !== null && (
                     <span className="org-inbound-space">{row.project.name}</span>
+                  )}
+                  {row.auth === null && row.authserv_ids.length > 0 && (
+                    <code className="org-inbound-code org-inbound-auth" data-inbound-seen>
+                      named {row.authserv_ids.join(', ')}
+                    </code>
                   )}
                   {row.auth !== null && (
                     <code className="org-inbound-code org-inbound-auth">{row.auth}</code>

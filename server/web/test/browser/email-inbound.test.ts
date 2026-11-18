@@ -46,6 +46,7 @@ const row = (patch: Record<string, unknown>) => ({
   task_key: null,
   comment_id: null,
   auth: null,
+  authserv_ids: [] as string[],
   attachment_count: 0,
   ...patch,
 });
@@ -96,6 +97,9 @@ const UNSET = {
   webhook_url: 'https://ksage.kvelld.com/webhooks/email',
   own_address: 'ksage@kvelld.com',
   can_store_secrets: true,
+  can_switch_on: true,
+  can_allow_unauthenticated: true,
+  authserv_seen: [] as string[],
   example_domain: 'tasks.kvelld.com',
   updated_at: null,
   updated_by: null,
@@ -347,10 +351,23 @@ void describe('Organisation → Integrations: the Email to tasks card', () => {
       );
       assert.equal(await shown.getByRole('button', { name: /Copy the webhook token/ }).count(), 1);
       assert.equal(server.tokens.length, 1);
-      assert.equal(await badge(h).innerText(), 'off · ready');
       assert.equal(await card(h).getByRole('button', { name: 'Make a new token' }).count(), 1);
 
-      // Step 3: on.
+      // Step 3: the receiving server, read off a real delivery (M1) — until
+      // then nothing would be believed, so the switch still waits.
+      assert.equal(await badge(h).innerText(), 'not set up');
+      assert.equal(
+        await card(h).locator('[data-inbound-step]').innerText(),
+        'Name the receiving server first, from a real delivery.',
+      );
+      await card(h)
+        .getByLabel(/Receiving server/)
+        .fill('mx.brevo.com');
+      await save.click();
+      await until(async () => (await badge(h).innerText()) === 'off · ready');
+      assert.deepEqual(server.puts.at(-1)?.body, { authserv_id: 'mx.brevo.com' });
+
+      // Step 4: on.
       assert.equal(await toggle.isDisabled(), false);
       await toggle.click();
       await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
@@ -487,6 +504,58 @@ void describe('Organisation → Integrations: the Email to tasks card', () => {
       // In the app, not a reload: the click goes through the router.
       await link.click();
       await h.page.waitForURL((url) => url.pathname === '/board', { timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin: the switch is an owner’s to turn on, and so is authentication off (M2)', async () => {
+    const server = inboundServer({
+      ...READY,
+      can_switch_on: false,
+      can_allow_unauthenticated: false,
+    });
+    const h = await integrations(orgStub(server.settings));
+    try {
+      assert.equal(
+        await card(h).getByRole('switch', { name: 'Email to tasks on' }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await card(h).locator('[data-inbound-step]').innerText(),
+        'Only an owner can turn this on.',
+      );
+      const require = card(h).getByRole('checkbox', { name: 'Require authenticated senders' });
+      assert.equal(await require.isChecked(), true);
+      assert.equal(await require.isDisabled(), true);
+      assert.match(await card(h).innerText(), /Only an owner can turn this off\./);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no receiving server named: the switch waits, and the servers recent mail named are offered (M1)', async () => {
+    const server = inboundServer({
+      ...READY,
+      authserv_id: null,
+      authserv_seen: ['inbound1.brevo.example'],
+      recent: [row({ reason: 'switch_off', authserv_ids: ['inbound1.brevo.example'] })],
+    });
+    const h = await integrations(orgStub(server.settings));
+    try {
+      assert.equal(
+        await card(h).locator('[data-inbound-step]').innerText(),
+        'Name the receiving server first, from a real delivery.',
+      );
+      assert.equal(
+        await card(h).getByRole('switch', { name: 'Email to tasks on' }).isDisabled(),
+        true,
+      );
+      assert.match(await card(h).innerText(), /Seen in recent mail: inbound1\.brevo\.example\./);
+      assert.equal(
+        (await card(h).locator('[data-inbound-seen]').innerText()).trim(),
+        'named inbound1.brevo.example',
+      );
     } finally {
       await h.close();
     }

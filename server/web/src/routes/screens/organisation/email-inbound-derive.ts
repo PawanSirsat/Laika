@@ -100,19 +100,31 @@ export function inboundDirty(form: InboundForm, saved: EmailInboundSettings): bo
  * about turning it **on**: one already on can always be turned off.
  */
 export function switchBlocker(
-  settings: Pick<EmailInboundSettings, 'domain' | 'token_last4'>,
+  settings: Pick<
+    EmailInboundSettings,
+    'domain' | 'token_last4' | 'can_switch_on' | 'require_authenticated' | 'authserv_id'
+  >,
 ): string | null {
+  // Turning it on accepts D-155's residual risk: an owner's call (M2).
+  if (!settings.can_switch_on) return 'Only an owner can turn this on.';
   const domain = settings.domain !== null;
   const token = settings.token_last4 !== null;
   if (!domain && !token) return 'Save a receiving domain and make a webhook token first.';
   if (!domain) return 'Save a receiving domain first.';
   if (!token) return 'Make a webhook token first.';
+  // With no server named nothing is believed, so every mail would be dropped (M1).
+  if (settings.require_authenticated && settings.authserv_id === null) {
+    return 'Name the receiving server first, from a real delivery.';
+  }
   return null;
 }
 
 /** The card's badge: on, ready to turn on, or not set up. */
 export function inboundBadge(
-  settings: Pick<EmailInboundSettings, 'enabled' | 'domain' | 'token_last4'>,
+  settings: Pick<
+    EmailInboundSettings,
+    'enabled' | 'domain' | 'token_last4' | 'can_switch_on' | 'require_authenticated' | 'authserv_id'
+  >,
 ): {
   readonly tone: 'on' | 'off';
   readonly label: string;
@@ -123,7 +135,10 @@ export function inboundBadge(
 
 /** The line beside the switch: what to do next, or what being on means. */
 export function switchLine(
-  settings: Pick<EmailInboundSettings, 'enabled' | 'domain' | 'token_last4'>,
+  settings: Pick<
+    EmailInboundSettings,
+    'enabled' | 'domain' | 'token_last4' | 'can_switch_on' | 'require_authenticated' | 'authserv_id'
+  >,
 ): string {
   if (settings.enabled) {
     return 'On: mail to a space’s address becomes a task, and a reply becomes a comment.';

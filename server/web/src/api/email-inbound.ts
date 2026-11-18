@@ -60,8 +60,10 @@ export interface EmailInboundRow {
   /** The task it made or commented on, by key. */
   readonly task_key: string | null;
   readonly comment_id: string | null;
-  /** The receiving server and its verdicts, e.g. `mx.example dmarc=pass`. */
+  /** The believed server and its verdicts, e.g. `mx.example dmarc=pass`. */
   readonly auth: string | null;
+  /** Every server the mail's `Authentication-Results` named, topmost first. */
+  readonly authserv_ids: readonly string[];
   readonly attachment_count: number;
 }
 
@@ -71,7 +73,7 @@ export interface EmailInboundSettings {
   readonly enabled: boolean;
   /** The receiving subdomain, e.g. `tasks.kvelld.com`. */
   readonly domain: string | null;
-  /** Drop a mail without an aligned DMARC, DKIM or SPF pass. */
+  /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. */
   readonly require_authenticated: boolean;
   /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
   readonly authserv_id: string | null;
@@ -85,6 +87,11 @@ export interface EmailInboundSettings {
   readonly own_address: string;
   /** Whether this server can store an API key (it has `LAIKA_SECRET`). */
   readonly can_store_secrets: boolean;
+  /** Owners only (LAI-1315 review, M2): turning it on, and authentication off. */
+  readonly can_switch_on: boolean;
+  readonly can_allow_unauthenticated: boolean;
+  /** The receiving servers recent mail named, newest first: what to name from. */
+  readonly authserv_seen: readonly string[];
   readonly example_domain: string;
   readonly updated_at: number | null;
   readonly updated_by: InboundPerson | null;

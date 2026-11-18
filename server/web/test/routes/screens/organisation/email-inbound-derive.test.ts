@@ -36,6 +36,9 @@ const UNSET: EmailInboundSettings = {
   webhook_url: 'https://ksage.kvelld.com/webhooks/email',
   own_address: 'ksage@kvelld.com',
   can_store_secrets: true,
+  can_switch_on: true,
+  can_allow_unauthenticated: true,
+  authserv_seen: [],
   example_domain: 'tasks.kvelld.com',
   updated_at: null,
   updated_by: null,
@@ -112,14 +115,32 @@ void describe('the switch', () => {
   void test('waits for a domain and a token, and says which is missing', () => {
     assert.equal(switchBlocker(UNSET), 'Save a receiving domain and make a webhook token first.');
     assert.equal(
-      switchBlocker({ domain: 'tasks.kvelld.com', token_last4: null }),
+      switchBlocker({ ...UNSET, domain: 'tasks.kvelld.com', token_last4: null }),
       'Make a webhook token first.',
     );
     assert.equal(
-      switchBlocker({ domain: null, token_last4: 'Wq3x' }),
+      switchBlocker({ ...UNSET, domain: null, token_last4: 'Wq3x' }),
       'Save a receiving domain first.',
     );
     assert.equal(switchBlocker(READY), null);
+  });
+
+  void test('waits for the receiving server to be named while authentication is required (M1)', () => {
+    assert.equal(
+      switchBlocker({ ...READY, authserv_id: null }),
+      'Name the receiving server first, from a real delivery.',
+    );
+    assert.equal(
+      switchBlocker({ ...READY, authserv_id: null, require_authenticated: false }),
+      null,
+    );
+  });
+
+  void test('is an owner’s to turn on (M2)', () => {
+    assert.equal(
+      switchBlocker({ ...READY, can_switch_on: false }),
+      'Only an owner can turn this on.',
+    );
   });
 
   void test('the badge and the line beside the switch follow it', () => {
