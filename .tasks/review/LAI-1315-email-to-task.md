@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-1312]
 discovered-from: LAI-1310
-status: in-progress
+status: review
 started: 2026-11-18T09:58:00Z
+finished: 2026-11-18T13:05:00Z
 ---
 
 ## Goal
@@ -146,7 +147,7 @@ outbox kind.
 - [x] The *Email to tasks* card and the Space settings address work in both themes, at 1440
       and 390
 - [x] D-155; SPEC §1.1, §3.4, §4, §6.4, §10.3, §11.6, §13.4; OPERATIONS
-- [ ] (PR B) attachments are fetched from Brevo and PUT to the store as ready rows linked to
+- [x] (PR B) attachments are fetched from Brevo and PUT to the store as ready rows linked to
       the task or comment; a failure never blocks the task
 - [ ] CI green on each PR
 
@@ -269,3 +270,28 @@ are done, and each was checked by putting the bug back, which turned its test re
   - Another sender's mail with a failed record's id does not touch it.
   - Migration 0088 is regenerated.
 - **Nit.** `ensureRow` now runs after the owner check, so a refused change writes nothing.
+
+## PR B (2026-11-18)
+
+PR A (#375) is merged at 3c728e889. PR B, `LAI-1315-email-attachments`, merges it and brings
+the attachments up to date with A's three review rounds: §4.106 and §4.103's key, and its tests
+name the receiving server. It needs no migration; the queue table was in A's 0088.
+
+- **The store's `put`.** A header-signed `PUT` whose `x-amz-content-sha256` is the body's
+  SHA-256, so the store refuses a body changed in flight. The fake store re-verifies both the
+  signature and the digest.
+- **`fetchInboundAttachment`.**
+  - It calls Brevo's one origin only, with the token path-encoded and `redirect: 'error'`.
+  - It reads at most the board's limit, plus the one byte that proves `too_large`, and never
+    reads Brevo's error bodies.
+- **`storeServerAttachment`.** It follows a browser upload's lifecycle: a `pending` row, the
+  `PUT`, then `ready` and `attachment.added` as the sender. A failed `PUT` leaves a pending row
+  for §11.6's sweep.
+- **The `system.email.attachments` job.**
+  - It runs every 30 seconds, and only when `index.ts` passes `inboundEmail`, so no test can
+    reach Brevo by leaving it out.
+  - It skips `store_off`, `no_api_key`, `too_large` and `not_needed` at once.
+  - It tries `fetch_failed` and `store_failed` three times.
+  - It joins a tick still running, and never blocks the task.
+
+The criterion "CI green on each PR" is ticked by CHIEF after PR B's CI and review.
