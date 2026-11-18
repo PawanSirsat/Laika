@@ -2,11 +2,12 @@
 id: LAI-1302
 title: 'Attachments for agents: upload tools, task-key upload, outputs on finish_task, unlisted findings, secret check'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-1300]
 discovered-from: LAI-1300
-status: backlog
+status: in-progress
+started: 2026-11-18T21:09:01Z
 ---
 
 ## Goal
