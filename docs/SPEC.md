@@ -4010,7 +4010,7 @@ through URLs Laika signs (§6.4). This row is what Laika knows of the object.
 | `project_id` | FK `projects`, cascade — a file belongs to a project from the start |
 | `task_id` | nullable, FK `tasks`, set null — the task it belongs to: named at upload, or filled when text on the task first links it; **never changed after** |
 | `comment_id` | nullable, FK `comments`, set null — the comment whose text first linked it: set only by the save that also fills `task_id`, so never on a file that reached the task by its upload or by the task's text |
-| `unlisted_work_id` | nullable, FK `unlisted_work`, set null — the unlisted finding `log_unlisted_work` attached it to (D-162 item 8, LAI-1302): only the uploader's own ready file with no task. Linked, as far as the sweep is concerned, until the finding is promoted — the file moves to the new task, and to its project when it was uploaded in another, with `attachment.added` — or dismissed — the file is removed with it. Kept after a promotion, as provenance |
+| `unlisted_work_id` | nullable, FK `unlisted_work`, set null — the unlisted finding `log_unlisted_work` attached it to (D-162 item 8, LAI-1302): only the uploader's own ready file with no task. Linked, as far as the sweep is concerned, until the finding is promoted — the file moves to the new task, and to its project when it was uploaded in another, with `attachment.added` — or dismissed — the file is removed with it. Until then it is read only by its uploader and by who reads the pile (`audit_log.export`), and **text that embeds it links nothing**: the promotion is the only way it reaches a task. Kept after a promotion, as provenance |
 | `uploaded_by` | FK `users` — who asked for the upload; the only one who may complete it, and the `own` of *Remove an attachment* (§3.2) |
 | `filename` | 1–255 (CHECK), no `/`, `\` or control character — **display only**, never a path or a key |
 | `content_type` | ≤ 127 (CHECK), lower case — as declared, and signed into the upload |
@@ -6787,8 +6787,11 @@ relative, and never a store URL, so a stored body never expires.
   or another size, is `409` and the row stays `pending` — reads its first
   sixteen bytes, sets `inline`, and marks it `ready`; a file that named its
   task writes `attachment.added` (§4.8). **A text file is read further first**
-  — a text type, or a name that says it is one, `.env` included; its first 2
-  MiB through one ranged `GET` — and scanned for secrets (§13.4, D-162): one
+  — a text type, or a name that says it is one (`.env`, `id_rsa`,
+  `server.pem`, `server.key`, `credentials`, `.npmrc`), at once; **any other
+  file whose first kilobyte is text** — not one of the seven a browser is
+  shown, and no NUL — after that probe; its first 2 MiB through one ranged
+  `GET` — and scanned for secrets (§13.4, D-162): one
   that holds a recognisable secret is `422 unprocessable`, `details: {
   reason: 'secret_detected', pattern, line }`, and is removed — row stamped,
   object deleted — so no read ever serves it. The answer never carries the
@@ -6797,7 +6800,9 @@ relative, and never a store URL, so a stored body never expires.
   the store answer `response-content-type` — the declared type when `inline`,
   else `application/octet-stream` — and `response-content-disposition` —
   `inline` when `inline`, else `attachment` — with the RFC 6266 filename
-  (§13.1). A `pending` or removed file, or one in a project the caller cannot
+  (§13.1). A file on an unlisted finding not yet promoted is served only to
+  its uploader and to those who read the pile (`audit_log.export`); to anyone
+  else it is the `404` below (D-162 item 8). A `pending` or removed file, or one in a project the caller cannot
   read, is the same `404`.
 - **Removing** stamps the row at once and deletes the object best effort; the
   sweep retries until it goes (§11.6). A file that belonged to a task writes
@@ -6900,7 +6905,9 @@ the client's `clientInfo.name` and its slug on the token (§4.9). That is what
 makes an agent with no heartbeat hook present (§9.3).
 
 The instructions stay under 2,048 characters with the must-follow rules in the
-first 512, and those rules are repeated in the descriptions of `start_working`,
+first 512 — claim before code, one task at a time, finish into review never
+done, and D-162's *show your work, never a secret* (LAI-1302), each whole
+sentence inside them, which `test/mcp/server.test.ts` asserts — and those rules are repeated in the descriptions of `start_working`,
 `create_task` and `finish_task` for clients that never show `instructions`.
 `/mcp` answers only `POST`: any other method gets `405` with `Allow: POST`. A
 `401` says whether the `Authorization` header was missing, empty (`Bearer` and
@@ -9311,15 +9318,23 @@ nothing reaches a third party. **Nothing is automatic**: no screenshot,
 transcript, prompt text, diff or file sweep is ever taken, and D-005 still
 governs everything collected without a deliberate act. **Secrets are never
 kept.** The agent attaches a masked copy, and the server scans each text file
-it completes — the first 2 MiB of a text type, or of a file whose name says it
-is text, `.env` included — for known shapes: a private key block, an AWS
-access key id or secret key, a Laika (`lai_`), GitHub (`ghp_`, `gho_`, `ghu_`,
-`ghs_`, `ghr_`, `github_pat_`) or `sk-` token, a `password:`-style value, a
-`.env` line whose name ends in a secret word, credentials in a URL, and a
-table column named for a credential with a value under it. A masked or
-placeholder value (`****`, `<redacted>`, `${VAR}`) passes. A hit refuses the
-completion with the rule and the line, never the text, and the file is
-deleted. There is no override; the list is `services/secret-scan.ts`, and
+it completes — the first 2 MiB of a text type, of a file whose name says it
+is text or a key (`.env`, `id_rsa`, `*.pem`, `*.key`, `credentials`,
+`.npmrc`), and of any other file whose first kilobyte is text by content (no
+NUL, not an image, PDF or recording) — for known shapes: a private key block,
+an AWS access key id or secret key, a Laika (`lai_`), GitHub (`ghp_`, `gho_`,
+`ghu_`, `ghs_`, `ghr_`, `github_pat_`) or `sk-` token, a `password:`-style
+value that is **one secret-shaped token** (six characters or more with a
+digit, a symbol or both cases, or twelve or more) — never prose such as
+*stored in the team vault* — a `.env` line whose name ends in a secret word,
+credentials in a URL, and a table column named for a credential (`password`,
+`api_key`, `client_secret`, `access_token` — not a bare `pass` or `token`, a
+test report's columns) whose cell is not a number, a result word or more
+than one word. A masked or placeholder value (`****`, `<redacted>`,
+`${VAR}`) passes. A hit refuses the completion with the rule and the line,
+never the text, and the file is deleted. **Every rule is bounded and linear**:
+the scan runs inside the request, and a crafted 2 MiB file of each rule's
+worst case is timed in `secret-scan.test.ts`. There is no override; the list is `services/secret-scan.ts`, and
 LAI-1351's CLI checks the same list before it uploads. It catches known
 shapes only: the instruction to mask is the real guard.
 
