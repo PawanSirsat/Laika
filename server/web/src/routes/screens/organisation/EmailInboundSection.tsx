@@ -398,10 +398,15 @@ function Ready({
             onEdit({ api_key });
           }}
           autoComplete="new-password"
+          // Said before Save, not after (LAI-1315 review): with no
+          // `LAIKA_SECRET` the server cannot encrypt a key, so it would refuse.
+          disabled={!settings.can_store_secrets}
           help={
-            settings.api_key_last4 === null
-              ? 'For fetching attachments. Laika keeps it encrypted and shows only its last four.'
-              : `The saved key ends …${settings.api_key_last4}. It is used only to fetch attachments.`
+            !settings.can_store_secrets
+              ? 'This server has no LAIKA_SECRET, so it cannot store a key. Set it and restart Laika, then paste the key here.'
+              : settings.api_key_last4 === null
+                ? 'For fetching attachments. Laika keeps it encrypted and shows only its last four.'
+                : `The saved key ends …${settings.api_key_last4}. It is used only to fetch attachments.`
           }
           error={problem('api_key')}
         />

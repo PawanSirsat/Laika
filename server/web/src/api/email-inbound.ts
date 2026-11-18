@@ -40,6 +40,12 @@ export interface InboundPerson {
   readonly name: string;
 }
 
+/** The space a mail went to, on the card. */
+export interface InboundProject {
+  readonly slug: string;
+  readonly name: string;
+}
+
 /** One inbound mail as the card lists it — never its subject or text. */
 export interface EmailInboundRow {
   readonly id: string;
@@ -50,7 +56,7 @@ export interface EmailInboundRow {
   readonly from_address: string | null;
   /** The person it was matched to. */
   readonly sender: InboundPerson | null;
-  readonly project: { readonly slug: string; readonly name: string } | null;
+  readonly project: InboundProject | null;
   /** The task it made or commented on, by key. */
   readonly task_key: string | null;
   readonly comment_id: string | null;
@@ -77,6 +83,8 @@ export interface EmailInboundSettings {
   readonly webhook_url: string | null;
   /** The board's own From address: a mail from it is dropped. */
   readonly own_address: string;
+  /** Whether this server can store an API key (it has `LAIKA_SECRET`). */
+  readonly can_store_secrets: boolean;
   readonly example_domain: string;
   readonly updated_at: number | null;
   readonly updated_by: InboundPerson | null;

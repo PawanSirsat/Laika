@@ -35,6 +35,7 @@ const UNSET: EmailInboundSettings = {
   api_key_last4: null,
   webhook_url: 'https://ksage.kvelld.com/webhooks/email',
   own_address: 'ksage@kvelld.com',
+  can_store_secrets: true,
   example_domain: 'tasks.kvelld.com',
   updated_at: null,
   updated_by: null,

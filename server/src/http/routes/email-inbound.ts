@@ -99,7 +99,9 @@ export function orgEmailInboundRoutes(options: EmailInboundRouteOptions): Hono<A
   app.get('/email-inbound', (c) => {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
-    return c.json<EmailInboundSettingsView>(getEmailInboundSettings(db, actor, publicUrl));
+    return c.json<EmailInboundSettingsView>(
+      getEmailInboundSettings(db, actor, publicUrl, serverSecret),
+    );
   });
 
   app.put('/email-inbound', async (c) => {
@@ -116,7 +118,7 @@ export function orgEmailInboundRoutes(options: EmailInboundRouteOptions): Hono<A
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
     return c.json<EmailInboundTokenView>(
-      rotateEmailInboundToken(db, actor, publicUrl, clock()),
+      rotateEmailInboundToken(db, actor, publicUrl, clock(), serverSecret),
       201,
     );
   });

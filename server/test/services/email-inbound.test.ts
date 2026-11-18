@@ -4,6 +4,7 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { emailInbound, tasks, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
+  getEmailInboundSettings,
   getProjectEmailAddress,
   INBOUND_ITEMS_MAX,
   orgEmailInboundView,
@@ -106,6 +107,14 @@ describe('the settings', () => {
     );
     expect(view).toMatchObject({ domain: DOMAIN, authserv_id: null });
     expect(orgEmailInboundView(t.db)).toEqual({ enabled: false, domain: DOMAIN });
+  });
+
+  it('says whether a key can be stored: not without LAIKA_SECRET, which refuses one', () => {
+    expect(getEmailInboundSettings(t.db, owner, '', '').can_store_secrets).toBe(false);
+    expect(getEmailInboundSettings(t.db, owner, '', SECRET).can_store_secrets).toBe(true);
+    expect(
+      refusal(() => setEmailInboundSettings(t.db, owner, { api_key: 'xkeysib-0123' }, '', '', NOW)),
+    ).toMatchObject({ code: 'internal' });
   });
 
   it('makes a new token every time, and only the newest is accepted', () => {

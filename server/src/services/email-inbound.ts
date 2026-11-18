@@ -100,6 +100,12 @@ export interface InboundPersonView {
   name: string;
 }
 
+/** The space a mail went to, on the card. */
+export interface InboundProjectView {
+  slug: string;
+  name: string;
+}
+
 /** One inbound mail as the card lists it — never its subject or text. */
 export interface EmailInboundRowView {
   id: string;
@@ -110,7 +116,7 @@ export interface EmailInboundRowView {
   from_address: string | null;
   /** The person it was matched to. */
   sender: InboundPersonView | null;
-  project: { slug: string; name: string } | null;
+  project: InboundProjectView | null;
   /** The task it made or commented on, by key. */
   task_key: string | null;
   comment_id: string | null;
@@ -137,6 +143,11 @@ export interface EmailInboundSettingsView {
   webhook_url: string | null;
   /** The board's own From address: a mail from it is dropped. */
   own_address: string;
+  /**
+   * Whether this server has `LAIKA_SECRET`, without which an API key cannot be
+   * stored (§12) — so the card can say so before *Save*, not after.
+   */
+  can_store_secrets: boolean;
   example_domain: string;
   updated_at: number | null;
   updated_by: InboundPersonView | null;
@@ -231,6 +242,7 @@ export function getEmailInboundSettings(
   db: Db,
   actor: ResolvedActor,
   publicUrl = '',
+  serverSecret = '',
 ): EmailInboundSettingsView {
   assertCan(actor, 'org.email.configure');
   const row = settingsRow(db);
@@ -244,6 +256,7 @@ export function getEmailInboundSettings(
     api_key_last4: row?.apiKeyLast4 ?? null,
     webhook_url: base === '' ? null : `${base}/webhooks/email`,
     own_address: boardFromAddress(db),
+    can_store_secrets: serverSecret !== '',
     example_domain: EXAMPLE_INBOUND_DOMAIN,
     updated_at: row?.updatedBy == null ? null : row.updatedAt,
     updated_by: personView(db, row?.updatedBy ?? null),
@@ -348,7 +361,7 @@ export function setEmailInboundSettings(
     })
     .where(eq(orgEmailInbound.orgId, orgId))
     .run();
-  return getEmailInboundSettings(db, actor, publicUrl);
+  return getEmailInboundSettings(db, actor, publicUrl, serverSecret);
 }
 
 /** `POST /org/email-inbound/token`: the new token, said once. */
@@ -368,6 +381,7 @@ export function rotateEmailInboundToken(
   actor: ResolvedActor,
   publicUrl = '',
   now: number = Date.now(),
+  serverSecret = '',
 ): EmailInboundTokenView {
   assertCan(actor, 'org.email.configure');
   const orgId = ensureRow(db, now);
@@ -381,7 +395,7 @@ export function rotateEmailInboundToken(
     })
     .where(eq(orgEmailInbound.orgId, orgId))
     .run();
-  return { token, settings: getEmailInboundSettings(db, actor, publicUrl) };
+  return { token, settings: getEmailInboundSettings(db, actor, publicUrl, serverSecret) };
 }
 
 /**

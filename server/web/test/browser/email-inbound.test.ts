@@ -95,6 +95,7 @@ const UNSET = {
   api_key_last4: null,
   webhook_url: 'https://ksage.kvelld.com/webhooks/email',
   own_address: 'ksage@kvelld.com',
+  can_store_secrets: true,
   example_domain: 'tasks.kvelld.com',
   updated_at: null,
   updated_by: null,
@@ -486,6 +487,20 @@ void describe('Organisation → Integrations: the Email to tasks card', () => {
       // In the app, not a reload: the click goes through the router.
       await link.click();
       await h.page.waitForURL((url) => url.pathname === '/board', { timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no LAIKA_SECRET: the key field is off and says why, before any Save', async () => {
+    const server = inboundServer({ ...UNSET, can_store_secrets: false });
+    const h = await integrations(orgStub(server.settings));
+    try {
+      const key = card(h).getByLabel(/Brevo API key/);
+      await key.waitFor({ timeout: 5_000 });
+      assert.equal(await key.isDisabled(), true);
+      assert.match(await card(h).innerText(), /no LAIKA_SECRET, so it cannot store a key/);
+      assert.equal(server.puts.length, 0);
     } finally {
       await h.close();
     }

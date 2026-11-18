@@ -1216,6 +1216,12 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'email-inbound.ts',
   },
   {
+    server: 'InboundProjectView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'InboundProject',
+    clientFile: 'email-inbound.ts',
+  },
+  {
     server: 'InboundPersonView',
     serverFile: 'services/email-inbound.ts',
     client: 'InboundPerson',

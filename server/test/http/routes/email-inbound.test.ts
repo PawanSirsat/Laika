@@ -220,6 +220,7 @@ describe('the card and the address: who may', () => {
       token_last4: null,
       webhook_url: `${TEST_ORIGIN}/webhooks/email`,
       own_address: 'ksage@kvelld.com',
+      can_store_secrets: true,
       example_domain: 'tasks.kvelld.com',
     });
 
