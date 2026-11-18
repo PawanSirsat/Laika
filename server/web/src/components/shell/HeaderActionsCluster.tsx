@@ -8,6 +8,7 @@ import { Icon } from '../icon/Icon.tsx';
 import { menuStep } from '../sidebar/menu-keys.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
 import { useDismiss } from '../use-dismiss.ts';
+import { HeaderHere } from './HeaderHere.tsx';
 import { bellLabel } from './notifications-model.ts';
 import { PersonMenu } from './PersonMenu.tsx';
 import { useShell } from './shell-context.ts';
@@ -24,7 +25,8 @@ const NotificationsPopover = lazy(async () => {
 /**
  * **The top bar's own controls** (LAI-1221; Jira's order since LAI-1227).
  * `HeaderCreate` sits beside the search; this is the right-hand cluster:
- * the bell, keyboard shortcuts, settings, then the person (`PersonMenu`),
+ * who's here (`HeaderHere`, LAI-1348), the bell, keyboard shortcuts,
+ * settings, then the person (`PersonMenu`),
  * whose menu holds the profile, the quick theme switch and signing out — the
  * one place for them now that the sidebar has no foot. Appearance and
  * Developer access are the gear's alone (LAI-1231).
@@ -33,6 +35,7 @@ export function HeaderActionsCluster() {
   const { me } = useShell();
   return (
     <div className="hdr-actions" data-header-cluster>
+      <HeaderHere />
       <HeaderBell />
       <HeaderHelp />
       <HeaderSettings />

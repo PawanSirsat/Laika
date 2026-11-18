@@ -26,6 +26,7 @@ import {
   capacityNow,
   loadOf,
   presenceNow,
+  presencePeopleNow,
   PRESENCE_WINDOW_MS,
   statusOf,
   type CapacitySpace,
@@ -1598,6 +1599,126 @@ describe('capacity per person (LAI-767)', () => {
         signIn(id, NOW - i * MIN);
         token(id, { lastMcpAt: NOW - i * MIN });
         assigned(id, 'in_progress');
+      }
+
+      expect(countFor()).toBe(few);
+    });
+  });
+
+  // The header's who's here (LAI-1348): Capacity's status, read cheaply.
+  describe('who is here, for the header (presencePeopleNow)', () => {
+    const here = (at = NOW) =>
+      presencePeopleNow(t.db, actor(adminId), at).people.map((p) => [
+        p.name,
+        p.status,
+        p.last_seen_via,
+      ]);
+
+    it('names who is online and who is away by Capacity’s signals, online first, and agrees with Capacity', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+      const cal = makeUser('member', 'Cal');
+      const dee = makeUser('member', 'Dee');
+      const eli = makeUser('member', 'Eli');
+      makeUser('member', 'Fay');
+      signIn(ada, NOW - 2 * MIN);
+      act(bea, NOW - 20 * MIN);
+      token(cal, { lastMcpAt: NOW - MIN, client: 'claude-code' });
+      beat(dee, NOW - 40 * MIN);
+      signIn(eli, NOW - 2 * 60 * MIN);
+
+      expect(here()).toEqual([
+        ['Cal', 'online', 'agent'],
+        ['Ada', 'online', 'web'],
+        ['Bea', 'away', 'board'],
+        ['Dee', 'away', 'web'],
+      ]);
+
+      // The drift guard: whatever Capacity calls online or away, this does,
+      // and whoever it leaves out Capacity calls offline or never.
+      const named = new Map(
+        presencePeopleNow(t.db, actor(adminId), NOW).people.map((p) => [p.user_id, p.status]),
+      );
+      for (const person of capacityNow(t.db, actor(adminId), NOW).people) {
+        const status = person.status;
+        if (status === 'online' || status === 'away') {
+          expect(named.get(person.user_id), person.name).toBe(status);
+        } else {
+          expect(named.has(person.user_id), person.name).toBe(false);
+        }
+      }
+    });
+
+    it('holds Capacity’s edges: five minutes is away, the hour is gone', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+      const cal = makeUser('member', 'Cal');
+      signIn(ada, NOW - 5 * MIN);
+      signIn(bea, NOW - 60 * MIN + 1);
+      signIn(cal, NOW - 60 * MIN);
+
+      expect(here()).toEqual([
+        ['Ada', 'away', 'web'],
+        ['Bea', 'away', 'web'],
+      ]);
+    });
+
+    it('names nobody on a revoked token or deactivated, and each person once at their newest', () => {
+      const gus = makeUser('member', 'Gus');
+      const revoked = token(gus, { lastMcpAt: NOW - MIN, revokedAt: NOW - 1000 });
+      act(gus, NOW - MIN, 'agent', revoked);
+      const hal = makeUser('member', 'Hal');
+      signIn(hal, NOW - MIN);
+      t.db.update(users).set({ isActive: 0 }).where(eq(users.id, hal)).run();
+      const ivy = makeUser('member', 'Ivy');
+      signIn(ivy, NOW - 50 * MIN);
+      act(ivy, NOW - 3 * MIN);
+
+      expect(here()).toEqual([['Ivy', 'online', 'board']]);
+    });
+
+    it('is enabled:false and nobody while presence is off — not an empty org', () => {
+      const ada = makeUser('member', 'Ada');
+      signIn(ada, NOW - MIN);
+      expect(presencePeopleNow(t.db, actor(adminId), NOW)).toEqual({
+        enabled: true,
+        people: [expect.objectContaining({ name: 'Ada', status: 'online' })],
+      });
+      t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+      expect(presencePeopleNow(t.db, actor(adminId), NOW)).toEqual({ enabled: false, people: [] });
+    });
+
+    it('reads only the last hour, through the time indexes, and writes nothing', () => {
+      const ada = makeUser('member', 'Ada');
+      act(ada, NOW - MIN);
+      beat(ada, NOW - MIN);
+      const read = () => presencePeopleNow(t.db, actor(adminId), NOW);
+
+      // A range on the time, not the org's whole history through its prefix.
+      const activityPlan = queryPlansOf(t.sqlite, 'activity', read).join('\n');
+      expect(activityPlan).toMatch(/activity_org_created_at_idx \(org_id=\? AND created_at>\?\)/);
+      expect(activityPlan).not.toMatch(/SCAN activity\b/);
+      const beatPlan = queryPlansOf(t.sqlite, 'heartbeats', read).join('\n');
+      expect(beatPlan).toMatch(/heartbeats_created_at_idx \(created_at>\?\)/);
+      expect(beatPlan).not.toMatch(/SCAN heartbeats\b/);
+
+      const statements = preparedDuring(t.sqlite, read);
+      expect(statements.length).toBeGreaterThan(0);
+      expect(statements.filter((sql) => !/^\s*select\b/i.test(sql))).toEqual([]);
+    });
+
+    it('prepares the same statements for two people as for twelve', () => {
+      const countFor = (): number =>
+        preparedDuring(t.sqlite, () => presencePeopleNow(t.db, actor(adminId), NOW)).length;
+
+      signIn(makeUser('member', 'One'), NOW - MIN);
+      const few = countFor();
+      for (let i = 0; i < 10; i += 1) {
+        const id = makeUser('member', `Person ${String(i)}`);
+        signIn(id, NOW - i * MIN);
+        token(id, { lastMcpAt: NOW - i * MIN });
+        act(id, NOW - i * MIN);
+        beat(id, NOW - i * MIN);
       }
 
       expect(countFor()).toBe(few);

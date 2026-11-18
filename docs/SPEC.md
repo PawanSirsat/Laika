@@ -5166,6 +5166,7 @@ POST   /api/v1/agent-sessions                body { client_version?, harness?, h
 POST   /api/v1/agent-sessions/:id/heartbeat  body { client_version?, harness?, harness_version?, model? } optional → { session, claims, lost } — renews the session's active claims (§9.1); a field sent replaces what the session said, one omitted is kept
 POST   /api/v1/agent-sessions/:id/end        → session; its live claims are released
 GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/presence/people               who is online or away now → { enabled, people[{ user_id, name, status: online|away, last_seen, last_seen_via }] } — the header's *who's here* (§9.3, LAI-1348); nothing written
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
 GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
 POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
@@ -7306,6 +7307,18 @@ hold a result that is legitimately many.
   stamped (D-076, D-081), so
   turning it back on shows nothing from the time it was off. The connecting
   client's name is still kept on the token, as token metadata.
+- **Who is here** (`GET /api/v1/presence/people`, LAI-1348) — the people
+  Capacity calls `online` or `away` now, **by Capacity's own signals and token
+  rules** (a sign-in, an activity-log row, a heartbeat, a token's `/mcp` call or
+  REST write; below), each read **over the last hour only** — the most anyone
+  can be away — so it is a fixed handful of indexed reads whatever the
+  headcount, and **writes nothing**: it asks no workload, availability or time
+  question, so no look is logged (§4.59). `{ enabled, people[{ user_id, name,
+  status, last_seen, last_seen_via }] }`, online first, then the most recently
+  seen; active people only; with presence off, `enabled: false` and nobody.
+  The top bar reads it on every page (every 30 s while the tab is visible) and
+  draws it as overlapping faces ringed by status, opening a list of who is
+  online and who is away.
 - **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions` (distinct
   tokens seen by heartbeat, `/mcp` call or REST write in the window, one token
   doing several counted once; D-076, D-081),

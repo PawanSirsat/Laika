@@ -106,6 +106,19 @@ const PAIRS: readonly Pair[] = [
     client: 'CapacityView',
     clientFile: 'presence.ts',
   },
+  // LAI-1348: the header's who's here — the view and each person in it.
+  {
+    server: 'PresencePeopleView',
+    serverFile: 'services/presence.ts',
+    client: 'PresencePeopleView',
+    clientFile: 'presence.ts',
+  },
+  {
+    server: 'PresencePersonView',
+    serverFile: 'services/presence.ts',
+    client: 'PresencePerson',
+    clientFile: 'presence.ts',
+  },
   // LAI-1331: why a person is away, nested in each Capacity entry. The pair
   // above sees `people` and nothing inside it; this one sees the shape.
   {

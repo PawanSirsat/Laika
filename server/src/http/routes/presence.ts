@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { capacityNow, presenceNow } from '../../services/presence.ts';
+import { capacityNow, presenceNow, presencePeopleNow } from '../../services/presence.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
@@ -26,6 +26,8 @@ export function presenceRoutes(options: PresenceRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get('/', (c) => c.json(presenceNow(options.db, requireActor(c))));
+  // Who is online or away now, for the header on every page (LAI-1348).
+  app.get('/people', (c) => c.json(presencePeopleNow(options.db, requireActor(c))));
 
   return app;
 }
