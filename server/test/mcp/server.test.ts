@@ -329,10 +329,10 @@ describe('the server tells any agent how to work the board (D-076)', () => {
     const instructions = client.getInstructions() ?? '';
     const flat = instructions.replace(/\s+/g, ' ');
     expect(flat).toContain(
-      "A feature with several parts gets one parent task; file each part as a child (`create_task`'s parent). Work on an existing feature becomes a new child of its parent. Attach the main outputs to the parent.",
+      "One parent per feature. A new feature with several parts gets one parent task, with each part as a child task (`create_task` with parent). Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child.",
     );
     // After the rules that must stand in Codex's first 512, not among them.
-    expect(flat.indexOf('A feature with several parts')).toBeGreaterThan(
+    expect(flat.indexOf('One parent per feature.')).toBeGreaterThan(
       flat.indexOf('Never upload secrets.'),
     );
 

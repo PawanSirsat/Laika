@@ -82,9 +82,10 @@ outputs with \`laika attach\` or \`request_upload\`, captioned. Never upload
 secrets. Comment with \`add_comment\` as you go. Refer to tasks by key, such
 as LAI-42.
 
-A feature with several parts gets one parent task; file each part as a child
-(\`create_task\`'s parent). Work on an existing feature becomes a new child of
-its parent. Attach the main outputs to the parent.
+One parent per feature. A new feature with several parts gets one parent task,
+with each part as a child task (\`create_task\` with parent). Work on an existing
+feature becomes a new child of its parent. A genuinely small one-off may stand
+alone. The main outputs go on the parent, a child's own outputs on the child.
 
 How to work:
 1. Call \`laika_whoami\` to confirm who this token acts as.

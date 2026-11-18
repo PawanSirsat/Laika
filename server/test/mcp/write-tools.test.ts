@@ -187,17 +187,16 @@ describe('a feature is one parent and its parts are children (LAI-1360)', () => 
       (tools.get(tool)?.inputSchema.properties?.[name] as { description?: string } | undefined)
         ?.description ?? '';
 
-    expect(tools.get('create_task')?.description).toContain(
-      'A feature with several parts gets one parent task; file each part as a child (`parent`). Work on an existing feature becomes a new child of its parent. Attach the main outputs to the parent.',
-    );
+    const rule =
+      "One parent per feature. A new feature with several parts gets one parent task, with each part as a child task (`create_task` with `parent`). Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child.";
+    const outputs = "The main outputs go on the parent, a child's own outputs on the child.";
+    expect(tools.get('create_task')?.description).toContain(rule);
     expect(tools.get('create_task')?.description).toMatch(/Look for that parent first/);
-    expect(field('create_task', 'parent')).toMatch(/child of one parent/);
+    expect(field('create_task', 'parent')).toMatch(/One parent per feature/);
     expect(field('create_task', 'parent')).toMatch(/find that parent first/);
-    expect(tools.get('finish_task')?.description).toMatch(/main outputs go on its parent/);
-    expect(field('finish_task', 'outputs')).toMatch(/main outputs go on the parent/);
-    expect(tools.get('request_upload')?.description).toMatch(
-      /main outputs of a feature belong on its parent/,
-    );
+    expect(tools.get('finish_task')?.description).toContain(outputs);
+    expect(field('finish_task', 'outputs')).toContain(outputs);
+    expect(tools.get('request_upload')?.description).toContain(outputs);
 
     await client.close();
   });
