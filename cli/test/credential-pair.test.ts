@@ -125,6 +125,18 @@ void describe('unpairedLines — why the board named has no token (LAI-1343 revi
     );
   });
 
+  void test("another place is a tool's credential file: the tool is named (LAI-1344 follow-up)", () => {
+    const tool = { from: '~/.laika/agents/codex.json', url: 'http://c', token: 't', tool: 'Codex' };
+    assert.equal(
+      unpairedLines(b, [tool])?.[1],
+      "Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use Codex's own credential for that board.",
+    );
+    assert.equal(
+      unpairedLines({ url: 'http://b', from: '~/.claude/settings.json' }, [tool])?.[1],
+      "Put http://b's token beside its URL in ~/.claude/settings.json, or remove that URL to use Codex's own credential for the other board.",
+    );
+  });
+
   void test('a token with no URL beside it names no board', () => {
     assert.deepEqual(unpairedLines(b, [{ from: 'the environment', token: 't' }]), [
       'No token for http://b. LAIKA_TOKEN in the environment is not used: no LAIKA_URL beside it names its board.',
@@ -231,7 +243,7 @@ void describe('nothing reaches board B (the acceptance case)', () => {
     assert.deepEqual(c.requests, [], 'activity was turned on for C although the shell names B');
     assert.deepEqual(err, [
       `No token for ${b.url}. ~/.laika/agents/claude-code.json holds one for ${c.url}, which is not sent to another board.`,
-      'Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.',
+      "Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use Claude Code's own credential for that board.",
     ]);
     // With no board named anywhere, that credential is this machine's connection, as before.
     assert.deepEqual(activityCredentials(at, {}), {

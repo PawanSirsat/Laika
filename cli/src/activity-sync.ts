@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HARNESSES, type Harness } from './agent-adapters.ts';
+import { ADAPTERS, HARNESSES, type Harness } from './agent-adapters.ts';
 import { readCredential } from './agent-session.ts';
 import { normaliseUrl } from './api.ts';
 import {
@@ -245,7 +245,12 @@ export function notConnectedLines(
   if (named === undefined || named.token !== undefined) return NOT_CONNECTED;
   const tools: CredentialSource[] = MACHINE_CREDENTIAL_ORDER.map((harness) => {
     const saved = readCredential(home, harness, {});
-    return { from: `~/.laika/agents/${harness}.json`, url: saved?.url, token: saved?.token };
+    return {
+      from: `~/.laika/agents/${harness}.json`,
+      url: saved?.url,
+      token: saved?.token,
+      tool: ADAPTERS[harness].name,
+    };
   });
   return unpairedLines(named, [...sources, ...tools]) ?? NOT_CONNECTED;
 }

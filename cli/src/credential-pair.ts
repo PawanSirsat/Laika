@@ -10,6 +10,8 @@ export interface CredentialSource {
   readonly from: string;
   readonly url?: string | undefined;
   readonly token?: string | undefined;
+  /** A tool's own credential file: the tool, by name (`Claude Code`). */
+  readonly tool?: string | undefined;
 }
 
 /** The board, where it came from, and a token for that board when one is held. */
@@ -70,11 +72,14 @@ export function unpairedLines(
       named(source.token) && named(source.url) && normaliseUrl(source.url.trim()) !== paired.url,
   );
   if (other !== undefined) {
+    // What would be used instead, named: the board, or a tool's own credential for it.
+    const instead = (board: string): string =>
+      other.tool === undefined ? board : `${other.tool}'s own credential for ${board}`;
     return [
       `No token for ${paired.url}. ${other.from} holds one for ${normaliseUrl(other.url?.trim() ?? '')}, which is not sent to another board.`,
       paired.from === 'the environment'
-        ? 'Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.'
-        : `Put ${paired.url}'s token beside its URL in ${paired.from}, or remove that URL to use the other board.`,
+        ? `Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use ${instead('that board')}.`
+        : `Put ${paired.url}'s token beside its URL in ${paired.from}, or remove that URL to use ${instead('the other board')}.`,
     ];
   }
   const orphan = sources.find((source) => named(source.token) && !named(source.url));
