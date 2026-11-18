@@ -8,6 +8,7 @@ import {
   archivedRowMeta,
   archivedToast,
   archiveRefusal,
+  bulkArchivedToast,
   restoredToast,
 } from '../../../../src/routes/screens/task/archive-model.ts';
 
@@ -20,6 +21,11 @@ void describe('archivedToast', () => {
     assert.equal(archivedToast('LAI-12', 0), 'LAI-12 archived');
     assert.equal(archivedToast('LAI-12', 1), 'LAI-12 and 1 subtask archived');
     assert.equal(archivedToast('LAI-12', 3), 'LAI-12 and 3 subtasks archived');
+  });
+
+  void test('the List’s bulk count, singular and plural', () => {
+    assert.equal(bulkArchivedToast(1), '1 task archived');
+    assert.equal(bulkArchivedToast(4), '4 tasks archived');
   });
 
   void test('a restore says where it went back to', () => {

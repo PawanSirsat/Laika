@@ -16,6 +16,11 @@ export function archivedToast(key: string, subtasks: number): string {
   return `${key} and ${String(subtasks)} ${subtasks === 1 ? 'subtask' : 'subtasks'} archived`;
 }
 
+/** The toast after the List's bulk Archive: how many went. */
+export function bulkArchivedToast(count: number): string {
+  return `${String(count)} ${count === 1 ? 'task' : 'tasks'} archived`;
+}
+
 /** The toast after Restore, or after Undo of an Archive. */
 export function restoredToast(key: string): string {
   return `${key} is back on the board`;

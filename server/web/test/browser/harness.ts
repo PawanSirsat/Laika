@@ -246,6 +246,8 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'comment.edit',
     'comment.delete',
     'task.delete',
+    // LAI-1353: archiving, as editing — a lead's and a member's, on a session.
+    'task.archive',
     'task.dependency.write',
     'task.watch',
     'project.read',
@@ -266,6 +268,7 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
     'comment.edit',
     'comment.delete',
     'task.delete',
+    'task.archive',
     'task.dependency.write',
     'task.watch',
     'project.read',
