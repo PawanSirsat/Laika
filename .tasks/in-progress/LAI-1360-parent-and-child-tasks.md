@@ -2,10 +2,11 @@
 id: LAI-1360
 title: 'Agent instructions: one parent task per feature, child tasks for the parts, main outputs on the parent'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-1302]
-status: backlog
+status: in-progress
+started: 2026-11-18T22:26:34Z
 ---
 
 ## Goal
@@ -31,3 +32,8 @@ This task is the server side. LAI-1351 and LAI-1352 carry the same rule into the
 
 - This builds after LAI-1302, which edits the same constants: take it on the same branch line, or right after it merges.
 - Plan: `~/.claude/plans/now-you-have-very-validated-perlis.md`.
+
+## Deviation (CORE, at claim)
+
+- **Claimed while LAI-1302 is in review, not done.** CHIEF's call, relayed by the lead on 2026-11-18, the same way LAI-1351 and LAI-1352 were claimed.
+- The branch `LAI-1360-parent-child-rule` is cut from `integration-ksage` with `LAI-1302-attachments-agents` merged in. It merges `integration-ksage` again once #405 lands, so the PR shows only this task's diff.
