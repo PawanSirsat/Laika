@@ -268,6 +268,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.calendar.sync',
   'system.email.attachments',
   'system.people.sync',
+  'system.directory.sync',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',

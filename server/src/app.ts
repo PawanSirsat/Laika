@@ -63,6 +63,7 @@ import {
   peopleDirectoryRoutes,
   userPhotoRoutes,
 } from './http/routes/people-sync.ts';
+import { ssoRoutes } from './http/routes/sso.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -100,7 +101,8 @@ import { capacityRoutes, presenceRoutes } from './http/routes/presence.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { stoppingGate } from './http/middleware/stopping.ts';
 import { setupRequired } from './services/setup.ts';
-import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
+import { AUTH_BASE_PATH, SSO_ONLY_MESSAGE, type Auth } from './auth/auth.ts';
+import { type MicrosoftSso } from './auth/sso.ts';
 import { SignInThrottle } from './auth/sign-in-throttle.ts';
 import { type Db } from './db/client.ts';
 import { users } from './db/schema.ts';
@@ -166,6 +168,11 @@ export interface CreateAppOptions {
   developerAccess?: DeveloperAccessMode;
   /** `LAIKA_CLI_SOURCE_URL` (§11.7, LAI-1043); absent is this repository. */
   cliSourceUrl?: string;
+  /**
+   * Microsoft SSO (§11.7, LAI-1238). Set, the password routes outside
+   * better-auth refuse `sso_only` too; absent or `null` is email and password.
+   */
+  sso?: MicrosoftSso | null;
   /**
    * Whether shutdown has begun (§11.2, LAI-214). A request on a **reused
    * keep-alive connection** can still reach a closing server, and answering
@@ -473,7 +480,27 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   }
 
   if (db !== undefined && options.auth !== undefined && options.sqlite !== undefined) {
-    app.route(`${API_BASE}/setup`, setupRoutes({ db, sqlite: options.sqlite, auth: options.auth }));
+    /*
+     * **SSO-only reaches past better-auth** (LAI-1238). Three routes of ours
+     * take or set a password: accepting an invite by password, issuing a reset
+     * link, and spending one. On an SSO-only instance each would hand someone a
+     * password that nothing can ever check — refused, in words, before the
+     * route reads anything. Invites themselves still work: they are accepted by
+     * signing in with Microsoft as the invited address.
+     */
+    if (options.sso != null) {
+      const refuse = (): never => {
+        throw new ApiError('forbidden', SSO_ONLY_MESSAGE, { reason: 'sso_only' });
+      };
+      app.post(`${API_BASE}/invites/accept`, refuse);
+      app.post(`${API_BASE}/users/:id/reset-link`, refuse);
+      app.post(`${API_BASE}/password-resets/consume`, refuse);
+    }
+
+    app.route(
+      `${API_BASE}/setup`,
+      setupRoutes({ db, sqlite: options.sqlite, auth: options.auth, sso: options.sso ?? null }),
+    );
     // Task routes mount on the same prefix; Hono merges the two routers.
     app.route(`${API_BASE}/projects`, projectTaskRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectSprintRoutes({ db, sqlite: options.sqlite }));
@@ -569,6 +596,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
         attachments: options.attachments,
         peopleSync: options.peopleSync,
       }),
+    );
+
+    // How people sign in, for Organisation → Security (LAI-1239).
+    app.route(
+      `${API_BASE}/org`,
+      ssoRoutes({ db, sso: options.sso ?? null, publicUrl: options.publicUrl ?? '' }),
     );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at

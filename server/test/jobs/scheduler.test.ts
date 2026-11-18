@@ -123,6 +123,7 @@ describe('the jobs §11.6 names', () => {
       'checkpoint.retention',
       'claim.expiry',
       'db.vacuum',
+      'directory.sync',
       'email.inbound_attachments',
       'email.notify',
       'email.retention',

@@ -536,6 +536,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.email.receive', {}],
     ['system.email.attachments', {}],
     ['system.people.sync', {}],
+    ['system.directory.sync', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

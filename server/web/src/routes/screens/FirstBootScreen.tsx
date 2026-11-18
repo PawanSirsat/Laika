@@ -57,6 +57,12 @@ export interface FirstBootScreenProps {
    * that gets abandoned.
    */
   readonly fieldErrors?: Readonly<Record<string, string>> | undefined;
+  /**
+   * An SSO-only instance (LAI-1238): **no password fields**. The owner signs in
+   * with Microsoft once the instance exists, and the email asked for here is
+   * the one their Microsoft account must carry — the help text says so.
+   */
+  readonly microsoft?: boolean;
 }
 
 /**
@@ -102,6 +108,7 @@ export function FirstBootScreen({
   submitting = false,
   serverError,
   fieldErrors = {},
+  microsoft = false,
 }: FirstBootScreenProps) {
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
@@ -117,7 +124,8 @@ export function FirstBootScreen({
   const passwordCheck = validatePassword(password);
   const matchCheck = passwordsMatch(password, confirm);
   const orgCheck = required(orgName, 'Org name');
-  const ownerDone = nameCheck.ok && emailCheck.ok && passwordCheck.ok && matchCheck.ok;
+  const ownerDone =
+    nameCheck.ok && emailCheck.ok && (microsoft || (passwordCheck.ok && matchCheck.ok));
   const orgDone = orgCheck.ok;
   const valid = ownerDone && orgDone;
 
@@ -231,6 +239,16 @@ export function FirstBootScreen({
                 <span className="boot-chip">FULL CONTROL</span>
               </legend>
 
+              {microsoft && (
+                <p className="boot-sso" data-boot-sso="">
+                  <span className="boot-sso-head">Sign-in: Microsoft</span>
+                  <span>
+                    This instance signs in with Microsoft work accounts. Enter the email of yours —
+                    you sign in with it the moment the instance is created.
+                  </span>
+                </p>
+              )}
+
               <div className="boot-grid">
                 <TextInput
                   label="Full name"
@@ -256,36 +274,46 @@ export function FirstBootScreen({
                   autoComplete="username"
                   required
                   disabled={submitting}
-                  help="Used for sign-in and agent attribution."
+                  help={
+                    microsoft
+                      ? 'Your Microsoft work address — you sign in with that account next.'
+                      : 'Used for sign-in and agent attribution.'
+                  }
                   error={form.shown('owner_email', emailCheck) ?? fieldErrors.owner_email}
                 />
-                <PasswordInput
-                  label="Password"
-                  value={password}
-                  onChange={setPassword}
-                  onBlur={() => {
-                    form.blur('owner_password', password);
-                  }}
-                  autoComplete="new-password"
-                  help={PASSWORD_RULE}
-                  showStrength
-                  required
-                  disabled={submitting}
-                  error={form.shown('owner_password', passwordCheck) ?? fieldErrors.owner_password}
-                />
-                <PasswordInput
-                  label="Confirm password"
-                  value={confirm}
-                  onChange={setConfirm}
-                  onBlur={() => {
-                    form.blur('confirm', confirm);
-                  }}
-                  autoComplete="new-password"
-                  required
-                  disabled={submitting}
-                  {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
-                  error={form.shown('confirm', matchCheck)}
-                />
+                {!microsoft && (
+                  <>
+                    <PasswordInput
+                      label="Password"
+                      value={password}
+                      onChange={setPassword}
+                      onBlur={() => {
+                        form.blur('owner_password', password);
+                      }}
+                      autoComplete="new-password"
+                      help={PASSWORD_RULE}
+                      showStrength
+                      required
+                      disabled={submitting}
+                      error={
+                        form.shown('owner_password', passwordCheck) ?? fieldErrors.owner_password
+                      }
+                    />
+                    <PasswordInput
+                      label="Confirm password"
+                      value={confirm}
+                      onChange={setConfirm}
+                      onBlur={() => {
+                        form.blur('confirm', confirm);
+                      }}
+                      autoComplete="new-password"
+                      required
+                      disabled={submitting}
+                      {...(confirm !== '' && matchCheck.ok ? { help: 'Matches' } : {})}
+                      error={form.shown('confirm', matchCheck)}
+                    />
+                  </>
+                )}
               </div>
             </fieldset>
 
@@ -320,14 +348,16 @@ export function FirstBootScreen({
 
             <footer className="boot-footer">
               <Button type="submit" busy={submitting}>
-                Create instance
+                {microsoft ? 'Create and sign in with Microsoft' : 'Create instance'}
               </Button>
               {/* Honest about what is happening and where (LAI-1203): the
                   database is named by the instance, never typed here. */}
               <p className="boot-footnote" role="status">
                 {submitting
                   ? `Creating the owner account and org in ${database ?? 'this instance’s database'}. This takes a few seconds.`
-                  : 'Takes a few seconds. This page never appears again — after this, you land on the board signed in, and new people arrive by invite.'}
+                  : microsoft
+                    ? 'Takes a few seconds, then Microsoft asks you to sign in. This page never appears again — new people arrive by invite.'
+                    : 'Takes a few seconds. This page never appears again — after this, you land on the board signed in, and new people arrive by invite.'}
               </p>
             </footer>
           </form>

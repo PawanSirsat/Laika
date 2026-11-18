@@ -247,6 +247,9 @@ export const SYSTEM_ACTIONS = [
   // Microsoft every hour, and leavers deactivated behind guards (D-161,
   // LAI-1330).
   'system.people.sync',
+  // §11.6: every enabled Member of the Microsoft directory added as a member,
+  // every 15 minutes, when directory sync is on (D-158, LAI-1239, LAI-1317).
+  'system.directory.sync',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

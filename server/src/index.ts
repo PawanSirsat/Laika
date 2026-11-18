@@ -48,6 +48,7 @@ function main(): void {
     secret: env.serverSecret,
     baseUrl: env.publicUrl,
     secureCookies: env.secureCookies,
+    sso: env.sso ?? null,
   });
 
   // Built here rather than inside `createApp` because the shutdown handler needs
@@ -62,6 +63,7 @@ function main(): void {
     buildCommit: env.buildCommit,
     developerAccess: env.developerAccess,
     cliSourceUrl: env.cliSourceUrl,
+    sso: env.sso ?? null,
     isStopping: () => stopping,
     logger: log,
     auth,
@@ -129,6 +131,8 @@ function main(): void {
     backupDir,
     // The HR sync reads the stored token with it (D-149, LAI-1181).
     serverSecret: env.serverSecret,
+    // The directory sync reads Microsoft Graph with the SSO app (LAI-1239).
+    sso: env.sso ?? null,
     // The attachments sweep deletes from the store with it (D-150, LAI-1300).
     attachments: { config: env.attachments },
     // The outbox's sender (D-153, LAI-1312). Nothing goes while the
