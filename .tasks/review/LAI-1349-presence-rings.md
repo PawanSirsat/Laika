@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-1348]
 discovered-from: LAI-1348
-status: in-progress
+status: review
 started: 2026-11-18T20:26:41Z
+finished: 2026-11-18T20:35:19Z
 ---
 
 ## Goal
@@ -29,10 +30,10 @@ the board toolbar, members popover and space toolbar that draw it, with their te
 
 ## Acceptance criteria
 
-- [ ] Online people show a green ring and away people an amber ring: in the toolbar member stack,
+- [x] Online people show a green ring and away people an amber ring: in the toolbar member stack,
       the members popover, and the Assignee options.
-- [ ] The header and these share a single poll.
-- [ ] With presence off there are no rings.
+- [x] The header and these share a single poll.
+- [x] With presence off there are no rings.
 - [ ] Existing tests stay green; CI is green on the PR.
 
 ## Notes
