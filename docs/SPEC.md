@@ -1218,7 +1218,7 @@ writes one for each subtask that went with it, payload `{ with_parent }` naming
 the parent; the task asked about writes `{}`. Their own verbs, not
 `task.updated` with a field, because *"who archived this, and when"* is the
 question — and not `task.status_changed`, because the status stays underneath.
-Three owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0092,
+Three owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0093,
 and the web mirror and its wording — one change.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
@@ -1455,6 +1455,12 @@ creation with `created_via: 'mcp'` provenance preserved on the resulting task.
 
 Same privacy rule as heartbeats (D-005): `note` is agent-authored prose, `repo`
 is a name. No file contents, no diffs, no prompt text.
+
+**A finding can hold files the agent chose to show** (D-162 item 8, LAI-1302):
+its own ready uploads, linked by §4.92's `unlisted_work_id` and embedded in
+`note` as captioned links. Promoting the finding moves them to the new task;
+dismissing it removes them. A deliberate output, not file contents swept up —
+D-005 still governs anything automatic.
 
 ### 4.15 `sprints`
 
@@ -4006,7 +4012,8 @@ periods (§4.86) are untouched by it: they stay the person's own (D-149 item 3).
 
 ### 4.92 `attachments`
 
-A file on a project, a task and a comment (D-150, LAI-1300). **The bytes are
+A file on a project, a task and a comment — or, an agent's, an unlisted
+finding (D-162, LAI-1302) — (D-150, LAI-1300). **The bytes are
 never in the database, and never pass through Laika**: they live in the
 operator's S3-compatible store (§11.7), uploaded and read by the browser
 through URLs Laika signs (§6.4). This row is what Laika knows of the object.
@@ -4017,21 +4024,22 @@ through URLs Laika signs (§6.4). This row is what Laika knows of the object.
 | `project_id` | FK `projects`, cascade — a file belongs to a project from the start |
 | `task_id` | nullable, FK `tasks`, set null — the task it belongs to: named at upload, or filled when text on the task first links it; **never changed after** |
 | `comment_id` | nullable, FK `comments`, set null — the comment whose text first linked it: set only by the save that also fills `task_id`, so never on a file that reached the task by its upload or by the task's text |
+| `unlisted_work_id` | nullable, FK `unlisted_work`, set null — the unlisted finding `log_unlisted_work` attached it to (D-162 item 8, LAI-1302): only the uploader's own ready file with no task. Linked, as far as the sweep is concerned, until the finding is promoted — the file moves to the new task, and to its project when it was uploaded in another, with `attachment.added` — or dismissed — the file is removed with it. Until then it is read only by its uploader and by who reads the pile (`audit_log.export`), and **text that embeds it links nothing**: the promotion is the only way it reaches a task. Kept after a promotion, as provenance |
 | `uploaded_by` | FK `users` — who asked for the upload; the only one who may complete it, and the `own` of *Remove an attachment* (§3.2) |
 | `filename` | 1–255 (CHECK), no `/`, `\` or control character — **display only**, never a path or a key |
 | `content_type` | ≤ 127 (CHECK), lower case — as declared, and signed into the upload |
 | `size_bytes` | ≥ 1 (CHECK), at most `LAIKA_ATTACHMENT_MAX_BYTES` — signed into the upload, and checked against the stored object |
 | `storage_key` | unique — `p/<project_id>/<id>`, **never the filename** |
 | `state` | `pending` \| `ready` (CHECK) — asked for, then confirmed in the store |
-| `inline` | 0/1 (CHECK), set at completion — 1 only for a png, jpeg, gif, webp or pdf **whose first bytes say so** and agree with `content_type` |
+| `inline` | 0/1 (CHECK), set at completion — 1 only for a png, jpeg, gif, webp or pdf, or an mp4 (`ftyp`, not a HEIF or AVIF still) or webm (EBML) recording (D-162), **whose first bytes say so** and agree with `content_type` |
 | `created_at` | |
 | `ready_at` | nullable — set exactly when `ready` (CHECK) |
 | `deleted_at` | nullable — removed: by a person, with its comment, or by the sweep; never read again |
 | `deleted_by` | nullable, FK `users`, set null — who removed it; null for the sweep |
 | `purged_at` | nullable — when the object left the store; only once removed (CHECK) |
 
-Indexes `(task_id)`, `(comment_id)`, `(state, created_at)` — the sweep's —
-`(project_id)`, and the two user keys. **Linking** reads the markdown a task's
+Indexes `(task_id)`, `(comment_id)`, `(unlisted_work_id)`, `(state,
+created_at)` — the sweep's — `(project_id)`, and the two user keys. **Linking** reads the markdown a task's
 description and acceptance, or a comment, is saved with, for
 `/api/v1/attachments/<id>/content` — relative, or on any origin, since one
 deployment can be reached at two (the SPA and the API apart) and the id, not
@@ -4041,15 +4049,36 @@ not removed, **that no task has yet**: it fills `task_id` (writing
 already has is left alone, and one another task has is **never relinked**.
 **A deleted comment removes the files it first linked and the deleter may
 remove** — each asked of `can()` as `DELETE /attachments/:id` asks it (§4.7,
-LAI-1300 review). An upload may be completed within an hour of asking. §11.6's
-sweep deletes a `pending` row after 24 hours, removes a `ready` file no task
-took in the 24 hours since it became ready, and deletes the object of every
-removed file until `purged_at` is set. **A presigned `PUT` stays usable for the
+LAI-1300 review). An upload may be completed within an hour of asking; **a text
+file is scanned for secrets first** and, holding one, removed instead of made
+`ready` (§13.4, D-162). §11.6's
+sweep deletes a `pending` row after 24 hours, removes a `ready` file no task —
+and no unlisted finding — took in the 24 hours since it became ready, and
+deletes the object of every removed file until `purged_at` is set. **A presigned `PUT` stays usable for the
 rest of its ten minutes** after the file is completed or removed: bounded, and
 safe because what a read serves is the type the presigned `GET` forces, not
 what the object claims.
 **Backing the store up is the operator's**: the nightly snapshot (§11.6) holds
 these rows and not the files (D-150 item 8).
+
+**An agent's outputs are those same links, and their captions are the links'
+text** (D-162, LAI-1302). `finish_task`'s `outputs` and the `attachments` of
+`add_comment`, `create_task` and `log_unlisted_work` (§7.1) are each `{
+attachment, caption }`, checked before the write — live and readable (else
+`404`), `ready` (`422 not_ready`), of the target's project (`422
+other_project`), on no other task (`422 other_task`) and on no unlisted
+finding not yet promoted (`422 on_unlisted_work`); at most 20, a caption at
+most 200 characters on one line — and written into the text under a
+`**Outputs**` (a finish) or `**Attached**` line, one per file: `- ![caption](url)`
+for an image a browser may show, `- [caption](url)` for anything else, its
+brackets escaped. Saving the text links them as above. **Nothing new is
+stored**: `get_task_context` reads a file's caption back as the text of the
+first link to it, in the task's description, acceptance and comments.
+**A round's outputs are the files its `summary_md` embeds.** §4.25's round has
+no column naming its summary comment and needs none: `summary_md` is that
+comment's text, written in the same transaction and never rewritten, so the
+link lives in the round itself, and an edit of the comment later changes
+nothing about which round a file was shown on.
 
 ### 4.93 `email_outbox`
 
@@ -5109,7 +5138,7 @@ DELETE /api/v1/projects/:slug/teams          the space has no channel and is tol
 POST   /api/v1/projects/:slug/teams/test     one test post to the channel, **whether posting is on or off** → the post, recorded like any other; 409 conflict reason teams_no_channel   (owner, admin; session only; its own rate-limit bucket)
 GET    /api/v1/projects/:slug/email-address  the space's inbound address → { address: '<slug>-<token>@<domain>' | null until a domain is set, enabled, can_rotate } — made the first time it is asked for   (whoever may create a task in the space; D-155, LAI-1315)
 POST   /api/v1/projects/:slug/email-address/rotate   a new token; the old address stops at once → as GET   (Edit project settings)
-POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
+POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests?, outputs? } — `outputs` [{ attachment, caption }] as `finish_task`'s (§4.92, D-162)
                                              → review, with a round and its proof (finish_task's twin, D-082); a checklist
                                              line that is a deliverable's id or exact title marks it done (LAI-1115)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
@@ -5133,8 +5162,8 @@ POST   /api/v1/tasks/:id/dependencies        body { blocked_by_task_id }  — th
 DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
-POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150)
-POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch   (the uploader)
+POST   /api/v1/projects/:slug/attachments    body { filename, content_type, size_bytes, task_id? } → 201 { attachment, upload: { url, method: 'PUT', headers: { content-type, content-disposition }, expires_at } }; `task_id` is the task's id, its key (`LAI-42`) or the outside id it carries, as every MCP tool takes a task (LAI-1302); 413 payload_too_large with max_bytes; never stored for a replay   (attachment.create; D-150; MCP `request_upload`, D-162)
+POST   /api/v1/attachments/:id/complete      → the attachment, ready; 409 conflict reason not_uploader, not_pending, upload_expired (asked for over an hour ago), upload_missing or size_mismatch; 422 unprocessable reason secret_detected with `pattern` and `line` — the file removed, never its text (§13.4, D-162)   (the uploader; MCP `complete_upload`)
 GET    /api/v1/attachments/:id/content       → 302 to a presigned GET, five minutes; Cache-Control: private, max-age=60; pending, removed or unreadable 404   (project.read)
 DELETE /api/v1/attachments/:id               → 204   (attachment.delete: a lead any, a member their own)
 GET    /api/v1/tasks/:id/attachments         → { data: [attachment] }, ready and not removed, oldest first   (project.read)
@@ -6776,8 +6805,9 @@ content_type, size_bytes, inline, uploaded_by, created_at, ready_at, url }`,
 `url` being `/api/v1/attachments/<id>/content` — **what markdown embeds**,
 relative, and never a store URL, so a stored body never expires.
 
-- **Asking** names the project by slug and optionally a task of it (another
-  project's is the missing task's `404`). `filename` is 1–255 with no `/`, `\`
+- **Asking** names the project by slug and optionally a task of it — by id,
+  key or outside id (LAI-1302) — and another project's is the missing task's
+  `404`. `filename` is 1–255 with no `/`, `\`
   or control character; `content_type` a media type, lower-cased;
   `size_bytes` at most `LAIKA_ATTACHMENT_MAX_BYTES`, else `413
   payload_too_large` with `details.max_bytes`. The answer's `upload` is a
@@ -6790,18 +6820,37 @@ relative, and never a store URL, so a stored body never expires.
   upload_expired` after). Laika `HEAD`s the object — missing,
   or another size, is `409` and the row stays `pending` — reads its first
   sixteen bytes, sets `inline`, and marks it `ready`; a file that named its
-  task writes `attachment.added` (§4.8).
+  task writes `attachment.added` (§4.8). **A text file is read further first**
+  — a text type, or a name that says it is one (`.env`, `id_rsa`,
+  `server.pem`, `server.key`, `credentials`, `.npmrc`), at once; **any other
+  file whose first kilobyte is text** — not one of the seven a browser is
+  shown, and no NUL — after that probe; its first 2 MiB through one ranged
+  `GET` — and scanned for secrets (§13.4, D-162): one
+  that holds a recognisable secret is `422 unprocessable`, `details: {
+  reason: 'secret_detected', pattern, line }`, and is removed — row stamped,
+  object deleted — so no read ever serves it. The answer never carries the
+  text that matched. There is no override.
 - **Reading** is a `302` to a presigned `GET`, five minutes long, that makes
   the store answer `response-content-type` — the declared type when `inline`,
   else `application/octet-stream` — and `response-content-disposition` —
   `inline` when `inline`, else `attachment` — with the RFC 6266 filename
-  (§13.1). A `pending` or removed file, or one in a project the caller cannot
+  (§13.1). A file on an unlisted finding not yet promoted is served only to
+  its uploader and to those who read the pile (`audit_log.export`); to anyone
+  else it is the `404` below (D-162 item 8). A `pending` or removed file, or one in a project the caller cannot
   read, is the same `404`.
 - **Removing** stamps the row at once and deletes the object best effort; the
   sweep retries until it goes (§11.6). A file that belonged to a task writes
   `attachment.removed`.
 - **Linking** has no route: saving a task's or a comment's text links the
-  files it embeds (§4.92), REST and MCP alike.
+  files it embeds (§4.92), REST and MCP alike. **An agent's outputs** (D-162)
+  are those links, written by the server: `POST /tasks/:id/finish`'s
+  `outputs`, and `finish_task`, `add_comment`, `create_task` and
+  `log_unlisted_work` over MCP (§7.1), each `{ attachment, caption }`.
+  Promoting an unlisted finding (`POST /unlisted/:id/promote`) moves its files
+  to the new task; dismissing it (`DELETE /unlisted/:id`) removes them.
+- **Recordings play inline** (D-162): an mp4 or webm whose first bytes say so
+  is `inline`, and with attachments on the store's origin is in the CSP's
+  `media-src` as well as `img-src` and `connect-src` (§13.1).
 
 **The history export (LAI-984).** `GET /activity/history?format=csv` is the
 JSON answer's rows — same gate, same filters, same validation, newest first —
@@ -6890,7 +6939,9 @@ the client's `clientInfo.name` and its slug on the token (§4.9). That is what
 makes an agent with no heartbeat hook present (§9.3).
 
 The instructions stay under 2,048 characters with the must-follow rules in the
-first 512, and those rules are repeated in the descriptions of `start_working`,
+first 512 — claim before code, one task at a time, finish into review never
+done, and D-162's *show your work, never a secret* (LAI-1302), each whole
+sentence inside them, which `test/mcp/server.test.ts` asserts — and those rules are repeated in the descriptions of `start_working`,
 `create_task` and `finish_task` for clients that never show `instructions`.
 `/mcp` answers only `POST`: any other method gets `405` with `Allow: POST`. A
 `401` says whether the `Authorization` header was missing, empty (`Bearer` and
@@ -6920,21 +6971,23 @@ matched.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`, `agent` (the registered agent this token is the credential of — `id`, `display_name`, `harness`, `device_label`, `status` — or `null` for a legacy token; D-114) — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, what it delivers (`### Delivers (n of m built)` — each Ships item with its state and its id, which `checkpoint_task` and `finish_task` take back — `### Solves`, `### Unlocks`; LAI-1115), `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
-| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, what it delivers (`### Delivers (n of m built)` — each Ships item with its state and its id, which `checkpoint_task` and `finish_task` take back — `### Solves`, `### Unlocks`; LAI-1115), `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name — and `attachments`: its ready files, oldest first, each `{ id, filename, content_type, size_bytes, inline, caption, url, round, comment_id, uploaded_by, created_at }` — `caption` the text of the first link to it in the task's text and comments, `round` the number of the round whose summary attached it, each or `null` (§4.92, D-162, LAI-1302); `url` is `/api/v1/attachments/<id>/content`, relative to the board. Empty on a board with no store |
+| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) — and show your work: attach what a person needs to see, captioned, never a secret (D-162). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | created task, `created_via: 'mcp'`. `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
+| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, attachments? }` | created task, `created_via: 'mcp'`. `attachments` — mockups, a screenshot of the problem, a repro — are `[{ attachment, caption }]`, files of this project with no task yet, checked before anything is created and added to the description as captioned links (§4.92, D-162). `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `deliverables`, `solves` and `unlocks` each replace the whole list, as `PATCH` does (§6.4, LAI-1115) — keep an item's `id` to keep its state; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint, claim_generation? }` | task. `sprint: null` takes it out of whichever it is in |
-| `add_comment` | `{ task, body }` | comment |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. Releases the session's claim (§5) |
+| `add_comment` | `{ task, body, attachments? }` | comment. `attachments` — the error screenshot, the log, the failing report of an incident or a blocker — are `[{ attachment, caption }]`, files of the task's project, added under the comment as captioned links, which the comment then owns (§4.92, D-162) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, outputs?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. `outputs` — what a person needs to see of the result: screenshots, the generated file, a report, a short recording — are `[{ attachment, caption }]`, appended under `**Outputs**` as captioned links, so each belongs to the task, the summary comment and, through its `summary_md`, the round; a file of another project or task refuses the whole finish (§4.92, D-162). Its REST twin `POST /tasks/:id/finish` takes them too. Releases the session's claim (§5) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |
-| `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
+| `log_unlisted_work` | `{ repo, note, attachments? }` | records work or an idea outside any project, for triage. `attachments` — evidence the agent chose to show — are `[{ attachment, caption }]`, its own ready uploads with no task: linked to the finding (§4.92 `unlisted_work_id`) and to its note as captioned links; promoting it moves them to the task, dismissing it removes them (D-162 item 8) |
+| `request_upload` | `{ task?, project?, filename, content_type, size_bytes }` | `{ attachment, upload, curl }` — `POST /projects/:slug/attachments`'s twin (§6.4, D-162, LAI-1302). Exactly one of `task` (a ref, which names the project) or `project` (a slug: a file for a task not created yet, or for an unlisted finding), else `422`, `reason: task_or_project`. `upload` is the presigned `PUT`, ten minutes long; `curl` is that upload as one command — `curl -fsS -T '<filename>' -H 'content-type: …' -H 'content-disposition: …' '<url>'`, every word single-quoted — run where the file is. **The bytes never pass through MCP or Laika.** Off, `503`, `reason: attachments_off` |
+| `complete_upload` | `{ attachment }` | the attachment, `ready` — `POST /attachments/:id/complete`'s twin (§6.4, D-162, LAI-1302), the uploader's alone, within an hour of asking. A text file holding a recognisable secret is `422`, `reason: secret_detected`, with the rule and the line, and is removed (§13.4) |
 | `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
 | `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` and the same `project` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
 | `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, working_on?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083). `working_on` names the Ships items this save advances, by id or exact title: they move to `in_progress`; a name the task does not list refuses the save (LAI-1115) |
@@ -9222,7 +9275,8 @@ name, which signs everyone out once.
 Markdown embeds Laika's own `/api/v1/attachments/<id>/content`, which answers a
 `302` to a presigned `GET` valid five minutes, `Cache-Control: private,
 max-age=60`. That URL fixes the store's answer: **only a png, jpeg, gif, webp
-or pdf whose first sixteen bytes say so** is served with its own type and
+or pdf, or an mp4 or webm recording (D-162), whose first sixteen bytes say
+so** is served with its own type and
 `inline`; everything else — HTML and SVG included, whatever it was called — is
 `application/octet-stream` and `attachment`, a download. The store this was
 built against sends no `X-Content-Type-Options`, so this override is what keeps
@@ -9230,8 +9284,9 @@ active content from rendering on its origin. Uploads are presigned `PUT`s that
 sign the size and type, so the store refuses anything else; the bytes never
 reach Laika, and Laika never echoes the store's own response text. **The CSP
 names the store's origin only when attachments are on**, and only in
-`img-src` and `connect-src` — never in `script-src`, `style-src`, `frame-src`
-or `object-src`.
+`img-src`, `media-src` — where an inline recording plays (D-162) — and
+`connect-src`; never in `script-src`, `style-src`, `frame-src` or
+`object-src`.
 
 ### 13.2 Errors and logging
 
@@ -9287,6 +9342,35 @@ minutes (§11.6). For sign-in and directory sync, no profile photo is fetched,
 nothing else of Graph's is read, and no signing keys are fetched: id-token
 sign-in is off, so nothing asks for them. Any task proposing otherwise is
 rejected at review.
+
+**An agent's outputs are deliberate, never captured** (D-162, LAI-1302). An
+agent may attach files it chooses to show a person — screenshots, generated
+documents, test and run reports, short recordings — to tasks, comments,
+finishes and unlisted findings, each captioned and attributed (§4.92). They go
+to the operator's store as every attachment does, through a presigned `PUT`;
+nothing reaches a third party. **Nothing is automatic**: no screenshot,
+transcript, prompt text, diff or file sweep is ever taken, and D-005 still
+governs everything collected without a deliberate act. **Secrets are never
+kept.** The agent attaches a masked copy, and the server scans each text file
+it completes — the first 2 MiB of a text type, of a file whose name says it
+is text or a key (`.env`, `id_rsa`, `*.pem`, `*.key`, `credentials`,
+`.npmrc`), and of any other file whose first kilobyte is text by content (no
+NUL, not an image, PDF or recording) — for known shapes: a private key block,
+an AWS access key id or secret key, a Laika (`lai_`), GitHub (`ghp_`, `gho_`,
+`ghu_`, `ghs_`, `ghr_`, `github_pat_`) or `sk-` token, a `password:`-style
+value that is **one secret-shaped token** (six characters or more with a
+digit, a symbol or both cases, or twelve or more) — never prose such as
+*stored in the team vault* — a `.env` line whose name ends in a secret word,
+credentials in a URL, and a table column named for a credential (`password`,
+`api_key`, `client_secret`, `access_token` — not a bare `pass` or `token`, a
+test report's columns) whose cell is not a number, a result word or more
+than one word. A masked or placeholder value (`****`, `<redacted>`,
+`${VAR}`) passes. A hit refuses the completion with the rule and the line,
+never the text, and the file is deleted. **Every rule is bounded and linear**:
+the scan runs inside the request, and a crafted 2 MiB file of each rule's
+worst case is timed in `secret-scan.test.ts`. There is no override; the list is `services/secret-scan.ts`, and
+LAI-1351's CLI checks the same list before it uploads. It catches known
+shapes only: the instruction to mask is the real guard.
 
 **Inbound email is the organisation's choice, and off as it ships** (D-155).
 With *Email to tasks* on, Brevo posts each mail sent to a space's address to

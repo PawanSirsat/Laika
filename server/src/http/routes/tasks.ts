@@ -31,6 +31,7 @@ import {
   type TaskView,
   DELIVERABLE_STATES,
 } from '../../services/tasks.ts';
+import { ATTACHMENT_REF_LIMITS } from '../../services/attachments.ts';
 import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
@@ -264,6 +265,16 @@ const FinishBody = strictObject({
       }),
     )
     .max(EVIDENCE_LIMITS.tests)
+    .optional(),
+  // Files to show a person, captioned (D-162). The service checks each one.
+  outputs: z
+    .array(
+      strictObject({
+        attachment: z.string().min(1).max(64),
+        caption: z.string().trim().min(1).max(ATTACHMENT_REF_LIMITS.caption),
+      }),
+    )
+    .max(ATTACHMENT_REF_LIMITS.items)
     .optional(),
 });
 

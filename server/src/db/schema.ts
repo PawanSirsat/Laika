@@ -1782,7 +1782,9 @@ export const leaveDays = sqliteTable(
  * object; `inline` only when its first bytes prove it is one of five types a
  * browser may show. Removing one is `deleted_at`; the object goes after,
  * `purged_at` saying it went. §11.6's sweep deletes a `pending` row nobody
- * finished and soft-deletes a file nothing linked.
+ * finished and soft-deletes a file nothing linked. An agent's file can also
+ * belong to an unlisted finding (D-162, LAI-1302), `unlisted_work_id`, which
+ * counts as linked until the finding is promoted or dismissed.
  */
 export const attachments = sqliteTable(
   'attachments',
@@ -1793,6 +1795,10 @@ export const attachments = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
+    /** The unlisted finding `log_unlisted_work` attached it to (D-162); null otherwise. */
+    unlistedWorkId: text('unlisted_work_id').references(() => unlistedWork.id, {
+      onDelete: 'set null',
+    }),
     uploadedBy: text('uploaded_by')
       .notNull()
       .references(() => users.id),
@@ -1818,6 +1824,7 @@ export const attachments = sqliteTable(
     uniqueIndex('attachments_storage_key_unique').on(t.storageKey),
     index('attachments_task_id_idx').on(t.taskId),
     index('attachments_comment_id_idx').on(t.commentId),
+    index('attachments_unlisted_work_id_idx').on(t.unlistedWorkId),
     index('attachments_state_created_at_idx').on(t.state, t.createdAt),
     index('attachments_project_id_idx').on(t.projectId),
     index('attachments_uploaded_by_idx').on(t.uploadedBy),
