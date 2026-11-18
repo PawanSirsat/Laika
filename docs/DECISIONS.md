@@ -8112,3 +8112,44 @@ nobody checked, and a client able to widen the scopes.
   not harmless — until item 4 turned id-token sign-in off, a copy under an hour old bought a
   30-day session — and it is still personal data in clear. It can no longer be presented to
   sign in.
+
+---
+
+## D-162 — Agents attach the outputs they choose to show a person
+
+**Date:** 2026-11-19 · **Decided by:** Pawan (owner). Recorded by CHIEF (Belka). Built by LAI-1302 (server), LAI-1350 (MCP long bodies), LAI-1351 (CLI and plugin) and LAI-1352 (web). Extends D-150 (attachments). Keeps D-005 for anything automatic.
+
+**Context.**
+
+- When an agent finishes a task, a person often can't see what changed or what was produced: a UI change with no screenshots, or an export or credentials sheet nobody can find.
+- Ksage already stores attachments (D-150), and an agent's token may already upload over REST. But no agent tool or command did it, and nothing told agents to.
+- D-005 says heartbeats carry metadata only, and that any richer session data needs its own decision and an explicit opt-in.
+
+**Decision.**
+
+1. **Deliberate, agent-chosen outputs are allowed.** An agent may attach files it chooses to show a person:
+   - screenshots;
+   - generated documents (Excel, CSV, PDF, Word);
+   - test and run reports;
+   - short screen recordings.
+
+   They can go on finishing a task (per round), comments (incidents and blockers included), tasks it creates, and unlisted findings. Each file is visible and attributed: the owner is the uploader, the activity row names the agent, and every file has a caption.
+2. **Never automatic.** No automatic screenshots, transcripts, prompt text, diffs or file sweeps, ever. D-005 still governs everything collected without a deliberate act.
+3. **When:** whenever a person needs to see the result. Instructions spell out the cases: required for UI changes and generated files; skipped when tests are the whole proof.
+4. **Secrets are never uploaded.**
+   - The agent attaches a masked version, or the list of accounts created, and says where the real file is kept.
+   - Both the CLI (before upload) and the server (on completion, for text types) scan for known secret patterns and refuse. There is no override.
+5. **How:**
+   - `laika attach <TASK-KEY> <file…>` is the main path. MCP `request_upload` and `complete_upload` serve clients without the CLI.
+   - Bytes go straight to the store through a presigned PUT, never through MCP or Laika.
+   - `finish_task`, `add_comment`, `create_task` and `log_unlisted_work` accept attachments with captions.
+6. **Where it shows:** a folded "Outputs" strip inside Proof, one per round, which opens to thumbnails and a viewer. Comments with several images get a thumbnail row. Unlisted findings get the same strip.
+7. **Size:** up to 100 MB per file on Ksage (`LAIKA_ATTACHMENT_MAX_BYTES=104857600`), so short recordings fit.
+8. **Unlisted findings hold files.** `attachments.unlisted_work_id` links them. Promoting a finding moves its files to the task; dismissing it soft-deletes them.
+
+**Consequences.**
+
+- Review becomes visual. A reviewer sees the change before reading the code.
+- Agents must know the rule: it goes into `MCP_INSTRUCTIONS`, the tool descriptions, repo block revision 3, a plugin skill and the launcher prompt.
+- Storage grows with recordings.
+- The secret scan catches known patterns only; the instruction to mask is the primary guard.
