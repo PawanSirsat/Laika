@@ -1,10 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor } from '../../src/auth/resolve-actor.ts';
-import { liveTask } from '../../src/db/live-task.ts';
+import { liveTask, liveTaskSql } from '../../src/db/live-task.ts';
 import { tasks } from '../../src/db/schema.ts';
-import { createTask, setTaskArchived } from '../../src/services/tasks.ts';
+import { createTask, setTaskArchived, setTaskDeleted } from '../../src/services/tasks.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -51,5 +51,27 @@ describe('liveTask', () => {
 
     setTaskArchived(t.db, owner, put.id, false);
     expect(read().sort()).toEqual([live.id, put.id].sort());
+  });
+
+  it('leaves a task in Trash out too, and says the same in raw SQL (LAI-1354)', () => {
+    const owner = loadActor(t.db, s.userId)!;
+    const live = createTask(t.sqlite, t.db, owner, 'laika', { title: 'Live' });
+    const gone = createTask(t.sqlite, t.db, owner, 'laika', { title: 'In Trash' });
+    const put = createTask(t.sqlite, t.db, owner, 'laika', { title: 'Archived' });
+    setTaskDeleted(t.db, owner, gone.id, true);
+    setTaskArchived(t.db, owner, put.id, true);
+
+    const viaDrizzle = t.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(liveTask())
+      .all()
+      .map((r) => r.id);
+    const viaRaw = t.db
+      .all<{ id: string }>(sql`SELECT x.id FROM tasks x WHERE ${liveTaskSql('x')}`)
+      .map((r) => r.id);
+    expect(viaDrizzle).toEqual([live.id]);
+    expect(viaRaw).toEqual([live.id]);
+    expect(() => liveTaskSql('x; DROP TABLE tasks')).toThrow(/not an alias/);
   });
 });

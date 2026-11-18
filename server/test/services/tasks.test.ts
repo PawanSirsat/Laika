@@ -1167,6 +1167,9 @@ describe('started_at and completed_at', () => {
         // LAI-1353: when it was put away and by whom, both null while live.
         'archived_at',
         'archived_by',
+        // LAI-1354: when it went into Trash and by whom.
+        'deleted_at',
+        'deleted_by',
         'assignee_id',
         'blocks',
         'claim',

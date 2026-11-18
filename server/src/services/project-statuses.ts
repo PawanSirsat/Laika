@@ -469,19 +469,25 @@ export function deleteProjectStatus(
     }
 
     const moving = db
-      .select({ id: tasks.id, number: tasks.number, archivedAt: tasks.archivedAt })
+      .select({
+        id: tasks.id,
+        number: tasks.number,
+        archivedAt: tasks.archivedAt,
+        deletedAt: tasks.deletedAt,
+      })
       .from(tasks)
       .where(eq(tasks.statusId, statusId))
       .orderBy(asc(tasks.number))
       .all();
 
     for (const task of moving) {
-      // **An archived task is re-filed, not moved** (LAI-1353 review). It is
-      // read-only, so `changeStatus` refuses it, and a status nobody can see
-      // a reason for must not be undeletable. Deleting a status is a setting
-      // of the space, not an edit of the task: it goes where its column went,
-      // keeps its archive, and its history says so.
-      if (task.archivedAt !== null) {
+      // **An archived task, or one in Trash, is re-filed, not moved**
+      // (LAI-1353 review, LAI-1354). It is read-only, so `changeStatus`
+      // refuses it, and a status nobody can see a reason for must not be
+      // undeletable. Deleting a status is a setting of the space, not an edit
+      // of the task: it goes where its column went, stays where it was put
+      // away, and its history says so.
+      if (task.archivedAt !== null || task.deletedAt !== null) {
         db.update(tasks)
           .set({ statusId: moveTo, status: target.category, updatedAt: now })
           .where(eq(tasks.id, task.id))

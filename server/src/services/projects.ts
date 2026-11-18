@@ -19,7 +19,7 @@ import {
   tasks,
   users,
 } from '../db/schema.ts';
-import { liveTask } from '../db/live-task.ts';
+import { liveTask, liveTaskSql } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
@@ -430,8 +430,8 @@ export function projectSummaries(
          )})
            AND t.status NOT IN ('done', 'cancelled')
            AND dep.status <> 'done'
-           AND t.archived_at IS NULL
-           AND dep.archived_at IS NULL
+           AND ${liveTaskSql('t')}
+           AND ${liveTaskSql('dep')}
          GROUP BY t.project_id`,
   )) {
     const summary = summaries.get(row.projectId);

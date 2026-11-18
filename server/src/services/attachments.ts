@@ -341,14 +341,19 @@ export function createAttachment(
   const taskId = taskRef === undefined ? null : resolveTaskRef(db, taskRef, actor);
   if (taskId !== null) {
     const task = db
-      .select({ projectId: tasks.projectId, archivedAt: tasks.archivedAt })
+      .select({
+        id: tasks.id,
+        projectId: tasks.projectId,
+        archivedAt: tasks.archivedAt,
+        deletedAt: tasks.deletedAt,
+      })
       .from(tasks)
       .where(eq(tasks.id, taskId))
       .get();
     // Another project's task answers as a missing one: no task id leaks across.
     if (task?.projectId !== project.id) throw ApiError.notFound(`No task "${taskRef ?? ''}"`);
-    // An archived task takes no new file (LAI-1353).
-    assertTaskLive(task);
+    // An archived task, or one in Trash, takes no new file (LAI-1353, LAI-1354).
+    assertTaskLive(task, actor);
   }
 
   const now = clockOf(deps);

@@ -561,7 +561,7 @@ export function addTasksToSprint(
     }
 
     // An archived task is read-only (LAI-1353), so it joins no sprint.
-    for (const row of rows) assertTaskLive(row);
+    for (const row of rows) assertTaskLive(row, actor);
 
     const foreign = rows.filter((row) => row.projectId !== sprint.projectId).map((row) => row.id);
     if (foreign.length > 0) {
@@ -614,7 +614,7 @@ export function removeTaskFromSprint(
         sprint_id: sprintId,
       });
     }
-    assertTaskLive(task);
+    assertTaskLive(task, actor);
 
     assertClaimFence(db, actor, taskId, now);
     db.update(tasks).set({ sprintId: null, updatedAt: now }).where(eq(tasks.id, taskId)).run();

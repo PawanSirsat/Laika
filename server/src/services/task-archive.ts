@@ -1,18 +1,46 @@
+import { type ServiceCaller } from '../auth/resolve-actor.ts';
 import { ApiError } from '../errors.ts';
 
 /**
- * **An archived task is read-only** (§4.5, LAI-1353): every write to it but
- * the restore — its fields, its status, a claim, a dependency, its place, a
- * sprint, a comment — is refused `409 conflict` with `details.reason:
- * archived`, so a person, an agent or the webhook gets one answer that says
- * what to do. §6.3's vocabulary is closed (D-021), so the reason names it, as
+ * **An archived task, or one in Trash, is read-only** (§4.5, LAI-1353,
+ * LAI-1354): every write to it but its restore — its fields, its status, a
+ * claim, a dependency, its place, a sprint, a comment — is refused `409
+ * conflict` with `details.reason` `archived` or `deleted`, so a person, an
+ * agent or the webhook gets one answer that says what to do. §6.3's
+ * vocabulary is closed (D-021), so the reason names it, as
  * `agent_cannot_mark_done` does.
+ *
+ * **A task in Trash does not exist to a token** (LAI-1354): an agent, a CLI
+ * or a script is answered `404`, exactly as for an id that names nothing, so
+ * no work is offered from Trash and nothing there is confirmed to exist.
  *
  * Its own module so `comments.ts`, which `tasks.ts` imports, can ask it too.
  */
 export const TASK_ARCHIVED = 'archived';
+export const TASK_DELETED = 'deleted';
 
-export function assertTaskLive(task: { archivedAt: number | null }): void {
+/** A credential acting, rather than a person signed in to the web app. */
+export function isTokenCaller(actor: ServiceCaller | undefined): boolean {
+  return (
+    actor !== undefined && 'token' in actor && actor.token !== null && actor.token !== undefined
+  );
+}
+
+/** The `404` a token gets for a task in Trash: the one a missing id gets. */
+export function noSuchTask(taskId: string): ApiError {
+  return ApiError.notFound(`No task with id "${taskId}"`);
+}
+
+export function assertTaskLive(
+  task: { id: string; archivedAt: number | null; deletedAt: number | null },
+  actor?: ServiceCaller,
+): void {
+  if (task.deletedAt !== null) {
+    if (isTokenCaller(actor)) throw noSuchTask(task.id);
+    throw new ApiError('conflict', 'This task is in Trash. Restore it before changing it.', {
+      reason: TASK_DELETED,
+    });
+  }
   if (task.archivedAt === null) return;
   throw new ApiError('conflict', 'This task is archived. Restore it before changing it.', {
     reason: TASK_ARCHIVED,

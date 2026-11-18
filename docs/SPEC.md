@@ -1001,6 +1001,8 @@ which is the check working on the document it exists to pin.
 | `handoff_count` | integer, default `0` — **completed** hand-offs of the task: an accepted `handoff` or `recovery` offer adds one in the accept's transaction (§4.73); a work request does not. Compared with the project policy's `max_handoffs` (§4.74). Never decremented (LAI-546) |
 | `archived_at` | nullable — when the task was **archived** (LAI-1353): put away whole, null while it is live. Archiving a parent stamps its subtasks with the same instant, so a restore brings back exactly those. Served on `TaskView` |
 | `archived_by` | nullable FK `users`, `ON DELETE SET NULL` — who archived it; null while it is live. Set and cleared together with `archived_at`. Served on `TaskView` |
+| `deleted_at` | nullable — when the task was moved into the space's **Trash** (LAI-1354): a soft delete, restorable for 30 days; null otherwise. A parent's subtasks are stamped with the same instant. Independent of `archived_at` — an archived task deleted and restored comes back archived. Served on `TaskView`; a token never reads a task with one (`404`) |
+| `deleted_by` | nullable FK `users`, `ON DELETE SET NULL` — who deleted it; null otherwise. Set and cleared together with `deleted_at` |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -1135,7 +1137,7 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
 `task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
 `agent.capacity_requested`, `attachment.added`, `attachment.removed`,
-`task.archived`, `task.restored`.
+`task.archived`, `task.restored`, `task.deleted`, `task.undeleted`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -1220,6 +1222,15 @@ the parent; the task asked about writes `{}`. Their own verbs, not
 question — and not `task.status_changed`, because the status stays underneath.
 Three owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0093,
 and the web mirror and its wording — one change.
+
+**`task.deleted` and `task.undeleted`** (LAI-1354) are a task moved into its
+space's Trash and brought back out (`DELETE /tasks/:id`, `POST
+/tasks/:id/restore`, §6.4) — by a person, never a token. One row per task,
+`{ with_parent }` on a subtask that went with its parent, as archiving writes.
+Not the archive's pair: *"who deleted this"* is a different question with a
+different end — a task left in Trash is scrubbed after 30 days (LAI-1355).
+Three owners: this row, the enum and CHECK in migration 0094, and the web
+mirror and its wording.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -5065,10 +5076,12 @@ GET    /api/v1/projects/:slug/context/deliveries   ?revision=&limit=&cursor= →
        └ **each session's latest delivery, not a history** (§4.69 keeps one row per session and project): `data` is [{ session_id, revision, delivered_at, session_ended_at, agent }], newest delivery first; `?revision=N` keeps the sessions whose latest delivery is N, so a session later given N+1 leaves N's list. A revision the project has not reached is 404, as the revision read's. *Delivered* means sent, never read (§4.69). `agent` is `{ id, harness, device_label, display_name, status }` only for the reader's own agent — another person's agent is missing to everyone else (D-121 item 7), so its row carries `agent: null` and no id or label (LAI-1003)
        └ all five context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
-GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&archived=&updated_since=&cursor=&fields=
+GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&archived=&trash=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
-                                             live tasks only: archived=only lists the archived ones instead, and with
-                                             updated_since a task archived since then is a §6.3 tombstone (LAI-1353);
+                                             live tasks only: archived=only lists the archived ones instead (never one in
+                                             Trash), trash=only the space's Trash (signed in only: a token is 403
+                                             session_required; both at once is 400), and with updated_since a task
+                                             archived or deleted since then is a §6.3 tombstone (LAI-1353, LAI-1354);
                                              fields=slim leaves out description_md, acceptance_md, deliverables, solves and unlocks (LAI-795, LAI-1115)
                                              each task carries `handoff`, its saves and hand-off in brief (LAI-1005), read once
                                              for the page returned, whatever its size and however many `ready=` batches were
@@ -5093,6 +5106,8 @@ GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=
                                              (project.read per project); the per-project list's task shape and order; any other filter is 422 (LAI-887)
 GET    /api/v1/tasks/summary                 /tasks' filters, same set → { total, by_status, by_assignee: [{ user_id|null|'others', name, count }] (top 10, then others), overdue, blocked, unassigned } (LAI-974)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
+DELETE /api/v1/tasks/:id                     POST /api/v1/tasks/:id/restore
+                                             into the space's Trash and back out (LAI-1354) — see below
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
                                              claim: body { branch?, estimate?, session_id? }, optional — the branch is kept
                                              on the task (LAI-770); estimate { size?, confidence? } (§4.34); on a registered
@@ -5275,9 +5290,25 @@ status, a claim, a dependency either way, a reorder, a sprint, a comment, a
 file — is `409 conflict` with `reason: archived`. Reads answer as before, with
 `archived_at` and `archived_by` on `TaskView`; it is never `ready`, and as a
 blocker it blocks nothing until restored. Deleting a status is a setting of the
-space, not an edit of the task: an archived task in it is re-filed to the
-status the work moves to, still archived, with a `task.status_changed` row
-`via: status_deleted`.
+space, not an edit of the task: an archived task in it — or one in Trash — is
+re-filed to the status the work moves to, still put away, with a
+`task.status_changed` row `via: status_deleted`.
+
+**`DELETE /tasks/:id` moves a task into its space's Trash; `POST
+/tasks/:id/restore` brings it back** (LAI-1354). A soft delete: the row, its key
+and its history stay, and it is restorable for 30 days (LAI-1355 scrubs after).
+Both ask §3.2's *Cancel / delete task* (`task.delete`: a lead any task, a member
+one they created) and are **signed in only** — a token is `403` with `reason:
+session_required`. Both answer the task as it then is. The subtasks go and come
+back with it, as archiving does (`parent_deleted` refuses a subtask whose parent
+is still in Trash, and a restore never brings a subtask back live under a parent
+that is archived); the live claim is released, live offers and the open work
+request close `task_closed`. **A task in Trash is read-only** — every write but
+the restore is `409 conflict` with `reason: deleted` — **and to a token it does
+not exist**: `GET /tasks/:id`, every MCP tool and every write answer `404`, as
+for an id that names nothing. It
+is never archived or restored from the archive while in Trash; an archived task
+deleted and restored comes back archived.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`

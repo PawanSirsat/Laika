@@ -276,6 +276,12 @@ export const ACTIVITY_TYPES = [
   // owners (CLAUDE.md §4.4): §4.8's row, this, and the web mirror, in one change.
   'task.archived',
   'task.restored',
+  // LAI-1354: a task moved into the space's Trash and brought back out —
+  // not the archive's pair, because "who deleted this" and "who archived
+  // this" are different questions with different consequences (a deleted
+  // task is scrubbed after 30 days). Three owners, as above.
+  'task.deleted',
+  'task.undeleted',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

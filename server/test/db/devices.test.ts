@@ -87,6 +87,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0091_people_directory',
     '0092_attachments_unlisted_work',
     '0093_task_archive',
+    '0094_task_trash',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -128,6 +129,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
         '0091_people_directory',
         '0092_attachments_unlisted_work',
         '0093_task_archive',
+        '0094_task_trash',
       ]);
       journal.entries.push(...dropped.filter((e) => !later.has(e.tag)));
       writeFileSync(journalPath, JSON.stringify(journal));

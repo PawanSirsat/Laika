@@ -15,11 +15,13 @@ import {
   removeTaskDependency,
   reorderTask,
   setTaskArchived,
+  setTaskDeleted,
   startWorking,
   SIZE_LEVELS,
   summariseAllTasks,
   TASK_ARCHIVED_FILTERS,
   TASK_LIST_FIELDS,
+  TASK_TRASH_FILTERS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
@@ -310,22 +312,21 @@ function parseEnum<T extends string>(
 
 /**
  * A page of task views as a list sends it (LAI-571, LAI-795, LAI-1353): each
- * row with its ETag, slim or whole — and, when the caller did not ask for
- * archived tasks, an archived one as a §6.3 tombstone. Only `updated_since`
- * reads one back (`sharedConditions`), so a client catching up learns the
- * task left its list.
+ * row with its ETag, slim or whole — and, when the caller did not ask for a
+ * shelf, a task put away — archived, or in Trash (LAI-1354) — as a §6.3
+ * tombstone. Only `updated_since` reads one back (`sharedConditions`), so a
+ * client catching up learns the task left its list.
  */
 function listedPage(
   page: Page<TaskView>,
   fields: (typeof TASK_LIST_FIELDS)[number] | undefined,
-  archived: (typeof TASK_ARCHIVED_FILTERS)[number] | undefined,
+  shelfAsked: boolean,
 ): Page<WithTombstones<ListedTaskView | ListedTaskSummaryView>> {
   const row = fields === 'slim' ? listedTaskSummary : listedTask;
+  const away = (view: TaskView) => view.archived_at !== null || view.deleted_at !== null;
   return {
     ...page,
-    data: page.data.map((view) =>
-      archived === undefined && view.archived_at !== null ? tombstone(view.id) : row(view),
-    ),
+    data: page.data.map((view) => (!shelfAsked && away(view) ? tombstone(view.id) : row(view))),
   };
 }
 
@@ -345,8 +346,13 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     // `slim` leaves out the two texts (LAI-795); absent, the answer is unchanged.
     const fields = parseEnum(c.req.query('fields'), TASK_LIST_FIELDS, 'fields');
 
-    // The space's Archived view (LAI-1353).
+    // The space's Archived view (LAI-1353) and its Trash (LAI-1354): one shelf
+    // at a time, since the archive never shows what is in Trash.
     const archived = parseEnum(c.req.query('archived'), TASK_ARCHIVED_FILTERS, 'archived');
+    const trash = parseEnum(c.req.query('trash'), TASK_TRASH_FILTERS, 'trash');
+    if (archived !== undefined && trash !== undefined) {
+      throw ApiError.badRequest('Ask for archived or trash, not both', { archived, trash });
+    }
 
     const rows = listTasks(db, actor, c.req.param('slug'), {
       limit,
@@ -370,6 +376,7 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       sprint: c.req.query('sprint'),
       ready: parseReady(c.req.query('ready')),
       archived,
+      trash,
     });
 
     const page: Page<TaskView> = buildPage(rows, limit, (row) => ({
@@ -378,7 +385,7 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     }));
 
     // Each row carries its own ETag (LAI-571), from the full view either way.
-    return c.json(listedPage(page, fields, archived));
+    return c.json(listedPage(page, fields, archived !== undefined || trash !== undefined));
   });
 
   app.post('/:slug/tasks', async (c) => {
@@ -423,7 +430,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     }));
 
     // Each row carries its own ETag (LAI-571), from the full view either way.
-    return c.json(listedPage(page, fields, archived));
+    return c.json(listedPage(page, fields, archived !== undefined));
   });
 
   // The figures for exactly what `GET /` pages through, with the same filters
@@ -476,6 +483,23 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       ...fields,
       expected_version: expectedVersion,
     });
+    c.header('ETag', taskEtag(task));
+    return c.json(task);
+  });
+
+  /**
+   * **Into the space's Trash, and back out** (§6.4, LAI-1354): `task.delete`,
+   * signed in only — the service's rules. Both answer the task as it now is,
+   * so the drawer can draw its Trash banner without a second read.
+   */
+  app.delete('/:id', (c) => {
+    const task = setTaskDeleted(db, requireActor(c), c.req.param('id'), true);
+    c.header('ETag', taskEtag(task));
+    return c.json(task);
+  });
+
+  app.post('/:id/restore', (c) => {
+    const task = setTaskDeleted(db, requireActor(c), c.req.param('id'), false);
     c.header('ETag', taskEtag(task));
     return c.json(task);
   });

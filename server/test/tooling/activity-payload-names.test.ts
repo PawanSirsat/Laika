@@ -51,6 +51,7 @@ import {
   createTask,
   removeTaskDependency,
   setTaskArchived,
+  setTaskDeleted,
   startWorking,
   updateTask,
 } from '../../src/services/tasks.ts';
@@ -670,6 +671,9 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       });
       setTaskArchived(t.db, owner(), putAway.id, true);
       setTaskArchived(t.db, owner(), putAway.id, false);
+      // …and into Trash and out (LAI-1354): task.deleted, task.undeleted.
+      setTaskDeleted(t.db, owner(), putAway.id, true);
+      setTaskDeleted(t.db, owner(), putAway.id, false);
 
       // --- comments.ts: added, edited, deleted -----------------------------
       const comment = addComment(t.db, owner(), task.id, 'A remark');
