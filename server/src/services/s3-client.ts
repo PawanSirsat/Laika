@@ -241,10 +241,14 @@ export function signedHeaders(
 
 /**
  * The store could not be reached, or would not answer (§6.3's `unavailable`).
- * Its own words never come with it.
+ * Its own words never come with it. `storeStatus` is what it answered, or
+ * null when it never did — `status` is Laika's own answer, 503.
  */
 export class StoreUnavailableError extends ApiError {
-  constructor(why: string) {
+  constructor(
+    why: string,
+    readonly storeStatus: number | null = null,
+  ) {
     super('unavailable', 'The file store could not be reached', {
       reason: 'store_unreachable',
       why,
@@ -441,7 +445,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       const answer = await send('HEAD', key);
       if (answer.status === 404) return null;
       if (answer.status < 200 || answer.status >= 300) {
-        throw new StoreUnavailableError(`HEAD answered ${String(answer.status)}`);
+        throw new StoreUnavailableError(`HEAD answered ${String(answer.status)}`, answer.status);
       }
       // Read as digits first: `Number(null)` is 0, so a store that sent no
       // length would otherwise read as an empty object — a size mismatch to
@@ -449,7 +453,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       const length = answer.headers.get('content-length');
       const size = length !== null && /^\d+$/.test(length) ? Number(length) : NaN;
       if (!Number.isSafeInteger(size)) {
-        throw new StoreUnavailableError('HEAD answered no size');
+        throw new StoreUnavailableError('HEAD answered no size', answer.status);
       }
       return { size };
     },
@@ -458,7 +462,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       const want = to - from + 1;
       const answer = await send('GET', key, { range: `bytes=${String(from)}-${String(to)}` }, want);
       if (answer.status !== 206 && answer.status !== 200) {
-        throw new StoreUnavailableError(`GET answered ${String(answer.status)}`);
+        throw new StoreUnavailableError(`GET answered ${String(answer.status)}`, answer.status);
       }
       // A store that ignored the range answers `200` and the whole object;
       // `readUpTo` stopped reading it after the bytes asked for.
@@ -477,14 +481,14 @@ export function storeClient(options: StoreClientOptions): StoreClient {
         body,
       );
       if (answer.status < 200 || answer.status >= 300) {
-        throw new StoreUnavailableError(`PUT answered ${String(answer.status)}`);
+        throw new StoreUnavailableError(`PUT answered ${String(answer.status)}`, answer.status);
       }
     },
 
     async remove(key) {
       const answer = await send('DELETE', key);
       if (answer.status === 404 || (answer.status >= 200 && answer.status < 300)) return;
-      throw new StoreUnavailableError(`DELETE answered ${String(answer.status)}`);
+      throw new StoreUnavailableError(`DELETE answered ${String(answer.status)}`, answer.status);
     },
   };
 }

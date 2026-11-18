@@ -16,6 +16,7 @@ import { deleteComment } from '../../src/services/comments.ts';
 import {
   INBOUND_ATTACHMENT_ATTEMPTS,
   INBOUND_ATTACHMENT_MAX_BYTES,
+  INBOUND_UNEXPECTED_IN_A_ROW,
   runInboundAttachments,
 } from '../../src/services/email-inbound-attachments.ts';
 import {
@@ -258,10 +259,11 @@ describe('a file that cannot be stored never blocks its task', () => {
     expect(t.db.select().from(tasks).all()).toHaveLength(1);
   });
 
-  it('store_failed: the store refused three times; the half-made row is left to the sweep', async () => {
+  it('store_failed: the store refused the file three times; the half-made row is left to the sweep', async () => {
     mailWith([file('dl-1')]);
+    // A 4xx is the file's: charged, where a store that is down is not.
     s3.intercept = (req) =>
-      req.method === 'PUT' ? new Response('no', { status: 500 }) : undefined;
+      req.method === 'PUT' ? new Response('no', { status: 400 }) : undefined;
     for (let i = 0; i < INBOUND_ATTACHMENT_ATTEMPTS; i += 1) {
       await runInboundAttachments(t.db, SECRET, deps(), NOW);
     }
@@ -373,6 +375,93 @@ describe('a file that cannot be stored never blocks its task', () => {
   });
 });
 
+describe('a store that is down fails nothing', () => {
+  it('ends the tick at the first refusal, fetches nothing behind it, and charges nobody; all stored once it is back', async () => {
+    mailWith([file('dl-1'), file('dl-2', PDF.length, 'b.pdf'), file('dl-3', PDF.length, 'c.pdf')]);
+    let down = true;
+    s3.intercept = (req) =>
+      down && req.method === 'PUT' ? new Response('no', { status: 503 }) : undefined;
+    for (let tick = 1; tick <= 3; tick += 1) {
+      expect(await runInboundAttachments(t.db, SECRET, deps(), NOW)).toEqual({
+        stored: 0,
+        failed: 0,
+        skipped: 0,
+        retried: 0,
+      });
+      // Only the head is asked for, once a tick; nobody behind it is fetched.
+      expect(brevoCalls).toEqual(Array(tick).fill('dl-1'));
+      expect(queue().map((q) => [q.state, q.attempts])).toEqual([
+        ['pending', 0],
+        ['pending', 0],
+        ['pending', 0],
+      ]);
+    }
+
+    down = false;
+    expect(await runInboundAttachments(t.db, SECRET, deps(), NOW)).toMatchObject({ stored: 3 });
+    expect(queue().map((q) => [q.state, q.attempts])).toEqual([
+      ['stored', 0],
+      ['stored', 0],
+      ['stored', 0],
+    ]);
+  });
+
+  it('a 4xx is the file’s, not the store’s: charged, and the next file is stored in the same tick', async () => {
+    mailWith([file('dl-big', PDF.length, 'big.pdf'), file('dl-2', PDF.length, 'fine.pdf')]);
+    s3.intercept = (req) =>
+      req.method === 'PUT' && req.headers.get('content-disposition')?.includes('big.pdf') === true
+        ? new Response('too big for the proxy', { status: 413 })
+        : undefined;
+    expect(await runInboundAttachments(t.db, SECRET, deps(), NOW)).toEqual({
+      stored: 1,
+      failed: 0,
+      skipped: 0,
+      retried: 1,
+    });
+    expect(queue().map((q) => [q.filename, q.state, q.attempts])).toEqual([
+      ['big.pdf', 'pending', 1],
+      ['fine.pdf', 'stored', 0],
+    ]);
+  });
+});
+
+describe('a compressed body (gzip)', () => {
+  it('is stored whole, though its Content-Length is the compressed size', async () => {
+    const csv = new TextEncoder().encode('id,name\n1,Ada\n'.repeat(5_000));
+    mailWith([file('dl-csv', csv.length, 'people.csv')]);
+    // What Node's fetch hands back for a gzip answer: the body inflated, the
+    // headers as sent (brevo-inbound.test.ts shows it against a real server).
+    brevoAnswer = () =>
+      new Response(csv, { headers: { 'content-encoding': 'gzip', 'content-length': '312' } });
+    expect(await runInboundAttachments(t.db, SECRET, deps(), NOW)).toMatchObject({ stored: 1 });
+    const stored = t.db.select().from(attachments).get()!;
+    expect(s3.objects.get(stored.storageKey)?.body).toEqual(csv);
+  });
+
+  it('a gzip bomb stops at the inbound ceiling, whatever the board allows', async () => {
+    mailWith([file('dl-bomb', 5, 'small.zip')]);
+    const MiB = 1024 * 1024;
+    let pulled = 0;
+    brevoAnswer = () =>
+      new Response(
+        new ReadableStream<Uint8Array>(
+          {
+            pull(controller) {
+              pulled += MiB;
+              controller.enqueue(new Uint8Array(MiB));
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        { headers: { 'content-encoding': 'gzip', 'content-length': '41000' } },
+      );
+    await runInboundAttachments(t.db, SECRET, deps('on', INBOUND_ATTACHMENT_MAX_BYTES * 2), NOW);
+    expect(queue()[0]).toMatchObject({ state: 'skipped', reason: 'too_large' });
+    expect(pulled).toBe(INBOUND_ATTACHMENT_MAX_BYTES + MiB);
+    expect(s3.objects.size).toBe(0);
+  });
+});
+
 describe('one file never stops the others (M1)', () => {
   it('stores a name cut nowhere near a pair, with a disposition that decodes back to it', async () => {
     // 202 code points, 402 UTF-16 units: a cut at 255 units splits a pair.
@@ -420,6 +509,34 @@ describe('one file never stops the others (M1)', () => {
     expect(faults.map((f) => (f as Error).message)).toEqual(
       Array(INBOUND_ATTACHMENT_ATTEMPTS).fill('a fault nobody expected'),
     );
+  });
+
+  it('the same fault twice in a row is the board’s: the tick stops before charging the rest', async () => {
+    mailWith([
+      file('dl-1', PDF.length, 'boom-1.pdf'),
+      file('dl-2', PDF.length, 'boom-2.pdf'),
+      file('dl-3', PDF.length, 'fine.pdf'),
+    ]);
+    t.sqlite.exec(`
+      CREATE TRIGGER boom BEFORE INSERT ON attachments WHEN NEW.filename LIKE 'boom-%'
+      BEGIN SELECT RAISE(ABORT, 'the disk is full'); END
+    `);
+    const faults: unknown[] = [];
+    expect(
+      await runInboundAttachments(
+        t.db,
+        SECRET,
+        deps('on', undefined, (cause) => faults.push(cause)),
+        NOW,
+      ),
+    ).toEqual({ stored: 0, failed: 0, skipped: 0, retried: 2 });
+    expect(faults).toHaveLength(INBOUND_UNEXPECTED_IN_A_ROW);
+    expect(brevoCalls).toEqual(['dl-1', 'dl-2']);
+    expect(queue().map((q) => [q.filename, q.state, q.attempts])).toEqual([
+      ['boom-1.pdf', 'pending', 1],
+      ['boom-2.pdf', 'pending', 1],
+      ['fine.pdf', 'pending', 0],
+    ]);
   });
 });
 

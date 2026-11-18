@@ -5,16 +5,33 @@
  * organisation's Brevo API key, and put in the D-150 store.
  *
  * **One fixed origin.** The key goes in the `api-key` header to
- * `https://api.brevo.com` and nowhere else — the token is a path segment,
- * encoded, so no announced value can send the key to another host.
+ * `https://api.brevo.com` and nowhere else — the token is one path segment,
+ * checked and encoded, so no announced value can send the key to another host
+ * or another of Brevo's paths.
  *
  * **Bounded.** At most `maxBytes` are read: a `Content-Length` over it is
  * `too_large` before a byte is read, and so is a body that runs past it, with
  * the rest never read. Brevo's error bodies are never read or passed on.
+ *
+ * **Uncompressed, or its length disbelieved.** `fetch` asks for gzip unless
+ * told otherwise, and inflates what it gets while `Content-Length` keeps the
+ * compressed size. So it asks for `identity`; and a body that comes compressed
+ * anyway is read by what arrives, never by its declared length — which also
+ * bounds a gzip bomb at `maxBytes`.
  */
 
 /** Where Brevo's API is. Fixed: the key is never sent anywhere else. */
 export const BREVO_API_ORIGIN = 'https://api.brevo.com';
+
+/**
+ * A `DownloadToken` Laika will put in a Brevo URL: one path segment that
+ * resolves to itself (LAI-1315 F1). Brevo does not say what its tokens are made
+ * of; the one published sample begins `eyJ0eXAiOi`, a JWT, so base64url and its
+ * dots are let through — and the two dot segments, `.` and `..`, are not, since
+ * a URL resolves `/v3/inbound/attachments/..` to `/v3/inbound/`. No `/`, no
+ * `%`: nothing else in a segment resolves.
+ */
+export const DOWNLOAD_TOKEN = /^(?!\.{1,2}$)[A-Za-z0-9_.=-]{1,2048}$/;
 
 /** How long one fetch may take, headers and body. */
 export const BREVO_TIMEOUT_MS = 30_000;
@@ -55,6 +72,10 @@ export async function fetchInboundAttachment(
   maxBytes: number,
   options: BrevoFetchOptions = {},
 ): Promise<FetchedAttachment> {
+  // The parser queues no other token; asked again here, where the key is sent.
+  if (!DOWNLOAD_TOKEN.test(downloadToken)) {
+    throw new BrevoFetchError('not a download token', null);
+  }
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => {
@@ -65,7 +86,7 @@ export async function fetchInboundAttachment(
       `${BREVO_API_ORIGIN}/v3/inbound/attachments/${encodeURIComponent(downloadToken)}`,
       {
         method: 'GET',
-        headers: { 'api-key': apiKey, accept: '*/*' },
+        headers: { 'api-key': apiKey, accept: '*/*', 'accept-encoding': 'identity' },
         redirect: 'error',
         signal: controller.signal,
       },
@@ -74,8 +95,14 @@ export async function fetchInboundAttachment(
       await res.body?.cancel().catch(() => undefined);
       throw new BrevoFetchError(`answered ${String(res.status)}`, res.status);
     }
-    // A length over the limit is refused before a byte is read.
-    const declared = declaredLength(res.headers.get('content-length'));
+    // A length over the limit is refused before a byte is read — unless the
+    // body came compressed, when the length is the compressed one and says
+    // nothing about what will be read.
+    const encoding = res.headers.get('content-encoding')?.trim().toLowerCase() ?? '';
+    const declared =
+      encoding === '' || encoding === 'identity'
+        ? declaredLength(res.headers.get('content-length'))
+        : null;
     if (declared !== null && declared > maxBytes) {
       await res.body?.cancel().catch(() => undefined);
       return { kind: 'too_large' };

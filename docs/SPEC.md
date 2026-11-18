@@ -8799,15 +8799,19 @@ One interval-driven scheduler in the same process:
   are fetched from Brevo with §4.103's API key and put in the D-150 store,
   each a ready §4.92 row the mail's sender uploaded, on the task or comment
   the mail made, with `attachment.added` as them. At most the smaller of the
-  board's attachment limit and **40 MiB** is read: these bytes are held in
-  memory, where a browser's upload never passes through Laika. Skipped at
+  board's attachment limit and **40 MiB** is read — by what arrives, never a
+  compressed body's `Content-Length`: these bytes are held in memory, where a
+  browser's upload never passes through Laika. Skipped at
   once, **before Brevo is asked** — `switch_off` (the organisation's switch
   is off now), `store_off`, `no_api_key`, `too_large`, `not_needed` (nothing
   left to put it on, a reply's comment deleted included, or a sender who may
-  no longer `attachment.create` there) — when it cannot work; a fetch or
-  store that fails, or throws anything else, is tried three times, a tick
-  apart, then `failed`. A tick still running when the next comes is joined.
-  **Never blocks the task, nor the files behind it**
+  no longer `attachment.create` there) — when it cannot work; a fetch that
+  fails, a store that refuses the file (a 4xx), or anything else thrown is
+  tried three times, a tick apart, then `failed`. **A store that is down** —
+  no answer, a 5xx, 408 or 429 — ends the tick and charges nobody, so
+  downtime fails no file; and two unexpected faults in a row end it too. A
+  tick still running when the next comes is joined. **Never blocks the task,
+  nor the files behind it**
 - **email retention** (§4.93, §4.98, §4.105) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
   `queued` or `sending` one, closed digests 90 days after they closed, with
@@ -9001,7 +9005,8 @@ sender's address and the receiving server's verdict words, never the mail. Mail
 to the board goes through Brevo, which the organisation chose; nothing is
 fetched from a mailbox. **Its attachments are one more outbound call**: a `GET`
 of `https://api.brevo.com/v3/inbound/attachments/<token>` per announced file,
-with the organisation's Brevo API key, to that one host and no other (§11.6).
+with the organisation's Brevo API key and `Accept-Encoding: identity`, to that
+one host and no other, the token checked to be one path segment (§11.6).
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DOWNLOAD_TOKEN } from './brevo-inbound.ts';
 
 /**
  * Reading one inbound mail as Brevo's inbound parsing posts it (D-155,
@@ -75,16 +76,6 @@ export const NO_SUBJECT = '(no subject)';
 
 /** At most this many attachments are taken from one mail. */
 export const INBOUND_ATTACHMENTS_MAX = 20;
-
-/**
- * A `DownloadToken` Laika will put in a Brevo URL: one path segment that
- * resolves to itself (F1). Brevo does not say what its tokens are made of; the
- * one published sample begins `eyJ0eXAiOi`, a JWT, so base64url and its dots
- * are let through — and the two dot segments, `.` and `..`, are not, since a
- * URL resolves `/v3/inbound/attachments/..` to `/v3/inbound/`. No `/`, no `%`:
- * nothing else in a segment resolves.
- */
-export const DOWNLOAD_TOKEN = /^(?!\.{1,2}$)[A-Za-z0-9_.=-]{1,2048}$/;
 
 /** The longest stored `message_id`; a longer one is stored as its digest. */
 const MESSAGE_ID_MAX = 512;

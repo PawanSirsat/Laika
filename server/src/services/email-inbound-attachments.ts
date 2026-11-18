@@ -24,11 +24,11 @@ import { StoreUnavailableError } from './s3-client.ts';
  * **A file never blocks its task, nor the files behind it.** The task or
  * comment was written when the mail arrived; a file that cannot be fetched or
  * stored is a reason on its row (§4.104), and the task stands without it. A
- * fetch or a store that fails — or throws anything nobody expected — is tried
- * at most three times, a tick apart; anything that cannot work — the switch
- * off, no store, no key, over the limit, nowhere left to put it, a sender who
- * may no longer attach there — is `skipped` at once, **before Brevo is
- * asked**.
+ * fetch, or a store that refuses the file — or anything nobody expected — is
+ * tried at most three times, a tick apart; anything that cannot work — the
+ * switch off, no store, no key, over the limit, nowhere left to put it, a
+ * sender who may no longer attach there — is `skipped` at once, **before
+ * Brevo is asked**. A store that is down ends the tick and charges nobody.
  */
 
 /** How many queued files one tick takes. */
@@ -43,6 +43,20 @@ export const INBOUND_ATTACHMENT_ATTEMPTS = 3;
  * memory between Brevo and the store, so it has a ceiling of its own.
  */
 export const INBOUND_ATTACHMENT_MAX_BYTES = 40 * 1024 * 1024;
+
+/** Unexpected faults one after another that end a tick. */
+export const INBOUND_UNEXPECTED_IN_A_ROW = 2;
+
+/**
+ * The store itself is down — no answer, a 5xx, a timeout or a throttle —
+ * rather than refusing this one file. A 4xx is the file's, and is charged
+ * like any refusal: otherwise one file the store will never take (a proxy's
+ * 413, say) would hold the queue for ever.
+ */
+function storeIsDown(err: StoreUnavailableError): boolean {
+  const status = err.storeStatus;
+  return status === null || status >= 500 || status === 408 || status === 429;
+}
 
 export interface InboundAttachmentDeps extends BrevoFetchOptions {
   /** The store; absent, or `config: null`, every queued file is `store_off`. */
@@ -162,25 +176,27 @@ async function drain(
     result.retried += 1;
   };
 
-  for (const { file, mail } of queued) {
+  type Queued = (typeof queued)[number];
+  /** One queued file, start to finish, and what its end means for the tick. */
+  const takeOne = async ({ file, mail }: Queued): Promise<'done' | 'store_down' | 'unexpected'> => {
     // What a throw counts as: Brevo's fault until the bytes are in hand.
     let stage: 'fetch_failed' | 'store_failed' = 'fetch_failed';
     try {
       if (!on) {
         finish(file.id, 'skipped', 'switch_off');
-        continue;
+        return 'done';
       }
       if (config === null) {
         finish(file.id, 'skipped', 'store_off');
-        continue;
+        return 'done';
       }
       if (apiKey === null) {
         finish(file.id, 'skipped', 'no_api_key');
-        continue;
+        return 'done';
       }
       if (file.sizeBytes > limit) {
         finish(file.id, 'skipped', 'too_large');
-        continue;
+        return 'done';
       }
       // Who to store it as, and where — asked before Brevo is, so a sender
       // who has since left the space has nothing fetched for them (F4).
@@ -194,17 +210,17 @@ async function drain(
         !can(withProject(actor, projectId), 'attachment.create', { projectId })
       ) {
         finish(file.id, 'skipped', 'not_needed');
-        continue;
+        return 'done';
       }
 
       const fetched = await fetchInboundAttachment(apiKey, file.downloadToken ?? '', limit, deps);
       if (fetched.kind === 'too_large') {
         finish(file.id, 'skipped', 'too_large');
-        continue;
+        return 'done';
       }
       if (fetched.bytes.length === 0) {
         finish(file.id, 'skipped', 'not_needed');
-        continue;
+        return 'done';
       }
 
       stage = 'store_failed';
@@ -217,23 +233,46 @@ async function drain(
         bytes: fetched.bytes,
       });
       finish(file.id, 'stored', null, stored.id);
+      return 'done';
     } catch (err) {
       // `StoreUnavailableError` is an `ApiError` too: it is asked first.
+      if (err instanceof StoreUnavailableError && storeIsDown(err)) {
+        // The store is down, not this file: nothing is charged for it.
+        return 'store_down';
+      }
       if (err instanceof BrevoFetchError || err instanceof StoreUnavailableError) {
         fault(file.id, file.attempts, stage);
-      } else if (err instanceof ApiError && err.code === 'payload_too_large') {
+        return 'done';
+      }
+      if (err instanceof ApiError && err.code === 'payload_too_large') {
         finish(file.id, 'skipped', 'too_large');
-      } else if (err instanceof ApiError) {
+        return 'done';
+      }
+      if (err instanceof ApiError) {
         // The sender may no longer attach in that space: nothing to store it as.
         finish(file.id, 'skipped', 'not_needed');
-      } else {
-        // Anything nobody expected is tried again like a refusal, and counted
-        // the same way (M1): one file can neither stop the files behind it nor
-        // be fetched for ever.
-        deps.onFault?.(err);
-        fault(file.id, file.attempts, stage);
+        return 'done';
       }
+      // Anything nobody expected is tried again like a refusal, and counted
+      // the same way (M1): one file can neither stop the files behind it nor
+      // be fetched for ever.
+      deps.onFault?.(err);
+      fault(file.id, file.attempts, stage);
+      return 'unexpected';
     }
+  };
+
+  let unexpectedInARow = 0;
+  for (const one of queued) {
+    const outcome = await takeOne(one);
+    // A store that is down takes nothing this tick: the files behind are
+    // neither fetched for it nor charged a try — `pruneAttachments`'
+    // `storeDown`, so minutes of downtime fail no file.
+    if (outcome === 'store_down') break;
+    // The same fault file after file is the board's, not the files': each is
+    // charged, and the tick stops before it charges the rest.
+    unexpectedInARow = outcome === 'unexpected' ? unexpectedInARow + 1 : 0;
+    if (unexpectedInARow >= INBOUND_UNEXPECTED_IN_A_ROW) break;
   }
   return result;
 }

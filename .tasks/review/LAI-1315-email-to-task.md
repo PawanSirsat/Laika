@@ -321,3 +321,20 @@ The criterion "CI green on each PR" is ticked by CHIEF after PR B's CI and revie
 - **F4.** `attachment.create` is checked before Brevo is asked; a sender removed from the space
   has nothing fetched or stored.
 - **F5.** A reply whose comment was deleted is `not_needed` and is never moved onto the task.
+
+### PR B, review round 2 (review-1315 on #381, 489dfd874)
+
+- **Gzip.** Node's `fetch` asks for gzip and inflates it, but `Content-Length` stays the
+  compressed size, so a compressed file failed as "sent more than it declared". This was
+  checked against a real local server. The fetch now asks for `Accept-Encoding: identity`.
+  A body that comes compressed anyway is read by what arrives, so a gzip bomb still stops at
+  the limit.
+- **Circuit breaker.** A store that is down (no answer, 5xx, 408, 429) ends the tick at once:
+  nothing is charged and nothing behind it is fetched, as `pruneAttachments`' `storeDown`
+  does. A store that refuses the file (4xx) is still charged and the tick goes on. Otherwise
+  one file the store will never take, such as a proxy's 413, would hold the queue forever.
+  Two unexpected faults in a row also end the tick. `StoreUnavailableError` now carries the
+  store's `storeStatus`.
+- **Token check in the fetch.** `fetchInboundAttachment` checks the token pattern itself
+  before the key is sent. `DOWNLOAD_TOKEN` now lives in `brevo-inbound.ts`.
+- `origin/master` (a3db10808) was merged first; 0089 is still the next free migration.
