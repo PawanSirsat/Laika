@@ -13,6 +13,7 @@ import {
   spaceRolesFor,
   nextSort,
   parseEmails,
+  presenceTitle,
   roleCounts,
   seatLine,
   sortPeople,
@@ -170,6 +171,21 @@ void describe('LAI-987 features in the LAI-893 tab', () => {
     assert.deepEqual(lastSignIn(undefined, NOW), { text: 'Never', tone: 'muted' });
     assert.equal(lastSignIn(NOW - 3 * HOUR, NOW).text, '3h ago');
     assert.equal(lastSignIn(NOW - 9 * DAY, NOW).text, '1w ago');
+  });
+
+  // LAI-1345: beside the hub's side menu the table drops Last sign-in, then
+  // Tools running; Last active's tooltip still names both.
+  void test('Last active’s tooltip names the two columns a narrow table drops, after its own note', () => {
+    const seen = lastActive({ status: 'away', last_seen: NOW - 2 * HOUR }, true, true, NOW);
+    assert.equal(
+      presenceTitle(seen, 2, lastSignIn(NOW - 3 * HOUR, NOW)),
+      'Tools running: 2\nLast sign-in: 3h ago',
+    );
+    const off = lastActive({ status: null, last_seen: null }, false, true, NOW);
+    assert.equal(
+      presenceTitle(off, undefined, lastSignIn(null, NOW)),
+      'Presence is off\nTools running: —\nLast sign-in: Never',
+    );
   });
 
   void test('the Deactivated filter shows only deactivated people', () => {

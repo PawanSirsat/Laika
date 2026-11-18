@@ -1615,20 +1615,28 @@
   outline-offset: 1px;
 }
 
-/* The table: a grid, scrolling sideways on a narrow screen. */
+/* The table: a grid, scrolling sideways on a narrow screen. It is its own
+   container, so the columns answer to the room beside the hub's side menu,
+   not to the viewport (LAI-1345). */
 .org-people-scroll {
   overflow-x: auto;
   scrollbar-width: thin;
+  container: people / inline-size;
 }
 
+/* Every column's floor, seven gaps and the row's padding. Below it the table
+   drops a column rather than squeeze one — see the container queries below. */
 .org-people-table {
-  min-width: 60rem;
+  min-width: 52rem;
 }
 
-/* Last active and Last sign-in side by side (LAI-999): presence, and the account. */
+/* Last active and Last sign-in side by side (LAI-999): presence, and the account.
+   Every column has a floor, so each row's grid divides the same way. */
 .org-people-row {
   display: grid;
-  grid-template-columns: 1.25rem minmax(0, 2.6fr) minmax(0, 1.1fr) 0.7fr 0.7fr 1fr 1fr 9.5rem;
+  grid-template-columns:
+    1.25rem minmax(12rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
+    minmax(4.5rem, 0.7fr) minmax(5.5rem, 1fr) minmax(5.5rem, 1fr) 5.5rem;
   align-items: center;
   gap: var(--space-3);
   padding: 0.5625rem var(--space-5);
@@ -1637,6 +1645,63 @@
 
 .org-people-row:last-child {
   border-bottom: none;
+}
+
+/* Too narrow for every column — a laptop beside the hub's side menu (the owner,
+   2026-11-18: "side menu, table adapts"). Last sign-in goes first, then Tools
+   running: out of sight, still read by a screen reader (as .visually-hidden,
+   index.css), and both named in Last active's tooltip. Below the last floor the
+   table scrolls. */
+@container people (width < 52rem) {
+  .org-people-table {
+    min-width: 45.75rem;
+  }
+
+  .org-people-row {
+    grid-template-columns:
+      1.25rem minmax(12rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
+      minmax(4.5rem, 0.7fr) minmax(5.5rem, 1fr) 5.5rem;
+  }
+
+  .org-people-header > [data-col='sign-in'],
+  .org-person > [data-last-sign-in] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@container people (width < 45.75rem) {
+  .org-people-table {
+    min-width: 40.5rem;
+  }
+
+  .org-people-row {
+    grid-template-columns:
+      1.25rem minmax(12rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
+      minmax(5.5rem, 1fr) 5.5rem;
+  }
+
+  .org-people-header > [data-col='tools'],
+  .org-person > [data-agents] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .org-people-header {
@@ -1683,6 +1748,13 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+}
+
+/* A long address ends in an ellipsis, whole in its title (LAI-1345). */
+.org-people-person .org-person-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .org-avatar-wrap {

@@ -31,6 +31,7 @@ import {
   lastActive,
   lastSignIn,
   nextSort,
+  presenceTitle,
   roleCounts,
   seatLine,
   readPeopleView,
@@ -709,10 +710,15 @@ export function PeopleTab({
                 <span role="columnheader">Person</span>
                 <span role="columnheader">Role</span>
                 <span role="columnheader">Spaces</span>
-                {/* Presence, not registered agents (LAI-1058, plan §B.7). */}
-                <span role="columnheader">Tools running</span>
+                {/* Presence, not registered agents (LAI-1058, plan §B.7). `data-col`
+                    names the two a narrow table drops first (LAI-1345). */}
+                <span role="columnheader" data-col="tools">
+                  Tools running
+                </span>
                 <span role="columnheader">Last active</span>
-                <span role="columnheader">Last sign-in</span>
+                <span role="columnheader" data-col="sign-in">
+                  Last sign-in
+                </span>
                 <span role="columnheader" className="visually-hidden">
                   Actions
                 </span>
@@ -789,7 +795,9 @@ export function PeopleTab({
                             <span className="org-chip org-chip-off">DEACTIVATED</span>
                           )}
                         </span>
-                        <span className="org-person-email">{person.email}</span>
+                        <span className="org-person-email" title={person.email}>
+                          {person.email}
+                        </span>
                         <PersonFacts userId={person.id} className="org-person-facts" />
                       </span>
                     </span>
@@ -842,7 +850,7 @@ export function PeopleTab({
                       role="cell"
                       className={`org-people-seen org-people-seen-${seen.tone}`}
                       data-last-active
-                      title={seen.note}
+                      title={presenceTitle(seen, agents, signedIn)}
                     >
                       {seen.text}
                     </span>

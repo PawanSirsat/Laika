@@ -90,6 +90,26 @@ export function lastSignIn(at: number | null | undefined, now: number): LastActi
   return ago(at, now);
 }
 
+/**
+ * Last active's tooltip (LAI-1345): its own note, then the two columns a
+ * narrow table drops first — Tools running and Last sign-in — so a reader
+ * beside the hub's side menu still finds them. One line each, in the
+ * columns' own words.
+ */
+export function presenceTitle(
+  seen: LastActive,
+  tools: number | undefined,
+  signedIn: LastActive,
+): string {
+  return [
+    seen.note,
+    `Tools running: ${tools === undefined ? '—' : String(tools)}`,
+    `Last sign-in: ${signedIn.text}`,
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
+}
+
 /** A space to narrow to: its slug, and the slugs each person is in (`GET /capacity`). */
 export interface SpaceFilter {
   readonly slug: string;
