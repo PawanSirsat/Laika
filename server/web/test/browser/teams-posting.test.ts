@@ -27,7 +27,7 @@ import {
 } from './harness.ts';
 import { ME_MEMBER, ME_OWNER, PROJECT, SLUG, spaceSettingsStub } from './space-settings-fixture.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('teams');
 
 const MINUTE = 60_000;
@@ -304,7 +304,7 @@ void describe('Organisation → Integrations: the Teams switch', () => {
   void test('is off, turns on with one click, and lists every space with a channel', async () => {
     const on = { value: false };
     const puts: StubCall[] = [];
-    const h = await open('/organisation?tab=integrations', orgStub(on, puts));
+    const h = await open('/organisation?tab=teams', orgStub(on, puts));
     try {
       const section = h.page.locator('[data-section="teams"]');
       await section.waitFor({ timeout: 20_000 });

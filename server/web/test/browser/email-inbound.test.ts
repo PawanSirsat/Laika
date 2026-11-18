@@ -222,7 +222,7 @@ function orgStub(extra: ApiStub): ApiStub {
 }
 
 async function integrations(stub: ApiStub): Promise<Harness> {
-  const h = await open('/organisation?tab=integrations', stub);
+  const h = await open('/organisation?tab=email', stub);
   await card(h).waitFor({ timeout: 20_000 });
   await card(h).getByRole('switch').waitFor();
   return h;

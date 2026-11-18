@@ -3555,7 +3555,7 @@ p.inspector-length {
   background: none;
   /* On its own the pill sits at the top of a column (`align-self: flex-start`);
      inside this row that lifted it 6px above the word and the chevron
-     (LAI-1319). Centred on the same line as both. */
+     (LAI-1346). Centred on the same line as both. */
   align-self: center;
   line-height: inherit;
 }

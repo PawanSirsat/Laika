@@ -55,7 +55,7 @@ void describe('the tabs are the owner’s grouping', () => {
   });
 
   void test('Organisation is a settings hub: Overview, then Workspace, People & access, Connections, Records', () => {
-    // LAI-1318: one focused page per job, grouped down the side. Work stays,
+    // LAI-1345: one focused page per job, grouped down the side. Work stays,
     // under Records, ungated as its sidebar entry was.
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => `${t.group ?? '-'}/${t.id}`),

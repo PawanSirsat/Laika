@@ -132,7 +132,10 @@ void describe('who is offered it', () => {
         const tabs = await h.page
           .locator('.page-tab')
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab')));
-        assert.deepEqual(tabs.slice(-2), ['security', 'activity']);
+        // The settings hub (LAI-1345): Activity closes Records, the last group,
+        // and Tokens & sign-in (`security`) is offered too.
+        assert.equal(tabs.at(-1), 'activity');
+        assert.ok(tabs.includes('security'));
       } finally {
         await h.close();
       }

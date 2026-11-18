@@ -3638,7 +3638,7 @@
 }
 
 /* ===========================================================================
- * LAI-1318 — the modern layer. Grids on every tab, folded sections, and one
+ * LAI-1345 — the modern layer. Grids on every tab, folded sections, and one
  * set of interaction states (hover, focus-visible, pressed, disabled) for
  * every control the page draws. Colours are theme.css tokens only, mixed;
  * nothing here invents a value, so both themes follow automatically.
@@ -4380,7 +4380,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 }
 
 /* ===========================================================================
- * LAI-1318 — Overview as a bento dashboard, in the Forge-style glass look:
+ * LAI-1345 — Overview as a bento dashboard, in the Forge-style glass look:
  * tinted panes, a soft accent glow per tile, bold titles. The glass itself is
  * the theme's tokens (LAI-1132); no blur here — cards are tinted, not blurred.
  * ======================================================================== */
@@ -4903,7 +4903,7 @@ a.bento-row:active {
   }
 }
 
-/* --- every tab in the same glass: one accent per tab (LAI-1318) ----------- */
+/* --- every tab in the same glass: one accent per tab (LAI-1345) ----------- */
 
 .org-body {
   --tone: var(--chip-purple);
@@ -4976,7 +4976,7 @@ a.bento-row:active {
 }
 
 /* ===========================================================================
- * LAI-1318 — the settings hub: sections down the side, one page each.
+ * LAI-1345 — the settings hub: sections down the side, one page each.
  * ======================================================================== */
 
 .org-hub {

@@ -199,7 +199,7 @@ export function EmailSection({ onChanged }: EmailSectionProps) {
   ].filter((part): part is string => part !== null);
 
   return (
-    // Folded to one row that says its state (LAI-1318).
+    // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="email"
       id="org-email"

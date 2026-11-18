@@ -221,7 +221,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const test = view.last_test;
 
   return (
-    // Folded to one row that says its state (LAI-1318).
+    // Folded to one row that says its state (LAI-1345).
     <OrgAccordion
       name="calendar"
       id="org-cal"

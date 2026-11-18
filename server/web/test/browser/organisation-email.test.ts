@@ -22,7 +22,7 @@ import {
   openSectionsByDefault,
 } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('email');
 
 /** A key nothing else on the page could contain by accident. */
@@ -187,7 +187,7 @@ function emailServer(role: string, initial: Record<string, unknown> = UNSET) {
 }
 
 async function integrations(stub: ApiStub, ready = '[data-section="email"]'): Promise<Harness> {
-  const h = await openPage('/organisation?tab=integrations', stub);
+  const h = await openPage('/organisation?tab=email', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }

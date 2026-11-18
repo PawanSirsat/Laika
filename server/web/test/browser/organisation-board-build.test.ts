@@ -65,7 +65,7 @@ void after(async () => {
 void describe('the board build line', () => {
   for (const role of ['owner', 'admin']) {
     void test(`${role}: version, commit and protocol, each the server’s`, async () => {
-      const h = await open('/organisation', stub(role));
+      const h = await open('/organisation?tab=general', stub(role));
       try {
         const line = h.page.locator(LINE);
         await line.waitFor({ timeout: 20_000 });
@@ -82,7 +82,7 @@ void describe('the board build line', () => {
 
   for (const role of ['member', 'viewer']) {
     void test(`${role}: no line, though the page has the build in hand`, async () => {
-      const h = await open('/organisation', stub(role));
+      const h = await open('/organisation?tab=general', stub(role));
       try {
         await h.page.locator('.org-stat', { hasText: 'Members' }).waitFor({ timeout: 20_000 });
         await h.page.locator('.org-pulse').waitFor({ timeout: 20_000 });
@@ -98,7 +98,7 @@ void describe('the board build line', () => {
   }
 
   void test('a build that does not know its commit says so; one protocol has no range', async () => {
-    const h = await open('/organisation', stub('owner', compat(null, 2, 2)));
+    const h = await open('/organisation?tab=general', stub('owner', compat(null, 2, 2)));
     try {
       const line = h.page.locator(LINE);
       await line.waitFor({ timeout: 20_000 });
@@ -112,7 +112,7 @@ void describe('the board build line', () => {
   });
 
   void test('a failed read shows no line, and the rest of Overview stands', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=general', {
       ...stub('owner'),
       '/api/v1/developer/compatibility': refuse(500, 'internal', 'boom'),
     });
@@ -130,7 +130,7 @@ void describe('fits', () => {
   for (const width of [1440, 390]) {
     for (const theme of ['light', 'dark']) {
       void test(`${String(width)}px, ${theme}: muted and inside the page`, async () => {
-        const h = await open('/organisation', stub('owner'));
+        const h = await open('/organisation?tab=general', stub('owner'));
         try {
           await h.page.setViewportSize({ width, height: 900 });
           await setTheme(h.page, theme);

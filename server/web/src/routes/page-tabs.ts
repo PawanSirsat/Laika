@@ -36,9 +36,16 @@ export interface PageTab {
   /**
    * The heading a tab sits under on a page whose sections are a side
    * navigation rather than a strip — the Organisation's settings hub
-   * (LAI-1318). Absent: it stands on its own, above every group.
+   * (LAI-1345). Absent: it stands on its own, above every group.
    */
   readonly group?: string;
+  /**
+   * A shorter word a page may draw at a phone's width instead of `label` —
+   * V3's *Setup* for *Project setup* (LAI-1327), so its tabs still fit 390px.
+   * The label stays the link's name to a screen reader, hidden for the eye
+   * only; a page that does not ask for the swap draws `label` alone.
+   */
+  readonly short?: string;
   /**
    * Drawn by its page after the tabs, as a quieter link, rather than as a tab
    * of its own — V3's *Advanced* (LAI-1096), which the owner's design leaves
@@ -101,7 +108,7 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
  */
 export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
-  // The settings hub (LAI-1318): one focused page per job, grouped. The ids
+  // The settings hub (LAI-1345): one focused page per job, grouped. The ids
   // the strip had — people, roles, integrations, security, work, activity —
   // keep their addresses, so every link to them still opens the same place.
   { id: 'general', label: 'General', group: 'Workspace' },

@@ -33,7 +33,7 @@ import {
   openSectionsByDefault,
 } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('github');
 
 const NOW = Date.now();
@@ -130,7 +130,7 @@ function orgServer(configured: boolean): { stub: ApiStub; calls: () => StubCall[
 void describe('the GitHub webhook card (LAI-753)', () => {
   void test('says what to paste, sets a secret, copies it once, and rotates it', async () => {
     const s = orgServer(false);
-    const h = await open('/organisation?tab=integrations', s.stub, { insecure: true });
+    const h = await open('/organisation?tab=github', s.stub, { insecure: true });
     const clip = await clipboardOf(h.page);
     try {
       assert.equal(new URL(h.origin).hostname, INSECURE_HOST);
@@ -192,7 +192,7 @@ void describe('the GitHub webhook card (LAI-753)', () => {
 
   void test('declining the rotation sends nothing; clearing asks and clears', async () => {
     const s = orgServer(true);
-    const h = await open('/organisation?tab=integrations', s.stub);
+    const h = await open('/organisation?tab=github', s.stub);
     try {
       const card = h.page.locator('[data-section="github"]');
       await card.waitFor({ timeout: 20_000 });
@@ -216,7 +216,7 @@ void describe('the GitHub webhook card (LAI-753)', () => {
 
   void test('a member sees no card at all', async () => {
     const s = orgServer(true);
-    const h = await open('/organisation?tab=integrations', {
+    const h = await open('/organisation?tab=github', {
       ...s.stub,
       '/api/v1/me': { ...OWNER, org_role: 'member' },
       '/api/v1/org': {
@@ -229,10 +229,8 @@ void describe('the GitHub webhook card (LAI-753)', () => {
       },
     });
     try {
-      // Integrations, loaded: the price table is everyone's, so it is there.
-      await h.page.locator('.org-body[data-tab="integrations"] .org-card').first().waitFor({
-        timeout: 20_000,
-      });
+      // GitHub's own page (LAI-1345), for a member: it says so, with no card.
+      await h.page.locator('[data-conn-refused]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('[data-section="github"]').count(), 0);
     } finally {
       await h.close();

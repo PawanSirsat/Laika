@@ -18,7 +18,7 @@ import { closeBrowser, open, until, type StubCall, openSectionsByDefault } from 
 import { PEOPLE } from './organisation-refine-fixtures.ts';
 import { TABS } from './organisation-tabs-fixtures.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault(
   'github',
   'hr',
@@ -415,7 +415,8 @@ void describe('Roles: grouped, findable, and a role explained', () => {
 
 void describe('Integrations: each card says its state', () => {
   void test('GitHub says not set up, with its steps, and fits a phone', async () => {
-    const h = await open('/organisation?tab=integrations', TABS(), {
+    // Each connection is on its own page since the settings hub (LAI-1345).
+    const h = await open('/organisation?tab=github', TABS(), {
       before: async (page) => {
         await page.setViewportSize({ width: 390, height: 844 });
       },
@@ -427,8 +428,6 @@ void describe('Integrations: each card says its state', () => {
       assert.equal(await badge.innerText(), 'not set up');
       assert.equal(await badge.getAttribute('data-tone'), 'off');
       assert.equal(await card.locator('[data-github-steps] li').count(), 3);
-      const ai = h.page.locator('[data-section="ai"] .org-status-badge');
-      assert.equal(await ai.innerText(), 'configured');
 
       const fits = await card.evaluate((el) => {
         const box = el.getBoundingClientRect();
@@ -443,6 +442,11 @@ void describe('Integrations: each card says its state', () => {
         `the card runs off the screen by ${String(fits.right - fits.width)}`,
       );
       assert.ok(fits.scroll <= 1, `the card clips ${String(fits.scroll)}px of its own content`);
+
+      await h.page.locator('.page-tab[data-tab="ai"]').click();
+      const ai = h.page.locator('[data-section="ai"] .org-status-badge');
+      await ai.waitFor({ timeout: 20_000 });
+      assert.equal(await ai.innerText(), 'configured');
     } finally {
       await h.close();
     }

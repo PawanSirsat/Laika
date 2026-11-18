@@ -963,7 +963,7 @@ export interface OpenOptions {
 }
 
 /**
- * The Organisation page's folded sections (LAI-1318) this file's pages open
+ * The Organisation page's folded sections (LAI-1345) this file's pages open
  * with, as they are for a viewer who opened them before: the page remembers
  * that choice in `localStorage` under `laika.org.section.<name>`.
  */

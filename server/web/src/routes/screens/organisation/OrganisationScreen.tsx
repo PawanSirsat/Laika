@@ -305,7 +305,7 @@ export function OrganisationScreen({
   };
 
   /**
-   * The sections this reader is offered (LAI-1318): each connection only to a
+   * The sections this reader is offered (LAI-1345): each connection only to a
    * reader its section always admitted — the page decides, as it did when
    * they were cards on one tab.
    */
@@ -468,7 +468,7 @@ export function OrganisationScreen({
 
           {tab === 'overview' && (
             <>
-              {/* The overview as a dashboard (LAI-1318): the week, the
+              {/* The overview as a dashboard (LAI-1345): the week, the
                 connections, the people, the spaces and what just happened. */}
               <OverviewBento
                 org={org}
@@ -556,7 +556,7 @@ export function OrganisationScreen({
             </>
           )}
 
-          {/* Workspace → General (LAI-1318): the organisation's name and what it
+          {/* Workspace → General (LAI-1345): the organisation's name and what it
             records, and Developer insights. */}
           {tab === 'general' && org !== undefined && (
             <div className="org-settings-grid">
@@ -672,7 +672,7 @@ export function OrganisationScreen({
             <BoardBuildLine />
           )}
 
-          {/* Workspace → Time & breaks (LAI-1318). */}
+          {/* Workspace → Time & breaks (LAI-1345). */}
           {tab === 'time' && org !== undefined && (
             <div className="org-settings-grid">
               {/* D-088 (LAI-787) and D-101 (LAI-956): the organisation's half
@@ -697,7 +697,7 @@ export function OrganisationScreen({
             </div>
           )}
 
-          {/* Workspace → Spaces (LAI-1318): every space, its members and open work. */}
+          {/* Workspace → Spaces (LAI-1345): every space, its members and open work. */}
           {tab === 'spaces' && <OrgSpaces projects={projects} onNavigate={onNavigate} />}
 
           {tab === 'work' && (
@@ -796,7 +796,7 @@ export function OrganisationScreen({
             />
           )}
 
-          {/* Connections (LAI-1318): an index of every connection, then each on
+          {/* Connections (LAI-1345): an index of every connection, then each on
             a page of its own — open, not folded, since the page is the section. */}
           {tab === 'integrations' && (
             <ConnectionsIndex
@@ -850,6 +850,18 @@ export function OrganisationScreen({
                         current === undefined ? current : { ...current, email },
                       );
                     }}
+                  />
+                )}
+                {/* D-155 (LAI-1315): Email to tasks, beside the outbound email
+                    it answers through — the same gate it had on Integrations. */}
+                {canConfigureEmail && (
+                  <EmailInboundSection
+                    onChanged={(email_inbound) => {
+                      setOrg((current) =>
+                        current === undefined ? current : { ...current, email_inbound },
+                      );
+                    }}
+                    onNavigate={onNavigate}
                   />
                 )}
               </div>
@@ -1083,7 +1095,7 @@ export function OrganisationScreen({
                       // **`token.list_any`** — Owner and Admin (§3.1), the same
                       // grade as this tab's own gate. Not on the reader's own
                       // row, as it never was: theirs are on Developer access.
-                      // Each other row is one accordion header (LAI-1318): the
+                      // Each other row is one accordion header (LAI-1345): the
                       // whole line opens that person's tokens in place.
                       return person.id === me.id ? (
                         <div className="org-sec-head">

@@ -23,7 +23,7 @@ import {
   openSectionsByDefault,
 } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('hr');
 
 const MINUTE = 60_000;
@@ -213,7 +213,7 @@ async function organisation(stub: ApiStub, ready = '[data-fact="holidays"]'): Pr
 
 /** Integrations, where the HR system card is, beside the GitHub webhook. */
 async function integrations(stub: ApiStub, ready = '[data-section="hr"]'): Promise<Harness> {
-  const h = await openPage('/organisation?tab=integrations', stub);
+  const h = await openPage('/organisation?tab=hr', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }

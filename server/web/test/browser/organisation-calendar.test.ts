@@ -26,7 +26,7 @@ import {
   openSectionsByDefault,
 } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('calendar');
 
 const MINUTE = 60_000;
@@ -199,7 +199,7 @@ function calendarState(initial: unknown) {
 
 /** Integrations, where the calendar card is. */
 async function integrations(stub: ApiStub, ready = '[data-section="calendar"]'): Promise<Harness> {
-  const h = await openPage('/organisation?tab=integrations', stub);
+  const h = await openPage('/organisation?tab=calendar', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }

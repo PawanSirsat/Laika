@@ -13,7 +13,7 @@ export interface OrgNavProps {
 }
 
 /**
- * The Organisation's settings hub navigation (LAI-1318): the sections down
+ * The Organisation's settings hub navigation (LAI-1345): the sections down
  * the side, grouped by job — Workspace, People & access, Connections,
  * Records — one focused page each. On a narrow screen it becomes one row
  * that scrolls sideways above the page.

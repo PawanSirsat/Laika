@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, type ApiStub, setTheme, openSectionsByDefault } from './harness.ts';
 
-// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1345).
 openSectionsByDefault('grants', 'perm-org', 'perm-project');
 
 const user = (id: string, name: string, org_role: string) => ({
