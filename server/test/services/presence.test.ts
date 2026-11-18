@@ -1694,11 +1694,12 @@ describe('capacity per person (LAI-767)', () => {
       beat(ada, NOW - MIN);
       const read = () => presencePeopleNow(t.db, actor(adminId), NOW);
 
+      // A range on the time, not the org's whole history through its prefix.
       const activityPlan = queryPlansOf(t.sqlite, 'activity', read).join('\n');
-      expect(activityPlan).toContain('activity_org_created_at_idx');
+      expect(activityPlan).toMatch(/activity_org_created_at_idx \(org_id=\? AND created_at>\?\)/);
       expect(activityPlan).not.toMatch(/SCAN activity\b/);
       const beatPlan = queryPlansOf(t.sqlite, 'heartbeats', read).join('\n');
-      expect(beatPlan).toContain('heartbeats_created_at_idx');
+      expect(beatPlan).toMatch(/heartbeats_created_at_idx \(created_at>\?\)/);
       expect(beatPlan).not.toMatch(/SCAN heartbeats\b/);
 
       const statements = preparedDuring(t.sqlite, read);
