@@ -5,9 +5,15 @@ description: Use when finishing, commenting on or reporting a blocker on a task 
 
 # Show your work
 
-A reviewer should see the result before reading the code. When your work
-produced something a person needs to look at, attach it to the task — the
-screenshots, the file, the report — each with a caption. Nothing is attached
+The repo block's rule, word for word:
+
+> **Show the result.** When a person needs to see what you did — a UI
+> change, a generated file — attach screenshots or outputs with
+> `laika attach` or `request_upload`, each with a caption, and pass them to
+> `finish_task` as `outputs`. Skip it when tests are the whole proof. Never
+> upload a secret: attach a masked copy, and say where the real file is kept.
+
+A reviewer should see the result before reading the code. Nothing is attached
 for you: you choose what to show, and you show it on purpose.
 
 ## When to attach, and when not
@@ -39,8 +45,9 @@ and pass them as `outputs` on `finish_task` — the same files, captioned, shown
 on that review round.
 
 For a finding outside any task, `laika attach --unlisted <repo> --project
-<slug> <file…> --comment "what you noticed"` logs it with its files — or pass
-`attachments` to `log_unlisted_work`. An error screenshot on a blocker goes in
+<slug> <file…> --comment "what you noticed"` logs **a new** unlisted finding
+holding the files — it cannot add files to a finding already logged. Or pass
+`attachments` to `log_unlisted_work` when you log it. An error screenshot on a blocker goes in
 `attachments` on `add_comment`; a mockup for a new task in `attachments` on
 `create_task`.
 
@@ -103,11 +110,13 @@ real credentials are kept instead.
 
 ## One parent per feature
 
-A new feature with several parts gets one parent task, with each part as a
-child task. Work on an existing feature becomes a new child of its parent. A
-genuinely small one-off may stand alone. The main outputs go on the parent, a
-child's own outputs on the child.
+The repo block's rule, word for word:
+
+> **One parent per feature.** A new feature with several parts gets one
+> parent task, with each part as a child task (`create_task` with
+> `parent`). Work on an existing feature becomes a new child of its parent.
+> A genuinely small one-off may stand alone. The main outputs go on the
+> parent, a child's own outputs on the child.
 
 So the parent shows how the feature looks as a whole — the screenshots a
 person would demo — and each child carries the evidence for its own part.
-Create a child with `create_task` and its `parent`.

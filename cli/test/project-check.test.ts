@@ -37,7 +37,6 @@ import {
   NEUTRAL_LABEL,
   normaliseRemote,
   PROJECT_BLOCK_REVISION,
-  REVISION_3_RULES,
   projectCheck,
   USAGE,
 } from '../src/project-check.ts';
@@ -978,13 +977,6 @@ void describe('drift: the CLI reads the block the web writes', () => {
     assert.ok(
       copy.includes("export const BLOCK_MARKER = 'This project is tracked on a Laika board.';"),
     );
-  });
-
-  void test('revision 3’s two rules, word for word as the web writes them (LAI-1351, LAI-1352)', () => {
-    // The web's copy is a template literal, so its backticks are escaped there.
-    for (const rule of REVISION_3_RULES) {
-      assert.ok(copy.includes(rule.replace(/`/g, '\\`')), `connect-copy.ts lacks:\n${rule}`);
-    }
   });
 
   void test('every instructions file the CLI reads for a tool is one the web writes', () => {

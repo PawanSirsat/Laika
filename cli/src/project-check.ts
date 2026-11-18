@@ -91,25 +91,6 @@ import { planFor } from './tool-add.ts';
 /** The instructions template revision this CLI knows (`connect-copy.ts`'s `PROJECT_BLOCK_REVISION`). */
 export const PROJECT_BLOCK_REVISION = 3;
 
-/**
- * The two rules revision 3 added (D-162; LAI-1351 here, LAI-1352 on the web),
- * word for word as `connect-copy.ts`'s `projectBlock` writes them, wrapping and
- * indentation included: show the result, and one parent per feature. The
- * drift test below `project-check.test.ts` holds the web's copy to these, and
- * the `laika-show-your-work` skill says the second in the same words.
- */
-export const REVISION_3_RULES = [
-  `7. **Show the result.** When a person needs to see what changed — a UI change,
-   a generated file, an incident — attach it with a caption: \`laika attach\`
-   or \`outputs\` on \`finish_task\`. Screenshots before and after, light and
-   dark. Skip it when tests are the whole proof. Never attach a secret: attach
-   a masked copy and say where the real file is kept.`,
-  `8. **One parent per feature.** A new feature with several parts gets one parent
-   task, with each part as a child task. Work on an existing feature becomes a
-   new child of its parent. A genuinely small one-off may stand alone. The main
-   outputs go on the parent, a child's own outputs on the child.`,
-] as const;
-
 /** `connect-copy.ts`'s end marker. The begin marker carries the revision and the project. */
 export const BLOCK_END = '<!-- laika:end -->';
 

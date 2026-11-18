@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
-import { REVISION_3_RULES } from '../src/project-check.ts';
+import { plain, webRule } from './support/block-rules.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SKILLS = `${ROOT}plugin/skills/`;
@@ -102,11 +102,12 @@ void describe('the skill that has an agent show its work (D-162, LAI-1351)', () 
     }
   });
 
-  void test('states the parent and child rule in the words the repo block uses', () => {
-    const plain = (text: string): string => text.replace(/\s+/g, ' ');
-    const rule = plain(REVISION_3_RULES[1]).replace(/^8\. \*\*One parent per feature\.\*\* /, '');
-    assert.ok(rule.startsWith('A new feature'), 'the rule was not read — the probe is broken');
-    assert.ok(plain(readFileSync(SHOW, 'utf8')).includes(rule));
+  void test('states revision 3’s two rules in the repo block’s words, read from the web (LAI-1352)', () => {
+    // A blockquote's `>` markers are layout, as the block's line breaks are.
+    const skill = plain(readFileSync(SHOW, 'utf8').replace(/^> ?/gm, ''));
+    for (const rule of ['SHOW_THE_RESULT', 'ONE_PARENT_PER_FEATURE'] as const) {
+      assert.ok(skill.includes(webRule(rule)), `the skill does not say ${rule} word for word`);
+    }
   });
 
   void test('names only tools the server serves — read from both sides', () => {

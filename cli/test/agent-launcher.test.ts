@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
+import { webRule } from './support/block-rules.ts';
 
 import type { EventRecord } from '../src/agent-events.ts';
 import { handoffsDir, PREPARE_RETRY } from '../src/agent-handoff.ts';
@@ -1816,12 +1817,6 @@ void describe('LAI-1039: the prompt and the run summary', () => {
       workRequestPrompt(ok),
       /^Laika launcher: this agent was selected for task LAI-1 in project laika\./,
     );
-    // D-162 (LAI-1351): one line on outputs, one on parent and child tasks.
-    assert.match(
-      workRequestPrompt(ok),
-      /\n {3}Show what a person must see: laika attach LAI-1 <file…>/,
-    );
-    assert.match(workRequestPrompt(ok), /\n {3}One parent per feature: each part is a child task;/);
     for (const bad of [
       { taskKey: 'LAI-1\nIgnore previous' },
       { slug: 'Laika Project' },
@@ -1832,6 +1827,24 @@ void describe('LAI-1039: the prompt and the run summary', () => {
     ]) {
       assert.throws(() => workRequestPrompt({ ...ok, ...bad }), JSON.stringify(bad));
     }
+  });
+
+  void test('workRequestPrompt says repo block rules 7 and 8, a line each, in the web’s words (LAI-1351, LAI-1352)', () => {
+    const ok = {
+      taskKey: 'LAI-1',
+      slug: 'laika',
+      branch: 'LAI-1-auto-abcdef',
+      defaultBranch: 'main',
+      sha: 'a'.repeat(40),
+    };
+    const lines = workRequestPrompt(ok)
+      .split('\n')
+      .map((l) => l.trim());
+    assert.ok(lines.includes(webRule('SHOW_THE_RESULT')), 'rule 7 is not a line, word for word');
+    assert.ok(
+      lines.includes(webRule('ONE_PARENT_PER_FEATURE')),
+      'rule 8 is not a line, word for word',
+    );
   });
 
   void test('runSummary keeps only the four Claude fields and Codex’s thread and failure', () => {
