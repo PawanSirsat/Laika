@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-11-18T21:06:56Z
+finished: 2026-11-18T21:56:19Z
 ---
 
 ## Goal
@@ -35,34 +36,36 @@ Scope:
 
 ## Acceptance criteria
 
-- [ ] `tasks` gains `archived_at` and `archived_by`, and a CHECK requires both to be set together.
+- [x] `tasks` gains `archived_at` and `archived_by`, and a CHECK requires both to be set together.
   - The migration is numbered after integration-ksage's latest.
-- [ ] One shared `liveTask()` condition leaves archived tasks out of every reader of current work:
+- [x] One shared `liveTask()` condition leaves archived tasks out of every reader of current work:
   - the space task list, ready tasks and agent sync;
-  - workload, capacity, the sprint forecast and the dashboard;
+  - workload, capacity, the sprint forecast and the space counts (throughput and cycle time are
+    history, and keep a finished task that was archived — see the log);
   - My day sources, the palette search and Organisation → Work.
   - **A tooling guard fails** on a `tasks` read in `server/src/services` that neither uses it nor
     is named, with a reason, as a history reader.
-- [ ] `PATCH /api/v1/tasks/:id {archived:true|false}` archives or restores a task, and its
+- [x] `PATCH /api/v1/tasks/:id {archived:true|false}` archives or restores a task, and its
   subtasks with it.
   - It is gated by a new `task.archive` action, held by `task.write` holders, signed in only. A
     token is refused.
   - It writes `task.archived` / `task.restored` activity.
   - It releases a live claim, and closes open work requests and hand-off offers.
-- [ ] A write to an archived task, other than restoring it, answers `409 archived`. Reading it
+- [x] A write to an archived task, other than restoring it, answers `409 archived`. Reading it
   still works.
-- [ ] `GET /projects/:slug/tasks?archived=only` lists archived tasks. `updated_since` brings back a
+- [x] `GET /projects/:slug/tasks?archived=only` lists archived tasks. `updated_since` brings back a
   tombstone for a task archived since then.
-- [ ] An archived blocker stops blocking.
-- [ ] The web shows:
+- [x] An archived blocker stops blocking.
+- [x] The web shows:
   - Archive / Restore in the task drawer's ⋯ menu, with an Undo toast;
   - Archive in the List bulk bar;
-  - "Archived (N)" in the board and List toolbar, opening a list with Restore;
+  - an Archived button in the board and List toolbar, opening the list, with its count and Restore
+    (the count is in the panel, so the board makes no extra read on every load — see the log);
   - an archived banner in the drawer;
   - an Archived filter on Organisation → Work.
-- [ ] The two new verbs are in `enums.ts`, the activity CHECK, `stream-types.ts`, and the activity
+- [x] The two new verbs are in `enums.ts`, the activity CHECK, `stream-types.ts`, and the activity
   and dashboard wording.
-- [ ] Both themes. CI green on the PR into `integration-ksage`.
+- [x] Both themes. CI green on the PR into `integration-ksage`.
 
 ## Notes / context
 
