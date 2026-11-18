@@ -814,6 +814,8 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/org/calendar': 'session only (org.calendar.configure)',
   'POST /api/v1/org/calendar/test': 'session only (org.calendar.configure)',
   'POST /api/v1/org/calendar/sync': 'session only (org.calendar.configure); time, not a task',
+  // LAI-1335: the same sync over the last 1 to 90 days.
+  'POST /api/v1/org/calendar/backfill': 'session only (org.calendar.configure); time, not a task',
   'DELETE /api/v1/org/calendar': 'session only (org.calendar.configure)',
   'POST /api/v1/otlp/v1/logs': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/metrics': 'telemetry, not a task',
