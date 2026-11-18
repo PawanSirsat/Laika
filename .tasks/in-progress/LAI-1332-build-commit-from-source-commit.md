@@ -5,9 +5,8 @@ area: docker
 assignee: build-1332
 priority: p2
 depends-on: []
-status: review
+status: in-progress
 started: 2026-11-18T11:39:52Z
-finished: 2026-11-18T11:46:00Z
 ---
 
 ## Goal
@@ -64,3 +63,34 @@ GitHub Actions keeps passing `LAIKA_BUILD_COMMIT=${{ github.sha }}`, which wins.
 
 - Coolify settings. After this reaches Ksage, CHIEF deletes the hand-set `LAIKA_BUILD_COMMIT` from
   Ksage Backend: it is also a runtime env, so it would override the image's value.
+
+## Round 2 — CHIEF, 2026-11-18T11:56Z: the entrypoint guard
+
+CHIEF, reviewing PR #389: *"Close it in this PR, because a Ksage auto-deploy must never fail to
+boot over a label."* Round 1 found that Coolify's `SOURCE_COMMIT` can be the literal `HEAD` (when
+its `git ls-remote` output does not parse) or `unknown` (when the commit is null), and the server
+refuses to start on a `LAIKA_BUILD_COMMIT` that is not 7–40 lowercase hex (§11.7).
+
+**This widens a task already in review**, which §2 says should be a new task. It stays here
+because CHIEF asked for it in this PR. The round 1 criteria above are unchanged. CHIEF may split
+it out.
+
+Named crossings, in addition to round 1's:
+- `server/test/tooling/entrypoint.test.ts`, a new test file that runs `docker/entrypoint.sh`. Nothing
+  tested the entrypoint before. It sits beside `web-serve.test.ts` (LAI-1308), which tests
+  `docker/` from the same place.
+- `docs/SPEC.md` §11.7, the same `LAIKA_BUILD_COMMIT` row: it now mentions the guard.
+
+### Acceptance criteria (round 2)
+
+- [ ] `docker/entrypoint.sh`: a `LAIKA_BUILD_COMMIT` that is set and not empty, but not 7–40
+      lowercase hex, is unset before `exec`, with one line on stderr:
+      `laika: LAIKA_BUILD_COMMIT '<value>' is not a commit; serving none`.
+- [ ] A valid value passes through untouched. An empty value stays set and empty, and an unset
+      one stays unset, with no notice either way.
+- [ ] The server's own §11.7 validation (`server/src/env.ts`) is unchanged.
+- [ ] A test runs the real entrypoint under `sh`: `HEAD` unset with the notice; `unknown` unset;
+      a 40-hex value kept; empty unchanged; plus the 7/40-length edges, 6 and 41 characters, and
+      uppercase hex.
+- [ ] Mutation: with the guard removed, the test goes red.
+- [ ] SPEC §11.7's `LAIKA_BUILD_COMMIT` row mentions the guard.
