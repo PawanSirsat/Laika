@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { recordMcpUse } from '../auth/tokens.ts';
 import { recordMcpClientReport } from '../services/client-reports.ts';
-import { type Logger } from '../log.ts';
+import { type LogFields, type Logger } from '../log.ts';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import {
@@ -338,11 +338,53 @@ function unparsedReason(bytes: Uint8Array): 'ends_early' | 'not_utf8' | 'not_jso
 }
 
 /**
- * The SDK's own refusals are fixed sentences and are logged as they are. Any
- * other error is logged by name only: its message could quote the request.
+ * The SDK's refusals that are fixed sentences, matched exactly and logged as
+ * they are (`webStandardStreamableHttp.js`, SDK 1.30.0).
  */
-const SDK_REFUSAL =
-  /^(Parse error|Not Acceptable|Unsupported Media Type|Invalid Request|Bad Request|Method not allowed|Session not found|Conflict)\b/;
+const SDK_REFUSALS = new Set([
+  'Not Acceptable: Client must accept both application/json and text/event-stream',
+  'Not Acceptable: Client must accept text/event-stream',
+  'Unsupported Media Type: Content-Type must be application/json',
+  'Parse error: Invalid JSON',
+  'Parse error: Invalid JSON-RPC message',
+  'Invalid Request: Server already initialized',
+  'Invalid Request: Only one initialization request is allowed',
+  'Bad Request: Server not initialized',
+  'Bad Request: Mcp-Session-Id header is required',
+  'Session not found',
+  'Method not allowed.',
+  'Conflict: Only one SSE stream is allowed per session',
+]);
+
+/** The one SDK refusal that quotes the request: the client's own header, verbatim. */
+const UNSUPPORTED_VERSION = 'Bad Request: Unsupported protocol version';
+
+/**
+ * What a transport refusal is logged as, never more than the client could not
+ * choose. A fixed sentence is logged whole, with the reason a body did not parse
+ * when that was the refusal. The version refusal is logged as its fixed part,
+ * with the header cut to 40 safe characters and its length. Anything else is
+ * logged by name only: its message could quote the request.
+ */
+function refusalFields(error: unknown, request: Request, bytes: Uint8Array): LogFields {
+  const message = error instanceof Error ? error.message : '';
+  if (message === 'Parse error: Invalid JSON') {
+    return { error: message, reason: unparsedReason(bytes) };
+  }
+  if (message === 'Parse error: Invalid JSON-RPC message') {
+    return { error: message, reason: 'not_json_rpc' };
+  }
+  if (SDK_REFUSALS.has(message)) return { error: message };
+  if (message.startsWith(`${UNSUPPORTED_VERSION}: `)) {
+    const sent = request.headers.get('mcp-protocol-version') ?? '';
+    return {
+      error: UNSUPPORTED_VERSION,
+      protocol_version: sent.slice(0, 40).replace(/[^\w.-]/g, '?'),
+      protocol_version_length: sent.length,
+    };
+  }
+  return { error: error instanceof Error ? error.name : typeof error };
+}
 
 /** The JSON-RPC error the SDK answers with, in the same shape. */
 function parseErrorResponse(message: string): Response {
@@ -404,15 +446,11 @@ export async function handleMcpRequest(
 
   // Before `connect`, which wraps whatever handler is already here: every
   // refusal the transport answers itself — the `-32700`s among them — is
-  // logged, with the reason a body did not parse when that was the refusal.
-  transport.onerror = (error) => {
-    const known = SDK_REFUSAL.test(error.message);
+  // logged. `unknown`, because the SDK's catch-all hands on whatever was thrown.
+  transport.onerror = (error: unknown) => {
     context.log?.warn('mcp.transport_error', {
       ...framing,
-      error: known ? error.message : error.name,
-      ...(known && error.message.startsWith('Parse error: Invalid JSON')
-        ? { reason: unparsedReason(body.bytes) }
-        : {}),
+      ...refusalFields(error, request, body.bytes),
     });
   };
 

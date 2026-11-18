@@ -793,4 +793,67 @@ describe('a long body arrives whole, and one that does not says why (LAI-1350)',
       },
     ]);
   });
+
+  /** One request over the socket, and the `mcp.transport_error` lines it left. */
+  async function refused(body: string, headers: Record<string, string> = {}) {
+    const res = await fetch(new URL('/mcp', baseUrl), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await mint()}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...headers,
+      },
+      body,
+    });
+    return {
+      status: res.status,
+      answer: (await res.json()) as { error?: { code: number } },
+      logged: h.log.records.filter((r) => r.event === 'mcp.transport_error'),
+    };
+  }
+
+  it('calls whole JSON with a fault in its middle not_json, not a cut body', async () => {
+    const { status, answer, logged } = await refused(
+      '{"jsonrpc":"2.0","id":1 "method":"tools/call","params":{"name":"laika_whoami"}}',
+    );
+
+    expect(status).toBe(400);
+    expect(answer.error?.code).toBe(-32700);
+    expect(logged).toEqual([
+      expect.objectContaining({ error: 'Parse error: Invalid JSON', reason: 'not_json' }),
+    ]);
+  });
+
+  it('calls valid JSON that is not a JSON-RPC message not_json_rpc', async () => {
+    const { status, answer, logged } = await refused('{"hello":"world","measured":true}');
+
+    expect(status).toBe(400);
+    expect(answer.error?.code).toBe(-32700);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        error: 'Parse error: Invalid JSON-RPC message',
+        reason: 'not_json_rpc',
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain('measured');
+  });
+
+  it('logs an unsupported protocol version as a fixed sentence, never the header it was sent', async () => {
+    const sent = `v<${'z'.repeat(4000)}>`;
+    const { status, logged } = await refused(
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      { 'MCP-Protocol-Version': sent },
+    );
+
+    expect(status).toBe(400);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        error: 'Bad Request: Unsupported protocol version',
+        protocol_version: `v?${'z'.repeat(38)}`,
+        protocol_version_length: sent.length,
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain('z'.repeat(41));
+  });
 });
