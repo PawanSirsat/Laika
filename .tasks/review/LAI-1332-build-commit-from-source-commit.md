@@ -5,8 +5,9 @@ area: docker
 assignee: build-1332
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T11:39:52Z
+finished: 2026-11-18T11:46:00Z
 ---
 
 ## Goal
@@ -43,20 +44,20 @@ GitHub Actions keeps passing `LAIKA_BUILD_COMMIT=${{ github.sha }}`, which wins.
 
 ## Acceptance criteria
 
-- [ ] `docker/Dockerfile`'s runtime stage declares `ARG SOURCE_COMMIT=""` and sets
+- [x] `docker/Dockerfile`'s runtime stage declares `ARG SOURCE_COMMIT=""` and sets
       `ENV LAIKA_BUILD_COMMIT=${LAIKA_BUILD_COMMIT:-$SOURCE_COMMIT}`; nothing else in the file changes
       but the comment above those lines.
-- [ ] A Docker build with only `--build-arg SOURCE_COMMIT=abc` bakes `LAIKA_BUILD_COMMIT=abc`; with
+- [x] A Docker build with only `--build-arg SOURCE_COMMIT=abc` bakes `LAIKA_BUILD_COMMIT=abc`; with
       `LAIKA_BUILD_COMMIT=def` and `SOURCE_COMMIT=abc` it bakes `def`; with neither it bakes empty.
       Proved with real builds and `docker inspect`, or the log says plainly that docker could not run.
-- [ ] `.github/workflows/deploy.yml` is unchanged: CI's AWS build still passes `github.sha` as
+- [x] `.github/workflows/deploy.yml` is unchanged: CI's AWS build still passes `github.sha` as
       `LAIKA_BUILD_COMMIT`, and the existing assertion on it still holds.
-- [ ] `env-contract.test.ts` pins the new `ARG` and `ENV` lines, and goes red if the fallback is
+- [x] `env-contract.test.ts` pins the new `ARG` and `ENV` lines, and goes red if the fallback is
       removed or the precedence is reversed.
-- [ ] SPEC §11.7's `LAIKA_BUILD_COMMIT` row names both build args and which wins. `SOURCE_COMMIT`
+- [x] SPEC §11.7's `LAIKA_BUILD_COMMIT` row names both build args and which wins. `SOURCE_COMMIT`
       gets no row of its own: it is a build arg, never read by the server, and the §11.7 table is
       the server's runtime contract.
-- [ ] The changed test file passes on its own; `pnpm lint` and `pnpm format` pass on the changed
+- [x] The changed test file passes on its own; `pnpm lint` and `pnpm format` pass on the changed
       files. Each exit code is recorded.
 
 ## Out of scope
