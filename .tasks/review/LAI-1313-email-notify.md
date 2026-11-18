@@ -158,3 +158,11 @@ No criterion changed. The findings were fixed on the same branch:
    - "since your last digest".
 
 The agent-for-owner question is filed as LAI-1341 (LAIKA-1094).
+
+## Review round 2 (CHIEF, 2026-11-18, by message) — what was done
+
+1. **N1:** the reads are org-scoped index ranges in index order, with a `(created_at, rowid)`
+   cursor (`read_to_rowid`). EXPLAIN QUERY PLAN guards all four reads. The reads continue
+   while email is off, for criterion 1's `email_off` rows.
+2. **N2:** nothing is looked behind the first cursor.
+3. **N3:** a person is owed a digest line only for `pref_off` or `too_old`, as §4.99 says.
