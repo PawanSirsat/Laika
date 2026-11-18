@@ -723,6 +723,15 @@
   position: relative;
 }
 
+/* Online or away (LAI-1349): the gap ring takes their status colour. */
+.bt-member[data-ring='online'] {
+  border-color: var(--chip-green);
+}
+
+.bt-member[data-ring='away'] {
+  border-color: var(--chip-orange);
+}
+
 /* The shared Avatar fills the ring (LAI-1336), whatever the button's box. */
 .bt-member > .avatar {
   width: 100%;

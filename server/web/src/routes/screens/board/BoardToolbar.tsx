@@ -22,6 +22,8 @@ import type { FilterChip } from './filter-chips.ts';
 import { FilterChips } from './FilterChips.tsx';
 import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
+import { usePresenceStatuses } from '../../../api/use-presence-people.ts';
+import { ringClass } from '../../../components/avatar/avatar-model.ts';
 import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -293,6 +295,8 @@ export function BoardToolbar({
   scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
+  // Who is online or away, from the page's one read (LAI-1349): each face's ring.
+  const presence = usePresenceStatuses();
   const filterButton = filterButtonRef;
   const groupButton = useRef<HTMLButtonElement>(null);
   const membersButton = useRef<HTMLButtonElement>(null);
@@ -453,12 +457,13 @@ export function BoardToolbar({
             theme={theme}
             size={22}
             label={null}
-            className="dd-avatar"
+            // Ringed by their status, online or away (LAI-1349).
+            className={`dd-avatar ${ringClass(presence?.get(m.user_id))}`.trim()}
           />
         ),
       })),
     ],
-    [members, theme],
+    [members, theme, presence],
   );
   const tagOptions = useMemo<DropdownOption[]>(
     () => [
@@ -584,6 +589,8 @@ export function BoardToolbar({
                   <button
                     type="button"
                     className={on ? 'bt-member bt-member-on' : 'bt-member'}
+                    // Its ring takes their status, online or away (LAI-1349).
+                    data-ring={presence?.get(member.user_id)}
                     aria-pressed={on}
                     aria-label={memberFilterLabel(member.name, on)}
                     onClick={() => {
