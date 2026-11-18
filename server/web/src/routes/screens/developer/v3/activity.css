@@ -17,12 +17,13 @@
   gap: var(--space-2);
 }
 
-/* A step whose control sits beside it, a step with commands under its line. */
-.dx-activity-step {
+/* A step whose control sits beside it, a step with commands under its line.
+   Two classes: this sheet comes before design.css's `.dx-flow-row`. */
+.dx-flow-row.dx-activity-step {
   align-items: flex-start;
 }
 
-.dx-activity-step > .dx-flow-n {
+.dx-flow-row.dx-activity-step > .dx-flow-n {
   margin-top: var(--space-0-5);
 }
 
@@ -74,4 +75,10 @@
 .dx-activity-trouble dd {
   margin: var(--space-0-5) 0 0;
   color: var(--text-secondary);
+}
+
+/* A command named in a step's line or a fix, as `ActivityTab`'s `withCode` sets it. */
+.dev-activity .dx-flow-line code,
+.dx-activity-trouble code {
+  overflow-wrap: anywhere;
 }

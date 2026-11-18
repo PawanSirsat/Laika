@@ -69,7 +69,16 @@ export function PageTabs({
                   onNavigate(href);
                 }}
               >
-                {tab.label}
+                {tab.short === undefined ? (
+                  tab.label
+                ) : (
+                  <>
+                    <span className="page-tab-long">{tab.label}</span>
+                    <span className="page-tab-short" aria-hidden="true">
+                      {tab.short}
+                    </span>
+                  </>
+                )}
                 {tab.badge !== undefined && <span className="page-tab-badge">{tab.badge}</span>}
                 {count !== undefined && (
                   <span className="page-tab-count">

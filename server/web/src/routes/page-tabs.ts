@@ -34,6 +34,13 @@ export interface PageTab {
    */
   readonly badge?: string;
   /**
+   * A shorter word a page may draw at a phone's width instead of `label` —
+   * V3's *Setup* for *Project setup* (LAI-1327), so its tabs still fit 390px.
+   * The label stays the link's name to a screen reader, hidden for the eye
+   * only; a page that does not ask for the swap draws `label` alone.
+   */
+  readonly short?: string;
+  /**
    * Drawn by its page after the tabs, as a quieter link, rather than as a tab
    * of its own — V3's *Advanced* (LAI-1096), which the owner's design leaves
    * out of its four tabs. **It is still a tab to `currentTab`**, so its
@@ -139,7 +146,7 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
 export const DEVELOPER_V3_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'activity', label: 'Activity' },
-  { id: 'projects', label: 'Project setup' },
+  { id: 'projects', label: 'Project setup', short: 'Setup' },
   { id: 'devices', label: 'Devices' },
   { id: 'tools', label: 'Tools' },
   { id: 'advanced', label: 'Advanced', secondary: true },

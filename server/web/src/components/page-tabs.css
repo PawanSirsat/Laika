@@ -51,6 +51,11 @@
 }
 
 /* A tab's marker word, such as *Preview* (LAI-1048). A word, never colour alone. */
+/* A tab's phone word (`PageTab.short`): drawn only where its page swaps it in. */
+.page-tab-short {
+  display: none;
+}
+
 .page-tab-badge {
   padding: 0 var(--space-1-5);
   border: 1px solid var(--chip-neutral-border);

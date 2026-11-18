@@ -68,6 +68,13 @@ function AppLink({
   );
 }
 
+/** A line whose `backticked` spans are commands, set as code. */
+function withCode(text: string): ReactNode {
+  return text
+    .split('`')
+    .map((part, i) => (i % 2 === 1 ? <code key={String(i)}>{part}</code> : part));
+}
+
 /**
  * Developer access V3 → **Activity** (LAI-1327, the owner's decision): local
  * activity set up as one checklist, each step live (`activity-state.ts`), then
@@ -276,7 +283,7 @@ export function ActivityTab({
                   className="dx-flow-line"
                   {...(step.key === 'org' ? { id: 'dx-activity-org-line' } : {})}
                 >
-                  {step.line}
+                  {withCode(step.line)}
                 </span>
                 {step.key === 'org' &&
                   !sharing.org_enabled &&
@@ -351,8 +358,8 @@ export function ActivityTab({
                       className="dx-activity-trouble"
                       data-trouble={trouble.key}
                     >
-                      <dt>{trouble.says}</dt>
-                      <dd>{trouble.fix}</dd>
+                      <dt>{withCode(trouble.says)}</dt>
+                      <dd>{withCode(trouble.fix)}</dd>
                     </div>
                   ))}
                 </dl>
