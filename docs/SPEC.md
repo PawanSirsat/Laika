@@ -7333,10 +7333,12 @@ anything missing sends the task back.
   a grid of forty-eight and a field for any one emoji, and *Remove* while an
   icon is set. A picked image is checked before it is decoded — PNG, JPEG or
   WebP, its size read from its header, at most 40 megapixels. **It then opens
-  a square frame editor**: drag (or arrow keys) to place it, zoom from the whole image fitted up to 4× (slider, wheel,
-  pinch, `+`/`-`), *Reset*, a background where the logo does not fill the
-  square — transparent, white, black or the space's colour — and a preview at
-  sidebar and settings size, and its position said in a polite live region.
+  a square frame editor**: drag (or arrow keys) to place it, zoom from the
+  whole image fitted up to 4× (slider, wheel, pinch, `+`/`-`), *Reset*, a
+  background where the logo does not fill the square — transparent, white,
+  black or the space's colour — and a preview at sidebar and settings size.
+  Its position is said in a polite live region after a key or *Reset* moves
+  it and where a drag ends, never on every pointer move.
   *Use this* crops on the client to a square of at most 512 pixels, PNG or
   WebP whichever is smaller, under the smaller of 1 MB and the board's
   attachment limit — at a lower quality or a smaller square when it must, and
