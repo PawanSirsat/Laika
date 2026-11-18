@@ -3646,9 +3646,10 @@
 
 .org {
   /* One motion curve for the page: quick out, soft landing. */
-  --org-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --org-fast: 140ms;
-  --org-slow: 260ms;
+  /* On the shared motion tokens, so reduced motion (motion.css) stills them too. */
+  --org-ease: var(--ease-enter);
+  --org-fast: var(--duration-fast);
+  --org-slow: var(--duration-slow);
   --org-lift:
     0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent),
     0 8px 24px -12px color-mix(in srgb, var(--text-primary) 18%, transparent);
@@ -3665,7 +3666,7 @@
 
 /* The glass surface stays the theme's (LAI-1132): tint, sheen and highlight. */
 .org-card {
-  border-radius: calc(var(--radius-card) + 4px);
+  border-radius: calc(var(--radius-card) + var(--radius-chip));
   padding: var(--space-5);
   transition:
     border-color var(--org-fast) var(--org-ease),
@@ -3697,7 +3698,7 @@
   overflow: hidden;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-radius: calc(var(--radius-card) + 2px);
+  border-radius: calc(var(--radius-card) + var(--radius-hairline));
   transition:
     transform var(--org-fast) var(--org-ease),
     border-color var(--org-fast) var(--org-ease),
@@ -3734,11 +3735,11 @@
 }
 
 .org-stat dt {
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
 }
 
 .org-stat-value {
-  font-size: 1.875rem;
+  font-size: var(--text-heading-lg);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -3803,7 +3804,7 @@
 .org-acc-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
   flex: 1;
 }
@@ -3835,7 +3836,7 @@
 .org-acc-flag {
   font-family: var(--font-ui);
   font-weight: var(--weight-semibold);
-  padding: 1px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-pill);
   color: var(--accent);
   background: var(--accent-bg);
@@ -3870,7 +3871,7 @@
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  margin: 0 var(--space-1) 0.2rem;
+  margin: 0 var(--space-1) var(--space-1);
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   color: var(--text-muted);
@@ -4200,7 +4201,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 
   div.org-sec-head > .org-person-controls {
     flex-basis: 100%;
-    margin-left: calc(1.75rem + var(--space-3));
+    margin-left: calc(var(--space-6) + var(--space-2));
   }
 }
 
@@ -4361,23 +4362,11 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
   }
 }
 
-/* --- reduced motion: the same states, no movement -------------------------- */
-
-@media (prefers-reduced-motion: reduce) {
-  .org *,
-  .org *::before,
-  .org *::details-content {
-    transition-duration: 0s !important;
-    animation: none !important;
-  }
-
-  .org-stat:hover,
-  .org .bar-control:active,
-  .org-github-done:active,
-  .bento-button:active {
-    transform: none;
-  }
-}
+/* --- reduced motion ---------------------------------------------------------
+   No block of its own: every duration here is a motion token (`--org-fast`,
+   `--org-slow`, `--duration-pulse`), and motion.css zeroes those and runs any
+   loop once under `prefers-reduced-motion` — the one place that media query
+   is written (motion-tokens.test.ts). */
 
 /* ===========================================================================
  * LAI-1318 — Overview as a bento dashboard, in the Forge-style glass look:
@@ -4441,7 +4430,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
   min-width: 0;
   height: 100%;
   box-sizing: border-box;
-  border-radius: calc(var(--radius-card) + 6px);
+  border-radius: calc(var(--radius-card) + var(--radius-sm));
   background:
     radial-gradient(
       120% 90% at 0% 0%,
@@ -4508,7 +4497,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 .bento-head-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   min-width: 0;
 }
 
@@ -4531,7 +4520,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
   font-weight: var(--weight-semibold);
   color: var(--accent);
   text-decoration: none;
-  padding: 2px var(--space-2);
+  padding: var(--space-0-5) var(--space-2);
   border-radius: var(--radius-pill);
   transition: background-color var(--org-fast) var(--org-ease);
 }
@@ -4599,7 +4588,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
 }
 
 .bento-figures .org-stat-value {
-  font-size: 1.75rem;
+  font-size: var(--text-heading-lg);
 }
 
 /* --- Connections ---------------------------------------------------------- */
@@ -4609,7 +4598,7 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .bento-conn,
@@ -4645,7 +4634,7 @@ a.bento-row:active {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   border: 2px solid var(--text-muted);
   box-sizing: border-box;
 }
@@ -4661,7 +4650,7 @@ a.bento-row:active {
 }
 
 .bento-conn-dot[data-state='reading'] {
-  animation: bento-pulse 1.2s ease-in-out infinite;
+  animation: bento-pulse var(--duration-pulse) var(--ease-standard) infinite;
 }
 
 @keyframes bento-pulse {
@@ -4698,7 +4687,7 @@ a.bento-row:active {
 .bento-avatars {
   display: flex;
   flex-wrap: wrap;
-  padding-left: 6px;
+  padding-left: var(--space-1-5);
 }
 
 .bento-avatar {
@@ -4707,8 +4696,8 @@ a.bento-row:active {
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  margin-left: -6px;
-  border-radius: 50%;
+  margin-left: calc(-1 * var(--space-1-5));
+  border-radius: var(--radius-round);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   box-shadow: 0 0 0 2px var(--glass-2-solid);
@@ -4741,7 +4730,7 @@ a.bento-row:active {
 }
 
 .bento-role dt {
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -4749,7 +4738,7 @@ a.bento-row:active {
 }
 
 .bento-role dd {
-  margin: 2px 0 0;
+  margin: var(--space-0-5) 0 0;
   font-size: var(--text-heading-md);
   font-weight: var(--weight-heavy);
   color: var(--text-primary);
@@ -4805,7 +4794,7 @@ a.bento-row:active {
 
 .bento-label {
   margin: 0 0 var(--space-1);
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -4844,7 +4833,7 @@ a.bento-row:active {
 .bento-feed-dot {
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--tone);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 20%, transparent);
   transform: translateY(-1px);
@@ -4876,7 +4865,7 @@ a.bento-row:active {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .bento-row-static {
@@ -4892,15 +4881,6 @@ a.bento-row:active {
   font-size: var(--text-heading-sm);
   font-weight: var(--weight-heavy);
   color: var(--text-primary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bento-tile,
-  .bento-avatar,
-  .bento-conn-dot {
-    transition: none;
-    animation: none;
-  }
 }
 
 /* --- every tab in the same glass: one accent per tab (LAI-1318) ----------- */
@@ -5001,7 +4981,7 @@ a.bento-row:active {
   gap: var(--space-4);
   padding: var(--space-3);
   border: 1px solid var(--glass-border);
-  border-radius: calc(var(--radius-card) + 4px);
+  border-radius: calc(var(--radius-card) + var(--radius-chip));
   background: var(--glass-sheen), var(--glass-2);
   box-shadow: var(--glass-highlight);
 }
@@ -5009,7 +4989,7 @@ a.bento-row:active {
 .org-nav-heading {
   margin: 0 0 var(--space-1);
   padding: 0 var(--space-2);
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -5021,7 +5001,7 @@ a.bento-row:active {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 1px;
+  gap: var(--space-0-5);
 }
 
 .org-nav .org-nav-item {
@@ -5093,7 +5073,7 @@ a.bento-row:active {
 .conn-index-head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 .conn-grid {
@@ -5114,7 +5094,7 @@ a.bento-row:active {
   box-sizing: border-box;
   padding: var(--space-4);
   border: 1px solid var(--glass-border);
-  border-radius: calc(var(--radius-card) + 4px);
+  border-radius: calc(var(--radius-card) + var(--radius-chip));
   background:
     radial-gradient(
       100% 80% at 0% 0%,
@@ -5176,7 +5156,7 @@ a.bento-row:active {
 .org-flat-head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0-5);
   margin-bottom: var(--space-4);
 }
 
