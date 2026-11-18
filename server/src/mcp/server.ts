@@ -94,8 +94,10 @@ export interface McpRequestContext {
   sqlite: Database.Database;
   /** Injectable so "3 days ago" in a response is not at the mercy of the clock. */
   now?: () => number;
-  /** Where a failed activity record is reported. The request still succeeds. */
+  /** Where a failed activity record, and a request the transport refused, is reported. */
   log?: Logger;
+  /** The request's id, so a refusal logged here joins its `http.request` line. */
+  requestId?: string;
   /** Injectable so a test can prove a failing record never fails the call. */
   recordUse?: (db: Db, tokenId: string, now: number, clientName: unknown) => unknown;
 }
@@ -257,6 +259,102 @@ function parsedText(result: ToolResult): Record<string, unknown> | null {
   }
 }
 
+/** The request body as it arrived, and what the request said it would be. */
+interface ReceivedBody {
+  bytes: Uint8Array;
+  /** `Content-Length`, or `null` when the request was chunked or sent none. */
+  declared: number | null;
+  received: number;
+  /** Why the body is not usable, when it is not: it never reaches the SDK. */
+  failure?: { reason: 'read_failed' | 'length_mismatch'; error?: string };
+}
+
+/**
+ * Read the body here, counting bytes, rather than leave it to the SDK.
+ *
+ * The SDK reads it with `req.json()` inside a bare `catch`, so **every** way a
+ * body can fail — a connection that closes early, a hop that cut it short, a
+ * stream error — reached the agent as `-32700 Parse error: Invalid JSON`, and
+ * nothing said which (LAI-1350). Reading it first is what lets a refusal name
+ * the declared and the received length.
+ */
+async function receiveBody(request: Request): Promise<ReceivedBody> {
+  const header = request.headers.get('content-length');
+  const declared = header !== null && /^\d+$/.test(header) ? Number(header) : null;
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    // A request body is bytes; the DOM typing says `any`.
+    const reader = (request.body as ReadableStream<Uint8Array> | null)?.getReader();
+    for (;;) {
+      if (reader === undefined) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.byteLength;
+    }
+  } catch (error) {
+    return {
+      bytes: new Uint8Array(0),
+      declared,
+      received,
+      failure: {
+        reason: 'read_failed',
+        error: error instanceof Error ? `${error.name}: ${error.message}` : 'unknown',
+      },
+    };
+  }
+  const bytes = new Uint8Array(Buffer.concat(chunks));
+  if (declared !== null && received !== declared) {
+    return { bytes, declared, received, failure: { reason: 'length_mismatch' } };
+  }
+  return { bytes, declared, received };
+}
+
+/**
+ * Why a body the SDK could not parse is not JSON, without saying what it said.
+ *
+ * `ends_early` is the shape of a body cut short — by a `Content-Length` counted
+ * in characters rather than bytes, or by a hop that truncates: the parser ran
+ * out of input, so the error sits at the very end of the text.
+ */
+function unparsedReason(bytes: Uint8Array): 'ends_early' | 'not_utf8' | 'not_json' {
+  const text = new TextDecoder().decode(bytes);
+  try {
+    JSON.parse(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const at = /at position (\d+)/.exec(message)?.[1];
+    if (message.includes('end of JSON input') || (at !== undefined && Number(at) >= text.length)) {
+      return 'ends_early';
+    }
+  }
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return 'not_utf8';
+  }
+  return 'not_json';
+}
+
+/**
+ * The SDK's own refusals are fixed sentences and are logged as they are. Any
+ * other error is logged by name only: its message could quote the request.
+ */
+const SDK_REFUSAL =
+  /^(Parse error|Not Acceptable|Unsupported Media Type|Invalid Request|Bad Request|Method not allowed|Session not found|Conflict)\b/;
+
+/** The JSON-RPC error the SDK answers with, in the same shape. */
+function parseErrorResponse(message: string): Response {
+  return new Response(
+    JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message }, id: null }),
+    {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    },
+  );
+}
+
 /**
  * One request in, one response out.
  *
@@ -267,6 +365,26 @@ export async function handleMcpRequest(
   request: Request,
   context: McpRequestContext,
 ): Promise<Response> {
+  // What a refused request is logged with (LAI-1350): never the body — only
+  // how long it said it was, how much arrived, and who sent it.
+  const body = await receiveBody(request);
+  const framing = {
+    request_id: context.requestId ?? null,
+    declared_bytes: body.declared,
+    received_bytes: body.received,
+    client: request.headers.get('user-agent')?.slice(0, 200) ?? null,
+    agent_harness: context.actor.token?.agent?.harness ?? null,
+  };
+
+  if (body.failure !== undefined) {
+    context.log?.warn('mcp.transport_error', { ...framing, ...body.failure });
+    return parseErrorResponse(
+      `Parse error: the request body did not arrive whole (${String(body.received)} of ${
+        body.declared === null ? 'an undeclared number of' : String(body.declared)
+      } bytes)`,
+    );
+  }
+
   const transport = new WebStandardStreamableHTTPServerTransport({
     // **`sessionIdGenerator` is omitted on purpose — its absence is what makes
     // this stateless.** The SDK's own wording: "If not provided, session
@@ -284,11 +402,33 @@ export async function handleMcpRequest(
     enableJsonResponse: true,
   });
 
+  // Before `connect`, which wraps whatever handler is already here: every
+  // refusal the transport answers itself — the `-32700`s among them — is
+  // logged, with the reason a body did not parse when that was the refusal.
+  transport.onerror = (error) => {
+    const known = SDK_REFUSAL.test(error.message);
+    context.log?.warn('mcp.transport_error', {
+      ...framing,
+      error: known ? error.message : error.name,
+      ...(known && error.message.startsWith('Parse error: Invalid JSON')
+        ? { reason: unparsedReason(body.bytes) }
+        : {}),
+    });
+  };
+
   const server = createMcpServer(context);
 
   try {
     await server.connect(transport);
-    const response = await transport.handleRequest(request);
+    // The body already read above, handed on unchanged: the SDK parses and
+    // answers it exactly as it would have read it from the socket.
+    const response = await transport.handleRequest(
+      new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: body.bytes,
+      }),
+    );
 
     // MCP activity is presence (D-076). The token is the session: stamp it,
     // and on `initialize` keep the name the client gave. The SDK records
