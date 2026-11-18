@@ -2,10 +2,11 @@
 id: LAI-1351
 title: '`laika attach`: agents attach outputs in one command; local secret check; the show-your-work skill and repo block revision 3'
 area: cli
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-1302]
-status: backlog
+status: in-progress
+started: 2026-11-18T21:56:47Z
 ---
 
 ## Goal
@@ -48,3 +49,15 @@ It uploads files to a task with captions, and posts a comment that links them. E
 
 - No multipart is needed: the bytes go in a plain PUT body to the presigned URL.
 - Plan: section 1 and section 2.
+
+## Dependency deviation (CHIEF's call, 2026-11-18)
+
+`depends-on: [LAI-1302]` is not in `.tasks/done/`: LAI-1302 (PR #405, branch
+`origin/LAI-1302-attachments-agents`) is in a fix round on secret-scan internals
+and unlisted read gating only. CHIEF confirmed its API surface as reviewed — the
+REST create `POST /api/v1/projects/:slug/attachments` taking a task key,
+`/attachments/:id/complete`, captions in links, and `finish_task` outputs — and
+directed this task to start against it. The branch merges
+`origin/LAI-1302-attachments-agents` and will merge `integration-ksage` again
+once #405 lands, so the PR shows only this task's diff.
+
