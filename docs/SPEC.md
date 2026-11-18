@@ -5245,7 +5245,10 @@ selected agent again if the archive closed its request, and writes
 status, a claim, a dependency either way, a reorder, a sprint, a comment, a
 file — is `409 conflict` with `reason: archived`. Reads answer as before, with
 `archived_at` and `archived_by` on `TaskView`; it is never `ready`, and as a
-blocker it blocks nothing until restored.
+blocker it blocks nothing until restored. Deleting a status is a setting of the
+space, not an edit of the task: an archived task in it is re-filed to the
+status the work moves to, still archived, with a `task.status_changed` row
+`via: status_deleted`.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`

@@ -5,6 +5,7 @@ import { activity, handoffOffers, taskClaims } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { registerAgent } from '../../src/services/agents.ts';
 import { addComment } from '../../src/services/comments.ts';
+import { createProjectStatus, deleteProjectStatus } from '../../src/services/project-statuses.ts';
 import { projectSummaries } from '../../src/services/projects.ts';
 import { listReviewQueue } from '../../src/services/review.ts';
 import {
@@ -197,6 +198,50 @@ describe('an archived task is read-only', () => {
     expect(refusal(() => task('Child', { parent_task_id: put.id }))).toEqual(archived);
 
     expect(getTask(t.db, owner, put.id).title).toBe('Put away');
+  });
+});
+
+describe('a status deleted under an archived task (review finding)', () => {
+  it('re-files the archived task where its column went, still archived, with its row', () => {
+    const statuses = createProjectStatus(t.sqlite, t.db, owner, 'laika', {
+      name: 'Blocked',
+      category: 'todo',
+    });
+    const blocked = statuses.find((x) => x.name === 'Blocked')!;
+    const todo = statuses.find((x) => x.category === 'todo' && x.id !== blocked.id)!;
+    const live = task('Live there');
+    const put = task('Put away there');
+    for (const id of [live.id, put.id]) {
+      changeStatus(t.db, owner, id, { status_id: blocked.id }, T0 + 1);
+    }
+    setTaskArchived(t.db, owner, put.id, true, T0 + 10);
+
+    const result = deleteProjectStatus(
+      t.sqlite,
+      t.db,
+      owner,
+      'laika',
+      blocked.id,
+      todo.id,
+      T0 + 20,
+    );
+    expect(result.moved).toBe(2);
+
+    expect(getTask(t.db, owner, live.id)).toMatchObject({ status_id: todo.id, archived_at: null });
+    expect(getTask(t.db, owner, put.id)).toMatchObject({
+      status_id: todo.id,
+      status: 'todo',
+      archived_at: T0 + 10,
+    });
+    const row = t.db
+      .select({ payload: activity.payloadJson })
+      .from(activity)
+      .where(and(eq(activity.taskId, put.id), eq(activity.createdAt, T0 + 20)))
+      .get();
+    expect(JSON.parse(row!.payload)).toMatchObject({
+      to_status_id: todo.id,
+      via: 'status_deleted',
+    });
   });
 });
 
