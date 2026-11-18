@@ -53,6 +53,12 @@ export interface ActivityStep {
   readonly action?: OverviewLink;
   /** Why the step cannot be started yet, when it cannot. */
   readonly locked?: string;
+  /**
+   * Done once, not working now: steps 4 and 5 while reports are stalled or
+   * paused by the organisation's switch. Drawn in the headline's warn tone
+   * rather than the green tick (LAI-1327 follow-up).
+   */
+  readonly attention?: true;
 }
 
 export interface ActivityInputs {
@@ -98,6 +104,8 @@ export function activitySteps(input: ActivityInputs): readonly ActivityStep[] {
   const received = input.lastReceivedAt;
   const stand = reportsStand(received, input.collectors);
   const sends = !input.readOnly && received !== null;
+  /** Steps 4 and 5 done, but nothing arriving now. */
+  const unwell = sends && (!input.orgEnabled || stand === 'stalled');
 
   const done: Readonly<Record<ActivityStepKey, boolean>> = {
     org: input.orgEnabled,
@@ -176,6 +184,7 @@ export function activitySteps(input: ActivityInputs): readonly ActivityStep[] {
       state,
       ...withLink,
       ...(state === 'pending' && before !== undefined ? { locked: waitsOn(before) } : {}),
+      ...(unwell && (key === 'command' || key === 'data') ? { attention: true as const } : {}),
     };
   });
 }
@@ -213,9 +222,10 @@ export interface Trouble {
   readonly key: 'org-off' | 'not-connected' | 'refused' | 'read-only';
   /**
    * The line `laika activity on` or `laika activity status` prints, word for
-   * word (`cli/src/activity.ts`) but for `…`, which stands for what differs
-   * from machine to machine — the board's address, the tool, the time — and
-   * the column padding `status` lines up with.
+   * word — `cli/src/activity.ts`, and `cli/src/activity-sync.ts`'s
+   * `NOT_CONNECTED` — but for `…`, which stands for what differs from machine
+   * to machine (the board's address, the tool, the time), and the column
+   * padding `status` lines up with.
    */
   readonly says: string;
   readonly fix: string;

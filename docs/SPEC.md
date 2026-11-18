@@ -7918,7 +7918,8 @@ anything missing sends the task back.
   the collector uses the machine's tool connection (LAI-1325) — once data
   has arrived it says *On* only while reports are fresh, *Paused* with the
   organisation's switch off, and *Last sent … ago; run `laika activity
-  status` on that machine* once stalled; for a viewer, whose credentials are
+  status` on that machine* once stalled — stalled or paused, steps 4 and 5
+  are drawn in the warn tone, not the green tick; for a viewer, whose credentials are
   read only, it is locked: *Viewers can't send activity: ask an owner for a
   member role*, and the journey's step says the same; and **first data
   arrives** (`GET /me/local-activity`'s `last_received_at` and
@@ -7926,9 +7927,13 @@ anything missing sends the task back.
   the re-read lands; a refusal is said beside it and the switch stays where
   it is. Under it, the *Count work in* scope, the panel's folds, and *It
   isn't working*, each line the collector prints beside its fix. It reads
-  again when the reader comes back to the window, asks every 20 s while
-  step 5 waits and the page is in view, and moves *… ago* on every 30 s; a
-  re-read that fails keeps what is shown and says so. The old
+  again when the reader comes back to the window, asks every 20 s while a
+  first report can arrive — step 4 next, so the organisation collects and a
+  device and a tool are there — and the page is in view, backing off to
+  60 s and 120 s while that fails, and moves *… ago* on every 30 s; a
+  re-read that fails keeps what is shown and says so, a later one replaces
+  the switch's answer, and a read sent before a scope change or a delete
+  never lands after it. The old
   `?tab=advanced&section=activity` lands on *Activity*. *Advanced* is the
   reader's personal credentials only: revoked and expired ones behind *Show
   N revoked/expired*, and credentials coding tools still use in one callout,

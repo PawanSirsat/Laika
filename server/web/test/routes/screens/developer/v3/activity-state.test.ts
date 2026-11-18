@@ -283,6 +283,35 @@ void describe('the checklist, in order (LAI-1327)', () => {
     assert.equal(held[4]?.state, 'pending');
   });
 
+  void test('stalled or paused, steps 4 and 5 need attention; fresh, they are simply done', () => {
+    const base = {
+      devices: [device({ id: 'd1', agents: [connected('a1')] })],
+      lastReceivedAt: NOW - MIN,
+      collectors: 1,
+    };
+    const attention = (over: Partial<ActivityInputs>) =>
+      activitySteps(inputs({ ...base, ...over })).map((step) => [
+        step.key,
+        step.attention === true,
+      ]);
+    const flagged = [
+      ['org', false],
+      ['device', false],
+      ['tool', false],
+      ['command', true],
+      ['data', true],
+    ];
+    // Stalled: the last report older than the 14 days.
+    assert.deepEqual(attention({ lastReceivedAt: NOW - 20 * DAY, collectors: 0 }), flagged);
+    // Paused: the organisation's switch off, with a history.
+    assert.deepEqual(attention({ orgEnabled: false }), flagged);
+    // Fresh: nothing to flag.
+    assert.ok(attention({}).every(([, flag]) => flag === false));
+    // Nothing received, or a viewer: not done, so nothing to flag either.
+    assert.ok(attention({ lastReceivedAt: null, collectors: 0 }).every(([, flag]) => !flag));
+    assert.ok(attention({ readOnly: true, orgEnabled: false }).every(([, flag]) => !flag));
+  });
+
   void test('a revoked device is no device', () => {
     const steps = activitySteps(
       inputs({ devices: [device({ id: 'd1', status: 'revoked', agents: [] })] }),
