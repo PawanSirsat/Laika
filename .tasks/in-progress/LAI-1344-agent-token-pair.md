@@ -2,11 +2,12 @@
 id: LAI-1344
 title: 'CLI: LAIKA_AGENT_TOKEN without LAIKA_AGENT_URL is sent to the tool file''s board'
 area: cli
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-1343
-status: backlog
+status: in-progress
+started: 2026-11-18T10:14:40Z
 ---
 
 ## Goal
