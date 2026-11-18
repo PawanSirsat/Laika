@@ -95,6 +95,7 @@ export function mcpRoutes(options: McpRouteOptions): Hono<AppEnv> {
       db: options.db,
       sqlite: options.sqlite,
       log: c.get('log'),
+      requestId: c.get('requestId'),
       attachments: options.attachments,
     });
   });
