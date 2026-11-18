@@ -5,6 +5,7 @@ import { PersonLink } from '../../../components/PersonLink.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { initials } from '../../../theme/initials.ts';
+import { AwayAndMeetings } from './AwayAndMeetings.tsx';
 import { count, HOVER, LoadBadges, ROLE_LABEL, SpaceChip } from './CapacityCard.tsx';
 import { barSegments, loadIn, runningAgents, statusText, workloadIn } from './capacity-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -140,6 +141,7 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                         <span className={`cap-status cap-status-${ring}`}>{status.text}</span>
                       </Tooltip>
                     </span>
+                    <AwayAndMeetings person={person} />
                   </span>
                 </td>
                 <td>
