@@ -783,6 +783,7 @@ function reconcileAway(
           eventId: e.id,
           startsAt: e.start,
           endsAt: e.end,
+          allDay: e.isAllDay ? 1 : 0,
           lastSeenAt: now,
           retiredAt: null,
           createdAt: now,
@@ -792,14 +793,21 @@ function reconcileAway(
     }
     // Moved, or back after it was retired: as Outlook has it now.
     tx.update(calendarAway)
-      .set({ startsAt: e.start, endsAt: e.end, lastSeenAt: now, retiredAt: null })
+      .set({
+        startsAt: e.start,
+        endsAt: e.end,
+        allDay: e.isAllDay ? 1 : 0,
+        lastSeenAt: now,
+        retiredAt: null,
+      })
       .where(and(eq(calendarAway.userId, userId), eq(calendarAway.eventId, e.id)))
       .run();
   }
+  // `held` is what this read named and what overlaps its window: a span not
+  // read, then, is one the read could have seen and did not — retired. One
+  // outside the window is never in `held`, so never retired by absence.
   for (const row of held.values()) {
     if (seen.has(row.eventId) || row.retiredAt !== null) continue;
-    // Only what this read could have seen: a span overlapping its window.
-    if (row.startsAt >= window.to || row.endsAt <= window.from) continue;
     tx.update(calendarAway)
       .set({ retiredAt: now })
       .where(and(eq(calendarAway.userId, userId), eq(calendarAway.eventId, row.eventId)))

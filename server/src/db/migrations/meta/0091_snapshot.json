@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "39a5253b-917e-4e05-8607-d09f18d76cd1",
+  "id": "d2e775c8-547d-40ee-8919-98a3efb022ab",
   "prevId": "f7a5b45e-0975-420d-8f36-50188c6e6702",
   "tables": {
     "accounts": {
@@ -1818,6 +1818,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "all_day": {
+          "name": "all_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "last_seen_at": {
           "name": "last_seen_at",
           "type": "integer",
@@ -1863,6 +1871,10 @@
         "calendar_away_span_check": {
           "name": "calendar_away_span_check",
           "value": "ends_at > starts_at"
+        },
+        "calendar_away_all_day_check": {
+          "name": "calendar_away_all_day_check",
+          "value": "all_day IN (0, 1)"
         },
         "calendar_away_event_id_check": {
           "name": "calendar_away_event_id_check",

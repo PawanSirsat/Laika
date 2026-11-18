@@ -551,11 +551,18 @@ describe('out of office (D-157 amended, LAI-1331)', () => {
     expect(synced(await sync())).toMatchObject({ away: 3, meetings: 1, created: 1 });
 
     expect(
-      awayOf(ada).map((a) => [a.eventId, a.startsAt, a.endsAt, a.lastSeenAt, a.retiredAt]),
+      awayOf(ada).map((a) => [
+        a.eventId,
+        a.startsAt,
+        a.endsAt,
+        a.allDay,
+        a.lastSeenAt,
+        a.retiredAt,
+      ]),
     ).toEqual([
-      [leave.id, Date.UTC(2026, 10, 16), Date.UTC(2026, 10, 21), NOW, null],
-      [afternoon.id, Date.UTC(2026, 10, 18, 12), Date.UTC(2026, 10, 18, 15), NOW, null],
-      [offsite.id, Date.UTC(2026, 10, 19, 6), Date.UTC(2026, 10, 19, 14), NOW, null],
+      [leave.id, Date.UTC(2026, 10, 16), Date.UTC(2026, 10, 21), 1, NOW, null],
+      [afternoon.id, Date.UTC(2026, 10, 18, 12), Date.UTC(2026, 10, 18, 15), 0, NOW, null],
+      [offsite.id, Date.UTC(2026, 10, 19, 6), Date.UTC(2026, 10, 19, 14), 0, NOW, null],
     ]);
     // Never time: the one entry is the meeting.
     expect(entriesOf(ada).map((e) => e.title)).toEqual(['Standup']);
@@ -563,7 +570,16 @@ describe('out of office (D-157 amended, LAI-1331)', () => {
     expect(awayOf(bea)).toEqual([]);
     // Nothing of the event but its id and span is kept.
     expect(Object.keys(awayOf(ada)[0]!).sort()).toEqual(
-      ['createdAt', 'endsAt', 'eventId', 'lastSeenAt', 'retiredAt', 'startsAt', 'userId'].sort(),
+      [
+        'allDay',
+        'createdAt',
+        'endsAt',
+        'eventId',
+        'lastSeenAt',
+        'retiredAt',
+        'startsAt',
+        'userId',
+      ].sort(),
     );
   });
 

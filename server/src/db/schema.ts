@@ -2265,9 +2265,14 @@ export const calendarAway = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /** Graph's immutable id for the event, or for one occurrence of a series. */
     eventId: text('event_id').notNull(),
-    /** Unix ms, UTC. An all-day event's end is the midnight after its last day. */
+    /**
+     * Unix ms, UTC. An all-day event's are **UTC midnights standing for its
+     * calendar dates** (the sync reads in UTC), its end the midnight after its
+     * last day: `all_day` says to read them as dates, not instants.
+     */
     startsAt: integer('starts_at').notNull(),
     endsAt: integer('ends_at').notNull(),
+    allDay: integer('all_day').notNull().default(0),
     /** The last sync that read the event. */
     lastSeenAt: integer('last_seen_at').notNull(),
     /** When a complete read of a window it overlaps no longer had it; null while it stands. */
@@ -2277,6 +2282,7 @@ export const calendarAway = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.eventId] }),
     check('calendar_away_span_check', sql.raw('ends_at > starts_at')),
+    check('calendar_away_all_day_check', sql.raw('all_day IN (0, 1)')),
     check('calendar_away_event_id_check', sql.raw('length(event_id) BETWEEN 1 AND 512')),
   ],
 );
