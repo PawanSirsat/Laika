@@ -4,7 +4,7 @@ title: 'Attachments for agents: upload tools, task-key upload, outputs on finish
 area: server
 assignee: unclaimed
 priority: p1
-depends-on: [LAI-1300, LAI-1350]
+depends-on: [LAI-1300]
 discovered-from: LAI-1300
 status: backlog
 ---
@@ -51,5 +51,5 @@ This task is the server half. LAI-1351 is the CLI and plugin half, and LAI-1352 
 - Binary never goes through MCP (1 MiB body limit, text-only results). Agents `curl -T` straight to the store.
 - An agent token can already create and complete over REST: `attachment.create` is not session-only. It needs a full-scope token, a full agent grant and agents allowed in the space.
 - `uploaded_by` stays the human owner; the activity row shows the agent.
-- **Depends on LAI-1350,** because longer `finish_task` bodies (outputs with captions) must not hit the -32700 truncation.
+- **LAI-1350 must be released first or together with this,** because longer `finish_task` bodies (outputs with captions) must not hit the -32700 truncation. Build both in parallel (CHIEF, 2026-11-19).
 - **Plan:** `~/.claude/plans/now-you-have-very-validated-perlis.md`, section 1.
