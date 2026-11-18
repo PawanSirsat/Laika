@@ -85,7 +85,11 @@ function mailWith(
   setEmailInboundSettings(
     t.db,
     owner,
-    { domain: 'tasks.example.test', ...(apiKey === null ? {} : { api_key: apiKey }) },
+    {
+      domain: 'tasks.example.test',
+      authserv_id: 'mx.b',
+      ...(apiKey === null ? {} : { api_key: apiKey }),
+    },
     SECRET,
     '',
     NOW,

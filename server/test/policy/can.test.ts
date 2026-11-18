@@ -758,6 +758,50 @@ describe('Teams posting refuses every token (LAI-1314)', () => {
   });
 });
 
+/**
+ * D-157 (LAI-1316): the Outlook calendar connection holds an app secret that
+ * reads every member's calendar, so every token is refused — an owner's full
+ * one included — and an owner or admin may, signed in.
+ */
+describe('the Outlook calendar connection refuses every token (LAI-1316)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+
+  it('allows an owner and an admin on a cookie session, and refuses each to any token', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role, null), 'org.calendar.configure'), role).toBe(true);
+      for (const token of tokens) {
+        expect(
+          can(actor(role, null, token), 'org.calendar.configure'),
+          `${role} / ${token.id}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('says a token is refused for being a token, not for the role', () => {
+    try {
+      assertCan(actor('owner', null, tokens[0]), 'org.calendar.configure');
+      expect.unreachable('a token reached the calendar connection');
+    } catch (err) {
+      expect((err as ApiError).details).toEqual({
+        action: 'org.calendar.configure',
+        reason: 'session_required',
+      });
+    }
+  });
+
+  it('gives a member and a viewer none of it, and follows the admin grant', () => {
+    expect(can(actor('member', null), 'org.calendar.configure')).toBe(false);
+    expect(can(actor('viewer', null), 'org.calendar.configure')).toBe(false);
+    const withdrawn = { ...actor('admin', null), orgGrants: { admin: [], member: [], viewer: [] } };
+    expect(can(withdrawn, 'org.calendar.configure')).toBe(false);
+  });
+});
+
 describe('time refuses every token but where a collector or an agent acts (LAI-787)', () => {
   const tokens: TokenContext[] = [
     { id: 'tok_full', scope: 'full', projectIds: null },

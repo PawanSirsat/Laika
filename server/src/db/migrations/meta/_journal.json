@@ -607,8 +607,15 @@
     {
       "idx": 86,
       "version": "6",
-      "when": 1794983596231,
-      "tag": "0087_email_inbound",
+      "when": 1794983508663,
+      "tag": "0087_calendar_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "6",
+      "when": 1794992848334,
+      "tag": "0088_email_inbound",
       "breakpoints": true
     }
   ]

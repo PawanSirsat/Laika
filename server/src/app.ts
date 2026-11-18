@@ -51,11 +51,13 @@ import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
 import { emailRoutes } from './http/routes/email.ts';
 import {
+  inboundEmailGate,
   inboundEmailWebhookRoutes,
   orgEmailInboundRoutes,
   projectEmailAddressRoutes,
 } from './http/routes/email-inbound.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
+import { calendarRoutes } from './http/routes/calendar.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -113,6 +115,7 @@ import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type TeamsPostingDeps } from './services/teams-posting.ts';
+import { type CalendarSyncDeps } from './services/calendar-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 import { type MailTransport, noTransport } from './services/email-transport.ts';
 
@@ -238,6 +241,12 @@ export interface CreateAppOptions {
    * `ENOTRANSPORT` instead.
    */
   emailTransport?: MailTransport;
+  /**
+   * The Outlook calendar sync's `fetch`, clock and waits (D-157, LAI-1316).
+   * Injected by the tests so **none of them calls Microsoft**; `index.ts`
+   * passes nothing and the real `fetch` is used.
+   */
+  calendarSync?: CalendarSyncDeps;
 }
 
 /**
@@ -366,12 +375,22 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // body — idempotency keeps the plain bytes it replays — and it decides for
   // itself which paths it may touch: never `/mcp`, never the SSE stream.
   app.use('*', apiCompression());
+  // One limiter: the middleware's buckets and inbound email's own (F2).
+  const limiter = options.rateLimiter ?? new RateLimiter();
+  // Inbound email's token and its bucket, before the body limit reads a byte
+  // (LAI-1315 review round 2, F2).
+  if (db !== undefined) {
+    app.use(INBOUND_EMAIL_PATH, inboundEmailGate({ db, rateLimiter: limiter }));
+  }
   const defaultLimit = bodyLimit({ maxSize: BODY_LIMIT_BYTES });
   const inboundEmailLimit = bodyLimit({ maxSize: INBOUND_EMAIL_BODY_LIMIT_BYTES });
   app.use(
     '*',
     createMiddleware<AppEnv>((c, next) =>
-      c.req.path === INBOUND_EMAIL_PATH ? inboundEmailLimit(c, next) : defaultLimit(c, next),
+      // POST only: no other method is accepted there (the gate answers 405).
+      c.req.path === INBOUND_EMAIL_PATH && c.req.method === 'POST'
+        ? inboundEmailLimit(c, next)
+        : defaultLimit(c, next),
     ),
   );
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
@@ -382,7 +401,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       ? authMiddleware({ auth: options.auth, db: options.db })
       : anonymousAuth,
   );
-  app.use('*', rateLimitMiddleware(options.rateLimiter ?? new RateLimiter()));
+  app.use('*', rateLimitMiddleware(limiter));
 
   // After rateLimit, before the routes: an un-set-up instance answers `conflict`
   // for every API path except setup and health (LAI-009 AC1).
@@ -513,6 +532,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     };
     app.route(`${API_BASE}/org`, orgTeamsRoutes(teams));
     app.route(`${API_BASE}/projects`, projectTeamsRoutes(teams));
+    // The Outlook calendar connection (D-157, LAI-1316): `/calendar*`, a path
+    // `orgRoutes` does not have.
+    app.route(
+      `${API_BASE}/org`,
+      calendarRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        calendarSync: options.calendarSync,
+      }),
+    );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
     // `/webhooks/*`, outside `/api/v1`, no user session."* It still passes

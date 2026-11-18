@@ -100,6 +100,7 @@ import {
   TEAMS_POST_OUTCOMES,
   TEAMS_POST_REASONS,
   AVAILABILITY_STATUSES,
+  CALENDAR_SYNC_ERROR_CODES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -2134,10 +2135,119 @@ export const emailWatermarks = sqliteTable('email_watermarks', {
   updatedAt,
 });
 
-// ------------------------------------------------ §4.101 org_email_inbound
+// ----------------------------------------------- §4.101 org_calendar_source
 
 /**
- * The organisation's *Email to tasks* settings (§4.101, D-155, LAI-1315). **No
+ * The organisation's Outlook calendar connection (§4.101, D-157, LAI-1316): an
+ * Entra app's tenant, client id and client secret, with which the sync reads
+ * each member's meetings through Microsoft Graph as the application — never
+ * as a person — once an admin has granted it `Calendars.Read`. **No row is
+ * not configured.** `enabled` is the switch, and it starts off: nothing is
+ * read until an owner or admin turns it on, and *Test connection* works
+ * before then.
+ *
+ * The secret is §12's ciphertext under its own purpose
+ * (`calendar_client_secret`), with its last four characters to show; it is
+ * written, never served. `rules_json` maps a meeting to a space — a keyword
+ * in its subject, or the Teams channel it is in — as
+ * `[{"kind","text","project_id"}]`, first match wins. `last_test_roles_json`
+ * is the roles the last test's token carried, which says whether the grant
+ * has been made.
+ *
+ * Its own table rather than columns on `orgs`, as `org_hr_source` is.
+ */
+export const orgCalendarSource = sqliteTable(
+  'org_calendar_source',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** The Entra tenant: a GUID, or a domain such as `contoso.onmicrosoft.com`. */
+    tenantId: text('tenant_id').notNull(),
+    /** The app's client (application) id, a GUID. */
+    clientId: text('client_id').notNull(),
+    /** §12 ciphertext. Never logged, never served, never in `activity`. */
+    secretEnc: text('secret_enc').notNull(),
+    secretLast4: text('secret_last4').notNull(),
+    /** The switch: 0 until an owner or admin turns it on. */
+    enabled: integer('enabled').notNull().default(0),
+    /** `[{"kind":"title"|"channel","text":"…","project_id":"…"}]`, at most 50. */
+    rulesJson: text('rules_json').notNull().default('[]'),
+    configuredBy: text('configured_by').references(() => users.id, { onDelete: 'set null' }),
+    configuredAt: integer('configured_at').notNull(),
+    /** When *Test connection* last got a token, and the roles it carried, A–Z. */
+    lastTestAt: integer('last_test_at'),
+    lastTestRolesJson: text('last_test_roles_json'),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastSuccessAt: integer('last_success_at'),
+    lastErrorCode: text('last_error_code', { enum: CALENDAR_SYNC_ERROR_CODES }),
+    /** Laika's own words for the failure — never Microsoft's response text. */
+    lastError: text('last_error'),
+    /** The last complete sync's counts, as `CalendarSyncResultView`. */
+    lastResultJson: text('last_result_json'),
+    updatedAt,
+  },
+  (t) => [
+    index('org_calendar_source_configured_by_idx').on(t.configuredBy),
+    check('org_calendar_source_enabled_check', sql.raw('enabled IN (0, 1)')),
+    check(
+      'org_calendar_source_last_error_code_check',
+      oneOfOrNull('last_error_code', CALENDAR_SYNC_ERROR_CODES),
+    ),
+    // A test has both its time and its roles, or neither.
+    check(
+      'org_calendar_source_test_check',
+      sql.raw('(last_test_at IS NULL) = (last_test_roles_json IS NULL)'),
+    ),
+    check('org_calendar_source_tenant_check', sql.raw('length(tenant_id) BETWEEN 1 AND 100')),
+    check('org_calendar_source_client_check', sql.raw('length(client_id) = 36')),
+  ],
+);
+
+// --------------------------------------------------- §4.102 calendar_events
+
+/**
+ * A meeting the calendar sync logged (§4.102, D-157, LAI-1316): which of a
+ * person's time entries holds which of their Outlook events, by Graph's
+ * event id, and **the entry's revision as the sync last wrote it**. An entry
+ * whose revision has moved past `entry_revision_synced` was changed by its
+ * person, and the sync never touches it again — the `solidtime_entries`
+ * pattern. Nothing of the meeting is kept here but its ids: the subject and
+ * the times are on the entry, and no link, body or attendee is stored
+ * anywhere.
+ */
+export const calendarEvents = sqliteTable(
+  'calendar_events',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Graph's id for the event, or for one occurrence of a series. */
+    eventId: text('event_id').notNull(),
+    /** The iCalendar UID Outlook gives the meeting, shared by everyone invited. */
+    icalUid: text('ical_uid'),
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => timeEntries.id, { onDelete: 'cascade' }),
+    /** The entry's revision as the sync last wrote it. */
+    entryRevisionSynced: integer('entry_revision_synced').notNull(),
+    /** The last sync that read the event. */
+    lastSeenAt: integer('last_seen_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('calendar_events_user_event_unique').on(t.userId, t.eventId),
+    uniqueIndex('calendar_events_entry_id_unique').on(t.entryId),
+    check('calendar_events_revision_check', sql.raw('entry_revision_synced >= 1')),
+    check('calendar_events_event_id_check', sql.raw('length(event_id) BETWEEN 1 AND 512')),
+  ],
+);
+
+// ------------------------------------------------ §4.103 org_email_inbound
+
+/**
+ * The organisation's *Email to tasks* settings (§4.103, D-155, LAI-1315). **No
  * row, or `enabled` 0, is off** — and off is how it ships: every inbound mail
  * is recorded in `email_inbound` as dropped `switch_off`, and nothing is
  * written. Set by an owner or admin, signed in (`org.email.configure`).
@@ -2148,10 +2258,10 @@ export const emailWatermarks = sqliteTable('email_watermarks', {
  * attachments, so it is §12 ciphertext under `brevo_api_key`.
  *
  * `authserv_id` names the receiving server whose `Authentication-Results`
- * Laika believes. A sender can put any `Authentication-Results` header in a
- * mail; only the one the receiving server added is evidence. With none named,
- * the topmost header is the one read — the receiving server adds its header
- * above everything already in the mail.
+ * Laika believes — the first header carrying it (LAI-1315 review, M1). A
+ * sender can put any `Authentication-Results` header in a mail; only the one
+ * the receiving server added is evidence. **With none named, nothing is
+ * believed**, and the switch cannot be on while authentication is required.
  *
  * Its own table rather than columns on `orgs`, the `org_teams_settings`
  * precedent: additive, and a CHECK on `orgs` is a rebuild of `orgs`.
@@ -2171,9 +2281,9 @@ export const orgEmailInbound = sqliteTable(
     /** §12 ciphertext under `brevo_api_key`: what fetches an attachment. */
     apiKeyEnc: text('api_key_enc'),
     apiKeyLast4: text('api_key_last4'),
-    /** Drop a mail without an aligned DMARC, DKIM or SPF pass. On unless turned off. */
+    /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. On unless an owner turns it off. */
     requireAuthenticated: integer('require_authenticated').notNull().default(1),
-    /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
+    /** The receiving server whose first `Authentication-Results` is believed; null believes nothing. */
     authservId: text('authserv_id'),
     updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
     updatedAt,
@@ -2203,13 +2313,18 @@ export const orgEmailInbound = sqliteTable(
       'org_email_inbound_on_check',
       sql.raw('enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)'),
     ),
+    // Nor, while senders must be authenticated, without a server to believe.
+    check(
+      'org_email_inbound_authserv_needed_check',
+      sql.raw('enabled = 0 OR require_authenticated = 0 OR authserv_id IS NOT NULL'),
+    ),
   ],
 );
 
-// ---------------------------------------- §4.102 project_inbound_addresses
+// ---------------------------------------- §4.104 project_inbound_addresses
 
 /**
- * A space's inbound address (§4.102, D-155, LAI-1315):
+ * A space's inbound address (§4.104, D-155, LAI-1315):
  * `<slug>-<token>@<domain>`. **Only the token is matched** — the slug is there
  * for a person reading the address — so renaming the space changes the
  * address shown and the old one keeps working; *New address* replaces the
@@ -2239,10 +2354,10 @@ export const projectInboundAddresses = sqliteTable(
   ],
 );
 
-// --------------------------------------------------- §4.103 email_inbound
+// --------------------------------------------------- §4.105 email_inbound
 
 /**
- * Every inbound mail at a space's address, and what became of it (§4.103,
+ * Every inbound mail at a space's address, and what became of it (§4.105,
  * D-155, LAI-1315) — **the provenance of a task or comment that arrived by
  * email**, since `created_via` says only `webhook`.
  *
@@ -2251,8 +2366,10 @@ export const projectInboundAddresses = sqliteTable(
  * name and its verdicts (`mx.example dmarc=pass dkim=pass`), so an owner
  * setting this up can see what Laika saw.
  *
- * One row per mail per address (`message_id`, `address_token`): Brevo may
- * deliver a mail again, and a retry must not make a second task. A mail that
+ * One row per mail per address per sender (`message_id`, `address_token`,
+ * `from_address`): Brevo may deliver a mail again, and a retry must not make a
+ * second task — and a forger who guesses a Message-ID makes a row of their
+ * own, never the real sender's. A mail that
  * matched no address keeps `address_token` empty. Kept 90 days (§11.6).
  */
 export const emailInbound = sqliteTable(
@@ -2265,7 +2382,8 @@ export const emailInbound = sqliteTable(
     addressToken: text('address_token').notNull(),
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** The From address, lower case, as the mail gave it. */
-    fromAddress: text('from_address'),
+    /** `''` when the mail gave none that could be read — part of the key, so never null. */
+    fromAddress: text('from_address').notNull().default(''),
     /** The person it was matched to. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     outcome: text('outcome', { enum: EMAIL_INBOUND_OUTCOMES }).notNull(),
@@ -2273,14 +2391,20 @@ export const emailInbound = sqliteTable(
     /** The task it made, or the task it commented on. */
     taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
     commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
-    /** The receiving server and its verdicts, e.g. `mx.example dmarc=pass`. Never mail text. */
+    /** The believed server and its verdicts, e.g. `mx.example dmarc=pass`. Never mail text. */
     auth: text('auth'),
+    /** Every server the mail's `Authentication-Results` named, topmost first, space-separated. */
+    authservIds: text('authserv_ids'),
     /** How many attachments the mail announced. */
     attachmentCount: integer('attachment_count').notNull().default(0),
+    /** How many deliveries of it failed; three, and it is `failed_repeatedly`. */
+    attempts: integer('attempts').notNull().default(0),
     receivedAt: integer('received_at').notNull(),
   },
   (t) => [
-    uniqueIndex('email_inbound_message_unique').on(t.messageId, t.addressToken),
+    // The sender is part of the key (round 3): a mail forged with a predicted
+    // Message-ID cannot pre-claim the real one, which keeps its own row.
+    uniqueIndex('email_inbound_message_unique').on(t.messageId, t.addressToken, t.fromAddress),
     index('email_inbound_project_received_idx').on(t.projectId, t.receivedAt),
     index('email_inbound_received_at_idx').on(t.receivedAt),
     index('email_inbound_user_id_idx').on(t.userId),
@@ -2294,20 +2418,22 @@ export const emailInbound = sqliteTable(
       sql.raw("(outcome = 'dropped') = (reason IS NOT NULL)"),
     ),
     check('email_inbound_message_id_check', sql.raw('length(message_id) BETWEEN 1 AND 512')),
-    check(
-      'email_inbound_from_check',
-      sql.raw('from_address IS NULL OR length(from_address) <= 320'),
-    ),
+    check('email_inbound_from_check', sql.raw('length(from_address) <= 320')),
     check('email_inbound_auth_check', sql.raw('auth IS NULL OR length(auth) <= 300')),
+    check(
+      'email_inbound_authserv_ids_check',
+      sql.raw('authserv_ids IS NULL OR length(authserv_ids) <= 300'),
+    ),
     check('email_inbound_attachments_check', sql.raw('attachment_count >= 0')),
+    check('email_inbound_attempts_check', sql.raw('attempts >= 0')),
   ],
 );
 
-// ---------------------------------------- §4.104 email_inbound_attachments
+// ---------------------------------------- §4.106 email_inbound_attachments
 
 /**
  * An inbound mail's attachment, from Brevo's announcement to the store
- * (§4.104, D-155, LAI-1315). Brevo sends a `DownloadToken`, not the bytes; the
+ * (§4.106, D-155, LAI-1315). Brevo sends a `DownloadToken`, not the bytes; the
  * attachments job fetches it with the organisation's Brevo API key and puts it
  * in the D-150 store as a ready `attachments` row the sender uploaded.
  *
@@ -5057,6 +5183,7 @@ export type UserAvailability = typeof userAvailability.$inferSelect;
 export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;
 export type OrgHrSource = typeof orgHrSource.$inferSelect;
+export type OrgCalendarSource = typeof orgCalendarSource.$inferSelect;
 export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;

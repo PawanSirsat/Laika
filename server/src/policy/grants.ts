@@ -69,6 +69,8 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     // D-153 (LAI-1312 review): outbound email, beside the HR connection.
     'org.email.configure',
     'org.teams.configure',
+    // D-157 (LAI-1316): the Outlook calendar connection, beside the HR one.
+    'org.calendar.configure',
   ],
 };
 

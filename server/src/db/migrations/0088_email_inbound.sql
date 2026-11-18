@@ -3,29 +3,33 @@ CREATE TABLE `email_inbound` (
 	`message_id` text NOT NULL,
 	`address_token` text NOT NULL,
 	`project_id` text,
-	`from_address` text,
+	`from_address` text DEFAULT '' NOT NULL,
 	`user_id` text,
 	`outcome` text NOT NULL,
 	`reason` text,
 	`task_id` text,
 	`comment_id` text,
 	`auth` text,
+	`authserv_ids` text,
 	`attachment_count` integer DEFAULT 0 NOT NULL,
+	`attempts` integer DEFAULT 0 NOT NULL,
 	`received_at` integer NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
 	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE no action ON DELETE set null,
 	FOREIGN KEY (`comment_id`) REFERENCES `comments`(`id`) ON UPDATE no action ON DELETE set null,
-	CONSTRAINT "email_inbound_outcome_check" CHECK(outcome IN ('task_created', 'comment_added', 'dropped')),
-	CONSTRAINT "email_inbound_reason_check" CHECK(reason IS NULL OR reason IN ('switch_off', 'unknown_address', 'own_sender', 'auto_reply', 'spam', 'unauthenticated', 'unknown_sender', 'not_allowed', 'empty', 'refused')),
+	CONSTRAINT "email_inbound_outcome_check" CHECK(outcome IN ('task_created', 'comment_added', 'dropped', 'failed')),
+	CONSTRAINT "email_inbound_reason_check" CHECK(reason IS NULL OR reason IN ('switch_off', 'unknown_address', 'own_sender', 'auto_reply', 'spam', 'unauthenticated', 'unknown_sender', 'not_allowed', 'empty', 'refused', 'failed_repeatedly')),
 	CONSTRAINT "email_inbound_reason_needed_check" CHECK((outcome = 'dropped') = (reason IS NOT NULL)),
 	CONSTRAINT "email_inbound_message_id_check" CHECK(length(message_id) BETWEEN 1 AND 512),
-	CONSTRAINT "email_inbound_from_check" CHECK(from_address IS NULL OR length(from_address) <= 320),
+	CONSTRAINT "email_inbound_from_check" CHECK(length(from_address) <= 320),
 	CONSTRAINT "email_inbound_auth_check" CHECK(auth IS NULL OR length(auth) <= 300),
-	CONSTRAINT "email_inbound_attachments_check" CHECK(attachment_count >= 0)
+	CONSTRAINT "email_inbound_authserv_ids_check" CHECK(authserv_ids IS NULL OR length(authserv_ids) <= 300),
+	CONSTRAINT "email_inbound_attachments_check" CHECK(attachment_count >= 0),
+	CONSTRAINT "email_inbound_attempts_check" CHECK(attempts >= 0)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `email_inbound_message_unique` ON `email_inbound` (`message_id`,`address_token`);--> statement-breakpoint
+CREATE UNIQUE INDEX `email_inbound_message_unique` ON `email_inbound` (`message_id`,`address_token`,`from_address`);--> statement-breakpoint
 CREATE INDEX `email_inbound_project_received_idx` ON `email_inbound` (`project_id`,`received_at`);--> statement-breakpoint
 CREATE INDEX `email_inbound_received_at_idx` ON `email_inbound` (`received_at`);--> statement-breakpoint
 CREATE INDEX `email_inbound_user_id_idx` ON `email_inbound` (`user_id`);--> statement-breakpoint
@@ -79,7 +83,8 @@ CREATE TABLE `org_email_inbound` (
 	CONSTRAINT "org_email_inbound_token_check" CHECK((token_hash IS NULL) = (token_last4 IS NULL)),
 	CONSTRAINT "org_email_inbound_api_key_check" CHECK((api_key_enc IS NULL) = (api_key_last4 IS NULL)),
 	CONSTRAINT "org_email_inbound_authserv_check" CHECK(authserv_id IS NULL OR length(authserv_id) BETWEEN 1 AND 253),
-	CONSTRAINT "org_email_inbound_on_check" CHECK(enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL))
+	CONSTRAINT "org_email_inbound_on_check" CHECK(enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)),
+	CONSTRAINT "org_email_inbound_authserv_needed_check" CHECK(enabled = 0 OR require_authenticated = 0 OR authserv_id IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE INDEX `org_email_inbound_updated_by_idx` ON `org_email_inbound` (`updated_by`);--> statement-breakpoint

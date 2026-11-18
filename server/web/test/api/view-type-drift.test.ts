@@ -1118,6 +1118,39 @@ const PAIRS: readonly Pair[] = [
     client: 'HrSyncResult',
     clientFile: 'hr.ts',
   },
+  // The Outlook calendar connection (D-157, LAI-1316): the card's view and
+  // each named shape inside it, so a rule's space, the last test and the
+  // last sync are compared field by field, not read as the parent's.
+  {
+    server: 'CalendarSourceView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarSource',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarRuleView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarRule',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarTestView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarTest',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarSyncErrorView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarSyncError',
+    clientFile: 'calendar.ts',
+  },
+  {
+    server: 'CalendarSyncResultView',
+    serverFile: 'services/calendar-sync.ts',
+    client: 'CalendarSyncResult',
+    clientFile: 'calendar.ts',
+  },
   {
     server: 'HolidayView',
     serverFile: 'services/holidays.ts',
@@ -1166,6 +1199,51 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/teams.ts',
     client: 'ProjectTeams',
     clientFile: 'teams.ts',
+  },
+  // Email to tasks (D-155, LAI-1315): each view and every named shape inside
+  // it — the card's, a row of its recent mail, a person it names, the token
+  // said once, `OrgView.email_inbound`, and a space's address.
+  {
+    server: 'EmailInboundSettingsView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'EmailInboundSettings',
+    clientFile: 'email-inbound.ts',
+  },
+  {
+    server: 'EmailInboundRowView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'EmailInboundRow',
+    clientFile: 'email-inbound.ts',
+  },
+  {
+    server: 'InboundProjectView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'InboundProject',
+    clientFile: 'email-inbound.ts',
+  },
+  {
+    server: 'InboundPersonView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'InboundPerson',
+    clientFile: 'email-inbound.ts',
+  },
+  {
+    server: 'EmailInboundTokenView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'EmailInboundToken',
+    clientFile: 'email-inbound.ts',
+  },
+  {
+    server: 'OrgEmailInboundView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'OrgEmailInbound',
+    clientFile: 'org.ts',
+  },
+  {
+    server: 'ProjectEmailAddressView',
+    serverFile: 'services/email-inbound.ts',
+    client: 'ProjectEmailAddress',
+    clientFile: 'email-inbound.ts',
   },
   // A day off on the reads that draw days (D-149, LAI-1183's contract,
   // LAI-1184's mirror): each named shape on both sides, so the holiday and

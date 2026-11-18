@@ -10,6 +10,9 @@ import {
   attachments,
   emailInbound,
   emailInboundAttachments,
+  orgCalendarSource,
+  orgTimeSettings,
+  timeEntries,
   handoffOffers,
   heartbeats,
   leaveDays,
@@ -41,6 +44,14 @@ import { istInstant } from '../../src/services/teams-compose.ts';
 import { setProjectTeamsChannel, setTeamsPosting } from '../../src/services/teams.ts';
 import { fakeTeams, TEAMS_URL } from '../helpers/fake-teams.ts';
 import { fakeAttachments, fakeS3 } from '../helpers/fake-s3.ts';
+import {
+  fakeGraph,
+  type FakeGraph,
+  GRAPH_CLIENT,
+  GRAPH_SECRET,
+  GRAPH_TENANT,
+  graphEvent,
+} from '../helpers/fake-graph.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -108,6 +119,7 @@ describe('the jobs §11.6 names', () => {
     expect(names).toEqual([
       'attachment.prune',
       'backup.snapshot',
+      'calendar.sync',
       'checkpoint.retention',
       'claim.expiry',
       'db.vacuum',
@@ -226,6 +238,12 @@ describe('the jobs §11.6 names', () => {
     expect(hr?.atStart).toBe(true);
     // It waits on the network, and the boot runs `atStart` jobs in turn.
     expect(jobs.at(-1)?.name).toBe('hr.sync');
+  });
+
+  it('syncs Outlook calendars every 15 minutes, never at boot (D-157, LAI-1316)', () => {
+    const job = buildJobs(deps()).find((j) => j.name === 'calendar.sync');
+    expect(job?.everyMs).toBe(15 * 60 * 1000);
+    expect(job?.atStart).toBeUndefined();
   });
 
   it('sweeps attachments hourly, not at boot (D-150, LAI-1300)', () => {
@@ -605,6 +623,105 @@ describe('teams.post (D-154, LAI-1314)', () => {
     expect(await scheduler.runOnce('teams.post')).toEqual({ changed: 1 });
     expect(fake.requests.map((r) => r.url)).toEqual([TEAMS_URL]);
     expect(fake.texts()[0]).toContain('https://laika.example/board?project=laika');
+    scheduler.stop();
+  });
+});
+
+describe('calendar.sync (D-157, LAI-1316)', () => {
+  const SECRET = 'test-secret-that-is-long-enough-to-pass-validation';
+  /** 09:00 UTC on the scheduler's day. */
+  const AT = NOW - (NOW % 86_400_000) + 9 * 3_600_000;
+
+  function connect(enabled: boolean): void {
+    t.db
+      .insert(orgCalendarSource)
+      .values({
+        orgId: seeded.orgId,
+        tenantId: GRAPH_TENANT,
+        clientId: GRAPH_CLIENT,
+        secretEnc: encryptSecret(GRAPH_SECRET, SECRET, 'calendar_client_secret'),
+        secretLast4: GRAPH_SECRET.slice(-4),
+        enabled: enabled ? 1 : 0,
+        configuredBy: seeded.userId,
+        configuredAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(orgTimeSettings)
+      .values({ orgId: seeded.orgId, mode: 'manual', updatedAt: NOW })
+      .run();
+  }
+
+  function calendarDeps(fake: FakeGraph): Partial<SchedulerDeps> {
+    return {
+      ...fakeTimers(),
+      serverSecret: SECRET,
+      calendar: { fetchImpl: fake.fetchImpl, sleep: () => Promise.resolve(), timeoutMs: 50 },
+    };
+  }
+
+  it('does nothing, and asks Microsoft nothing, while the switch is off', async () => {
+    connect(false);
+    const fake = fakeGraph({ calendars: { 'owner@example.test': [graphEvent(AT)] } });
+    const scheduler = startScheduler(deps(calendarDeps(fake)));
+    await scheduler.started;
+
+    expect(await scheduler.runOnce('calendar.sync')).toEqual({ changed: 0 });
+    expect(fake.requests).toEqual([]);
+    expect(t.db.select().from(timeEntries).all()).toEqual([]);
+    scheduler.stop();
+  });
+
+  it('syncs on its tick with the scheduler’s clock, and says what it changed', async () => {
+    connect(true);
+    const fake = fakeGraph({ calendars: { 'owner@example.test': [graphEvent(AT)] } });
+    const scheduler = startScheduler(deps(calendarDeps(fake)));
+    await scheduler.started;
+    // Not at boot.
+    expect(fake.requests).toEqual([]);
+
+    expect(await scheduler.runOnce('calendar.sync')).toEqual({ changed: 1 });
+    expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
+    expect(t.db.select().from(orgCalendarSource).get()?.lastSuccessAt).toBe(NOW);
+    expect(log.records.find((r) => r.job === 'calendar.sync')).toMatchObject({
+      event: 'cron.job_ran',
+      changed: 1,
+    });
+    scheduler.stop();
+  });
+
+  it('logs a failed read by its code alone — no secret, no Microsoft words', async () => {
+    connect(true);
+    const fake = fakeGraph({ roles: [], calendars: { 'owner@example.test': [] } });
+    const scheduler = startScheduler(deps(calendarDeps(fake)));
+    await scheduler.started;
+    await scheduler.runOnce('calendar.sync');
+
+    expect(log.records.find((r) => r.job === 'calendar.sync')).toMatchObject({
+      event: 'cron.job_failed',
+      error: 'calendar sync failed: not_granted',
+    });
+    expect(JSON.stringify(log.records)).not.toContain(GRAPH_SECRET);
+    expect(JSON.stringify(log.records)).not.toContain('MS-SECRET-WORDS');
+    scheduler.stop();
+  });
+
+  it('joins a sync already running rather than reading Microsoft twice', async () => {
+    connect(true);
+    const fake = fakeGraph({ calendars: { 'owner@example.test': [graphEvent(AT)] } });
+    const release = fake.hold();
+    const scheduler = startScheduler(deps(calendarDeps(fake)));
+    await scheduler.started;
+    const first = scheduler.runOnce('calendar.sync');
+    await new Promise((done) => setTimeout(done, 0));
+    const second = scheduler.runOnce('calendar.sync');
+    await new Promise((done) => setTimeout(done, 0));
+    expect(fake.of('calendarView')).toHaveLength(1);
+    release();
+    expect(await Promise.all([first, second])).toEqual([{ changed: 1 }, { changed: 1 }]);
+    expect(fake.of('calendarView')).toHaveLength(1);
+    expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
     scheduler.stop();
   });
 });

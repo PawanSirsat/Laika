@@ -6,9 +6,11 @@ import { ProjectMark } from '../ProjectMark.tsx';
 
 /**
  * Row one of a space: **who and what, and nothing else** (LAI-1198) — in the
- * page, under a *Spaces /* breadcrumb, since LAI-1227 (LAI-1188 had drawn it in
- * the app header; the owner asked for Jira's header, whose top bar names no
- * page and whose project page names itself).
+ * page since LAI-1227 (LAI-1188 had drawn it in the app header; the owner asked
+ * for Jira's header, whose top bar names no page and whose project page names
+ * itself). **No *Spaces /* breadcrumb above it** (LAI-1328, the owner): the
+ * rail and the menu are the way back to every space, and the space's name now
+ * starts the page.
  *
  * Until LAI-1198 this row also carried Search, Priority, Tag, Assignee and
  * Ready-only on every view that did not claim them, which pushed Agents and
@@ -30,38 +32,12 @@ export function SpaceTopBar() {
    * by-slug response is in flight — a URL is a poor name but a true one.
    */
   const { spaceName, spaceKey, route } = useShell();
-  const spacesHref = '/projects';
   const slug = route.params.get('project') ?? undefined;
 
   const { stream } = useLive();
 
   return (
     <>
-      {/*
-        **The way back to every space** (LAI-1227), Jira's *Projects /* above a
-        project's name: one step, to the Spaces page. Not a heading — the
-        space's name below is the page's one `h1`.
-      */}
-      <div className="space-crumbs" data-space-crumbs>
-        <nav aria-label="Breadcrumb">
-          <ol className="space-crumbs-list">
-            <li className="space-crumb">
-              <a
-                href={spacesHref}
-                className="space-crumb-link"
-                onClick={(event) => {
-                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                  event.preventDefault();
-                  route.navigate(spacesHref);
-                }}
-              >
-                Spaces
-              </a>
-            </li>
-          </ol>
-        </nav>
-      </div>
-
       <div className="space-bar-row">
         <div className="space-identity">
           {/*
@@ -75,11 +51,12 @@ export function SpaceTopBar() {
             so the space looks like itself in the rail and on its page. It was
             a fixed ink block with a bar-chart glyph, the same for every space.
             The shell's read of this space is remembered by slug, so the mark
-            has its icon without the bar carrying it.
+            has its icon without the bar carrying it. One step up from `md`
+            (LAI-1328, the owner: "a little bigger, but not much").
           */}
           {slug !== undefined && (
             <span className="space-icon" aria-hidden="true">
-              <ProjectMark project={{ slug, name: spaceName ?? slug }} size="md" />
+              <ProjectMark project={{ slug, name: spaceName ?? slug }} size="lg" />
             </span>
           )}
           <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>

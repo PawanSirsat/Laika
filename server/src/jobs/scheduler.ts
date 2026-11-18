@@ -18,6 +18,12 @@ import {
 } from '../services/hr-sync.ts';
 import { notifyEmail, pruneEmailDigests } from '../services/email-notify.ts';
 import {
+  CALENDAR_SYNC_EVERY_MINUTES,
+  type CalendarSyncDeps,
+  changedBy as calendarChanged,
+  runCalendarSync,
+} from '../services/calendar-sync.ts';
+import {
   changedBy as emailChangedBy,
   type EmailOutboxDeps,
   pruneEmailOutbox,
@@ -80,6 +86,8 @@ export interface SchedulerDeps {
   serverSecret?: string;
   /** The HR sync's `fetch` and waits — injected by the tests, which never call Clan. */
   hr?: HrSyncDeps;
+  /** The Outlook calendar sync's `fetch` and waits — injected by the tests, which never call Microsoft. */
+  calendar?: CalendarSyncDeps;
   /**
    * The attachments store (D-150, LAI-1300), and the `fetch` the tests inject
    * so none of them calls a store. Absent, or `config: null`, the sweep does
@@ -297,6 +305,25 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
         return {
           changed: ticked.sent + ticked.failed + ticked.suppressed + ticked.pruned,
         };
+      },
+    },
+    // Members' Outlook meetings logged as their time (D-157, LAI-1316),
+    // every 15 minutes; nothing unless the connection is saved **and its
+    // switch is on**. Not `atStart`: a boot should not wait on Microsoft, and
+    // the first tick comes within 15 minutes — so it need not be last, as the
+    // HR sync below is. A run still going is joined,
+    // never doubled (`runCalendarSync`); a failed read is recorded on the
+    // connection and thrown here by its code alone.
+    {
+      name: 'calendar.sync',
+      everyMs: CALENDAR_SYNC_EVERY_MINUTES * 60 * 1000,
+      run: async (now) => {
+        const outcome = await runCalendarSync(db, deps.serverSecret ?? '', {
+          ...deps.calendar,
+          now: () => now,
+        });
+        if (outcome.kind === 'failed') throw new Error(`calendar sync failed: ${outcome.code}`);
+        return { changed: calendarChanged(outcome) };
       },
     },
     // Holidays and leave from the organisation's HR system (D-149 item 7,

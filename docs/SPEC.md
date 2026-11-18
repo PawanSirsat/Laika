@@ -148,7 +148,7 @@ organisation's grants for exactly these actions and no others.
 | *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
 | *Create and archive spaces* | `project.create`, `project.archive` |
 | *See and manage anyone's developer setup* | `token.list_any`, `token.revoke_any`, `developer_setup.read_any`, `agent.revoke_any`, `device.revoke_any` (not for the owner — D-133) |
-| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.email.configure` (D-153), `org.teams.configure` (D-154) |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set`, `org.hr.configure` (D-149), `org.email.configure` (D-153), `org.teams.configure` (D-154), `org.calendar.configure` (D-157) |
 
 *Invite people* and *Deactivate people and reset access* were one
 capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
@@ -270,6 +270,7 @@ be obvious because someone will be asking for it.
 | Connect the organisation's HR system | ✓ (session only) | ✓ (session only) | — | — |
 | Configure the organisation's email | ✓ (session only) | ✓ (session only) | — | — |
 | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
+| Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
 | Read own time settings | ✓ | ✓ | ✓ | ✓ |
 | Set own Draft my time | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
@@ -433,6 +434,14 @@ where a space's stand-ups, titles and comments are read out to, and an agent's
 token that could set one could send them anywhere. A space's own routes also
 need the space to be one the caller can open (`project.read`), else the missing
 slug's `404`. The posting job acts as §3.4's `system.teams.post`.
+
+**"Connect the organisation's Outlook calendar" is `org.calendar.configure`**
+(D-157, LAI-1316), behind §6.4's `/org/calendar` routes: save the Entra app's
+tenant, client id and secret, the rules that send a meeting to a space and the
+switch, test whether `Calendars.Read` has been granted, sync now, disconnect.
+Session only, because the secret reads every member's calendar. **The meetings
+it logs are each member's own time** (§4.48), read and changed under
+`time_entries.*_own` like an entry they typed.
 
 **"Change a member's confirmed time" is `time_entries.write_member`** (D-143,
 LAI-1165, amending D-102 rule 4 and D-088 items 2 and 6), behind §6.4's
@@ -793,8 +802,9 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.prune` | §11.6: outbox rows 90 days after they were written (§4.93, D-153, LAI-1312) |
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
-| `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.101 – §4.104, D-155, LAI-1315) |
-| `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.104, D-155 item 6, LAI-1315) |
+| `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.103 – §4.106, D-155, LAI-1315) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, every 15 minutes while the switch is on (§4.101, §4.102, D-157, LAI-1316) |
+| `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.106, D-155 item 6, LAI-1315) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -2390,12 +2400,12 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788) |
-| `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
+| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
+| `source_ref` | nullable — the draft it came from, an import's own id (LAI-788), or a calendar meeting's Graph event id (D-157); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `kind` | nullable — what the person said it was (D-108, LAI-897; the design's eight since LAI-516): `work` \| `meeting` \| `thinking` \| `research` \| `pairing` \| `review` \| `support` \| `admin` — validated by the API on every path (no CHECK here: SQLite cannot add one without rebuilding a table that carries retention triggers; `time_timers.kind` carries it). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it. Migration 0060 mapped the first eight: call → meeting, planning → thinking, learning → research, other → work |
-| `title` | nullable, ≤ 120 characters (CHECK) — the person's own name for it, shown where a card's key would be when there is no card |
-| `description` | nullable, ≤ 2000 characters (CHECK) — what it was, in their words; `note` stays the one line Solidtime gets when there is no title |
+| `title` | nullable, ≤ 120 characters — validated by the API on every path, no CHECK (as `kind`) — the person's own name for it, shown where a card's key would be when there is no card |
+| `description` | nullable, ≤ 2000 characters — validated by the API, no CHECK — what it was, in their words; `note` stays the one line Solidtime gets when there is no title |
 | `folder`, `branch` | nullable — a confirmed draft's work folder name and branch (§4.47, D-098 item 5), carried into the entry when the person confirms it and seen with it by owners and admins, as confirmed hours are (D-088 item 7); null for a typed or imported entry. Not part of a revision (§4.49) |
 | `revision` | integer ≥ 1, its newest revision's number |
 | `deleted_at` | nullable — a person's delete keeps the row |
@@ -4069,6 +4079,15 @@ Every notification mail ends by saying why it came and linking the reader's own
 profile (`/people?user=<id>`, *Change what … emails you*), where their two
 switches are (§4.97); without a public URL it names the profile instead.
 
+**An agent is named as its owner's, never as its owner** (LAI-1341, the owner's
+decision). A token acts as the person who owns it, so `actor_id` is the owner
+either way; `actor_kind` `agent` is what tells them apart. Mail and digest lines
+say `<the agent's display name> (Ada's agent)` for a registered agent's row
+(`agent_id`), and `Ada's agent` for a token no agent was registered for. And
+**nobody is told what they did themselves in person** — but what their agent did
+on their behalf they are told: Ada's agent assigning Ada, or @mentioning her,
+mails Ada, and its work on the tasks she watches is in her digest.
+
 ### 4.94 `org_teams_settings`
 
 The organisation's Teams posting switch (D-154, LAI-1314) — one row, or none.
@@ -4188,9 +4207,10 @@ Indexes: unique `(user_id, activity_id)` and `(user_id, notice_id)`,
 is on:
 - `task.status_changed`, `task.assigned` (to someone else), `task.updated`
   (not a claim), `comment.added`, `attachment.added` and `task.stale_flagged`,
-  on a task the person watches (§4.18), done by someone else, that they were
-  not already mailed at once — **mailed means the mail is queued or sent**, so
-  one recorded `pref_off` or `too_old` does not count;
+  on a task the person watches (§4.18), not done by them in person (their
+  agent's doing counts, LAI-1341), that they were not already mailed at once —
+  **mailed means the mail is queued or sent**, so one recorded `pref_off` or
+  `too_old` does not count;
 - an assignment or an @mention the person was **not** mailed at once for one of
   those two reasons, watching the task or not — instant off is "tell me in the
   digest", not "never tell me";
@@ -4223,28 +4243,81 @@ never mailed, not even the two minutes before the job started.
 | `read_to_rowid` | its rowid — 0 before the first, which is "now, nothing behind it" |
 | `updated_at` | |
 
-### 4.101 `org_email_inbound`
+### 4.101 `org_calendar_source`
+
+The organisation's connection to Microsoft 365 calendars (D-157, LAI-1316) — one
+row, or none when it is not set up. Its own table, as `org_hr_source` is. Written
+only through `org.calendar.configure` and the sync.
+
+| field | notes |
+| --- | --- |
+| `org_id` | pk, FK `orgs`, cascade |
+| `tenant_id` | 1–100 (CHECK) — the Entra tenant, a GUID or a domain such as `contoso.onmicrosoft.com`, lowercase; checked before it is ever put in a URL |
+| `client_id` | 36 (CHECK) — the app's client id, a GUID, lowercase |
+| `secret_enc` | the client secret, AES-256-GCM under purpose `calendar_client_secret` (D-009's scheme); never returned, never logged. One `LAIKA_SECRET` can no longer open reads as `credentials_rejected`, naming `LAIKA_SECRET` |
+| `secret_last4` | for display |
+| `enabled` | 0/1 (CHECK), default 0 — **the switch**; the sync reads nothing while it is 0 |
+| `rules_json` | JSON, default `[]` — `[{ "kind": "title" \| "channel", "text", "project_id" }]`, at most 50, first match wins |
+| `configured_by` | nullable, FK `users`, set null |
+| `configured_at` | |
+| `last_test_at` | nullable — the last *Test connection* that got a token |
+| `last_test_roles_json` | nullable — the roles that token carried, A–Z; set and cleared with `last_test_at` (CHECK), and cleared when the credentials change |
+| `last_attempt_at` | nullable — the last sync, whatever came of it |
+| `last_success_at` | nullable |
+| `last_error_code` | nullable — `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) |
+| `last_error` | nullable — Laika's words, never Microsoft's body |
+| `last_result_json` | nullable — the last complete sync's counts |
+| `updated_at` | |
+
+**An application, never a person's sign-in** (D-157 item 1): the sync reads each
+member's calendar as the app, once an admin has granted it `Calendars.Read`.
+Disconnecting deletes the row; the meetings already logged stay, as the people's
+time they are.
+
+### 4.102 `calendar_events`
+
+Which of a person's time entries holds which of their Outlook meetings (D-157,
+LAI-1316) — the `solidtime_entries` pattern, so a re-read can tell a changed
+meeting, a gone one, and **an entry the person has changed since**, which the sync
+never touches again.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `event_id` | 1–512 (CHECK) — Graph's **immutable** id for the event, or for one occurrence of a series (`Prefer: IdType="ImmutableId"`, so a meeting moved between folders keeps it and is never logged twice); unique with `user_id` |
+| `ical_uid` | nullable — the meeting's iCalendar UID, shared by everyone invited |
+| `entry_id` | unique, FK `time_entries`, cascade — the entry it logged (`source: 'calendar'`, `source_ref` this `event_id`) |
+| `entry_revision_synced` | ≥ 1 (CHECK) — the entry's revision as the sync last wrote it; an entry past it is the person's |
+| `last_seen_at` | the last sync that read the event |
+| `created_at` | |
+
+**Nothing of the meeting is kept here but its ids**: the subject — *Busy* for a
+private, confidential or personal one — and the times are on the entry, and no join link,
+body or attendee is read or stored anywhere (D-157 item 4).
+
+### 4.103 `org_email_inbound`
 
 The organisation's *Email to tasks* settings (D-155, LAI-1315). **No row, or
-`enabled` 0, is off** — how it ships: every inbound mail is recorded in §4.103
+`enabled` 0, is off** — how it ships: every inbound mail is recorded in §4.105
 as dropped `switch_off`, and nothing is written. Set by an owner or admin,
 signed in (`org.email.configure`). Its own table, so `orgs` is not rebuilt.
 
 | field | notes |
 | --- | --- |
 | `org_id` | pk, FK `orgs`, cascade |
-| `enabled` | 0/1 (CHECK), default 0. 1 needs `domain` and `token_hash` (CHECK) |
+| `enabled` | 0/1 (CHECK), default 0. 1 needs `domain` and `token_hash`, and — while `require_authenticated` is 1 — `authserv_id` (CHECK). **Every write to this row but turning `enabled` off is an owner's** (D-155 item 7); an admin may turn it off |
 | `domain` | nullable — the receiving subdomain, lower case, 3–253 (CHECK): `tasks.kvelld.com`. It must differ from the sending domain; its MX points at Brevo |
 | `token_hash` | nullable — the SHA-256 of the webhook's bearer token, hex. **The token itself is never stored**: shown once when made, compared, never sent anywhere |
 | `token_last4` | nullable — its last four characters; set exactly when `token_hash` is (CHECK) |
 | `api_key_enc` | nullable — the Brevo API key that fetches attachments, AES-256-GCM under purpose `brevo_api_key`. Write-only: never returned, never logged |
 | `api_key_last4` | nullable — set exactly when `api_key_enc` is (CHECK) |
-| `require_authenticated` | 0/1 (CHECK), default **1** — drop a mail without an aligned DMARC, DKIM or SPF pass (D-155 item 4) |
-| `authserv_id` | nullable, 1–253 (CHECK) — the receiving server whose `Authentication-Results` count; null reads the topmost header |
+| `require_authenticated` | 0/1 (CHECK), default **1** — drop a mail without a DMARC, DKIM or SPF pass for exactly its From domain (D-155 item 4). **Turned off by an owner only** |
+| `authserv_id` | nullable, 1–253 (CHECK) — the receiving server whose `Authentication-Results` is believed: **the first header carrying it**, and no other (D-155 item 4). Null believes nothing. Named by an owner from real deliveries, never guessed |
 | `updated_by` | nullable, FK `users`, set null |
 | `updated_at` | |
 
-### 4.102 `project_inbound_addresses`
+### 4.104 `project_inbound_addresses`
 
 A space's inbound address, `<slug>-<token>@<domain>` (D-155). **Only the token
 is matched**, so a rename keeps the address working; *New address* replaces the
@@ -4258,7 +4331,7 @@ a task in the space asks for it.
 | `created_by` | nullable, FK `users`, set null |
 | `created_at` | |
 
-### 4.103 `email_inbound`
+### 4.105 `email_inbound`
 
 Every inbound mail at a space's address and what became of it (D-155) — **the
 provenance of a task or comment that arrived by email**, since `created_via`
@@ -4270,24 +4343,26 @@ row per mail per address, so a redelivery makes nothing twice. Kept 90 days
 | field | notes |
 | --- | --- |
 | `id` | pk |
-| `message_id` | 1–512 (CHECK) — the mail's `Message-ID` without brackets; a digest when it had none or one too long. Unique with `address_token` |
+| `message_id` | 1–512 (CHECK) — the mail's `Message-ID` without brackets; a digest when it had none or one too long. Unique with `address_token` and `from_address` |
 | `address_token` | the space address's token, or `''` when the mail went to none |
 | `project_id` | nullable, FK `projects`, cascade |
-| `from_address` | nullable, ≤ 320 (CHECK) — the From address, lower case |
+| `from_address` | ≤ 320 (CHECK), default `''` — the From address, lower case; `''` when the mail gave none readable. Part of the unique key: a forged mail with a predicted `Message-ID` is a row of its own, never the real sender's |
 | `user_id` | nullable, FK `users`, set null — the person it was matched to |
-| `outcome` | `task_created` \| `comment_added` \| `dropped` |
-| `reason` | nullable — exactly when `dropped` (CHECK): `switch_off` \| `unknown_address` \| `own_sender` \| `auto_reply` \| `spam` \| `unauthenticated` \| `unknown_sender` \| `not_allowed` \| `empty` \| `refused` |
+| `outcome` | `task_created` \| `comment_added` \| `dropped` \| `failed` — a fault, tried again on Brevo's redelivery |
+| `reason` | nullable — exactly when `dropped` (CHECK): `switch_off` \| `unknown_address` \| `own_sender` \| `auto_reply` \| `spam` \| `unauthenticated` \| `unknown_sender` \| `not_allowed` \| `empty` \| `refused` \| `failed_repeatedly` (its third fault) |
 | `task_id` | nullable, FK `tasks`, set null — the task it made, or commented on |
 | `comment_id` | nullable, FK `comments`, set null |
-| `auth` | nullable, ≤ 300 (CHECK) — the believed server and its verdict words, e.g. `mx.example dmarc=pass` |
+| `auth` | nullable, ≤ 300 (CHECK) — the believed server and its verdict words, e.g. `mx.example dmarc=pass`; null when no header was believed |
+| `authserv_ids` | nullable, ≤ 300 (CHECK) — every server the mail's `Authentication-Results` named, topmost first, space-separated: what an owner names `authserv_id` from |
 | `attachment_count` | ≥ 0 (CHECK) — how many attachments the mail announced |
+| `attempts` | ≥ 0 (CHECK), default 0 — how many deliveries of it faulted; at 3 it is `failed_repeatedly` |
 | `received_at` | |
 
-### 4.104 `email_inbound_attachments`
+### 4.106 `email_inbound_attachments`
 
 An inbound mail's attachment on its way to the D-150 store (D-155 item 6). Brevo
 sends a download token, not the bytes; §11.6's attachments job fetches it with
-§4.101's API key and stores it as a ready §4.92 row the sender uploaded. A
+§4.103's API key and stores it as a ready §4.92 row the sender uploaded. A
 failure is a reason here and never blocks the task.
 
 | field | notes |
@@ -4745,9 +4820,14 @@ DELETE /api/v1/org/email                     forget the settings and the key and
 POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one that the caller can open, by name] }   (owner, admin; session only; D-154, LAI-1314)
 PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
-GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
-PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 naming the field   (same)
-POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**   (same)
+GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, can_store_secrets, can_change, authserv_seen, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, authserv_ids, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
+PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 field authserv_id reason authserv_required to be on, authentication required, with no receiving server named; **403 reason owner_only, naming the field, for anything from anyone but an owner except `{ enabled: false }`**; 422 naming the field   (same)
+POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**; 403 owner_only for anyone but an owner   (same)
+GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
+PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
+POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
+POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
+DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -7298,7 +7378,7 @@ That gate is a product requirement, not a v1 shortcut.
 
 ### 10.3 `POST /webhooks/email`
 
-Brevo's inbound parsing (D-155, LAI-1315). Mail to `*@<domain>` (§4.101), whose
+Brevo's inbound parsing (D-155, LAI-1315). Mail to `*@<domain>` (§4.103), whose
 MX records point at Brevo, is parsed and posted here as `{ items: [...] }`.
 **Off until an owner turns it on.**
 
@@ -7306,27 +7386,36 @@ MX records point at Brevo, is parsed and posted here as `{ items: [...] }`.
 - **The token.** `Authorization: Bearer <token>`, the one *Make token* showed
   (§6.4). It is compared as SHA-256 digests with `timingSafeEqual`, so any
   length gets the same plain `401`.
-- **No token made is no delivery accepted.** A bad token and a bad body both get
-  `401`; only once the token holds is the body read, and then a bad one is `422`.
+- **No token made is no delivery accepted.** The token is a header and is
+  checked, with its rate-limit bucket, **before a byte of the body is read** —
+  ahead of the body limit, which reads a body sent without a length. A bad
+  token is `401` whatever the body; once it holds, a bad body is `422`.
 - **No Laika credential is resolved on `/webhooks/*`.** The header is Brevo's.
-- **Limits.** Its own rate-limit bucket, and a 4 MiB body (every other route
-  has 1 MiB).
-- **At most 50 mails** a delivery.
+- **Limits.** A 4 MiB body (every other route has 1 MiB), and two rate-limit
+  buckets chosen **after** the token: a verified delivery spends one, a refused
+  token another, so junk never spends Brevo's.
+- **POST only.** Every other method is `405` with `Allow: POST`, counted like
+  any anonymous request, before a byte of its body is read.
+- **At most 50 mails** a delivery. Brevo's list fields may be mailboxes or plain
+  addresses, and its spam score `Spam.Score` or `SpamScore`; both are read.
 
-**Each mail, at each space address it went to** (§4.102, matched on the token
-alone), is one §4.103 row. It is idempotent on `(message_id, address_token)`: a
-redelivery answers `duplicate` and makes nothing.
+**Each mail, at each space address it went to** — the envelope's recipients,
+which carry a Bcc'd space; To and Cc only when there is no envelope — (§4.104,
+matched on the token alone) is one §4.105 row. It is idempotent on
+`(message_id, address_token, from_address)`: a redelivery answers `duplicate`
+and makes nothing, and — the sender being part of the key — a forged mail with
+a predicted id is a row of its own, never the real one's.
 
 **What a mail becomes**, written **as its sender** — the active person whose
 address is the From, under their own `can()`:
 - **A reply.** It becomes a **comment** on the task when `In-Reply-To` or
-  `References` names an earlier §4.103 mail of the same space, or the subject
+  `References` names an earlier §4.105 mail of the same space, or the subject
   carries `[KEY-N]` for a task in it.
 - **Otherwise a task.** The subject is the title (`(no subject)` when empty, at
   most 300 characters); Brevo's extracted text, else the plain text with quoted
   history trimmed, is the description (at most 50 000).
 - **Never HTML**, and `created_via: 'webhook'`.
-- **Announced attachments** are queued in §4.104.
+- **Announced attachments** are queued in §4.106.
 
 **Dropped, never answered**, one reason each, checked in this order:
 1. `switch_off`
@@ -7336,17 +7425,26 @@ address is the From, under their own `can()`:
    list, `X-Autoreply`, an empty `Return-Path`
 5. `spam`: Brevo's score of 5 or more
 6. `unauthenticated`: with `require_authenticated` on, no DMARC pass for the
-   From domain and no aligned DKIM or SPF pass, in the believed
-   `Authentication-Results` — the server named in `authserv_id`, else the
-   topmost header
+   From domain and no DKIM or SPF pass for exactly it, in the believed
+   `Authentication-Results`. **The believed one is the first header carrying
+   `authserv_id`**, and no other. With no server named nothing is believed;
+   with the header's keys ambiguous (two keys for it, or a value that is not
+   text) it fails closed
 7. `unknown_sender`
 8. `empty`
 9. `not_allowed`: the sender's `can()` refused
 10. `refused`: any other refusal
 
-The answer is `200 { ok, results: [{ outcome, reason }] }` for every mail,
-dropped or not: Brevo retries what is not `2xx`, and a dropped mail must not
-come back. **No mail text is in the answer, a log line or §4.103.**
+The answer is `200 { ok, results: [{ outcome, reason }] }` for every mail Laika
+decided about, dropped or not: Brevo retries what is not `2xx`, and a dropped
+mail must not come back. **Each mail is its own transaction**: a fault in one
+keeps nothing it would have written, the rest are still received, its record
+says `failed` with the count, and the answer is `503`, so Brevo delivers again.
+**On its third fault** it is `dropped` `failed_repeatedly` and answered `200`,
+so a mail that can never be received stops coming back. A `Message-ID` that is
+empty (`<>`) or not one word is no id: the mail is keyed by its digest. A
+`refused` or `failed_repeatedly` is logged at warn. **No mail text is in the answer, a log line or
+§4.105.**
 
 **Setting it up on Brevo** is `docs/OPERATIONS.md`, *Email to tasks: turning it
 on*.
@@ -7520,7 +7618,7 @@ the decision currently governing it rather than the table naming one for all.
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
 | Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept, the hand-offs needing approval at its head and the whole Hand-offs list at `?view=handoffs` — D-146; `?tab=handoffs` is an alias to it, LAI-1169) and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`), `/work` → `/organisation?tab=work` (keeping its `person`, `status`, `space`, `sprint` and `size`) | **LAI-796**; **LAI-507**; **D-147** |
-| Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*, *Holidays*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider, HR system, Email — D-153), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
+| Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*, *Holidays*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider, HR system, Email — D-153, Email to tasks — D-155), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
@@ -7539,14 +7637,14 @@ call MCP; agents do.
 | --- | --- | --- | --- | --- |
 | **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ |
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
-| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members`; Space settings' icon (D-152): `POST /projects/:slug/icon`, `POST /projects/:slug/icon/complete`, `DELETE /projects/:slug/icon`, `GET /org`'s `attachments`; every mark reads `GET /projects/:slug/icon`; on a space's settings, `GET/PUT/DELETE /projects/:slug/teams` and `POST /projects/:slug/teams/test` for owners and admins (D-154) | `get_project_context` | ✅ (icons: LAI-1311; Teams: LAI-1314) |
+| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members`; Space settings' icon (D-152): `POST /projects/:slug/icon`, `POST /projects/:slug/icon/complete`, `DELETE /projects/:slug/icon`, `GET /org`'s `attachments`; every mark reads `GET /projects/:slug/icon`; on a space's settings, `GET/PUT/DELETE /projects/:slug/teams` and `POST /projects/:slug/teams/test` for owners and admins (D-154), and `GET /projects/:slug/email-address` and `POST /projects/:slug/email-address/rotate` (D-155) | `get_project_context` | ✅ (icons: LAI-1311; Teams: LAI-1314; email address: LAI-1315) |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable`, `GET /tasks/:id/attachments`, `POST /projects/:slug/attachments`, `POST /attachments/:id/complete`, `DELETE /attachments/:id`, `GET /org`'s `attachments` (D-150) | `add_comment`, `get_task_context` | ✅ (attachments: LAI-1301) |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT /org/teams` (D-154), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -7869,6 +7967,27 @@ anything missing sends the task back.
   `LAIKA_PUBLIC_URL`; and the last seven days' sent, failed, unconfirmed and
   not-sent counts. The invite dialog and a person's reset link say when the
   link was also emailed; the copy link is the same either way.
+  An **Email to tasks** section on *Integrations* for the same owners and
+  admins (D-155, LAI-1315): a badge — *not set up*, *off* or *on* — and the
+  *Email to tasks on* switch, disabled with its reason until a receiving
+  domain and a webhook token exist; the receiving domain (placeholder
+  `tasks.kvelld.com`); *Require authenticated senders* (on) with what it means;
+  the receiving server whose `Authentication-Results` count (optional); the
+  Brevo API key, write-only, its last four shown, for attachments; *Make token*
+  — the token shown **once**, to paste into Brevo, and *Make a new token*
+  behind a confirm that says the old one stops at once; the webhook URL with
+  *Copy*, or that `LAIKA_PUBLIC_URL` is not set; the board's own From address,
+  which is never written; and the last 20 inbound mails — when, task created,
+  comment added or dropped with its reason in words, the sender's name or
+  address, the space, the task's key linked, the receiving server's verdicts
+  and how many attachments — failed and given-up mail included — **never a
+  subject or text**. Every control but turning it off is an owner's: an admin
+  sees them disabled, with *Only an owner changes these settings*, and may turn
+  it off (D-155 item 7). **Space settings**
+  shows the space's address to whoever may create a task there, with *Copy*,
+  what mailing it does, that the organisation has set no domain yet or that
+  *Email to tasks* is off when so, and *New address* behind a confirm for
+  whoever may edit its settings.
 - **Connect** (`/developer?tab=connect`; `?agent=` sets the agent and
   `?step=2` opens on the token) — the four-step wizard: choose the agent, mint
   a token, add Laika to the agent, check it connected. **Everything in it is
@@ -8536,6 +8655,18 @@ One interval-driven scheduler in the same process:
   `system.hr.sync`. **A run never overlaps another** — *Sync now* joins one
   already running. No `activity` row: the connection carries its time, counts
   and last error
+- **calendar sync** (§4.101, §4.102, D-157, LAI-1316) — every 15 minutes, **never
+  at boot**, and only while the Outlook connection is saved, **its switch is
+  on** and the organisation's Time is not off: each active member's calendar
+  from the start of yesterday to the end of tomorrow in their zone, every
+  member read before one transaction writes; invitations the member accepted
+  (online or in person) and Teams meetings they organised (`isOnlineMeeting`)
+  become or update their `calendar` entries — an event they organised that is
+  not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
+  the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
+  and an entry the person changed is left alone. Under §3.4's
+  `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
+  one already running. No `activity` row, as for any time entry (§4.48)
 - **Teams posting** (§4.94 – §4.96, D-154, LAI-1314) — every minute, not at
   boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
   channel at **05:30 and 12:30 UTC** (11:00 and 18:00 IST), Monday to Friday by
@@ -8622,19 +8753,19 @@ One interval-driven scheduler in the same process:
   another**; a tick joins the one going. No `activity` row. Nothing without a
   transport, and nothing mailed while the organisation's switch is off — the
   default
-- **inbound attachments** (§4.104, D-155 item 6, LAI-1315) — every 30 seconds,
+- **inbound attachments** (§4.106, D-155 item 6, LAI-1315) — every 30 seconds,
   not at boot, under `system.email.attachments`: the ten oldest queued files
-  are fetched from Brevo with §4.101's API key (at most the board's
+  are fetched from Brevo with §4.103's API key (at most the board's
   attachment limit read) and put in the D-150 store, each a ready §4.92 row
   the mail's sender uploaded, on the task or comment the mail made, with
   `attachment.added` as them. Skipped at once — `store_off`, `no_api_key`,
   `too_large`, `not_needed` — when it cannot work; a fetch or store that
   fails is tried three times, a tick apart, then `failed`. A tick still
   running when the next comes is joined. **Never blocks the task**
-- **email retention** (§4.93, §4.98, §4.103) — daily **and once at boot**, under
+- **email retention** (§4.93, §4.98, §4.105) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
   `queued` or `sending` one, closed digests 90 days after they closed, with
-  their items, and inbound mail records (§4.103, D-155) 90 days after they
+  their items, and inbound mail records (§4.105, D-155) 90 days after they
   arrived, with their attachment rows — never the tasks or comments they made.
   No `activity` row
 - **email notify** (§4.97 – §4.100, D-153, LAI-1313) — every 30 seconds, not at
@@ -8644,11 +8775,13 @@ One interval-driven scheduler in the same process:
   still written then, `email_off`, as the record D-153 keeps — writes an
   `assignment` mail for `task.assigned` — and for `task.created` with an
   assignee, unless it was reassigned since — and a `mention` mail for each
-  person a comment @mentions, never to the actor, each through the outbox
-  (`pref_off`, `no_access`, and `too_old` for activity first read over an hour
-  late, recorded there) and each written once — a re-read renders nothing;
-  collects digest items (§4.99); and closes every digest whose morning has come
-  (§4.98). Only writes to the outbox — `email.send` sends. No `activity` row
+  person a comment @mentions — never to a person for what they did in person,
+  but to an agent's owner for what the agent did (LAI-1341) — each through the
+  outbox (`pref_off`, `no_access`, and `too_old` for activity first read over
+  an hour late, recorded there) and each written once — a re-read renders
+  nothing; collects digest items (§4.99); and closes every digest whose morning
+  has come (§4.98). Only writes to the outbox — `email.send` sends. No
+  `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.
@@ -8806,13 +8939,18 @@ posting on, each space's Teams channel** (D-154): one `POST` of
 `{"text": …}` to that space's Power Automate webhook — its stand-ups, nightly
 digest and notices, which carry task keys and titles, people's names and a
 person's comments — nothing to a space without one, and nothing at all while
-*Teams posting* is off, as it ships. Teams' answer is never read. Any task
+*Teams posting* is off, as it ships. Teams' answer is never read. And, when an
+owner or admin sets it up and turns it on, **the organisation's Microsoft
+tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
+`GET`s of members' calendars from `graph.microsoft.com`, keeping only each
+accepted invitation's or organised Teams meeting's subject — *Busy* when it is
+private — times and ids, never a join link, a body or an attendee. Any task
 proposing otherwise is rejected at review.
 
 **Inbound email is the organisation's choice, and off as it ships** (D-155).
 With *Email to tasks* on, Brevo posts each mail sent to a space's address to
 `/webhooks/email` (§10.3). Its subject and text become the task or comment it
-makes, and are kept nowhere else; the record of it (§4.103) holds ids, the
+makes, and are kept nowhere else; the record of it (§4.105) holds ids, the
 sender's address and the receiving server's verdict words, never the mail. Mail
 to the board goes through Brevo, which the organisation chose; nothing is
 fetched from a mailbox. **Its attachments are one more outbound call**: a `GET`

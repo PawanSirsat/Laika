@@ -98,6 +98,8 @@ describe('migrations', () => {
     // LAI-1300, D-150: files in the operator's store, by project, task and comment.
     'attachments',
     'board_activity_days',
+    // LAI-1316, D-157: which time entry holds which Outlook meeting.
+    'calendar_events',
     // LAI-1038, D-126: capacity pings and the one answer each got.
     'capacity_pings',
     // LAI-545, D-116: every ref a checkpoint has, and every push that moved one.
@@ -112,6 +114,9 @@ describe('migrations', () => {
     // LAI-1313, D-153: a person's daily digest and what it will say.
     'email_digest_items',
     'email_digests',
+    // LAI-1315, D-155: every inbound mail and what it became, and its attachments.
+    'email_inbound',
+    'email_inbound_attachments',
     // LAI-1312, D-153: every email sent, and every one suppressed with its reason.
     'email_outbox',
     // LAI-1313: how far the notify job has read activity and notices.
@@ -134,6 +139,10 @@ describe('migrations', () => {
     // LAI-1136, D-134: a member's own notices, kept 90 days.
     'member_notices',
     'member_ratings',
+    // LAI-1316, D-157: the Outlook calendar connection.
+    'org_calendar_source',
+    // LAI-1315, D-155: the organisation's Email to tasks settings.
+    'org_email_inbound',
     // LAI-1181, D-149: holidays, synced or typed, and the HR connection.
     'org_holidays',
     'org_hr_source',
@@ -153,6 +162,8 @@ describe('migrations', () => {
     'project_context_revisions',
     // LAI-546, §4.74: a project's hand-off settings; no row is the defaults.
     'project_handoff_policies',
+    // LAI-1315, D-155: each space's inbound address.
+    'project_inbound_addresses',
     'project_memberships',
     // LAI-1066: what is known about a repository's Laika block; evidence only.
     'project_repo_setups',

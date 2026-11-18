@@ -232,6 +232,41 @@ describe('an entry that came from Solidtime is read-only in Laika (review round 
     expect(solidtimeOutbox(t.db, owner, { since: DAY }, NOW).push).toEqual([]);
   });
 
+  it('never offers a meeting from Outlook to Solidtime, new, changed or deleted (D-157, LAI-1316)', () => {
+    const id = newId();
+    t.db
+      .insert(timeEntries)
+      .values({
+        id,
+        userId: owner.userId,
+        day: DAY,
+        tz: 'UTC',
+        startedAt: at(DAY, 9),
+        endedAt: at(DAY, 10),
+        minutes: 60,
+        source: 'calendar',
+        sourceRef: 'AAMkAG-event-1',
+        kind: 'meeting',
+        title: 'Standup',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    const typed = createEntry(t.db, owner, { day: DAY, tz: 'UTC', minutes: 30 }, NOW);
+    // A positive control: the typed entry beside it is offered.
+    expect(solidtimeOutbox(t.db, owner, { since: DAY }, NOW).push.map((p) => p.entry_id)).toEqual([
+      typed.id,
+    ]);
+    t.db
+      .update(timeEntries)
+      .set({ deletedAt: NOW, revision: 2 })
+      .where(eq(timeEntries.id, id))
+      .run();
+    expect(solidtimeOutbox(t.db, owner, { since: DAY }, NOW).push.map((p) => p.entry_id)).toEqual([
+      typed.id,
+    ]);
+  });
+
   it('refuses a record that both links and removes one Solidtime entry', () => {
     own([entry({ id: 'st-1', key: 'ONR-1' })]);
     const [imported] = live(owner.userId);

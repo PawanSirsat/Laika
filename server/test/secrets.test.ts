@@ -113,6 +113,7 @@ describe('the key', () => {
       email_body: encryptSecret('{"text":"t","html":"h"}', SECRET, 'email_body'),
       teams_webhook_url: encryptSecret('https://x.example/0123', SECRET, 'teams_webhook_url'),
       brevo_api_key: encryptSecret('xkeysib-0123', SECRET, 'brevo_api_key'),
+      calendar_client_secret: encryptSecret('Zq8~cal0123', SECRET, 'calendar_client_secret'),
     } as const;
 
     for (const purpose of Object.keys(stored) as SecretPurpose[]) {
