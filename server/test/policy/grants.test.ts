@@ -83,6 +83,7 @@ describe('the mapping', () => {
         'org.hr.configure',
         'org.email.configure',
         'org.teams.configure',
+        'org.calendar.configure',
       ],
     });
     expect(CAPABILITIES).not.toContain('manage_people');

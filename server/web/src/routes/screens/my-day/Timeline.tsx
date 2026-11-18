@@ -591,7 +591,7 @@ export function Timeline({
     },
   });
 
-  /** A block the pointer or the keys may move: not read, not busy, not an import. */
+  /** A block the pointer or the keys may move: not read, not busy, not an import (an Outlook meeting is the person's to move). */
   const canDrag = (block: LaneBlock): boolean =>
     !readOnly && !busy && (lockDrafts ? block.kind !== 'drafted' : !block.locked);
   const unchanged = (block: LaneBlock): Edit => ({
@@ -1816,6 +1816,9 @@ export function Timeline({
                   const bad = moving && dragCheck !== undefined && !dragCheck.ok;
                   const entryKind =
                     block.kind === 'confirmed' ? (entries.get(block.id)?.kind ?? null) : null;
+                  // A meeting the Outlook sync logged says so (D-157, LAI-1316).
+                  const fromOutlook =
+                    block.kind === 'confirmed' && entries.get(block.id)?.source === 'calendar';
                   const icon =
                     block.kind === 'confirmed'
                       ? entryKind === null
@@ -1846,6 +1849,7 @@ export function Timeline({
                       data-block-key={key}
                       data-kind={block.kind}
                       data-entry-kind={entryKind ?? undefined}
+                      data-source={fromOutlook ? 'calendar' : undefined}
                       style={
                         {
                           left: left(shape.start, shape.end),
@@ -1869,7 +1873,9 @@ export function Timeline({
                               ? block.needsCard
                                 ? 'Draft, no task yet'
                                 : 'Draft'
-                              : 'Confirmed'
+                              : fromOutlook
+                                ? 'Confirmed, from Outlook'
+                                : 'Confirmed'
                           }, ${range}, ${top}, ${duration(shape.minutes)}`}
                           onClick={() => {
                             // A drag that just ended is not a click.

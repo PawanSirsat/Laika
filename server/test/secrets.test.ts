@@ -112,6 +112,7 @@ describe('the key', () => {
       clan_api_token: encryptSecret('7|clan0123', SECRET, 'clan_api_token'),
       email_body: encryptSecret('{"text":"t","html":"h"}', SECRET, 'email_body'),
       teams_webhook_url: encryptSecret('https://x.example/0123', SECRET, 'teams_webhook_url'),
+      calendar_client_secret: encryptSecret('Zq8~cal0123', SECRET, 'calendar_client_secret'),
     } as const;
 
     for (const purpose of Object.keys(stored) as SecretPurpose[]) {
