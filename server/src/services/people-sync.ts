@@ -351,6 +351,16 @@ export async function syncPeople(
   const result = emptyResult(members.length);
   const photos = { budget: PHOTO_FETCHES_PER_RUN, storeDown: false };
   const reads: PersonRead[] = [];
+  // Another tenant or app saved meanwhile forgot every Entra id (F2): a run
+  // reading the old one must not put them back. Asked with no `await` between
+  // it and the write it guards.
+  const ours = (): boolean => {
+    const now = db
+      .select({ tenantId: orgCalendarSource.tenantId, clientId: orgCalendarSource.clientId })
+      .from(orgCalendarSource)
+      .get();
+    return now?.tenantId === source.tenantId && now.clientId === source.clientId;
+  };
 
   try {
     const access = await client.token();
@@ -372,6 +382,7 @@ export async function syncPeople(
       }
       if (read.kind === 'gone') {
         result.not_found += 1;
+        if (!ours()) return { kind: 'skipped' };
         markMissing(db, known.get(member.id), clock());
         continue;
       }
@@ -379,6 +390,7 @@ export async function syncPeople(
       const manager = await client.manager(read.user.id);
       const managerId = managerOf(manager, byAddress, member.id);
       const row = known.get(member.id);
+      if (!ours()) return { kind: 'skipped' };
       if (saveProfile(db, member.id, row, read.user, managerId, read.pinned, clock())) {
         result.updated += 1;
       }
@@ -392,9 +404,11 @@ export async function syncPeople(
     return recordFailure(db, settings, started, code);
   }
 
-  const leavers = await reviewLeavers(db, reads, active.length, store, deps, clock());
+  if (!ours()) return { kind: 'skipped' };
+  const leavers = await reviewLeavers(db, reads, active.length, store, deps, ours, clock());
   // The connection the run began with, and its switch still on: one turned
-  // off, or saved again, meanwhile is not told about this run.
+  // off, or another tenant or app saved, meanwhile is not told about this run.
+  if (!ours()) return { kind: 'skipped' };
   const changed = db
     .update(orgPeopleSync)
     .set({
@@ -686,6 +700,7 @@ async function reviewLeavers(
   members: number,
   store: StoreClient | null,
   deps: PeopleSyncDeps,
+  ours: () => boolean,
   now: number,
 ): Promise<LeaverReviewView> {
   const found: LeaverView[] = [];
@@ -709,6 +724,9 @@ async function reviewLeavers(
     if (row?.oid == null) continue;
     const confirmed = (since: number | null): boolean =>
       since !== null && now - since >= LEAVER_CONFIRM_MS;
+    // `saveProfile` already keeps `disabled_since` only for a pinned read, so
+    // the pinning asked here is a second copy of that rule (M2): no read can
+    // reach this line with it false and a confirmed `disabled_since`.
     const reason: LeaverReason | null =
       read.kind === 'gone'
         ? confirmed(row.missing)
@@ -726,8 +744,7 @@ async function reviewLeavers(
   const going = found.filter((p) => p.protected === null);
   const total = recentlyDeactivated(db, now) + going.length;
   const breaker =
-    going.length > 0 &&
-    (total > LEAVERS_BREAKER_COUNT || total > LEAVERS_BREAKER_SHARE * members);
+    going.length > 0 && (total > LEAVERS_BREAKER_COUNT || total > LEAVERS_BREAKER_SHARE * members);
   if (found.length === 0) return { at: now, state: 'none', breaker: false, people: [], changed };
 
   // Asked again now, not when the run began: turned off meanwhile is off.
@@ -737,6 +754,8 @@ async function reviewLeavers(
 
   const people: LeaverView[] = [];
   for (const p of found) {
+    // Each photo removed is an `await`: another tenant saved meanwhile stops the rest.
+    if (!ours()) break;
     if (p.protected !== null) {
       people.push(p);
       continue;

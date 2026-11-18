@@ -247,9 +247,7 @@ export type PhotoRead =
  * photo it is for, or `none` / `skipped` as {@link PhotoRead}'s.
  */
 export type PhotoTagRead =
-  | { kind: 'tag'; tag: string; size: PhotoSize }
-  | { kind: 'none' }
-  | { kind: 'skipped' };
+  { kind: 'tag'; tag: string; size: PhotoSize } | { kind: 'none' } | { kind: 'skipped' };
 
 /**
  * One event, as the sync reads it. **Nothing here is stored but the ids, the

@@ -324,7 +324,12 @@ describe('photos', () => {
     graph.intercept = (req) =>
       req.kind === 'photoValue' ? new Response(new Uint8Array(), { status: 200 }) : undefined;
     clock = NOW + HOUR;
-    expect((await synced()).result).toMatchObject({ photos_removed: 0, photos_fetched: 0 });
+    // Skipped, not refused: an empty answer says nothing about the photo.
+    expect((await synced()).result).toMatchObject({
+      photos_removed: 0,
+      photos_fetched: 0,
+      photos_refused: 0,
+    });
     expect(row(s.userId)).toMatchObject({ photoKey: key, photoEtag: '"W/1"' });
     expect(s3.objects.has(key)).toBe(true);
   });
@@ -421,6 +426,42 @@ describe('one person, one Entra id (review M1)', () => {
       jobTitle: 'Engineer',
       photoKey: null,
       missingSince: null,
+    });
+  });
+
+  it('their id answered with another account is that account changed, not them', async () => {
+    switches(true, true);
+    const ada = person('Ada', 'ada@example.test');
+    entra('owner@example.test');
+    entra('ada@example.test', { jobTitle: 'Engineer' });
+    crowd(10);
+    await synced();
+    graph.intercept = (req) =>
+      req.kind === 'user' && req.user === 'oid-ada@example.test'
+        ? new Response(
+            JSON.stringify({
+              id: 'oid-someone-else',
+              userPrincipalName: 'ada@example.test',
+              mail: 'ada@example.test',
+              jobTitle: 'Intern',
+              accountEnabled: false,
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        : undefined;
+    for (const at of [NOW + HOUR, NOW + 3 * HOUR]) {
+      clock = at;
+      const { result, leavers } = await synced();
+      expect(result.changed).toBe(1);
+      expect(leavers.state).toBe('none');
+      expect(leavers.changed).toEqual([{ user_id: ada, name: 'Ada', email: 'ada@example.test' }]);
+    }
+    expect(active(ada)).toBe(true);
+    expect(row(ada)).toMatchObject({
+      entraOid: 'oid-ada@example.test',
+      jobTitle: 'Engineer',
+      accountEnabled: 1,
+      disabledSince: null,
     });
   });
 });
@@ -731,5 +772,40 @@ describe('another tenant or app (F2)', () => {
     disconnectCalendar(t.db, owner, NOW);
     expect(row(ada)?.entraOid).toBeNull();
     expect(t.db.select().from(orgPeopleSync).get()?.leaversEnabled).toBe(0);
+  });
+
+  it('a run still reading the old tenant puts no Entra id back, and records nothing', async () => {
+    switches(true, false);
+    person('Ada', 'ada@example.test');
+    person('Bob', 'bob@example.test');
+    entra('owner@example.test');
+    entra('ada@example.test');
+    entra('bob@example.test');
+    // The second person's read is answered as another tenant is saved.
+    let reads = 0;
+    graph.intercept = (req) => {
+      if (req.kind === 'user' && ++reads === 2) {
+        saveCalendarSource(
+          t.db,
+          owner,
+          SECRET,
+          {
+            tenant_id: 'contoso.onmicrosoft.com',
+            client_id: GRAPH_CLIENT,
+            enabled: false,
+            rules: [],
+          },
+          { now: () => clock },
+        );
+      }
+      return undefined;
+    };
+
+    expect((await run()).kind).toBe('skipped');
+    expect(reads).toBe(2);
+    const rows = t.db.select().from(userDirectory).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.entraOid).toBeNull();
+    expect(t.db.select().from(orgPeopleSync).get()?.lastResultJson).toBeNull();
   });
 });

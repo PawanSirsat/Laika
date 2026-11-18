@@ -65,8 +65,7 @@ export function changedHeadline(count: number): string | null {
 }
 
 /** The breaker, in the card's words. */
-export const BREAKER_RULE =
-  'more than 3 people, or more than a tenth of the members, within a day';
+export const BREAKER_RULE = 'more than 3 people, or more than a tenth of the members, within a day';
 
 /** The leaver review's headline, or null when there is nothing to say. */
 export function leaverHeadline(review: LeaverReview): string | null {

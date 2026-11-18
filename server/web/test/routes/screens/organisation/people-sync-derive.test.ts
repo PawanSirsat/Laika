@@ -95,7 +95,13 @@ void describe('the leaver review', () => {
       /^Held for you to check — more than 3 people, or more than a tenth of the members, within a day/,
     );
     assert.equal(
-      leaverHeadline({ at: 1, state: 'deactivated', breaker: false, people: [leaver], changed: [] }),
+      leaverHeadline({
+        at: 1,
+        state: 'deactivated',
+        breaker: false,
+        people: [leaver],
+        changed: [],
+      }),
       'Deactivated by the last sync:',
     );
     assert.equal(

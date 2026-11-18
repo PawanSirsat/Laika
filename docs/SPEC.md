@@ -8871,7 +8871,10 @@ One interval-driven scheduler in the same process:
   §6.4's deactivation does: tokens revoked, sessions ended, spaces left, open
   tasks unassigned, `user.deactivated` written by the system with `via:
   'microsoft_directory'`, and their stored photo and directory row deleted. **A
-  run never overlaps another** — *Sync now* joins one already running
+  run never overlaps another** — *Sync now* joins one already running — and
+  **one that finds another tenant or app saved meanwhile stops**: it writes
+  nothing more and records nothing, so the Entra ids that save forgot are not
+  put back.
 - **Teams posting** (§4.94 – §4.96, D-154, LAI-1314) — every minute, not at
   boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
   channel at **05:30 and 12:30 UTC** (11:00 and 18:00 IST), Monday to Friday by
