@@ -609,7 +609,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           `to another task. A task assigned to you that is not started yet: \`update_status\` ` +
           `to \`in_progress\`. Name the branch after the key — \`${prefix}-42-short-name\`. ` +
           `Laika ties the tokens your session spends to the task you marked; work before it, or ` +
-          `on a branch without a key, stays unattributed. Show your work: when a person needs ` +
+          `on a branch without a key, stays unattributed. A feature with several parts gets one ` +
+          `parent task; file each part as a child (\`parent\`). Work on an existing feature ` +
+          `becomes a new child of its parent. Attach the main outputs to the parent. ` +
+          `Show your work: when a person needs ` +
           `to see the result (UI changes, generated files), attach screenshots or outputs with ` +
           `\`laika attach\` or \`request_upload\`, captioned. Never upload secrets.`;
 
