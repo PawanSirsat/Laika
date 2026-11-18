@@ -14,6 +14,8 @@ import { ApiError } from '../errors.ts';
 import { assertCan, can, systemPrincipal } from '../policy/can.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { type StoreClient, storeClient, StoreUnavailableError } from './s3-client.ts';
+import { isScannedFile, SECRET_SCAN_BYTES, scanForSecrets, type SecretHit } from './secret-scan.ts';
+import { resolveTaskRef } from './tasks.ts';
 
 /**
  * Attachments (§4.92, §6.4, D-150, LAI-1300): files on a project, a task and
@@ -32,9 +34,10 @@ import { type StoreClient, storeClient, StoreUnavailableError } from './s3-clien
  *
  * ## What a browser is shown, and what it is made to download
  *
- * A file is shown in the page only when it is a png, jpeg, gif, webp or pdf
- * **and its first bytes say so** (`inline`); everything else — SVG and HTML
- * included — is served `application/octet-stream` as a download. The store
+ * A file is shown in the page only when it is a png, jpeg, gif, webp or pdf,
+ * or an mp4 or webm recording (D-162), **and its first bytes say so**
+ * (`inline`); everything else — SVG and HTML included — is served
+ * `application/octet-stream` as a download. The store
  * answers with whatever the presigned `GET` signs as `response-content-type`,
  * and the store D-150 runs sends no `X-Content-Type-Options`, so this forced
  * type is what keeps active content from rendering on the store's origin.
@@ -45,6 +48,18 @@ import { type StoreClient, storeClient, StoreUnavailableError } from './s3-clien
  * and text that carries one links the file to its task and comment on save
  * (`linkAttachmentRefs`), as `syncMentions` reads `@` handles: REST and MCP
  * alike, with no new request field.
+ *
+ * ## An agent's outputs are that markdown too (D-162, LAI-1302)
+ *
+ * `finish_task`'s `outputs` and the `attachments` of `add_comment`,
+ * `create_task` and `log_unlisted_work` are checked here
+ * (`attachmentLinksMarkdown`) and become lines of the text they are saved
+ * with — `![caption](url)` for an image a browser may show, `[caption](url)`
+ * for anything else. So **the caption is the link's text**, and nothing new is
+ * stored: a round's outputs are the files its `summary_md` embeds, and
+ * `get_task_context` reads each caption back out of the text
+ * (`describeTaskFiles`). A text file is scanned for secrets before it is
+ * `ready` (`secret-scan.ts`), and refused and deleted when it holds one.
  *
  * ## Off unless configured
  *
@@ -77,6 +92,12 @@ const SWEEP_BATCH = 500;
 
 /** The bytes read to decide `inline`. */
 const SNIFF_BYTES = 16;
+
+/** The bytes read of a file not declared as text, to tell whether it is text anyway. */
+const TEXT_PROBE_BYTES = 1024;
+
+/** The most files one write attaches, and the longest caption (D-162). */
+export const ATTACHMENT_REF_LIMITS = { items: 20, caption: 200 } as const;
 
 export interface AttachmentView {
   id: string;
@@ -214,9 +235,25 @@ export function contentDisposition(kind: 'inline' | 'attachment', filename: stri
 }
 
 /**
- * What the first bytes say a file is, among the five a browser may show
- * (D-150 item 4), or `null`. A declared type is believed only when these
- * agree with it.
+ * ISO base media brands that are still images, not recordings: HEIF and
+ * AVIF carry an `ftyp` box exactly as an mp4 does.
+ */
+const IMAGE_BRANDS = new Set([
+  'heic',
+  'heix',
+  'heim',
+  'heis',
+  'hevc',
+  'mif1',
+  'msf1',
+  'avif',
+  'avis',
+]);
+
+/**
+ * What the first bytes say a file is, among the seven a browser may show —
+ * D-150 item 4's five, and D-162's mp4 and webm recordings — or `null`. A
+ * declared type is believed only when these agree with it.
  */
 export function sniffInlineType(bytes: Uint8Array): string | null {
   const starts = (...sig: number[]) => sig.every((b, i) => bytes[i] === b);
@@ -227,7 +264,25 @@ export function sniffInlineType(bytes: Uint8Array): string | null {
   if (ascii(0, 'GIF87a') || ascii(0, 'GIF89a')) return 'image/gif';
   if (ascii(0, 'RIFF') && ascii(8, 'WEBP')) return 'image/webp';
   if (ascii(0, '%PDF-')) return 'application/pdf';
+  // An mp4 opens with its `ftyp` box: four bytes of size, then the type, then
+  // the brand — which says whether it is a recording or a HEIF still.
+  if (ascii(4, 'ftyp')) {
+    const brand = String.fromCharCode(...bytes.subarray(8, 12));
+    return IMAGE_BRANDS.has(brand) ? null : 'video/mp4';
+  }
+  // WebM is Matroska, whose EBML header starts with these four bytes.
+  if (starts(0x1a, 0x45, 0xdf, 0xa3)) return 'video/webm';
   return null;
+}
+
+/**
+ * Text by what it holds, whatever it was called (LAI-1302 review): not one of
+ * the seven a browser is shown — a PDF's first kilobyte can be NUL-free — and
+ * no NUL in its first bytes, which every binary format this board sees has
+ * early: a zip (xlsx, docx), a gzip, a video's box sizes.
+ */
+function isTextByContent(head: Uint8Array): boolean {
+  return sniffInlineType(head.subarray(0, SNIFF_BYTES)) === null && !head.includes(0);
 }
 
 // ------------------------------------------------------------------- upload
@@ -236,6 +291,10 @@ export interface CreateAttachmentInput {
   filename: string;
   content_type: string;
   size_bytes: number;
+  /**
+   * The task it is for: its id, or — as every MCP tool takes a task — its key
+   * (`LAI-42`) or the outside id it carries (LAI-1302, `resolveTaskRef`).
+   */
   task_id?: string | undefined;
 }
 
@@ -244,6 +303,7 @@ export interface CreateAttachmentInput {
  * a presigned `PUT`, ten minutes long, for exactly these bytes. A file over
  * the deployment's largest is `413 payload_too_large` with `max_bytes`, and a
  * `task_id` that is not this project's task is `404`, as a missing one is.
+ * MCP's `request_upload` is the same call (D-162).
  */
 export function createAttachment(
   db: Db,
@@ -276,7 +336,8 @@ export function createAttachment(
       max_bytes: config.maxBytes,
     });
   }
-  const taskId = input.task_id ?? null;
+  const taskRef = input.task_id;
+  const taskId = taskRef === undefined ? null : resolveTaskRef(db, taskRef, actor);
   if (taskId !== null) {
     const task = db
       .select({ projectId: tasks.projectId })
@@ -284,7 +345,7 @@ export function createAttachment(
       .where(eq(tasks.id, taskId))
       .get();
     // Another project's task answers as a missing one: no task id leaks across.
-    if (task?.projectId !== project.id) throw ApiError.notFound(`No task with id "${taskId}"`);
+    if (task?.projectId !== project.id) throw ApiError.notFound(`No task "${taskRef ?? ''}"`);
   }
 
   const now = clockOf(deps);
@@ -353,6 +414,9 @@ function attachmentPayload(row: AttachmentRow) {
  * (`upload_expired`) — `409` otherwise. Laika `HEAD`s the
  * object: missing, or another size than was asked for, is `409` and the row
  * stays `pending` for the sweep. The first sixteen bytes decide `inline`.
+ * A text file's first 2 MiB are scanned for secrets first (D-162 item 4):
+ * one that holds a recognised secret is `422`, `reason: secret_detected`,
+ * and is removed — row and object — so it can never be read.
  * A file that named its task belongs to it from here: `attachment.added`.
  */
 export async function completeAttachment(
@@ -393,8 +457,28 @@ export async function completeAttachment(
       found: found.size,
     });
   }
-  const head = await store.readRange(row.storageKey, 0, SNIFF_BYTES - 1);
-  const inline = sniffInlineType(head) === row.contentType;
+  // A file that says it is text is read for the scan at once; any other is
+  // probed first, and read too when its first bytes say it is text after all
+  // — a key named `id_rsa`, or a CSV called `.png` (LAI-1302 review).
+  const scanBytes = Math.min(row.sizeBytes, SECRET_SCAN_BYTES);
+  const declaredText = isScannedFile(row.contentType, row.filename);
+  const head = await store.readRange(
+    row.storageKey,
+    0,
+    (declaredText ? scanBytes : Math.min(row.sizeBytes, TEXT_PROBE_BYTES)) - 1,
+  );
+  const text = declaredText
+    ? head
+    : isTextByContent(head)
+      ? head.length >= scanBytes
+        ? head
+        : await store.readRange(row.storageKey, 0, scanBytes - 1)
+      : null;
+  if (text !== null) {
+    const hit = scanForSecrets(new TextDecoder().decode(text));
+    if (hit !== null) await refuseSecret(db, actor, store, row, clockOf(deps), hit);
+  }
+  const inline = sniffInlineType(head.subarray(0, SNIFF_BYTES)) === row.contentType;
 
   const now = clockOf(deps);
   db.transaction((tx) => {
@@ -429,6 +513,37 @@ export async function completeAttachment(
   return toView(db.select().from(attachments).where(eq(attachments.id, id)).get()!);
 }
 
+/**
+ * A file that holds a secret never becomes `ready` (D-162 item 4, §13.4): the
+ * row is stamped removed by the uploader and the object deleted — best
+ * effort, the sweep retrying until `purged_at` is set — and the completion
+ * is refused with the rule and the line, never the text that matched.
+ */
+async function refuseSecret(
+  db: Db,
+  actor: ResolvedActor,
+  store: StoreClient,
+  row: AttachmentRow,
+  now: number,
+  hit: SecretHit,
+): Promise<never> {
+  db.update(attachments)
+    .set({ deletedAt: now, deletedBy: actor.userId })
+    .where(and(eq(attachments.id, row.id), isNull(attachments.deletedAt)))
+    .run();
+  try {
+    await store.remove(row.storageKey);
+    db.update(attachments).set({ purgedAt: now }).where(eq(attachments.id, row.id)).run();
+  } catch {
+    // The sweep retries it: `deleted_at` set and `purged_at` null.
+  }
+  throw new ApiError(
+    'unprocessable',
+    `That file holds what looks like a secret (${hit.pattern}, line ${String(hit.line)}). It was not kept — attach a masked copy instead.`,
+    { reason: 'secret_detected', pattern: hit.pattern, line: hit.line },
+  );
+}
+
 // --------------------------------------------------------------------- read
 
 /**
@@ -437,7 +552,11 @@ export async function completeAttachment(
  * store must answer with — the declared type and `inline` only for an
  * `inline` file, `application/octet-stream` and `attachment` for anything
  * else. Pending, removed, or in a project the caller cannot read, is the
- * same `404`.
+ * same `404` — and so is **a file on an unlisted finding not yet promoted**
+ * to anyone but its uploader and those who read the pile (`audit_log.export`,
+ * as `GET /unlisted` asks): a finding is nobody's project work yet, and the
+ * project its file was uploaded under is only where the upload was asked for
+ * (D-162 item 8, LAI-1302 review).
  */
 export function attachmentContentUrl(
   db: Db,
@@ -450,6 +569,10 @@ export function attachmentContentUrl(
   const missing = ApiError.notFound(`No attachment with id "${id}"`);
   if (row?.state !== 'ready' || row.deletedAt !== null) throw missing;
   if (!can(withProject(actor, row.projectId), 'project.read', { projectId: row.projectId })) {
+    throw missing;
+  }
+  const onFinding = row.unlistedWorkId !== null && row.taskId === null;
+  if (onFinding && row.uploadedBy !== actor.userId && !can(actor, 'audit_log.export')) {
     throw missing;
   }
 
@@ -631,6 +754,9 @@ export function linkAttachmentRefs(
     // Only a file no task has yet: one this task already has was linked by
     // something else first, and one another task has is never relinked.
     if (row.taskId !== null) continue;
+    // Nor one an unlisted finding holds: it reaches a task by the finding's
+    // promotion, or goes with its dismissal, and by nothing else (D-162).
+    if (row.unlistedWorkId !== null) continue;
     const fillComment = commentId !== null && row.commentId === null;
 
     db.update(attachments)
@@ -651,6 +777,321 @@ export function linkAttachmentRefs(
     });
   }
   return changed;
+}
+
+// ------------------------------------------------------- outputs (D-162)
+
+/** One file an agent attaches, and the caption a person reads beside it (D-162). */
+export interface AttachmentRefInput {
+  /** The attachment's id, as `request_upload` returned it. */
+  attachment: string;
+  caption: string;
+}
+
+/**
+ * Where attached files go: a task that exists, or — for a task about to be
+ * created, or an unlisted finding — only a project.
+ */
+export interface AttachTarget {
+  projectId: string;
+  taskId: string | null;
+}
+
+/** A caption on one line, its brackets escaped, so it is a link's text and nothing more. */
+function captionText(caption: string, filename: string): string {
+  const text = [...caption.replace(/\s+/g, ' ').trim()]
+    .slice(0, ATTACHMENT_REF_LIMITS.caption)
+    .join('');
+  return (text === '' ? filename : text).replace(/[\\[\]]/g, (c) => `\\${c}`);
+}
+
+/** `![caption](url)` for an image a browser may show, `[caption](url)` for anything else. */
+function refLine(row: AttachmentRow, caption: string): string {
+  const image = row.inline === 1 && row.contentType.startsWith('image/');
+  return `- ${image ? '!' : ''}[${captionText(caption, row.filename)}](${attachmentContentPath(row.id)})`;
+}
+
+/** `**label**`, a blank line, then one line per file — or nothing for no files. */
+function refBlock(label: string, lines: readonly string[]): string {
+  return lines.length === 0 ? '' : [`**${label}**`, '', ...lines].join('\n');
+}
+
+/** `text` with `block` after it, a blank line between. */
+export function appendAttachmentBlock(text: string, block: string): string {
+  return block === '' ? text : `${text}\n\n${block}`;
+}
+
+function refusedRef(id: string, reason: string, message: string): ApiError {
+  return new ApiError('unprocessable', message, {
+    field: 'attachments',
+    attachment_id: id,
+    reason,
+  });
+}
+
+/**
+ * The live rows `items` name, each one `actor` may read, in order and once
+ * each — a missing, removed or unreadable one is the same `404`.
+ */
+function requireRefRows(
+  db: Db,
+  actor: ResolvedActor,
+  items: readonly AttachmentRefInput[],
+): { row: AttachmentRow; caption: string }[] {
+  if (items.length > ATTACHMENT_REF_LIMITS.items) {
+    throw new ApiError(
+      'unprocessable',
+      `At most ${String(ATTACHMENT_REF_LIMITS.items)} files at once`,
+      { field: 'attachments', max: ATTACHMENT_REF_LIMITS.items },
+    );
+  }
+  const seen = new Set<string>();
+  const out: { row: AttachmentRow; caption: string }[] = [];
+  for (const item of items) {
+    if (seen.has(item.attachment)) continue;
+    seen.add(item.attachment);
+    const row = db.select().from(attachments).where(eq(attachments.id, item.attachment)).get();
+    const missing = ApiError.notFound(`No attachment with id "${item.attachment}"`, {
+      field: 'attachments',
+    });
+    // Missing, removed, or in a project the caller cannot read: the same 404.
+    if (row?.deletedAt !== null) throw missing;
+    if (!can(withProject(actor, row.projectId), 'project.read', { projectId: row.projectId })) {
+      throw missing;
+    }
+    if (row.state !== 'ready') {
+      throw refusedRef(
+        row.id,
+        'not_ready',
+        `"${row.filename}" is not uploaded yet — PUT it, then complete_upload, then attach it`,
+      );
+    }
+    out.push({ row, caption: item.caption });
+  }
+  return out;
+}
+
+/**
+ * The markdown that attaches `items` to `target` — a `**label**` line, then
+ * `- ![caption](url)` for an image a browser may show and `- [caption](url)`
+ * for anything else — after checking each: live and readable (else `404`),
+ * `ready` (else `422 not_ready`), **of the target's project** (`422
+ * other_project`), on no other task (`422 other_task`), and on no unlisted
+ * finding not yet promoted (`422 on_unlisted_work`). At most
+ * `ATTACHMENT_REF_LIMITS.items`; a file named twice is attached once.
+ *
+ * **It writes nothing.** The text it returns links each file when it is
+ * saved, through `linkAttachmentRefs` — so the caption is the link's text,
+ * and a round's outputs are the files its `summary_md` embeds (D-162).
+ */
+export function attachmentLinksMarkdown(
+  db: Db,
+  actor: ResolvedActor,
+  target: AttachTarget,
+  items: readonly AttachmentRefInput[],
+  label: string,
+): string {
+  const lines = requireRefRows(db, actor, items).map(({ row, caption }) => {
+    if (row.projectId !== target.projectId) {
+      throw refusedRef(row.id, 'other_project', `"${row.filename}" belongs to another project`);
+    }
+    if (row.taskId !== null && row.taskId !== target.taskId) {
+      throw refusedRef(row.id, 'other_task', `"${row.filename}" is attached to another task`);
+    }
+    if (row.taskId === null && row.unlistedWorkId !== null) {
+      throw refusedRef(
+        row.id,
+        'on_unlisted_work',
+        `"${row.filename}" is attached to an unlisted finding`,
+      );
+    }
+    return refLine(row, caption);
+  });
+  return refBlock(label, lines);
+}
+
+/**
+ * `[caption](…/attachments/<id>/content)`, as `refLine` writes it and as a
+ * person or the editor does: the link's text, its escapes kept, and the id.
+ */
+const CAPTIONED_REF =
+  /!?\[((?:\\.|[^\\\]\n])*)\]\(\s*(?:https?:\/\/[^\s/"'()<>[\]]+)?\/api\/v1\/attachments\/([0-9A-HJKMNP-TV-Z]{26})\/content(?:\s+"[^"\n]*")?\s*\)/g;
+
+/** Each file's caption: the text of the first link to it with any, unescaped. */
+export function parseAttachmentCaptions(
+  texts: readonly (string | null | undefined)[],
+): Map<string, string> {
+  const captions = new Map<string, string>();
+  for (const md of texts) {
+    if (md === null || md === undefined || md === '') continue;
+    for (const match of md.matchAll(CAPTIONED_REF)) {
+      const id = match[2]!;
+      const caption = match[1]!.replace(/\\(.)/g, '$1').trim();
+      if (caption !== '' && !captions.has(id)) captions.set(id, caption);
+    }
+  }
+  return captions;
+}
+
+/** A task's file as `get_task_context` lists it (D-162). */
+export interface TaskFile {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  inline: boolean;
+  /** The text of the first link to it in the task's text or comments, or null. */
+  caption: string | null;
+  /** `/api/v1/attachments/<id>/content`, relative to the board. */
+  url: string;
+  /** The round whose summary attached it, or null for a file attached otherwise. */
+  round: number | null;
+  comment_id: string | null;
+  uploaded_by: string;
+  created_at: number;
+}
+
+/**
+ * A task's files with their captions and rounds — read from the text, since
+ * that is where both are kept: the caption from the first link to the file in
+ * `texts` (the task's description and acceptance, then its comments, oldest
+ * first), the round from the first round whose `summary_md` embeds it.
+ */
+export function describeTaskFiles(
+  files: readonly AttachmentView[],
+  texts: readonly (string | null | undefined)[],
+  rounds: readonly { number: number; summary_md: string }[],
+): TaskFile[] {
+  const captions = parseAttachmentCaptions(texts);
+  const roundOf = new Map<string, number>();
+  for (const round of [...rounds].sort((a, b) => a.number - b.number)) {
+    for (const id of parseAttachmentRefs(round.summary_md)) {
+      if (!roundOf.has(id)) roundOf.set(id, round.number);
+    }
+  }
+  return files.map((file) => ({
+    id: file.id,
+    filename: file.filename,
+    content_type: file.content_type,
+    size_bytes: file.size_bytes,
+    inline: file.inline,
+    caption: captions.get(file.id) ?? null,
+    url: file.url,
+    round: roundOf.get(file.id) ?? null,
+    comment_id: file.comment_id,
+    uploaded_by: file.uploaded_by,
+    created_at: file.created_at,
+  }));
+}
+
+// -------------------------------------------- unlisted findings (D-162 item 8)
+
+/**
+ * Attach files to the unlisted finding `unlistedId` (`log_unlisted_work`),
+ * inside the write that logs it, and answer the markdown the note carries.
+ * Each must be **the actor's own** upload (`422 not_uploader`), `ready`, on
+ * no task (`422 other_task`) and on no other finding (`422 on_unlisted_work`).
+ * From here the sweep counts it as linked.
+ */
+export function attachToUnlisted(
+  db: Db,
+  actor: ResolvedActor,
+  unlistedId: string,
+  items: readonly AttachmentRefInput[],
+): string {
+  const rows = requireRefRows(db, actor, items);
+  const lines = rows.map(({ row, caption }) => {
+    if (row.uploadedBy !== actor.userId) {
+      throw refusedRef(row.id, 'not_uploader', `"${row.filename}" was uploaded by somebody else`);
+    }
+    if (row.taskId !== null) {
+      throw refusedRef(row.id, 'other_task', `"${row.filename}" is attached to a task`);
+    }
+    if (row.unlistedWorkId !== null) {
+      throw refusedRef(
+        row.id,
+        'on_unlisted_work',
+        `"${row.filename}" is attached to another unlisted finding`,
+      );
+    }
+    return refLine(row, caption);
+  });
+  for (const { row } of rows) {
+    db.update(attachments)
+      .set({ unlistedWorkId: unlistedId })
+      .where(eq(attachments.id, row.id))
+      .run();
+  }
+  return refBlock('Attached', lines);
+}
+
+/**
+ * A promoted finding's files follow it to its task (D-162 item 8): each is
+ * moved to the task — and to its project, when it was uploaded in another —
+ * with `attachment.added`. The only way one reaches a task: text that embeds
+ * it links nothing (`linkAttachmentRefs`). Inside the promotion's write,
+ * after the task exists.
+ */
+export function moveUnlistedAttachments(
+  db: Db,
+  actor: ResolvedActor,
+  unlistedId: string,
+  target: { projectId: string; taskId: string },
+  now: number,
+): string[] {
+  const rows = db
+    .select()
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.unlistedWorkId, unlistedId),
+        eq(attachments.state, 'ready'),
+        isNull(attachments.taskId),
+        isNull(attachments.deletedAt),
+      ),
+    )
+    .all();
+  const orgId = rows.length === 0 ? null : orgOf(db, target.projectId);
+  for (const row of rows) {
+    db.update(attachments)
+      .set({ projectId: target.projectId, taskId: target.taskId })
+      .where(eq(attachments.id, row.id))
+      .run();
+    appendActivity(db, {
+      orgId: orgId!,
+      projectId: target.projectId,
+      taskId: target.taskId,
+      ...activityActor(actor),
+      type: 'attachment.added',
+      payload: attachmentPayload(row),
+      now,
+    });
+  }
+  return rows.map((row) => row.id);
+}
+
+/**
+ * A dismissed finding's files go with it (D-162 item 8): each still on no
+ * task is stamped removed by whoever dismissed it, and §11.6's sweep deletes
+ * the objects. No activity — a finding belongs to no task.
+ */
+export function removeUnlistedAttachments(
+  db: Db,
+  actor: ResolvedActor,
+  unlistedId: string,
+  now: number,
+): number {
+  return db
+    .update(attachments)
+    .set({ deletedAt: now, deletedBy: actor.userId })
+    .where(
+      and(
+        eq(attachments.unlistedWorkId, unlistedId),
+        isNull(attachments.taskId),
+        isNull(attachments.deletedAt),
+      ),
+    )
+    .run().changes;
 }
 
 /**
@@ -742,8 +1183,8 @@ const pruning = new WeakMap<Db, Promise<{ changed: number }>>();
  *
  * 1. a `pending` row older than 24 hours — an upload nobody finished — has
  *    its object deleted, if there is one, and then the row;
- * 2. a `ready` file no task took in the 24 hours since it became ready is
- *    stamped removed;
+ * 2. a `ready` file no task — and no unlisted finding (D-162) — took in the
+ *    24 hours since it became ready is stamped removed;
  * 3. a removed file whose object is still stored has it deleted, and
  *    `purged_at` set — which is how a removal the store missed is retried.
  *
@@ -813,6 +1254,9 @@ async function sweep(
       and(
         eq(attachments.state, 'ready'),
         isNull(attachments.taskId),
+        // A file on an unlisted finding is linked to it (D-162 item 8): it
+        // waits for the finding to be promoted, or goes when it is dismissed.
+        isNull(attachments.unlistedWorkId),
         isNull(attachments.deletedAt),
         lt(attachments.readyAt, cutoff),
       ),

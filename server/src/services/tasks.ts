@@ -91,7 +91,12 @@ import {
   type SizeView,
 } from './estimates.ts';
 import { canBeMentioned } from './mentions.ts';
-import { linkAttachmentRefs } from './attachments.ts';
+import {
+  appendAttachmentBlock,
+  attachmentLinksMarkdown,
+  type AttachmentRefInput,
+  linkAttachmentRefs,
+} from './attachments.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import {
   ambiguousOutsideId,
@@ -2424,6 +2429,12 @@ export interface FinishTaskInput extends EvidenceInput {
    * summary, as before.
    */
   checklist?: readonly string[] | undefined;
+  /**
+   * Files the agent chose to show a person (D-162): appended to the summary
+   * as `**Outputs**` links, captioned, so they belong to the task, to the
+   * summary's comment and — through the round's `summary_md` — to the round.
+   */
+  outputs?: readonly AttachmentRefInput[] | undefined;
   now?: number;
 }
 
@@ -2491,7 +2502,16 @@ export function finishTask(
       });
     }
 
-    const summary = finishSummary(input, marks.unmatched);
+    // The outputs are checked here, inside the move's transaction: a file of
+    // another project or task refuses the whole finish (D-162).
+    const outputs = attachmentLinksMarkdown(
+      db,
+      actor,
+      { projectId: task.project_id, taskId: task.id },
+      input.outputs ?? [],
+      'Outputs',
+    );
+    const summary = appendAttachmentBlock(finishSummary(input, marks.unmatched), outputs);
     addComment(db, actor, task.id, summary, now);
 
     // The round, with its proof (§4.25, D-082). After the move, inside the same
