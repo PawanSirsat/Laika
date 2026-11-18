@@ -126,6 +126,7 @@ import '../../routes/screens/developer/devices.css';
 import '../../routes/screens/developer/agents.css';
 import '../../routes/screens/developer/v3/page-notices.css';
 import '../../routes/screens/developer/v3/advanced.css';
+import '../../routes/screens/developer/v3/activity.css';
 import '../../routes/screens/developer/v3/update-cli.css';
 import '../../routes/screens/developer/v3/add-wizards.css';
 import '../../routes/screens/developer/v3/status-legend.css';

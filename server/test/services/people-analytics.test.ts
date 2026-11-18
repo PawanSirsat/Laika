@@ -164,13 +164,18 @@ describe('the same shape the person reads (D-102 rule 1)', () => {
     );
   });
 
-  it('answers their held local activity exactly as /me/local-activity does', () => {
+  it('answers their held local activity exactly as /me/local-activity does, less last_received_at', () => {
     const own = getOwnLocalActivity(t.db, actor(bea), 14, NOW);
     expect(own.days.map((d) => [d.day, d.sessions])).toEqual([
       [TODAY, 3],
       ['2026-10-19', 1],
     ]);
-    expect(getPersonLocalActivity(t.db, actor(admin), bea, 14, NOW)).toEqual(own);
+    expect(own.last_received_at).not.toBeNull();
+    const { last_received_at: _theirsAlone, ...shared } = own;
+    const theirs = getPersonLocalActivity(t.db, actor(admin), bea, 14, NOW);
+    expect(theirs).toEqual(shared);
+    // When her machine last reported is hers alone (LAI-1327 review 1).
+    expect(theirs).not.toHaveProperty('last_received_at');
   });
 });
 

@@ -33,6 +33,7 @@ import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
 import { EmailSection } from './EmailSection.tsx';
+import { EmailInboundSection } from './EmailInboundSection.tsx';
 import { emailOn } from './email-derive.ts';
 import { TeamsPostingSection } from './TeamsPostingSection.tsx';
 import { CalendarSourceSection } from './CalendarSourceSection.tsx';
@@ -761,6 +762,19 @@ export function OrganisationScreen({
                 onChanged={(email) => {
                   setOrg((current) => (current === undefined ? current : { ...current, email }));
                 }}
+              />
+            )}
+
+            {/* D-155 (LAI-1315): email to tasks — the same `org.email.configure`,
+                beside the outbound card it shares Brevo with. */}
+            {canConfigureEmail && (
+              <EmailInboundSection
+                onChanged={(email_inbound) => {
+                  setOrg((current) =>
+                    current === undefined ? current : { ...current, email_inbound },
+                  );
+                }}
+                onNavigate={onNavigate}
               />
             )}
 

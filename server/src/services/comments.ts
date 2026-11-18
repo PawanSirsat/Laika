@@ -219,6 +219,12 @@ export function addComment(
   taskId: string,
   bodyMd: string,
   now: number = Date.now(),
+  /**
+   * How it arrived, when the caller knows better than the actor does: an
+   * inbound mail is written as its sender, who has no token, so it would
+   * otherwise read `web` (D-155, LAI-1315).
+   */
+  via?: CreatedVia,
 ): CommentView {
   const { task, project } = requireTaskContext(db, taskId);
   assertCan(withProject(actor, project.id), 'comment.create', { projectId: project.id });
@@ -235,7 +241,7 @@ export function addComment(
       taskId,
       authorId: system ? null : actor.userId,
       bodyMd,
-      createdVia: system ? 'webhook' : createdViaFor(actor),
+      createdVia: system ? 'webhook' : (via ?? createdViaFor(actor)),
       createdAt: now,
       updatedAt: now,
     })

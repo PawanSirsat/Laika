@@ -612,6 +612,8 @@ describe('the parser itself', () => {
       'local_activity_days',
       // LAI-1316: one row per organisation, keyed by `org_id`, as the HR connection.
       'org_calendar_source',
+      // LAI-1315: one row per organisation, keyed by `org_id`: its Email to tasks settings.
+      'org_email_inbound',
       // LAI-1181: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_hr_source',
       'org_model_prices',
@@ -620,6 +622,8 @@ describe('the parser itself', () => {
       'org_teams_settings',
       'org_time_settings',
       'plan_limits',
+      // LAI-1315: one address per space, keyed by `project_id`.
+      'project_inbound_addresses',
       // LAI-1314: one channel per space, keyed by `project_id`.
       'project_teams_channels',
       'pushed_commit_keys',

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, min, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, max, min, ne, sql } from 'drizzle-orm';
 import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -175,8 +175,12 @@ export interface OwnLocalDay {
   cache_read: number;
 }
 
-/** What the server holds for the caller — the collection preview (§6.4). */
-export interface OwnLocalActivityView {
+/**
+ * What the server holds for a person — their own collection preview, and an
+ * owner's or admin's read of it (`GET /people/:id/local-activity`) alike
+ * (§6.4).
+ */
+export interface LocalActivityView {
   /** The window, in `tz`: the last `days` days to today. */
   start: string;
   end: string;
@@ -188,6 +192,22 @@ export interface OwnLocalActivityView {
   collectors: number;
   /** The oldest day held at all, or null when nothing is. */
   oldest_day: string | null;
+}
+
+/** The caller's own — `GET /me/local-activity`, the collection preview (§6.4). */
+export interface OwnLocalActivityView extends LocalActivityView {
+  /**
+   * When a machine of theirs last reported, at all — not only in the window —
+   * as epoch ms, or null when none ever has (LAI-1327): the newest
+   * `local_activity_days.updated_at`. Developer access's Activity checklist
+   * reads it as *first data arrived* and *last received 4 min ago*.
+   *
+   * **The caller's own, never someone else's** (LAI-1327 review 1): to
+   * another reader a millisecond of when someone's machine last reported is
+   * close to when they were last at their desk, so `localActivityOf` — which
+   * `GET /people/:id/local-activity` answers — does not carry it.
+   */
+  last_received_at: number | null;
 }
 
 // ------------------------------------------------------------------ sharing
@@ -577,12 +597,21 @@ export function getOwnLocalActivity(
   now: number = Date.now(),
 ): OwnLocalActivityView {
   assertCan(actor, 'local_activity.read_own');
-  return localActivityOf(db, actor.userId, days, now);
+  const received = db
+    .select({ at: max(localActivityDays.updatedAt) })
+    .from(localActivityDays)
+    .where(eq(localActivityDays.userId, actor.userId))
+    .get();
+  return {
+    ...localActivityOf(db, actor.userId, days, now),
+    last_received_at: received?.at ?? null,
+  };
 }
 
 /**
- * One person's held local activity, as `GET /me/local-activity` answers it —
- * **no `can()` here**: the person's read asks `local_activity.read_own`, an
+ * One person's held local activity, as `GET /me/local-activity` answers it
+ * less `last_received_at`, which only their own read adds — **no `can()`
+ * here**: the person's read asks `local_activity.read_own`, an
  * owner's or admin's `people.analytics.read` (D-102 rule 1, LAI-957).
  */
 export function localActivityOf(
@@ -590,7 +619,7 @@ export function localActivityOf(
   userId: string,
   days: number = OWN_PREVIEW_DAYS_MAX,
   now: number = Date.now(),
-): OwnLocalActivityView {
+): LocalActivityView {
   const span = Math.min(Math.max(Math.trunc(days), 1), OWN_PREVIEW_DAYS_MAX);
   const tz = latestReportZone(db, userId);
   const end = dayIn(tz, now);

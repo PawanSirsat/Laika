@@ -98,12 +98,20 @@ export interface Org {
   readonly attachments: OrgAttachments | null;
   /** Outbound email (D-153): the switch and whether SMTP is configured. Everyone reads it. */
   readonly email: OrgEmail;
+  /** Email to tasks (D-155): the switch and the receiving domain. Everyone reads it. */
+  readonly email_inbound: OrgEmailInbound;
 }
 
 /** `OrgView.email` (D-153, LAI-1312). */
 export interface OrgEmail {
   readonly enabled: boolean;
   readonly configured: boolean;
+}
+
+/** `OrgView.email_inbound` (D-155, LAI-1315). */
+export interface OrgEmailInbound {
+  readonly enabled: boolean;
+  readonly domain: string | null;
 }
 
 /** `GET /org`'s `attachments` when they are on (D-150). */

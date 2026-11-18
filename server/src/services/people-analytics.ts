@@ -5,7 +5,7 @@ import { users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { readLogged } from './analytics-views.ts';
-import { localActivityOf, type OwnLocalActivityView } from './local-activity.ts';
+import { localActivityOf, type LocalActivityView } from './local-activity.ts';
 import { dayOf, type MyDayView } from './my-day.ts';
 import { daysOf, type TimeDaysView } from './time-days.ts';
 import { summaryOf, type TimeSummaryView } from './time-summary.ts';
@@ -19,7 +19,8 @@ import { summaryOf, type TimeSummaryView } from './time-summary.ts';
  *
  * `GET /people/:id/time` is `dayOf` — the assembly `GET /me/time` answers —
  * with the person's id, drafts included; `GET /people/:id/local-activity` is
- * `localActivityOf`, `GET /me/local-activity`'s. There is no second copy to
+ * `localActivityOf`, `GET /me/local-activity`'s less `last_received_at`, the
+ * one field that is the person's alone (LAI-1327). There is no second copy to
  * drift. The heatmap and the per-person tokens already had their readers
  * (`people-activity.ts`, `token-usage.ts`); all four log through
  * `analytics-views.ts`.
@@ -117,14 +118,18 @@ export function getPersonDays(
   );
 }
 
-/** `GET /people/:id/local-activity?days=` — `GET /me/local-activity`, for that person. */
+/**
+ * `GET /people/:id/local-activity?days=` — `GET /me/local-activity`, for that
+ * person, without `last_received_at`: when their machine last reported is
+ * theirs alone (LAI-1327 review 1).
+ */
 export function getPersonLocalActivity(
   db: Db,
   actor: ResolvedActor,
   userId: string,
   days?: number,
   now: number = Date.now(),
-): OwnLocalActivityView {
+): LocalActivityView {
   requirePerson(db, actor, userId);
   return readLogged(
     db,

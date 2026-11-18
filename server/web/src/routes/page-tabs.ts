@@ -34,6 +34,13 @@ export interface PageTab {
    */
   readonly badge?: string;
   /**
+   * A shorter word a page may draw at a phone's width instead of `label` —
+   * V3's *Setup* for *Project setup* (LAI-1327), so its tabs still fit 390px.
+   * The label stays the link's name to a screen reader, hidden for the eye
+   * only; a page that does not ask for the swap draws `label` alone.
+   */
+  readonly short?: string;
+  /**
    * Drawn by its page after the tabs, as a quieter link, rather than as a tab
    * of its own — V3's *Advanced* (LAI-1096), which the owner's design leaves
    * out of its four tabs. **It is still a tab to `currentTab`**, so its
@@ -125,26 +132,30 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
 /**
  * The V3 tabs (plan §B, §C), in the owner's design (LAI-1078): a device is
  * paired once, its coding tools are listed on their own (*Tools*, LAI-1080),
- * and a project is set up on its own. `projects` keeps the classic id, so a
- * link to it means the same place in every mode. **Activity is not a tab of
- * its own here**: *Share local activity* is the second card on Advanced, and
- * `?tab=activity` lands on it (`developerAlias`).
+ * and a project is set up on its own. `projects` and `activity` keep the
+ * classic ids, so a link to either means the same place in every mode.
  *
- * **The design has four tabs** (LAI-1096): Advanced is `secondary`, a quieter
- * link at the end of the row, so the four fit a phone's width — and an
- * address naming it still opens it.
+ * **Activity is a tab of its own, right after Overview** (LAI-1327, the
+ * owner's decision): a live checklist that sets it up, where it was the last
+ * card on Advanced under every credential. Advanced holds credentials only.
+ *
+ * **Advanced is `secondary`** (LAI-1096): a quieter link at the end of the
+ * row, so the tabs fit a phone's width — and an address naming it still opens
+ * it.
  */
 export const DEVELOPER_V3_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'projects', label: 'Project setup' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'projects', label: 'Project setup', short: 'Setup' },
   { id: 'devices', label: 'Devices' },
   { id: 'tools', label: 'Tools' },
   { id: 'advanced', label: 'Advanced', secondary: true },
 ];
 
 /**
- * Where on Advanced `?section=` points (LAI-1078): the *Share local activity*
- * card, which was V3's Activity tab.
+ * The `?section=` that pointed at Advanced's *Share local activity* card
+ * (LAI-1078). The card is gone (LAI-1327): an address still naming it opens
+ * the Activity tab (`developerAlias`).
  */
 export const ADVANCED_ACTIVITY_SECTION = 'activity';
 
@@ -210,8 +221,8 @@ export function splitTabs(tabs: readonly PageTab[]): {
  *   `exchange`, `reconnect`). Devices itself, its details and *Add device*
  *   stay.
  * - `tokens` is Advanced.
- * - `activity` is Advanced's *Share local activity* card (LAI-1078):
- *   `?section=activity`, which Advanced scrolls to.
+ * - `activity` is a tab of its own again (LAI-1327) and stays; **Advanced's
+ *   old `?section=activity`** — where LAI-1078 had sent it — is Activity.
  *
  * Everything else in the query is kept, in its order.
  */
@@ -221,13 +232,14 @@ export function developerAlias(
 ): URLSearchParams | undefined {
   if (mode !== 'v3') return undefined;
   const tab = params.get('tab');
-  if (
-    tab !== 'connect' &&
-    tab !== 'agents' &&
-    tab !== 'devices' &&
-    tab !== 'tokens' &&
-    tab !== 'activity'
-  ) {
+  if (tab === 'advanced' && params.get('section') === ADVANCED_ACTIVITY_SECTION) {
+    const next = new URLSearchParams();
+    next.set('tab', 'activity');
+    for (const [key, value] of params)
+      if (key !== 'tab' && key !== 'section') next.append(key, value);
+    return next;
+  }
+  if (tab !== 'connect' && tab !== 'agents' && tab !== 'devices' && tab !== 'tokens') {
     return undefined;
   }
 
@@ -251,12 +263,6 @@ export function developerAlias(
   if (tab === 'tokens') {
     next.set('tab', 'advanced');
     for (const [key, value] of rest) next.append(key, value);
-    return next;
-  }
-  if (tab === 'activity') {
-    next.set('tab', 'advanced');
-    next.set('section', ADVANCED_ACTIVITY_SECTION);
-    for (const [key, value] of rest) if (key !== 'section') next.append(key, value);
     return next;
   }
 

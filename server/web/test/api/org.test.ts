@@ -116,6 +116,8 @@ void describe('the AI settings are absent, not null', () => {
       attachments: null,
       // Always sent, to everyone (D-153); off until an owner turns it on.
       email: { enabled: false, configured: false },
+      // Always sent, to everyone (D-155); off, with no domain, until an owner sets one.
+      email_inbound: { enabled: false, domain: null },
     };
     assert.equal('ai' in withheld, false);
     assert.equal(withheld.ai, undefined);

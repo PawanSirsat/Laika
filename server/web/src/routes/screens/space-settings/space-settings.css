@@ -1468,3 +1468,59 @@
     overflow-wrap: anywhere;
   }
 }
+
+/*
+ * D-155's address for this space (LAI-1315), on General beside the Teams
+ * channel. Tokens only.
+ */
+.ss-email-in {
+  margin-top: var(--space-5);
+}
+
+.ss-email-in-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  min-width: 0;
+}
+
+.ss-email-in-body > .ss-notice,
+.ss-email-in-body > .ss-field-error,
+.ss-email-in-body > .ss-help {
+  flex: none;
+  margin: 0;
+}
+
+.ss-email-in-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.ss-email-in-code {
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.ss-email-in-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .ss-email-in-body {
+    padding: var(--space-3) var(--space-4);
+  }
+}
