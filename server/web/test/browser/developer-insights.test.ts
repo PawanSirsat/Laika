@@ -291,7 +291,7 @@ void describe('Developer access: Share local activity', () => {
         assert.equal((await notice.innerText()).includes(guidance), true);
         assert.equal(await section.getByRole('switch').count(), 0);
         assert.equal(
-          await section.locator('a[href="/organisation?tab=overview"]').count(),
+          await section.locator('a[href="/organisation?tab=general"]').count(),
           role === 'owner' || role === 'admin' ? 1 : 0,
         );
       } finally {
@@ -325,7 +325,7 @@ void describe('Developer access: Share local activity', () => {
         assert.equal(await section.locator('#share-held').count(), 1);
         assert.equal(await notice.locator('a[href="/my-day"]').count(), 1);
         assert.equal(
-          await notice.locator('a[href="/organisation?tab=overview"]').count(),
+          await notice.locator('a[href="/organisation?tab=general"]').count(),
           organisationLink,
         );
 
@@ -470,7 +470,7 @@ void describe('Share local activity: who can see it follows the owner’s grants
         await notice.waitFor({ timeout: 20_000 });
         assert.match(await notice.innerText(), new RegExp(guidance.replace(/[.]/g, '\\.'), 'i'));
         assert.equal(
-          await notice.locator('a[href="/organisation?tab=overview"]').count(),
+          await notice.locator('a[href="/organisation?tab=general"]').count(),
           linked ? 1 : 0,
         );
       } finally {
@@ -495,9 +495,9 @@ void describe('Activity tab: Share local activity (the wizard’s Optional entry
       assert.doesNotMatch(await panel.innerText(), /nothing to turn on/);
       assert.equal(await panel.getByRole('switch').count(), 0);
       await until(
-        async () => (await panel.locator('a[href="/organisation?tab=overview"]').count()) === 1,
+        async () => (await panel.locator('a[href="/organisation?tab=general"]').count()) === 1,
       );
-      assert.equal(await panel.locator('a[href="/organisation?tab=overview"]').count(), 1);
+      assert.equal(await panel.locator('a[href="/organisation?tab=general"]').count(), 1);
     } finally {
       await h.close();
     }
@@ -663,7 +663,7 @@ void describe('Activity tab: Share local activity (the wizard’s Optional entry
  * not the other.
  */
 void describe('the Activity tab says who may turn insights on (one panel since LAI-507)', () => {
-  const LINK = 'a[href="/organisation?tab=overview"]';
+  const LINK = 'a[href="/organisation?tab=general"]';
   for (const [who, role, actions, linked] of [
     [
       'an admin who keeps people and loses settings',

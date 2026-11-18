@@ -193,7 +193,11 @@ void describe('My day with time tracking off (LAI-1191)', () => {
       const link = h.page.locator('[data-day-off-settings]');
       assert.equal(await link.count(), 1);
       await link.click();
-      await h.page.waitForURL((url) => url.pathname === '/organisation', { timeout: 10_000 });
+      // Time & breaks, where the switch is in the settings hub (LAI-1318).
+      await h.page.waitForURL(
+        (url) => url.pathname === '/organisation' && url.searchParams.get('tab') === 'time',
+        { timeout: 10_000 },
+      );
     } finally {
       await h.close();
     }
