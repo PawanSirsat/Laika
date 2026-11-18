@@ -1,5 +1,5 @@
 import { request } from './client.ts';
-import type { OwnLocalActivity } from './local-activity.ts';
+import type { LocalActivity } from './local-activity.ts';
 import type { Page } from './tasks.ts';
 import type { MyDay, TimeDays, TimeSummary } from './time.ts';
 
@@ -93,8 +93,8 @@ export function getPersonDays(
 export function getPersonLocalActivity(
   userId: string,
   signal?: AbortSignal,
-): Promise<OwnLocalActivity> {
-  return request<OwnLocalActivity>(
+): Promise<LocalActivity> {
+  return request<LocalActivity>(
     `/people/${encodeURIComponent(userId)}/local-activity?days=14`,
     opts(signal),
   );

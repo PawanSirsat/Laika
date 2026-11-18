@@ -530,6 +530,14 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'local-activity.ts',
   },
   {
+    // `GET /people/:id/local-activity`: the same, less `last_received_at`,
+    // which is the person's alone (LAI-1327 review 1).
+    server: 'LocalActivityView',
+    serverFile: 'services/local-activity.ts',
+    client: 'LocalActivity',
+    clientFile: 'local-activity.ts',
+  },
+  {
     // Who looked at a person's analytics (D-102 rule 3, LAI-957), paired the
     // moment My day listed it (LAI-959).
     server: 'WhoLookedView',
