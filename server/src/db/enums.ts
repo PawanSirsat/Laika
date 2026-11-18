@@ -269,6 +269,13 @@ export const ACTIVITY_TYPES = [
   // (CLAUDE.md §4.4): §4.8's row, this, and the web mirror, in one change.
   'attachment.added',
   'attachment.removed',
+  // LAI-1353: a task put away and brought back. Their own verbs, not
+  // `task.updated` with a field: "who archived this, and when" is the
+  // question, and it is not a status change — the status stays underneath.
+  // A parent's subtasks each get their own row, naming the parent. Three
+  // owners (CLAUDE.md §4.4): §4.8's row, this, and the web mirror, in one change.
+  'task.archived',
+  'task.restored',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

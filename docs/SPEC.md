@@ -646,6 +646,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Attach a file | ✓ | ✓ | — |
 | Remove an attachment | own + any | own | — |
 | Cancel / delete task | ✓ | own-created | — |
+| Archive or restore a task | ✓ (session only) | ✓ (session only) | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
 | Watch / unwatch a task | ✓ | ✓ | ✓ |
@@ -998,6 +999,8 @@ which is the check working on the document it exists to pin.
 | `estimate_hash` | nullable — a hash of everything the model read for the current estimate (title, description, acceptance, tags, what blocks it, its children and the project's model version), so a recompute that would change nothing costs nothing |
 | `selected_agent_id` | nullable FK `agents` (§4.63), `ON DELETE SET NULL` — the registered agent **meant to do the work** (D-114 item 7, LAI-535). Not the assignee and not a claim: selecting one opens a **work request** addressed to it, and changes neither `assignee_id`, `status` nor anything a claim holds; a task can stay human-only. Set by `PATCH /tasks/:id` and `update_task`, and in the create by `POST /projects/:slug/tasks` (`selected_agent_id`) and `create_task` (`agent`) (§6.4, §7.1, LAI-1027), by anyone who may edit the task, to **their own** agent only — active, granted `full` on the project, in a space whose agents may write (the hand-off policy's defaults, proposal §4.5; other members' agents wait for LAI-546). `null` withdraws the request. Under a live claim it may move only to the claim's own holder (§6.4). Served on `TaskView` as `selected_agent` |
 | `handoff_count` | integer, default `0` — **completed** hand-offs of the task: an accepted `handoff` or `recovery` offer adds one in the accept's transaction (§4.73); a work request does not. Compared with the project policy's `max_handoffs` (§4.74). Never decremented (LAI-546) |
+| `archived_at` | nullable — when the task was **archived** (LAI-1353): put away whole, null while it is live. Archiving a parent stamps its subtasks with the same instant, so a restore brings back exactly those. Served on `TaskView` |
+| `archived_by` | nullable FK `users`, `ON DELETE SET NULL` — who archived it; null while it is live. Set and cleared together with `archived_at`. Served on `TaskView` |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -1131,7 +1134,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.claim_reclaimed`, `task.checkpoint_saved`, `task.handoff_offered`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
 `task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
-`agent.capacity_requested`, `attachment.added`, `attachment.removed`.
+`agent.capacity_requested`, `attachment.added`, `attachment.removed`,
+`task.archived`, `task.restored`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -1206,6 +1210,16 @@ was never added, and a file nothing linked belonged to no task. Their own verbs
 because *"who put this file on the task, and when"* is the question. Three
 owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0082, and the
 web mirror and its wording — one change (LAI-1300).
+
+**`task.archived` and `task.restored`** (LAI-1353) are a task put away and
+brought back (`PATCH /tasks/:id { archived }`, §6.4). Actor: the person who did
+it — never a token (§3.2). Task-scoped, one row **per task**: archiving a parent
+writes one for each subtask that went with it, payload `{ with_parent }` naming
+the parent; the task asked about writes `{}`. Their own verbs, not
+`task.updated` with a field, because *"who archived this, and when"* is the
+question — and not `task.status_changed`, because the status stays underneath.
+Three owners (CLAUDE.md §4.4): this row, the enum and CHECK in migration 0092,
+and the web mirror and its wording — one change.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -5022,8 +5036,10 @@ GET    /api/v1/projects/:slug/context/deliveries   ?revision=&limit=&cursor= →
        └ **each session's latest delivery, not a history** (§4.69 keeps one row per session and project): `data` is [{ session_id, revision, delivered_at, session_ended_at, agent }], newest delivery first; `?revision=N` keeps the sessions whose latest delivery is N, so a session later given N+1 leaves N's list. A revision the project has not reached is 404, as the revision read's. *Delivered* means sent, never read (§4.69). `agent` is `{ id, harness, device_label, display_name, status }` only for the reader's own agent — another person's agent is missing to everyone else (D-121 item 7), so its row carries `agent: null` and no id or label (LAI-1003)
        └ all five context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
-GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
+GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&archived=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
+                                             live tasks only: archived=only lists the archived ones instead, and with
+                                             updated_since a task archived since then is a §6.3 tombstone (LAI-1353);
                                              fields=slim leaves out description_md, acceptance_md, deliverables, solves and unlocks (LAI-795, LAI-1115)
                                              each task carries `handoff`, its saves and hand-off in brief (LAI-1005), read once
                                              for the page returned, whatever its size and however many `ready=` batches were
@@ -5044,7 +5060,7 @@ PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
 DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
 GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
-GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&updated_since=&cursor=&fields= — every project the caller may read
+GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&archived=&updated_since=&cursor=&fields= — every project the caller may read
                                              (project.read per project); the per-project list's task shape and order; any other filter is 422 (LAI-887)
 GET    /api/v1/tasks/summary                 /tasks' filters, same set → { total, by_status, by_assignee: [{ user_id|null|'others', name, count }] (top 10, then others), overdue, blocked, unassigned } (LAI-974)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
@@ -5215,6 +5231,21 @@ three original fields, unchanged.
 `{ title, description_md, acceptance_md, deliverables, solves, unlocks, tags,
 priority, assignee_id, parent_task_id, due_on, planned_start, external_ref,
 selected_agent_id }`.
+
+**`{ archived: true | false }` archives or restores the task** (LAI-1353),
+*Archive or restore a task* in §3.2 — signed in only. It travels **alone**:
+with any other field it is `422` `reason: archived_alone`. Archiving takes the
+task's subtasks with it, releases its live claim, closes its live hand-off
+offers and its open work request `task_closed`, and writes `task.archived` per
+task (§4.8). Restoring brings back the subtasks archived with it, asks the
+selected agent again if the archive closed its request, and writes
+`task.restored`; a subtask whose parent is still archived is `409`
+`reason: parent_archived`. Asking for what the task already is writes nothing.
+**An archived task is read-only**: every other write to it — `PATCH`, a
+status, a claim, a dependency either way, a reorder, a sprint, a comment, a
+file — is `409 conflict` with `reason: archived`. Reads answer as before, with
+`archived_at` and `archived_by` on `TaskView`; it is never `ready`, and as a
+blocker it blocks nothing until restored.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`

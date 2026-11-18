@@ -9,6 +9,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   ne,
@@ -51,8 +52,10 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
+import { liveTask } from '../db/live-task.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
 import {
+  handoffOffers,
   projects,
   projectStatuses,
   taskDependencies,
@@ -79,6 +82,7 @@ import {
   type TaskLiveClaimView,
 } from './claims.ts';
 import { handoffViews, NO_HANDOFF, type TaskHandoffView } from './task-handoff.ts';
+import { assertTaskLive } from './task-archive.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -256,6 +260,13 @@ export interface TaskSummaryView {
    */
   stale_flagged_at: number | null;
   /**
+   * When the task was put away and by whom (§4.5, LAI-1353), both null while
+   * it is live. An archived task is in no list but `?archived=only` and is
+   * read-only until restored; its status is still underneath.
+   */
+  archived_at: number | null;
+  archived_by: string | null;
+  /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
    * Was `dependencies` until LAI-099. Next to `blocks`, that name did not say
@@ -412,13 +423,16 @@ function loadViewContext(
   // that no rule reads.
   const referenced = [...new Set([...edges.blockedBy.values()].flat())];
 
+  // **An archived blocker blocks nothing** (LAI-1353): it is left out here, so
+  // the readiness rule never sees its status — the edge stays in `blocked_by`
+  // and comes back into force on restore.
   const statuses = new Map<string, TaskStatus>(
     referenced.length === 0
       ? []
       : db
           .select({ id: tasks.id, status: tasks.status })
           .from(tasks)
-          .where(inArray(tasks.id, referenced))
+          .where(and(inArray(tasks.id, referenced), liveTask()))
           .all()
           .map((r) => [r.id, r.status] as const),
   );
@@ -512,12 +526,15 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     external_ref: row.externalRef,
     // §4.5's rule, unchanged by LAI-091: readiness is a function of what blocks
     // this task. `blocks` is deliberately not an input — a task holding up ten
-    // others is no less ready to be picked up itself.
-    ready: isReady({
-      status: row.status,
-      assigneeId: row.assigneeId,
-      dependencyStatuses: statuses,
-    }),
+    // others is no less ready to be picked up itself. An archived task is in
+    // nobody's queue (LAI-1353), so it is never ready.
+    ready:
+      row.archivedAt === null &&
+      isReady({
+        status: row.status,
+        assigneeId: row.assigneeId,
+        dependencyStatuses: statuses,
+      }),
     blocked_by: deps,
     blocks: context.edges.blocks.get(row.id) ?? [],
     send_back: sendBackOf(context.sendBacks.get(row.id)),
@@ -533,6 +550,8 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     started_at: row.startedAt,
     completed_at: row.completedAt,
     stale_flagged_at: row.staleFlaggedAt,
+    archived_at: row.archivedAt,
+    archived_by: row.archivedBy,
     position: row.position,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -676,13 +695,20 @@ function assertParentAllowed(
   }
 
   const parent = db
-    .select({ projectId: tasks.projectId, parentTaskId: tasks.parentTaskId })
+    .select({
+      projectId: tasks.projectId,
+      parentTaskId: tasks.parentTaskId,
+      archivedAt: tasks.archivedAt,
+    })
     .from(tasks)
     .where(eq(tasks.id, input.parentId))
     .get();
   if (parent?.projectId !== input.projectId) {
     throw parentRefused('project', 'The parent must be a task on the same project');
   }
+  // A subtask added under an archived parent would be archived work nobody
+  // archived (LAI-1353).
+  assertTaskLive(parent);
   if (parent.parentTaskId !== null) {
     throw parentRefused('depth', 'That task is itself a subtask — subtasks go one level deep');
   }
@@ -1108,6 +1134,13 @@ export function createTask(
   });
 }
 
+/**
+ * `?archived=` on a task list (LAI-1353): `only` lists the archived tasks — a
+ * space's Archived view. Absent is today's list, where they are not.
+ */
+export const TASK_ARCHIVED_FILTERS = ['only'] as const;
+export type TaskArchivedFilter = (typeof TASK_ARCHIVED_FILTERS)[number];
+
 export interface ListTasksFilter {
   /** A category — every status of it (LAI-738). */
   status?: TaskStatus | undefined;
@@ -1123,6 +1156,8 @@ export interface ListTasksFilter {
   sprint?: string | undefined;
   /** A task id: only its subtasks (§6.4, D-066). */
   parent?: string | undefined;
+  /** Only archived tasks (LAI-1353); absent, only live ones. */
+  archived?: TaskArchivedFilter | undefined;
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
@@ -1159,13 +1194,22 @@ export function listTasks(
 }
 
 /**
- * The filters both task lists take: `status`, `assignee`, `sprint` and
- * `updated_since`, each the same predicate whichever list asks.
+ * The filters both task lists take: `status`, `assignee`, `sprint`,
+ * `archived` and `updated_since`, each the same predicate whichever list asks.
  */
 function sharedConditions(
-  filter: Pick<ListAllTasksFilter, 'status' | 'assignee' | 'sprint' | 'updatedSince'>,
+  filter: Pick<ListAllTasksFilter, 'status' | 'assignee' | 'sprint' | 'archived' | 'updatedSince'>,
 ): SQL[] {
   const conditions: SQL[] = [];
+
+  // **Live work only, unless archived work is what was asked for** (LAI-1353).
+  // Catching up with `updated_since` is the one other case: a task archived
+  // since the watermark comes back so the route can send it as a §6.3
+  // tombstone — a client that reads only changes must learn that it left.
+  if (filter.archived === 'only') conditions.push(isNotNull(tasks.archivedAt));
+  else if (filter.updatedSince === null || filter.updatedSince === undefined) {
+    conditions.push(liveTask());
+  }
 
   if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
   if (filter.assignee !== undefined) {
@@ -1280,6 +1324,8 @@ export interface ListAllTasksFilter {
   assignee?: string | undefined;
   /** A sprint id, or `none` for tasks in no sprint. */
   sprint?: string | undefined;
+  /** Only archived tasks (LAI-1353); absent, only live ones. */
+  archived?: TaskArchivedFilter | undefined;
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
@@ -1409,7 +1455,12 @@ export function summariseAllTasks(
 
   const scope = allTasksScope(db, actor, filter);
   if (scope === null) return counts;
-  const where = scope.conditions;
+  // Figures are about work, so a task archived since `updated_since` is not
+  // counted the way the list would tombstone it (LAI-1353).
+  const where =
+    filter.archived === undefined && filter.updatedSince != null
+      ? [...scope.conditions, liveTask()]
+      : scope.conditions;
   const open = inArray(tasks.status, [...OPEN_STATUSES]);
 
   // 1. Total and by status.
@@ -1478,7 +1529,14 @@ export function summariseAllTasks(
               .select({ one: sql`1` })
               .from(taskDependencies)
               .innerJoin(blocker, eq(blocker.id, taskDependencies.dependsOnTaskId))
-              .where(and(eq(taskDependencies.taskId, tasks.id), ne(blocker.status, 'done'))),
+              .where(
+                and(
+                  eq(taskDependencies.taskId, tasks.id),
+                  ne(blocker.status, 'done'),
+                  // An archived blocker blocks nothing (LAI-1353).
+                  liveTask(blocker),
+                ),
+              ),
           ),
         ),
       )
@@ -1642,6 +1700,7 @@ export function updateTask(
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
+  assertTaskLive(task);
 
   const now = input.now ?? Date.now();
   const changes: Record<string, unknown> = {};
@@ -1870,6 +1929,184 @@ export function updateTask(
   );
 }
 
+/**
+ * **Archive a task, or restore it** (§4.5, LAI-1353) — `PATCH /tasks/:id
+ * { archived }`. `task.archive`: whoever may edit it, signed in.
+ *
+ * Archiving puts the task away **whole**: it leaves every list and queue
+ * (`liveTask()`), keeps its status, history, time and estimates, and is
+ * read-only until restored. Its subtasks go with it, stamped with the same
+ * instant — so restoring the parent brings back exactly those, and a subtask
+ * that had been archived on its own before stays where it was. A subtask is
+ * restored on its own only once its parent is live (`parent_archived`).
+ *
+ * Archiving also ends the work in flight on each task, as the system: the
+ * live claim is released, its live hand-off offers close `task_closed`
+ * (`releaseLiveClaim`), and an open work request to the selected agent is
+ * cancelled `task_closed` — an agent is never asked to do work nobody can
+ * see. The selection itself stays, so a restore asks that agent again.
+ *
+ * Asking for what the task already is changes nothing and writes nothing.
+ */
+export function setTaskArchived(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  archived: boolean,
+  now: number = Date.now(),
+): TaskView {
+  const { project } = requireTask(db, taskId);
+  assertCan(withProject(actor, project.id), 'task.archive', { projectId: project.id });
+
+  return db.transaction(
+    () => {
+      // Read under the write lock: two people archiving at once write once.
+      const row = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+      const prefix = db
+        .select({ prefix: projects.prefix })
+        .from(projects)
+        .where(eq(projects.id, project.id))
+        .get()!.prefix;
+
+      if (archived && row.archivedAt === null) archiveWithSubtasks(db, actor, project, row, now);
+      if (!archived && row.archivedAt !== null) restoreWithSubtasks(db, actor, project, row, now);
+
+      return viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        prefix,
+        now,
+        readerOf(actor),
+      );
+    },
+    { behavior: 'immediate' },
+  );
+}
+
+function archiveWithSubtasks(
+  db: Db,
+  actor: ResolvedActor,
+  project: typeof projects.$inferSelect,
+  row: TaskRow,
+  now: number,
+): void {
+  const subtasks = db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.parentTaskId, row.id), liveTask()))
+    .all()
+    .map((t) => t.id);
+  const ids = [row.id, ...subtasks];
+
+  db.update(tasks)
+    .set({ archivedAt: now, archivedBy: actor.userId, updatedAt: now })
+    .where(inArray(tasks.id, ids))
+    .run();
+
+  for (const id of ids) {
+    releaseLiveClaim(db, id, now);
+    db.update(handoffOffers)
+      .set({ state: 'cancelled', closedReason: 'task_closed', closedAt: now })
+      .where(
+        and(
+          eq(handoffOffers.taskId, id),
+          eq(handoffOffers.kind, 'work_request'),
+          eq(handoffOffers.state, 'open'),
+        ),
+      )
+      .run();
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId: id,
+      ...activityActor(actor),
+      type: 'task.archived',
+      // A subtask names the parent it went with, so its history says why.
+      payload: id === row.id ? {} : { with_parent: row.id },
+      now,
+    });
+  }
+}
+
+function restoreWithSubtasks(
+  db: Db,
+  actor: ResolvedActor,
+  project: typeof projects.$inferSelect,
+  row: TaskRow,
+  now: number,
+): void {
+  if (row.parentTaskId !== null) {
+    const parent = db
+      .select({ archivedAt: tasks.archivedAt })
+      .from(tasks)
+      .where(eq(tasks.id, row.parentTaskId))
+      .get();
+    if (parent !== undefined && parent.archivedAt !== null) {
+      throw new ApiError('conflict', 'Its parent task is archived. Restore the parent first.', {
+        reason: 'parent_archived',
+        parent_task_id: row.parentTaskId,
+      });
+    }
+  }
+
+  // The subtasks archived **with** it — same instant — and no others.
+  const restored = db
+    .select({ id: tasks.id, selectedAgentId: tasks.selectedAgentId })
+    .from(tasks)
+    .where(
+      or(
+        eq(tasks.id, row.id),
+        and(eq(tasks.parentTaskId, row.id), eq(tasks.archivedAt, row.archivedAt!)),
+      ),
+    )
+    .all();
+
+  db.update(tasks)
+    .set({ archivedAt: null, archivedBy: null, updatedAt: now })
+    .where(
+      inArray(
+        tasks.id,
+        restored.map((t) => t.id),
+      ),
+    )
+    .run();
+
+  for (const task of restored) {
+    // The work request the archive cancelled is asked again, if the agent is
+    // still the one selected — and only that one: a request declined before
+    // the archive stays declined.
+    const cancelled =
+      task.selectedAgentId === null
+        ? undefined
+        : db
+            .select({ id: handoffOffers.id })
+            .from(handoffOffers)
+            .where(
+              and(
+                eq(handoffOffers.taskId, task.id),
+                eq(handoffOffers.kind, 'work_request'),
+                eq(handoffOffers.toAgentId, task.selectedAgentId),
+                eq(handoffOffers.closedReason, 'task_closed'),
+                eq(handoffOffers.closedAt, row.archivedAt!),
+              ),
+            )
+            .get();
+    if (cancelled !== undefined && task.selectedAgentId !== null) {
+      moveSelection(db, actor, task.id, task.selectedAgentId, now);
+    }
+
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId: task.id,
+      ...activityActor(actor),
+      type: 'task.restored',
+      payload: task.id === row.id ? {} : { with_parent: row.id },
+      now,
+    });
+  }
+}
+
 /** Where a claim may take a task from (§5, M7, D-082). */
 const CLAIMABLE: readonly TaskStatus[] = [...READY_STATUSES, 'in_progress'];
 
@@ -1941,6 +2178,8 @@ export function startWorking(
 
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+    // Under the lock, so an archive that commits first is seen (LAI-1353).
+    assertTaskLive(before);
     const from = statusRow(db, project.id, before.statusId)!;
 
     if (agent !== null) return agentStartWorking(db, actor, project, before, from, options, now);
@@ -2235,6 +2474,7 @@ export function changeStatus(
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
+  assertTaskLive(task);
   // Every move — the holder's finish, a person's accept or send-back — passes
   // the claim fence first (LAI-541).
   assertClaimFence(db, actor, taskId, now);
@@ -2524,12 +2764,14 @@ export function addTaskDependency(
   dependsOnTaskId: string,
   now: number = Date.now(),
 ): TaskView {
-  const { project } = requireTask(db, taskId);
+  const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
+  assertTaskLive(task);
   assertClaimFence(db, actor, taskId, now);
 
   // Both ends must exist, or a typo silently creates an unsatisfiable blocker.
-  requireTask(db, dependsOnTaskId);
+  // An archived blocker blocks nothing (LAI-1353), so it cannot be added as one.
+  assertTaskLive(requireTask(db, dependsOnTaskId).task);
 
   try {
     addDependency(sqlite, db, taskId, dependsOnTaskId, now);
@@ -2572,8 +2814,9 @@ export function removeTaskDependency(
   dependsOnTaskId: string,
   now: number = Date.now(),
 ): TaskView {
-  const { project } = requireTask(db, taskId);
+  const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
+  assertTaskLive(task);
   assertClaimFence(db, actor, taskId, now);
 
   const removed = db
@@ -2640,8 +2883,10 @@ export function reorderTask(
   taskId: string,
   input: ReorderTaskInput,
 ): TaskView {
-  const { project } = requireTask(db, taskId);
+  const found = requireTask(db, taskId);
+  const { project } = found;
   assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+  assertTaskLive(found.task);
 
   const afterId = input.after_task_id;
   const beforeId = input.before_task_id;

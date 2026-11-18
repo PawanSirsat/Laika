@@ -14,6 +14,7 @@ import {
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { meetingReviews, projects, tasks } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { reviseProjectContext } from './projects.ts';
@@ -97,7 +98,8 @@ export function buildPrompt(db: Db, projectId: string, prefix: string, transcrip
       assigneeId: tasks.assigneeId,
     })
     .from(tasks)
-    .where(and(eq(tasks.projectId, projectId), inArray(tasks.status, OPEN_STATUSES)))
+    // The open work a meeting may talk about; archived tasks are put away (LAI-1353).
+    .where(and(eq(tasks.projectId, projectId), inArray(tasks.status, OPEN_STATUSES), liveTask()))
     .all();
 
   const project = db

@@ -19,6 +19,7 @@ import {
   tasks,
   users,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
@@ -404,7 +405,8 @@ export function projectSummaries(
   for (const row of db
     .select({ projectId: tasks.projectId, status: tasks.status, total: sql<number>`COUNT(*)` })
     .from(tasks)
-    .where(inArray(tasks.projectId, ids))
+    // A space's counts are its live work; archived tasks are put away (LAI-1353).
+    .where(and(inArray(tasks.projectId, ids), liveTask()))
     .groupBy(tasks.projectId, tasks.status)
     .all()) {
     const summary = summaries.get(row.projectId);
@@ -428,6 +430,8 @@ export function projectSummaries(
          )})
            AND t.status NOT IN ('done', 'cancelled')
            AND dep.status <> 'done'
+           AND t.archived_at IS NULL
+           AND dep.archived_at IS NULL
          GROUP BY t.project_id`,
   )) {
     const summary = summaries.get(row.projectId);
