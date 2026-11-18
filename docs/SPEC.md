@@ -438,8 +438,9 @@ slug's `404`. The posting job acts as §3.4's `system.teams.post`.
 **"Connect the organisation's Outlook calendar" is `org.calendar.configure`**
 (D-157, LAI-1316), behind §6.4's `/org/calendar` routes: save the Entra app's
 tenant, client id and secret, the rules that send a meeting to a space and the
-switch, test whether `Calendars.Read` has been granted, sync now, disconnect.
-Session only, because the secret reads every member's calendar. **The meetings
+switch, test whether `Calendars.Read` has been granted, sync now, backfill the
+last 1 to 90 days (LAI-1335), disconnect. Session only, because the secret
+reads every member's calendar. **The meetings
 it logs are each member's own time** (§4.48), read and changed under
 `time_entries.*_own` like an entry they typed.
 
@@ -805,7 +806,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
 | `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.103 – §4.106, D-155, LAI-1315) |
-| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, and their out-of-office spans kept as away, never time, every 15 minutes while the switch is on (§4.101, §4.102, §4.107, D-157, LAI-1316, LAI-1331) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations not declined (D-157 item 3 amended, LAI-1335), Teams meetings organised — logged as their time, and their out-of-office spans kept as away, never time, every 15 minutes while the switch is on (§4.101, §4.102, §4.107, D-157, LAI-1316, LAI-1331) |
 | `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.106, D-155 item 6, LAI-1315) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
@@ -2402,7 +2403,7 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157), `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
+| `source` | `draft` \| `manual` \| `import` \| `calendar` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788); a `calendar` entry is a meeting the Outlook sync logged (§4.102, D-157) — an invitation the person has not declined (accepted, tentative or not answered: D-157 item 3 amended, LAI-1335) or a Teams meeting they organised — `kind` `meeting`, the person's to change or delete as a typed one, and never pushed to Solidtime |
 | `source_ref` | nullable — the draft it came from, an import's own id (LAI-788), or a calendar meeting's Graph event id (D-157); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `kind` | nullable — what the person said it was (D-108, LAI-897; the design's eight since LAI-516): `work` \| `meeting` \| `thinking` \| `research` \| `pairing` \| `review` \| `support` \| `admin` — validated by the API on every path (no CHECK here: SQLite cannot add one without rebuilding a table that carries retention triggers; `time_timers.kind` carries it). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it. Migration 0060 mapped the first eight: call → meeting, planning → thinking, learning → research, other → work |
@@ -4871,6 +4872,7 @@ GET    /api/v1/org/calendar                  the Outlook calendar connection →
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
+POST   /api/v1/org/calendar/backfill         body { days } — the sync over the last `days` days for every member: from the start of the day `days` before today to the end of tomorrow, each in their own zone, under every rule of §11.6's (the closed period and a full day held back, an entry the person changed or deleted left alone, one entry per event, retiring only inside the window it read whole); it waits for a sync already running and is joined by one asked for meanwhile, and writes a person to a transaction → { days, result: { …last_result's counts } | null — null when a read failed (the connection's last_error) or the switch went off meanwhile, connection: the connection after it }; 422 unprocessable reason days_out_of_range (with min 1, max 90) unless days is a whole number from 1 to 90; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket; LAI-1335)
 DELETE /api/v1/org/calendar                  disconnect: the credentials and out-of-office spans (§4.107) go, logged meetings stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
@@ -7713,7 +7715,7 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list; the **View**'s Week (LAI-1174): `GET /me/time` for each of its seven days, its Month and Year: `GET /me/time/days` (LAI-1173), a year in four reads | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134, LAI-1174 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
+| **Organisation** *(seven tabs, LAI-796; Work since D-147)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET/DELETE /org/hr`, `POST /org/hr/connect`, `POST /org/hr/connect/verify`, `POST /org/hr/sync`, `PUT /org/hr/people`, `GET/POST /org/holidays`, `DELETE /org/holidays/:id` (D-149), `GET/PUT/DELETE /org/calendar`, `POST /org/calendar/test`, `POST /org/calendar/sync` (D-157), `POST /org/calendar/backfill` (LAI-1335), `GET/PUT /org/teams` (D-154), `GET/PUT /org/email-inbound`, `POST /org/email-inbound/token` (D-155), `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites`; the *Work* tab (LAI-952, LAI-1170): `GET /tasks?fields=slim` (paged), `GET /tasks/summary`, `GET /projects/:slug/sprints`, and for its bulk bar `GET /projects/:slug/statuses`, `PATCH /tasks/:id`, `POST /tasks/:id/status`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId` — one request per task | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -8772,17 +8774,29 @@ One interval-driven scheduler in the same process:
   at boot**, and only while the Outlook connection is saved, **its switch is
   on** and the organisation's Time is not off: each active member's calendar
   from the start of yesterday to the end of tomorrow in their zone, every
-  member read before one transaction writes; invitations the member accepted
-  (online or in person) and Teams meetings they organised (`isOnlineMeeting`)
+  member read before one transaction writes; invitations the member has not
+  declined — accepted, tentative or not answered, online or in person, shown
+  busy or tentative (D-157 item 3 amended, LAI-1335: the owner's choice of
+  2026-11-18, made knowing it is about 1,080 hours a month of invitations
+  nobody accepted; a person deletes what they did not attend, and their
+  delete wins) — and Teams meetings they organised (`isOnlineMeeting`)
   become or update their `calendar` entries — an event they organised that is
   not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
-  the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
-  and an entry the person changed is left alone. **Out of office is kept
+  the owner's choice of 2026-11-18) — declined, cancelled, free, all-day and
+  gone ones are not logged or are retired, and an entry the person changed is
+  left alone. **Out of office is kept
   apart as away, never as time** (§4.107, D-157 amended, LAI-1331): each span
   read is kept, moved or brought back, and one overlapping the window that is
   no longer read is retired. Under §3.4's
   `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
-  one already running. No `activity` row, as for any time entry (§4.48)
+  one already running. **A backfill** (§6.4, LAI-1335) is the same run over
+  the last 1 to 90 days, from the start of the day that many days before
+  today to the end of tomorrow: it waits for a run already going, a tick or
+  *Sync now* that comes meanwhile joins it, it retires only inside the window
+  it read whole, and it writes **a person to a transaction**, yielding between
+  them, so 90 days of every member is never one blocking pass. The regular
+  window stays yesterday to tomorrow. No `activity` row, as for any time
+  entry (§4.48)
 - **Teams posting** (§4.94 – §4.96, D-154, LAI-1314) — every minute, not at
   boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
   channel at **05:30 and 12:30 UTC** (11:00 and 18:00 IST), Monday to Friday by
@@ -9067,9 +9081,10 @@ person's comments — nothing to a space without one, and nothing at all while
 *Teams posting* is off, as it ships. Teams' answer is never read. And, when an
 owner or admin sets it up and turns it on, **the organisation's Microsoft
 tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
-`GET`s of members' calendars from `graph.microsoft.com`, keeping only each
-accepted invitation's or organised Teams meeting's subject — *Busy* when it is
-private — times and ids, never a join link, a body or an attendee. Any task
+`GET`s of members' calendars from `graph.microsoft.com`, keeping only the
+subject — *Busy* when it is private — times and ids of each invitation they
+have not declined and each Teams meeting they organised, never a join link, a
+body or an attendee. Any task
 proposing otherwise is rejected at review.
 
 **Inbound email is the organisation's choice, and off as it ships** (D-155).
