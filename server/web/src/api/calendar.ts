@@ -17,9 +17,9 @@ import { ApiError } from './errors.ts';
  * last four characters.
  */
 
-/** Why the last sync failed. */
+/** Why the last sync failed — or, `stopped_partway`, why a backfill stopped (LAI-1335). */
 export type CalendarSyncErrorCode =
-  'credentials_rejected' | 'not_granted' | 'unreachable' | 'bad_answer';
+  'credentials_rejected' | 'not_granted' | 'unreachable' | 'bad_answer' | 'stopped_partway';
 
 /** What a mapping rule matches: words in the meeting's subject, or its Teams channel. */
 export type CalendarRuleKind = 'title' | 'channel';
@@ -79,10 +79,23 @@ export interface CalendarSyncResult {
   readonly unchanged: number;
   /** Entries the person changed themselves, left alone. */
   readonly kept_edits: number;
+  /**
+   * A backfill's: entries before yesterday whose meeting changed or went
+   * since, left as they were — before yesterday it only adds (LAI-1335).
+   */
+  readonly kept_older: number;
   /** Out-of-office spans read — kept as away beside availability, never as time (LAI-1331). */
   readonly away: number;
   /** Meetings not logged, changed or retired: the day already full, or in the closed period. */
   readonly skipped: number;
+}
+
+/** A backfill going now (LAI-1335). */
+export interface CalendarBackfillRunning {
+  /** The days before today it reaches back. */
+  readonly days: number;
+  /** When it began, unix ms. */
+  readonly started_at: number;
 }
 
 /** `GET /org/calendar`, and what every write to it answers. */
@@ -102,11 +115,13 @@ export interface CalendarSource {
   readonly last_success_at: number | null;
   readonly last_error: CalendarSyncError | null;
   readonly last_result: CalendarSyncResult | null;
+  /** A backfill going now, or null; one asked for meanwhile joins it. */
+  readonly backfill_running: CalendarBackfillRunning | null;
 }
 
 /** `POST /org/calendar/backfill`'s answer (LAI-1335). */
 export interface CalendarBackfill {
-  /** The days before today it reached back, as asked. */
+  /** The days before today it reached back: as asked, or more when it joined a longer one. */
   readonly days: number;
   /**
    * What it did — `null` when a read failed, which the connection's
@@ -156,8 +171,9 @@ export function syncCalendarSource(): Promise<CalendarSource> {
 
 /**
  * Log the last `days` days of everyone's meetings (1 to 90), by every rule a
- * sync keeps; it waits for a sync already running. Only while the switch is
- * on.
+ * sync keeps, only adding before yesterday; it joins a backfill already
+ * running that reaches as far back, and waits for any other sync. Only while
+ * the switch is on.
  */
 export function backfillCalendarSource(days: number): Promise<CalendarBackfill> {
   return request<CalendarBackfill>('/org/calendar/backfill', { method: 'POST', body: { days } });
@@ -228,6 +244,7 @@ export const CALENDAR_SYNC_ERROR_WORDS: Readonly<Record<CalendarSyncErrorCode, s
   not_granted: 'Microsoft has not granted Calendars.Read to the app yet',
   unreachable: 'Laika could not reach Microsoft',
   bad_answer: 'Microsoft answered with something Laika could not read',
+  stopped_partway: 'a backfill stopped part-way, the switch turned off while it ran',
 };
 
 export function calendarSyncErrorWords(error: CalendarSyncError): string {

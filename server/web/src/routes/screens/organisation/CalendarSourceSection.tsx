@@ -26,6 +26,7 @@ import {
   backfillConfirm,
   backfillDays,
   backfillLine,
+  backfillRunningLine,
   blankRule,
   countsLine,
   DEFAULT_BACKFILL_DAYS,
@@ -55,6 +56,9 @@ type Busy = 'save' | 'switch' | 'test' | 'sync' | 'backfill' | 'disconnect';
 
 const MINUTE = 60_000;
 
+/** How often the card asks again while a backfill runs, to learn it is done. */
+const BACKFILL_POLL_MS = 10_000;
+
 const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
   { value: 'title', label: 'Title contains' },
   { value: 'channel', label: 'Teams channel is' },
@@ -78,7 +82,10 @@ const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
  * with a page that looks on and a server that is off.
  *
  * **Backfill the last N days** (LAI-1335), while the switch is on: a number
- * from 1 to 90, a confirm, then the counts on a line of their own.
+ * from 1 to 90, a confirm, then the counts on a line of their own. While one
+ * runs — this page's, or one the server says is going after a proxy gave up
+ * on the request — Backfill waits, and the card asks again every ten seconds
+ * until it is done (review F1).
  */
 export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const confirm = useConfirm();
@@ -111,6 +118,25 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       controller.abort();
     };
   }, []);
+
+  // A backfill going: ask again until it is done, so Backfill comes back and
+  // the last sync shows its counts.
+  const backfillGoing = view?.backfill_running != null;
+  useEffect(() => {
+    if (!backfillGoing) return undefined;
+    const controller = new AbortController();
+    const stop = startTicker(() => {
+      getCalendarSource(controller.signal)
+        .then((answer) => {
+          if (!controller.signal.aborted) setView(answer);
+        })
+        .catch(() => undefined);
+    }, BACKFILL_POLL_MS);
+    return () => {
+      stop();
+      controller.abort();
+    };
+  }, [backfillGoing]);
 
   // "4 min ago" keeps up with the clock while the page is open.
   useEffect(
@@ -216,6 +242,11 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
         })
         .catch((cause: unknown) => {
           setError(calendarRefusal(cause));
+          // A proxy that gave up on a long request leaves the backfill
+          // running: read the card again, so it says so and waits for it.
+          getCalendarSource()
+            .then(setView)
+            .catch(() => undefined);
         })
         .finally(() => {
           setBusy(undefined);
@@ -258,6 +289,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     keywords: p.slug,
   }));
   const test = view.last_test;
+  const running = view.backfill_running;
 
   return (
     <section
@@ -541,10 +573,17 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
                     Last sync {ago(view.last_attempt_at)} failed:{' '}
                     {calendarSyncErrorWords(view.last_error)}.
                   </span>
-                  {view.last_success_at !== null && view.last_result !== null && (
-                    <span className="org-fact-note">
-                      Last good sync {ago(view.last_success_at)}: {countsLine(view.last_result)}.
+                  {view.last_error.code === 'stopped_partway' && view.last_result !== null ? (
+                    <span className="org-fact-note" data-calendar-stopped-counts>
+                      Before it stopped: {countsLine(view.last_result)}.
                     </span>
+                  ) : (
+                    view.last_success_at !== null &&
+                    view.last_result !== null && (
+                      <span className="org-fact-note">
+                        Last good sync {ago(view.last_success_at)}: {countsLine(view.last_result)}.
+                      </span>
+                    )
                   )}
                 </>
               ) : (
@@ -602,13 +641,13 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
                 aria-label={`Days to backfill, 1 to ${String(MAX_BACKFILL_DAYS)}`}
                 aria-describedby="org-cal-backfill-note"
                 aria-invalid={daysProblem === undefined ? undefined : true}
-                disabled={busy !== undefined}
+                disabled={busy !== undefined || running !== null}
                 onChange={(event) => {
                   setDaysText(event.target.value);
                   setDaysChecked(false);
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') backfill();
+                  if (event.key === 'Enter' && running === null) backfill();
                 }}
               />
               <span className="org-cal-backfill-words" aria-hidden="true">
@@ -617,12 +656,17 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
               <Button
                 variant="secondary"
                 busy={busy === 'backfill'}
-                disabled={busy !== undefined}
+                disabled={busy !== undefined || running !== null}
                 onClick={backfill}
               >
                 Backfill
               </Button>
             </span>
+            {running !== null && busy !== 'backfill' && (
+              <span className="org-hr-sync" data-calendar-backfill-running>
+                {backfillRunningLine(running.days, ago(running.started_at))}
+              </span>
+            )}
             {daysProblem !== undefined && (
               <span className="org-fact-error" data-calendar-backfill-problem>
                 {daysProblem}

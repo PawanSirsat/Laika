@@ -10,6 +10,7 @@ import {
   backfillConfirm,
   backfillDays,
   backfillLine,
+  backfillRunningLine,
   blankRule,
   countsLine,
   formChanged,
@@ -44,6 +45,7 @@ const view = (over: Partial<CalendarSource> = {}): CalendarSource => ({
   last_success_at: null,
   last_error: null,
   last_result: null,
+  backfill_running: null,
   ...over,
 });
 
@@ -189,6 +191,7 @@ void describe('the words', () => {
     removed: 0,
     unchanged: 6,
     kept_edits: 0,
+    kept_older: 0,
     skipped: 0,
     away: 0,
     ...over,
@@ -210,6 +213,13 @@ void describe('the words', () => {
         }),
       ),
       '1 meeting · 1 logged · 2 updated · 3 removed · 1 left as people changed them · 2 held back (day full or closed) · 1 person, 1 with no Outlook calendar',
+    );
+  });
+
+  void test('a backfill’s older entries left as they were are said so (LAI-1335 review F2)', () => {
+    assert.equal(
+      countsLine(result({ kept_older: 3 })),
+      '6 meetings · 3 from before yesterday left as they were · 4 people',
     );
   });
 
@@ -265,6 +275,7 @@ void describe('the backfill (LAI-1335)', () => {
     removed: 0,
     unchanged: 0,
     kept_edits: 0,
+    kept_older: 0,
     skipped: 2,
     away: 0,
   };
@@ -292,6 +303,14 @@ void describe('the backfill (LAI-1335)', () => {
     assert.equal(backfillConfirm(1).title, 'Backfill the last 1 day?');
   });
 
+  void test('while one runs, the line says so and that its counts come as the last sync (review F1)', () => {
+    assert.equal(
+      backfillRunningLine(30, '2 min ago'),
+      'A backfill of the last 30 days is running, started 2 min ago. Its counts show as the last sync when it finishes.',
+    );
+    assert.match(backfillConfirm(30).body, /Before yesterday it only adds meetings not yet logged/);
+  });
+
   void test('the line says the counts, or why there are none', () => {
     assert.equal(
       backfillLine({ days: 30, result: counts, connection: view({ enabled: true }) }),
@@ -307,7 +326,16 @@ void describe('the backfill (LAI-1335)', () => {
     );
     assert.equal(
       backfillLine({ days: 7, result: null, connection: view() }),
-      'The backfill of the last 7 days stopped: the switch was turned off while it ran.',
+      'The backfill of the last 7 days wrote nothing: the switch was turned off, or the connection saved again, while it ran.',
+    );
+    // Stopped between two people (review F5): what was written before it.
+    assert.equal(
+      backfillLine({
+        days: 30,
+        result: { ...counts, people: 2, meetings: 9, created: 9, skipped: 0 },
+        connection: view({ last_error: { code: 'stopped_partway', message: 'x' } }),
+      }),
+      'The backfill of the last 30 days stopped part-way: the switch was turned off while it ran. Before it stopped: 9 meetings · 9 logged · 2 people.',
     );
   });
 });

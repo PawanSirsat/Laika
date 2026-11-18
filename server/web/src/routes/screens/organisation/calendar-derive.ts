@@ -210,6 +210,9 @@ export function countsLine(result: CalendarSyncResult): string {
     result.updated > 0 ? `${String(result.updated)} updated` : '',
     result.removed > 0 ? `${String(result.removed)} removed` : '',
     result.kept_edits > 0 ? `${String(result.kept_edits)} left as people changed them` : '',
+    result.kept_older > 0
+      ? `${String(result.kept_older)} from before yesterday left as they were`
+      : '',
     result.skipped > 0 ? `${String(result.skipped)} held back (day full or closed)` : '',
     result.not_a_meeting > 0
       ? `${String(result.not_a_meeting)} of people’s own events left off (not Teams meetings)`
@@ -275,19 +278,31 @@ export function backfillConfirm(days: number): { title: string; body: string } {
     title: `Backfill the last ${daysWords(days)}?`,
     body:
       `Laika reads everyone’s Outlook calendar from ${daysWords(days)} ago to tomorrow and logs ` +
-      'their meetings as their time, by the same rules as every sync. Days in the closed period ' +
+      'their meetings as their time, by the same rules as every sync. Before yesterday it only ' +
+      'adds meetings not yet logged and changes none already there. Days in the closed period ' +
       'and days already full are held back, and anything a person changed or deleted stays as ' +
       'they left it. Running it again adds nothing. It can take a few minutes; if this page ' +
       'loses the answer, it still finishes, and its counts show as the last sync.',
   };
 }
 
+/**
+ * The line while a backfill runs, `ago` its start in words: Backfill waits
+ * until it is done — one asked for now would only join it (review F1).
+ */
+export function backfillRunningLine(days: number, ago: string): string {
+  return `A backfill of the last ${daysWords(days)} is running, started ${ago}. Its counts show as the last sync when it finishes.`;
+}
+
 /** The line a finished backfill leaves under its control. */
 export function backfillLine(answer: CalendarBackfill): string {
   const span = `the last ${daysWords(answer.days)}`;
-  if (answer.result !== null) return `Backfilled ${span}: ${countsLine(answer.result)}.`;
   const error = answer.connection.last_error;
+  if (error?.code === 'stopped_partway' && answer.result !== null) {
+    return `The backfill of ${span} stopped part-way: the switch was turned off while it ran. Before it stopped: ${countsLine(answer.result)}.`;
+  }
+  if (answer.result !== null) return `Backfilled ${span}: ${countsLine(answer.result)}.`;
   return error === null
-    ? `The backfill of ${span} stopped: the switch was turned off while it ran.`
+    ? `The backfill of ${span} wrote nothing: the switch was turned off, or the connection saved again, while it ran.`
     : `The backfill of ${span} failed: ${calendarSyncErrorWords(error)}. Nothing was logged.`;
 }

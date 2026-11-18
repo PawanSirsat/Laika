@@ -171,12 +171,14 @@ void describe('a refusal, in words', () => {
 });
 
 void describe('a failed sync, in words', () => {
-  void test('the four codes the sync records, and anything else as sent', () => {
+  void test('the codes the sync records, and anything else as sent', () => {
     const codes: CalendarSyncErrorCode[] = [
       'credentials_rejected',
       'not_granted',
       'unreachable',
       'bad_answer',
+      // LAI-1335 review F5.
+      'stopped_partway',
     ];
     for (const code of codes) {
       assert.notEqual(calendarSyncErrorWords({ code, message: 'x' }), 'x', code);

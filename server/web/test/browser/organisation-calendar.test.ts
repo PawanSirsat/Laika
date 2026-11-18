@@ -80,6 +80,7 @@ const OFF = {
   last_success_at: null,
   last_error: null,
   last_result: null,
+  backfill_running: null,
 };
 
 /** `minutes` before now, read when the fixture is built — the page reads it moments later. */
@@ -505,6 +506,7 @@ void describe('Outlook calendar: backfill (LAI-1335)', () => {
     removed: 0,
     unchanged: 14,
     kept_edits: 0,
+    kept_older: 5,
     skipped: 18,
     away: 3,
   };
@@ -577,12 +579,129 @@ void describe('Outlook calendar: backfill (LAI-1335)', () => {
       );
       assert.equal(
         await c.locator('[data-calendar-backfilled]').innerText(),
-        'Backfilled the last 30 days: 412 meetings · 380 logged · 18 held back (day full or closed) · 3 out of office, kept as away (never time) · 9 people, 1 with no Outlook calendar, 1 whose calendar Microsoft would not open.',
+        'Backfilled the last 30 days: 412 meetings · 380 logged · 5 from before yesterday left as they were · 18 held back (day full or closed) · 3 out of office, kept as away (never time) · 9 people, 1 with no Outlook calendar, 1 whose calendar Microsoft would not open.',
       );
       // The card's last sync is the backfill's.
       assert.match(
         await c.locator('[data-calendar-counts]').innerText(),
         /^Last sync just now: 412 meetings · 380 logged/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('one the server says is running holds Backfill and says so, until a later read says it is done (review F1)', async () => {
+    let state: unknown = saved({
+      enabled: true,
+      backfill_running: { days: 30, started_at: ago(2) },
+    });
+    const h = await openPage(
+      '/organisation?tab=integrations',
+      orgStub('owner', { '/api/v1/org/calendar': () => state }),
+      {
+        before: async (page) => {
+          await page.clock.install();
+        },
+      },
+    );
+    try {
+      await h.page.locator('[data-calendar-backfill-running]').waitFor({ timeout: 20_000 });
+      const c = card(h);
+      const go = c.getByRole('button', { name: 'Backfill', exact: true });
+      assert.equal(
+        await c.locator('[data-calendar-backfill-running]').innerText(),
+        'A backfill of the last 30 days is running, started 2 min ago. Its counts show as the last sync when it finishes.',
+      );
+      assert.equal(await go.isDisabled(), true);
+      assert.equal(await c.getByLabel('Days to backfill, 1 to 90').isDisabled(), true);
+
+      // Done on the server: the next read, ten seconds on, gives Backfill back.
+      state = saved({
+        enabled: true,
+        last_attempt_at: Date.now(),
+        last_success_at: Date.now(),
+        last_result: BACKFILLED,
+      });
+      const reads = () => h.calls.filter((call) => call.path === '/api/v1/org/calendar').length;
+      const before = reads();
+      await h.page.clock.fastForward(10_000);
+      await until(async () => (await c.locator('[data-calendar-backfill-running]').count()) === 0);
+      assert.equal(reads(), before + 1);
+      assert.equal(await go.isDisabled(), false);
+      assert.match(await c.locator('[data-calendar-counts]').innerText(), /412 meetings/);
+      // Done, it asks no more.
+      await h.page.clock.fastForward(30_000);
+      await h.page.waitForTimeout(200);
+      assert.equal(reads(), before + 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a gateway giving up on the request: the card reads again, holds Backfill and says it runs', async () => {
+    let state: unknown = saved({ enabled: true });
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': () => state,
+        '/api/v1/org/calendar/backfill': () => {
+          // The server carries on; the proxy in front of it gave up.
+          state = saved({ enabled: true, backfill_running: { days: 30, started_at: Date.now() } });
+          return reply(504, '<html><body>504 Gateway Time-out</body></html>');
+        },
+      }),
+      '[data-calendar-backfill]',
+    );
+    try {
+      const c = card(h);
+      const go = c.getByRole('button', { name: 'Backfill', exact: true });
+      await go.click();
+      const dialog = h.page.getByRole('alertdialog');
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Backfill' }).click();
+      await c.getByRole('alert').waitFor();
+      await until(async () => (await c.locator('[data-calendar-backfill-running]').count()) > 0);
+      assert.match(
+        await c.locator('[data-calendar-backfill-running]').innerText(),
+        /^A backfill of the last 30 days is running, started just now\./,
+      );
+      assert.equal(await go.isDisabled(), true);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('one the switch stopped part-way says so, with what it wrote before (review F5)', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved({
+          enabled: true,
+          last_attempt_at: ago(1),
+          last_success_at: ago(30),
+          last_error: { code: 'stopped_partway', message: 'x' },
+          last_result: BACKFILLED,
+        }),
+      }),
+      '[data-calendar-sync-error]',
+    );
+    try {
+      const c = card(h);
+      assert.equal(
+        await c.locator('[data-calendar-sync-error]').getAttribute('data-calendar-sync-error'),
+        'stopped_partway',
+      );
+      assert.match(
+        await c.locator('[data-calendar-sync-error]').innerText(),
+        /failed: a backfill stopped part-way, the switch turned off while it ran\.$/,
+      );
+      assert.match(
+        await c.locator('[data-calendar-stopped-counts]').innerText(),
+        /^Before it stopped: 412 meetings · 380 logged/,
+      );
+      // Not the last good sync's time beside counts that are not its own.
+      assert.equal(
+        (await c.locator('[data-calendar-last]').innerText()).includes('Last good sync'),
+        false,
       );
     } finally {
       await h.close();
