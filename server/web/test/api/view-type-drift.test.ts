@@ -1174,6 +1174,58 @@ const PAIRS: readonly Pair[] = [
     client: 'CalendarSyncResult',
     clientFile: 'calendar.ts',
   },
+  // The people sync on the same card (D-161, LAI-1330): its view, and each
+  // named shape inside it — the last run's counts, its error and its leaver
+  // review, down to one leaver.
+  {
+    server: 'PeopleSyncView',
+    serverFile: 'services/people-sync-settings.ts',
+    client: 'PeopleSync',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'PeopleSyncErrorView',
+    serverFile: 'services/people-sync-settings.ts',
+    client: 'PeopleSyncError',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'PeopleSyncResultView',
+    serverFile: 'services/people-sync.ts',
+    client: 'PeopleSyncResult',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'LeaverReviewView',
+    serverFile: 'services/people-sync.ts',
+    client: 'LeaverReview',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'LeaverView',
+    serverFile: 'services/people-sync.ts',
+    client: 'Leaver',
+    clientFile: 'people-sync.ts',
+  },
+  {
+    server: 'ChangedAccountView',
+    serverFile: 'services/people-sync.ts',
+    client: 'ChangedAccount',
+    clientFile: 'people-sync.ts',
+  },
+  // Everyone's photo version, title, department and manager (D-161).
+  {
+    server: 'PeopleDirectoryView',
+    serverFile: 'services/people-directory.ts',
+    client: 'PeopleDirectory',
+    clientFile: 'people-directory.ts',
+  },
+  {
+    server: 'PersonDirectoryView',
+    serverFile: 'services/people-directory.ts',
+    client: 'PersonDirectory',
+    clientFile: 'people-directory.ts',
+  },
   // The backfill's answer (LAI-1335): its counts and the connection after it,
   // and the backfill the connection says is running (review F1).
   {

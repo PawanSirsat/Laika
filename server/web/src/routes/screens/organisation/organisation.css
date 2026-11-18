@@ -252,17 +252,9 @@
   opacity: 0.55;
 }
 
+/* The shared Avatar at 28 (D-161): its own size, disc and initials. */
 .org-avatar {
   flex: none;
-  display: flex;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: var(--radius-round);
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
 }
 
 .org-person-who,
@@ -3090,6 +3082,53 @@
 
 .org-cal-switch > .org-fact-note {
   flex: 1 1 100%;
+}
+
+/*
+ * D-161's people sync (LAI-1330), inside the same card: its two switches,
+ * and the leaver review — a dry run while Leavers is off. Tokens only.
+ */
+.org-people-sync {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  min-width: 0;
+}
+
+.org-leavers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.org-leavers-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.org-leaver {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.org-leaver-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.org-leaver-why {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 /* Wider than the HR sign-in form: a rule is three controls on one line. */

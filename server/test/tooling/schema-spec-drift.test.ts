@@ -620,6 +620,8 @@ describe('the parser itself', () => {
       // LAI-1181: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_hr_source',
       'org_model_prices',
+      // LAI-1330: one row per organisation, keyed by `org_id`: its people sync.
+      'org_people_sync',
       'org_role_grants',
       // LAI-1314: one row per organisation, keyed by `org_id`, as its Time setting.
       'org_teams_settings',
@@ -649,6 +651,8 @@ describe('the parser itself', () => {
       'token_usage_zones',
       // LAI-1130: one row per person, keyed by `user_id`, as their time settings.
       'user_availability',
+      // LAI-1330: one row per person, keyed by `user_id`: what the directory says.
+      'user_directory',
       // LAI-1313: one row per person, keyed by `user_id`, as their availability.
       'user_email_prefs',
       'user_time_settings',

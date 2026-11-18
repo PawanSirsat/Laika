@@ -26,6 +26,12 @@ import {
   runCalendarSync,
 } from '../services/calendar-sync.ts';
 import {
+  PEOPLE_SYNC_EVERY_MINUTES,
+  type PeopleSyncDeps,
+  changedBy as peopleChanged,
+  runPeopleSync,
+} from '../services/people-sync.ts';
+import {
   changedBy as emailChangedBy,
   type EmailOutboxDeps,
   pruneEmailOutbox,
@@ -90,6 +96,8 @@ export interface SchedulerDeps {
   hr?: HrSyncDeps;
   /** The Outlook calendar sync's `fetch` and waits — injected by the tests, which never call Microsoft. */
   calendar?: CalendarSyncDeps;
+  /** The people sync's `fetch` and waits — injected by the tests, which never call Microsoft. */
+  people?: Omit<PeopleSyncDeps, 'attachments'>;
   /** Microsoft SSO (LAI-1238); its `directorySync` switches the directory job on. */
   sso?: MicrosoftSso | null;
   /** The directory sync's `fetch` — injected by the tests, which never call Graph. */
@@ -339,6 +347,24 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
         });
         if (outcome.kind === 'failed') throw new Error(`calendar sync failed: ${outcome.code}`);
         return { changed: calendarChanged(outcome) };
+      },
+    },
+    // People from Microsoft's directory (D-161, LAI-1330): titles,
+    // departments, managers and photos, every hour, and leavers behind their
+    // guards; nothing unless *Photos and profile* is on. Not `atStart`, as the
+    // calendar's. A run still going is joined, never doubled; a failed read is
+    // recorded on the row and thrown here by its code alone.
+    {
+      name: 'people.sync',
+      everyMs: PEOPLE_SYNC_EVERY_MINUTES * 60 * 1000,
+      run: async (now) => {
+        const outcome = await runPeopleSync(db, deps.serverSecret ?? '', {
+          ...deps.people,
+          attachments: deps.attachments,
+          now: () => now,
+        });
+        if (outcome.kind === 'failed') throw new Error(`people sync failed: ${outcome.code}`);
+        return { changed: peopleChanged(outcome) };
       },
     },
     // Every enabled Member of the Microsoft directory as a Laika member

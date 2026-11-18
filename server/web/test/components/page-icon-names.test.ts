@@ -79,6 +79,11 @@ const NO_TOOLTIP: readonly {
   readonly why: string;
 }[] = [
   {
+    file: 'components/shell/PersonMenu.tsx',
+    mark: "'user-menu-trigger'",
+    why: 'the reader’s own face (D-161), which opens their menu: the menu names them at its top, and the trigger’s accessible name says whose it is',
+  },
+  {
     file: 'routes/screens/my-day/Timeline.tsx',
     mark: 'data-edge="start"',
     why: 'a block’s drag handle: its cursor is the affordance, and a tooltip would sit under the pointer on the edge being dragged',

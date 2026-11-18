@@ -331,6 +331,29 @@ const COMPATIBILITY_PATH = '/api/v1/developer/compatibility';
 const ME_PATH = '/api/v1/me';
 
 /**
+ * Microsoft's directory as Laika keeps it (D-161, LAI-1330), for a test to
+ * **opt in to** (review F8): every avatar asks for it once a session, and a
+ * test that names no stub gets the harness's `404`, which the client reads
+ * as nobody synced and never asks again — so a test about the directory says
+ * so, rather than inheriting an answer it did not choose.
+ */
+export const NO_DIRECTORY = { people: {} };
+
+/** The Microsoft 365 card's people sync, both switches off and never run — opt in as above. */
+export const PEOPLE_SYNC_OFF = {
+  connected: false,
+  profile_enabled: false,
+  leavers_enabled: false,
+  photos_stored: false,
+  sync_every_minutes: 60,
+  last_attempt_at: null,
+  last_success_at: null,
+  last_error: null,
+  last_result: null,
+  leavers: null,
+};
+
+/**
  * The task list and one task (LAI-795). **The list is answered as the server
  * answers it**: asked `fields=slim`, the stub leaves out `description_md` and
  * `acceptance_md`, so a fixture written in full still reaches the app as the

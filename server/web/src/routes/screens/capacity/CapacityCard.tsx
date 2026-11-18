@@ -10,11 +10,11 @@ import { Chip } from '../../../components/chip/Chip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { PersonFacts } from '../../../components/person-facts/PersonFacts.tsx';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
-import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { initials } from '../../../theme/initials.ts';
 import {
   barSegments,
   LOAD_LABEL,
@@ -108,7 +108,6 @@ export interface CapacityCardProps {
 export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
   const [details, setDetails] = useState(false);
   const detailsId = useId();
-  const ink = avatarColor(person.user_id, theme);
   const status = statusText(person, now);
   const ring = person.status ?? 'off';
   const work = workloadIn(person, space);
@@ -127,12 +126,14 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
     <li className="cap-card" data-status={person.status ?? 'off'} data-load={load}>
       <div className="cap-card-head">
         <span className={`cap-avatar-wrap cap-ring-${ring}`} aria-hidden="true">
-          <span
+          <Avatar
+            name={person.name}
+            userId={person.user_id}
+            theme={theme}
+            size={36}
+            label={null}
             className="cap-avatar"
-            style={{ background: ink.background, color: ink.foreground }}
-          >
-            {initials(person.name)}
-          </span>
+          />
           {person.status !== null && <span className={`cap-dot cap-dot-${person.status}`} />}
         </span>
         <span className="cap-who">
@@ -162,6 +163,7 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
               )}
             </span>
           </span>
+          <PersonFacts userId={person.user_id} className="cap-facts" />
         </span>
         <LoadBadges load={load} overdue={work.overdue} />
       </div>

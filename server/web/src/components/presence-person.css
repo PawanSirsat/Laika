@@ -7,17 +7,9 @@
   min-width: 0;
 }
 
+/* The shared Avatar at 28 (D-161): its own size, disc and border. */
 .pp-avatar {
-  width: 1.75rem;
-  height: 1.75rem;
   flex: none;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-default);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
 }
 
 .pp-body {

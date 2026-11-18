@@ -1,12 +1,12 @@
 import { and, asc, eq, gt, gte, inArray, isNull, max, or, type SQL } from 'drizzle-orm';
-import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
+import { activityActor, type ResolvedActor, type ServiceCaller } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole, type ProjectRole } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { orgs, projectMemberships, projects, sessions, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, systemPrincipal } from '../policy/can.ts';
 import {
   applyOffboardingChoice,
   assertOffboardingChoice,
@@ -445,6 +445,77 @@ export function setUserActive(
   return viewOf(db, requireUser(db, userId));
 }
 
+/**
+ * Why Microsoft's directory may not deactivate someone it says has left
+ * (D-161, LAI-1330): they are an owner — the one `orgs.owner_user_id` names,
+ * or anyone still holding the role — or the last active admin.
+ */
+export type LeaverProtection = 'owner' | 'last_admin';
+
+/** Whether the people sync must leave `userId` alone, and why; null when it may deactivate them. */
+export function leaverProtection(db: Db, userId: string): LeaverProtection | null {
+  const target = requireUser(db, userId);
+  if (target.orgRole === 'owner' || target.id === recordedOwnerId(db)) return 'owner';
+  if (target.orgRole === 'admin') {
+    const otherAdmins = db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.orgRole, 'admin'), eq(users.isActive, 1)))
+      .all()
+      .filter((row) => row.id !== userId).length;
+    if (otherAdmins === 0) return 'last_admin';
+  }
+  return null;
+}
+
+/**
+ * Deactivate a person Microsoft's directory says has left (D-161, LAI-1330),
+ * by the people sync and no person: {@link setUserActive}'s deactivation —
+ * every token revoked and every session ended, every space left, their open
+ * tasks unassigned (nobody is there to choose someone to hand them to) — as
+ * §3.4's principal, with `user.deactivated` written by the system and
+ * `via: 'microsoft_directory'`.
+ *
+ * {@link leaverProtection} is asked **inside** the transaction, so the
+ * second of two admins in one run sees the first already gone. The answer is
+ * whether it deactivated them; someone already inactive, or protected, is
+ * left as they are.
+ */
+export function deactivateLeaver(db: Db, userId: string, now: number): boolean {
+  const system = systemPrincipal();
+  assertCan(system, 'system.people.sync');
+  return db.transaction(() => {
+    const target = requireUser(db, userId);
+    if (target.isActive !== 1 || leaverProtection(db, userId) !== null) return false;
+
+    db.update(users)
+      .set({ isActive: 0, updatedAt: new Date(now) })
+      .where(eq(users.id, userId))
+      .run();
+    const open = openTasksHeldBy(db, userId);
+    applyOffboardingChoice(db, system, userId, open, 'unassign', now);
+    removeEveryMembership(db, system, userId, now);
+    const revoked = revokeEveryToken(db, userId, now);
+    const ended = endEverySession(db, userId);
+
+    appendActivity(db, {
+      orgId: requireOrgId(db),
+      projectId: null,
+      ...activityActor(system),
+      type: 'user.deactivated',
+      payload: {
+        user_id: userId,
+        org_role: target.orgRole,
+        token_ids: revoked,
+        sessions_ended: ended,
+        via: 'microsoft_directory',
+      },
+      now,
+    });
+    return true;
+  });
+}
+
 /** What `POST /users/:id/sign-out` answers. */
 export interface SignOutView {
   user_id: string;
@@ -499,7 +570,7 @@ export function signOutEverywhere(
  * the owner holds lead on every space, so none is left without one who can
  * manage it.
  */
-function removeEveryMembership(db: Db, actor: ResolvedActor, userId: string, now: number): void {
+function removeEveryMembership(db: Db, actor: ServiceCaller, userId: string, now: number): void {
   const held = db
     .select({
       id: projectMemberships.id,

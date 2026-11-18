@@ -22,6 +22,7 @@ import { IconButton } from '../../../components/forms/IconButton.tsx';
 import { PasswordInput } from '../../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../../components/forms/TextInput.tsx';
 import { Switch } from '../../../components/Switch.tsx';
+import { PeopleSyncPanel } from './PeopleSyncPanel.tsx';
 import {
   backfillConfirm,
   backfillDays,
@@ -66,8 +67,10 @@ const RULE_KINDS: readonly DropdownOption<CalendarRuleKind>[] = [
 ];
 
 /**
- * The organisation's Outlook calendar (D-157, LAI-1316), a card on
- * Organisation → Integrations after the HR system: an owner or admin saves
+ * The organisation's Microsoft 365 connection, a card on Organisation →
+ * Integrations after the HR system — its Outlook calendar (D-157, LAI-1316)
+ * and, through the same app, its people (D-161, LAI-1330, `PeopleSyncPanel`),
+ * each with its own switch: an owner or admin saves
  * the Microsoft Entra app's tenant, client id and secret, tests whether
  * Microsoft grants it `Calendars.Read`, says which meetings go to which
  * space, and turns the switch on. Shown only to a holder of
@@ -158,7 +161,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
     return (
       <section className="org-card org-cal" aria-labelledby="org-cal" data-section="calendar">
         <header className="org-card-head">
-          <h2 id="org-cal">Outlook calendar</h2>
+          <h2 id="org-cal">Microsoft 365</h2>
         </header>
         <p className="org-fact-error" role="alert">
           The calendar connection could not be read. {readFailed}
@@ -257,8 +260,8 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
 
   const disconnect = (): void => {
     void confirm({
-      title: 'Disconnect Outlook?',
-      body: 'Laika forgets the tenant, client ID and secret, stops reading calendars, and stops showing anyone out of office from Outlook. Meetings already logged stay on people’s days as their time.',
+      title: 'Disconnect Microsoft 365?',
+      body: 'Laika forgets the tenant, client ID and secret, stops reading calendars and people, and stops showing anyone out of office from Outlook. Meetings already logged stay on people’s days as their time; photos and titles already synced stay, and Deactivate leavers goes off.',
       confirmLabel: 'Disconnect',
       danger: true,
     }).then((yes) => {
@@ -293,15 +296,16 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const running = view.backfill_running;
 
   return (
-    // Folded to one row that says its state (LAI-1318).
+    // Folded to one row that says its state (LAI-1318); the card is
+    // Microsoft 365, its calendar and its people (D-161).
     <OrgAccordion
       name="calendar"
       id="org-cal"
-      title="Outlook calendar"
+      title="Microsoft 365"
       className="org-cal"
       section="calendar"
       hooks={{ 'data-calendar-status': statusWord(view) }}
-      description="Meetings each person has not declined, logged on their My day as confirmed time."
+      description="Meetings people have not declined, logged on My day as confirmed time; and their photos, titles and managers."
       meta={
         <span
           className="org-status-badge"
@@ -327,7 +331,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       <div className="org-hr-body">
         <span className="org-cal-switch" data-calendar-switch>
           <span className="org-cal-switch-label" id="org-cal-switch-label">
-            Log meetings automatically
+            Calendar
           </span>
           <Switch
             checked={view.enabled}
@@ -347,9 +351,11 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
           </span>
         </span>
 
+        <PeopleSyncPanel connected={view.configured} now={now} />
+
         <form
           className="org-hr-form org-cal-form"
-          aria-label="Outlook calendar settings"
+          aria-label="Microsoft 365 settings"
           noValidate
           onSubmit={(event) => {
             event.preventDefault();

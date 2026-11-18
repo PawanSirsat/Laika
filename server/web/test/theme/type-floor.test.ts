@@ -54,7 +54,6 @@ const TINY = [
   '.t-avatar', // the board card's 26px avatar, and the toolbar's assignee stack
   '.dd-avatar', // 22px, in every person dropdown
   '.space-member', // 22px, the space header's member stack
-  '.rail-feed-avatar', // 22px, the board rail's activity feed
   '.swim-avatar', // 22px, a swimlane's head
   '.dash-avatar', // 24px, the dashboard's contributors
   '.list-avatar', // 22px, the List view's assignee cell

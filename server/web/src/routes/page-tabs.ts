@@ -131,7 +131,7 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'hr', label: 'HR system', group: 'Connections' },
   { id: 'email', label: 'Email', group: 'Connections' },
   { id: 'teams', label: 'Microsoft Teams', group: 'Connections' },
-  { id: 'calendar', label: 'Outlook calendar', group: 'Connections' },
+  { id: 'calendar', label: 'Microsoft 365', group: 'Connections' },
   { id: 'ai', label: 'AI & model prices', group: 'Connections' },
   // Everyone's work across every space (LAI-952), a tab since D-147
   // (LAI-1170): ungated, as the sidebar entry it replaces was — the server

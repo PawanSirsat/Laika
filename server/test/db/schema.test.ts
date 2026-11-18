@@ -150,6 +150,8 @@ describe('migrations', () => {
     'org_hr_source',
     // LAI-773: an organisation's own API-equivalent prices.
     'org_model_prices',
+    // LAI-1330, D-161: the people sync's switches and last run.
+    'org_people_sync',
     // LAI-958, D-102: what the owner granted each org role.
     'org_role_grants',
     // LAI-1314, D-154: the Teams posting switch and its notice cursor.
@@ -235,6 +237,8 @@ describe('migrations', () => {
     // LAI-1130, D-131: a person's own availability and away periods.
     'user_availability',
     'user_away_periods',
+    // LAI-1330, D-161: what Microsoft's directory says of a person, photo included.
+    'user_directory',
     // LAI-1313, D-153: a person's own email switches; no row is both on.
     'user_email_prefs',
     // LAI-787, D-088: a person's own Draft my time.
