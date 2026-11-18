@@ -62,6 +62,8 @@ export const HOVER = {
     'Sprint moves and card reorders, by them or their agents. Tidying, not work: counted in neither figure before it.',
   never: 'No sign-in, board action or agent signal has ever been recorded for them.',
   presence_off: 'Presence is off for this organisation, so nobody’s status or last seen is kept.',
+  spaces:
+    'The spaces they are in that you can see. The number is their committed work there, in progress plus to do; a greyed space has no open work of theirs.',
 } as const;
 
 /** Thousands separated: "2,547" reads at a glance, "2547" does not. */
@@ -69,6 +71,7 @@ export const count = (n: number): string => n.toLocaleString('en-US');
 
 /** What a space chip says on hover: committed is the figure, the rest is here. */
 export function spaceTitle(s: CapacitySpace): string {
+  if (s.open === 0) return `In ${s.name}, with no open work of theirs there`;
   return `${count(s.committed)} committed in ${s.name} (in progress and to do) · ${count(s.backlog)} in backlog, ${count(s.in_review)} waiting on reviewers`;
 }
 
@@ -321,9 +324,11 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
             <div className="cap-block cap-spaces-block">
               <span className="cap-label">
                 Spaces
-                <span className="cap-label-note">
-                  {count(person.spaces.length)} {person.spaces.length === 1 ? 'space' : 'spaces'}
-                </span>
+                <Tooltip content={HOVER.spaces}>
+                  <span className="cap-label-note">
+                    {count(person.spaces.length)} {person.spaces.length === 1 ? 'space' : 'spaces'}
+                  </span>
+                </Tooltip>
               </span>
               {person.spaces.length === 0 ? (
                 <span className="cap-quiet">No spaces</span>
@@ -390,19 +395,31 @@ export function LoadBadges({
 }
 
 /**
- * A space the person has open work in: its mark (LAI-1311), its name and its
- * **committed** count. The pipeline and the review queue are on hover, and
- * read aloud (D-092).
+ * A space the person is in or has open work in: its mark (LAI-1311), its name
+ * and its **committed** count. The pipeline and the review queue are on
+ * hover, and read aloud (D-092). A space they are in with no open work of
+ * theirs is greyed, with no count (LAI-1334) — and says so aloud.
  */
 export function SpaceChip({ space, on }: { readonly space: CapacitySpace; readonly on: boolean }) {
+  const idle = space.open === 0;
   const aside = `${count(space.backlog)} in backlog, ${count(space.in_review)} waiting on reviewers`;
   return (
     <Tooltip content={spaceTitle(space)}>
-      <li className={on ? 'cap-space cap-space-on' : 'cap-space'}>
+      <li
+        className={`cap-space${on ? ' cap-space-on' : ''}${idle ? ' cap-space-idle' : ''}`}
+        data-space={space.slug}
+        data-idle={idle ? '' : undefined}
+      >
         <ProjectMark project={space} size="xs" />
         {space.name}
-        <span className="cap-space-n">{count(space.committed)}</span>
-        <span className="visually-hidden"> committed, {aside}</span>
+        {idle ? (
+          <span className="visually-hidden">, no open work</span>
+        ) : (
+          <>
+            <span className="cap-space-n">{count(space.committed)}</span>
+            <span className="visually-hidden"> committed, {aside}</span>
+          </>
+        )}
       </li>
     </Tooltip>
   );

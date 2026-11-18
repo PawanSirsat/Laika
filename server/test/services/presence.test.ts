@@ -28,6 +28,7 @@ import {
   presenceNow,
   PRESENCE_WINDOW_MS,
   statusOf,
+  type CapacitySpace,
   type CapacityWorkload,
 } from '../../src/services/presence.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
@@ -1251,6 +1252,92 @@ describe('capacity per person (LAI-767)', () => {
       expect(partial.workload).toMatchObject({ in_progress: 1, todo: 0, committed: 1, open: 1 });
       expect(partial.spaces.map((s) => [s.slug, s.load])).toEqual([['laika', 'light']]);
       expect(partial.in_progress_tasks).toEqual([seen]);
+    });
+
+    // LAI-1334: "0 No spaces" for someone between tasks who is in three.
+    describe('the spaces a person is in, not only where they have open work', () => {
+      const space = (name: string, slug: string, prefix: string) =>
+        createProject(t.sqlite, t.db, actor(adminId), { name, slug, prefix });
+      const row = (s: CapacitySpace) => [s.slug, s.committed, s.open, s.load];
+
+      it('lists every space they are in with no open work, A–Z, every count 0', () => {
+        const ada = makeUser('member', 'Ada');
+        space('Zeta', 'zeta', 'ZET');
+        const alpha = space('Alpha', 'alpha', 'ALP');
+        for (const slug of ['zeta', 'laika', 'alpha']) {
+          addMember(t.db, actor(adminId), slug, ada, 'member');
+        }
+
+        const mine = entry(ada);
+        expect(mine).toMatchObject({ load: 'none', workload: { open: 0 } });
+        expect(mine.spaces.map(row)).toEqual([
+          ['alpha', 0, 0, 'none'],
+          ['laika', 0, 0, 'none'],
+          ['zeta', 0, 0, 'none'],
+        ]);
+        expect(mine.spaces[0]).toEqual({
+          project_id: alpha.id,
+          slug: 'alpha',
+          name: 'Alpha',
+          in_progress: 0,
+          todo: 0,
+          backlog: 0,
+          in_review: 0,
+          committed: 0,
+          overdue: 0,
+          due_soon: 0,
+          open: 0,
+          load: 'none',
+        });
+      });
+
+      it('puts a space with open work first, with its counts, and the one without after it', () => {
+        const ada = makeUser('member', 'Ada');
+        space('Alpha', 'alpha', 'ALP');
+        addMember(t.db, actor(adminId), 'alpha', ada, 'member');
+        addMember(t.db, actor(adminId), 'laika', ada, 'member');
+        assigned(ada, 'todo', null, 'laika');
+        // Open but not committed still counts as open work: before the idle one.
+        space('Mid', 'mid', 'MID');
+        addMember(t.db, actor(adminId), 'mid', ada, 'member');
+        assigned(ada, 'review', null, 'mid');
+
+        expect(entry(ada).spaces.map(row)).toEqual([
+          ['laika', 1, 1, 'light'],
+          ['mid', 0, 1, 'none'],
+          ['alpha', 0, 0, 'none'],
+        ]);
+      });
+
+      it('never lists a space the reader cannot see', () => {
+        const ada = makeUser('member', 'Ada');
+        const reader = makeUser('member', 'Reader');
+        space('Secret', 'secret', 'SEC');
+        addMember(t.db, actor(adminId), 'laika', ada, 'member');
+        addMember(t.db, actor(adminId), 'secret', ada, 'member');
+        addMember(t.db, actor(adminId), 'laika', reader, 'member');
+
+        // Control: whoever reads both sees both.
+        expect(entry(ada).spaces.map((s) => s.slug)).toEqual(['laika', 'secret']);
+        expect(entry(ada, reader).spaces.map((s) => s.slug)).toEqual(['laika']);
+      });
+
+      it('leaves out an archived space, unless open work of theirs is still in it', () => {
+        const ada = makeUser('member', 'Ada');
+        space('Old', 'old', 'OLD');
+        addMember(t.db, actor(adminId), 'laika', ada, 'member');
+        addMember(t.db, actor(adminId), 'old', ada, 'member');
+        t.db.update(projects).set({ archivedAt: NOW }).where(eq(projects.slug, 'old')).run();
+        expect(entry(ada).spaces.map((s) => s.slug)).toEqual(['laika']);
+
+        t.db.update(projects).set({ archivedAt: null }).where(eq(projects.slug, 'old')).run();
+        assigned(ada, 'todo', null, 'old');
+        t.db.update(projects).set({ archivedAt: NOW }).where(eq(projects.slug, 'old')).run();
+        expect(entry(ada).spaces.map(row)).toEqual([
+          ['old', 1, 1, 'light'],
+          ['laika', 0, 0, 'none'],
+        ]);
+      });
     });
   });
 
