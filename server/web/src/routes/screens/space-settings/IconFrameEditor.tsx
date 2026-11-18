@@ -106,7 +106,24 @@ export function IconFrameEditor({
 }: IconFrameEditorProps) {
   const [image, setImage] = useState<ImageBitmap | null>(null);
   const [unreadable, setUnreadable] = useState(false);
-  const [placement, setPlacement] = useState<Placement>(START);
+  /**
+   * Where the image sits, and the position last said aloud. One state, so a
+   * drag's end reads the placement its last move left, not a render's copy.
+   */
+  const [frame, setFrame] = useState<{ readonly placement: Placement; readonly said: string }>({
+    placement: START,
+    said: '',
+  });
+  const placement = frame.placement;
+  /** Move the image; `say` also puts the new position in the live region. */
+  const setPlacement = (update: Placement | ((p: Placement) => Placement), say = false): void => {
+    setFrame((f) => {
+      const next = typeof update === 'function' ? update(f.placement) : update;
+      return { placement: next, said: say ? describePlacement(next) : f.said };
+    });
+  };
+  /** A drag moved the image since the pointer went down. */
+  const dragged = useRef(false);
   const [background, setBackground] = useState<FrameBackground>('transparent');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | undefined>(undefined);
@@ -174,6 +191,7 @@ export function IconFrameEditor({
     const was = held.get(event.pointerId);
     if (was === undefined || image === null) return;
     const now = { x: event.clientX, y: event.clientY };
+    dragged.current = true;
     if (held.size === 1) {
       // In frame pixels: the box is FRAME_PX wide by its CSS, but a zoomed
       // page or a narrower layout must still move the image with the pointer.
@@ -193,6 +211,11 @@ export function IconFrameEditor({
 
   const up = (event: PointerEvent<HTMLDivElement>): void => {
     pointers.current.delete(event.pointerId);
+    // Said once, where the drag ends — every move would flood the region.
+    if (pointers.current.size === 0 && dragged.current) {
+      dragged.current = false;
+      setFrame((f) => ({ ...f, said: describePlacement(f.placement) }));
+    }
   };
 
   const use = useCallback(async (): Promise<void> => {
@@ -292,7 +315,7 @@ export function IconFrameEditor({
                 const next = keyPlacement(placement, event.key, event.shiftKey, image);
                 if (next === null) return;
                 event.preventDefault();
-                setPlacement(next);
+                setPlacement(next, true);
               }}
             >
               <canvas ref={frameRef} className="ss-frame-canvas" aria-hidden="true" />
@@ -300,9 +323,13 @@ export function IconFrameEditor({
             <p className="ss-help" id={helpId}>
               Drag, or use the arrow keys, to move it; + and − zoom; 0 starts again.
             </p>
-            {/* Where it is now, said as it moves (LAI-1321 review). */}
+            {/*
+              Where it is now, said after a key or the Reset button moves it
+              and where a drag ends (LAI-1321) — not on every pointer move, the
+              wheel or the slider, which says its own value.
+            */}
             <p className="visually-hidden" aria-live="polite" data-frame-status>
-              {image === null ? '' : describePlacement(placement)}
+              {frame.said}
             </p>
           </div>
 
@@ -371,7 +398,7 @@ export function IconFrameEditor({
               variant="secondary"
               size="sm"
               onClick={() => {
-                setPlacement(START);
+                setPlacement(START, true);
               }}
               disabled={image === null}
               data-action="frame-reset"

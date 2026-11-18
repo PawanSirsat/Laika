@@ -46,7 +46,8 @@ import { requireReadableProjectBySlug } from './projects.ts';
  * settings stages a cropped image when *Use this* is pressed and completes it
  * only on Save, so one that is discarded, replaced before Save, or left when
  * the page closes stays in the store — at most a megabyte, and only an owner
- * or admin can make one — until the sweep CHIEF filed removes it.
+ * or admin can make one — until the sweep of leftover images (LAI-1324)
+ * removes it.
  *
  * ## Read through Laika, not redirected
  *
