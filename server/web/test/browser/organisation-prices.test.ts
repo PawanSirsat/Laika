@@ -12,7 +12,18 @@
 import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, until, type ApiStub, type StubCall } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+  openSectionsByDefault,
+} from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('prices');
 
 const ANTHROPIC = 'https://platform.claude.com/docs/en/about-claude/pricing';
 const OPENAI = 'https://developers.openai.com/api/docs/pricing';

@@ -19,7 +19,11 @@ import {
   type ApiStub,
   type Harness,
   type StubCall,
+  openSectionsByDefault,
 } from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('email');
 
 /** A key nothing else on the page could contain by accident. */
 const KEY = 'xsmtpsib-Zq8never-echoed-K3Y9';
