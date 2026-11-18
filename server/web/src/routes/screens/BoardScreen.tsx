@@ -67,7 +67,7 @@ import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
 import { spaceSettingsHref } from '../space-settings-url.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
-import { BoardArchived } from './board/BoardArchived.tsx';
+import { BoardShelf, type ShelfKind } from './board/BoardShelf.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
 import { HiddenColumnsDialog } from './board/HiddenColumnsDialog.tsx';
@@ -534,8 +534,8 @@ export function BoardScreen({
     undefined,
   );
   const [insightsOpen, setInsightsOpen] = useState(false);
-  /** The Archived panel (LAI-1353), from the toolbar's archive icon. */
-  const [archivedOpen, setArchivedOpen] = useState(false);
+  /** The Archived or Trash panel (LAI-1353, LAI-1354), from the toolbar's icons. */
+  const [shelfOpen, setShelfOpen] = useState<ShelfKind | undefined>(undefined);
   /**
    * Labels to offer in the filter: every label in use **in the project**.
    *
@@ -1205,7 +1205,10 @@ export function BoardScreen({
               setInsightsOpen(true);
             }}
             onArchived={() => {
-              setArchivedOpen(true);
+              setShelfOpen('archived');
+            }}
+            onTrash={() => {
+              setShelfOpen('trash');
             }}
             onViewSettings={(anchor) => {
               setSettingsAt((at) => (at === undefined ? anchor : undefined));
@@ -1288,18 +1291,27 @@ export function BoardScreen({
         />
       )}
 
-      {archivedOpen && slug !== undefined && (
-        <BoardArchived
+      {shelfOpen !== undefined && slug !== undefined && (
+        <BoardShelf
+          key={shelfOpen}
           slug={slug}
-          mayRestore={project !== undefined && gates.project(project.id, 'task.archive')}
+          shelf={shelfOpen}
+          mayRestore={(task) =>
+            project !== undefined &&
+            (shelfOpen === 'archived'
+              ? gates.project(project.id, 'task.archive')
+              : // `task.delete`: a lead any task, a member one they created (§3.2).
+                gates.project(project.id, 'task.delete') &&
+                (mayConfigure || task.created_by === me?.id))
+          }
           nameOf={(id) => members.get(id)?.name}
           onOpen={(taskId) => {
-            setArchivedOpen(false);
+            setShelfOpen(undefined);
             openTaskInUrl(taskId);
           }}
           onRestored={refresh}
           onClose={() => {
-            setArchivedOpen(false);
+            setShelfOpen(undefined);
           }}
         />
       )}
@@ -1649,6 +1661,9 @@ export function BoardScreen({
               }
               mayArchive={
                 boardProjectId !== undefined && gates.project(boardProjectId, 'task.archive')
+              }
+              mayDelete={
+                boardProjectId !== undefined && gates.project(boardProjectId, 'task.delete')
               }
               onOpen={openTaskInUrl}
               // The space's one Create task dialog (LAI-1167); the List's

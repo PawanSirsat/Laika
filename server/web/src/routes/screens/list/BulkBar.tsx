@@ -6,6 +6,7 @@ import { anchorOf, ListMenu, type MenuAnchor, type MenuItem } from './ListMenu.t
 import type { BulkAction, BulkRun } from './list-bulk.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
+import { bulkDeleteQuestion } from '../task/archive-model.ts';
 import '../../../components/bulk-bar.css';
 
 export interface BulkBarProps {
@@ -37,6 +38,11 @@ export interface BulkBarProps {
   readonly maySetSprint: boolean;
   /** `task.archive` here (LAI-1353) — *Archive* is absent otherwise, not disabled. */
   readonly mayArchive?: boolean | undefined;
+  /**
+   * `task.delete` here (LAI-1354) — *Delete* is absent otherwise. A member's
+   * delete of a task they did not create is refused per task, in the report.
+   */
+  readonly mayDelete?: boolean | undefined;
   readonly run: BulkRun | undefined;
   readonly onAction: (action: BulkAction) => void;
   readonly onDismissReport: () => void;
@@ -90,6 +96,7 @@ export function BulkBar({
   sprintLabels,
   maySetSprint,
   mayArchive = false,
+  mayDelete = false,
   run,
   onAction,
   onDismissReport,
@@ -97,7 +104,8 @@ export function BulkBar({
   const [open, setOpen] = useState<{ readonly which: Open; readonly at: MenuAnchor } | undefined>(
     undefined,
   );
-  const [confirming, setConfirming] = useState(false);
+  /** Which of the two actions that take work away is asking, in place. */
+  const [confirming, setConfirming] = useState<'cancel' | 'delete' | false>(false);
   const busy = run?.phase === 'running';
   const bar = useRef<HTMLDivElement>(null);
 
@@ -337,7 +345,61 @@ export function BulkBar({
           </button>
         )}
 
-        {confirming ? (
+        {confirming === 'delete' && (
+          <span className="list-bulk-confirm" role="group" aria-label="Confirm deleting">
+            {bulkDeleteQuestion(count)}
+            <button
+              type="button"
+              className="list-bulk-action list-bulk-danger"
+              data-bulk-confirm="delete"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false);
+                onAction({ kind: 'delete' });
+              }}
+            >
+              Move to Trash
+            </button>
+            <button
+              type="button"
+              className="list-bulk-action"
+              onClick={() => {
+                setConfirming(false);
+              }}
+            >
+              Keep
+            </button>
+          </span>
+        )}
+
+        {/*
+          **Delete** (LAI-1354): into the space's Trash, restorable for 30
+          days — asked once, in place, as Cancel is.
+        */}
+        {mayDelete && !confirming && (
+          <button
+            type="button"
+            className="list-bulk-action list-bulk-danger"
+            data-bulk-action="delete"
+            disabled={busy}
+            onClick={() => {
+              setOpen(undefined);
+              setConfirming('delete');
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Delete
+          </button>
+        )}
+
+        {confirming === 'cancel' ? (
           <span className="list-bulk-confirm" role="group" aria-label="Confirm cancelling">
             Cancel {String(count)} {count === 1 ? 'task' : 'tasks'}?
             <button
@@ -362,25 +424,28 @@ export function BulkBar({
             </button>
           </span>
         ) : (
-          <button
-            type="button"
-            className="list-bulk-action list-bulk-danger"
-            disabled={busy}
-            onClick={() => {
-              setOpen(undefined);
-              setConfirming(true);
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-              />
-            </svg>
-            Cancel tasks
-          </button>
+          confirming === false && (
+            <button
+              type="button"
+              className="list-bulk-action list-bulk-danger"
+              disabled={busy}
+              onClick={() => {
+                setOpen(undefined);
+                setConfirming('cancel');
+              }}
+            >
+              {/* A circle struck through: the trash can is Delete's now (LAI-1354). */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM5.6 5.6l12.8 12.8"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+              Cancel tasks
+            </button>
+          )
         )}
 
         <span className="list-bulk-sep" aria-hidden="true" />

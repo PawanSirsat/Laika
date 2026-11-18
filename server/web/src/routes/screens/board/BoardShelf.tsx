@@ -1,0 +1,230 @@
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { usePopoverLayer } from '../../../components/overlay/layer-stack.ts';
+import { ApiError } from '../../../api/errors.ts';
+import { everyPage } from '../../../api/every-page.ts';
+import {
+  listTasks,
+  setTaskArchived,
+  setTaskDeleted,
+  type TaskSummary,
+} from '../../../api/tasks.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
+import { Icon } from '../../../components/icon/Icon.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import {
+  archivedRowMeta,
+  archiveRefusal,
+  restoredToast,
+  trashRowMeta,
+  untrashedToast,
+} from '../task/archive-model.ts';
+import './board-shelf.css';
+
+/** The two places a space's tasks are put away (LAI-1353, LAI-1354). */
+export type ShelfKind = 'archived' | 'trash';
+
+export interface BoardShelfProps {
+  readonly slug: string;
+  readonly shelf: ShelfKind;
+  /** Whether this reader may restore this one: `task.archive`, or `task.delete`'s own rule. */
+  readonly mayRestore: (task: TaskSummary) => boolean;
+  /** A person's name by id, for who put each task away. */
+  readonly nameOf: (userId: string) => string | undefined;
+  /** Open a task in the drawer — read-only, with its banner — by id. */
+  readonly onOpen: (taskId: string) => void;
+  /** The board re-reads its set after a restore, so the card comes back. */
+  readonly onRestored: () => void;
+  readonly onClose: () => void;
+}
+
+/** The largest page the server serves (§6.3): few reads for a long shelf. */
+const PAGE = 200;
+
+/** Everything that differs between the two shelves. */
+const SHELF = {
+  archived: {
+    title: 'Archived',
+    label: 'Archived tasks',
+    filter: { archived: 'only' },
+    stamp: (t: TaskSummary) => t.archived_at ?? null,
+    by: (t: TaskSummary) => t.archived_by ?? null,
+    meta: archivedRowMeta,
+    restore: (id: string) => setTaskArchived(id, false),
+    restored: (key: string) => restoredToast(key),
+    empty:
+      'Nothing archived. Open a task and choose Archive from its menu to put it away with its history.',
+    cut: 'More are archived than this list reads; these are the oldest.',
+  },
+  trash: {
+    title: 'Trash',
+    label: 'Trash',
+    filter: { trash: 'only' },
+    stamp: (t: TaskSummary) => t.deleted_at ?? null,
+    by: (t: TaskSummary) => t.deleted_by ?? null,
+    meta: trashRowMeta,
+    restore: (id: string) => setTaskDeleted(id, false),
+    restored: (key: string, task: TaskSummary) => untrashedToast(key, task.archived_at != null),
+    empty: 'Trash is empty. A deleted task waits here for 30 days, and can be restored until then.',
+    cut: 'More are in Trash than this list reads; these are the oldest.',
+  },
+} as const;
+
+/**
+ * **A space's shelf: its archived tasks, or its Trash** (LAI-1353, LAI-1354)
+ * — the toolbar's archive and trash icons, beside Insights, in its panel's
+ * shape.
+ *
+ * `GET /projects/:slug/tasks?archived=only` or `?trash=only`, every page —
+ * the server orders by when a task last changed, and a put-away one cannot
+ * change, so the whole list is read and drawn newest first: the question is
+ * usually "what did we just put away". A runaway list says it is cut. Each
+ * row opens the task (read-only, with its banner) and, for whoever may,
+ * restores it: the row leaves this list and the card returns.
+ */
+export function BoardShelf({
+  slug,
+  shelf,
+  mayRestore,
+  nameOf,
+  onOpen,
+  onRestored,
+  onClose,
+}: BoardShelfProps) {
+  const on = SHELF[shelf];
+  const [state, setState] = useState<
+    | { status: 'loading' }
+    | { status: 'ready'; tasks: readonly TaskSummary[]; truncated: boolean }
+    | { status: 'error'; why: string }
+  >({ status: 'loading' });
+  const [restoring, setRestoring] = useState<string | undefined>(undefined);
+  const [refusal, setRefusal] = useState<string | undefined>(undefined);
+  const toast = useToast();
+  usePopoverLayer(true, onClose);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const filter = SHELF[shelf].filter;
+    everyPage((cursor) => listTasks(slug, { ...filter, limit: PAGE, cursor }, controller.signal))
+      .then(({ items, truncated }) => {
+        const stamp = SHELF[shelf].stamp;
+        const newest = [...items].sort(
+          (a, b) => (stamp(b) ?? 0) - (stamp(a) ?? 0) || b.number - a.number,
+        );
+        setState({ status: 'ready', tasks: newest, truncated });
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        setState({
+          status: 'error',
+          why: cause instanceof ApiError ? cause.message : 'Could not read this list.',
+        });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [slug, shelf]);
+
+  const restore = async (task: TaskSummary): Promise<void> => {
+    setRestoring(task.id);
+    setRefusal(undefined);
+    let back: TaskSummary;
+    try {
+      back = await on.restore(task.id);
+    } catch (cause) {
+      setRefusal(archiveRefusal(cause, 'restore'));
+      setRestoring(undefined);
+      return;
+    }
+    setRestoring(undefined);
+    // The subtasks put away **with** it — the same instant — came back too.
+    const cameBack = (t: TaskSummary): boolean =>
+      t.id === task.id || (t.parent_task_id === task.id && on.stamp(t) === on.stamp(task));
+    setState((was) =>
+      was.status === 'ready' ? { ...was, tasks: was.tasks.filter((t) => !cameBack(t)) } : was,
+    );
+    onRestored();
+    toast.show({ text: on.restored(task.key, back), tone: 'success', mark: 'data-archive-toast' });
+  };
+
+  const now = Date.now();
+  const count = state.status === 'ready' ? state.tasks.length : undefined;
+
+  return createPortal(
+    <>
+      <div className="bi-catcher" aria-hidden="true" onClick={onClose} />
+      <div className="bi bshelf" role="dialog" aria-label={on.label} data-board-shelf={shelf}>
+        <header className="bi-head">
+          <h2 className="bi-title">
+            {on.title}
+            {count !== undefined && <span className="bshelf-count"> · {count}</span>}
+          </h2>
+          <Tooltip content="Close" shortcut="Escape">
+            <button type="button" className="bi-close" onClick={onClose} aria-label="Close">
+              <Icon name="close" size="small" />
+            </button>
+          </Tooltip>
+        </header>
+
+        {state.status === 'loading' && <p className="bi-note">Reading…</p>}
+        {state.status === 'error' && (
+          <p className="bi-note" role="alert">
+            {state.why}
+          </p>
+        )}
+        {refusal !== undefined && (
+          <p className="bi-note bshelf-refusal" role="alert">
+            {refusal}
+          </p>
+        )}
+
+        {state.status === 'ready' &&
+          (state.tasks.length === 0 ? (
+            <p className="bi-note bshelf-empty">{on.empty}</p>
+          ) : (
+            <ul className="bshelf-list">
+              {state.tasks.map((task) => {
+                const stamp = on.stamp(task);
+                const by = on.by(task);
+                return (
+                  <li key={task.id} className="bshelf-row" data-shelf-row={task.key}>
+                    <button
+                      type="button"
+                      className="bshelf-open"
+                      onClick={() => {
+                        onOpen(task.id);
+                      }}
+                    >
+                      <span className="bshelf-key">{task.key}</span>
+                      <span className="bshelf-title">{task.title}</span>
+                      <span className="bshelf-meta">
+                        {stamp === null
+                          ? ''
+                          : on.meta(stamp, by === null ? undefined : nameOf(by), now)}
+                      </span>
+                    </button>
+                    {mayRestore(task) && (
+                      <button
+                        type="button"
+                        className="bshelf-restore"
+                        disabled={restoring !== undefined}
+                        aria-busy={restoring === task.id}
+                        aria-label={`Restore ${task.key}`}
+                        onClick={() => {
+                          void restore(task);
+                        }}
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ))}
+        {state.status === 'ready' && state.truncated && <p className="bi-note">{on.cut}</p>}
+      </div>
+    </>,
+    document.body,
+  );
+}

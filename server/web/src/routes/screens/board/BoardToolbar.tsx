@@ -142,6 +142,8 @@ export interface BoardToolbarProps {
   readonly onHiddenColumns?: (() => void) | undefined;
   /** The space's archived tasks (LAI-1353): drawn when given, before Insights. */
   readonly onArchived?: (() => void) | undefined;
+  /** The space's Trash (LAI-1354): drawn when given, beside Archived. */
+  readonly onTrash?: (() => void) | undefined;
   /** The board's sprint scope, at the end of the active-filter row (LAI-1198). */
   readonly scope?: ReactNode;
 }
@@ -295,6 +297,7 @@ export function BoardToolbar({
   hiddenColumns = 0,
   onHiddenColumns,
   onArchived,
+  onTrash,
   scope,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | 'members' | undefined>(undefined);
@@ -1030,6 +1033,29 @@ export function BoardToolbar({
                   <path d="M3.5 4.5h17v4h-17z" strokeLinejoin="round" />
                   <path d="M5 8.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.5" strokeLinejoin="round" />
                   <path d="M10 12.5h4" strokeLinecap="round" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
+
+          {/* **Trash** (LAI-1354): deleted tasks, the days left, and Restore. */}
+          {onTrash !== undefined && (
+            <Tooltip content="Trash">
+              <button
+                type="button"
+                className="bt-icon"
+                data-board-action="trash"
+                aria-label="Trash"
+                aria-haspopup="dialog"
+                onClick={onTrash}
+              >
+                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+                  <path d="M4.5 7h15" strokeLinecap="round" />
+                  <path d="M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2" strokeLinejoin="round" />
+                  <path
+                    d="M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </button>
             </Tooltip>

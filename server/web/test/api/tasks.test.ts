@@ -21,6 +21,7 @@ import {
   listMembers,
   listTasks,
   setTaskArchived,
+  setTaskDeleted,
   SLIM_OMITS,
   toSummary,
   type Task,
@@ -103,6 +104,22 @@ void describe('listTasks query string', () => {
     assert.deepEqual(read.data, [live]);
     await listTasks('p', { archived: 'only' });
     assert.equal(new URL(calls[1]?.url ?? '', 'http://x').searchParams.get('archived'), 'only');
+  });
+
+  void test('setTaskDeleted deletes, and restores through /restore (LAI-1354)', async () => {
+    const calls = stub({ id: 't1' });
+    await setTaskDeleted('t1', true);
+    await setTaskDeleted('t1', false);
+    assert.deepEqual(
+      calls.map((c) => [c.init.method, c.url]),
+      [
+        ['DELETE', '/api/v1/tasks/t1'],
+        ['POST', '/api/v1/tasks/t1/restore'],
+      ],
+    );
+    const listed = stub(page);
+    await listTasks('p', { trash: 'only' });
+    assert.equal(new URL(listed[0]?.url ?? '', 'http://x').searchParams.get('trash'), 'only');
   });
 
   void test('setTaskArchived sends archived on its own (LAI-1353)', async () => {

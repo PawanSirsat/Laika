@@ -16,9 +16,9 @@ import { effectiveSelection, pageState, selectAll, toggleOne, togglePage } from 
 import { runBulkAction, statusChoices, type BulkAction, type BulkRun } from './list-bulk.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
-import { setTaskArchived } from '../../../api/tasks.ts';
+import { setTaskArchived, setTaskDeleted } from '../../../api/tasks.ts';
 import { useToast } from '../../../components/toast/ToastProvider.tsx';
-import { bulkArchivedToast } from '../task/archive-model.ts';
+import { bulkArchivedToast, bulkTrashedToast } from '../task/archive-model.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentDevice, agentProductName, selectedHarness } from '../../../api/selected-agent.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -66,6 +66,8 @@ export interface ListViewProps {
   readonly maySetSprint: boolean;
   /** `task.archive` here (LAI-1353): the bulk bar's *Archive*. */
   readonly mayArchive?: boolean | undefined;
+  /** `task.delete` here (LAI-1354): the bulk bar's *Delete*. */
+  readonly mayDelete?: boolean | undefined;
   readonly onOpen: (taskId: string) => void;
   readonly onAdd: () => void;
   /**
@@ -138,6 +140,7 @@ export function ListView({
   mayEdit,
   maySetSprint,
   mayArchive = false,
+  mayDelete = false,
   onOpen,
   onAdd,
   sort,
@@ -218,15 +221,21 @@ export function ListView({
       // **Archived rows leave the List, and the bar and its report with
       // them** (LAI-1353), so a toast says what went — and Undo brings each
       // back. A refusal is still in the report, whose rows stayed.
-      if (action.kind !== 'archive' || outcome.done.length === 0) return;
+      // Into Trash goes the same way (LAI-1354), and Undo takes each back out.
+      if (action.kind !== 'archive' && action.kind !== 'delete') return;
+      if (outcome.done.length === 0) return;
       const count = outcome.done.length;
+      const trash = action.kind === 'delete';
       toast.show({
-        text: bulkArchivedToast(count),
+        text: trash ? bulkTrashedToast(count) : bulkArchivedToast(count),
         tone: 'info',
-        mark: 'data-archive-toast',
+        mark: trash ? 'data-trash-toast' : 'data-archive-toast',
         undo: async () => {
-          for (const id of outcome.done) await setTaskArchived(id, false);
+          for (const id of outcome.done) {
+            await (trash ? setTaskDeleted(id, false) : setTaskArchived(id, false));
+          }
           onChanged();
+          // Both shelves' rows came from the live List, so both go back to the board.
           return `${String(count)} ${count === 1 ? 'task is' : 'tasks are'} back on the board`;
         },
       });
@@ -650,6 +659,7 @@ export function ListView({
             sprintLabels={sprintLabels}
             maySetSprint={maySetSprint}
             mayArchive={mayArchive}
+            mayDelete={mayDelete}
             run={bulkRun}
             onAction={runBulk}
             onDismissReport={() => {

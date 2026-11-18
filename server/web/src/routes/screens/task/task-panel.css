@@ -291,6 +291,13 @@
   color: var(--text-primary);
 }
 
+/* Delete… (LAI-1354): the one item that takes work off the board for good. */
+.panel-overflow button.panel-overflow-danger,
+.panel-overflow button.panel-overflow-danger:hover,
+.panel-overflow button.panel-overflow-danger:focus-visible {
+  color: var(--overdue);
+}
+
 /* ------------------------------------------------------------- claim lock */
 
 .claim-lock {

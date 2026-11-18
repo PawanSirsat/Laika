@@ -214,13 +214,13 @@ void describe('the Archived panel (LAI-1353)', () => {
     const h = await open('/board?project=laika-core', space(['t2']));
     try {
       await h.page.locator('[data-board-action="archived"]').click({ timeout: 20_000 });
-      const shelf = h.page.locator('[data-board-archived]');
+      const shelf = h.page.locator('[data-board-shelf="archived"]');
       await shelf.waitFor({ timeout: 10_000 });
-      const row = shelf.locator('[data-archived-row="LC-2"]');
+      const row = shelf.locator('[data-shelf-row="LC-2"]');
       await row.waitFor({ timeout: 10_000 });
       assert.match(await row.innerText(), /Task number 2/);
       assert.match(await row.innerText(), /Ada Lovelace · 3 Nov/);
-      assert.equal(await shelf.locator('[data-archived-row]').count(), 1);
+      assert.equal(await shelf.locator('[data-shelf-row]').count(), 1);
 
       await row.getByRole('button', { name: 'Restore LC-2' }).click();
       await row.waitFor({ state: 'detached', timeout: 10_000 });

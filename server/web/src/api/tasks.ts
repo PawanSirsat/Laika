@@ -181,6 +181,13 @@ export interface TaskSummary {
    */
   readonly archived_at?: number | null;
   readonly archived_by?: string | null;
+  /**
+   * When the task was moved into the space's Trash, and by whom (LAI-1354) —
+   * null otherwise. Read-only there, restorable for 30 days. Optional for the
+   * same fixtures' reason as `archived_at`.
+   */
+  readonly deleted_at?: number | null;
+  readonly deleted_by?: string | null;
   readonly blocked_by: readonly string[];
   /**
    * Ids this task **blocks** — the reverse edge of `blocked_by`.
@@ -394,6 +401,8 @@ export interface TaskFilter {
   readonly parent?: string | undefined;
   /** `only`: the archived tasks instead of the live ones — a space's Archived view (LAI-1353). */
   readonly archived?: 'only' | undefined;
+  /** `only`: the space's Trash instead (LAI-1354). Never with `archived`. */
+  readonly trash?: 'only' | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -412,6 +421,7 @@ function toQuery(filter: TaskFilter): string {
   if (filter.updated_since !== undefined) params.set('updated_since', String(filter.updated_since));
   if (filter.parent !== undefined) params.set('parent', filter.parent);
   if (filter.archived !== undefined) params.set('archived', filter.archived);
+  if (filter.trash !== undefined) params.set('trash', filter.trash);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 
@@ -806,6 +816,16 @@ export function setTaskArchived(taskId: string, archived: boolean): Promise<Task
     method: 'PATCH',
     body: { archived },
   });
+}
+
+/**
+ * Into the space's Trash, or back out (LAI-1354): `DELETE /tasks/:id` and
+ * `POST /tasks/:id/restore`. Each answers the task as it then is.
+ */
+export function setTaskDeleted(taskId: string, deleted: boolean): Promise<Task> {
+  return deleted
+    ? request<Task>(`/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' })
+    : request<Task>(`/tasks/${encodeURIComponent(taskId)}/restore`, { method: 'POST' });
 }
 
 /**

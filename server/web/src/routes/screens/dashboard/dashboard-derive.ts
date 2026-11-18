@@ -231,6 +231,9 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   // the project's work, so the feed tells it.
   'task.archived': 'archived a task',
   'task.restored': 'restored a task from the archive',
+  // Into the space's Trash and back out (LAI-1354).
+  'task.deleted': 'moved a task to Trash',
+  'task.undeleted': 'restored a task from Trash',
 };
 
 /**
