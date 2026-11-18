@@ -1167,6 +1167,13 @@ const PAIRS: readonly Pair[] = [
     client: 'CalendarSyncResult',
     clientFile: 'calendar.ts',
   },
+  // The backfill's answer (LAI-1335): its counts and the connection after it.
+  {
+    server: 'CalendarBackfillView',
+    serverFile: 'services/calendar-source.ts',
+    client: 'CalendarBackfill',
+    clientFile: 'calendar.ts',
+  },
   {
     server: 'HolidayView',
     serverFile: 'services/holidays.ts',

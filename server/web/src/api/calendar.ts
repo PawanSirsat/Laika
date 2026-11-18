@@ -5,8 +5,10 @@ import { ApiError } from './errors.ts';
  * The organisation's Outlook calendar connection (D-157, LAI-1316): an owner
  * or admin saves the Microsoft Entra app's tenant, client id and secret, tests
  * that Microsoft grants it `Calendars.Read`, and turns the switch on — then
- * every 15 minutes the meetings each member accepted or organised are logged
- * as confirmed time on their My day. Mirrors `routes/calendar.ts`; the views
+ * every 15 minutes the meetings each member was invited to and has not
+ * declined, or organised in Teams, are logged as confirmed time on their My
+ * day; a backfill does the same for the last 1 to 90 days (LAI-1335).
+ * Mirrors `routes/calendar.ts`; the views
  * are declared in `services/calendar-source.ts`, and each view and every
  * named shape inside it is paired in `test/api/view-type-drift.test.ts`.
  *
@@ -66,7 +68,7 @@ export interface CalendarSyncResult {
   readonly mailbox_denied: number;
   /** How many Microsoft would not look up (400): skipped the same way. */
   readonly mailbox_refused: number;
-  /** Meetings logged or to be logged: invitations accepted, Teams meetings organised. */
+  /** Meetings logged or to be logged: invitations not declined, Teams meetings organised. */
   readonly meetings: number;
   /** Events a person organised that are not Teams meetings — a lunch, focus time — left off. */
   readonly not_a_meeting: number;
@@ -100,6 +102,19 @@ export interface CalendarSource {
   readonly last_success_at: number | null;
   readonly last_error: CalendarSyncError | null;
   readonly last_result: CalendarSyncResult | null;
+}
+
+/** `POST /org/calendar/backfill`'s answer (LAI-1335). */
+export interface CalendarBackfill {
+  /** The days before today it reached back, as asked. */
+  readonly days: number;
+  /**
+   * What it did — `null` when a read failed, which the connection's
+   * `last_error` says, or the switch went off while it ran.
+   */
+  readonly result: CalendarSyncResult | null;
+  /** The connection afterwards, as `GET /org/calendar` answers it. */
+  readonly connection: CalendarSource;
 }
 
 /** One mapping rule as `PUT /org/calendar` takes it: `project` is a space slug. */
@@ -139,6 +154,15 @@ export function syncCalendarSource(): Promise<CalendarSource> {
   return request<CalendarSource>('/org/calendar/sync', { method: 'POST' });
 }
 
+/**
+ * Log the last `days` days of everyone's meetings (1 to 90), by every rule a
+ * sync keeps; it waits for a sync already running. Only while the switch is
+ * on.
+ */
+export function backfillCalendarSource(days: number): Promise<CalendarBackfill> {
+  return request<CalendarBackfill>('/org/calendar/backfill', { method: 'POST', body: { days } });
+}
+
 /** Forget the credentials and stop syncing. Meetings already logged stay people's time. */
 export function disconnectCalendarSource(): Promise<void> {
   return request<void>('/org/calendar', { method: 'DELETE' });
@@ -166,6 +190,7 @@ export const CALENDAR_REFUSAL_WORDS: Readonly<Record<string, string>> = {
     'Microsoft refused that tenant, client ID or secret. Check them, or make a new secret.',
   graph_unreachable: 'Laika could not reach Microsoft. Try again in a minute.',
   calendar_off: 'The switch is off. Turn it on and save to sync.',
+  days_out_of_range: 'Backfill a whole number of days, from 1 to 90.',
 };
 
 /** The words for a refused calendar call: its reason's, else the server's message. */

@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { CalendarSource, CalendarSyncResult } from '../../../../src/api/calendar.ts';
 import {
+  backfillConfirm,
+  backfillDays,
+  backfillLine,
   blankRule,
   countsLine,
   formChanged,
@@ -246,5 +249,65 @@ void describe('the words', () => {
     assert.equal(statusWord(OFF), 'not set up');
     assert.equal(statusWord(view()), 'off');
     assert.equal(statusWord(view({ enabled: true })), 'on');
+  });
+});
+
+void describe('the backfill (LAI-1335)', () => {
+  const counts: CalendarSyncResult = {
+    people: 4,
+    no_mailbox: 0,
+    mailbox_denied: 0,
+    mailbox_refused: 0,
+    meetings: 40,
+    not_a_meeting: 0,
+    created: 38,
+    updated: 0,
+    removed: 0,
+    unchanged: 0,
+    kept_edits: 0,
+    skipped: 2,
+    away: 0,
+  };
+
+  void test('takes a whole number of days from 1 to 90, and names anything else', () => {
+    assert.deepEqual(backfillDays('30'), { days: 30 });
+    assert.deepEqual(backfillDays(' 1 '), { days: 1 });
+    assert.deepEqual(backfillDays('90'), { days: 90 });
+    for (const typed of ['0', '91', '1.5', '-3', '', 'thirty', '1e1']) {
+      assert.deepEqual(
+        backfillDays(typed),
+        { problem: 'A whole number of days, from 1 to 90.' },
+        JSON.stringify(typed),
+      );
+    }
+  });
+
+  void test('the confirm says the span and the rules it keeps', () => {
+    const { title, body } = backfillConfirm(30);
+    assert.equal(title, 'Backfill the last 30 days?');
+    assert.match(body, /from 30 days ago to tomorrow/);
+    assert.match(body, /closed period/);
+    assert.match(body, /changed or deleted stays as they left it/);
+    assert.match(body, /Running it again adds nothing/);
+    assert.equal(backfillConfirm(1).title, 'Backfill the last 1 day?');
+  });
+
+  void test('the line says the counts, or why there are none', () => {
+    assert.equal(
+      backfillLine({ days: 30, result: counts, connection: view({ enabled: true }) }),
+      'Backfilled the last 30 days: 40 meetings · 38 logged · 2 held back (day full or closed) · 4 people.',
+    );
+    assert.equal(
+      backfillLine({
+        days: 7,
+        result: null,
+        connection: view({ enabled: true, last_error: { code: 'unreachable', message: 'x' } }),
+      }),
+      'The backfill of the last 7 days failed: Laika could not reach Microsoft. Nothing was logged.',
+    );
+    assert.equal(
+      backfillLine({ days: 7, result: null, connection: view() }),
+      'The backfill of the last 7 days stopped: the switch was turned off while it ran.',
+    );
   });
 });
