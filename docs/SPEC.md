@@ -786,7 +786,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.send` | §11.6: every 30 seconds, the outbox's queued email sent — or recorded `suppressed` when the switch is off or nothing is configured (§4.93, D-153, LAI-1312) |
 | `system.email.prune` | §11.6: outbox rows 90 days after they were written (§4.93, D-153, LAI-1312) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
-| `system.calendar.sync` | §11.6: members' accepted and organised Outlook meetings logged as their time, every 15 minutes while the switch is on (§4.97, §4.98, D-157, LAI-1316) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, every 15 minutes while the switch is on (§4.97, §4.98, D-157, LAI-1316) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -4598,7 +4598,7 @@ DELETE /api/v1/org/email                     forget the settings and the key and
 POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one that the caller can open, by name] }   (owner, admin; session only; D-154, LAI-1314)
 PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
-GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
+GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
@@ -8308,8 +8308,11 @@ One interval-driven scheduler in the same process:
   at boot**, and only while the Outlook connection is saved, **its switch is
   on** and the organisation's Time is not off: each active member's calendar
   from the start of yesterday to the end of tomorrow in their zone, every
-  member read before one transaction writes; accepted and organised meetings
-  become or update their `calendar` entries, gone or cancelled ones are retired,
+  member read before one transaction writes; invitations the member accepted
+  (online or in person) and Teams meetings they organised (`isOnlineMeeting`)
+  become or update their `calendar` entries — an event they organised that is
+  not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
+  the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
   and an entry the person changed is left alone. Under §3.4's
   `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
   one already running. No `activity` row, as for any time entry (§4.48)
@@ -8559,9 +8562,9 @@ person's comments — nothing to a space without one, and nothing at all while
 owner or admin sets it up and turns it on, **the organisation's Microsoft
 tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
 `GET`s of members' calendars from `graph.microsoft.com`, keeping only each
-accepted or organised meeting's subject — *Busy* when it is private — times and
-ids, never a join link, a body or an attendee. Any task proposing otherwise is
-rejected at review.
+accepted invitation's or organised Teams meeting's subject — *Busy* when it is
+private — times and ids, never a join link, a body or an attendee. Any task
+proposing otherwise is rejected at review.
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day

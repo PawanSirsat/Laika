@@ -7829,11 +7829,17 @@ Consent is still pending, so the feature ships whole and **off**.
    run: every 15 minutes (`system.calendar.sync`, §11.6), never at boot.
 3. **What is logged — amends D-088 item 2.** A meeting on a member's calendar, matched to
    them by lowercased email, from the start of yesterday to the end of tomorrow in their own
-   zone, **that they accepted or organised**, becomes a **confirmed** `time_entries` row with
-   `source: 'calendar'` — confirmed by the sync, not by the person. Tentative, declined,
-   not-answered, cancelled, all-day, *free* and *out of office* events are not logged. Each
-   revision is the member's own (`changed_by` is them), the entry is theirs to change or
-   delete like one they typed, and it is never pushed to Solidtime.
+   zone, becomes a **confirmed** `time_entries` row with `source: 'calendar'` — confirmed by
+   the sync, not by the person — when it is one of two things. **An invitation they
+   accepted** (`responseStatus` `accepted`, not the organiser) counts, online or in person.
+   **An event they organised counts only when it is a Teams meeting** (`isOnlineMeeting`):
+   *Lunch*, *Doctor* and Viva's *Focus time* are events in their own calendar, not
+   meetings, and are counted as `not_a_meeting` and left off. That is the owner's choice of
+   2026-11-18 (*"Teams meetings only"*), over reading attendees, which are still never read
+   — `isOnlineMeeting` is a boolean, and the join link is never asked for. Tentative,
+   declined, not-answered, cancelled, all-day, *free* and *out of office* events are not
+   logged. Each revision is the member's own (`changed_by` is them), the entry is theirs to
+   change or delete like one they typed, and it is never pushed to Solidtime.
 4. **What is kept — amends D-088 item 4.** The meeting's **subject** as the entry's title
    (≤ 120), its span and minutes, its space by the rules, and Graph's event and iCalendar ids
    (§4.98) — **immutable ids** (`Prefer: IdType="ImmutableId"`), so a meeting moved between
