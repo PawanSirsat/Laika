@@ -186,7 +186,7 @@ export function storedMessageId(value: string): string | null {
   // Empty (`<>`) or with space or control characters in it is no id at all
   // (LAI-1315 review round 2): the caller digests the mail instead, so a
   // `Message-ID: <>` can never be a row the table refuses on every retry.
-   
+
   if (id === '' || /[\s\u0000-\u001f\u007f]/.test(id)) return null;
   if (id.length <= MESSAGE_ID_MAX) return id;
   return `sha256:${createHash('sha256').update(id).digest('hex')}`;
