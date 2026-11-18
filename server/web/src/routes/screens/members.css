@@ -44,16 +44,8 @@
   border-bottom: none;
 }
 
+/* The shared Avatar at 32 (LAI-1336): its own size, disc and initials. */
 .member-avatar {
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
   flex: none;
 }
 

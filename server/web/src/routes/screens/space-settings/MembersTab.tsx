@@ -23,8 +23,7 @@ import type { Project } from '../../../api/projects.ts';
 import { leaveSpace, type LeaveSpaceView } from '../../../api/space-settings.ts';
 import type { UseMembers } from '../../../api/use-members.ts';
 import { listAllUsers, type OrgUser } from '../../../api/users.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { filterMembers, roleSummary } from './space-settings-model.ts';
@@ -289,22 +288,18 @@ export function MembersTab({
           ) : (
             <ul className="ss-members" id="ss-member-list">
               {shown.map((member) => {
-                const colour = avatarColor(member.user_id, theme);
                 const busy = members.pendingId === member.user_id;
                 const self = member.user_id === me.id;
                 return (
                   <li key={member.user_id} className="ss-member" data-member={member.user_id}>
-                    <span
+                    <Avatar
+                      name={member.name}
+                      userId={member.user_id}
+                      theme={theme}
+                      size={36}
+                      label={null}
                       className="ss-member-avatar"
-                      style={{
-                        background: colour.background,
-                        color: colour.foreground,
-                        borderColor: colour.border,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {initials(member.name)}
-                    </span>
+                    />
                     <div className="ss-member-who">
                       <span className="ss-member-name">
                         <span className="ss-member-name-text" title={member.name}>
@@ -584,36 +579,30 @@ function AddPeople({
                 : `Nobody matches “${query.trim()}”.`}
             </li>
           ) : (
-            matches.map((person) => {
-              const colour = avatarColor(person.id, theme);
-              return (
-                <li key={person.id}>
-                  <button
-                    type="button"
-                    className="ss-add-result"
-                    data-person={person.id}
-                    onClick={() => {
-                      setChosen((current) => [...current, person]);
-                      setQuery('');
-                    }}
-                  >
-                    <span
-                      className="ss-member-avatar ss-member-avatar-sm"
-                      style={{
-                        background: colour.background,
-                        color: colour.foreground,
-                        borderColor: colour.border,
-                      }}
-                      aria-hidden="true"
-                    >
-                      {initials(person.name)}
-                    </span>
-                    <span className="ss-member-name">{person.name}</span>
-                    <span className="ss-member-email">{person.email}</span>
-                  </button>
-                </li>
-              );
-            })
+            matches.map((person) => (
+              <li key={person.id}>
+                <button
+                  type="button"
+                  className="ss-add-result"
+                  data-person={person.id}
+                  onClick={() => {
+                    setChosen((current) => [...current, person]);
+                    setQuery('');
+                  }}
+                >
+                  <Avatar
+                    name={person.name}
+                    userId={person.id}
+                    theme={theme}
+                    size={28}
+                    label={null}
+                    className="ss-member-avatar"
+                  />
+                  <span className="ss-member-name">{person.name}</span>
+                  <span className="ss-member-email">{person.email}</span>
+                </button>
+              </li>
+            ))
           )}
         </ul>
       )}

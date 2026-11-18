@@ -2,21 +2,16 @@ import { useCallback } from 'react';
 import { LaneRow, type LaneRowProps } from './LaneRow.tsx';
 import type { Swimlane } from './group-lanes.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import './board.css';
 
 export interface KanbanViewProps extends Omit<LaneRowProps, 'showColumnConfig' | 'theme'> {
   /**
-   * Restated rather than inherited through the `Omit`.
-   *
-   * `tokens.test.ts` checks that any file computing an `avatarColor()` has a
-   * **live** theme — it looks for `readonly theme: Theme` or a `useTheme()`
-   * call, because a stale theme renders light-mode avatars in dark mode and
-   * nothing else looks wrong. Inheriting the prop satisfies the compiler and
-   * not the guard, and the guard is right to insist: a reader of this file
+   * Restated rather than inherited through the `Omit`: the live theme a
+   * swimlane's avatar is coloured in, because a stale one renders light-mode
+   * avatars in dark mode and nothing else looks wrong. A reader of this file
    * could not otherwise tell where the theme came from.
    */
   readonly theme: Theme;
@@ -76,7 +71,6 @@ export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: Kanb
     <div className="swimlanes">
       {swimlanes.map((lane, index) => {
         const shut = collapsed?.has(lane.key) ?? false;
-        const ink = lane.avatarId === undefined ? undefined : avatarColor(lane.avatarId, row.theme);
 
         return (
           <section key={lane.key} className="swim" aria-labelledby={`swim-${lane.key || 'none'}`}>
@@ -101,15 +95,14 @@ export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: Kanb
               </Tooltip>
 
               {lane.avatarId !== undefined && (
-                <span
-                  className="swim-avatar t-avatar"
-                  aria-hidden="true"
-                  {...(ink === undefined
-                    ? {}
-                    : { style: { background: ink.background, color: ink.foreground } })}
-                >
-                  {initials(lane.name)}
-                </span>
+                <Avatar
+                  name={lane.name}
+                  userId={lane.avatarId}
+                  theme={row.theme}
+                  size={22}
+                  label={null}
+                  className="swim-avatar"
+                />
               )}
 
               <h3 className="swim-name" id={`swim-${lane.key || 'none'}`}>

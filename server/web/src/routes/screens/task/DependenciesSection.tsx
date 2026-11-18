@@ -8,8 +8,7 @@ import {
   type Member,
   type TaskSummary,
 } from '../../../api/tasks.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
@@ -258,7 +257,6 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
   }
 
   const who = task.assignee_id === null ? undefined : members.get(task.assignee_id);
-  const ink = task.assignee_id === null ? undefined : avatarColor(task.assignee_id, theme);
 
   return (
     <li className="dep-chip">
@@ -276,17 +274,22 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
       {/* The blocker's own state, on the right where the design puts it — it is
           the answer to "is this still in my way". */}
       <span className={`dep-status dep-status-${task.status}`}>{task.status_name}</span>
-      <Tooltip content={who?.name ?? 'Unassigned'} lazy>
-        <span
-          className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
-          aria-hidden="true"
-          {...(ink === undefined
-            ? {}
-            : { style: { background: ink.background, color: ink.foreground } })}
-        >
-          {who === undefined ? '—' : initials(who.name)}
-        </span>
-      </Tooltip>
+      {/* Their photo, or their initials (LAI-1336); nobody is a dashed mark. */}
+      {who === undefined ? (
+        <Tooltip content="Unassigned" lazy>
+          <span className="dep-avatar dep-avatar-empty" aria-hidden="true">
+            —
+          </span>
+        </Tooltip>
+      ) : (
+        <Avatar
+          name={who.name}
+          userId={who.user_id}
+          theme={theme}
+          size={22}
+          className="dep-avatar"
+        />
+      )}
       {onRemove !== undefined && (
         <Tooltip content="Unlink">
           <button

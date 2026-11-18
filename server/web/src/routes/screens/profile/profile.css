@@ -195,17 +195,9 @@
   border-top: 1px solid var(--border-subtle);
 }
 
+/* The shared Avatar at 26, solid (LAI-1336): its own size, disc and initials. */
 .prof-looked-avatar {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.625rem;
-  height: 1.625rem;
-  border-radius: var(--radius-pill);
-  color: var(--on-accent);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
 }
 
 .prof-looked-who {

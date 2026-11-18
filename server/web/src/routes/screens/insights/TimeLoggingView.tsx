@@ -11,8 +11,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { hoursCompact } from '../../../components/time-report/time-report-derive.ts';
 import '../../../components/time-report/time-report.css';
-import { avatarColorSolid } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { dayIn } from '../my-day/my-day-derive.ts';
 import {
@@ -359,7 +358,7 @@ function Row({
     <tr data-person={person.user.id}>
       <th scope="row" className="tlg-who">
         <div className="tlg-person">
-          <Avatar id={person.user.id} name={person.user.name} />
+          <PersonFace id={person.user.id} name={person.user.name} />
           <div className="tlg-person-text">
             <a className="tlg-name" href={profile} onClick={go(profile)}>
               {person.user.name}
@@ -408,16 +407,18 @@ function Row({
   );
 }
 
-function Avatar({ id, name }: { readonly id: string; readonly name: string }) {
+/** A person's row head: the shared avatar, their photo or initials (LAI-1336). */
+function PersonFace({ id, name }: { readonly id: string; readonly name: string }) {
   const { theme } = useTheme();
-  const colour = avatarColorSolid(id, theme);
   return (
-    <span
+    <Avatar
+      name={name}
+      userId={id}
+      theme={theme}
+      size={28}
+      solid
+      label={null}
       className="trep-avatar"
-      style={{ background: colour.background, color: colour.foreground }}
-      aria-hidden="true"
-    >
-      {initials(name)}
-    </span>
+    />
   );
 }

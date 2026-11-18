@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Donut } from '../../../components/Donut.tsx';
 import { percentLabel, roundedPercents } from '../../../components/donut-arcs.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { Tabs, tabId } from '../../../components/tabs/Tabs.tsx';
@@ -55,16 +54,17 @@ function detail(row: PersonLoad): string {
   return parts.join(' · ');
 }
 
-function Avatar({ id, name, theme }: { id: string; name: string; theme: Theme }) {
-  const ink = avatarColor(id, theme);
+/** A contributor: the shared avatar, their photo or initials (LAI-1336). */
+function PersonFace({ id, name, theme }: { id: string; name: string; theme: Theme }) {
   return (
-    <span
-      className="dash-avatar dash-legend-avatar"
-      style={{ background: ink.background, color: ink.foreground, borderColor: ink.border }}
-      aria-hidden="true"
-    >
-      {initials(name)}
-    </span>
+    <Avatar
+      name={name}
+      userId={id}
+      theme={theme}
+      size={24}
+      label={null}
+      className="dash-legend-avatar"
+    />
   );
 }
 
@@ -250,7 +250,7 @@ function Delivered({
                   <span className="dash-contrib-rank" aria-hidden="true">
                     {i + 1}
                   </span>
-                  <Avatar id={row.id} name={nameOf(row.id)} theme={theme} />
+                  <PersonFace id={row.id} name={nameOf(row.id)} theme={theme} />
                   <span className="dash-legend-who">
                     <span className="dash-legend-name">{nameOf(row.id)}</span>
                     {row.selfClosed > 0 && (
@@ -384,7 +384,7 @@ function OpenWorkNow({
             <>
               <span className="dash-swatch" style={{ background: color }} aria-hidden="true" />
               {row.kind === 'person' ? (
-                <Avatar id={row.id} name={nameOf(row.id)} theme={theme} />
+                <PersonFace id={row.id} name={nameOf(row.id)} theme={theme} />
               ) : (
                 <span className="dash-avatar dash-legend-avatar" aria-hidden="true">
                   {row.kind === 'others' ? '+' : '–'}

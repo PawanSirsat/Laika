@@ -847,22 +847,9 @@
   border-bottom: none;
 }
 
+/* The shared Avatar, 36 in the list and 28 in the add picker (LAI-1336). */
 .ss-member-avatar {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-round);
-  border: 1px solid transparent;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-}
-
-.ss-member-avatar-sm {
-  width: 1.75rem;
-  height: 1.75rem;
-  font-size: var(--text-small);
 }
 
 .ss-member-who {

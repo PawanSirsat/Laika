@@ -591,8 +591,13 @@ thead .dash-contrib-n {
 
 /* ---------------------------------------------------------------- avatars */
 
+/*
+ * The others' and nobody's marks beside the people's shared Avatars (LAI-1336):
+ * the same 24px, ring inside, so the legend's column stays one width.
+ */
 .dash-avatar {
   position: relative;
+  box-sizing: border-box;
   display: flex;
   flex: none;
   width: 24px;

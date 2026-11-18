@@ -96,12 +96,16 @@ export function Avatar({
         }
       >
         {picture ? (
+          // Lazy and off the main thread: a board draws one per card. Its
+          // words are the name, unless the row already says it (LAI-1336).
           <img
             className="avatar-img"
             src={url}
-            alt=""
+            alt={spoken === undefined ? '' : (label ?? name)}
             width={size}
             height={size}
+            loading="lazy"
+            decoding="async"
             onError={() => {
               setBroken(url);
             }}

@@ -39,7 +39,7 @@ void describe('words', () => {
     assert.deepEqual(Object.keys(PRESENCE_WORDS).sort(), ['away', 'offline', 'online']);
   });
 
-  void test('seven sizes, smallest first', () => {
-    assert.deepEqual([...AVATAR_SIZES], [16, 20, 24, 28, 32, 36, 60]);
+  void test('nine sizes, smallest first', () => {
+    assert.deepEqual([...AVATAR_SIZES], [16, 20, 22, 24, 26, 28, 32, 36, 60]);
   });
 });

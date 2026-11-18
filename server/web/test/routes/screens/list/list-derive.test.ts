@@ -268,7 +268,6 @@ void describe('the List row', () => {
     const { rows } = rowsFor([task({ id: 'a', key: 'LC-1' })]);
     assert.equal(rows[0]?.who, 'Unassigned');
     assert.equal(rows[0]?.assigned, false);
-    assert.equal(rows[0]?.initials, '—');
     assert.equal(rows[0]?.assigneeId, '');
   });
 
@@ -280,7 +279,8 @@ void describe('the List row', () => {
     // One person, two rows, one identity — the whole point of the field.
     assert.equal(rows[0]?.assigneeId, 'u1');
     assert.equal(rows[1]?.assigneeId, 'u1');
-    assert.equal(rows[0]?.initials, 'MK');
+    // The name the shared Avatar draws, by the same id (LAI-1336).
+    assert.equal(rows[0]?.who, 'Mira Kellner');
   });
 
   void test('carries the sprint tag the board already derived', () => {
