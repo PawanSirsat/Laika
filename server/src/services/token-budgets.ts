@@ -17,6 +17,7 @@ import {
   tokenBudgets,
   tokenUsageDays,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { createLogger, type Logger } from '../log.ts';
 import { assertCan, can } from '../policy/can.ts';
@@ -421,6 +422,8 @@ function openTaskIds(db: Db, projectIds: readonly string[]): string[] {
       and(
         inArray(tasks.projectId, [...projectIds]),
         inArray(tasks.status, ['in_progress', 'review']),
+        // Archived work is not open work (LAI-1353).
+        liveTask(),
       ),
     )
     .all()
@@ -915,7 +918,11 @@ export function getMyAlerts(
     .select({ id: tasks.id })
     .from(tasks)
     .where(
-      and(eq(tasks.assigneeId, actor.userId), inArray(tasks.status, ['in_progress', 'review'])),
+      and(
+        eq(tasks.assigneeId, actor.userId),
+        inArray(tasks.status, ['in_progress', 'review']),
+        liveTask(),
+      ),
     )
     .all()
     .map((r) => r.id);

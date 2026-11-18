@@ -44,6 +44,9 @@ import {
   readWorkFilter,
   readWorkGroup,
   STATUS_FILTERS,
+  ARCHIVED_CHOICE,
+  statusChoiceChange,
+  statusChoiceOf,
   STATUS_TILES,
   summaryFilter,
   withPageSize,
@@ -280,11 +283,17 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
   /*
    * The rows the reader may change: `task.write` in each row's own space,
    * the server's answer (`GET /permissions`), never the org role. A row they
-   * may not change has no checkbox — absent, not disabled (LAI-082).
+   * may not change has no checkbox — absent, not disabled (LAI-082). An
+   * archived task is read-only (LAI-1353), so it has none either.
    */
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
   const writable = useMemo(
-    () => new Set(tasks.filter((t) => gates.project(t.project_id, 'task.write')).map((t) => t.id)),
+    () =>
+      new Set(
+        tasks
+          .filter((t) => t.archived_at == null && gates.project(t.project_id, 'task.write'))
+          .map((t) => t.id),
+      ),
     [tasks, gates],
   );
   const writableIds = tasks.filter((t) => writable.has(t.id)).map((t) => t.id);
@@ -615,10 +624,14 @@ export function WorkTab({ me, params, setParams, onOpenTask, onNavigate }: WorkT
         <Dropdown
           className="work-filter"
           aria-label="Status"
-          value={filter.status ?? ''}
-          options={[{ value: '', label: 'Any status' }, ...STATUS_FILTERS]}
+          value={statusChoiceOf(filter)}
+          options={[
+            { value: '', label: 'Any status' },
+            ...STATUS_FILTERS,
+            { value: ARCHIVED_CHOICE, label: 'Archived' },
+          ]}
           onChange={(value) => {
-            set({ status: value });
+            set(statusChoiceChange(value));
           }}
         />
         <Dropdown

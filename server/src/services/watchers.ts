@@ -3,6 +3,7 @@ import { type ResolvedActor, loadActor, withProject } from '../auth/resolve-acto
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { commentMentions, comments, projects, taskWatchers, tasks } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { mentionedUserIds } from './mentions.ts';
@@ -289,10 +290,12 @@ export function tasksWatchedBy(
 
   // One `can()` per distinct project rather than per task: §3 grades reads by
   // project, so every task in a project has the same answer.
+  // An archived task is out of every list, this one too (LAI-1353); the
+  // watch itself stays, and the task comes back here on restore.
   const rows = db
     .select({ id: tasks.id, projectId: tasks.projectId })
     .from(tasks)
-    .where(inArray(tasks.id, remaining))
+    .where(and(inArray(tasks.id, remaining), liveTask()))
     .all();
 
   const readable = new Map<string, boolean>();

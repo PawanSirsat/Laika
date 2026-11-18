@@ -18,6 +18,7 @@ import {
   unlistedWork,
   users,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { readLoggedMany } from './analytics-views.ts';
 import { availabilityFor } from './availability.ts';
@@ -667,7 +668,10 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
     })
     .from(tasks)
     .innerJoin(projects, eq(projects.id, tasks.projectId))
-    .where(and(inArray(tasks.assigneeId, ids), inArray(tasks.status, [...OPEN_CATEGORIES])))
+    // Archived work is not on anybody's plate (LAI-1353).
+    .where(
+      and(inArray(tasks.assigneeId, ids), inArray(tasks.status, [...OPEN_CATEGORIES]), liveTask()),
+    )
     .all();
 
   // `can()` once per project, not once per task.

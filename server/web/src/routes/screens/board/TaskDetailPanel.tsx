@@ -19,6 +19,7 @@ import {
   getTask,
   isOutsideId,
   listWatchers,
+  setTaskArchived,
   unwatchTask,
   updateTask,
   watchTask,
@@ -66,6 +67,13 @@ import type { HandoffOffer } from '../../../api/handoffs.ts';
 import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
+import {
+  archivedBanner,
+  archivedToast,
+  archiveRefusal,
+  restoredToast,
+} from '../task/archive-model.ts';
 import { useDismiss } from '../../../components/use-dismiss.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import '../task/task-panel.css';
@@ -228,12 +236,12 @@ export function TaskDetailPanel({
   onClose,
   statuses,
   sprints,
-  maySetSprint,
+  maySetSprint: maySetSprintGranted,
   meId,
   meEmail,
-  mayAssign = false,
-  mayEdit = false,
-  mayCreate = false,
+  mayAssign: mayAssignGranted = false,
+  mayEdit: mayEditGranted = false,
+  mayCreate: mayCreateGranted = false,
   onTagsChanged,
   onTaskEdited,
   onHandoffsChanged,
@@ -246,6 +254,16 @@ export function TaskDetailPanel({
   expandHref,
   onExpand,
 }: TaskDetailPanelProps) {
+  /*
+   * **An archived task is read-only** (LAI-1353): every control that writes
+   * reads one of these, so this one line takes them all away. Restore — in
+   * the banner and the ⋯ menu — is the one write left.
+   */
+  const archived = task.archived_at != null;
+  const mayEdit = mayEditGranted && !archived;
+  const mayAssign = mayAssignGranted && !archived;
+  const mayCreate = mayCreateGranted && !archived;
+  const maySetSprint = maySetSprintGranted && !archived;
   const detail = useTaskDetail(slug, task.id);
   /*
    * A claim taken, lapsed or taken back while the drawer is open (LAI-543):
@@ -592,7 +610,44 @@ export function TaskDetailPanel({
    */
   const boardAttach = useEditorAttach(slug, task.id);
   const projectAttach = useEditorAttach(slug, undefined);
-  const mayAttach = holdsProjectAction(permissions, task.project_id, 'attachment.create');
+  const mayAttach =
+    !archived && holdsProjectAction(permissions, task.project_id, 'attachment.create');
+  /*
+   * **Archive and Restore** (LAI-1353), from the ⋯ menu and the banner. No
+   * confirm: Undo on the toast takes it back on the server. Its subtasks go
+   * with it, and the space's next read leaves them all out; this drawer stays
+   * on the task, which the host now reads by id, banner and all.
+   */
+  const toast = useToast();
+  const mayArchive = holdsProjectAction(permissions, task.project_id, 'task.archive');
+  const [archiveError, setArchiveError] = useState<string | undefined>(undefined);
+  const archiving = async (to: boolean): Promise<void> => {
+    setOverflowOpen(false);
+    setArchiveError(undefined);
+    const subtasks = [...byId.values()].filter(
+      (t) => t.parent_task_id === task.id && (t.archived_at == null) === to,
+    ).length;
+    const said = (archivedNow: boolean): string =>
+      archivedNow ? archivedToast(task.key, subtasks) : restoredToast(task.key);
+    try {
+      await setTaskArchived(task.id, to);
+    } catch (cause) {
+      setArchiveError(archiveRefusal(cause, to));
+      return;
+    }
+    onTaskEdited();
+    toast.show({
+      text: said(to),
+      tone: 'info',
+      mark: 'data-archive-toast',
+      // A real reversal: the server puts it back as it was.
+      undo: async () => {
+        await setTaskArchived(task.id, !to);
+        onTaskEdited();
+        return said(!to);
+      },
+    });
+  };
   const attach = mayAttach ? boardAttach : undefined;
   const commentAttach = mayAttach ? projectAttach : undefined;
   const isAssignee = meId !== undefined && task.assignee_id === meId;
@@ -809,6 +864,19 @@ export function TaskDetailPanel({
                     </button>
                   </li>
                 )}
+                {mayArchive && (
+                  <li>
+                    <button
+                      type="button"
+                      data-archive-action={archived ? 'restore' : 'archive'}
+                      onClick={() => {
+                        void archiving(!archived);
+                      }}
+                    >
+                      {archived ? 'Restore from archive' : 'Archive'}
+                    </button>
+                  </li>
+                )}
               </ul>
             )}
           </div>
@@ -842,6 +910,35 @@ export function TaskDetailPanel({
 
       <div className="panel-columns">
         <div className="panel-main">
+          {/* Put away (LAI-1353): who and when, read-only, and the way back. */}
+          {task.archived_at != null && (
+            <div className="panel-archived" data-archived-banner="" role="status">
+              <Icon name="archive" size="small" />
+              <span className="panel-archived-text">
+                {archivedBanner(
+                  task.archived_at,
+                  task.archived_by == null ? undefined : members.get(task.archived_by)?.name,
+                  Date.now(),
+                )}
+              </span>
+              {mayArchive && (
+                <button
+                  type="button"
+                  className="panel-archived-restore"
+                  onClick={() => {
+                    void archiving(false);
+                  }}
+                >
+                  Restore
+                </button>
+              )}
+            </div>
+          )}
+          {archiveError !== undefined && (
+            <p className="panel-alert" role="alert">
+              {archiveError}
+            </p>
+          )}
           {/*
             The title as a heading, click to edit — the design writes it as text
             you type into rather than a field.
@@ -902,7 +999,7 @@ export function TaskDetailPanel({
             offers={handoffs.offers}
             nameOf={(id) => personName(id, members)}
             claimNow={claimNow}
-            mayDecide={mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
+            mayDecide={!archived && mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
             deciding={review.deciding}
             decideError={review.decideError}
             onAccept={review.accept}
@@ -1161,6 +1258,7 @@ export function TaskDetailPanel({
             rounds={rounds?.rounds ?? []}
             leads={leads}
             attach={commentAttach}
+            archived={archived}
           />
         </div>
 

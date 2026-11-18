@@ -13,7 +13,8 @@ import { PRIORITIES, type TaskSummary, type TaskFilter, type TaskPriority } from
  * equality on status, status id, priority, assignee and sprint, with `none` for null as
  * over a query string; `ready` as the server served it, never recomputed
  * (§4.5); a tag by its normalised name (`normaliseTagName` trims and
- * lower-cases); `updated_at` at or after `updated_since`; children of `parent`.
+ * lower-cases); `updated_at` at or after `updated_since`; children of `parent`;
+ * live tasks, or only archived ones under `archived` (LAI-1353).
  * Every field the type gains must be handled here, or it would be accepted and
  * ignored — LAI-069's failure, in memory instead of on the wire.
  *
@@ -36,6 +37,8 @@ export function matchesTaskFilter(task: TaskSummary, filter: TaskFilter): boolea
     return false;
   if (filter.updated_since !== undefined && task.updated_at < filter.updated_since) return false;
   if (filter.parent !== undefined && task.parent_task_id !== filter.parent) return false;
+  // Live work, unless archived work is what was asked for (LAI-1353).
+  if ((filter.archived === 'only') !== (task.archived_at != null)) return false;
   return true;
 }
 
@@ -50,6 +53,7 @@ const NARROWING = [
   'tag',
   'updated_since',
   'parent',
+  'archived',
 ] as const satisfies readonly (keyof TaskFilter)[];
 
 /**
