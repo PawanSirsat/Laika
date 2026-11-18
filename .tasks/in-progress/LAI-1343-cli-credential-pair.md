@@ -30,5 +30,8 @@ lookup like it, as a census rather than a single patch.
 
 ## Notes
 
+- **Scope:** `cli/`, and one named plugin file, `plugin/scripts/laika-claude`: the census found
+  it pairs the two names across `~/.laika/env` and the environment. Its tests sit beside its
+  others, in `cli/test/plugin-install.test.ts`.
 - **Testing on Belka:** single test files only; CI runs the gate.
 - **Where it stops:** at a green PR. CHIEF merges.
