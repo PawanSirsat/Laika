@@ -274,8 +274,8 @@ const ROUTES: readonly {
   {
     from: '/developer?tab=activity',
     old: { url: '/developer?tab=activity', tab: 'activity' },
-    // LAI-1078: Share local activity is Advanced's second card in v3.
-    v3: { url: '/developer?tab=advanced&section=activity', tab: 'advanced' },
+    // LAI-1327: Activity is v3's own tab again, right after Overview.
+    v3: { url: '/developer?tab=activity', tab: 'activity' },
   },
   {
     from: '/developer',
@@ -335,7 +335,13 @@ void describe('every old address lands, in each mode (plan §C)', () => {
       const h = await open('/developer', s);
       try {
         await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-        assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Tools']);
+        assert.deepEqual(await tabs(h.page), [
+          'Overview',
+          'Activity',
+          'Project setup',
+          'Devices',
+          'Tools',
+        ]);
         assert.equal(await advancedLink(h.page).getAttribute('data-tab'), 'advanced');
         assert.equal(await h.page.locator('.conn-wizard-card').count(), 0);
       } finally {
@@ -388,8 +394,15 @@ void describe('the tab bars (plan §I)', () => {
     const h = await open('/developer', stub('v3'));
     try {
       await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-      // The design's four tabs (LAI-1096); Advanced is the quieter link after them.
-      assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Tools']);
+      // The design's tabs (LAI-1096), Activity right after Overview (LAI-1327);
+      // Advanced is the quieter link after them.
+      assert.deepEqual(await tabs(h.page), [
+        'Overview',
+        'Activity',
+        'Project setup',
+        'Devices',
+        'Tools',
+      ]);
       const link = advancedLink(h.page);
       assert.equal(await link.getAttribute('href'), '/developer?tab=advanced');
       assert.equal(await link.getAttribute('aria-current'), null);
@@ -429,7 +442,7 @@ void describe('the tab bars (plan §I)', () => {
     }
   });
 
-  void test('v3: Devices lists devices; Advanced carries credentials and activity; Project setup its flow', async () => {
+  void test('v3: Devices lists devices; Activity is a tab; Advanced carries credentials only; Project setup its flow', async () => {
     const h = await open('/developer?tab=devices', stub('v3', [agentRow({ id: 'a1' })]));
     try {
       // LAI-1054: Devices is its own list now, not the classic Agents tab.
@@ -445,8 +458,8 @@ void describe('the tab bars (plan §I)', () => {
       const wizard = h.page.locator('.dev-setup [data-wizard="project-setup"]');
       await wizard.waitFor({ timeout: 20_000 });
       assert.equal(await wizard.count(), 1);
-      // No Activity tab in v3 (LAI-1078): its card is Advanced's second.
-      assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 0);
+      // Activity is a tab of its own again, after Overview (LAI-1327).
+      assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 1);
       await advancedLink(h.page).click();
       await h.page.locator('.dev-advanced .dev-adv').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=advanced');
@@ -470,7 +483,10 @@ void describe('the tab bars (plan §I)', () => {
       assert.equal(await h.page.locator('.page-tab-active').count(), 1);
       assert.equal(await active(h.page), 'advanced');
       assert.equal(await h.page.locator('.page-tab[aria-current]').count(), 0);
-      await h.page.locator('.dev-advanced-page .dev-sharing').waitFor({ timeout: 20_000 });
+      // Credentials only (LAI-1327): Share local activity is not on Advanced.
+      await h.page.locator('.dev-advanced .dev-adv-list-title').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.dev-advanced-page .dev-sharing').count(), 0);
+      assert.equal(await h.page.locator('.dev-advanced-page > .dev-card').count(), 1);
       // *New personal credential* sits in Advanced itself, not in the page
       // header (LAI-1058; developer-advanced.test.ts has the rest).
       await h.page
@@ -1579,14 +1595,14 @@ void describe('look and fit', () => {
     });
 
   for (const theme of ['light', 'dark']) {
-    void test(`390px, ${theme}: the four tabs and Advanced fit the row, nothing off-screen (LAI-1096)`, async () => {
+    void test(`390px, ${theme}: the five tabs and Advanced fit the row, nothing off-screen (LAI-1096, LAI-1327)`, async () => {
       const h = await open('/developer', stub('v3'));
       try {
         await h.page.setViewportSize({ width: 390, height: 844 });
         await setTheme(h.page, theme);
         await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
         const fit = await rowFit(h.page);
-        assert.equal(fit.tabs.length, 4);
+        assert.equal(fit.tabs.length, 5);
         for (const right of [...fit.tabs, fit.link]) {
           assert.ok(right <= fit.view, `${String(right)}px is past the ${String(fit.view)}px view`);
         }

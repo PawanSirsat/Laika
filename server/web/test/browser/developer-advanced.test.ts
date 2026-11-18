@@ -1,19 +1,20 @@
 /**
- * Developer access V3 → Advanced and Activity (LAI-1058, plan §B.5, §B.6,
- * §L7), in a real browser.
+ * Developer access V3 → Advanced (LAI-1058, plan §B.6, §L7; LAI-1327), in a
+ * real browser. Advanced holds the reader's personal credentials and nothing
+ * else — Activity is a tab of its own (developer-activity.test.ts).
  *
  * - Advanced asks for personal credentials only, and shows no agent's.
+ * - Only what is in use is in view, and counted: revoked and expired wait
+ *   behind *Show N revoked/expired*.
+ * - Personal tokens a coding tool uses are one callout — *N credentials are
+ *   used by coding tools* — that opens to their rows, each with a *Used by …*
+ *   chip and *Move to Tools*, which revokes nothing.
  * - A new credential's expiry: 90 days unless chosen, *Never* still allowed.
- * - A personal token a coding tool uses says *Personal (legacy)*, and its
- *   *Upgrade connection* goes to Add a tool without revoking anything.
  * - Revoke is under `⋯`, asks first, and a refusal shows with the form shut.
  * - The one-time secret is shown once, and focus comes back after it.
- * - Activity in v3 says *Once per device* and points at Project setup; its
- *   history deletion still asks first.
- * - Advanced is two flat cards, nothing drawn as a card inside either; the
- *   `full` chip is neutral; what explains them is in closed folds that open
- *   by click or key, and *See what the board holds for you* opens its own
- *   (LAI-1100 #11). Classic and preview's Activity tab draw none of that.
+ * - One flat card, nothing boxed inside it; the `full` chip is neutral; *How
+ *   to use a personal credential* is a closed fold. Classic and preview's
+ *   Activity tab draw their panel as they always did.
  */
 
 import assert from 'node:assert/strict';
@@ -30,6 +31,14 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+
+/** Set `LAIKA_SHOTS` to a directory to keep the pictures the review asks for. */
+const SHOTS = process.env.LAIKA_SHOTS;
+
+async function shoot(page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return;
+  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+}
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -84,6 +93,16 @@ const LEGACY = tokenView({
   last_mcp_at: NOW - 60_000,
   last_client: 'claude-code',
   last_client_name: 'claude-code',
+});
+const REVOKED = tokenView({
+  id: 't5',
+  name: 'old-ci',
+  revoked_at: NOW - 2 * DAY,
+});
+const EXPIRED = tokenView({
+  id: 't6',
+  name: 'last-quarter',
+  expires_at: NOW - DAY,
 });
 const AGENT = tokenView({
   id: 't3',
@@ -174,7 +193,12 @@ void describe('Advanced lists personal credentials only', () => {
         for (const url of asked) {
           assert.equal(new URL(url).searchParams.get('kind'), 'personal', url);
         }
-        assert.equal(await h.page.locator('.dev-adv-row').count(), 2);
+        // In view: the script's row; the coding tool's is in the callout, closed.
+        assert.equal(await h.page.locator('.dev-adv-row').count(), 1);
+        assert.equal(
+          await h.page.locator('.dev-adv-legacy-callout').getAttribute('data-legacy-count'),
+          '1',
+        );
         assert.equal(await h.page.getByText('agent-credential').count(), 0);
         assert.equal(await h.page.getByText(/Belka/).count(), 0);
         assert.match(
@@ -188,29 +212,38 @@ void describe('Advanced lists personal credentials only', () => {
   }
 });
 
-void describe('a legacy tool token', () => {
-  void test('is labelled Personal (legacy), says how to move, and a script token is not', async () => {
+void describe('personal tokens a coding tool uses: one callout (LAI-1327)', () => {
+  void test('one line and a closed toggle; opened, the row has a short chip and Move to Tools', async () => {
     const h = await open('/developer?tab=advanced', stub('v3'));
     try {
+      const callout = h.page.locator('.dev-adv-legacy-callout');
+      await callout.waitFor({ timeout: 20_000 });
+      assert.equal(
+        (await callout.locator('.dev-adv-legacy-note').innerText()).replace(/\s+/g, ' '),
+        '1 credential is used by a coding tool — move it to Tools, where each tool gets its own. Nothing is revoked for you.',
+      );
+      const toggle = callout.getByRole('button', { name: 'Show it' });
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await rowOf(h.page, 'old-laptop').count(), 0);
+
+      await toggle.click();
       const legacy = rowOf(h.page, 'old-laptop');
-      await legacy.waitFor({ timeout: 20_000 });
+      await legacy.waitFor({ timeout: 10_000 });
+      assert.equal(
+        await callout.getByRole('button', { name: 'Hide them' }).getAttribute('aria-expanded'),
+        'true',
+      );
+      assert.equal(await legacy.locator('.dev-adv-used-by').innerText(), 'Used by Claude Code');
       assert.equal(await legacy.locator('.tok-kind').textContent(), 'Personal (legacy)');
-      assert.match(await legacy.innerText(), /Used by Claude Code\. It keeps working/);
-      assert.equal(
-        await rowOf(h.page, 'nightly-export').locator('.tok-kind').textContent(),
-        'Personal',
-      );
-      assert.equal(await rowOf(h.page, 'nightly-export').locator('.dev-adv-legacy').count(), 0);
-      assert.equal(
-        await h.page.locator('.dev-adv-legacy-note').innerText(),
-        'One of these is used by a coding tool. It keeps working; Upgrade connection on its row moves it to Tools. Nothing is revoked for you.',
-      );
+      // The long sentence each row carried is gone.
+      assert.doesNotMatch(await callout.innerText(), /It keeps working; to give/);
+      assert.equal(await rowOf(h.page, 'nightly-export').locator('.dev-adv-used-by').count(), 0);
     } finally {
       await h.close();
     }
   });
 
-  void test('the note is one line, and counts two legacy tokens as two (LAI-1100 #11)', async () => {
+  void test('two are counted as two', async () => {
     const SECOND = tokenView({
       id: 't4',
       name: 'old-desktop',
@@ -223,23 +256,31 @@ void describe('a legacy tool token', () => {
       stub('v3', { '/api/v1/tokens': { data: [SCRIPT, LEGACY, SECOND], next_cursor: null } }),
     );
     try {
-      const note = h.page.locator('.dev-adv-legacy-note');
-      await note.waitFor({ timeout: 20_000 });
-      assert.equal(
-        await note.innerText(),
-        '2 of these are used by coding tools. They keep working; Upgrade connection on each row moves that one to Tools. Nothing is revoked for you.',
+      const callout = h.page.locator('.dev-adv-legacy-callout');
+      await callout.waitFor({ timeout: 20_000 });
+      assert.equal(await callout.getAttribute('data-legacy-count'), '2');
+      assert.match(
+        await callout.locator('.dev-adv-legacy-note').innerText(),
+        /^2 credentials are used by coding tools — move them to Tools/,
       );
-      assert.equal(await note.getAttribute('data-legacy-count'), '2');
+      await callout.getByRole('button', { name: 'Show them' }).click();
+      await rowOf(h.page, 'old-desktop').waitFor({ timeout: 10_000 });
+      assert.equal(
+        await rowOf(h.page, 'old-desktop').locator('.dev-adv-used-by').innerText(),
+        'Used by Codex',
+      );
     } finally {
       await h.close();
     }
   });
 
-  void test('Upgrade connection opens Add a tool on that tool, and revokes nothing', async () => {
+  void test('Move to Tools opens Add a tool on that tool, and revokes nothing', async () => {
     const h = await open('/developer?tab=advanced', stub('v3'));
     try {
-      const link = h.page.getByRole('link', { name: 'Upgrade connection for old-laptop' });
+      await h.page.getByRole('button', { name: 'Show it' }).click();
+      const link = h.page.getByRole('link', { name: 'Move old-laptop to Tools' });
       await link.waitFor({ timeout: 20_000 });
+      assert.equal(await link.innerText(), 'Move to Tools');
       assert.equal(
         await link.getAttribute('href'),
         '/developer?tab=tools&add=tool&tool=claude-code',
@@ -248,11 +289,53 @@ void describe('a legacy tool token', () => {
       await until(() => here(h.page.url()).startsWith('/developer?tab=tools'), 10_000);
       assert.equal(here(h.page.url()), '/developer?tab=tools&add=tool&tool=claude-code');
       await h.page.waitForTimeout(500);
+      assert.equal(h.calls.filter((c) => c.method === 'DELETE').length, 0, 'moving sent a DELETE');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('revoked and expired wait behind a toggle (LAI-1327)', () => {
+  void test('hidden and uncounted until asked for; shown, each says what it is', async () => {
+    const h = await open(
+      '/developer?tab=advanced',
+      stub('v3', {
+        '/api/v1/tokens': { data: [SCRIPT, REVOKED, LEGACY, EXPIRED], next_cursor: null },
+      }),
+    );
+    try {
+      await rowOf(h.page, 'nightly-export').waitFor({ timeout: 20_000 });
+      // The count is of credentials in use: the script's and the tool's.
+      assert.equal((await h.page.locator('.dev-adv-count').innerText()).trim(), '· 2');
+      assert.equal(await rowOf(h.page, 'old-ci').count(), 0);
+      assert.equal(await rowOf(h.page, 'last-quarter').count(), 0);
+
+      const show = h.page.getByRole('button', { name: 'Show 2 revoked/expired' });
+      assert.equal(await show.getAttribute('aria-expanded'), 'false');
+      await show.click();
+      await rowOf(h.page, 'old-ci').waitFor({ timeout: 10_000 });
+      assert.equal(await rowOf(h.page, 'old-ci').locator('.tok-state').textContent(), 'revoked');
       assert.equal(
-        h.calls.filter((c) => c.method === 'DELETE').length,
-        0,
-        'upgrading sent a DELETE',
+        await rowOf(h.page, 'last-quarter').locator('.tok-state').textContent(),
+        'expired',
       );
+      // A revoked one can be revoked no further: it says when, not ⋯.
+      assert.equal(await rowOf(h.page, 'old-ci').locator('.tok-revoked-at').count(), 1);
+      assert.equal((await h.page.locator('.dev-adv-count').innerText()).trim(), '· 2');
+
+      await h.page.getByRole('button', { name: 'Hide revoked/expired' }).click();
+      await until(async () => (await rowOf(h.page, 'old-ci').count()) === 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('none retired: no toggle at all', async () => {
+    const h = await open('/developer?tab=advanced', stub('v3'));
+    try {
+      await rowOf(h.page, 'nightly-export').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.getByRole('button', { name: /revoked\/expired/ }).count(), 0);
     } finally {
       await h.close();
     }
@@ -360,6 +443,8 @@ void describe('revoking', () => {
       stub('v3', { '/api/v1/tokens/t2': refuse(409, 'conflict', 'That token is busy') }),
     );
     try {
+      // The tool's token is in its callout: opened first.
+      await h.page.getByRole('button', { name: 'Show it' }).click();
       const row = rowOf(h.page, 'old-laptop');
       await row.waitFor({ timeout: 20_000 });
       await row.getByRole('button', { name: 'More actions for old-laptop' }).click();
@@ -379,124 +464,15 @@ void describe('revoking', () => {
   });
 });
 
-void describe('Activity', () => {
-  void test('v3: Once per device, Project setup named, rules and history unchanged', async () => {
-    const h = await open('/developer?tab=activity', stub('v3'));
-    try {
-      // The lists are folded in v3 (LAI-1100 #11); the status line is not.
-      await h.page.locator('.dev-sharing [data-state="org-collects"]').waitFor({ timeout: 20_000 });
-      assert.equal(
-        await h.page.locator('.dev-sharing .conn-chip-scope').innerText(),
-        'Once per device',
-      );
-      const text = await h.page.locator('.dev-sharing').innerText();
-      assert.match(text, /Developer access’s Project setup\./);
-      assert.doesNotMatch(text, /Projects tab/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('v3: an Activity address lands on Advanced’s second card, its title focused (LAI-1078)', async () => {
-    const h = await open('/developer?tab=activity', stub('v3'));
-    try {
-      await h.page.locator('#activity #dev-sharing-title').waitFor({ timeout: 20_000 });
-      assert.equal(new URL(h.page.url()).search, '?tab=advanced&section=activity');
-      // The title is in view, not under the fold of a closed `<details>`.
-      assert.equal(await h.page.locator('#dev-sharing-title').isVisible(), true);
-      assert.equal(await h.page.locator('.page-tab-active').getAttribute('data-tab'), 'advanced');
-      // Personal credentials first, then Share local activity — one tab, two cards.
-      const order = await h.page.evaluate(() =>
-        [...document.querySelectorAll('.dev-advanced-page > *')].map((el) =>
-          el.classList.contains('dev-sharing')
-            ? 'activity'
-            : el.classList.contains('dev-advanced')
-              ? 'credentials'
-              : el.className,
-        ),
-      );
-      assert.deepEqual(order, ['credentials', 'activity']);
-      await h.page.waitForFunction(
-        () => document.activeElement?.id === 'dev-sharing-title',
-        undefined,
-        { timeout: 10_000 },
-      );
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('v3: Advanced on its own leaves focus where it was', async () => {
-    const h = await open('/developer?tab=advanced', stub('v3'));
-    try {
-      await h.page.locator('#activity #dev-sharing-title').waitFor({ timeout: 20_000 });
-      await h.page.locator('.dev-adv-row, .dev-advanced .state-empty').first().waitFor({
-        timeout: 20_000,
-      });
-      assert.notEqual(await h.page.evaluate(() => document.activeElement?.id), 'dev-sharing-title');
-    } finally {
-      await h.close();
-    }
-  });
-
-  for (const mode of ['classic', 'preview'] as const) {
-    void test(`${mode}: the Activity tab is exactly as it was`, async () => {
-      const h = await open('/developer?tab=activity', stub(mode));
-      try {
-        await h.page.locator('.dev-sharing .share-list').first().waitFor({ timeout: 20_000 });
-        assert.equal(
-          await h.page.locator('.dev-sharing .conn-chip-scope').innerText(),
-          'Once per machine',
-        );
-        assert.match(
-          await h.page.locator('.dev-sharing').innerText(),
-          /Developer access’s Projects tab\./,
-        );
-      } finally {
-        await h.close();
-      }
-    });
-  }
-
-  void test('deleting the history asks first; declining sends nothing', async () => {
-    const h = await open('/developer?tab=activity', stub('v3'));
-    try {
-      // In its fold since LAI-1100 #11: open it first.
-      await h.page.locator('[data-fold="held"] > summary').click({ timeout: 20_000 });
-      const del = h.page.getByRole('button', { name: 'Delete my local-activity history' });
-      await del.waitFor({ timeout: 20_000 });
-      await del.click();
-      const asked = await answerConfirm(h.page, false);
-      assert.match(asked, /This cannot be undone/);
-      await h.page.waitForTimeout(500);
-      assert.equal(h.calls.filter((c) => c.method === 'DELETE').length, 0);
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-/**
- * Advanced, simplified (LAI-1100 #11): *"Too many options … force heavy
- * scrolling; reduce them."* Two flat cards; the list, the button, the scope
- * choice and the command stay in view; everything that explains them is a
- * closed `<details>`.
- */
-const FOLDS = [
-  { id: 'how', title: 'How to use a personal credential', inside: '.tok-ref-list' },
-  { id: 'sent', title: 'What is sent and never sent', inside: '.share-list[data-list="never"]' },
-  { id: 'otel', title: 'OpenTelemetry (optional)', inside: 'pre[data-otel]' },
-  { id: 'held', title: 'What the board holds for you', inside: 'table.share-table' },
-] as const;
-
+/** Advanced's one fold (LAI-1100 #11): what explains a personal credential. */
 const fold = (page: Page, id: string) => page.locator(`.dev-advanced-page [data-fold="${id}"]`);
 const isOpen = (page: Page, id: string) =>
   fold(page, id).evaluate((el) => (el as HTMLDetailsElement).open);
 
-/** Both cards drawn, the activity card read: what every test below waits for. */
+/** The card drawn and its list read: what every test below waits for. */
 async function advancedReady(page: Page): Promise<void> {
   await rowOf(page, 'nightly-export').waitFor({ timeout: 20_000 });
-  await fold(page, 'held').waitFor({ timeout: 20_000 });
+  await fold(page, 'how').waitFor({ timeout: 20_000 });
 }
 
 /**
@@ -529,27 +505,25 @@ function boxedInside(page: Page): Promise<string[]> {
   });
 }
 
-void describe('Advanced is two flat sections, its extras folded (LAI-1100 #11)', () => {
-  void test('two cards, one after the other: none inside another, and nothing inside drawn as one', async () => {
-    const h = await open('/developer?tab=advanced', stub('v3'));
+void describe('Advanced is one flat card, credentials only (LAI-1100 #11, LAI-1327)', () => {
+  void test('one card, no activity: nothing inside it drawn as a card, whatever is open', async () => {
+    const h = await open(
+      '/developer?tab=advanced',
+      stub('v3', { '/api/v1/tokens': { data: [SCRIPT, LEGACY, REVOKED], next_cursor: null } }),
+    );
     try {
       await advancedReady(h.page);
       const cards = h.page.locator('.dev-advanced-page > .dev-card');
-      assert.equal(await cards.count(), 2);
-      assert.deepEqual(
-        await cards.evaluateAll((els) =>
-          els.map((el) => el.querySelector('h2')?.textContent?.trim() ?? ''),
-        ),
-        ['Personal credentials', 'Share local activity'],
-      );
+      assert.equal(await cards.count(), 1);
+      assert.equal(await cards.locator('h2').first().innerText(), 'Personal credentials');
+      assert.equal(await h.page.locator('.dev-sharing, [data-extra="activity"]').count(), 0);
+      assert.equal(await h.page.getByText('Share local activity').count(), 0);
       assert.equal(await h.page.locator('.dev-card .dev-card, .dev-card .dx-card').count(), 0);
-      // The old scope reference and CLI cards are gone, not hidden.
-      assert.equal(await h.page.locator('.dev-advanced-page .tok-ref, .tok-cli').count(), 0);
-      assert.equal(await h.page.getByText('Scope reference').count(), 0);
       assert.deepEqual(await boxedInside(h.page), []);
-      // And with every fold open, nothing inside them is a card either.
-      for (const { id } of FOLDS) await fold(h.page, id).locator('> summary').click();
-      for (const { id } of FOLDS) assert.equal(await isOpen(h.page, id), true, id);
+      await h.page.getByRole('button', { name: 'Show it' }).click();
+      await h.page.getByRole('button', { name: 'Show 1 revoked/expired' }).click();
+      await fold(h.page, 'how').locator('> summary').click();
+      assert.equal(await isOpen(h.page, 'how'), true);
       assert.deepEqual(await boxedInside(h.page), []);
     } finally {
       await h.close();
@@ -588,7 +562,7 @@ void describe('Advanced is two flat sections, its extras folded (LAI-1100 #11)',
     }
   });
 
-  void test('the extras are closed folds with a line each; the list, scope and command are in view', async () => {
+  void test('How to use a personal credential is its one fold, closed, and opens by click, Enter or Space', async () => {
     const h = await open('/developer?tab=advanced', stub('v3'));
     try {
       await advancedReady(h.page);
@@ -598,70 +572,8 @@ void describe('Advanced is two flat sections, its extras folded (LAI-1100 #11)',
           .evaluateAll((els) =>
             els.map((el) => [(el as HTMLElement).dataset.fold, (el as HTMLDetailsElement).open]),
           ),
-        FOLDS.map(({ id }) => [id, false]),
+        [['how', false]],
       );
-      for (const { id, title, inside } of FOLDS) {
-        const summary = fold(h.page, id).locator('> summary');
-        assert.equal(await summary.isVisible(), true, id);
-        assert.equal(await summary.locator('.dev-fold-title').innerText(), title);
-        assert.equal(await fold(h.page, id).locator(inside).isVisible(), false, `${id} is open`);
-      }
-      assert.equal(
-        await fold(h.page, 'sent').locator('.dev-fold-sub').innerText(),
-        'Daily counts only — never prompt text, file names, paths or commit messages',
-      );
-      // What stays out: one intro line, the button, the rows, the status, the
-      // scope choice and the command with its Copy.
-      assert.equal(
-        await h.page.locator('.dev-advanced-intro').innerText(),
-        'For scripts, the REST API and automation. It acts as you; coding tools get their own on Tools.',
-      );
-      for (const visible of [
-        h.page.getByRole('button', { name: '+ New personal credential' }),
-        rowOf(h.page, 'old-laptop'),
-        h.page.locator('.dev-sharing [data-state="org-collects"]'),
-        h.page.locator('.dev-sharing input[name="share-scope"][value="laika-repos"]'),
-        h.page.locator('.dev-sharing pre[aria-labelledby="share-command-label"]'),
-        h.page
-          .locator('.dev-sharing .conn-block', { has: h.page.locator('#share-command-label') })
-          .locator('.copy-button'),
-      ]) {
-        assert.equal(await visible.isVisible(), true);
-      }
-      assert.match(
-        await h.page.locator('.dev-sharing [data-state="org-collects"]').innerText(),
-        /^Your organisation collects your local activity\. The owner and anyone they grant access can see it, and you can see who looked\. See what the board holds for you\.$/,
-      );
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('an owner’s status line also says where to turn it off', async () => {
-    const h = await open(
-      '/developer?tab=advanced',
-      stub('v3', { '/api/v1/me': { ...ME, org_role: 'owner' } }),
-    );
-    try {
-      const status = h.page.locator('.dev-sharing [data-state="org-collects"]');
-      await status.waitFor({ timeout: 20_000 });
-      await until(
-        async () => (await status.locator('a[href="/organisation?tab=overview"]').count()) === 1,
-      );
-      assert.match(
-        await status.innerText(),
-        /See what the board holds for you\. You can turn it off in Organisation\.$/,
-      );
-      assert.equal(await status.locator('a[href="/organisation?tab=overview"]').count(), 1);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('each fold opens by click, Enter or Space, shows what it holds, and closes', async () => {
-    const h = await open('/developer?tab=advanced', stub('v3'));
-    try {
-      await advancedReady(h.page);
       const how = fold(h.page, 'how');
       await how.locator('> summary').click();
       assert.equal(await isOpen(h.page, 'how'), true);
@@ -669,42 +581,24 @@ void describe('Advanced is two flat sections, its extras folded (LAI-1100 #11)',
       assert.match(howText, /read_only/);
       assert.ok(howText.includes(`export LAIKA_URL=${h.origin}`), howText);
       assert.match(howText, /curl -s -H "Authorization: Bearer \$LAIKA_TOKEN"/);
-
-      await fold(h.page, 'sent').locator('> summary').focus();
-      await h.page.keyboard.press('Enter');
-      assert.equal(await isOpen(h.page, 'sent'), true);
-      assert.match(
-        await fold(h.page, 'sent').innerText(),
-        /Prompt text, or anything an agent wrote/,
-      );
-
-      await fold(h.page, 'otel').locator('> summary').focus();
-      await h.page.keyboard.press('Space');
-      assert.equal(await isOpen(h.page, 'otel'), true);
-      assert.equal(await fold(h.page, 'otel').locator('pre[data-otel]').isVisible(), true);
-      assert.equal(await fold(h.page, 'otel').locator('.copy-button').isVisible(), true);
-
-      await fold(h.page, 'held').locator('> summary').click();
-      assert.equal(await fold(h.page, 'held').locator('table.share-table').isVisible(), true);
-      assert.equal(
-        await h.page.getByRole('button', { name: 'Delete my local-activity history' }).isVisible(),
-        true,
-      );
-
       await how.locator('> summary').click();
       assert.equal(await isOpen(h.page, 'how'), false);
-      assert.equal(await how.locator('.tok-ref-list').isVisible(), false);
+      await how.locator('> summary').focus();
+      await h.page.keyboard.press('Enter');
+      assert.equal(await isOpen(h.page, 'how'), true);
+      await h.page.keyboard.press('Space');
+      assert.equal(await isOpen(h.page, 'how'), false);
     } finally {
       await h.close();
     }
   });
 
-  void test('a fold’s summary is reached by Tab and drawn focused', async () => {
+  void test('the fold’s summary is reached by Tab and drawn focused', async () => {
     const h = await open('/developer?tab=advanced', stub('v3'));
     try {
       await advancedReady(h.page);
-      // The last thing before the fold: the legacy row's Upgrade connection.
-      await h.page.getByRole('link', { name: 'Upgrade connection for old-laptop' }).focus();
+      // The last thing before the fold: the callout's toggle.
+      await h.page.getByRole('button', { name: 'Show it' }).focus();
       await h.page.keyboard.press('Tab');
       const focused = await h.page.evaluate(() => {
         const el = document.activeElement;
@@ -728,123 +622,34 @@ void describe('Advanced is two flat sections, its extras folded (LAI-1100 #11)',
     }
   });
 
-  void test('See what the board holds for you opens its fold and goes to it', async () => {
-    const h = await open('/developer?tab=advanced', stub('v3'), {
-      before: (page) => page.setViewportSize({ width: 1280, height: 600 }),
-    });
-    try {
-      await advancedReady(h.page);
-      const link = h.page.locator('.dev-sharing [data-state="org-collects"] a[href="#share-held"]');
-      assert.equal(await isOpen(h.page, 'held'), false);
-      await link.click();
-      await until(() => isOpen(h.page, 'held'));
-      assert.equal(await isOpen(h.page, 'held'), true);
-      assert.equal(await fold(h.page, 'held').getAttribute('id'), 'share-held');
-      assert.equal(await fold(h.page, 'held').locator('table.share-table').isVisible(), true);
-      const where = await fold(h.page, 'held')
-        .locator('> summary')
-        .evaluate((el) => ({
-          focused: el === document.activeElement,
-          inView: el.getBoundingClientRect().top >= 0,
-          above: el.getBoundingClientRect().bottom <= window.innerHeight,
-        }));
-      assert.deepEqual(where, { focused: true, inView: true, above: true });
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('an Activity address scrolls the card into view as well as focusing it', async () => {
-    const h = await open('/developer?tab=activity', stub('v3'), {
-      before: (page) => page.setViewportSize({ width: 1280, height: 600 }),
-    });
-    try {
-      await h.page.waitForFunction(
-        () => document.activeElement?.id === 'dev-sharing-title',
-        undefined,
-        { timeout: 20_000 },
-      );
-      await h.page.waitForTimeout(200);
-      const box = await h.page
-        .locator('#dev-sharing-title')
-        .evaluate((el) => [el.getBoundingClientRect().top, window.innerHeight] as const);
-      assert.ok(box[0] >= 0 && box[0] < box[1] - 40, `the title is at ${String(box[0])}px`);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('with insights off: says so, offers no command, folds what is sent and what is held', async () => {
+  void test('Advanced, 1440 and 390, light and dark: no sideways scroll', async () => {
     const h = await open(
       '/developer?tab=advanced',
       stub('v3', {
-        '/api/v1/me/activity-sharing': {
-          org_enabled: false,
-          enabled: false,
-          person_can_opt_out: false,
-          scope: 'agent-repos',
-          min_sync_interval_s: 600,
-        },
+        '/api/v1/tokens': { data: [SCRIPT, LEGACY, REVOKED, EXPIRED], next_cursor: null },
       }),
     );
     try {
-      await h.page.locator('.dev-sharing [data-state="org-off"]').waitFor({ timeout: 20_000 });
-      assert.match(
-        await h.page.locator('.dev-sharing [data-state="org-off"]').innerText(),
-        /Developer insights are off for this organisation/,
-      );
-      assert.equal(await h.page.locator('.dev-sharing input[name="share-scope"]').count(), 0);
-      assert.equal(await h.page.locator('#share-command-label').count(), 0);
-      assert.deepEqual(
-        await h.page
-          .locator('.dev-sharing details')
-          .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.fold)),
-        ['sent', 'held'],
-      );
+      await advancedReady(h.page);
+      for (const theme of ['light', 'dark']) {
+        await setTheme(h.page, theme);
+        for (const width of [1440, 390]) {
+          await h.page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+          await h.page.waitForTimeout(250);
+          const fit = await h.page.evaluate(() => ({
+            page: document.documentElement.scrollWidth,
+            view: document.documentElement.clientWidth,
+          }));
+          assert.ok(fit.page <= fit.view, `${theme} ${String(width)}: ${String(fit.page)}px wide`);
+          await shoot(h.page, `advanced-${String(width)}-${theme}`);
+        }
+      }
     } finally {
       await h.close();
     }
   });
-
-  for (const theme of ['light', 'dark']) {
-    void test(`${theme}, 390px, every fold open: nothing scrolls sideways, and ⋯ sits by its name`, async () => {
-      const h = await open('/developer?tab=advanced', stub('v3'));
-      try {
-        await h.page.setViewportSize({ width: 390, height: 844 });
-        await setTheme(h.page, theme);
-        await advancedReady(h.page);
-        for (const { id } of FOLDS) await fold(h.page, id).locator('> summary').click();
-        const fits = await h.page.evaluate(() => ({
-          page: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-          cards: [...document.querySelectorAll('.dev-advanced-page > .dev-card')].map(
-            (card) =>
-              card.scrollWidth <= card.clientWidth &&
-              card.getBoundingClientRect().right <= document.documentElement.clientWidth,
-          ),
-        }));
-        assert.deepEqual(fits, { page: true, cards: [true, true] });
-        const row = rowOf(h.page, 'nightly-export');
-        const name = await row.locator('.tok-name').boundingBox();
-        const more = await row
-          .getByRole('button', { name: 'More actions for nightly-export' })
-          .boundingBox();
-        assert.ok(name !== null && more !== null);
-        assert.ok(
-          more.y < name.y + name.height && more.y + more.height > name.y,
-          `⋯ at ${String(more.y)}px is not on the name’s line at ${String(name.y)}px`,
-        );
-      } finally {
-        await h.close();
-      }
-    });
-  }
 });
 
-/**
- * The classic and preview Activity tab is the same `ShareActivity`, without
- * `compact` — and must stay exactly as it was: every part in view, no fold,
- * in its old order.
- */
 void describe('the classic Activity tab is untouched by Advanced’s folds (LAI-1100 #11)', () => {
   for (const mode of ['classic', 'preview'] as const) {
     void test(`${mode}: no fold, every part in view, in its old order`, async () => {

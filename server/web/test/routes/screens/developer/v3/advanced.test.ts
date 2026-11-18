@@ -198,7 +198,7 @@ void describe('the list, grouped as Advanced draws it (LAI-1327)', () => {
   void test('names the tool by its product name, by what it called itself, or as a coding tool', () => {
     assert.equal(legacyToolName(legacy), 'Claude Code');
     assert.equal(
-      legacyToolName(token({ last_client: 'zed-preview', last_client_name: 'Zed Preview' })),
+      legacyToolName(token({ last_mcp_at: NOW, last_client_name: 'Zed Preview' })),
       'Zed Preview',
     );
     assert.equal(legacyToolName(token({ last_mcp_at: NOW })), 'a coding tool');
