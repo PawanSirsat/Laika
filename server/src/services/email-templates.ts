@@ -49,10 +49,21 @@ export function validFor(expiresAt: number, now: number): string {
   return `${String(days)} days`;
 }
 
+/**
+ * One piece of a message's body, already escaped: a string is a paragraph; a
+ * `block` is markup that may not sit inside one — a list — and goes in a
+ * `<div>` of the same spacing instead.
+ */
+type Part = string | { block: string };
+
 /** The HTML frame every message shares: one column, readable in either theme. */
-function frame(brand: EmailBrand, heading: string, paragraphs: string[], button?: Button): string {
-  const body = paragraphs
-    .map((p) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;">${p}</p>`)
+function frame(brand: EmailBrand, heading: string, parts: Part[], button?: Button): string {
+  const body = parts
+    .map((p) =>
+      typeof p === 'string'
+        ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.5;">${p}</p>`
+        : `<div style="margin:0 0 16px;font-size:15px;line-height:1.5;">${p.block}</div>`,
+    )
     .join('\n');
   const action =
     button === undefined
@@ -176,6 +187,188 @@ ${textFooter(brand)}`;
     `Hi ${escapeHtml(input.userName)},`,
     `This is the test email you sent from ${escapeHtml(brand.orgName)}'s Email settings. If you can read it, ${escapeHtml(brand.product)} can send mail.`,
     `Mail only goes out while Email is switched on in Organisation › Integrations.`,
+  ]);
+  return { subject, text, html };
+}
+
+/** A task as a mail names it: its key, title and, when the board has a public URL, a link. */
+export interface TaskRef {
+  key: string;
+  title: string;
+  projectName: string;
+  /** `LAIKA_PUBLIC_URL/task/<key>`, or null when the server has no public URL. */
+  url: string | null;
+}
+
+/** `LAI-42: Title` — the way a person names a task out loud. */
+function taskLine(task: TaskRef): string {
+  return `${task.key}: ${task.title}`;
+}
+
+/**
+ * Why they got it, and where to change it (CHIEF's LAI-1313 review): every
+ * notification mail links the reader's own profile, where their two switches
+ * are. Without a public URL there is no link to give, so it says where.
+ */
+function why(
+  brand: EmailBrand,
+  reason: string,
+  prefsUrl: string | null,
+): { text: string; html: string } {
+  const change = `Change what ${brand.product} emails you`;
+  return prefsUrl === null
+    ? {
+        text: `${reason} ${change} on your profile.`,
+        html: `${escapeHtml(reason)} ${escapeHtml(change)} on your profile.`,
+      }
+    : {
+        text: `${reason} ${change}: ${prefsUrl}`,
+        html: `${escapeHtml(reason)} <a href="${escapeHtml(prefsUrl)}" style="color:#2f5bea;">${escapeHtml(change)}</a>.`,
+      };
+}
+
+export interface AssignmentEmailInput {
+  brand: EmailBrand;
+  /** Who assigned it. */
+  actorName: string;
+  task: TaskRef;
+  /** The reader's own profile, where they change what they are mailed; null without a public URL. */
+  prefsUrl: string | null;
+}
+
+/** You were assigned a task (D-153, LAI-1313) — instant. */
+export function assignmentEmail(input: AssignmentEmailInput): RenderedEmail {
+  const { brand, task } = input;
+  const subject = `${input.actorName} assigned you ${taskLine(task)}`;
+  const link = task.url === null ? '' : `\nOpen it: ${task.url}\n`;
+  const footer = why(brand, "You're getting this because it's assigned to you.", input.prefsUrl);
+  const text = `${input.actorName} assigned you ${task.key} in ${task.projectName}:
+${task.title}
+${link}
+${footer.text}
+
+${textFooter(brand)}`;
+  const html = frame(
+    brand,
+    `${task.key} is yours`,
+    [
+      `${escapeHtml(input.actorName)} assigned you <strong>${escapeHtml(task.key)}</strong> in ${escapeHtml(task.projectName)}: ${escapeHtml(task.title)}`,
+      footer.html,
+    ],
+    task.url === null ? undefined : { label: `Open ${task.key}`, url: task.url },
+  );
+  return { subject, text, html };
+}
+
+export interface MentionEmailInput {
+  brand: EmailBrand;
+  /** Who wrote the comment. */
+  actorName: string;
+  task: TaskRef;
+  /** The comment as plain text, already cut short. */
+  excerpt: string;
+  /** The reader's own profile, where they change what they are mailed; null without a public URL. */
+  prefsUrl: string | null;
+}
+
+/** You were @mentioned in a comment (D-153, LAI-1313) — instant. */
+export function mentionEmail(input: MentionEmailInput): RenderedEmail {
+  const { brand, task } = input;
+  const subject = `${input.actorName} mentioned you on ${taskLine(task)}`;
+  const link = task.url === null ? '' : `\nReply on the task: ${task.url}\n`;
+  const quoted = input.excerpt
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+  const footer = why(brand, "You're getting this because you were @mentioned.", input.prefsUrl);
+  const text = `${input.actorName} mentioned you on ${task.key} in ${task.projectName} (${task.title}):
+
+${quoted}
+${link}
+${footer.text}
+
+${textFooter(brand)}`;
+  const html = frame(
+    brand,
+    `${input.actorName} mentioned you`,
+    [
+      `On <strong>${escapeHtml(task.key)}</strong> in ${escapeHtml(task.projectName)}: ${escapeHtml(task.title)}`,
+      `<span style="display:block;border-left:3px solid #d5d9e2;padding-left:12px;color:#3a4050;white-space:pre-wrap;">${escapeHtml(input.excerpt)}</span>`,
+      footer.html,
+    ],
+    task.url === null ? undefined : { label: 'Reply on the task', url: task.url },
+  );
+  return { subject, text, html };
+}
+
+/** One task's part of a digest: what happened on it, in order. */
+export interface DigestTask {
+  task: TaskRef;
+  lines: string[];
+}
+
+export interface DigestEmailInput {
+  brand: EmailBrand;
+  userName: string;
+  tasks: DigestTask[];
+  /** Member notices, already worded. */
+  notices: string[];
+  /** The reader's own profile, where they change what they are mailed; null without a public URL. */
+  prefsUrl: string | null;
+}
+
+/** What happened on the tasks a person watches since their last digest (D-153, LAI-1313) — daily. */
+export function digestEmail(input: DigestEmailInput): RenderedEmail {
+  const { brand } = input;
+  const count = input.tasks.reduce((n, t) => n + t.lines.length, 0) + input.notices.length;
+  const subject = `Your ${brand.product} digest: ${String(count)} update${count === 1 ? '' : 's'}`;
+
+  const textTasks = input.tasks
+    .map((t) => {
+      const head = t.task.url === null ? taskLine(t.task) : `${taskLine(t.task)} — ${t.task.url}`;
+      return `${head}\n${t.lines.map((l) => `  - ${l}`).join('\n')}`;
+    })
+    .join('\n\n');
+  const textNotices =
+    input.notices.length === 0
+      ? ''
+      : `\n\nFor you:\n${input.notices.map((l) => `  - ${l}`).join('\n')}`;
+  const footer = why(
+    brand,
+    "You're getting this daily digest because it's on in your profile.",
+    input.prefsUrl,
+  );
+  const text = `Hi ${input.userName},
+
+Here is what happened on the tasks you watch since your last digest.
+
+${textTasks}${textNotices}
+
+${footer.text}
+
+${textFooter(brand)}`;
+
+  const htmlTasks = input.tasks.map((t) => {
+    const title =
+      t.task.url === null
+        ? `<strong>${escapeHtml(taskLine(t.task))}</strong>`
+        : `<a href="${escapeHtml(t.task.url)}" style="color:#2f5bea;text-decoration:none;"><strong>${escapeHtml(taskLine(t.task))}</strong></a>`;
+    const items = t.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('');
+    return { block: `${title}<ul style="margin:6px 0 0;padding-left:20px;">${items}</ul>` };
+  });
+  const htmlNotices =
+    input.notices.length === 0
+      ? []
+      : [
+          {
+            block: `<strong>For you</strong><ul style="margin:6px 0 0;padding-left:20px;">${input.notices.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`,
+          },
+        ];
+  const html = frame(brand, 'Your daily digest', [
+    `Hi ${escapeHtml(input.userName)}, here is what happened on the tasks you watch since your last digest.`,
+    ...htmlTasks,
+    ...htmlNotices,
+    footer.html,
   ]);
   return { subject, text, html };
 }

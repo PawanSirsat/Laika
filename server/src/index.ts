@@ -134,8 +134,9 @@ function main(): void {
     // The outbox's sender (D-153, LAI-1312). Nothing goes while the
     // organisation's *Email on* switch is off — the default.
     email: { transport: smtpTransport() },
-    // Teams posts link back to this Laika (D-154, LAI-1314); the address
-    // each is posted to is decrypted with `serverSecret` above.
+    // Teams posts and notification mail link back to this Laika (D-154,
+    // LAI-1314; LAI-1313). The address each Teams post goes to is decrypted
+    // with `serverSecret` above.
     publicUrl: env.publicUrl,
   });
 

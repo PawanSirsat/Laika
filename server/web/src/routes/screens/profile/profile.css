@@ -1641,3 +1641,45 @@
 .prof-time-note {
   color: var(--text-muted);
 }
+
+/*
+ * Your own email switches (D-153, LAI-1313), below the Overview's rows: a card
+ * of its own, not a `.prof-card`, so the rows' shared heights never count it.
+ * Tokens only, so both themes follow.
+ */
+.prof-email {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.prof-email-head {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.prof-email-switches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.prof-email-note,
+.prof-email-error {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.prof-email-error {
+  color: var(--chip-orange);
+}

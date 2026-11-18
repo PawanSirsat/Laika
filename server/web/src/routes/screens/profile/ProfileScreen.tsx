@@ -68,6 +68,7 @@ import {
   rovingTabIndex,
 } from '../../../components/tabs/TabStrip.tsx';
 import './profile.css';
+import { EmailPrefsCard } from './EmailPrefsCard.tsx';
 
 export interface ProfileScreenProps {
   /** `?user=` — whose profile. */
@@ -535,6 +536,10 @@ export function ProfileScreen({
           }
         />
       )}
+
+      {/* D-153 (LAI-1313): your own email switches, below the Overview's rows
+          rather than in them, so the rows keep their shared heights. */}
+      {shownTab === 'overview' && own && <EmailPrefsCard />}
 
       {shownTab === 'dev' &&
         (own ? (
