@@ -10,12 +10,15 @@ import {
   generalIssues,
   generalPatch,
   handoffSummary,
+  heldIconPreview,
+  holdIcon,
   isDirty,
   keyChange,
   nextTaskKey,
   readerLine,
   repoFromPaste,
   roleSummary,
+  savePatch,
   visibilityEffect,
 } from '../../../../src/routes/screens/space-settings/space-settings-model.ts';
 
@@ -289,5 +292,47 @@ void describe('what Access says a setting does right now', () => {
 
   void test('colours are named as people say them', () => {
     assert.equal(colorLabel('teal'), 'Teal');
+  });
+});
+
+void describe('a held icon (LAI-1321)', () => {
+  const staged = {
+    upload_id: '01M7NB3PN15NBHEPSNB8VPBTZJ',
+    content_type: 'image/png',
+    size_bytes: 9,
+  } as const;
+  const image = { kind: 'image', staged, preview: 'data:image/png;base64,AAAA' } as const;
+
+  void test('the preview is what the icon will be once saved', () => {
+    assert.deepEqual(heldIconPreview({ emoji: '🚀' }, null), { emoji: '🚀' });
+    assert.deepEqual(heldIconPreview(null, image), { url: image.preview, updated_at: 0 });
+    assert.deepEqual(heldIconPreview(null, { kind: 'emoji', emoji: '🎯' }), { emoji: '🎯' });
+    assert.equal(heldIconPreview({ emoji: '🚀' }, { kind: 'remove' }), null);
+  });
+
+  void test('a change that changes nothing is not held', () => {
+    assert.equal(holdIcon({ emoji: '🚀' }, { kind: 'emoji', emoji: '🚀' }), null);
+    assert.equal(holdIcon(null, { kind: 'remove' }), null);
+    assert.deepEqual(holdIcon({ emoji: '🚀' }, { kind: 'emoji', emoji: '🎯' }), {
+      kind: 'emoji',
+      emoji: '🎯',
+    });
+    assert.deepEqual(holdIcon({ emoji: '🚀' }, { kind: 'remove' }), { kind: 'remove' });
+    assert.deepEqual(holdIcon(null, image), image);
+  });
+
+  void test('Save sends a held emoji with the changed fields, in one PATCH', () => {
+    const draft = { ...draftOf(PROJECT), name: 'Laika Board' };
+    assert.deepEqual(savePatch(PROJECT, draft, true, { kind: 'emoji', emoji: '🚀' }), {
+      name: 'Laika Board',
+      icon_emoji: '🚀',
+    });
+    // An image is completed, and a removal sent, after the PATCH — not in it.
+    assert.deepEqual(savePatch(PROJECT, draft, true, image), { name: 'Laika Board' });
+    assert.deepEqual(savePatch(PROJECT, draftOf(PROJECT), true, { kind: 'remove' }), {});
+    // Without the right to edit the fields, only the icon goes.
+    assert.deepEqual(savePatch(PROJECT, draft, false, { kind: 'emoji', emoji: '🚀' }), {
+      icon_emoji: '🚀',
+    });
   });
 });

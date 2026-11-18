@@ -1,11 +1,10 @@
 import { useId, useRef, useState, useSyncExternalStore } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
-  iconFileProblem,
+  ICON_MAX_BYTES,
+  isIconType,
   isOneEmoji,
-  removeProjectIcon,
-  setProjectEmoji,
-  uploadProjectIcon,
+  stageProjectIcon,
 } from '../../../api/project-icons.ts';
 import { lookOf, subscribeLooks } from '../../../api/project-looks.ts';
 import type { Project } from '../../../api/projects.ts';
@@ -13,85 +12,150 @@ import { useAttachmentLimit } from '../../../api/use-attach.ts';
 import { Button } from '../../../components/forms/Button.tsx';
 import { ProjectMark } from '../../../components/ProjectMark.tsx';
 import { emojiLabel, ICON_EMOJIS } from './icon-choices.ts';
+import { imageSize, MAX_PICK_PIXELS } from './icon-frame.ts';
+import { IconFrameEditor } from './IconFrameEditor.tsx';
+import { type HeldIcon, heldIconPreview, holdIcon } from './space-settings-model.ts';
 
 export interface IconSectionProps {
   readonly project: Project;
+  /** The icon change waiting for Save changes, or `null` for none (LAI-1321). */
+  readonly held: HeldIcon | null;
+  readonly onHold: (held: HeldIcon | null) => void;
+  /**
+   * Told when an image starts and stops going to the store, so General keeps
+   * Save off meanwhile (LAI-1321 review): a save must not race an upload.
+   */
+  readonly onStaging?: ((staging: boolean) => void) | undefined;
+  /** While General saves: nothing here may change under it. */
+  readonly saving?: boolean;
 }
 
-type Busy = 'upload' | 'emoji' | 'remove' | null;
+/** The largest picture the frame editor opens — it is cropped to far less, but a camera photo must still open. */
+const PICK_MAX_BYTES = 25 * 1024 * 1024;
+
+function asDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // `readAsDataURL` always answers a string; anything else is a read that failed.
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('unreadable'));
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('unreadable'));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
 
 /**
- * Space settings → General → Icon (D-152, LAI-1311): what every mark of this
- * space draws — an uploaded image, an emoji, or else its first letter on its
- * colour. Shown to org owners and admins only; the screen decides that.
+ * Space settings → General → Icon (D-152, LAI-1311; held since LAI-1321):
+ * what every mark of this space draws — an image, an emoji, or else its first
+ * letter on its colour. Shown to org owners and admins only; the tab decides.
  *
- * **Each change saves at once**, outside General's form: an upload is sent
- * the moment a file is picked, so there is nothing to hold for Save — and a
- * change here must not reset a half-typed name above it. So it does not hand
- * the screen a new project: the answer is remembered by slug
- * (`api/project-looks.ts`), and every mark on the page, this preview among
- * them, redraws from there.
+ * **Every change waits for Save changes**, as every other General field does
+ * (the owner, 2026-11-18: a change that saved on its own left Save disabled,
+ * and looked unsaved). Picking an image opens the frame editor; *Use this*
+ * puts the cropped square in the store at once — so Save only has to say so —
+ * and holds it, previewed and marked *Not saved yet*. An emoji and Remove are
+ * held the same way. The tab sends them with Save and drops them on Discard.
  *
  * Upload is offered only on a board with a file store (`GET /org`'s
  * `attachments`); without one, emoji and letter are the choices.
  */
-export function IconSection({ project }: IconSectionProps) {
+export function IconSection({
+  project,
+  held,
+  onHold,
+  onStaging,
+  saving = false,
+}: IconSectionProps) {
   const look = useSyncExternalStore(subscribeLooks, () => lookOf(project.slug));
-  const icon = look !== undefined ? look.icon : project.icon;
+  const current = look !== undefined ? look.icon : project.icon;
+  const shown = heldIconPreview(current, held);
   const limit = useAttachmentLimit();
-  const [busy, setBusy] = useState<Busy>(null);
+  const [picked, setPicked] = useState<Blob | null>(null);
+  const [staging, setStaging] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | undefined>(undefined);
-  const [done, setDone] = useState<string | undefined>(undefined);
+  const [note, setNote] = useState<string | undefined>(undefined);
   const [picking, setPicking] = useState(false);
   const [typed, setTyped] = useState('');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const typedId = useId();
   const pickerId = useId();
 
-  const current = icon !== null && 'emoji' in icon ? icon.emoji : undefined;
-  const hasIcon = icon !== null;
+  const busy = staging || saving;
+  const shownEmoji = shown !== null && 'emoji' in shown ? shown.emoji : undefined;
   const typedIssue =
     typed.trim() !== '' && !isOneEmoji(typed) ? 'Type or paste a single emoji.' : undefined;
 
-  const run = (kind: Exclude<Busy, null>, work: () => Promise<unknown>, said: string): void => {
-    setBusy(kind);
+  const hold = (change: HeldIcon): void => {
     setFailure(undefined);
-    setDone(undefined);
-    work()
-      .then(() => {
-        setDone(said);
+    setNote(undefined);
+    onHold(holdIcon(current, change));
+  };
+
+  /**
+   * A picked file, checked before anything decodes it: its type, its bytes,
+   * and — read from its header — its pixels (LAI-1321 review: a small file
+   * can hold a picture that decodes into gigabytes).
+   */
+  const pickFile = async (file: File | undefined): Promise<void> => {
+    if (file === undefined) return;
+    setFailure(undefined);
+    setNote(undefined);
+    if (!isIconType(file.type)) {
+      setFailure('An icon is a PNG, JPEG or WebP image.');
+      return;
+    }
+    if (file.size > PICK_MAX_BYTES) {
+      setFailure('That picture is too large to open — 25 MB at most.');
+      return;
+    }
+    const size = imageSize(new Uint8Array(await file.arrayBuffer()));
+    if (size === null) {
+      setFailure('That file could not be read as an image.');
+      return;
+    }
+    if (size.width * size.height > MAX_PICK_PIXELS) {
+      setFailure(
+        `That picture is ${String(size.width)} × ${String(size.height)} — too large to work with. 40 megapixels at most.`,
+      );
+      return;
+    }
+    setPicked(file);
+  };
+
+  /** The cropped square, into the store at once and held until Save. */
+  const stage = (image: Blob, reduced: boolean): void => {
+    setPicked(null);
+    setStaging(true);
+    onStaging?.(true);
+    setProgress(0);
+    setFailure(undefined);
+    setNote(
+      reduced ? 'Made smaller to fit this board’s file limit — check it looks right.' : undefined,
+    );
+    Promise.all([
+      stageProjectIcon(project.slug, image, (fraction) => {
+        setProgress(fraction);
+      }),
+      asDataUrl(image),
+    ])
+      .then(([staged, preview]) => {
+        // Not `hold`: that clears the note, and the note is about this image.
+        setFailure(undefined);
+        onHold(holdIcon(current, { kind: 'image', staged, preview }));
       })
       .catch((cause: unknown) => {
         setFailure(failureText(cause));
       })
       .finally(() => {
-        setBusy(null);
+        setStaging(false);
+        onStaging?.(false);
         setProgress(null);
       });
-  };
-
-  const pickFile = (file: File | undefined): void => {
-    if (file === undefined) return;
-    const problem = iconFileProblem(file, limit ?? undefined);
-    if (problem !== null) {
-      setDone(undefined);
-      setFailure(problem.message);
-      return;
-    }
-    setProgress(0);
-    run(
-      'upload',
-      () =>
-        uploadProjectIcon(project.slug, file, (fraction) => {
-          setProgress(fraction);
-        }),
-      'Image saved as the icon.',
-    );
-  };
-
-  const chooseEmoji = (emoji: string): void => {
-    run('emoji', () => setProjectEmoji(project.slug, emoji), `${emoji} is the icon now.`);
   };
 
   return (
@@ -108,15 +172,20 @@ export function IconSection({ project }: IconSectionProps) {
       </div>
       <div className="ss-row-field">
         <div className="ss-icon">
-          <ProjectMark project={project} size="xl" labelled />
+          <ProjectMark
+            project={{ slug: project.slug, name: project.name, color: project.color, icon: shown }}
+            size="xl"
+            labelled
+            preview
+          />
           <div className="ss-icon-actions">
             {limit !== null && limit !== undefined && (
               <>
                 <Button
                   variant="secondary"
                   size="sm"
-                  busy={busy === 'upload'}
-                  disabled={busy !== null}
+                  busy={staging}
+                  disabled={busy}
                   data-action="icon-upload"
                   onClick={() => fileRef.current?.click()}
                 >
@@ -133,7 +202,7 @@ export function IconSection({ project }: IconSectionProps) {
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
                     event.currentTarget.value = '';
-                    pickFile(file);
+                    void pickFile(file);
                   }}
                 />
               </>
@@ -143,7 +212,7 @@ export function IconSection({ project }: IconSectionProps) {
               size="sm"
               aria-expanded={picking}
               aria-controls={pickerId}
-              disabled={busy !== null}
+              disabled={busy}
               data-action="icon-emoji"
               onClick={() => {
                 setPicking((open) => !open);
@@ -151,28 +220,43 @@ export function IconSection({ project }: IconSectionProps) {
             >
               Choose emoji
             </Button>
-            {hasIcon && (
+            {shown !== null && (
               <Button
                 variant="secondary"
                 size="sm"
-                busy={busy === 'remove'}
-                disabled={busy !== null}
+                disabled={busy}
                 data-action="icon-remove"
                 onClick={() => {
-                  run(
-                    'remove',
-                    () => removeProjectIcon(project.slug),
-                    'Icon removed: the space shows its letter.',
-                  );
+                  hold({ kind: 'remove' });
                 }}
               >
                 Remove
               </Button>
             )}
+            {held !== null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                data-action="icon-keep"
+                onClick={() => {
+                  onHold(null);
+                }}
+              >
+                Keep current
+              </Button>
+            )}
           </div>
         </div>
+        {held !== null && (
+          <p className="ss-icon-held" data-icon-held>
+            Not saved yet — Save changes to use it.
+          </p>
+        )}
         {limit !== null && limit !== undefined && (
-          <p className="ss-help">PNG, JPEG or WebP, up to 1 MB. A square image reads best.</p>
+          <p className="ss-help">
+            PNG, JPEG or WebP. You can position and zoom it before it is used.
+          </p>
         )}
 
         {picking && (
@@ -182,28 +266,20 @@ export function IconSection({ project }: IconSectionProps) {
                 <button
                   key={emoji}
                   type="button"
-                  className={emoji === current ? 'ss-emoji ss-emoji-on' : 'ss-emoji'}
+                  className={emoji === shownEmoji ? 'ss-emoji ss-emoji-on' : 'ss-emoji'}
                   aria-label={emojiLabel(emoji)}
-                  aria-pressed={emoji === current}
-                  disabled={busy !== null}
+                  aria-pressed={emoji === shownEmoji}
+                  disabled={busy}
                   data-emoji={emoji}
                   onClick={() => {
-                    chooseEmoji(emoji);
+                    hold({ kind: 'emoji', emoji });
                   }}
                 >
                   {emoji}
                 </button>
               ))}
             </div>
-            <form
-              className="ss-emoji-typed"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (typed.trim() === '' || typedIssue !== undefined) return;
-                chooseEmoji(typed.trim());
-                setTyped('');
-              }}
-            >
+            <div className="ss-emoji-typed">
               <label htmlFor={typedId} className="ss-help">
                 Or type or paste any emoji
               </label>
@@ -219,13 +295,24 @@ export function IconSection({ project }: IconSectionProps) {
                 onChange={(event) => {
                   setTyped(event.currentTarget.value);
                 }}
+                onKeyDown={(event) => {
+                  // Enter takes the emoji here; it must not submit anything around it.
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  if (typed.trim() === '' || typedIssue !== undefined) return;
+                  hold({ kind: 'emoji', emoji: typed.trim() });
+                  setTyped('');
+                }}
               />
               <Button
-                type="submit"
                 variant="secondary"
                 size="sm"
-                disabled={busy !== null || typed.trim() === '' || typedIssue !== undefined}
+                disabled={busy || typed.trim() === '' || typedIssue !== undefined}
                 data-action="icon-emoji-use"
+                onClick={() => {
+                  hold({ kind: 'emoji', emoji: typed.trim() });
+                  setTyped('');
+                }}
               >
                 Use it
               </Button>
@@ -234,21 +321,36 @@ export function IconSection({ project }: IconSectionProps) {
                   {typedIssue}
                 </p>
               )}
-            </form>
+            </div>
           </div>
         )}
 
         <p className="ss-help" role="status" data-icon-status>
-          {busy === 'upload' && progress !== null
-            ? `Uploading — ${String(Math.round(progress * 100))}%`
-            : (done ?? '')}
+          {staging && progress !== null ? `Uploading — ${String(Math.round(progress * 100))}%` : ''}
         </p>
+        {note !== undefined && (
+          <p className="ss-help" data-icon-note>
+            {note}
+          </p>
+        )}
         {failure !== undefined && (
           <p className="ss-field-error" role="alert" data-icon-error>
             {failure}
           </p>
         )}
       </div>
+
+      {picked !== null && (
+        <IconFrameEditor
+          file={picked}
+          space={{ slug: project.slug, color: project.color }}
+          maxBytes={Math.min(ICON_MAX_BYTES, limit ?? ICON_MAX_BYTES)}
+          onCancel={() => {
+            setPicked(null);
+          }}
+          onUse={stage}
+        />
+      )}
     </div>
   );
 }
@@ -258,9 +360,8 @@ function failureText(cause: unknown): string {
   if (cause instanceof ApiError) {
     const reason = (cause.details as { reason?: unknown } | null)?.reason;
     if (reason === 'attachments_off') return 'This board has no file store, so images are off.';
-    if (reason === 'type_mismatch') return 'That file is not the image it says it is.';
     return cause.message;
   }
   if (cause instanceof Error && cause.name === 'IconFileError') return cause.message;
-  return 'The icon could not be saved. Try again.';
+  return 'The image could not be uploaded. Try again.';
 }
