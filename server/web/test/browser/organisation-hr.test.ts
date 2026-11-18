@@ -922,7 +922,7 @@ void describe('Holidays', () => {
     }
   });
 
-  void test('a member on Integrations is shown no HR system, and it is never asked', async () => {
+  void test('a member on the HR system’s page is shown no card, and it is never asked', async () => {
     // Its page says who sets it up, rather than drawing an empty card.
     const h = await integrations(
       orgStub('member', { '/api/v1/org/hr': connected() }),
