@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { isKeyName, scanFile } from '../src/attach-scan.ts';
 import { officeText } from '../src/office-text.ts';
-import { SECRET_PATTERNS, type SecretPatternName, scanForSecrets } from '../src/secret-scan.ts';
+import {
+  SECRET_PATTERNS,
+  SECRET_SCAN_BYTES,
+  type SecretPatternName,
+  scanForSecrets,
+} from '../src/secret-scan.ts';
 import { docx, xlsx, zip } from './support/zip.ts';
 
 /**
@@ -247,5 +252,98 @@ void describe('what must pass: masked copies, reports and prose (no false positi
 
   void test('a sentence that mentions a password is not a table header', () => {
     passes('notes.md', 'Set the password, then sign in.\nAfter that, open the board.\n');
+  });
+});
+
+void describe('what D-162 tells an agent to write passes, and the same shape with a real one does not (the board’s cases)', () => {
+  // The server's pairs (LAI-1302 review), rule for rule: the fix narrowed
+  // each rule rather than removing it, here as there.
+  const cases: [string, string, string, SecretPatternName][] = [
+    [
+      'a note on where the password lives',
+      'Password: stored in the team vault',
+      'Password: Hunter2-but-longer',
+      'password_value',
+    ],
+    [
+      'a password column that says where it is',
+      'account,password\nprod db,see vault',
+      'account,password\nprod db,Hunter2!x',
+      'credential_column',
+    ],
+    [
+      'a CSV test report',
+      'suite,pass,fail\nunit,120,0',
+      'suite,api_token\nunit,abc123def456',
+      'credential_column',
+    ],
+    [
+      'a markdown test report',
+      '| Suite | Pass | Fail |\n|---|---|---|\n| unit | 120 | 0 |',
+      '| Suite | Password |\n|---|---|\n| unit | Welcome-1 |',
+      'credential_column',
+    ],
+  ];
+  for (const [what, clean, secret, pattern] of cases) {
+    void test(`passes ${what}, and still catches a real one in the same shape`, () => {
+      assert.equal(scanForSecrets(clean), null, clean);
+      assert.equal(scanForSecrets(secret)?.pattern, pattern, secret);
+    });
+  }
+
+  void test('takes a password value only as one secret-shaped token, not a word', () => {
+    for (const clean of [
+      'password: required',
+      'The password: see the runbook.',
+      '"password": "in 1Password"',
+    ]) {
+      assert.equal(scanForSecrets(clean), null, clean);
+    }
+    for (const secret of [
+      '"password": "hunter22",',
+      'password = correcthorsebatterystaple',
+      "db.password='Pa55word' # local",
+    ]) {
+      assert.equal(scanForSecrets(secret)?.pattern, 'password_value', secret);
+    }
+  });
+});
+
+/**
+ * Each rule's worst case at the size the board reads, ported from the
+ * server's test (LAI-1302 review). The CLI reads a whole file, so a rule that
+ * went quadratic would hold `laika attach` for minutes on a crafted one; the
+ * `url_credentials` rule this list replaced took about 1.5 s on 80k characters
+ * of `a.`.
+ */
+void describe('every rule is linear on a crafted 2 MiB file', () => {
+  const fill = (unit: string, prefix = ''): string =>
+    (prefix + unit.repeat(Math.ceil(SECRET_SCAN_BYTES / unit.length))).slice(0, SECRET_SCAN_BYTES);
+
+  const WORST: Record<SecretPatternName, string> = {
+    private_key: fill('A ', '-----BEGIN '),
+    aws_access_key_id: fill('AKIA'),
+    aws_secret_access_key: fill(' ', 'aws_secret_access_key'),
+    laika_token: fill('lai_'),
+    github_token: fill('a', 'ghp_'),
+    sk_token: fill('sk-'),
+    password_value: fill('\t', 'password: abcd'),
+    env_secret: fill('A_A_A_A_A_A_A_A_A_A_A_A_A_A_A_A\n'),
+    url_credentials: fill('a.'),
+    credential_column: fill(',****\n', 'a,password\n'),
+  };
+
+  void test('scans each in well under a second, and all of them within 1.5 s', () => {
+    assert.deepEqual(Object.keys(WORST).sort(), [...SECRET_PATTERNS].sort());
+    let total = 0;
+    for (const [pattern, text] of Object.entries(WORST)) {
+      assert.equal(text.length, SECRET_SCAN_BYTES, pattern);
+      const started = performance.now();
+      scanForSecrets(text);
+      const took = performance.now() - started;
+      assert.ok(took < 750, `${pattern} took ${took.toFixed(0)} ms`);
+      total += took;
+    }
+    assert.ok(total < 1500, `all of them took ${total.toFixed(0)} ms`);
   });
 });
