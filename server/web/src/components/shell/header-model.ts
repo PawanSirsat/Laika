@@ -4,9 +4,10 @@
  * somebody else, and where each view of a person is.
  *
  * **No breadcrumb here since LAI-1227**: the top bar is Jira's and names no
- * page. Each page names itself once, in its own `h1`; a space's views add
- * *Spaces /* above the space's name (`SpaceTopBar`), a member's profile its
- * *People /* trail (`ScreenHeader`'s crumbs variant).
+ * page. Each page names itself once, in its own `h1`: a space's views by the
+ * space's name and mark (`SpaceTopBar`, with no *Spaces /* above it since
+ * LAI-1328), a member's profile under its *People /* trail (`ScreenHeader`'s
+ * crumbs variant).
  */
 
 /** The screens that already show another person's data (LAI-959, LAI-1138, LAI-1170). */

@@ -119,7 +119,8 @@ export function ScreenHeader({
     /*
      * The breadcrumb is the page's (LAI-1227): the top bar is Jira's and names
      * no page, so a member's profile says where it sits — *People / <name>* —
-     * above its context line, as a space says *Spaces /* above its name.
+     * above its context line. (A space's header had *Spaces /* too, until
+     * LAI-1328; its name and mark now start the page.)
      */
     const crumbs = (
       <nav className="screen-crumbs-trail" aria-label="Breadcrumb">

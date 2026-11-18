@@ -2,11 +2,13 @@
 id: LAI-1341
 title: 'Notification mail when an agent acts for its owner: should the owner be mailed about what their own agent did, and in what words?'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1313
-status: backlog
+status: review
+started: 2026-11-18T06:30:57Z
+finished: 2026-11-18T06:37:24Z
 ---
 
 ## Goal
@@ -40,3 +42,24 @@ they watch.
 - **Where the change would land.** The actor rule is `row.actorId` in
   `services/email-notify.ts` (`activityRow`), together with the digest's "done by someone
   else" rule in SPEC §4.99.
+
+## Decision (the owner, relayed by CHIEF, 2026-11-18)
+
+**Email them, and name the agent.**
+
+- When a person's own agent assigns or @mentions them, they get the mail. "Never the actor"
+  applies to the human acting in person, not to their agent.
+- When an agent acts on anyone, the mail and the digest line say "Pawan's agent", or the
+  agent's display name followed by "(Pawan's agent)". Never just "Pawan".
+
+## Acceptance criteria
+
+- [x] An owner's own agent assigning them a task mails them. The subject names the agent:
+      `<display name> (<owner>'s agent) assigned you …`.
+- [x] An owner's own agent @mentioning them mails them. A token with no registered agent reads
+      as `<owner>'s agent`.
+- [x] Nobody is mailed for what they did in person: self-assignment, a claim, a self-mention.
+- [x] An agent's work reaches the digests of the people who watch the task, the owner's own
+      included, worded as its owner's agent.
+- [x] SPEC §4.93, §4.99 and §11.6 say so. CI is green.
+

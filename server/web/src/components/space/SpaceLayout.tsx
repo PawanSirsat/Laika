@@ -259,8 +259,8 @@ function SpaceFrameBody({
         <div className="space-bar">
           {/*
             **One header, three rows, the same on every tab** (LAI-1198): who
-            and what (`SpaceTopBar` — since LAI-1227 in the page, under a
-            *Spaces /* breadcrumb, as Jira's project header), the views
+            and what (`SpaceTopBar` — since LAI-1227 in the page, as Jira's
+            project header, and with no breadcrumb since LAI-1328), the views
             (`ViewTabs`), then the one toolbar (`SpaceToolbar`) — search and
             filters and the view's own controls. Create is the top bar's.
           */}
