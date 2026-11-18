@@ -20,6 +20,7 @@ import {
   activitySteps,
   TROUBLES,
   type ActivityHeadline,
+  type ActivityInputs,
   type ActivityStep,
 } from './activity-state.ts';
 import type { ChipTone } from './DesignChip.tsx';
@@ -50,8 +51,12 @@ const HEADLINE_TONE: Readonly<Record<ActivityHeadline['kind'], ChipTone>> = {
 
 /** How often *4 min ago* moves on by itself. */
 const TICK_MS = 30_000;
-/** How often the tab asks again while it waits for a first report. */
-const POLL_MS = 20_000;
+/**
+ * How long the tab waits before asking again while step 5 waits: 20 s, then
+ * 60 s and 120 s after one and two failures in a row; an answer resets it
+ * (LAI-1327 follow-up).
+ */
+const POLL_BACKOFF_MS = [20_000, 60_000, 120_000] as const;
 
 /** An in-app link: a real `href`, and a plain click stays in the page. */
 function AppLink({
@@ -102,8 +107,11 @@ function withCode(text: string): ReactNode {
  * **It stays current by itself** (LAI-1327 review 1), since steps 2 to 5
  * finish on the reader's machine, not here: it reads everything again when
  * the reader comes back to the window, asks again every 20 s while step 5
- * waits and the page is in view, and moves *4 min ago* on every 30 s. A
- * re-read that fails keeps what is shown and says so (`StaleNotice`).
+ * waits for a report that can arrive — step 4 next: the organisation
+ * collects, a device and a tool are there, the reader is no viewer — and the
+ * page is in view, backing off to 60 s and 120 s while it fails; and it moves
+ * *4 min ago* on every 30 s. A re-read that fails keeps what is shown and says
+ * so (`StaleNotice`).
  */
 export function ActivityTab({
   origin,
@@ -120,8 +128,8 @@ export function ActivityTab({
   const [insightsBusy, setInsightsBusy] = useState(false);
   const [insightsError, setInsightsError] = useState<string | undefined>(undefined);
   /**
-   * The organisation's switch as `PATCH /org` answered it, until a re-read
-   * shows the same — so the switch never flashes back to where it was.
+   * The organisation's switch as `PATCH /org` answered it, until the next read
+   * lands — so the switch never flashes back to where it was.
    */
   const [insightsAnswer, setInsightsAnswer] = useState<boolean | undefined>(undefined);
   const [retrying, setRetrying] = useState(false);
@@ -176,16 +184,58 @@ export function ActivityTab({
     };
   }, []);
 
-  // Step 5 waiting: ask again until a first report lands, while it is in view.
-  const waiting =
-    !readOnly && model.state.kind === 'ready' && model.state.held.last_received_at === null;
+  // Any read that lands after the switch's answer replaces it (LAI-1327
+  // follow-up): a failed re-read cannot pin the switch, and a change made in
+  // another tab shows on the next read.
+  useEffect(() => {
+    setInsightsAnswer(undefined);
+  }, [model.loadedAt]);
+
+  const shown = model.state.kind === 'ready' ? model.state : undefined;
+  const orgEnabled = insightsAnswer ?? shown?.sharing.org_enabled ?? false;
+  const inputs: ActivityInputs | undefined =
+    shown === undefined || devices === undefined
+      ? undefined
+      : {
+          orgEnabled,
+          devices,
+          lastReceivedAt: shown.held.last_received_at,
+          collectors: shown.held.collectors,
+          readOnly,
+          // Never before the answer shown was read: *4 min ago*, not *-1 min*.
+          now: Math.max(now, model.loadedAt ?? 0),
+        };
+  const steps = inputs === undefined ? undefined : activitySteps(inputs);
+
+  // Ask again only while a report can still arrive: step 4 is next — the
+  // organisation collects, a device is paired and a tool connected, the
+  // reader is no viewer, and nothing has come yet. Only while the page is in
+  // view, and slower while it fails.
+  const waiting = steps?.find((step) => step.key === 'command')?.state === 'active';
   useEffect(() => {
     if (!waiting) return undefined;
-    const every = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void poll();
-    }, POLL_MS);
+    let failures = 0;
+    let timer = 0;
+    let stopped = false;
+    const next = (): void => {
+      const wait = POLL_BACKOFF_MS[Math.min(failures, POLL_BACKOFF_MS.length - 1)];
+      timer = window.setTimeout(() => {
+        if (document.visibilityState !== 'visible') {
+          next();
+          return;
+        }
+        void poll().then((result) => {
+          if (stopped) return;
+          if (result === 'fresh') failures = 0;
+          if (result === 'failed') failures += 1;
+          next();
+        });
+      }, wait);
+    };
+    next();
     return () => {
-      window.clearInterval(every);
+      stopped = true;
+      window.clearTimeout(timer);
     };
   }, [waiting, poll]);
 
@@ -195,11 +245,10 @@ export function ActivityTab({
     updateOrg({ developer_insights: on })
       .then((org) => {
         // Shown from the answer at once, as Organisation does; the switch stays
-        // busy until the re-read brings the steps that hang on it.
+        // busy until the re-read brings the steps that hang on it, and that
+        // read — or any later one — replaces the answer.
         setInsightsAnswer(org.developer_insights);
-        return reload().then((fresh) => {
-          if (fresh) setInsightsAnswer(undefined);
-        });
+        return reload();
       })
       .catch((cause: unknown) => {
         setInsightsError(cause instanceof Error ? cause.message : 'That change was refused.');
@@ -243,7 +292,7 @@ export function ActivityTab({
       </div>
     );
   }
-  if (model.state.kind === 'loading' || devices === undefined) {
+  if (shown === undefined || inputs === undefined || steps === undefined) {
     return (
       <div className="dx dev-activity">
         <LoadingState shape="card" count={2} label="Loading your activity setup" />
@@ -251,19 +300,8 @@ export function ActivityTab({
     );
   }
 
-  const { sharing, held, permissions } = model.state;
-  const orgEnabled = insightsAnswer ?? sharing.org_enabled;
-  const inputs = {
-    orgEnabled,
-    devices,
-    lastReceivedAt: held.last_received_at,
-    collectors: held.collectors,
-    readOnly,
-    // Never before the answer shown was read: *4 min ago*, not *-1 min*.
-    now: Math.max(now, model.loadedAt ?? 0),
-  };
+  const { sharing, permissions } = shown;
   const staleCause = model.stale !== undefined ? model.stale.cause : devicesError;
-  const steps = activitySteps(inputs);
   const headline = activityHeadline(inputs);
   const commands = activityCommands(origin);
 
@@ -345,9 +383,17 @@ export function ActivityTab({
               <span
                 className="dx-flow-n"
                 aria-hidden="true"
-                {...(step.state === 'pending' ? {} : { 'data-state': step.state })}
+                {...(step.state === 'pending'
+                  ? {}
+                  : { 'data-state': step.attention === true ? 'attention' : step.state })}
               >
-                {step.state === 'done' ? <DxIcon name="check" size={16} /> : i + 1}
+                {step.attention === true ? (
+                  <DxIcon name="alert" size={16} />
+                ) : step.state === 'done' ? (
+                  <DxIcon name="check" size={16} />
+                ) : (
+                  i + 1
+                )}
               </span>
               <div className="dx-flow-text">
                 <strong
@@ -355,7 +401,7 @@ export function ActivityTab({
                   {...(step.key === 'org' ? { id: 'dx-activity-org-name' } : {})}
                 >
                   <span className="visually-hidden">
-                    {`Step ${String(i + 1)}, ${step.state === 'done' ? 'done' : step.state === 'active' ? 'next' : 'later'}: `}
+                    {`Step ${String(i + 1)}, ${step.attention === true ? 'needs attention' : step.state === 'done' ? 'done' : step.state === 'active' ? 'next' : 'later'}: `}
                   </span>
                   {step.name}
                 </strong>

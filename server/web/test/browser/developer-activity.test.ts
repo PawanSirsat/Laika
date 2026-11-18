@@ -16,6 +16,10 @@
  *   off, *Last sent …* once stalled; a viewer's step 4 is locked; a refused
  *   switch says why and stays put, and a slow one never flashes back; the tab
  *   keeps itself current, and a failed re-read keeps what it shows.
+ * - The follow-up: any later read replaces the switch's answer; the poll runs
+ *   only while a report can arrive and backs off while it fails; a read sent
+ *   before a change or a delete never lands after it; stalled and paused steps
+ *   are drawn in the warn tone.
  * - 390px, light and dark, with no sideways scroll. Set `LAIKA_SHOTS` to a
  *   directory to keep the pictures the review asks for.
  */
@@ -28,6 +32,7 @@ import {
   closeBrowser,
   open,
   refuse,
+  reply,
   setTheme,
   until,
   type ApiStub,
@@ -776,6 +781,21 @@ void describe('step 4 says what is true now (LAI-1327 review 1)', () => {
           await h.page.locator('.dev-activity').getAttribute('data-headline'),
           c.name === 'paused' ? 'off' : c.name === 'stalled' ? 'stalled' : 'collecting',
         );
+        // Stalled or paused: steps 4 and 5 in the warn tone, saying so to a
+        // screen reader; fresh, the green tick (LAI-1327 follow-up).
+        for (const key of ['command', 'data']) {
+          const mark = step(h.page, key).locator('.dx-flow-n');
+          const said = await step(h.page, key)
+            .locator('.dx-flow-name .visually-hidden')
+            .textContent();
+          if (c.name === 'fresh') {
+            assert.equal(await mark.getAttribute('data-state'), 'done', key);
+            assert.match(said ?? '', /, done: $/, key);
+          } else {
+            assert.equal(await mark.getAttribute('data-state'), 'attention', key);
+            assert.match(said ?? '', /, needs attention: $/, key);
+          }
+        }
         for (const theme of ['light', 'dark'] as const) {
           await h.page.setViewportSize({ width: 1440, height: 1000 });
           await setTheme(h.page, theme);
@@ -796,6 +816,287 @@ void describe('step 4 says what is true now (LAI-1327 review 1)', () => {
       }
     });
   }
+});
+
+void describe('the follow-up (LAI-1327)', () => {
+  const localReads = (calls: readonly StubCall[]) =>
+    calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/me/local-activity').length;
+
+  void test('a re-read that fails cannot pin the switch: the next read shows a flip made elsewhere', async () => {
+    let on = false;
+    let failSharing = false;
+    const sharingNow = () => ({
+      org_enabled: on,
+      enabled: on,
+      person_can_opt_out: false,
+      scope: 'agent-repos',
+      min_sync_interval_s: 600,
+    });
+    const base = stub(WORLDS.off);
+    const h = await open('/developer?tab=activity', {
+      ...base,
+      '/api/v1/org': (call: StubCall) => {
+        if (call.method === 'PATCH') {
+          on = (call.body as { developer_insights: boolean }).developer_insights;
+        }
+        return {
+          id: 'o1',
+          name: 'Kvell Dynamics',
+          presence_enabled: true,
+          developer_insights: on,
+          created_at: 1,
+          updated_at: 2,
+        };
+      },
+      '/api/v1/me/activity-sharing': () =>
+        failSharing ? refuse(500, 'internal', 'The board is restarting.') : sharingNow(),
+    });
+    try {
+      await ready(h.page);
+      const toggle = step(h.page, 'org').getByRole('switch');
+      failSharing = true;
+      await toggle.click();
+      // The re-read after the change failed: the answer stands, and says so.
+      await h.page.locator('.dev-activity [data-stale]').waitFor({ timeout: 10_000 });
+      await until(async () => !(await toggle.isDisabled()), 10_000);
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
+
+      // Turned off again in another tab; this one reads again when focused.
+      on = false;
+      failSharing = false;
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(async () => (await toggle.getAttribute('aria-checked')) === 'false', 10_000);
+      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+      assert.equal(await headline(h.page), 'Off for the organisation');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no poll while nothing can arrive: the organisation off, or no device', async () => {
+    const tool1 = deviceRow([tool('a1')]);
+    for (const w of [
+      { ...WORLDS.noDevice },
+      { ...WORLDS.off, devices: [tool1] },
+    ] satisfies World[]) {
+      const h = await open('/developer?tab=activity', stub(w), {
+        before: async (page) => page.clock.install(),
+      });
+      try {
+        await ready(h.page);
+        const first = localReads(h.calls);
+        await h.page.clock.fastForward(25_000);
+        await h.page.waitForTimeout(400);
+        assert.equal(
+          localReads(h.calls),
+          first,
+          `no poll: org ${String(w.org)}, ${String(w.devices.length)} device(s)`,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('the poll backs off while it fails — 20 s, 60 s, 120 s — and an answer resets it', async () => {
+    let fail = false;
+    const h = await open(
+      '/developer?tab=activity',
+      stub(WORLDS.waiting, {
+        '/api/v1/me/local-activity': () =>
+          fail ? refuse(500, 'internal', 'The board is restarting.') : held(WORLDS.waiting),
+      }),
+      { before: async (page) => page.clock.install() },
+    );
+    // Let the answer land and the next wait be set before moving the clock on.
+    const settle = () => h.page.waitForTimeout(300);
+    try {
+      await ready(h.page);
+      const first = localReads(h.calls);
+      fail = true;
+
+      await h.page.clock.fastForward(20_500);
+      await until(() => localReads(h.calls) === first + 1);
+      assert.equal(localReads(h.calls), first + 1, 'the first poll, at 20 s');
+      await settle();
+
+      await h.page.clock.fastForward(21_000);
+      await settle();
+      assert.equal(localReads(h.calls), first + 1, 'one failure: not again at 20 s');
+      await h.page.clock.fastForward(40_000);
+      await until(() => localReads(h.calls) === first + 2);
+      assert.equal(localReads(h.calls), first + 2, 'one failure: again at 60 s');
+      await settle();
+
+      await h.page.clock.fastForward(61_000);
+      await settle();
+      assert.equal(localReads(h.calls), first + 2, 'two failures: not again at 60 s');
+      fail = false;
+      await h.page.clock.fastForward(60_000);
+      await until(() => localReads(h.calls) === first + 3);
+      assert.equal(localReads(h.calls), first + 3, 'two failures: again at 120 s');
+      await settle();
+
+      await h.page.clock.fastForward(20_500);
+      await until(() => localReads(h.calls) === first + 4);
+      assert.equal(localReads(h.calls), first + 4, 'an answer: back to 20 s');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a read sent before a scope change never lands after it', async () => {
+    let scope = 'agent-repos';
+    let hold: Promise<void> | undefined;
+    let release: () => void = () => undefined;
+    const sharingNow = () => ({
+      org_enabled: true,
+      enabled: true,
+      person_can_opt_out: false,
+      scope,
+      min_sync_interval_s: 600,
+    });
+    const h = await open(
+      '/developer?tab=activity',
+      stub(WORLDS.received, {
+        '/api/v1/me/activity-sharing': (call: StubCall) => {
+          if (call.method === 'PUT') {
+            scope = (call.body as { scope: string }).scope;
+            return sharingNow();
+          }
+          // Answered as it stands now, and held when the test says so.
+          const body = sharingNow();
+          return hold === undefined ? body : hold.then(() => body);
+        },
+      }),
+    );
+    try {
+      await ready(h.page);
+      const narrow = h.page.getByRole('radio', { name: /Only repos set up for Laika/ });
+      await narrow.waitFor({ timeout: 10_000 });
+      hold = new Promise<void>((done) => {
+        release = done;
+      });
+      const reads = () =>
+        h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/me/activity-sharing')
+          .length;
+      const before = reads();
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => reads() > before);
+      hold = undefined;
+
+      await narrow.click();
+      await until(async () => await narrow.isChecked(), 10_000);
+      assert.equal(await narrow.isChecked(), true);
+      release();
+      await h.page.waitForTimeout(500);
+      assert.equal(await narrow.isChecked(), true, 'the older read did not put the old scope back');
+    } finally {
+      release();
+      await h.close();
+    }
+  });
+
+  void test('a read sent while a scope change is out never lands after its answer', async () => {
+    let releasePut: () => void = () => undefined;
+    let releaseGet: () => void = () => undefined;
+    const putHeld = new Promise<void>((done) => {
+      releasePut = done;
+    });
+    const getHeld = new Promise<void>((done) => {
+      releaseGet = done;
+    });
+    let changing = false;
+    const sharing = (scope: string) => ({
+      org_enabled: true,
+      enabled: true,
+      person_can_opt_out: false,
+      scope,
+      min_sync_interval_s: 600,
+    });
+    const h = await open(
+      '/developer?tab=activity',
+      stub(WORLDS.received, {
+        '/api/v1/me/activity-sharing': (call: StubCall) => {
+          if (call.method === 'PUT') {
+            changing = true;
+            const scope = (call.body as { scope: string }).scope;
+            return putHeld.then(() => sharing(scope));
+          }
+          // A read the server answered before the change was written: the old scope.
+          return changing ? getHeld.then(() => sharing('agent-repos')) : sharing('agent-repos');
+        },
+      }),
+    );
+    try {
+      await ready(h.page);
+      const narrow = h.page.getByRole('radio', { name: /Only repos set up for Laika/ });
+      await narrow.waitFor({ timeout: 10_000 });
+      const sent = (method: string) =>
+        h.calls.filter((c) => c.method === method && c.path === '/api/v1/me/activity-sharing')
+          .length;
+      const gets = sent('GET');
+      await narrow.click();
+      await until(() => sent('PUT') === 1);
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => sent('GET') > gets);
+
+      releasePut();
+      await until(async () => await narrow.isChecked(), 10_000);
+      assert.equal(await narrow.isChecked(), true);
+      releaseGet();
+      await h.page.waitForTimeout(500);
+      assert.equal(await narrow.isChecked(), true, 'the read sent during the change was dropped');
+    } finally {
+      releasePut();
+      releaseGet();
+      await h.close();
+    }
+  });
+
+  void test('a read sent before a delete never lands after it', async () => {
+    let deleted = false;
+    let hold: Promise<void> | undefined;
+    let release: () => void = () => undefined;
+    const w = WORLDS.received;
+    const h = await open(
+      '/developer?tab=activity',
+      stub(w, {
+        '/api/v1/me/local-activity': (call: StubCall) => {
+          if (call.method === 'DELETE') {
+            deleted = true;
+            return reply(204, null);
+          }
+          const body = held(deleted ? { ...w, lastReceivedAt: null } : w);
+          return hold === undefined ? body : hold.then(() => body);
+        },
+      }),
+    );
+    try {
+      await ready(h.page);
+      await h.page.locator('.dev-activity details[data-fold="held"] > summary').click();
+      await h.page.locator('.dev-activity .share-table').waitFor({ timeout: 10_000 });
+      hold = new Promise<void>((done) => {
+        release = done;
+      });
+      const before = localReads(h.calls);
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => localReads(h.calls) > before);
+      hold = undefined;
+
+      await h.page.getByRole('button', { name: 'Delete my local-activity history' }).click();
+      await answerConfirm(h.page, true);
+      const nothing = h.page.locator('.dev-activity [data-state="nothing-held"]');
+      await nothing.waitFor({ timeout: 10_000 });
+      release();
+      await h.page.waitForTimeout(500);
+      assert.equal(await nothing.count(), 1, 'still deleted');
+      assert.equal(await h.page.locator('.dev-activity .share-table').count(), 0);
+    } finally {
+      release();
+      await h.close();
+    }
+  });
 });
 
 void describe('look and fit', () => {
