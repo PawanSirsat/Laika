@@ -144,3 +144,22 @@ Asked by CHIEF on PR #391. What changed, one item each:
 - **Renumbered** to `0091_people_directory` after #390 took 0090, regenerated for a newer
   journal time; SPEC §4.108 and §4.109 kept.
 
+
+## Review round 2 (review-1317, 2026-11-18)
+
+- **M2 (required).** `disabled_since` now starts only on a change the sync saw: a read by the
+  row's own id that says disabled, when the read before had the account enabled. An account
+  disabled since its first match is never a leaver. It is listed to check, with reason
+  `disabled_at_match`.
+- **Two members at one Microsoft account (required).** When an Entra id is already pinned to
+  another member's row, the next first match is not saved. It is listed to check as
+  `shared_account`, so only the member holding the id can ever go.
+- **The check list says why.** `changed[]` items carry
+  `reason: account_changed | shared_account | disabled_at_match`, and the card words each one.
+- **F2 residual.** The photo writes (stored, removed) and the failure record now ask whether
+  the connection is still the one the run read with. A photo put as another tenant is saved
+  has its object deleted again.
+- **F3 residual.** A deactivated person's photo answers the same `404`, and the directory names
+  no `photo_v` for them.
+- **Web.** A directory read that began before a change of user is dropped when it answers (a
+  generation counter).
