@@ -55,7 +55,8 @@ function folderBefore0073(): string {
     '0087_calendar_sync',
     '0088_email_inbound',
     '0089_email_inbound_switch_off',
-    '0090_people_directory',
+    '0090_calendar_away',
+    '0091_people_directory',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));

@@ -2826,6 +2826,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_email_inbound$/),
         // LAI-1315's `switch_off` reason: one of those four rebuilt, every row kept.
         expect.stringMatching(/_email_inbound_switch_off$/),
+        // LAI-1331's out-of-office spans: one new table, nothing rebuilt.
+        expect.stringMatching(/_calendar_away$/),
         // LAI-1330's people sync: two new tables, nothing rebuilt.
         expect.stringMatching(/_people_directory$/),
       ]);
@@ -2993,7 +2995,8 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3097,7 +3100,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3131,7 +3135,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
         // LAI-1314's 0085 its three Teams tables, LAI-1313's 0086 its four
         // email tables, LAI-1316's 0087 its two calendar tables and LAI-1315's
         // 0088 its four inbound ones (its 0089 rebuilds one of them and adds
-        // none), and LAI-1330's 0090 its two people tables; nothing else
+        // none), LAI-1331's 0090 its away spans and LAI-1330's 0091 its two
+        // people tables; nothing else
         // appears.
         expect(tables()).toEqual(
           [
@@ -3151,6 +3156,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'project_teams_channels',
             'teams_posts',
             'calendar_events',
+            'calendar_away',
             'org_calendar_source',
             'email_inbound',
             'email_inbound_attachments',
@@ -3212,7 +3218,8 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3334,7 +3341,8 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3422,7 +3430,8 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3515,7 +3524,8 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3619,7 +3629,8 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3712,14 +3723,15 @@ describe('0086 rebuilds the email outbox on a populated 0085 database and keeps 
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so —
     // LAI-1316's 0087 and LAI-1315's 0088 add tables and touch nothing 0086
-    // made; LAI-1315's 0089 rebuilds one of 0088's, and LAI-1330's 0090 adds
+    // made; LAI-1315's 0089 rebuilds one of 0088's, and LAI-1330's 0091 adds
     // two tables.
     expect(dropped.map((e) => e.tag)).toEqual([
       '0086_email_notify',
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3821,7 +3833,8 @@ describe('0087 rebuilds time_entries for the calendar source on a populated 0086
       '0087_calendar_sync',
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -4062,10 +4075,12 @@ describe('0089 rebuilds email_inbound_attachments for switch_off on a populated 
     const at = journal.entries.findIndex((e) => e.tag === '0089_email_inbound_switch_off');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    // LAI-1330's 0090 adds two tables and touches nothing 0089 rebuilt.
+    // LAI-1331's 0090 and LAI-1330's 0091 add tables and touch nothing 0089
+    // rebuilt.
     expect(dropped.map((e) => e.tag)).toEqual([
       '0089_email_inbound_switch_off',
-      '0090_people_directory',
+      '0090_calendar_away',
+      '0091_people_directory',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;

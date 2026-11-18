@@ -24,6 +24,7 @@ import {
   statusText,
   workloadIn,
 } from './capacity-derive.ts';
+import { AwayAndMeetings } from './AwayAndMeetings.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export const ROLE_LABEL: Readonly<Record<CapacityEntry['org_role'], string>> = {
@@ -163,6 +164,7 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
         </span>
         <LoadBadges load={load} overdue={work.overdue} />
       </div>
+      <AwayAndMeetings person={person} card />
 
       {/* What matters at a glance (LAI-1222): one bar of committed work, its
           two figures, and how long the oldest has been going. */}

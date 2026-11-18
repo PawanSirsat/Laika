@@ -28,6 +28,7 @@ import {
   matchesQuery,
   passesFilter,
   PRESENCE_FILTERS,
+  meetingsSortOffered,
   sortPeople,
   SORTS,
   summarize,
@@ -255,7 +256,12 @@ export function CapacityScreen({
   // With presence off, nothing reads presence: those chips and sorts are not
   // offered, and one left chosen falls back rather than filtering on nulls.
   const effectiveFilter: CapacityFilter = !on && PRESENCE_FILTERS.has(filter) ? 'all' : filter;
-  const effectiveSort: CapacitySort = !on && (sort === 'online' || sort === 'seen') ? 'load' : sort;
+  // *Most meetings this week* only where the figures came (LAI-1331, D-102).
+  const meetingsOn = meetingsSortOffered(everyone);
+  const effectiveSort: CapacitySort =
+    (!on && (sort === 'online' || sort === 'seen')) || (!meetingsOn && sort === 'meetings')
+      ? 'load'
+      : sort;
   const searching = query.trim() !== '';
   const shown = sortPeople(
     everyone.filter(
@@ -506,9 +512,11 @@ export function CapacityScreen({
                   className="cap-dropdown"
                   aria-label="Sort"
                   value={effectiveSort}
-                  options={SORTS.filter((s) => on || (s.id !== 'online' && s.id !== 'seen')).map(
-                    (s) => ({ value: s.id, label: `Sort: ${s.label}` }),
-                  )}
+                  options={SORTS.filter(
+                    (s) =>
+                      (on || (s.id !== 'online' && s.id !== 'seen')) &&
+                      (meetingsOn || s.id !== 'meetings'),
+                  ).map((s) => ({ value: s.id, label: `Sort: ${s.label}` }))}
                   onChange={setSort}
                 />
                 {(effectiveFilter !== 'all' || space !== null || searching || team) && (

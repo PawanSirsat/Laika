@@ -106,6 +106,14 @@ const PAIRS: readonly Pair[] = [
     client: 'CapacityView',
     clientFile: 'presence.ts',
   },
+  // LAI-1331: why a person is away, nested in each Capacity entry. The pair
+  // above sees `people` and nothing inside it; this one sees the shape.
+  {
+    server: 'CapacityAwayView',
+    serverFile: 'services/presence.ts',
+    client: 'CapacityAway',
+    clientFile: 'presence.ts',
+  },
   {
     // Paired the moment the mirror existed (LAI-459), the same way the presence
     // rows were. Both are real `*View` exports, so neither hits the census wall

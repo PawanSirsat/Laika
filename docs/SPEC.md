@@ -805,7 +805,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
 | `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.103 – §4.106, D-155, LAI-1315) |
-| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, every 15 minutes while the switch is on (§4.101, §4.102, D-157, LAI-1316) |
+| `system.calendar.sync` | §11.6: members' Outlook meetings — invitations accepted, Teams meetings organised — logged as their time, and their out-of-office spans kept as away, never time, every 15 minutes while the switch is on (§4.101, §4.102, §4.107, D-157, LAI-1316, LAI-1331) |
 | `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.106, D-155 item 6, LAI-1315) |
 | `system.people.sync` | §11.6: every hour, each member's photo, job title, department and manager read from Microsoft and kept (§4.108), and — with *Leavers* on — a person Microsoft says has left deactivated behind its guards, as `user.deactivated` with no human actor (§4.109, D-161, LAI-1330) |
 
@@ -4299,6 +4299,9 @@ never touches again.
 private, confidential or personal one — and the times are on the entry, and no join link,
 body or attendee is read or stored anywhere (D-157 item 4).
 
+**An event shown as out of office is never a meeting and never time**: it is
+kept apart, as an away span in §4.107 (D-157 amended, LAI-1331).
+
 ### 4.103 `org_email_inbound`
 
 The organisation's *Email to tasks* settings (D-155, LAI-1315). **No row, or
@@ -4382,6 +4385,45 @@ failure is a reason here and never blocks the task.
 | `attempts` | ≥ 0 (CHECK) |
 | `created_at` | |
 | `finished_at` | nullable |
+
+### 4.107 `calendar_away`
+
+The spans a person's Outlook calendar shows them **out of office** (D-157
+amended, LAI-1331), as the calendar sync (§11.6) last read them — read beside
+their own away periods (§4.86) on Capacity, and **never time**: no entry is
+made from one.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade; the key with `event_id` |
+| `event_id` | 1–512 (CHECK) — Graph's **immutable** id for the event, or for one occurrence of a series |
+| `starts_at`, `ends_at` | unix ms, `ends_at > starts_at` (CHECK) |
+| `all_day` | 0 \| 1 (CHECK) — the span is whole days: the sync reads in UTC, so its two values are **UTC midnights standing for its calendar dates**, `ends_at` the midnight after its last day, read as dates and never shifted by a zone. **An assumption**: that Graph returns an all-day event's start and end as UTC midnights under the read's `Prefer: outlook.timezone="UTC"` — to be checked live on Ksage after release |
+| `last_seen_at` | the last sync that read the event |
+| `retired_at` | nullable — when a complete read of a window it overlaps no longer had it; `null` while it stands |
+| `created_at` | |
+
+**Which events**: shown as out of office (`showAs` `oof`), not cancelled, and
+the person's own — organised by them, or an invitation they accepted; all day
+or not. **The meetings' rules for the rest**: every member's window read whole
+before one transaction writes; a span read is kept, moved or **back** (its
+`retired_at` cleared) as Outlook has it now; one standing that overlaps the
+window and is no longer read is retired. Unlike a meeting, a span counts
+**whenever it overlaps the window**, not only when it began inside it — a week
+away began days ago. **Nothing of the event is kept but its id and its span**:
+no subject, no body, no attendee.
+
+**Told only while the sync reads it.** Capacity names no span while the
+Outlook connection (§4.101) is missing or switched off, and none whose
+`last_seen_at` is a day old or more: the sync stamps every span it reads every
+15 minutes, so a standing one is never older while it works, and a mailbox it
+now skips (`403`, `404`, `400` — nothing of theirs retired) or a sync that
+keeps failing stops being shown after a day. **Disconnecting deletes every
+row** (`DELETE /api/v1/org/calendar`), in the transaction that forgets the
+credentials; a connection made again reads them afresh.
+
+**Retention**: a span that ended more than 90 days ago, retired or not, is
+deleted by §11.6's time retention. No index for it: a person has a handful.
 
 ### 4.108 `user_directory`
 
@@ -4875,11 +4917,11 @@ PUT    /api/v1/org/teams                     body { posting_enabled } — the sw
 GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, can_store_secrets, can_change, authserv_seen, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, authserv_ids, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
 PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 field authserv_id reason authserv_required to be on, authentication required, with no receiving server named; **403 reason owner_only, naming the field, for anything from anyone but an owner except `{ enabled: false }`**; 422 naming the field   (same)
 POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**; 403 owner_only for anyone but an owner   (same)
-GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
+GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped, away } | null } — away counts the out-of-office spans read (§4.107), 0 in a result stored before LAI-1331 — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; another tenant or client id makes the people sync forget every Entra id and first sighting and turns *Leavers* off (D-161); turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
-DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay; the people sync forgets every Entra id and first sighting, and *Leavers* goes off (D-161) (204)   (owner, admin; session only)
+DELETE /api/v1/org/calendar                  disconnect: the credentials and out-of-office spans (§4.107) go, logged meetings stay; the people sync forgets every Entra id and first sighting, and *Leavers* goes off (D-161) (204)   (owner, admin; session only)
 GET    /api/v1/org/people-sync               the people sync on the Microsoft 365 card → { connected, profile_enabled, leavers_enabled, photos_stored, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, found, not_found, denied, refused, changed, updated, photos_fetched, photos_unchanged, photos_removed, photos_refused, photos_deferred } | null, leavers: { at, state: none | dry_run | held | deactivated, breaker, people: [{ user_id, name, email, reason: disabled | gone, protected: owner | last_admin | null, failed }], changed: [{ user_id, name, email }] } | null } — with *Leavers* off, `leavers` is a dry run   (owner, admin; session only; org.calendar.configure; D-161, LAI-1330)
 PUT    /api/v1/org/people-sync               body { profile_enabled, leavers_enabled } → the people sync; turning *Photos and profile* on starts a run; 422 reason leavers_need_profile (Leavers without it); 409 conflict reason microsoft_not_connected (either turned on with no §4.101 connection); turning *Leavers* on also asks user.deactivate, else 403   (owner, admin; session only)
 POST   /api/v1/org/people-sync/sync          syncs now, or joins the run already going → the people sync; 409 conflict reason people_sync_off unless *Photos and profile* is on   (owner, admin; session only)
@@ -7307,6 +7349,27 @@ hold a result that is legitimately many.
     `position`, D-060.4) by either hand, counted from §4.8 over the window
     through `activity_org_created_at_idx`; `by_self` and `by_agents` are
     §4.22's columns less that bookkeeping, so the three sum to the series.
+  - **`away`** (LAI-1331, D-157 amended): `{ own: { until } | null, outlook:
+    { until } | null }` — the away period the person set covering their today
+    (§4.86) and an Outlook out-of-office span covering now (§4.107), each the
+    last day of it as a calendar day in the person's own zone (an all-day
+    span read as its dates); `null` when neither is so. **D-137's audience**:
+    present for the people whose availability the reader sees — everyone
+    for *See everyone's analytics*, the people in the spaces a lead leads,
+    the people who share a space with a member, and always the reader —
+    and **absent, not null**, for anyone else. **On a web session only**
+    (`availability.read`, D-131): an agent's token reading Capacity is told
+    nobody's, its own person's included. Outlook's half only while the
+    connection is on and the sync has seen the span within a day (§4.107).
+  - **`meeting_minutes_week`** (LAI-1331): the minutes of `kind` `meeting`
+    the person has logged (§4.48, not deleted) on the days of their own week,
+    Monday to Sunday in their zone — the calendar's meetings and any they
+    typed; no Graph call. **Their time (D-102)**: present on the reader's
+    own row (`time_entries.read_own`), and on anyone else's only for *See
+    everyone's analytics* on a web session (`people.analytics.read`) —
+    **each person shown is a logged `time` look** (§4.59, deduped as D-135
+    says), written in the read's transaction, so a list that cannot be
+    logged is not answered. Absent for everyone else.
 
   **With `presence_enabled` off**, `status`, `last_seen` and `last_seen_via`
   are `null`, no agent is `running` and every agent's `last_at` is `null`: the org chose not to record who is
@@ -8125,7 +8188,9 @@ anything missing sends the task back.
   at all; the id stays `none`, so a saved address still opens it. The toolbar
   goes on with a space selector (all spaces, or one, which narrows every count
   to it); a sort
-  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); a
+  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*, and
+  *Most meetings this week* only where the figures came for more than one
+  person, LAI-1331 — an address asking for it falls back to *Heaviest load*); a
   **Cards / List** toggle, remembered per browser (LAI-991); an (i)
   with the definitions. **One card a person** in a grid of three columns on a
   laptop, two on a tablet and one on a phone — **every card draws every block
@@ -8137,7 +8202,12 @@ anything missing sends the task back.
   date and time and the kind of signal on hover, *Never seen*; name, org role,
   and for owners and admins the profile kind; under them, the job title,
   department and *Reports to* the directory gives (D-161), and the person's
-  synced photo in the avatar; the load badge with its rule on
+  synced photo in the avatar; **why they are away and their meetings this
+  week** (LAI-1331), a line the card's width under the head — *Away until Fri
+  20 Nov* for their own period, *Out of office until Wed 25 Nov* for
+  Outlook's, *Outlook ·* first when both are so, each an away pill with its
+  glyph, and *6 h in meetings this week* — drawn only when the server sent
+  something to say (the list puts it under the name); the load badge with its rule on
   hover — **the selected space's load** when one is selected, and the *Heavy
   load* chip reads the same — and beside it an *N overdue* badge of its own
   (D-092, LAI-818); the workload counts
@@ -8745,8 +8815,10 @@ One interval-driven scheduler in the same process:
   (LAI-788). With them, by the same job (LAI-831): `time_breaks` dated before
   30 days ago, as drafts are (§4.55), and `time_undo` rows older than
   `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). Away periods
-  that ended more than 30 days ago go with them (§4.86, LAI-1130). No
-  `activity` row, for the reason local activity's has none
+  that ended more than 30 days ago go with them (§4.86, LAI-1130), and
+  Outlook's out-of-office spans that ended more than 90 days ago, retired or
+  not (§4.107, LAI-1331). No `activity` row, for the reason local activity's
+  has none
 - **HR sync** (§4.88 – §4.91, D-149, LAI-1181) — every 30 minutes **and once
   at boot**, while the organisation is connected: the HR system's people,
   holidays and leave from 1 January last year to 31 December next year, read in
@@ -8764,7 +8836,10 @@ One interval-driven scheduler in the same process:
   become or update their `calendar` entries — an event they organised that is
   not a Teams meeting is counted `not_a_meeting` and left off (D-157 item 3,
   the owner's choice of 2026-11-18) — gone or cancelled ones are retired,
-  and an entry the person changed is left alone. Under §3.4's
+  and an entry the person changed is left alone. **Out of office is kept
+  apart as away, never as time** (§4.107, D-157 amended, LAI-1331): each span
+  read is kept, moved or brought back, and one overlapping the window that is
+  no longer read is retired. Under §3.4's
   `system.calendar.sync`. **A run never overlaps another** — *Sync now* joins
   one already running. No `activity` row, as for any time entry (§4.48)
 - **people sync** (§4.108, §4.109, D-161, LAI-1330) — every hour, **never at

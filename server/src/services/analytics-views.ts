@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, gte, isNull, lt, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gt, gte, inArray, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type AnalyticsViewKind, type OrgRole } from '../db/enums.ts';
@@ -80,6 +80,54 @@ function logLook(
     .run();
 }
 
+/** Rows to one insert: six values each, far below SQLite's limit on variables. */
+const LOOKS_PER_INSERT = 500;
+
+/**
+ * {@link logLook} for several people at once (LAI-1331): **one** read of the
+ * looks already written inside {@link LOOK_DEDUPE_MS} and **one** insert of
+ * the rest, whatever the number of people — so a list that logs everyone it
+ * shows, as Capacity's meeting hours do, prepares the same statements for two
+ * people as for twelve. The same rule, row for row, as one look at a time.
+ */
+function logLooks(
+  tx: Db | Tx,
+  viewerId: string,
+  subjectIds: readonly string[],
+  kind: AnalyticsViewKind,
+  day: string | null,
+  now: number,
+): void {
+  const subjects = [...new Set(subjectIds)];
+  if (subjects.length === 0) return;
+  const recent = new Set(
+    tx
+      .select({ subjectId: analyticsViews.subjectId })
+      .from(analyticsViews)
+      .where(
+        and(
+          inArray(analyticsViews.subjectId, subjects),
+          gt(analyticsViews.viewedAt, now - LOOK_DEDUPE_MS),
+          eq(analyticsViews.viewerId, viewerId),
+          eq(analyticsViews.kind, kind),
+          day === null ? isNull(analyticsViews.day) : eq(analyticsViews.day, day),
+        ),
+      )
+      .all()
+      .map((r) => r.subjectId),
+  );
+  const fresh = subjects.filter((id) => !recent.has(id));
+  for (let i = 0; i < fresh.length; i += LOOKS_PER_INSERT) {
+    tx.insert(analyticsViews)
+      .values(
+        fresh
+          .slice(i, i + LOOKS_PER_INSERT)
+          .map((subjectId) => ({ id: newId(), viewerId, subjectId, kind, day, viewedAt: now })),
+      )
+      .run();
+  }
+}
+
 /**
  * Run `read` and log it as `viewer` reading `subjectId`'s `kind`, in one
  * transaction. A person reading their own writes no row: nobody looked.
@@ -140,10 +188,14 @@ export function readLoggedMany<T>(
   return db.transaction((tx) => {
     const view = read();
     const day = dayOfRead(view);
-    for (const subjectId of new Set(subjectsOf(view))) {
-      if (subjectId === viewer.userId) continue;
-      logLook(tx, viewer.userId, subjectId, kind, day, now);
-    }
+    logLooks(
+      tx,
+      viewer.userId,
+      subjectsOf(view).filter((subjectId) => subjectId !== viewer.userId),
+      kind,
+      day,
+      now,
+    );
     return view;
   });
 }

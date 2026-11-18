@@ -539,6 +539,7 @@ void describe('Outlook calendar: the switch and syncing', () => {
       await dialog.waitFor();
       assert.match(await dialog.innerText(), /Disconnect Microsoft 365\?/);
       assert.match(await dialog.innerText(), /Meetings already logged stay/);
+      assert.match(await dialog.innerText(), /stops showing anyone out of office from Outlook/);
       await dialog.getByRole('button', { name: 'Disconnect' }).click();
       await until(async () => (await c.getAttribute('data-calendar-status')) === 'not set up');
       assert.deepEqual(

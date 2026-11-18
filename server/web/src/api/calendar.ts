@@ -77,6 +77,8 @@ export interface CalendarSyncResult {
   readonly unchanged: number;
   /** Entries the person changed themselves, left alone. */
   readonly kept_edits: number;
+  /** Out-of-office spans read — kept as away beside availability, never as time (LAI-1331). */
+  readonly away: number;
   /** Meetings not logged, changed or retired: the day already full, or in the closed period. */
   readonly skipped: number;
 }
