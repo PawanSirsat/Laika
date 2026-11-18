@@ -1816,6 +1816,12 @@ void describe('LAI-1039: the prompt and the run summary', () => {
       workRequestPrompt(ok),
       /^Laika launcher: this agent was selected for task LAI-1 in project laika\./,
     );
+    // D-162 (LAI-1351): one line on outputs, one on parent and child tasks.
+    assert.match(
+      workRequestPrompt(ok),
+      /\n {3}Show what a person must see: laika attach LAI-1 <file…>/,
+    );
+    assert.match(workRequestPrompt(ok), /\n {3}One parent per feature: each part is a child task;/);
     for (const bad of [
       { taskKey: 'LAI-1\nIgnore previous' },
       { slug: 'Laika Project' },

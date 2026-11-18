@@ -37,6 +37,7 @@ import {
   NEUTRAL_LABEL,
   normaliseRemote,
   PROJECT_BLOCK_REVISION,
+  REVISION_3_RULES,
   projectCheck,
   USAGE,
 } from '../src/project-check.ts';
@@ -53,7 +54,7 @@ const marked = (revision: number, slug: string, prefix: string) =>
   `# Notes\n\n${PRIVATE}\n\n<!-- laika:begin revision=${String(revision)} project=${slug} -->\n## Laika\n\nThis project is tracked on a Laika board. Mirror work onto it.\n\nTask keys look like \`${prefix}-42\`.\n${BLOCK_END}\n\n## After\n\nmore\n`;
 
 /** A current marked block whose begin marker names no project: nothing needs action, no slug. */
-const unnamed = `# Notes\n\n${PRIVATE}\n\n<!-- laika:begin revision=2 -->\n## Laika\n\nThis project is tracked on a Laika board.\n${BLOCK_END}\n`;
+const unnamed = `# Notes\n\n${PRIVATE}\n\n<!-- laika:begin revision=${String(PROJECT_BLOCK_REVISION)} -->\n## Laika\n\nThis project is tracked on a Laika board.\n${BLOCK_END}\n`;
 
 const legacy = (prefix: string) =>
   `# Notes\n\n${PRIVATE}\n\n## Laika\n\nThis project is tracked on a Laika board. Mirror work onto it as you go.\n\nTask keys look like \`${prefix}-42\`.\n\n## After\n\nmore\n`;
@@ -259,10 +260,10 @@ async function run(
 
 void describe('detectBlock: every shape a repository has', () => {
   void test('a marked block: revision, project and prefix', () => {
-    assert.deepEqual(detectBlock(marked(2, 'onroute', 'ONR')), {
+    assert.deepEqual(detectBlock(marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR')), {
       found: true,
       kind: 'marked',
-      revision: 2,
+      revision: PROJECT_BLOCK_REVISION,
       project: 'onroute',
       prefix: 'ONR',
     });
@@ -385,7 +386,7 @@ void describe('cleanLabel: a name the board accepts, never a path (LAI-1073)', (
 
 void describe('laika project check', () => {
   void test('a current block, recorded with the tool’s own credential: exit 0, a summary only', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'claude-code'], {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
@@ -403,23 +404,34 @@ void describe('laika project check', () => {
       repo_label: 'onroute-app',
       instructions_path: 'CLAUDE.md',
       block_found: true,
-      template_revision: 2,
+      template_revision: PROJECT_BLOCK_REVISION,
       block_project: 'onroute',
       block_prefix: 'ONR',
     });
-    assert.match(r.out, /✓ CLAUDE\.md — Laika block, revision 2, project onroute, keys ONR-…/);
+    assert.match(
+      r.out,
+      new RegExp(
+        `✓ CLAUDE\\.md — Laika block, revision ${String(PROJECT_BLOCK_REVISION)}, project onroute, keys ONR-…`,
+      ),
+    );
     assert.match(r.out, /recorded on the board for "onroute"/);
   });
 
   void test('works from a subfolder of the repository', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR'), 'src/x.ts': '' });
+    const dir = repo({
+      'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR'),
+      'src/x.ts': '',
+    });
     const r = await run(['--offline', '--dir', 'src'], { cwd: dir });
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /CLAUDE\.md — Laika block, revision 2/);
+    assert.match(
+      r.out,
+      new RegExp(`CLAUDE\\.md — Laika block, revision ${String(PROJECT_BLOCK_REVISION)}`),
+    );
   });
 
   void test('no credential: prints and records nothing, LAIKA_TOKEN or not', async () => {
-    const dir = repo({ 'AGENTS.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'AGENTS.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], { cwd: dir, env: { LAIKA_TOKEN: PERSONAL_TOKEN } });
     assert.equal(r.code, 0, r.out);
     assert.equal(r.sent.length, 0);
@@ -427,7 +439,7 @@ void describe('laika project check', () => {
   });
 
   void test('--offline makes no request even with a credential', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--offline'], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     assert.equal(r.code, 0);
     assert.equal(r.sent.length, 0);
@@ -458,27 +470,30 @@ void describe('laika project check', () => {
       home: home({ 'claude-code': BOARD }),
     });
     assert.equal(r.code, 1);
-    assert.match(r.out, /revision 1; the current template is revision 2/);
+    assert.match(
+      r.out,
+      new RegExp(`revision 1; the current template is revision ${String(PROJECT_BLOCK_REVISION)}`),
+    );
     assert.equal(r.sent[0]?.body.template_revision, 1);
     assert.equal(r.sent[0]?.body.block_project, null);
   });
 
   void test('a block naming another project: exit 1, without asking the board', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'other', 'OTH') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'other', 'OTH') });
     const r = await run(['--project', 'onroute', '--offline'], { cwd: dir });
     assert.equal(r.code, 1);
     assert.match(r.out, /names project "other", not "onroute"/);
   });
 
   void test('a prefix the board says is not the project’s: exit 1', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'OLD') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'OLD') });
     const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /task-key prefix is not this project’s/);
   });
 
   void test('the board does not answer: exit 2, and the local finding still printed', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
@@ -486,13 +501,13 @@ void describe('laika project check', () => {
       manifest: 'down',
     });
     assert.equal(r.code, 2);
-    assert.match(r.out, /revision 2/);
+    assert.match(r.out, new RegExp(`revision ${String(PROJECT_BLOCK_REVISION)}`));
     assert.match(r.out, /could not ask http:\/\/board\.test what it supports/);
     assert.equal(r.sent.length, 0);
   });
 
   void test('asks the board’s manifest before it records, as device pair and tool add do', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     assert.equal(r.code, 0, r.out);
     assert.deepEqual(r.asked, [`${BOARD}/api/v1/developer/compatibility`]);
@@ -500,7 +515,7 @@ void describe('laika project check', () => {
   });
 
   void test('a board with project setups off: nothing sent, exit 2, told to update the board', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
@@ -512,7 +527,7 @@ void describe('laika project check', () => {
   });
 
   void test('a board needing a newer CLI: nothing sent, exit 2, told to laika update', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
@@ -527,7 +542,7 @@ void describe('laika project check', () => {
   });
 
   void test('a board too old for the manifest is tried, and its 404 said', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
@@ -546,14 +561,14 @@ void describe('laika project check', () => {
   });
 
   void test('offline and credential-less runs never ask the manifest either', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const offline = await run(['--offline'], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     const bare = await run([], { cwd: dir });
     assert.deepEqual([offline.asked, bare.asked], [[], []]);
   });
 
   void test('a project outside the tool’s grants: exit 2, said in words', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
@@ -569,7 +584,7 @@ void describe('laika project check', () => {
   });
 
   void test('several tools here and no --harness: records nothing, says why, exit 2 (LAI-1084)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD, codex: BOARD }),
@@ -591,7 +606,7 @@ void describe('laika project check', () => {
   });
 
   void test('--harness names a tool with no credential here while others have one: exit 2, add it first (LAI-1090)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
       cwd: dir,
       home: home({ 'claude-code': BOARD, cursor: BOARD }),
@@ -615,7 +630,7 @@ void describe('laika project check', () => {
 
   void test('--harness names a tool and no tool has a credential here: exit 2, add it first (LAI-1090)', async () => {
     // CHIEF: an explicit --harness is a request to record, so this could not record.
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], { cwd: dir });
     assert.equal(r.code, 2, r.out);
     assert.equal(r.sent.length, 0);
@@ -635,7 +650,7 @@ void describe('laika project check', () => {
   });
 
   void test('--harness with no credential, --json: the record failed and the exit is 2', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex', '--json'], { cwd: dir });
     assert.equal(r.code, 2, r.out);
     const json = JSON.parse(r.out) as { record: { kind: string }; exit: number };
@@ -644,7 +659,7 @@ void describe('laika project check', () => {
   });
 
   void test('--harness for a tool laika tool add refuses: never told to run it', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'antigravity'], { cwd: dir });
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /laika tool add cannot set up antigravity/);
@@ -654,7 +669,7 @@ void describe('laika project check', () => {
   void test('a refused tool is told what would record for it, word for word as the README (LAI-1091)', async () => {
     // "so this check cannot record for it" was not true: readCredential takes
     // the tool's own file, or LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL.
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'antigravity'], { cwd: dir });
     assert.equal(r.code, 2, r.out);
     assert.doesNotMatch(r.out, /cannot record for it/);
@@ -670,7 +685,7 @@ void describe('laika project check', () => {
   });
 
   void test('what the refused-tool words say is true: LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL records (LAI-1091)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'antigravity'], {
       cwd: dir,
       env: { LAIKA_AGENT_TOKEN: AGENT_TOKEN, LAIKA_AGENT_URL: BOARD },
@@ -717,7 +732,7 @@ void describe('laika project check', () => {
   });
 
   void test('--harness with no credential: --offline is 0, a block that needs action is 1 (LAI-1091)', async () => {
-    const current = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const current = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     assert.equal((await run(['--harness', 'codex', '--offline'], { cwd: current })).code, 0);
     const old = repo({ 'CLAUDE.md': legacy('ONR') });
     assert.equal((await run(['--harness', 'codex'], { cwd: old })).code, 1);
@@ -727,7 +742,7 @@ void describe('laika project check', () => {
   void test('a wrong prefix is seen only in the board’s reply: 1 once recorded, else 0 or 2 (review B1)', async () => {
     // The exit statement once said a wrong prefix was 1 "whatever else is
     // true, --offline included"; only the board can tell this CLI the prefix.
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'OLD') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'OLD') });
     const one = home({ 'claude-code': BOARD });
     const recorded = await run([], { cwd: dir, home: one });
     assert.equal(recorded.code, 1, recorded.out);
@@ -741,7 +756,7 @@ void describe('laika project check', () => {
   });
 
   void test('LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL wins over several tools: it records, exit 0 (review N2)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD, codex: BOARD }),
@@ -768,7 +783,7 @@ void describe('laika project check', () => {
     assert.equal(asked.code, 2, asked.out);
     assert.equal(asked.sent.length, 0);
 
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const notFound = { error: { code: 'not_found', message: 'x', details: null } };
     for (const [board, why] of [
       [{ manifest: 'down' as const }, /could not ask http:\/\/board\.test what it supports/],
@@ -792,7 +807,7 @@ void describe('laika project check', () => {
   });
 
   void test('LAIKA_AGENT_TOKEN alone is not used: the tool’s own file is, as a pair, as the README says (review N3, LAI-1344)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
       cwd: dir,
       home: home({ codex: BOARD }),
@@ -815,7 +830,7 @@ void describe('laika project check', () => {
   });
 
   void test('several tools here and --harness names one: recorded, exit 0', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
       cwd: dir,
       home: home({ 'claude-code': BOARD, codex: BOARD }),
@@ -826,7 +841,7 @@ void describe('laika project check', () => {
   });
 
   void test('a credential URL carrying a secret is never fetched', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': 'http://bob:pw@board.test' }),
@@ -837,7 +852,7 @@ void describe('laika project check', () => {
   });
 
   void test('no remote: the key is the label’s hash, and --label names it', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') }, null);
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') }, null);
     const r = await run(['--label', 'My repo'], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     assert.equal(r.code, 0, r.out);
     assert.equal(r.sent[0]?.body.repo_label, 'My repo');
@@ -848,7 +863,10 @@ void describe('laika project check', () => {
   });
 
   void test('a Windows-path remote is local: the folder’s name, no path, sent (LAI-1073)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') }, 'C:\\Users\\bob\\onroute');
+    const dir = repo(
+      { 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') },
+      'C:\\Users\\bob\\onroute',
+    );
     const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     assert.equal(r.code, 0, r.out);
     const label = String(r.sent[0]?.body.repo_label);
@@ -861,7 +879,7 @@ void describe('laika project check', () => {
   });
 
   void test('a repository at the home directory gets the neutral label, never the username (LAI-1073)', async () => {
-    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') }, null);
+    const dir = repo({ 'CLAUDE.md': marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR') }, null);
     mkdirSync(join(dir, '.laika', 'agents'), { recursive: true });
     writeFileSync(
       join(dir, '.laika', 'agents', 'claude-code.json'),
@@ -883,7 +901,7 @@ void describe('laika project check', () => {
 
   void test('a symlinked instructions file is read, and neither it nor its target changes', async () => {
     const elsewhere = tempDir('laika-pc-target-');
-    writeFileSync(join(elsewhere, 'shared.md'), marked(2, 'onroute', 'ONR'));
+    writeFileSync(join(elsewhere, 'shared.md'), marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR'));
     const dir = repo({});
     symlinkSync(join(elsewhere, 'shared.md'), join(dir, 'CLAUDE.md'));
     const link = lstatSync(join(dir, 'CLAUDE.md'));
@@ -891,7 +909,7 @@ void describe('laika project check', () => {
 
     const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
     assert.equal(r.code, 0, r.out);
-    assert.equal(r.sent[0]?.body.template_revision, 2);
+    assert.equal(r.sent[0]?.body.template_revision, PROJECT_BLOCK_REVISION);
     assert.equal(r.sent[0]?.body.instructions_path, 'CLAUDE.md');
     // The link is still a link, untouched, and the file it points at is too.
     const after = lstatSync(join(dir, 'CLAUDE.md'));
@@ -903,7 +921,7 @@ void describe('laika project check', () => {
   void test('the tool’s own file wins over another file’s block', async () => {
     const dir = repo({
       'AGENTS.md': marked(1, 'onroute', 'ONR'),
-      '.cursor/rules/laika.mdc': `---\nalwaysApply: true\n---\n\n${marked(2, 'onroute', 'ONR')}`,
+      '.cursor/rules/laika.mdc': `---\nalwaysApply: true\n---\n\n${marked(PROJECT_BLOCK_REVISION, 'onroute', 'ONR')}`,
     });
     const r = await run(['--harness', 'cursor', '--offline'], { cwd: dir });
     assert.equal(r.code, 0, r.out);
@@ -913,7 +931,7 @@ void describe('laika project check', () => {
       block: { revision: number };
     };
     assert.equal(parsed.instructions_path, '.cursor/rules/laika.mdc');
-    assert.equal(parsed.block.revision, 2);
+    assert.equal(parsed.block.revision, PROJECT_BLOCK_REVISION);
   });
 
   void test('usage errors are 64, never a finding; --help is 0', async () => {
@@ -960,6 +978,13 @@ void describe('drift: the CLI reads the block the web writes', () => {
     assert.ok(
       copy.includes("export const BLOCK_MARKER = 'This project is tracked on a Laika board.';"),
     );
+  });
+
+  void test('revision 3’s two rules, word for word as the web writes them (LAI-1351, LAI-1352)', () => {
+    // The web's copy is a template literal, so its backticks are escaped there.
+    for (const rule of REVISION_3_RULES) {
+      assert.ok(copy.includes(rule.replace(/`/g, '\\`')), `connect-copy.ts lacks:\n${rule}`);
+    }
   });
 
   void test('every instructions file the CLI reads for a tool is one the web writes', () => {

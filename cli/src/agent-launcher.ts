@@ -1029,6 +1029,9 @@ export function workRequestPrompt(f: WorkPrompt): string {
     `   git push -u origin ${b}. Never push master or main; never force-push.`,
     '4. Open a pull request, then finish_task with commit, branch, PR and each test',
     '   command with its exit code. Never mark the task done.',
+    // D-162 (LAI-1351): the outputs line and the parent-and-child line.
+    `   Show what a person must see: laika attach ${k} <file…> --caption "…"; never a secret.`,
+    '   One parent per feature: each part is a child task; main outputs go on the parent.',
     '5. If you cannot finish: add_comment why, and stop.',
     '',
   ].join('\n');
