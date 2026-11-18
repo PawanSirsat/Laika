@@ -69,6 +69,12 @@ Scope: area `server` and, named, `server/web/`'s Organisation calendar card
 - **Review round 1 (review-1316, CHIEF 2026-11-18), no must-fix; F1, F2, F4, F5 done:** a
   backfill joins one already running that reaches as far back (`backfill_running` served, the
   card waits and asks again); before yesterday it only adds (`kept_older`); 90 days tied to
-  SQLite's bound variables by a test; a stop part-way is `last_error` `stopped_partway` with
-  the counts so far, by migration 0091 (rebuilds `org_calendar_source`; LAI-1330's branch also
-  carries a 0091 — whichever merges second renumbers). SPEC §4.101, §6.4, §11.6.
+  SQLite's bound variables by a test; a stop part-way is served as `last_error`
+  `stopped_partway` with the counts so far. SPEC §4.101, §6.4, §11.6.
+- **F5 is option (B), CHIEF 2026-11-18:** no migration (0091 withdrawn; LAI-1330 owns it). The
+  stop is `"stopped_partway": true` beside the counts in `last_result_json`; `lastRunOf`
+  (`calendar-source.ts`) alone derives `last_error` from it; `last_error_code` keeps hard
+  failures only.
+- **Base is `integration-ksage`** (owner: nothing to AWS, master frozen). Merged it in; SPEC
+  §13.4 kept both sentences. The branch also carries LAI-1334 (#394, merged on master, not yet
+  on integration-ksage) from the earlier master merge.
