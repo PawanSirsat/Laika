@@ -15,6 +15,7 @@ import {
 } from '../../../api/model-prices.ts';
 import { COST_LABEL } from '../../../api/usage.ts';
 import { Button } from '../../../components/forms/Button.tsx';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 type Load =
   | { readonly kind: 'loading' }
@@ -124,12 +125,30 @@ export function ModelPricesSection() {
     commit();
   };
 
+  const overridden = load.kind === 'ready' ? load.prices.entries.filter((e) => e.overridden) : [];
+
   return (
-    <section className="org-card org-prices" aria-labelledby="org-prices" data-section="prices">
-      <header className="org-card-head">
-        <h2 id="org-prices">Model prices</h2>
-        {load.kind === 'ready' && <span className="org-count">table of {load.prices.as_of}</span>}
-      </header>
+    <OrgAccordion
+      name="prices"
+      id="org-prices"
+      title="Model prices"
+      className="org-prices"
+      section="prices"
+      meta={
+        load.kind === 'ready' ? (
+          <>
+            {String(load.prices.entries.length)}{' '}
+            {load.prices.entries.length === 1 ? 'model' : 'models'} · table of {load.prices.as_of}
+            {overridden.length > 0 && (
+              <span className="org-acc-flag" data-overridden>
+                {String(overridden.length)} set here
+              </span>
+            )}
+          </>
+        ) : undefined
+      }
+      description="The list prices every cost on Usage is computed with, per million tokens."
+    >
       <p className="org-note">
         Every cost on Usage is <strong>{COST_LABEL}</strong>: these list prices on the vendor’s API,
         in dollars per million tokens, applied to the tokens Laika counted. Laika never fetches a
@@ -198,12 +217,12 @@ export function ModelPricesSection() {
                       <th scope="row">
                         <code>{entry.model}</code>
                       </th>
-                      {FIELDS.map(([field]) => (
-                        <td key={field} className="org-price">
+                      {FIELDS.map(([field, label]) => (
+                        <td key={field} className="org-price" data-label={label}>
                           {perMillion(entry[field])}
                         </td>
                       ))}
-                      <td>
+                      <td className="org-price-from">
                         <span className="org-price-status" data-status={status}>
                           {PRICE_STATUS_LABELS[status]}
                         </span>
@@ -224,7 +243,7 @@ export function ModelPricesSection() {
                         )}
                       </td>
                       {load.prices.can_set && (
-                        <td>
+                        <td className="org-price-change">
                           <span className="org-price-actions">
                             <button
                               type="button"
@@ -338,6 +357,6 @@ export function ModelPricesSection() {
           )}
         </>
       )}
-    </section>
+    </OrgAccordion>
   );
 }

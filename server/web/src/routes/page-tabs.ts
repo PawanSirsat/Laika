@@ -34,6 +34,12 @@ export interface PageTab {
    */
   readonly badge?: string;
   /**
+   * The heading a tab sits under on a page whose sections are a side
+   * navigation rather than a strip — the Organisation's settings hub
+   * (LAI-1318). Absent: it stands on its own, above every group.
+   */
+  readonly group?: string;
+  /**
    * Drawn by its page after the tabs, as a quieter link, rather than as a tab
    * of its own — V3's *Advanced* (LAI-1096), which the owner's design leaves
    * out of its four tabs. **It is still a tab to `currentTab`**, so its
@@ -95,16 +101,42 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
  */
 export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
+  // The settings hub (LAI-1318): one focused page per job, grouped. The ids
+  // the strip had — people, roles, integrations, security, work, activity —
+  // keep their addresses, so every link to them still opens the same place.
+  { id: 'general', label: 'General', group: 'Workspace' },
+  { id: 'time', label: 'Time & breaks', group: 'Workspace' },
+  { id: 'spaces', label: 'Spaces', group: 'Workspace' },
+  { id: 'people', label: 'Members', group: 'People & access' },
+  // Who may do what, for everyone: the endpoint is `org.read` (LAI-950).
+  { id: 'roles', label: 'Roles & permissions', group: 'People & access' },
+  {
+    id: 'security',
+    label: 'Tokens & sign-in',
+    group: 'People & access',
+    requires: 'token.list_any',
+  },
+  // Every connection, and then each on its own page. Each page keeps the gate
+  // its section always had, decided on the page: the list shows only those
+  // this reader may configure.
+  { id: 'integrations', label: 'All connections', group: 'Connections' },
+  { id: 'github', label: 'GitHub', group: 'Connections' },
+  { id: 'hr', label: 'HR system', group: 'Connections' },
+  { id: 'email', label: 'Email', group: 'Connections' },
+  { id: 'teams', label: 'Microsoft Teams', group: 'Connections' },
+  { id: 'calendar', label: 'Outlook calendar', group: 'Connections' },
+  { id: 'ai', label: 'AI & model prices', group: 'Connections' },
   // Everyone's work across every space (LAI-952), a tab since D-147
   // (LAI-1170): ungated, as the sidebar entry it replaces was — the server
   // decides whose tasks each reader is sent.
-  { id: 'work', label: 'Work' },
-  { id: 'people', label: 'People' },
-  // Who may do what, for everyone: the endpoint is `org.read` (LAI-950).
-  { id: 'roles', label: 'Roles & permissions' },
-  { id: 'integrations', label: 'Integrations' },
-  { id: 'security', label: 'Security', requires: 'token.list_any' },
-  { id: 'activity', label: 'Activity', requires: 'audit_log.export', refusedByAddress: true },
+  { id: 'work', label: 'Work', group: 'Records' },
+  {
+    id: 'activity',
+    label: 'Activity',
+    group: 'Records',
+    requires: 'audit_log.export',
+    refusedByAddress: true,
+  },
 ];
 
 /**
