@@ -27,6 +27,7 @@ import {
   pruneEmailOutbox,
   runEmailOutbox,
 } from '../services/email-outbox.ts';
+import { pruneEmailInbound } from '../services/email-inbound.ts';
 import { runTeamsTick, TEAMS_TICK_MS, type TeamsPostingDeps } from '../services/teams-posting.ts';
 import { snapshot } from './backup.ts';
 import {
@@ -213,7 +214,10 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     {
       name: 'email.retention',
       everyMs: DAY,
-      run: (now) => ({ changed: pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) }),
+      run: (now) => ({
+        changed:
+          pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) + pruneEmailInbound(db, now),
+      }),
       atStart: true,
     },
     // Assignment and mention mail, and the daily digests (§4.97 – §4.100,

@@ -1,5 +1,5 @@
 import type { AgentClient } from '../../../api/agent-clients.ts';
-import type { OwnLocalActivity } from '../../../api/local-activity.ts';
+import type { LocalActivity } from '../../../api/local-activity.ts';
 import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { agentLabel } from '../profile/activity-derive.ts';
 import './connect.css';
@@ -23,7 +23,7 @@ export function dayLabel(day: string): string {
  * **one table for the person and for whoever reads it for them** (D-102 rule
  * 1, LAI-959), so an owner sees exactly what the person sees on Connect.
  */
-export function HeldDays({ held }: { readonly held: OwnLocalActivity }) {
+export function HeldDays({ held }: { readonly held: LocalActivity }) {
   return (
     <table className="share-table">
       <thead>

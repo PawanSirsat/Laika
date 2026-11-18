@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { getCompatibility } from '../../../../api/developer-updates.ts';
 import { listDevices, type Device } from '../../../../api/devices.ts';
+import { getActivitySharing, getOwnLocalActivity } from '../../../../api/local-activity.ts';
 import { listProjectSetups, type ProjectSetup } from '../../../../api/project-setups.ts';
 import { getAgentVerification } from '../../../../api/tool-setup.ts';
 import { useProjects } from '../../../../api/use-projects.ts';
@@ -47,12 +48,26 @@ export interface OverviewTabProps {
   readonly onNavigate: (to: string) => void;
   /** Where *Set up a project* goes; `preview` sends it to the new flow (LAI-1052). */
   readonly projectsHref?: string;
+  /** The reader is a viewer: the journey's *Share activity* says they cannot send. */
+  readonly readOnly?: boolean;
 }
 
 /** The Overview's two reads, together: neither is drawn without the other. */
 interface Loaded {
   readonly devices: readonly Device[];
   readonly setups: readonly ProjectSetup[];
+  /**
+   * Whether the organisation collects, and the reader's newest report
+   * (LAI-1327) — the journey's *Share activity* step. `undefined` when either
+   * read failed: the step is then left out, never guessed.
+   */
+  readonly activity:
+    | {
+        readonly orgEnabled: boolean;
+        readonly lastReceivedAt: number | null;
+        readonly collectors: number;
+      }
+    | undefined;
 }
 
 interface Failure {
@@ -216,6 +231,7 @@ function AttentionChip({
 export function OverviewTab({
   onNavigate,
   projectsHref = OVERVIEW_ADDRESSES.projects,
+  readOnly = false,
 }: OverviewTabProps) {
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [error, setError] = useState<Failure | null>(null);
@@ -236,7 +252,9 @@ export function OverviewTab({
     return Promise.allSettled([
       listDevices(signal),
       listProjectSetups(undefined, undefined, signal),
-    ]).then(([devices, setups]) => {
+      getActivitySharing(signal),
+      getOwnLocalActivity(signal),
+    ]).then(([devices, setups, sharing, held]) => {
       if (signal?.aborted === true) return;
       if (devices.status === 'rejected') {
         setError({ resource: 'your devices', cause: devices.reason });
@@ -246,7 +264,18 @@ export function OverviewTab({
         setError({ resource: 'your repository setups', cause: setups.reason });
         return;
       }
-      setLoaded({ devices: devices.value.data, setups: setups.value });
+      setLoaded({
+        devices: devices.value.data,
+        setups: setups.value,
+        activity:
+          sharing.status === 'fulfilled' && held.status === 'fulfilled'
+            ? {
+                orgEnabled: sharing.value.org_enabled,
+                lastReceivedAt: held.value.last_received_at ?? null,
+                collectors: held.value.collectors,
+              }
+            : undefined,
+      });
       setError(null);
       const at = Date.now();
       setNow(at);
@@ -368,7 +397,12 @@ export function OverviewTab({
     const toolsHref = OVERVIEW_ADDRESSES.tools;
     const hero = heroOf(state, now, projectsHref, toolsHref);
     const attention = attentionItems(state, updates, now);
-    const rows = journeyRows(state, projectsHref, toolsHref);
+    const rows = journeyRows(
+      state,
+      projectsHref,
+      toolsHref,
+      loaded?.activity === undefined ? undefined : { ...loaded.activity, readOnly, now },
+    );
     body = (
       <>
         {error !== null && (

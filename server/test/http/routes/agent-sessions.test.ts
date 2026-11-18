@@ -672,6 +672,8 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/meeting-reviews/:id/discard': 'changes the review, not a task',
   'POST /webhooks/github': 'the system principal (§3.4, §10.1): evidence, not work — never fenced',
   'POST /webhooks/transcript': 'files a meeting review, not a task change',
+  'POST /webhooks/email':
+    'inbound mail (§10.3): creates a task nothing holds yet, or adds a comment — never fenced (§6.3)',
   'PATCH /api/v1/sprints/:id':
     'the sprint’s own fields; completing it does not touch its tasks (§7.1)',
   'PUT /api/v1/sprints/:id/budget': 'session only (budget.set, §3.1)',
@@ -781,6 +783,10 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
   'DELETE /api/v1/org/email': 'organisation settings (org.settings.edit), not a task',
   'POST /api/v1/org/email/test': 'a test email to the caller, not a task',
+  'PUT /api/v1/org/email-inbound': 'session only (org.email.configure), not a task',
+  'POST /api/v1/org/email-inbound/token': 'session only (org.email.configure), not a task',
+  'POST /api/v1/projects/:slug/email-address/rotate':
+    'a space setting (project.settings.edit), not a task',
   'PUT /api/v1/me/email-prefs':
     'session only (email_prefs.own); a person’s own switches, not a task',
   'PUT /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',

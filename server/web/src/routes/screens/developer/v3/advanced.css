@@ -65,7 +65,8 @@
 }
 
 .dev-adv-intro a,
-.dev-adv-legacy a {
+.dev-adv-legacy-note a,
+.dev-adv-move {
   color: var(--accent);
   font-weight: var(--weight-semibold);
 }
@@ -78,8 +79,25 @@
   max-width: 14rem;
 }
 
-/* One line, not a box: each legacy row already says how to move it. */
-.dev-adv-legacy-note {
+/*
+ * The legacy callout (LAI-1327): one line and a toggle, not a box — the rows
+ * it opens are divided like the list's, each with a chip and a link.
+ */
+.dev-adv-legacy-callout,
+.dev-adv-retired {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.dev-adv-legacy-callout > .tok-list,
+.dev-adv-retired > .tok-list {
+  align-self: stretch;
+}
+
+.dev-adv-legacy-note,
+.dev-adv-none {
   margin: 0 var(--space-4-5);
   font-size: var(--text-small);
   line-height: 1.5;
@@ -90,12 +108,26 @@
   color: var(--text-primary);
 }
 
-.dev-adv-legacy {
-  flex-basis: 100%;
-  margin: 0;
+.dev-adv-toggle {
+  margin: 0 var(--space-4-5);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
   font-size: var(--text-small);
-  color: var(--text-secondary);
-  line-height: 1.5;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.dev-adv-toggle:focus-visible,
+.dev-adv-move:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dev-adv-move {
+  font-size: var(--text-small);
 }
 
 .dev-adv-row .overflow-menu {
@@ -130,7 +162,7 @@
     order: 1;
   }
 
-  .dev-advanced .dev-adv-legacy {
+  .dev-advanced .dev-adv-move {
     order: 2;
   }
 }
