@@ -46,15 +46,9 @@
   gap: var(--space-2);
 }
 
+/* The shared Avatar at 24 (LAI-1336): its own size, disc and initials. */
 .prof-manage-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
+  flex: none;
 }
 
 .prof-manage-name {

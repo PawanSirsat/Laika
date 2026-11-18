@@ -7,8 +7,7 @@ import { getTeamsSettings } from '../../../api/teams.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import type { OrgUser } from '../../../api/users.ts';
 import type { OrgRole } from '../../../api/invites.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { statusWord } from './calendar-derive.ts';
@@ -389,19 +388,17 @@ export function OverviewBento({
             }
           >
             <div className="bento-avatars" aria-label={`${String(active.length)} active people`}>
-              {shown.map((person) => {
-                const ink = avatarColor(person.id, theme);
-                return (
-                  <span
-                    key={person.id}
-                    className="bento-avatar"
-                    style={{ background: ink.background, color: ink.foreground }}
-                    title={person.name}
-                  >
-                    {initials(person.name)}
-                  </span>
-                );
-              })}
+              {/* The shared avatar (LAI-1336): a photo, or initials, named on hover. */}
+              {shown.map((person) => (
+                <Avatar
+                  key={person.id}
+                  name={person.name}
+                  userId={person.id}
+                  theme={theme}
+                  size={36}
+                  className="bento-avatar"
+                />
+              ))}
               {active.length > shown.length && (
                 <span className="bento-avatar bento-avatar-more">
                   +{String(active.length - shown.length)}

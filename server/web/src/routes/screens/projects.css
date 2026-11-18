@@ -384,6 +384,10 @@
   min-width: 0;
 }
 
+/*
+ * A face in the stack — the shared Avatar at 28 (LAI-1336), or the `+n` — in
+ * the card's ring, overlapped.
+ */
 .space-face {
   width: 1.75rem;
   height: 1.75rem;

@@ -6,7 +6,7 @@ import { SizeChip } from '../../../components/SizeChip.tsx';
 import { Chip } from '../../../components/chip/Chip.tsx';
 import { sprintGlyphLabel } from '../../../components/chip/chip-model.ts';
 import { startTicker } from '../../../api/time-label.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import type { Sprint } from '../../../api/sprints.ts';
@@ -346,7 +346,6 @@ export function ListView({
 
             <tbody>
               {shown.map((row) => {
-                const ink = row.assigned ? avatarColor(row.assigneeId, theme) : undefined;
                 const isSelected = effective.has(row.id);
                 const moving = movingId === row.id;
                 return (
@@ -481,21 +480,20 @@ export function ListView({
 
                     <td>
                       <span className="list-assignee">
-                        <span
-                          className={row.assigned ? 'list-avatar' : 'list-avatar list-avatar-empty'}
-                          aria-hidden="true"
-                          {...(ink === undefined
-                            ? {}
-                            : {
-                                style: {
-                                  background: ink.background,
-                                  color: ink.foreground,
-                                  borderColor: ink.border,
-                                },
-                              })}
-                        >
-                          {row.initials}
-                        </span>
+                        {row.assigned ? (
+                          <Avatar
+                            name={row.who}
+                            userId={row.assigneeId}
+                            theme={theme}
+                            size={22}
+                            label={null}
+                            className="list-avatar"
+                          />
+                        ) : (
+                          <span className="list-avatar list-avatar-empty" aria-hidden="true">
+                            —
+                          </span>
+                        )}
                         <Tooltip content={row.who} lazy>
                           <span className="list-who">{row.who}</span>
                         </Tooltip>

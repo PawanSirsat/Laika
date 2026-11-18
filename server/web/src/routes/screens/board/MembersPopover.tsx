@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import type { Member } from '../../../api/tasks.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 
 export interface MembersPopoverProps {
@@ -114,7 +113,6 @@ export function MembersPopover({
       ) : (
         <ul ref={list} className="bt-mp-list">
           {shown.map((member) => {
-            const colour = avatarColor(member.user_id, theme);
             const on = assignee === member.user_id;
             return (
               <li key={member.user_id}>
@@ -128,13 +126,14 @@ export function MembersPopover({
                       onClose();
                     }}
                   >
-                    <span
-                      className="bt-mp-avatar t-avatar"
-                      style={{ background: colour.background, color: colour.foreground }}
-                      aria-hidden="true"
-                    >
-                      {initials(member.name)}
-                    </span>
+                    <Avatar
+                      name={member.name}
+                      userId={member.user_id}
+                      theme={theme}
+                      size={26}
+                      label={null}
+                      className="bt-mp-avatar"
+                    />
                     <span className="bt-mp-text">
                       <span className="bt-mp-name">{member.name}</span>
                       <span className="bt-mp-email">{member.email}</span>

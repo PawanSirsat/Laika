@@ -19,8 +19,14 @@
 .avatar-20 {
   --avatar-size: 1.25rem;
 }
+.avatar-22 {
+  --avatar-size: 1.375rem;
+}
 .avatar-24 {
   --avatar-size: 1.5rem;
+}
+.avatar-26 {
+  --avatar-size: 1.625rem;
 }
 .avatar-28 {
   --avatar-size: 1.75rem;
@@ -58,9 +64,11 @@
 
 /*
  * The people surfaces' sizes (D-161) keep the initials they drew by hand: the
- * small step, heavy, from 28 up, and a heading's at a profile's 60.
+ * small step, heavy, from 26 up, and a heading's at a profile's 60.
  */
+.avatar-26 .avatar-disc,
 .avatar-28 .avatar-disc,
+.avatar-32 .avatar-disc,
 .avatar-36 .avatar-disc {
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);

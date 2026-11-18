@@ -16,8 +16,7 @@ import {
 import { statusNameOf } from '../../../api/status-derive.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { statusOptions } from '../board/status-options.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import type { Theme } from '../../../theme/theme.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { Icon } from '../../../components/icon/Icon.tsx';
@@ -190,8 +189,6 @@ export function SubtasksSection({
         <ul className="dep-list sub-list">
           {children.map((child) => {
             const who = child.assignee_id === null ? undefined : members.get(child.assignee_id);
-            const ink =
-              child.assignee_id === null ? undefined : avatarColor(child.assignee_id, theme);
             return (
               <li key={child.id} className="dep-chip sub-row">
                 <button
@@ -247,11 +244,18 @@ export function SubtasksSection({
                           ? 'dep-avatar dep-avatar-empty sub-assign'
                           : 'dep-avatar sub-assign'
                       }
-                      {...(ink === undefined
-                        ? {}
-                        : { style: { background: ink.background, color: ink.foreground } })}
                     >
-                      <span aria-hidden="true">{who === undefined ? '—' : initials(who.name)}</span>
+                      {who === undefined ? (
+                        <span aria-hidden="true">—</span>
+                      ) : (
+                        <Avatar
+                          name={who.name}
+                          userId={who.user_id}
+                          theme={theme}
+                          size={22}
+                          label={null}
+                        />
+                      )}
                       <span className="visually-hidden" id={`sub-assign-${child.id}`}>
                         Assignee of {child.key}
                       </span>
@@ -274,15 +278,14 @@ export function SubtasksSection({
                             label: `${member.name}${member.user_id === meId ? ' (you)' : ''}`,
                             keywords: member.email,
                             icon: (
-                              <span
+                              <Avatar
+                                name={member.name}
+                                userId={member.user_id}
+                                theme={theme}
+                                size={22}
+                                label={null}
                                 className="dd-avatar"
-                                style={{
-                                  background: avatarColor(member.user_id, theme).background,
-                                  color: avatarColor(member.user_id, theme).foreground,
-                                }}
-                              >
-                                {initials(member.name)}
-                              </span>
+                              />
                             ),
                           })),
                         ]}
@@ -295,18 +298,20 @@ export function SubtasksSection({
                       />
                     </label>
                   </Tooltip>
-                ) : (
-                  <Tooltip content={who?.name ?? 'Unassigned'} lazy>
-                    <span
-                      className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
-                      aria-hidden="true"
-                      {...(ink === undefined
-                        ? {}
-                        : { style: { background: ink.background, color: ink.foreground } })}
-                    >
-                      {who === undefined ? '—' : initials(who.name)}
+                ) : who === undefined ? (
+                  <Tooltip content="Unassigned" lazy>
+                    <span className="dep-avatar dep-avatar-empty" aria-hidden="true">
+                      —
                     </span>
                   </Tooltip>
+                ) : (
+                  <Avatar
+                    name={who.name}
+                    userId={who.user_id}
+                    theme={theme}
+                    size={22}
+                    className="dep-avatar"
+                  />
                 )}
                 {mayEdit && (
                   <Tooltip content="Detach from this task">

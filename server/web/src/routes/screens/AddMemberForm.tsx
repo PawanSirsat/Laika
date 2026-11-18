@@ -10,9 +10,8 @@ import {
   projectRoleLabel,
   type ProjectRole,
 } from '../../api/members.ts';
-import { avatarColor } from '../../theme/avatar-color.ts';
+import { Avatar } from '../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
-import { initials } from '../../theme/initials.ts';
 
 export interface AddMemberFormProps {
   /** User ids already on the project — never offered. */
@@ -151,39 +150,33 @@ export function AddMemberForm({ existingIds, busy, onAdd, onCancel }: AddMemberF
         </p>
       ) : (
         <ul className="member-add-list" role="radiogroup" aria-label="People to add">
-          {eligible.map((user) => {
-            const colour = avatarColor(user.id, theme);
-            return (
-              <li key={user.id}>
-                <label className="member-add-option">
-                  <input
-                    type="radio"
-                    name="add-member-user"
-                    value={user.id}
-                    checked={chosen === user.id}
-                    onChange={() => {
-                      setChosen(user.id);
-                    }}
-                  />
-                  <span
-                    className="member-avatar"
-                    style={{
-                      background: colour.background,
-                      color: colour.foreground,
-                      borderColor: colour.border,
-                    }}
-                    aria-hidden="true"
-                  >
-                    {initials(user.name)}
-                  </span>
-                  <span className="member-who">
-                    <span className="member-name">{user.name}</span>
-                    <span className="member-email">{user.email}</span>
-                  </span>
-                </label>
-              </li>
-            );
-          })}
+          {eligible.map((user) => (
+            <li key={user.id}>
+              <label className="member-add-option">
+                <input
+                  type="radio"
+                  name="add-member-user"
+                  value={user.id}
+                  checked={chosen === user.id}
+                  onChange={() => {
+                    setChosen(user.id);
+                  }}
+                />
+                <Avatar
+                  name={user.name}
+                  userId={user.id}
+                  theme={theme}
+                  size={32}
+                  label={null}
+                  className="member-avatar"
+                />
+                <span className="member-who">
+                  <span className="member-name">{user.name}</span>
+                  <span className="member-email">{user.email}</span>
+                </span>
+              </label>
+            </li>
+          ))}
         </ul>
       )}
 

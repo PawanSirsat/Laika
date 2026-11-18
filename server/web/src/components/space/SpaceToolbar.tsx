@@ -8,8 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { avatarColor } from '../../theme/avatar-color.ts';
-import { initials } from '../../theme/initials.ts';
+import { Avatar } from '../avatar/Avatar.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import { cluster, memberFilterLabel } from './top-bar-derive.ts';
 import { Tooltip } from '../tooltip/Tooltip.tsx';
@@ -281,7 +280,6 @@ function FilterControls({
           aria-label={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
         >
           {shown.map((member) => {
-            const colour = avatarColor(member.user_id, theme);
             const on = assignee === member.user_id;
             return (
               <Tooltip
@@ -290,15 +288,21 @@ function FilterControls({
               >
                 <button
                   type="button"
-                  className={on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'}
-                  style={{ background: colour.background, color: colour.foreground }}
+                  className={on ? 'space-member space-member-on' : 'space-member'}
                   aria-pressed={on}
                   aria-label={memberFilterLabel(member.name, on)}
                   onClick={() => {
                     onAssignee(on ? undefined : member.user_id);
                   }}
                 >
-                  {initials(member.name)}
+                  {/* The face inside the ring (LAI-1336): their photo, or initials. */}
+                  <Avatar
+                    name={member.name}
+                    userId={member.user_id}
+                    theme={theme}
+                    size={20}
+                    label={null}
+                  />
                 </button>
               </Tooltip>
             );

@@ -154,6 +154,7 @@
   height: 22px;
   border-radius: var(--radius-round);
   border: 1.5px solid var(--bg-card);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -164,6 +165,12 @@
 
 .space-member + .space-member {
   margin-left: -7px;
+}
+
+/* The shared Avatar fills the ring (LAI-1336), whatever the button's box. */
+.space-member > .avatar {
+  width: 100%;
+  height: 100%;
 }
 
 /*

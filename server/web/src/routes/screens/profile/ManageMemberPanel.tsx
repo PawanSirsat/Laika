@@ -3,8 +3,7 @@ import { SidePanel } from '../../../components/SidePanel.tsx';
 import type { OrgRole } from '../../../api/invites.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import type { Gates } from '../../../api/permissions.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { ManageSections, type KindControl } from './ManageSections.tsx';
@@ -41,7 +40,6 @@ export function ManageMemberPanel({
   restore,
 }: ManageMemberPanelProps) {
   const { theme } = useTheme();
-  const ink = avatarColor(user.id, theme);
   /** A reset link is on screen: shown once, so a click beside the panel keeps it. */
   const [secret, setSecret] = useState(false);
   return (
@@ -55,13 +53,14 @@ export function ManageMemberPanel({
       restore={restore}
       subtitle={
         <span className="prof-manage-who">
-          <span
+          <Avatar
+            name={user.name}
+            userId={user.id}
+            theme={theme}
+            size={24}
+            label={null}
             className="prof-manage-avatar"
-            style={{ background: ink.background, color: ink.foreground }}
-            aria-hidden="true"
-          >
-            {initials(user.name)}
-          </span>
+          />
           <span className="prof-manage-name">{user.name}</span>
           <span aria-hidden="true">·</span>
           <span>{orgRoleLabel(user.org_role as OrgRole)}</span>

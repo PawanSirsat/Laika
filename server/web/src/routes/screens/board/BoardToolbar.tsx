@@ -22,8 +22,7 @@ import type { FilterChip } from './filter-chips.ts';
 import { FilterChips } from './FilterChips.tsx';
 import { MembersPopover } from './MembersPopover.tsx';
 import type { Theme } from '../../../theme/theme.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { cluster, memberFilterLabel } from '../../../components/space/top-bar-derive.ts';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { SpaceBand, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
@@ -442,22 +441,22 @@ export function BoardToolbar({
         pinned: true,
         icon: <span className="dd-avatar dd-avatar-none" />,
       },
-      ...members.map((m) => {
-        const colour = avatarColor(m.user_id, theme);
-        return {
-          value: m.user_id,
-          label: m.name,
-          keywords: m.email,
-          icon: (
-            <span
-              className="dd-avatar t-avatar"
-              style={{ background: colour.background, color: colour.foreground }}
-            >
-              {initials(m.name)}
-            </span>
-          ),
-        };
-      }),
+      ...members.map((m) => ({
+        value: m.user_id,
+        label: m.name,
+        keywords: m.email,
+        // Their photo when the directory has one (LAI-1336); the label names them.
+        icon: (
+          <Avatar
+            name={m.name}
+            userId={m.user_id}
+            theme={theme}
+            size={22}
+            label={null}
+            className="dd-avatar"
+          />
+        ),
+      })),
     ],
     [members, theme],
   );
@@ -576,7 +575,6 @@ export function BoardToolbar({
             aria-label={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
           >
             {shown.map((member) => {
-              const colour = avatarColor(member.user_id, theme);
               const on = assignee === member.user_id;
               return (
                 <Tooltip
@@ -585,15 +583,21 @@ export function BoardToolbar({
                 >
                   <button
                     type="button"
-                    className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
-                    style={{ background: colour.background, color: colour.foreground }}
+                    className={on ? 'bt-member bt-member-on' : 'bt-member'}
                     aria-pressed={on}
                     aria-label={memberFilterLabel(member.name, on)}
                     onClick={() => {
                       onAssignee(on ? undefined : member.user_id);
                     }}
                   >
-                    {initials(member.name)}
+                    {/* The face inside the ring (LAI-1336): their photo, or initials. */}
+                    <Avatar
+                      name={member.name}
+                      userId={member.user_id}
+                      theme={theme}
+                      size={24}
+                      label={null}
+                    />
                   </button>
                 </Tooltip>
               );

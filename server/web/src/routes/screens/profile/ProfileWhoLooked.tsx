@@ -3,8 +3,7 @@ import { ApiError } from '../../../api/errors.ts';
 import { listAnalyticsViews, type WhoLooked } from '../../../api/people-analytics.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { avatarColorSolid } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { HeaderPopover } from '../my-day/HeaderPopover.tsx';
 import {
@@ -156,13 +155,15 @@ export function ProfileWhoLooked() {
             const role = viewerRole(look.viewer);
             return (
               <li key={look.id} className="prof-looked-row" data-look={look.kind}>
-                <span
+                <Avatar
+                  name={look.viewer.name}
+                  userId={look.viewer.id}
+                  theme={theme}
+                  size={26}
+                  solid
+                  label={null}
                   className="prof-looked-avatar"
-                  aria-hidden="true"
-                  style={{ background: avatarColorSolid(look.viewer.id, theme).background }}
-                >
-                  {initials(look.viewer.name)}
-                </span>
+                />
                 <span className="prof-looked-who">
                   <span className="prof-looked-name">
                     {look.viewer.name}

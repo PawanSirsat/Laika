@@ -19,8 +19,7 @@ import {
   type ReportLink,
   type TimeReportQuery,
 } from '../../api/time.ts';
-import { avatarColorSolid } from '../../theme/avatar-color.ts';
-import { initials } from '../../theme/initials.ts';
+import { Avatar } from '../avatar/Avatar.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import { ProjectMark } from '../ProjectMark.tsx';
 import { Button } from '../forms/Button.tsx';
@@ -528,7 +527,7 @@ export function TimeReport({
                 options={chipOptions.member.map((o) => ({
                   value: o.value,
                   label: o.label,
-                  mark: <Avatar id={o.person.id} name={o.person.name} />,
+                  mark: <PersonFace id={o.person.id} name={o.person.name} />,
                 }))}
                 selected={filters.members}
                 open={pop === 'member'}
@@ -881,23 +880,25 @@ function FilterChip({ id, name, options, selected, open, onToggle, onChange }: F
   );
 }
 
-function Avatar({ id, name }: { readonly id: string; readonly name: string }) {
+/** A person in the report: the shared avatar, their photo or initials (LAI-1336). */
+function PersonFace({ id, name }: { readonly id: string; readonly name: string }) {
   const { theme } = useTheme();
-  const colour = avatarColorSolid(id, theme);
   return (
-    <span
+    <Avatar
+      name={name}
+      userId={id}
+      theme={theme}
+      size={28}
+      solid
+      label={null}
       className="trep-avatar"
-      style={{ background: colour.background, color: colour.foreground }}
-      aria-hidden="true"
-    >
-      {initials(name)}
-    </span>
+    />
   );
 }
 
 function Mark({ face }: { readonly face: Face }) {
   if (face.space !== undefined) return <ProjectMark project={face.space} />;
-  if (face.person !== undefined) return <Avatar id={face.person.id} name={face.person.name} />;
+  if (face.person !== undefined) return <PersonFace id={face.person.id} name={face.person.name} />;
   if (face.kind !== undefined) {
     return <span className={`trep-dot trep-kind-${face.kind}`} aria-hidden="true" />;
   }
