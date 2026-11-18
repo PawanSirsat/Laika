@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import { ApiError, NetworkError } from './errors.ts';
 
 /**
  * What Microsoft's directory says of each person, as Laika keeps it (D-161,
@@ -11,8 +12,10 @@ import { request } from './client.ts';
  * avatar given a user id reads this one map, so nothing else needs to carry
  * a photo. The read happens once a session, the first time something asks
  * (`loadDirectory`), and again when the people sync is run from its card
- * (`reloadDirectory`). Anyone the sync has not read has no entry, and is
- * drawn by their initials, as everyone was before.
+ * (`reloadDirectory`); a read that fails for want of an answer is tried
+ * again, backing off, rather than leaving the session faceless (review F9).
+ * Anyone the sync has not read has no entry, and is drawn by their
+ * initials, as everyone was before.
  */
 
 /** One person's entry. */
@@ -51,6 +54,24 @@ const listeners = new Set<() => void>();
 let loading: Promise<void> | null = null;
 let loaded = false;
 let version = 0;
+let failures = 0;
+let retry: ReturnType<typeof setTimeout> | null = null;
+
+/** The first wait before a failed read is tried again; each next one doubles, to the most. */
+export const DIRECTORY_RETRY_FIRST_MS = 2_000;
+export const DIRECTORY_RETRY_MOST_MS = 60_000;
+/** How many times a failed read is tried again before the session does without. */
+export const DIRECTORY_RETRIES = 6;
+
+/**
+ * A failure worth trying again: no answer at all, a `5xx` or a `429`. A
+ * refusal is an answer — an older server with no directory, a caller who
+ * may not read it — and asking again changes nothing.
+ */
+function worthRetrying(cause: unknown): boolean {
+  if (cause instanceof NetworkError) return true;
+  return cause instanceof ApiError && (cause.status >= 500 || cause.status === 429);
+}
 
 function notify(): void {
   version += 1;
@@ -119,17 +140,35 @@ export function subscribeDirectory(listener: () => void): () => void {
 /**
  * Read the directory, once a session: a second ask while the first is going
  * joins it, and one after it has answered does nothing. A board whose server
- * has no directory, or that refuses it, is a directory with nobody in it.
+ * has no directory, or that refuses it, is a directory with nobody in it. A
+ * read that got no answer is tried again after a wait that doubles, up to
+ * {@link DIRECTORY_RETRIES} times.
  */
 export function loadDirectory(): Promise<void> {
   if (loaded) return Promise.resolve();
   loading ??= getPeopleDirectory()
     .then((view) => {
       rememberDirectory(view);
-    })
-    .catch(() => undefined)
-    .finally(() => {
       loaded = true;
+      failures = 0;
+    })
+    .catch((cause: unknown) => {
+      if (!worthRetrying(cause) || failures >= DIRECTORY_RETRIES) {
+        loaded = true;
+        return;
+      }
+      failures += 1;
+      const wait = Math.min(
+        DIRECTORY_RETRY_MOST_MS,
+        DIRECTORY_RETRY_FIRST_MS * 2 ** (failures - 1),
+      );
+      if (retry !== null) clearTimeout(retry);
+      retry = setTimeout(() => {
+        retry = null;
+        void loadDirectory();
+      }, wait);
+    })
+    .finally(() => {
       loading = null;
     });
   return loading;
@@ -145,6 +184,9 @@ export function reloadDirectory(): Promise<void> {
 export function forgetDirectory(): void {
   loaded = false;
   loading = null;
+  failures = 0;
+  if (retry !== null) clearTimeout(retry);
+  retry = null;
   if (entries.size === 0) return;
   entries.clear();
   notify();

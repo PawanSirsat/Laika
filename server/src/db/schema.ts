@@ -2505,9 +2505,13 @@ export const emailInboundAttachments = sqliteTable(
  * enabled, and their profile photo, **kept in the operator's store** so
  * Microsoft is never asked on a view. **No row is not synced.**
  *
+ * **Once matched, a person is their Entra object id** (review M1): every later
+ * run reads `/users/{entra_oid}`, never the address again, so a rename does
+ * not lose them and an address given to someone else does not become them.
  * `seen_at` is when the directory last answered for them; `missing_since`
- * when it first did not, for someone it had answered for before — the
- * leaver rule's first miss, cleared when they are found again. The photo's
+ * when that read first answered `404`, and `disabled_since` when it first
+ * said their account is disabled — each the first of the two sightings the
+ * leaver rule needs, cleared when it stops being true. The photo's
  * four columns are all set or all null, and `photo_etag` is Microsoft's, so
  * an unchanged photo is never fetched twice.
  *
@@ -2530,6 +2534,7 @@ export const userDirectory = sqliteTable(
     accountEnabled: integer('account_enabled'),
     seenAt: integer('seen_at'),
     missingSince: integer('missing_since'),
+    disabledSince: integer('disabled_since'),
     /** `u/<user_id>/photo/<id>` in the operator's store. */
     photoKey: text('photo_key'),
     photoType: text('photo_type', { enum: USER_PHOTO_TYPES }),

@@ -1192,6 +1192,12 @@ const PAIRS: readonly Pair[] = [
     client: 'Leaver',
     clientFile: 'people-sync.ts',
   },
+  {
+    server: 'ChangedAccountView',
+    serverFile: 'services/people-sync.ts',
+    client: 'ChangedAccount',
+    clientFile: 'people-sync.ts',
+  },
   // Everyone's photo version, title, department and manager (D-161).
   {
     server: 'PeopleDirectoryView',

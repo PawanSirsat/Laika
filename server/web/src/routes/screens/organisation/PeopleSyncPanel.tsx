@@ -15,6 +15,7 @@ import { PersonLink } from '../../../components/PersonLink.tsx';
 import { Switch } from '../../../components/Switch.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import {
+  changedHeadline,
   leaverHeadline,
   leaverReasonWords,
   leaversNote,
@@ -93,6 +94,8 @@ export function PeopleSyncPanel({ connected, now }: PeopleSyncPanelProps) {
   const ago = (at: number): string => timeLabel(at, now).text;
   const review = view.leavers;
   const headline = review === null ? null : leaverHeadline(review);
+  const changed = review?.changed ?? [];
+  const changedHead = changedHeadline(changed.length);
 
   return (
     <div className="org-people-sync" data-people-sync>
@@ -191,6 +194,32 @@ export function PeopleSyncPanel({ connected, now }: PeopleSyncPanelProps) {
                     </li>
                   );
                 })}
+              </ul>
+            </div>
+          )}
+          {changedHead !== null && (
+            <div className="org-leavers" data-people-changed>
+              <span className="org-fact-note" data-tone="warning">
+                {changedHead}
+              </span>
+              <ul className="org-leavers-list">
+                {changed.map((person) => (
+                  <li key={person.user_id} className="org-leaver" data-changed={person.user_id}>
+                    <Avatar
+                      name={person.name}
+                      userId={person.user_id}
+                      theme={theme}
+                      size={28}
+                      label={null}
+                    />
+                    <span className="org-leaver-who">
+                      <PersonLink userId={person.user_id} className="org-person-link">
+                        {person.name}
+                      </PersonLink>
+                      <span className="org-leaver-why">{person.email}</span>
+                    </span>
+                  </li>
+                ))}
               </ul>
             </div>
           )}

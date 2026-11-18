@@ -12,8 +12,9 @@ import {
   users,
 } from '../../src/db/schema.ts';
 import { encryptSecret } from '../../src/secrets.ts';
+import { disconnectCalendar, saveCalendarSource } from '../../src/services/calendar-source.ts';
 import {
-  LEAVER_MISSING_MS,
+  LEAVER_CONFIRM_MS,
   PHOTO_MAX_BYTES,
   type PeopleSyncOutcome,
   runPeopleSync,
@@ -306,6 +307,28 @@ describe('photos', () => {
     expect(row(s.userId)?.photoEtag).toBe('"W/1"');
   });
 
+  it('no photo at 240px is not no photo: the default size is asked for and kept (F4)', async () => {
+    entra('owner@example.test', { photo: { etag: '"W/9"', bytes: JPEG, defaultOnly: true } });
+    expect((await synced()).result).toMatchObject({ photos_fetched: 1 });
+    expect(graph.of('photoValue').map((r) => r.url.pathname)).toEqual([
+      '/v1.0/users/oid-owner%40example.test/photo/$value',
+    ]);
+    expect(row(s.userId)).toMatchObject({ photoEtag: '"W/9"', photoType: 'image/jpeg' });
+  });
+
+  it('an empty answer for the bytes keeps the photo stored (F5)', async () => {
+    const me = entra('owner@example.test', { photo: { etag: '"W/1"', bytes: JPEG } });
+    await synced();
+    const key = row(s.userId)!.photoKey!;
+    me.photo = { etag: '"W/2"', bytes: JPEG };
+    graph.intercept = (req) =>
+      req.kind === 'photoValue' ? new Response(new Uint8Array(), { status: 200 }) : undefined;
+    clock = NOW + HOUR;
+    expect((await synced()).result).toMatchObject({ photos_removed: 0, photos_fetched: 0 });
+    expect(row(s.userId)).toMatchObject({ photoKey: key, photoEtag: '"W/1"' });
+    expect(s3.objects.has(key)).toBe(true);
+  });
+
   it('refuses bytes that are not png, jpeg or webp, whatever they claim, and over a megabyte', async () => {
     const ada = person('Ada', 'ada@example.test');
     entra('owner@example.test', {
@@ -340,21 +363,121 @@ describe('photos', () => {
   });
 });
 
-describe('leavers', () => {
-  it('lists a disabled account as a dry run while Leavers is off, and deactivates nobody', async () => {
+describe('one person, one Entra id (review M1)', () => {
+  it('a rename in Microsoft keeps them: read by id, never missed, never a leaver', async () => {
+    switches(true, true);
     const ada = person('Ada', 'ada@example.test');
     entra('owner@example.test');
-    entra('ada@example.test', { accountEnabled: false });
+    entra('ada@example.test', { jobTitle: 'Engineer' });
     crowd(10);
-    const { leavers } = await synced();
-    expect(leavers).toMatchObject({ state: 'dry_run', breaker: false });
-    expect(leavers.people).toEqual([
-      { user_id: ada, name: 'Ada', email: 'ada@example.test', reason: 'disabled', protected: null },
+    await synced();
+    // Renamed and moved to a new domain: the address answers nobody now.
+    graph.directory.delete('ada@example.test');
+    graph.directory.set('ada.lovelace@new.test', {
+      id: 'oid-ada@example.test',
+      upn: 'ada.lovelace@new.test',
+      mail: 'ada.lovelace@new.test',
+      jobTitle: 'Staff engineer',
+      accountEnabled: true,
+    });
+    for (const at of [NOW + HOUR, NOW + 2 * HOUR, NOW + 3 * HOUR]) {
+      clock = at;
+      expect((await synced()).leavers.state).toBe('none');
+    }
+    expect(active(ada)).toBe(true);
+    expect(row(ada)).toMatchObject({ jobTitle: 'Staff engineer', missingSince: null });
+    // Her address asked for once — the first match — and her id after.
+    const asked = graph.of('user').map((r) => r.user);
+    expect(asked.filter((u) => u === 'ada@example.test')).toHaveLength(1);
+    expect(asked.filter((u) => u === 'oid-ada@example.test')).toHaveLength(3);
+  });
+
+  it('an address handed to someone else: nothing of theirs is saved, nobody goes, and the card says check', async () => {
+    switches(true, true);
+    const ada = person('Ada', 'ada@example.test');
+    entra('owner@example.test');
+    entra('ada@example.test', { jobTitle: 'Engineer' });
+    crowd(10);
+    await synced();
+    // Her account deleted; a new hire given her address.
+    graph.directory.set('ada@example.test', {
+      id: 'oid-new-hire',
+      upn: 'ada@example.test',
+      mail: 'ada@example.test',
+      jobTitle: 'Intern',
+      accountEnabled: true,
+      photo: { etag: '"new"', bytes: JPEG },
+    });
+    for (const at of [NOW + HOUR, NOW + 3 * HOUR]) {
+      clock = at;
+      const { result, leavers } = await synced();
+      expect(result.changed).toBe(1);
+      expect(leavers.state).toBe('none');
+      expect(leavers.changed).toEqual([{ user_id: ada, name: 'Ada', email: 'ada@example.test' }]);
+    }
+    expect(active(ada)).toBe(true);
+    expect(row(ada)).toMatchObject({
+      entraOid: 'oid-ada@example.test',
+      jobTitle: 'Engineer',
+      photoKey: null,
+      missingSince: null,
+    });
+  });
+});
+
+/**
+ * Match everyone at `NOW`, then see `who` disabled at +1 h — the first
+ * sighting — and again at +2 h, which confirms it: the second run's outcome.
+ */
+async function disabledTwice(who: FakeDirectoryUser[]) {
+  clock = NOW;
+  await synced();
+  for (const u of who) u.accountEnabled = false;
+  clock = NOW + HOUR;
+  const first = await synced();
+  clock = NOW + 2 * HOUR;
+  return { first, second: await synced() };
+}
+
+describe('leavers', () => {
+  it('a disabled account is listed only on a second sighting an hour after the first — a dry run while Leavers is off', async () => {
+    const ada = person('Ada', 'ada@example.test');
+    entra('owner@example.test');
+    const her = entra('ada@example.test');
+    crowd(10);
+    const { first, second } = await disabledTwice([her]);
+    expect(first.leavers.state).toBe('none');
+    expect(second.leavers).toMatchObject({ state: 'dry_run', breaker: false });
+    expect(second.leavers.people).toEqual([
+      {
+        user_id: ada,
+        name: 'Ada',
+        email: 'ada@example.test',
+        reason: 'disabled',
+        protected: null,
+        failed: false,
+      },
     ]);
     expect(active(ada)).toBe(true);
   });
 
-  it('with Leavers on, deactivates a disabled account through the deactivation service, as the system', async () => {
+  it('a first match proves nothing: an account disabled from the start needs two later sightings (M2)', async () => {
+    switches(true, true);
+    const shared = person('Shared mailbox', 'shared@example.test');
+    entra('owner@example.test');
+    entra('shared@example.test', { accountEnabled: false });
+    crowd(10);
+    expect((await synced()).leavers.state).toBe('none');
+    expect(row(shared)?.disabledSince).toBeNull();
+    clock = NOW + HOUR;
+    expect((await synced()).leavers.state).toBe('none');
+    expect(row(shared)?.disabledSince).toBe(NOW + HOUR);
+    expect(active(shared)).toBe(true);
+    clock = NOW + 2 * HOUR;
+    expect((await synced()).leavers.people.map((p) => p.user_id)).toEqual([shared]);
+  });
+
+  it('with Leavers on, deactivates through the deactivation service, as the system, and forgets their photo (F3)', async () => {
     switches(true, true);
     const ada = person('Ada', 'ada@example.test');
     t.db
@@ -363,11 +486,15 @@ describe('leavers', () => {
       .run();
     const task = createTask(t.sqlite, t.db, owner, 'laika', { title: 'Hers', assignee_id: ada });
     entra('owner@example.test');
-    entra('ada@example.test', { accountEnabled: false });
+    const her = entra('ada@example.test', { photo: { etag: '"W/1"', bytes: JPEG } });
     crowd(10);
+    clock = NOW;
+    await synced();
+    const key = row(ada)!.photoKey!;
+    expect(s3.objects.has(key)).toBe(true);
 
-    const { leavers } = await synced();
-    expect(leavers).toMatchObject({ state: 'deactivated' });
+    const { second } = await disabledTwice([her]);
+    expect(second.leavers).toMatchObject({ state: 'deactivated' });
     expect(active(ada)).toBe(false);
     // Her open task handed back, her space left — and the record says who did it.
     expect(t.db.select().from(tasks).where(eq(tasks.id, task.id)).get()?.assigneeId).toBeNull();
@@ -380,9 +507,37 @@ describe('leavers', () => {
       user_id: ada,
       via: 'microsoft_directory',
     });
+    // Her photo and directory row go with her: old history draws initials.
+    expect(row(ada)).toBeUndefined();
+    expect(s3.objects.has(key)).toBe(false);
   });
 
-  it('a person gone from the directory goes only on a second miss at least an hour after the first', async () => {
+  it('one leaver that cannot be deactivated is marked, and the others still go (F6)', async () => {
+    switches(true, true);
+    const ada = person('Ada', 'ada@example.test');
+    const bea = person('Bea', 'bea@example.test');
+    entra('owner@example.test');
+    const a = entra('ada@example.test');
+    const b = entra('bea@example.test');
+    crowd(30);
+    t.sqlite.exec(`
+      CREATE TRIGGER stuck BEFORE UPDATE OF is_active ON users WHEN OLD.email = 'ada@example.test'
+      BEGIN SELECT RAISE(ABORT, 'a fault nobody expected'); END
+    `);
+    const { second } = await disabledTwice([a, b]);
+    expect(second.leavers.state).toBe('deactivated');
+    expect(second.leavers.people.map((p) => [p.user_id, p.failed]).sort()).toEqual(
+      [
+        [ada, true],
+        [bea, false],
+      ].sort(),
+    );
+    expect(active(ada)).toBe(true);
+    expect(active(bea)).toBe(false);
+    expect(t.db.select().from(orgPeopleSync).get()?.lastSuccessAt).toBe(NOW + 2 * HOUR);
+  });
+
+  it('a person gone by their id goes only on a second miss at least an hour after the first', async () => {
     switches(true, true);
     const ada = person('Ada', 'ada@example.test');
     entra('owner@example.test');
@@ -396,11 +551,11 @@ describe('leavers', () => {
     expect(row(ada)?.missingSince).toBe(NOW + HOUR);
     expect(active(ada)).toBe(true);
 
-    clock = NOW + HOUR + LEAVER_MISSING_MS - 1;
+    clock = NOW + HOUR + LEAVER_CONFIRM_MS - 1;
     expect((await synced()).leavers.state).toBe('none');
     expect(active(ada)).toBe(true);
 
-    clock = NOW + HOUR + LEAVER_MISSING_MS;
+    clock = NOW + HOUR + LEAVER_CONFIRM_MS;
     const { leavers } = await synced();
     expect(leavers.people).toMatchObject([{ user_id: ada, reason: 'gone' }]);
     expect(active(ada)).toBe(false);
@@ -449,9 +604,10 @@ describe('leavers', () => {
 
   it('never deactivates an owner, and says why', async () => {
     switches(true, true);
-    entra('owner@example.test', { accountEnabled: false });
-    const { leavers } = await synced();
-    expect(leavers.people).toMatchObject([{ user_id: s.userId, protected: 'owner' }]);
+    const me = entra('owner@example.test');
+    crowd(10);
+    const { second } = await disabledTwice([me]);
+    expect(second.leavers.people).toMatchObject([{ user_id: s.userId, protected: 'owner' }]);
     expect(active(s.userId)).toBe(true);
   });
 
@@ -460,18 +616,18 @@ describe('leavers', () => {
     const a = person('Amy', 'amy@example.test', 'admin');
     const b = person('Bob', 'bob@example.test', 'admin');
     entra('owner@example.test');
-    entra('amy@example.test', { accountEnabled: false });
-    entra('bob@example.test', { accountEnabled: false });
+    const amy = entra('amy@example.test');
+    const bob = entra('bob@example.test');
     // Twenty members, so two leavers are under the breaker's tenth.
     crowd(17);
-    const { leavers } = await synced();
-    expect(leavers.state).toBe('deactivated');
+    const { second } = await disabledTwice([amy, bob]);
+    expect(second.leavers.state).toBe('deactivated');
     expect([active(a), active(b)].sort()).toEqual([false, true]);
-    expect(leavers.people.map((p) => p.protected).sort()).toEqual(['last_admin', null]);
+    expect(second.leavers.people.map((p) => p.protected).sort()).toEqual(['last_admin', null]);
 
     // Alone, the last admin is protected before anything is tried.
     const alone = active(a) ? a : b;
-    clock = NOW + HOUR;
+    clock = NOW + 3 * HOUR;
     expect((await synced()).leavers.people).toMatchObject([
       { user_id: alone, protected: 'last_admin' },
     ]);
@@ -481,36 +637,99 @@ describe('leavers', () => {
   it('the breaker holds everyone when more than three would go', async () => {
     switches(true, true);
     entra('owner@example.test');
-    const gone = [1, 2, 3, 4].map((n) => {
-      entra(`l${String(n)}@example.test`, { accountEnabled: false });
-      return person(`L${String(n)}`, `l${String(n)}@example.test`);
-    });
+    const gone = [1, 2, 3, 4].map((n) => ({
+      id: person(`L${String(n)}`, `l${String(n)}@example.test`),
+      u: entra(`l${String(n)}@example.test`),
+    }));
     crowd(40);
-    const { leavers } = await synced();
-    expect(leavers).toMatchObject({ state: 'held', breaker: true });
-    expect(leavers.people).toHaveLength(4);
-    for (const id of gone) expect(active(id)).toBe(true);
+    const { second } = await disabledTwice(gone.map((g) => g.u));
+    expect(second.leavers).toMatchObject({ state: 'held', breaker: true });
+    expect(second.leavers.people).toHaveLength(4);
+    for (const g of gone) expect(active(g.id)).toBe(true);
   });
 
   it('the breaker holds everyone when more than a tenth of members would go', async () => {
     switches(true, true);
     entra('owner@example.test');
-    const gone = [1, 2].map((n) => {
-      entra(`l${String(n)}@example.test`, { accountEnabled: false });
-      return person(`L${String(n)}`, `l${String(n)}@example.test`);
-    });
+    const gone = [1, 2].map((n) => ({
+      id: person(`L${String(n)}`, `l${String(n)}@example.test`),
+      u: entra(`l${String(n)}@example.test`),
+    }));
     // Two of eight is a quarter: held, though two is under the count.
     crowd(5);
+    const { second } = await disabledTwice(gone.map((g) => g.u));
+    expect(second.leavers).toMatchObject({ state: 'held', breaker: true });
+    for (const g of gone) expect(active(g.id)).toBe(true);
+  });
+
+  it('the breaker counts the sync’s own deactivations over 24 hours, not one run (F1)', async () => {
+    switches(true, true);
+    entra('owner@example.test');
+    const people = [1, 2, 3, 4].map((n) => ({
+      id: person(`L${String(n)}`, `l${String(n)}@example.test`),
+      u: entra(`l${String(n)}@example.test`),
+    }));
+    crowd(40);
+    // Three today, under the count: they go.
+    const { second } = await disabledTwice(people.slice(0, 3).map((p) => p.u));
+    expect(second.leavers.state).toBe('deactivated');
+    // A fourth, still inside the day: held.
+    const last = people[3]!;
+    last.u.accountEnabled = false;
+    clock = NOW + 3 * HOUR;
+    await synced();
+    clock = NOW + 4 * HOUR;
     expect((await synced()).leavers).toMatchObject({ state: 'held', breaker: true });
-    for (const id of gone) expect(active(id)).toBe(true);
+    expect(active(last.id)).toBe(true);
+    // A day after the three, the window has moved on: the fourth goes.
+    clock = NOW + 2 * HOUR + 24 * HOUR + 1;
+    expect((await synced()).leavers.state).toBe('deactivated');
+    expect(active(last.id)).toBe(false);
   });
 
   it('a dry run says whether the breaker would hold', async () => {
     entra('owner@example.test');
-    for (const n of [1, 2, 3, 4]) {
-      entra(`l${String(n)}@example.test`, { accountEnabled: false });
+    const all = [1, 2, 3, 4].map((n) => {
       person(`L${String(n)}`, `l${String(n)}@example.test`);
-    }
-    expect((await synced()).leavers).toMatchObject({ state: 'dry_run', breaker: true });
+      return entra(`l${String(n)}@example.test`);
+    });
+    const { second } = await disabledTwice(all);
+    expect(second.leavers).toMatchObject({ state: 'dry_run', breaker: true });
+  });
+});
+
+describe('another tenant or app (F2)', () => {
+  it('forgets every Entra id and first sighting, and switches Leavers off', async () => {
+    switches(true, true);
+    const ada = person('Ada', 'ada@example.test');
+    entra('owner@example.test');
+    entra('ada@example.test');
+    await synced();
+    expect(row(ada)?.entraOid).toBe('oid-ada@example.test');
+
+    saveCalendarSource(
+      t.db,
+      owner,
+      SECRET,
+      {
+        tenant_id: 'contoso.onmicrosoft.com',
+        client_id: GRAPH_CLIENT,
+        enabled: false,
+        rules: [],
+      },
+      { now: () => clock },
+    );
+    expect(row(ada)).toMatchObject({ entraOid: null, missingSince: null, disabledSince: null });
+    expect(t.db.select().from(orgPeopleSync).get()).toMatchObject({
+      profileEnabled: 1,
+      leaversEnabled: 0,
+    });
+
+    // A disconnect forgets them too: the next connection may be another tenant's.
+    switches(true, true);
+    t.db.update(userDirectory).set({ entraOid: 'oid-x' }).run();
+    disconnectCalendar(t.db, owner, NOW);
+    expect(row(ada)?.entraOid).toBeNull();
+    expect(t.db.select().from(orgPeopleSync).get()?.leaversEnabled).toBe(0);
   });
 });

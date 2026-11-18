@@ -14,7 +14,9 @@ import { PHOTO_MAX_BYTES } from './people-sync.ts';
  * version for the client's look-store, and each photo's bytes.
  *
  * **Who may read is who may see the people**: `member_list.read`, every role
- * (§3.1) — never wider. The photo is answered by Laika from the operator's
+ * (§3.1) — never wider. **A viewer, and any `read_only` token, is given the
+ * photos alone** — no title, department or manager: a viewer may be a client
+ * (D-161, CHIEF's decision on review F7). The photo is answered by Laika from the operator's
  * store, as a space icon is (D-152), so `img-src 'self'` covers it and no
  * view of anyone reaches Microsoft or the store's own origin.
  */
@@ -45,6 +47,11 @@ export interface PeopleDirectoryView {
   people: Record<string, PersonDirectoryView>;
 }
 
+/** Whether `actor` is given the directory's words, or its photos alone (F7). */
+function readsProfiles(actor: ResolvedActor): boolean {
+  return actor.orgRole !== 'viewer' && actor.token?.scope !== 'read_only';
+}
+
 /** `GET /api/v1/people/directory`. */
 export function getPeopleDirectory(
   db: Db,
@@ -53,6 +60,7 @@ export function getPeopleDirectory(
 ): PeopleDirectoryView {
   assertCan(actor, 'member_list.read');
   const stored = (deps?.config ?? null) !== null;
+  const words = readsProfiles(actor);
   const names = new Map(
     db
       .select({ id: users.id, name: users.name })
@@ -62,13 +70,16 @@ export function getPeopleDirectory(
   );
   const people: Record<string, PersonDirectoryView> = {};
   for (const row of db.select().from(userDirectory).all()) {
-    people[row.userId] = {
-      photo_v: stored && row.photoKey !== null ? row.photoUpdatedAt : null,
-      job_title: row.jobTitle,
-      department: row.department,
-      manager_id: row.managerUserId,
-      manager_name: row.managerUserId === null ? null : (names.get(row.managerUserId) ?? null),
-    };
+    const photo_v = stored && row.photoKey !== null ? row.photoUpdatedAt : null;
+    people[row.userId] = words
+      ? {
+          photo_v,
+          job_title: row.jobTitle,
+          department: row.department,
+          manager_id: row.managerUserId,
+          manager_name: row.managerUserId === null ? null : (names.get(row.managerUserId) ?? null),
+        }
+      : { photo_v, job_title: null, department: null, manager_id: null, manager_name: null };
   }
   return { people };
 }

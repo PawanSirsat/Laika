@@ -82,9 +82,10 @@ function storeDeps() {
 }
 
 describe('the directory', () => {
-  it('is everyone synced, by user id, for every role that may see people', () => {
-    const viewer = loadActor(t.db, ada)!;
-    expect(getPeopleDirectory(t.db, viewer, storeDeps())).toEqual({
+  it('is everyone synced, by user id, with their words for a member', () => {
+    t.db.update(users).set({ orgRole: 'member' }).where(eq(users.id, ada)).run();
+    const member = loadActor(t.db, ada)!;
+    expect(getPeopleDirectory(t.db, member, storeDeps())).toEqual({
       people: {
         [s.userId]: {
           photo_v: NOW,
@@ -102,6 +103,36 @@ describe('the directory', () => {
         },
       },
     });
+  });
+
+  it('a viewer, and a read-only token, get the photos alone — no title, department or manager (F7)', () => {
+    const photosOnly = {
+      people: {
+        [s.userId]: {
+          photo_v: NOW,
+          job_title: null,
+          department: null,
+          manager_id: null,
+          manager_name: null,
+        },
+        [ada]: {
+          photo_v: null,
+          job_title: null,
+          department: null,
+          manager_id: null,
+          manager_name: null,
+        },
+      },
+    };
+    const viewer = loadActor(t.db, ada)!;
+    expect(viewer.orgRole).toBe('viewer');
+    expect(getPeopleDirectory(t.db, viewer, storeDeps())).toEqual(photosOnly);
+    // The owner, through a read-only token: still the photos alone.
+    const readOnly = {
+      ...owner,
+      token: { id: 'tok-1', scope: 'read_only', projectIds: null },
+    } as unknown as ResolvedActor;
+    expect(getPeopleDirectory(t.db, readOnly, storeDeps())).toEqual(photosOnly);
   });
 
   it('names no photo version with no store, so nobody is sent to a 404', () => {

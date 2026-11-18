@@ -22,6 +22,8 @@ export interface PeopleSyncResult {
   readonly not_found: number;
   readonly denied: number;
   readonly refused: number;
+  /** Matched before, gone by id, their address now another account's: to check. */
+  readonly changed: number;
   readonly updated: number;
   readonly photos_fetched: number;
   readonly photos_unchanged: number;
@@ -41,6 +43,15 @@ export interface Leaver {
   /** `disabled`: their account is switched off; `gone`: the directory no longer has them. */
   readonly reason: 'disabled' | 'gone';
   readonly protected: LeaverProtection | null;
+  /** Their deactivation was tried and failed: deactivate them by hand. */
+  readonly failed: boolean;
+}
+
+/** Someone whose Microsoft account changed — a rename, or an address handed on: check by hand. */
+export interface ChangedAccount {
+  readonly user_id: string;
+  readonly name: string;
+  readonly email: string;
 }
 
 /**
@@ -52,6 +63,7 @@ export interface LeaverReview {
   readonly state: 'none' | 'dry_run' | 'held' | 'deactivated';
   readonly breaker: boolean;
   readonly people: readonly Leaver[];
+  readonly changed: readonly ChangedAccount[];
 }
 
 /** `GET /api/v1/org/people-sync`, and every write's answer. */

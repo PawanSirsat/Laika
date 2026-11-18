@@ -4395,13 +4395,14 @@ whose older migration fixtures name every column.
 | field | notes |
 | --- | --- |
 | `user_id` | pk, FK `users`, cascade |
-| `entra_oid` | nullable, 1–64 (CHECK) — their Entra object id; set the first time the directory answers for them, and **what makes a later miss count** toward the leaver rule |
+| `entra_oid` | nullable, 1–64 (CHECK) — their Entra object id, set by the one first match by address; **from then on they are read by it** (`/users/{entra_oid}`), so a rename keeps them and an address handed to someone else never becomes them. Cleared when the connection names another tenant or app, or is disconnected |
 | `job_title` | nullable, 1–200 (CHECK) |
 | `department` | nullable, 1–200 (CHECK) |
 | `manager_user_id` | nullable, FK `users`, set null — their manager, when the directory names one whose address is a Laika user's; nothing else of the manager is kept |
 | `account_enabled` | nullable, 0/1 (CHECK) — Entra's `accountEnabled`; null when the answer did not say |
 | `seen_at` | nullable — when the directory last answered for them |
-| `missing_since` | nullable — the first run since then that it did not (`404`), for someone with an `entra_oid`; kept, not moved, on later misses, and cleared when they are found |
+| `missing_since` | nullable — the first run whose read by `entra_oid` answered `404`; kept, not moved, on later misses, and cleared when they are found |
+| `disabled_since` | nullable — the first run whose read by `entra_oid` said their account is disabled; never set by a first match, kept while it stays disabled, cleared when it does not |
 | `photo_key` | nullable — `u/<user_id>/photo/<id>` in the D-150 store |
 | `photo_type` | nullable — `image/png` \| `image/jpeg` \| `image/webp` (CHECK), proved by the first bytes; never SVG |
 | `photo_etag` | nullable, ≤ 200 (CHECK) — Microsoft's `@odata.mediaEtag` for the photo stored: the same tag is no fetch |
@@ -4428,7 +4429,7 @@ the sync.
 | `last_error_code` | nullable — `not_connected` \| `credentials_rejected` \| `not_granted` \| `unreachable` \| `bad_answer` (CHECK) |
 | `last_error` | nullable — Laika's words, never Microsoft's body |
 | `last_result_json` | nullable — the last complete run's counts |
-| `leavers_json` | nullable — the last complete run's leaver review: `{ at, state: none \| dry_run \| held \| deactivated, breaker, people: [{ user_id, name, email, reason: disabled \| gone, protected: owner \| last_admin \| null }] }` |
+| `leavers_json` | nullable — the last complete run's leaver review: `{ at, state: none \| dry_run \| held \| deactivated, breaker, people: [{ user_id, name, email, reason: disabled \| gone, protected: owner \| last_admin \| null, failed }], changed: [{ user_id, name, email }] }` — `changed` is each person whose id Microsoft no longer has while their address answers with another account, for a person to check |
 | `updated_at` | |
 
 ## 5. Task lifecycle
@@ -4875,11 +4876,11 @@ GET    /api/v1/org/email-inbound             the Email to tasks card → { enabl
 PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 field authserv_id reason authserv_required to be on, authentication required, with no receiving server named; **403 reason owner_only, naming the field, for anything from anyone but an owner except `{ enabled: false }`**; 422 naming the field   (same)
 POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**; 403 owner_only for anyone but an owner   (same)
 GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
-PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
+PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; another tenant or client id makes the people sync forget every Entra id and first sighting and turns *Leavers* off (D-161); turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
-DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay (204)   (owner, admin; session only)
-GET    /api/v1/org/people-sync               the people sync on the Microsoft 365 card → { connected, profile_enabled, leavers_enabled, photos_stored, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, found, not_found, denied, refused, updated, photos_fetched, photos_unchanged, photos_removed, photos_refused, photos_deferred } | null, leavers: { at, state: none | dry_run | held | deactivated, breaker, people: [{ user_id, name, email, reason: disabled | gone, protected: owner | last_admin | null }] } | null } — with *Leavers* off, `leavers` is a dry run   (owner, admin; session only; org.calendar.configure; D-161, LAI-1330)
+DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay; the people sync forgets every Entra id and first sighting, and *Leavers* goes off (D-161) (204)   (owner, admin; session only)
+GET    /api/v1/org/people-sync               the people sync on the Microsoft 365 card → { connected, profile_enabled, leavers_enabled, photos_stored, sync_every_minutes, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, found, not_found, denied, refused, changed, updated, photos_fetched, photos_unchanged, photos_removed, photos_refused, photos_deferred } | null, leavers: { at, state: none | dry_run | held | deactivated, breaker, people: [{ user_id, name, email, reason: disabled | gone, protected: owner | last_admin | null, failed }], changed: [{ user_id, name, email }] } | null } — with *Leavers* off, `leavers` is a dry run   (owner, admin; session only; org.calendar.configure; D-161, LAI-1330)
 PUT    /api/v1/org/people-sync               body { profile_enabled, leavers_enabled } → the people sync; turning *Photos and profile* on starts a run; 422 reason leavers_need_profile (Leavers without it); 409 conflict reason microsoft_not_connected (either turned on with no §4.101 connection); turning *Leavers* on also asks user.deactivate, else 403   (owner, admin; session only)
 POST   /api/v1/org/people-sync/sync          syncs now, or joins the run already going → the people sync; 409 conflict reason people_sync_off unless *Photos and profile* is on   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
@@ -4902,7 +4903,7 @@ GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, na
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind } — anybody's but yours logged as kinds profile and time   (owner, admin; session only)
 GET    /api/v1/me/profile                    your own profile; ratings only with profile.read; no look   (every role; session only; D-139, LAI-1150)
 GET    /api/v1/users/:id/photo               ?v= → their synced photo's bytes (D-161), answered by Laika from the store rather than redirected, so `img-src 'self'` covers it; `Cache-Control: private, max-age=31536000, immutable` when `v` names the current `photo_updated_at`, else `private, no-cache`; no photo, no store, an object the store lost, and a caller who may not see people are the same 404   (member_list.read; LAI-1330)
-GET    /api/v1/people/directory              → { people: { [user_id]: { photo_v, job_title, department, manager_id, manager_name } } } — everyone the people sync has read (§4.108); `photo_v` is null with no photo or no store   (member_list.read; LAI-1330)
+GET    /api/v1/people/directory              → { people: { [user_id]: { photo_v, job_title, department, manager_id, manager_name } } } — everyone the people sync has read (§4.108); `photo_v` is null with no photo or no store. **A viewer, and any `read_only` token, gets the photos alone**: every other field null — a viewer may be a client (D-161)   (member_list.read; LAI-1330)
 GET    /api/v1/me/activity                   ?range=12w|52w — your own heatmap by day; no look   (every role; session only; D-139, LAI-1150)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
@@ -8770,24 +8771,31 @@ One interval-driven scheduler in the same process:
   boot**, and only while *Photos and profile* is on, a §4.101 connection is
   saved and `LAIKA_SECRET` is set, under §3.4's `system.people.sync`; the app's
   token must carry `User.Read.All` (`not_granted` otherwise). Each active
-  member, those least recently read first and at most 500 a run, by address:
-  `/users/{address}`, and the one person whose `mail` it is when that is a
-  `404`; then their manager and their photo's `@odata.mediaEtag`. A `403`, a
-  `400` or two people at one address skip that person; a `404` is counted, and
-  is the first miss of someone with an `entra_oid`. A photo is fetched only
-  when its tag changed — at most 50 a run, 1 MiB, its first bytes png, jpeg or
-  webp — and put under a new key with a header-signed `PUT`, the old object
-  deleted best effort; a `404` removes the stored one; no store keeps no photo,
-  and a store that fails stops photos, not profiles. **Leavers**, after a
-  complete read: an account Microsoft says is disabled, or someone with an
-  `entra_oid` it has not had for at least an hour (two runs); never someone it
-  never had, never an owner and never the last active admin. **The breaker**:
-  more than 3 leavers, or more than a tenth of the active members, in one run
-  deactivates nobody and records `held` — so on a board of fewer than ten
-  members every leaver waits for a person. With *Leavers* off the review is a
-  dry run. Otherwise each is deactivated as §6.4's deactivation does — tokens
-  revoked, sessions ended, spaces left, open tasks unassigned — with
-  `user.deactivated` written by the system, `via: 'microsoft_directory'`. **A
+  member, those least recently read first and at most 500 a run. **Matched
+  once by address** — `/users/{address}`, and the one person whose `mail` it
+  is when that is a `404` — **and read by their Entra id ever after**
+  (`/users/{entra_oid}`), so a rename keeps them and an address handed on does
+  not become them. That read answering `404` is them gone; if their address
+  then answers with **another** id, nothing is saved, nobody is a leaver, and
+  the card names them to check. A `403`, a `400` or two people at one address
+  skip that person. Then their manager and their photo's `@odata.mediaEtag` —
+  the 240px photo's, else the default size's (`/photo`). A photo is fetched
+  only when its tag changed — at most 50 a run, 1 MiB, its first bytes png,
+  jpeg or webp — and put under a new key with a header-signed `PUT`, the old
+  object deleted best effort; a `404` removes the stored one, and a `403`, a
+  `400` or an empty answer removes nothing; no store keeps no photo, and a
+  store that fails stops photos, not profiles. **Leavers**, after a complete
+  read and only for someone already matched by id: their account disabled, or
+  their id `404`, on two runs at least an hour apart — never on a first match,
+  never an owner, never the last active admin. **The breaker** counts the
+  sync's own deactivations over a rolling 24 hours: more than 3, or more than
+  a tenth of the active members, holds the rest and records `held` — so on a
+  board of fewer than ten members every leaver waits for a person. With
+  *Leavers* off the review is a dry run. Otherwise each is deactivated **on
+  their own** — one that fails is marked `failed` and the rest still go — as
+  §6.4's deactivation does: tokens revoked, sessions ended, spaces left, open
+  tasks unassigned, `user.deactivated` written by the system with `via:
+  'microsoft_directory'`, and their stored photo and directory row deleted. **A
   run never overlaps another** — *Sync now* joins one already running
 - **Teams posting** (§4.94 – §4.96, D-154, LAI-1314) — every minute, not at
   boot, under §3.4's `system.teams.post`: KSage's stand-up to each space with a
@@ -9078,8 +9086,9 @@ tenant** (D-157): an app token from `login.microsoftonline.com` and read-only
 accepted invitation's or organised Teams meeting's subject — *Busy* when it is
 private — times and ids, never a join link, a body or an attendee; and, with
 *Photos and profile* on (D-161), read-only `GET`s of each active member's
-directory entry (`/users/{address}`, or `/users?$filter=mail eq …`), their
-`/manager` and their `/photos/240x240` and its `$value`, keeping only their
+directory entry (`/users/{address}` or `/users?$filter=mail eq …` to match
+them once, `/users/{entra_oid}` after), their `/manager`, and their
+`/photos/240x240` or `/photo` and its `$value`, keeping only their
 Entra id, job title, department, account state, their manager as a Laika user
 and the photo in the store. Any task proposing otherwise is rejected at review.
 

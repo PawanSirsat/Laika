@@ -1,8 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq, gte, sql } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type PeopleSyncErrorCode, USER_PHOTO_TYPES, type UserPhotoType } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import {
+  activity,
   orgCalendarSource,
   orgPeopleSync,
   type OrgPeopleSync,
@@ -42,19 +43,24 @@ import { deactivateLeaver, type LeaverProtection, leaverProtection } from './use
  *
  * ## Who is read, and how
  *
- * Each active member by their address, lowercased: `/users/{address}`, and
- * the one person whose `mail` it is when that is a `404`. Then their manager
- * (matched to a Laika user by address, never stored otherwise) and their
- * photo's tag. One Microsoft will not show (`403`) or look up (`400`, or an
- * address two people answer to) is counted and left as they are; one it does
- * not have (`404`) is counted too, and is the leaver rule's first miss if it
- * had answered for them before. Those least recently read go first, at most
- * {@link PEOPLE_PER_RUN} a run.
+ * **By address once, then by their Entra object id** (review M1). Someone not
+ * yet matched is looked up by their address, lowercased: `/users/{address}`,
+ * and the one person whose `mail` it is when that is a `404`. From then on
+ * they are `/users/{entra_oid}` — a rename keeps them, and an address handed
+ * to someone else never becomes them. That read answering `404` is the one
+ * signal they are gone; and if their address then answers with **another**
+ * id, nothing is saved, nobody is counted a leaver, and the card says *the
+ * Microsoft account changed: check*. Then their manager (matched to a Laika
+ * user by address, never stored otherwise) and their photo's tag. One
+ * Microsoft will not show (`403`) or look up (`400`, or an address two people
+ * answer to) is counted and left as they are. Those least recently read go
+ * first, at most {@link PEOPLE_PER_RUN} a run.
  *
  * ## Photos, only when they changed
  *
  * `@odata.mediaEtag` is kept with the photo: the same tag is no fetch at all.
- * A changed one fetches `$value` — at most {@link PHOTO_MAX_BYTES}, its type
+ * The 240px photo is asked for, and the default-size one when there is none
+ * at 240px. A changed one fetches `$value` — at most {@link PHOTO_MAX_BYTES}, its type
  * proved by its first bytes to be png, jpeg or webp (never SVG) — puts it
  * under a new key, `u/<user_id>/photo/<id>`, and deletes the old object, best
  * effort, as a space icon's (D-152). A `404` means they removed it in
@@ -64,20 +70,23 @@ import { deactivateLeaver, type LeaverProtection, leaverProtection } from './use
  *
  * ## Leavers, behind guards
  *
- * After a **complete** read, a member is a leaver when Microsoft says their
- * account is disabled (`accountEnabled: false`), or when it has not had them
- * for at least {@link LEAVER_MISSING_MS} — two hourly runs — after having had
- * them before. Someone it never had (another domain, an address that is no
- * one's there) is never a leaver. An owner, and the last active admin, never
- * go ({@link leaverProtection}). **The breaker**: more than
- * {@link LEAVERS_BREAKER_COUNT}, or more than a tenth of the members, in one
- * run is a directory answering wrongly until a person says otherwise — nobody
- * is deactivated, and the review says `held`. With *Leavers* off the review
- * is a dry run: who would go, and whether the breaker would hold them.
+ * After a **complete** read, and only for someone already matched by their
+ * Entra id, a member is a leaver when that id's account has been disabled,
+ * or has answered `404`, on two runs at least {@link LEAVER_CONFIRM_MS}
+ * apart (review M2). Someone never matched — another domain, a shared
+ * mailbox, an address that is no one's there — is never a leaver. An owner,
+ * and the last active admin, never go ({@link leaverProtection}). **The
+ * breaker** counts the sync's own deactivations over a rolling
+ * {@link LEAVERS_BREAKER_WINDOW_MS}: more than {@link LEAVERS_BREAKER_COUNT},
+ * or more than a tenth of the members, would be a directory answering wrongly
+ * — the rest are held, and the review says `held`. With *Leavers* off the
+ * review is a dry run: who would go, and whether the breaker would hold them.
  *
  * Deactivation is `deactivateLeaver`, `setUserActive`'s own: tokens revoked,
  * sessions ended, spaces left, open tasks unassigned, `user.deactivated` by
- * the system with `via: 'microsoft_directory'`.
+ * the system with `via: 'microsoft_directory'` — and their stored photo and
+ * directory row go with it. Each leaver is tried on their own: one that
+ * fails is marked so, and the rest still go.
  *
  * ## When it runs
  *
@@ -98,10 +107,16 @@ export const PHOTO_FETCHES_PER_RUN = 50;
 /** Members one run reads at most, those least recently read first. */
 export const PEOPLE_PER_RUN = 500;
 
-/** How long a person the directory had answered for must be missing before they are a leaver. */
-export const LEAVER_MISSING_MS = 60 * 60 * 1000;
+/**
+ * How long a leaver's signal — disabled, or `404` on their id — must hold:
+ * the first sighting and a second at least this much later (two hourly runs).
+ */
+export const LEAVER_CONFIRM_MS = 60 * 60 * 1000;
 
-/** The breaker: more leavers than this in one run holds them all. */
+/** The breaker's window: the sync's own deactivations counted over this long. */
+export const LEAVERS_BREAKER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** The breaker: more of the sync's deactivations than this in its window holds the rest. */
 export const LEAVERS_BREAKER_COUNT = 3;
 
 /** …or more than this share of the active members. */
@@ -122,6 +137,8 @@ export interface PeopleSyncResultView {
   denied: number;
   /** How many it would not look up (`400`, or two people at one address). */
   refused: number;
+  /** Matched before, gone by id, and their address now someone else's: shown to check. */
+  changed: number;
   /** Profiles whose title, department, manager or account state changed. */
   updated: number;
   photos_fetched: number;
@@ -145,18 +162,32 @@ export interface LeaverView {
   reason: LeaverReason;
   /** Why they are never deactivated by the sync, or null. */
   protected: LeaverProtection | null;
+  /** Their deactivation was tried and failed: deactivate them by hand. */
+  failed: boolean;
+}
+
+/**
+ * Someone matched before whose id Microsoft no longer has, and whose address
+ * now answers with another account — a rename, or an address handed on. The
+ * sync saves nothing and takes nobody: a person checks (review M1).
+ */
+export interface ChangedAccountView {
+  user_id: string;
+  name: string;
+  email: string;
 }
 
 /**
  * The last complete run's leavers: `none` found; a `dry_run` with *Leavers*
  * off; `held` at the breaker; or `deactivated`. `breaker` is whether the
- * breaker held them, or would have.
+ * breaker held them, or would have. `changed` is every account to check.
  */
 export interface LeaverReviewView {
   at: number;
   state: 'none' | 'dry_run' | 'held' | 'deactivated';
   breaker: boolean;
   people: LeaverView[];
+  changed: ChangedAccountView[];
 }
 
 export type PeopleSyncOutcome =
@@ -223,10 +254,15 @@ interface Member {
   name: string;
 }
 
-/** What one member's read found. */
+/**
+ * What one member's read found: them (`pinned` when read by the Entra id the
+ * row already held), gone by that id, their account changed, or skipped.
+ */
 type PersonRead =
-  | { member: Member; user: GraphUser }
-  | { member: Member; skipped: 'not_found' | 'denied' | 'refused' };
+  | { member: Member; kind: 'found'; user: GraphUser; pinned: boolean }
+  | { member: Member; kind: 'gone' }
+  | { member: Member; kind: 'changed' }
+  | { member: Member; kind: 'skipped'; why: 'not_found' | 'denied' | 'refused' };
 
 function emptyResult(people: number): PeopleSyncResultView {
   return {
@@ -235,6 +271,7 @@ function emptyResult(people: number): PeopleSyncResultView {
     not_found: 0,
     denied: 0,
     refused: 0,
+    changed: 0,
     updated: 0,
     photos_fetched: 0,
     photos_unchanged: 0,
@@ -323,18 +360,26 @@ export async function syncPeople(
     }
     // One person after another: a tenant's throttling is per app.
     for (const member of members) {
-      const read = await client.user(member.email);
-      if ('skipped' in read) {
-        result[read.skipped] += 1;
-        reads.push({ member, skipped: read.skipped });
-        if (read.skipped === 'not_found') markMissing(db, known.get(member.id), clock());
+      const read = await readPerson(client, member, known.get(member.id));
+      reads.push(read);
+      if (read.kind === 'skipped') {
+        result[read.why] += 1;
+        continue;
+      }
+      if (read.kind === 'changed') {
+        result.changed += 1;
+        continue;
+      }
+      if (read.kind === 'gone') {
+        result.not_found += 1;
+        markMissing(db, known.get(member.id), clock());
         continue;
       }
       result.found += 1;
-      reads.push({ member, user: read.user });
       const manager = await client.manager(read.user.id);
       const managerId = managerOf(manager, byAddress, member.id);
-      if (saveProfile(db, member.id, known.get(member.id), read.user, managerId, clock())) {
+      const row = known.get(member.id);
+      if (saveProfile(db, member.id, row, read.user, managerId, read.pinned, clock())) {
         result.updated += 1;
       }
       if (store !== null) {
@@ -347,7 +392,7 @@ export async function syncPeople(
     return recordFailure(db, settings, started, code);
   }
 
-  const leavers = reviewLeavers(db, reads, members.length, clock());
+  const leavers = await reviewLeavers(db, reads, active.length, store, deps, clock());
   // The connection the run began with, and its switch still on: one turned
   // off, or saved again, meanwhile is not told about this run.
   const changed = db
@@ -394,6 +439,37 @@ function recordFailure(
   return changed === 0 ? { kind: 'skipped' } : { kind: 'failed', code };
 }
 
+/**
+ * Read one member (review M1): by the Entra id their row holds, once there is
+ * one, and by address only to match them the first time. Their id answering
+ * `404` is them gone — unless their address now answers with another id,
+ * which is an account changed, for a person to check.
+ */
+async function readPerson(
+  client: GraphClient,
+  member: Member,
+  row: UserDirectory | undefined,
+): Promise<PersonRead> {
+  const oid = row?.entraOid ?? null;
+  if (oid === null) {
+    const first = await client.user(member.email);
+    return 'skipped' in first
+      ? { member, kind: 'skipped', why: first.skipped }
+      : { member, kind: 'found', user: first.user, pinned: false };
+  }
+  const read = await client.userById(oid);
+  if ('user' in read) {
+    // Graph answering for an id with another is an account changed, not them.
+    return read.user.id === oid
+      ? { member, kind: 'found', user: read.user, pinned: true }
+      : { member, kind: 'changed' };
+  }
+  if (read.skipped !== 'not_found') return { member, kind: 'skipped', why: read.skipped };
+  const now = await client.user(member.email);
+  if ('user' in now && now.user.id !== oid) return { member, kind: 'changed' };
+  return { member, kind: 'gone' };
+}
+
 /** Their manager as a Laika user, by address — never themselves. */
 function managerOf(
   manager: GraphUser | null,
@@ -422,15 +498,23 @@ function markMissing(db: Db, row: UserDirectory | undefined, now: number): void 
   row.missingSince = now;
 }
 
-/** Keep what the directory says of them; whether anything shown changed. */
+/**
+ * Keep what the directory says of them; whether anything shown changed. A
+ * disabled account starts `disabled_since` only when read by the id the row
+ * already held (`pinned`, review M2) — a first match proves nothing — and
+ * keeps it while it stays disabled.
+ */
 function saveProfile(
   db: Db,
   userId: string,
   row: UserDirectory | undefined,
   user: GraphUser,
   managerId: string | null,
+  pinned: boolean,
   now: number,
 ): boolean {
+  const disabledSince =
+    pinned && user.accountEnabled === false ? (row?.disabledSince ?? now) : null;
   const fields = {
     entraOid: user.id,
     jobTitle: user.jobTitle,
@@ -445,12 +529,10 @@ function saveProfile(
     row.department !== fields.department ||
     row.managerUserId !== fields.managerUserId ||
     row.accountEnabled !== fields.accountEnabled;
+  const seen = { seenAt: now, missingSince: null, disabledSince, updatedAt: now };
   db.insert(userDirectory)
-    .values({ userId, ...fields, seenAt: now, missingSince: null, updatedAt: now })
-    .onConflictDoUpdate({
-      target: userDirectory.userId,
-      set: { ...fields, seenAt: now, missingSince: null, updatedAt: now },
-    })
+    .values({ userId, ...fields, ...seen })
+    .onConflictDoUpdate({ target: userDirectory.userId, set: { ...fields, ...seen } })
     .run();
   return changed;
 }
@@ -512,7 +594,7 @@ async function syncPhoto(
   }
   photos.budget -= 1;
 
-  const read = await client.photo(entraId, PHOTO_MAX_BYTES);
+  const read = await client.photo(entraId, tag.size, PHOTO_MAX_BYTES);
   if (read.kind === 'skipped') return;
   if (read.kind === 'none') {
     if (held !== null) await removePhoto(db, store, userId, held.key, result, clock());
@@ -573,57 +655,131 @@ async function removePhoto(
   await discard(store, key);
 }
 
+/** How many people the sync itself deactivated within the breaker's window. */
+function recentlyDeactivated(db: Db, now: number): number {
+  return (
+    db
+      .select({ n: count() })
+      .from(activity)
+      .where(
+        and(
+          eq(activity.type, 'user.deactivated'),
+          eq(activity.actorKind, 'system'),
+          gte(activity.createdAt, now - LEAVERS_BREAKER_WINDOW_MS),
+          sql`json_extract(${activity.payloadJson}, '$.via') = 'microsoft_directory'`,
+        ),
+      )
+      .get()?.n ?? 0
+  );
+}
+
 /**
  * Who has left, from a complete read, and what is done about it: nothing
  * with *Leavers* off (a dry run), nothing past the breaker (held), and
- * otherwise each deactivated who is not protected.
+ * otherwise each deactivated who is not protected — on their own, so one
+ * that fails is marked and the rest still go — their stored photo and
+ * directory row with them.
  */
-function reviewLeavers(
+async function reviewLeavers(
   db: Db,
   reads: readonly PersonRead[],
   members: number,
+  store: StoreClient | null,
+  deps: PeopleSyncDeps,
   now: number,
-): LeaverReviewView {
+): Promise<LeaverReviewView> {
   const found: LeaverView[] = [];
+  const changed: ChangedAccountView[] = [];
   for (const read of reads) {
-    let reason: LeaverReason | null = null;
-    if ('user' in read) {
-      if (read.user.accountEnabled === false) reason = 'disabled';
-    } else if (read.skipped === 'not_found') {
-      const row = db
-        .select({ oid: userDirectory.entraOid, since: userDirectory.missingSince })
-        .from(userDirectory)
-        .where(eq(userDirectory.userId, read.member.id))
-        .get();
-      if (row?.oid != null && row.since !== null && now - row.since >= LEAVER_MISSING_MS) {
-        reason = 'gone';
-      }
+    const who = { user_id: read.member.id, name: read.member.name, email: read.member.email };
+    if (read.kind === 'changed') {
+      changed.push(who);
+      continue;
     }
+    if (read.kind !== 'found' && read.kind !== 'gone') continue;
+    const row = db
+      .select({
+        oid: userDirectory.entraOid,
+        missing: userDirectory.missingSince,
+        disabled: userDirectory.disabledSince,
+      })
+      .from(userDirectory)
+      .where(eq(userDirectory.userId, read.member.id))
+      .get();
+    if (row?.oid == null) continue;
+    const confirmed = (since: number | null): boolean =>
+      since !== null && now - since >= LEAVER_CONFIRM_MS;
+    const reason: LeaverReason | null =
+      read.kind === 'gone'
+        ? confirmed(row.missing)
+          ? 'gone'
+          : null
+        : read.pinned && read.user.id === row.oid && read.user.accountEnabled === false
+          ? confirmed(row.disabled)
+            ? 'disabled'
+            : null
+          : null;
     if (reason === null) continue;
-    found.push({
-      user_id: read.member.id,
-      name: read.member.name,
-      email: read.member.email,
-      reason,
-      protected: leaverProtection(db, read.member.id),
-    });
+    found.push({ ...who, reason, protected: leaverProtection(db, read.member.id), failed: false });
   }
+
   const going = found.filter((p) => p.protected === null);
+  const total = recentlyDeactivated(db, now) + going.length;
   const breaker =
-    going.length > LEAVERS_BREAKER_COUNT || going.length > LEAVERS_BREAKER_SHARE * members;
-  if (found.length === 0) return { at: now, state: 'none', breaker: false, people: [] };
+    going.length > 0 &&
+    (total > LEAVERS_BREAKER_COUNT || total > LEAVERS_BREAKER_SHARE * members);
+  if (found.length === 0) return { at: now, state: 'none', breaker: false, people: [], changed };
 
   // Asked again now, not when the run began: turned off meanwhile is off.
   const on = db.select({ on: orgPeopleSync.leaversEnabled }).from(orgPeopleSync).get()?.on === 1;
-  if (!on) return { at: now, state: 'dry_run', breaker, people: found };
-  if (breaker) return { at: now, state: 'held', breaker, people: found };
+  if (!on) return { at: now, state: 'dry_run', breaker, people: found, changed };
+  if (breaker) return { at: now, state: 'held', breaker, people: found, changed };
 
-  // Protection is asked again inside each deactivation: the second of two
-  // admins sees the first gone, and stays — and says why.
-  const people = found.map((p) =>
-    p.protected !== null || deactivateLeaver(db, p.user_id, now)
-      ? p
-      : { ...p, protected: leaverProtection(db, p.user_id) },
-  );
-  return { at: now, state: 'deactivated', breaker: false, people };
+  const people: LeaverView[] = [];
+  for (const p of found) {
+    if (p.protected !== null) {
+      people.push(p);
+      continue;
+    }
+    try {
+      // Protection is asked again inside each deactivation: the second of two
+      // admins sees the first gone, and stays — and says why.
+      if (!deactivateLeaver(db, p.user_id, now)) {
+        people.push({ ...p, protected: leaverProtection(db, p.user_id) });
+        continue;
+      }
+    } catch (err) {
+      deps.log?.error('people.leaver_failed', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      people.push({ ...p, failed: true });
+      continue;
+    }
+    people.push(p);
+    await forgetPerson(db, store, p.user_id);
+  }
+  return { at: now, state: 'deactivated', breaker: false, people, changed };
+}
+
+/**
+ * A deactivated leaver's stored photo and directory row (review F3): their
+ * old history draws their initials, and nothing of theirs stays in the store.
+ */
+async function forgetPerson(db: Db, store: StoreClient | null, userId: string): Promise<void> {
+  const held = photoOf(db, userId);
+  db.delete(userDirectory).where(eq(userDirectory.userId, userId)).run();
+  if (held !== null && store !== null) await discard(store, held.key);
+}
+
+/**
+ * The Microsoft 365 connection now names another tenant or app (review F2):
+ * every Entra id, first miss and first disabled sighting belongs to the old
+ * one, so they go, and *Leavers* is switched off — turning it on again is a
+ * person's decision, after a run against the new tenant.
+ */
+export function forgetDirectoryIdentity(db: Db, now: number): void {
+  db.update(userDirectory)
+    .set({ entraOid: null, missingSince: null, disabledSince: null, updatedAt: now })
+    .run();
+  db.update(orgPeopleSync).set({ leaversEnabled: 0, updatedAt: now }).run();
 }

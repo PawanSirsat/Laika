@@ -5,8 +5,10 @@
  */
 
 import assert from 'node:assert/strict';
-import { beforeEach, describe, test } from 'node:test';
+import { beforeEach, describe, mock, test } from 'node:test';
 import {
+  DIRECTORY_RETRIES,
+  DIRECTORY_RETRY_FIRST_MS,
   directoryEntryOf,
   directoryVersion,
   forgetDirectory,
@@ -36,9 +38,12 @@ const bea = {
 let asked = 0;
 let answer: unknown = { people: { 'u-ada': ada, 'u-bea': bea } };
 let status = 200;
+/** The statuses the next asks answer with, before `status`. */
+let next: number[] = [];
 globalThis.fetch = ((input: string | URL) => {
   asked += 1;
   assert.equal(input instanceof URL ? input.href : input, '/api/v1/people/directory');
+  const status = next.shift() ?? statusNow();
   return Promise.resolve(
     new Response(JSON.stringify(answer), {
       status,
@@ -47,12 +52,26 @@ globalThis.fetch = ((input: string | URL) => {
   );
 }) as unknown as typeof fetch;
 
+function statusNow(): number {
+  return status;
+}
+
 beforeEach(() => {
   forgetDirectory();
   asked = 0;
   status = 200;
+  next = [];
   answer = { people: { 'u-ada': ada, 'u-bea': bea } };
 });
+
+/**
+ * Let a fetch and the promise chain behind it settle: reading a body takes
+ * real turns of the event loop, which `setImmediate` gives (only `setTimeout`
+ * is mocked).
+ */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) await new Promise((done) => setImmediate(done));
+}
 
 void describe('the read', () => {
   void test('happens once a session, however many ask, and again only when asked to', async () => {
@@ -69,6 +88,56 @@ void describe('the read', () => {
     answer = { error: { code: 'not_found' } };
     await loadDirectory();
     assert.equal(directoryEntryOf('u-ada'), undefined);
+  });
+
+  void test('a read with no answer is tried again, backing off, until it has one (F9)', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      next = [503, 503];
+      await loadDirectory();
+      assert.equal(asked, 1);
+      assert.equal(directoryEntryOf('u-ada'), undefined);
+      mock.timers.tick(DIRECTORY_RETRY_FIRST_MS - 1);
+      await settle();
+      assert.equal(asked, 1, 'tried again before its wait');
+      mock.timers.tick(1);
+      await settle();
+      assert.equal(asked, 2);
+      // The second wait is twice the first.
+      mock.timers.tick(DIRECTORY_RETRY_FIRST_MS);
+      await settle();
+      assert.equal(asked, 2);
+      mock.timers.tick(DIRECTORY_RETRY_FIRST_MS);
+      await settle();
+      assert.equal(asked, 3);
+      assert.deepEqual(directoryEntryOf('u-ada'), ada);
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  void test('gives up after its tries, and a refusal is never tried again', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      status = 503;
+      await loadDirectory();
+      for (let i = 0; i < DIRECTORY_RETRIES + 2; i += 1) {
+        mock.timers.tick(60_000);
+        await settle();
+      }
+      assert.equal(asked, DIRECTORY_RETRIES + 1);
+
+      forgetDirectory();
+      asked = 0;
+      status = 403;
+      answer = { error: { code: 'forbidden' } };
+      await loadDirectory();
+      mock.timers.tick(60_000);
+      await settle();
+      assert.equal(asked, 1);
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   void test('forgetting clears everyone, and the next ask reads again', async () => {

@@ -27,6 +27,7 @@ export function peopleCountsLine(result: PeopleSyncResult): string {
     result.not_found > 0 ? `${String(result.not_found)} not in Microsoft` : null,
     result.denied > 0 ? `${String(result.denied)} Microsoft would not show` : null,
     result.refused > 0 ? `${String(result.refused)} Microsoft would not look up` : null,
+    result.changed > 0 ? `${String(result.changed)} whose Microsoft account changed` : null,
   ].filter((part): part is string => part !== null);
   const read = `${plural(result.people, 'person', 'people')} read: ${String(result.found)} found${
     missed.length === 0 ? '' : `, ${missed.join(', ')}`
@@ -47,15 +48,25 @@ export function leaverReasonWords(leaver: Leaver): string {
     : 'no longer in Microsoft for over an hour';
 }
 
-/** Why the sync never deactivates them, or null. */
+/** Why the sync never deactivates them, or that it tried and failed; null for neither. */
 export function protectionWords(leaver: Leaver): string | null {
   if (leaver.protected === 'owner') return 'never deactivated: the owner';
   if (leaver.protected === 'last_admin') return 'never deactivated: the last admin';
+  if (leaver.failed) return 'could not be deactivated: do it by hand on People';
   return null;
 }
 
+/** The heading over accounts to check, or null when there are none. */
+export function changedHeadline(count: number): string | null {
+  if (count === 0) return null;
+  return count === 1
+    ? 'Microsoft account changed — check this person by hand. Nothing of theirs was changed:'
+    : 'Microsoft accounts changed — check these people by hand. Nothing of theirs was changed:';
+}
+
 /** The breaker, in the card's words. */
-export const BREAKER_RULE = 'more than 3 people, or more than a tenth of the members, at once';
+export const BREAKER_RULE =
+  'more than 3 people, or more than a tenth of the members, within a day';
 
 /** The leaver review's headline, or null when there is nothing to say. */
 export function leaverHeadline(review: LeaverReview): string | null {
@@ -91,6 +102,6 @@ export function leaversNote(view: PeopleSync, mayDeactivate: boolean): string {
     return 'Only someone who may deactivate people can turn this on.';
   }
   return view.leavers_enabled
-    ? `On: someone whose account Microsoft turned off, or who has gone from it for over an hour, is deactivated — never the owner or the last admin, and nobody when ${BREAKER_RULE}.`
+    ? `On: someone whose account Microsoft turned off, or who has gone from it, for over an hour, is deactivated — never the owner or the last admin, and nobody past ${BREAKER_RULE}.`
     : 'Off: each sync lists who would be deactivated, below, and nobody is.';
 }

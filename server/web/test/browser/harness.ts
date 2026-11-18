@@ -331,15 +331,15 @@ const COMPATIBILITY_PATH = '/api/v1/developer/compatibility';
 const ME_PATH = '/api/v1/me';
 
 /**
- * Microsoft's directory as Laika keeps it (D-161, LAI-1330): every avatar
- * asks for it once a session, so a test that does not name it is a board
- * whose people sync never ran — nobody's photo, title or manager.
+ * Microsoft's directory as Laika keeps it (D-161, LAI-1330), for a test to
+ * **opt in to** (review F8): every avatar asks for it once a session, and a
+ * test that names no stub gets the harness's `404`, which the client reads
+ * as nobody synced and never asks again — so a test about the directory says
+ * so, rather than inheriting an answer it did not choose.
  */
-const DIRECTORY_PATH = '/api/v1/people/directory';
 export const NO_DIRECTORY = { people: {} };
 
-/** The Microsoft 365 card's people sync, both switches off and never run. */
-const PEOPLE_SYNC_PATH = '/api/v1/org/people-sync';
+/** The Microsoft 365 card's people sync, both switches off and never run — opt in as above. */
 export const PEOPLE_SYNC_OFF = {
   connected: false,
   profile_enabled: false,
@@ -761,16 +761,6 @@ function serve(
         if (chosen === undefined && req.method === 'GET' && path === COMPATIBILITY_PATH) {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(DEFAULT_COMPATIBILITY));
-          return;
-        }
-
-        if (
-          chosen === undefined &&
-          req.method === 'GET' &&
-          (path === DIRECTORY_PATH || path === PEOPLE_SYNC_PATH)
-        ) {
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify(path === DIRECTORY_PATH ? NO_DIRECTORY : PEOPLE_SYNC_OFF));
           return;
         }
 

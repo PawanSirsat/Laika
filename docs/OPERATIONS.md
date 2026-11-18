@@ -411,17 +411,24 @@ managers; it only keeps no photos.
    unchanged.
 3. **Read the dry run before *Leavers*.** While *Leavers* is off, every run
    lists who it *would* deactivate, and why — an account turned off in
-   Microsoft, or someone it has not had for over an hour. Only someone it had
-   before counts as gone; an owner and the last admin are never taken.
+   Microsoft, or one Microsoft no longer has, seen on two runs an hour apart.
+   Only someone matched before counts, and they are then followed by their
+   Entra id, so a rename is not a leaver; someone whose address now belongs
+   to another account is listed to **check by hand** instead. An owner and
+   the last admin are never taken.
 4. **Turn on *Leavers* last**, after at least one run whose list is right and
    whose breaker did not trip. Turning it on needs *Deactivate people* as well
-   as the connection's own grant. More than 3 leavers, or more than a tenth of
-   the members, in one run deactivates nobody and lists them as *held* — on a
-   board of fewer than ten members that is every leaver, by design.
+   as the connection's own grant. More than 3 of the sync's deactivations, or
+   more than a tenth of the members, within 24 hours holds the rest and lists
+   them as *held* — on a board of fewer than ten members that is every leaver,
+   by design. Saving another tenant or app on the card, or disconnecting it,
+   switches *Leavers* off again and forgets every Entra id.
 
 Each deactivation is the one People does by hand: tokens revoked, sessions
 ended, spaces left, open tasks unassigned, written in the history by the
-system with `via: microsoft_directory`. Reactivating someone is done by hand on
+system with `via: microsoft_directory`; their synced photo and title are
+deleted with it. Viewers, and read-only tokens, see people's photos but not
+their titles, departments or managers. Reactivating someone is done by hand on
 People, as ever — **but while Microsoft still says they have left, the next run
 deactivates them again.** Fix the account in Microsoft first, or turn *Leavers*
 off for as long as they should stay.

@@ -27,7 +27,9 @@
  *   for a person in `denied` and `400` for one in `refused`;
  * - `GET /users/{id}/manager`, `404` when they have none;
  * - `GET /users/{id}/photos/240x240` (`@odata.mediaEtag`) and its `$value`,
- *   `404` when they have no photo. **A directory read carrying the
+ *   and the default size's `GET /users/{id}/photo` and its `$value` — `404`
+ *   when they have no photo, and the 240px pair `404` for someone whose
+ *   photo is `defaultOnly`. **A directory read carrying the
  *   calendar's `Prefer` headers is not answered** — the fetch throws.
  *
  * `intercept` answers a request before the fake does — a `429`, a `500`, a
@@ -73,7 +75,7 @@ export interface FakeDirectoryUser {
   accountEnabled?: boolean;
   /** Their manager's user principal name. */
   manager?: string;
-  photo?: { etag: string; bytes: Uint8Array; contentType?: string };
+  photo?: { etag: string; bytes: Uint8Array; contentType?: string; defaultOnly?: boolean };
 }
 
 /** What `intercept` may answer: a response, a hang until the client aborts, or nothing — the fake answers. */
@@ -184,7 +186,7 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
       const headers = new Headers(init?.headers);
       const view = /^\/v1\.0\/users\/([^/]+)\/calendarView$/.exec(url.pathname);
       const dir =
-        /^\/v1\.0\/users(?:\/([^/]+)(?:\/(manager|photos\/240x240(?:\/\$value)?))?)?$/.exec(
+        /^\/v1\.0\/users(?:\/([^/]+)(?:\/(manager|photos\/240x240(?:\/\$value)?|photo(?:\/\$value)?))?)?$/.exec(
           url.pathname,
         );
       const dirKind: FakeGraphRequest['kind'] | null =
@@ -378,7 +380,8 @@ function directoryAnswer(
     const boss = who.manager === undefined ? undefined : fake.directory.get(who.manager);
     return boss === undefined ? notFound() : json(200, userJson(boss));
   }
-  if (who.photo === undefined) {
+  const sized = req.url.pathname.includes('/photos/240x240');
+  if (who.photo === undefined || (sized && who.photo.defaultOnly === true)) {
     return json(404, { error: { code: 'ImageNotFound', message: 'MS-SECRET-WORDS no photo' } });
   }
   if (kind === 'photo') {

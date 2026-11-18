@@ -28,6 +28,7 @@ CREATE TABLE `user_directory` (
 	`account_enabled` integer,
 	`seen_at` integer,
 	`missing_since` integer,
+	`disabled_since` integer,
 	`photo_key` text,
 	`photo_type` text,
 	`photo_etag` text,

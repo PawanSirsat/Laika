@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { Leaver, PeopleSync } from '../../../../src/api/people-sync.ts';
 import {
+  changedHeadline,
   leaverHeadline,
   leaverReasonWords,
   leaversNote,
@@ -34,6 +35,7 @@ const result = {
   not_found: 1,
   denied: 0,
   refused: 0,
+  changed: 0,
   updated: 3,
   photos_fetched: 2,
   photos_unchanged: 6,
@@ -48,6 +50,7 @@ const leaver: Leaver = {
   email: 'ada@example.test',
   reason: 'disabled',
   protected: null,
+  failed: false,
 };
 
 void describe('peopleCountsLine', () => {
@@ -72,7 +75,13 @@ void describe('peopleCountsLine', () => {
 
 void describe('the leaver review', () => {
   void test('a dry run says who would go, and when the breaker would hold them', () => {
-    const review = { at: 1, state: 'dry_run' as const, breaker: false, people: [leaver] };
+    const review = {
+      at: 1,
+      state: 'dry_run' as const,
+      breaker: false,
+      people: [leaver],
+      changed: [],
+    };
     assert.match(
       leaverHeadline(review)!,
       /^Leavers is off\. Turned on, the next sync would deactivate:$/,
@@ -82,14 +91,17 @@ void describe('the leaver review', () => {
 
   void test('held, deactivated and none each say their own', () => {
     assert.match(
-      leaverHeadline({ at: 1, state: 'held', breaker: true, people: [leaver] })!,
-      /^Held for you to check — more than 3 people/,
+      leaverHeadline({ at: 1, state: 'held', breaker: true, people: [leaver], changed: [] })!,
+      /^Held for you to check — more than 3 people, or more than a tenth of the members, within a day/,
     );
     assert.equal(
-      leaverHeadline({ at: 1, state: 'deactivated', breaker: false, people: [leaver] }),
+      leaverHeadline({ at: 1, state: 'deactivated', breaker: false, people: [leaver], changed: [] }),
       'Deactivated by the last sync:',
     );
-    assert.equal(leaverHeadline({ at: 1, state: 'none', breaker: false, people: [] }), null);
+    assert.equal(
+      leaverHeadline({ at: 1, state: 'none', breaker: false, people: [], changed: [] }),
+      null,
+    );
   });
 
   void test('why someone is listed, and why the sync never takes them', () => {
@@ -106,6 +118,20 @@ void describe('the leaver review', () => {
     assert.equal(
       protectionWords({ ...leaver, protected: 'last_admin' }),
       'never deactivated: the last admin',
+    );
+    assert.equal(
+      protectionWords({ ...leaver, failed: true }),
+      'could not be deactivated: do it by hand on People',
+    );
+  });
+
+  void test('an account that changed in Microsoft is named for a person to check (review M1)', () => {
+    assert.equal(changedHeadline(0), null);
+    assert.match(changedHeadline(1)!, /^Microsoft account changed — check this person by hand\./);
+    assert.match(changedHeadline(2)!, /^Microsoft accounts changed — check these people/);
+    assert.match(
+      peopleCountsLine({ ...result, not_found: 0, changed: 1 }),
+      /8 found, 1 whose Microsoft account changed;/,
     );
   });
 });

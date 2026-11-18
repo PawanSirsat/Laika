@@ -179,12 +179,26 @@ describe('/org/people-sync', () => {
 describe('/people/directory and /users/:id/photo', () => {
   it('serves everyone their entry and the photo at its version, cached for a year', async () => {
     await synced();
+    const member = await join('m@example.test', 'member');
+    const full = await call('GET', '/people/directory', undefined, { Cookie: member });
+    expect(full.status).toBe(200);
+    expect(
+      ((await full.json()) as { people: Record<string, unknown> }).people[ownerId],
+    ).toMatchObject({ job_title: 'Director', department: 'Leadership', photo_v: NOW });
+
+    // A viewer — who may be a client — gets the photo and nothing else (F7).
     const viewer = await join('v@example.test', 'viewer');
     const dir = await call('GET', '/people/directory', undefined, { Cookie: viewer });
     expect(dir.status).toBe(200);
     const people = ((await dir.json()) as { people: Record<string, { photo_v: number }> }).people;
     const v = people[ownerId]?.photo_v;
-    expect(people[ownerId]).toMatchObject({ job_title: 'Director', department: 'Leadership' });
+    expect(people[ownerId]).toEqual({
+      photo_v: NOW,
+      job_title: null,
+      department: null,
+      manager_id: null,
+      manager_name: null,
+    });
     expect(v).toBe(NOW);
 
     const photo = await call('GET', `/users/${ownerId}/photo?v=${String(v)}`, undefined, {

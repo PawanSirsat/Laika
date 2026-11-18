@@ -17,6 +17,7 @@ import {
   closeBrowser,
   defaultPermissions,
   open as openPage,
+  PEOPLE_SYNC_OFF,
   reply,
   setTheme,
   until,
@@ -111,6 +112,7 @@ const PEOPLE_DRY_RUN = {
     not_found: 1,
     denied: 0,
     refused: 0,
+    changed: 0,
     updated: 3,
     photos_fetched: 2,
     photos_unchanged: 21,
@@ -129,6 +131,7 @@ const PEOPLE_DRY_RUN = {
         email: 'grace@example.com',
         reason: 'disabled',
         protected: null,
+        failed: false,
       },
       {
         user_id: 'u1',
@@ -136,8 +139,10 @@ const PEOPLE_DRY_RUN = {
         email: 'u1@example.com',
         reason: 'gone',
         protected: 'owner',
+        failed: false,
       },
     ],
+    changed: [],
   },
 };
 
@@ -189,6 +194,8 @@ function orgStub(role: string, extra: ApiStub = {}): ApiStub {
     '/api/v1/permissions': permissionsFor(role),
     '/api/v1/org/holidays': { holidays: [] },
     '/api/v1/org/model-prices': { as_of: '2026-10-18', can_set: false, entries: [] },
+    // The card's people part (D-161), opted in: off and never run.
+    '/api/v1/org/people-sync': PEOPLE_SYNC_OFF,
     ...extra,
   };
 }
