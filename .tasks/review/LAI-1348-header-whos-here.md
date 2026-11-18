@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T19:41:00Z
+finished: 2026-11-18T20:04:04Z
 ---
 
 ## Goal
@@ -38,20 +39,22 @@ the last 5 minutes. Away is within the hour.
 
 Scope: area `server` and, named, `server/web/`'s header shell (`components/shell/`), the API
 mirror `api/presence.ts`, and their tests; SPEC §6.4 (the endpoint line), §9.3 (the read) and
-the §11.4 header line. This scope was set by the owner's direct ask, 2026-11-19. The PR targets
+the §11.4 header line. (SPEC has no app-header paragraph, so the header is named in
+§9.3's new bullet instead.) This scope was set by the owner's direct ask, 2026-11-19. The PR targets
 integration-ksage: AWS is frozen.
 
 ## Acceptance criteria
 
-- [ ] The header shows online and away people from any page, with green and amber rings and a
+- [x] The header shows online and away people from any page, with green and amber rings and a
       `+N`.
-- [ ] A face animates in when someone comes online, and animates out when they leave; reduced
+- [x] A face animates in when someone comes online, and animates out when they leave; reduced
       motion is instant.
-- [ ] Clicking opens a popover listing Online and Away, with links.
-- [ ] Nothing is shown when presence is off, or before the first answer.
-- [ ] The server read is cheap and writes nothing; a test proves its statuses match Capacity's.
-- [ ] Both themes; hidden at ≤600px; the existing header tests stay green.
+- [x] Clicking opens a popover listing Online and Away, with links.
+- [x] Nothing is shown when presence is off, or before the first answer.
+- [x] The server read is cheap and writes nothing; a test proves its statuses match Capacity's.
+- [x] Both themes; hidden at ≤600px; the existing header tests stay green.
 - [ ] CI is green on the PR; an independent review.
+      *(Builder: read on the PR after this commit; the review is independent.)*
 
 ## Notes
 
