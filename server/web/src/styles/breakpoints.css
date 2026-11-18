@@ -7,7 +7,8 @@
  * — the token reference, `getComputedStyle` — not for queries. A query writes
  * the width literally, as one of these values: `max-width: N` (at or below),
  * `max-width: N-1` (below, the complement of `min-width: N`), `min-width: N`,
- * or `min-width: N+1`. The guard refuses any other width outside its
+ * or `min-width: N+1` — or the same in range syntax, `width <= N`, `width < N`,
+ * `width >= N`, `width > N`. The guard refuses any other width outside its
  * exemption list. The scheme is written out in `theme/breakpoints.ts`.
  */
 :root {

@@ -5203,8 +5203,10 @@ a.bento-row:active {
 }
 
 /* Beside the page the column never scrolls, so it clips nothing: a focused
-   section's ring reaches past the items' edge (LAI-1345). */
-@media (min-width: 901px) {
+   section's ring reaches past the items' edge (LAI-1345). Range syntax, with
+   the narrow block's (width <= 900px): no width, not even 900.5 under zoom,
+   falls between the two. */
+@media (width > 900px) {
   .org-nav .org-nav-strip {
     overflow: visible;
   }
@@ -5467,7 +5469,7 @@ a.bento-row:active {
    sections become one row that scrolls above the page. Above it the side menu
    stays, and People's table makes room instead (the owner, 2026-11-18: "side
    menu, table adapts"). After the restyle above, so these win in the row. */
-@media (max-width: 900px) {
+@media (width <= 900px) {
   .org-hub {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
