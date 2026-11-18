@@ -73,8 +73,11 @@ export interface ContentSecurityPolicyOptions {
    * The attachments store's origin (D-150, LAI-1300), or `null` when
    * attachments are off. On, it joins `img-src` — a file is shown through a
    * 302 to it — `media-src`, where an inline recording plays the same way
-   * (D-162), and `connect-src`, where the browser uploads; **nothing
-   * else**: no script, style, frame or object may come from it.
+   * (D-162), `frame-src`, where the output viewer shows a PDF the same way
+   * (LAI-1352), and `connect-src`, where the browser uploads; **nothing
+   * else**: no script, style or object may come from it. The store serves
+   * only the seven sniffed types inline and everything else as a download, so
+   * a frame of it can show a PDF, an image or a recording and nothing more.
    */
   storageOrigin?: string | null;
 }
@@ -101,6 +104,9 @@ export function buildContentSecurityPolicy(
     `img-src 'self' data:${fromStore}`,
     // An mp4 or webm recording plays in a <video> through the same 302 (D-162).
     `media-src 'self'${fromStore}`,
+    // The output viewer shows a PDF in a frame through the same 302 (LAI-1352).
+    // Off, `'self'` is what `default-src` already gave frames.
+    `frame-src 'self'${fromStore}`,
     "font-src 'self'",
     // The SPA talks to its own origin only — SSE (§11.5) is same-origin too —
     // and, with attachments on, uploads to the store.
