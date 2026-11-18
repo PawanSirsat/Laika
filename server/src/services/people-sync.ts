@@ -53,8 +53,9 @@ import { deactivateLeaver, type LeaverProtection, leaverProtection } from './use
  * Microsoft account changed: check*. Then their manager (matched to a Laika
  * user by address, never stored otherwise) and their photo's tag. One
  * Microsoft will not show (`403`) or look up (`400`, or an address two people
- * answer to) is counted and left as they are. Those least recently read go
- * first, at most {@link PEOPLE_PER_RUN} a run.
+ * answer to) is counted and left as they are. The least recently read are
+ * chosen, at most {@link PEOPLE_PER_RUN} a run, and read the earliest member
+ * first: of two members at one Microsoft account, the earlier keeps it.
  *
  * ## Photos, only when they changed
  *
@@ -333,19 +334,28 @@ export async function syncPeople(
       email: users.email,
       name: users.name,
       isActive: users.isActive,
+      createdAt: users.createdAt,
     })
     .from(users)
     .all();
   const byAddress = new Map(everyone.map((u) => [u.email.toLowerCase(), u.id]));
   const active = everyone.filter((u) => u.isActive === 1);
-  // Those least recently read first, so a board past the limit is read in turn.
+  const created = new Map(active.map((u) => [u.id, u.createdAt.getTime()]));
+  // Those least recently read are chosen, so a board past the limit is read in
+  // turn; then they are read the earliest member first. Of two members at one
+  // Microsoft account the first read keeps it (`claimedByAnother`), so it is
+  // always the same one — not whichever was read least recently, which after
+  // the ids are forgotten (F2) is the one never saved (review-1317).
   const members: Member[] = active
     .map((u) => ({ id: u.id, email: u.email.toLowerCase(), name: u.name }))
     .sort(
       (a, b) =>
         (known.get(a.id)?.seenAt ?? 0) - (known.get(b.id)?.seenAt ?? 0) || a.id.localeCompare(b.id),
     )
-    .slice(0, PEOPLE_PER_RUN);
+    .slice(0, PEOPLE_PER_RUN)
+    .sort(
+      (a, b) => (created.get(a.id) ?? 0) - (created.get(b.id) ?? 0) || a.id.localeCompare(b.id),
+    );
 
   const client = graphClient({
     tenantId: source.tenantId,

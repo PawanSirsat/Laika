@@ -8887,7 +8887,8 @@ One interval-driven scheduler in the same process:
   boot**, and only while *Photos and profile* is on, a §4.101 connection is
   saved and `LAIKA_SECRET` is set, under §3.4's `system.people.sync`; the app's
   token must carry `User.Read.All` (`not_granted` otherwise). Each active
-  member, those least recently read first and at most 500 a run. **Matched
+  member: the least recently read, at most 500 a run, read the earliest
+  member first. **Matched
   once by address** — `/users/{address}`, and the one person whose `mail` it
   is when that is a `404` — **and read by their Entra id ever after**
   (`/users/{entra_oid}`), so a rename keeps them and an address handed on does
@@ -8895,7 +8896,8 @@ One interval-driven scheduler in the same process:
   then answers with **another** id, nothing is saved, nobody is a leaver, and
   the card names them to check. **A first match whose account another
   member's row already holds** is not them either: nothing is saved, and the
-  card names them to check. A `403`, a `400` or two people at one address
+  card names them to check — and since the earliest member is read first, it
+  is always the earlier of the two who keeps it, ids forgotten or not. A `403`, a `400` or two people at one address
   skip that person. Then their manager and their photo's `@odata.mediaEtag` —
   the 240px photo's, else the default size's (`/photo`). A photo is fetched
   only when its tag changed — at most 50 a run, 1 MiB, its first bytes png,

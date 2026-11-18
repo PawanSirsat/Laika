@@ -14,6 +14,7 @@ import {
 import { encryptSecret } from '../../src/secrets.ts';
 import { disconnectCalendar, saveCalendarSource } from '../../src/services/calendar-source.ts';
 import {
+  forgetDirectoryIdentity,
   LEAVER_CONFIRM_MS,
   PHOTO_MAX_BYTES,
   type PeopleSyncOutcome,
@@ -467,6 +468,36 @@ describe('one person, one Entra id (review M1)', () => {
       accountEnabled: 1,
       disabledSince: null,
     });
+  });
+});
+
+describe('one Microsoft account, one member (review round 2)', () => {
+  it('of two members at one account the one created first keeps it, and still does once every id is forgotten', async () => {
+    const ada = person('Ada', 'ada@example.test');
+    const alias = person('Ada (alias)', 'a.lovelace@example.test');
+    t.db
+      .update(users)
+      .set({ createdAt: new Date(NOW + 60_000) })
+      .where(eq(users.id, alias))
+      .run();
+    entra('owner@example.test');
+    entra('ada@example.test', { mail: 'a.lovelace@example.test' });
+    await synced();
+    expect(row(ada)?.entraOid).toBe('oid-ada@example.test');
+    expect(row(alias)).toBeUndefined();
+
+    // Another tenant or app forgets every id (F2): the alias, never saved, is
+    // now the least recently read of the two.
+    forgetDirectoryIdentity(t.db, NOW);
+    for (const at of [NOW + HOUR, NOW + 2 * HOUR]) {
+      clock = at;
+      const { leavers } = await synced();
+      expect(row(ada)?.entraOid).toBe('oid-ada@example.test');
+      expect(row(alias)).toBeUndefined();
+      expect(leavers.changed).toEqual([
+        expect.objectContaining({ user_id: alias, reason: 'shared_account' }),
+      ]);
+    }
   });
 });
 
