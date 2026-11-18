@@ -4305,14 +4305,14 @@ signed in (`org.email.configure`). Its own table, so `orgs` is not rebuilt.
 | field | notes |
 | --- | --- |
 | `org_id` | pk, FK `orgs`, cascade |
-| `enabled` | 0/1 (CHECK), default 0. 1 needs `domain` and `token_hash` (CHECK) |
+| `enabled` | 0/1 (CHECK), default 0. 1 needs `domain` and `token_hash`, and — while `require_authenticated` is 1 — `authserv_id` (CHECK). **Turned on by an owner only** (D-155 item 7) |
 | `domain` | nullable — the receiving subdomain, lower case, 3–253 (CHECK): `tasks.kvelld.com`. It must differ from the sending domain; its MX points at Brevo |
 | `token_hash` | nullable — the SHA-256 of the webhook's bearer token, hex. **The token itself is never stored**: shown once when made, compared, never sent anywhere |
 | `token_last4` | nullable — its last four characters; set exactly when `token_hash` is (CHECK) |
 | `api_key_enc` | nullable — the Brevo API key that fetches attachments, AES-256-GCM under purpose `brevo_api_key`. Write-only: never returned, never logged |
 | `api_key_last4` | nullable — set exactly when `api_key_enc` is (CHECK) |
-| `require_authenticated` | 0/1 (CHECK), default **1** — drop a mail without an aligned DMARC, DKIM or SPF pass (D-155 item 4) |
-| `authserv_id` | nullable, 1–253 (CHECK) — the receiving server whose `Authentication-Results` count; null reads the topmost header |
+| `require_authenticated` | 0/1 (CHECK), default **1** — drop a mail without a DMARC, DKIM or SPF pass for exactly its From domain (D-155 item 4). **Turned off by an owner only** |
+| `authserv_id` | nullable, 1–253 (CHECK) — the receiving server whose `Authentication-Results` is believed: **the first header carrying it**, and no other (D-155 item 4). Null believes nothing. Named by an owner or admin from a real delivery, never guessed |
 | `updated_by` | nullable, FK `users`, set null |
 | `updated_at` | |
 
@@ -4351,7 +4351,8 @@ row per mail per address, so a redelivery makes nothing twice. Kept 90 days
 | `reason` | nullable — exactly when `dropped` (CHECK): `switch_off` \| `unknown_address` \| `own_sender` \| `auto_reply` \| `spam` \| `unauthenticated` \| `unknown_sender` \| `not_allowed` \| `empty` \| `refused` |
 | `task_id` | nullable, FK `tasks`, set null — the task it made, or commented on |
 | `comment_id` | nullable, FK `comments`, set null |
-| `auth` | nullable, ≤ 300 (CHECK) — the believed server and its verdict words, e.g. `mx.example dmarc=pass` |
+| `auth` | nullable, ≤ 300 (CHECK) — the believed server and its verdict words, e.g. `mx.example dmarc=pass`; null when no header was believed |
+| `authserv_ids` | nullable, ≤ 300 (CHECK) — every server the mail's `Authentication-Results` named, topmost first, space-separated: what an owner names `authserv_id` from |
 | `attachment_count` | ≥ 0 (CHECK) — how many attachments the mail announced |
 | `received_at` | |
 
@@ -4817,8 +4818,8 @@ DELETE /api/v1/org/email                     forget the settings and the key and
 POST   /api/v1/org/email/test                send one message now to the caller's address — the one send that works while the switch is off → 200 { ok, to, code, message, at } whether or not the server took it, code the SMTP reply (535) or the transport's (ETIMEDOUT); 422 reason email_not_configured or email_key_unreadable   (same; its own rate-limit bucket)
 GET    /api/v1/org/teams                     Teams posting → { posting_enabled, updated_at, updated_by: { id, name } | null, schedule: { standup_utc: ['05:30', '12:30'], digest_utc: '07:00' }, channels: [the channel, as below, for every unarchived space with one that the caller can open, by name] }   (owner, admin; session only; D-154, LAI-1314)
 PUT    /api/v1/org/teams                     body { posting_enabled } — the switch; off, nothing is posted and each post is recorded as suppressed → as GET   (owner, admin; session only)
-GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
-PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 naming the field   (same)
+GET    /api/v1/org/email-inbound             the Email to tasks card → { enabled, domain, require_authenticated, authserv_id, token_last4, api_key_last4, webhook_url, own_address, can_store_secrets, can_switch_on, can_allow_unauthenticated, authserv_seen, example_domain, updated_at, updated_by, recent: [the 20 newest inbound mails in spaces the caller can open: { id, received_at, outcome, reason, from_address, sender, project: { slug, name } | null, task_key, comment_id, auth, authserv_ids, attachment_count }] } — never the token, the key, or a mail's subject or text   (Configure the organisation's email: owner, admin; session only; D-155, LAI-1315)
+PUT    /api/v1/org/email-inbound             body { enabled?, domain?, require_authenticated?, authserv_id?, api_key? } — every field optional; domain null clears it and turns the switch off; api_key write-only, null removes it → as GET; 422 field enabled reason inbound_not_configured without a domain and a token; 422 field authserv_id reason authserv_required to be on, authentication required, with no receiving server named; **403 reason owner_only** for anyone but an owner turning it on or authentication off; 422 naming the field   (same)
 POST   /api/v1/org/email-inbound/token       make the webhook's bearer token, replacing any before it → 201 { token, settings } — the token **said once**   (same)
 GET    /api/v1/org/calendar                  the Outlook calendar connection → { configured, enabled, tenant_id, client_id, secret_last4, rules: [{ kind: title | channel, text, project: { id, slug, name } | null }], sync_every_minutes, last_test: { at, calendars_read, roles } | null, last_attempt_at, last_success_at, last_error: { code, message } | null, last_result: { people, no_mailbox, mailbox_denied, mailbox_refused, meetings, not_a_meeting, created, updated, removed, unchanged, kept_edits, skipped } | null } — a mailbox Microsoft does not have (404), will not open (403) or will not look up (400) is that person skipped and counted, nothing of theirs retired; only a refused token or one without Calendars.Read fails the run   (owner, admin; session only; D-157, LAI-1316)
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
@@ -7386,12 +7387,15 @@ MX records point at Brevo, is parsed and posted here as `{ items: [...] }`.
 - **No token made is no delivery accepted.** A bad token and a bad body both get
   `401`; only once the token holds is the body read, and then a bad one is `422`.
 - **No Laika credential is resolved on `/webhooks/*`.** The header is Brevo's.
-- **Limits.** Its own rate-limit bucket, and a 4 MiB body (every other route
-  has 1 MiB).
-- **At most 50 mails** a delivery.
+- **Limits.** A 4 MiB body (every other route has 1 MiB), and two rate-limit
+  buckets chosen **after** the token: a verified delivery spends one, a refused
+  token another, so junk never spends Brevo's.
+- **At most 50 mails** a delivery. Brevo's list fields may be mailboxes or plain
+  addresses, and its spam score `Spam.Score` or `SpamScore`; both are read.
 
-**Each mail, at each space address it went to** (§4.104, matched on the token
-alone), is one §4.105 row. It is idempotent on `(message_id, address_token)`: a
+**Each mail, at each space address it went to** — the envelope's recipients,
+which carry a Bcc'd space; To and Cc only when there is no envelope — (§4.104,
+matched on the token alone) is one §4.105 row. It is idempotent on `(message_id, address_token)`: a
 redelivery answers `duplicate` and makes nothing.
 
 **What a mail becomes**, written **as its sender** — the active person whose
@@ -7413,17 +7417,23 @@ address is the From, under their own `can()`:
    list, `X-Autoreply`, an empty `Return-Path`
 5. `spam`: Brevo's score of 5 or more
 6. `unauthenticated`: with `require_authenticated` on, no DMARC pass for the
-   From domain and no aligned DKIM or SPF pass, in the believed
-   `Authentication-Results` — the server named in `authserv_id`, else the
-   topmost header
+   From domain and no DKIM or SPF pass for exactly it, in the believed
+   `Authentication-Results`. **The believed one is the first header carrying
+   `authserv_id`**, and no other. With no server named nothing is believed;
+   with the header's keys ambiguous (two keys for it, or a value that is not
+   text) it fails closed
 7. `unknown_sender`
 8. `empty`
 9. `not_allowed`: the sender's `can()` refused
 10. `refused`: any other refusal
 
-The answer is `200 { ok, results: [{ outcome, reason }] }` for every mail,
-dropped or not: Brevo retries what is not `2xx`, and a dropped mail must not
-come back. **No mail text is in the answer, a log line or §4.105.**
+The answer is `200 { ok, results: [{ outcome, reason }] }` for every mail Laika
+decided about, dropped or not: Brevo retries what is not `2xx`, and a dropped
+mail must not come back. **Each mail is its own transaction**: a fault in one
+records nothing of it, the rest are still received, and the answer is `503`
+with that mail `failed`, so Brevo delivers again and only it is new. A
+`refused` is logged at warn. **No mail text is in the answer, a log line or
+§4.105.**
 
 **Setting it up on Brevo** is `docs/OPERATIONS.md`, *Email to tasks: turning it
 on*.

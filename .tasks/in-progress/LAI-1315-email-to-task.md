@@ -163,3 +163,58 @@ outbox kind.
   (`http/middleware/auth.ts`). Brevo's `Authorization: Bearer` was refused as an invalid Laika
   token before the route could check it. GitHub and the transcript route send no Authorization
   header, so nothing changes for them.
+
+## Review round 1 (CHIEF / review-1315, 2026-11-18) — response
+
+review-1315 found the `/webhooks/*` auth change safe, and the token, address token, threading,
+content and migration sound. Every finding below is made, with its test. Each must-fix and F2–F5
+was checked by putting the bug back: each went red.
+
+- **M1, the believed header.**
+  - There is no "topmost" fallback: with no `authserv_id` nothing is believed. While
+    authentication is required the switch cannot turn on (422 `authserv_required`, plus a DB
+    CHECK).
+  - With an id named, only the first header carrying it counts; later ones with the same id
+    or another are ignored.
+  - Two keys for the header (case variants), or a value that is not text, fails closed.
+  - Each mail records the servers its headers named (`email_inbound.authserv_ids`), and the
+    card lists them under *Seen in recent mail*.
+  - OPERATIONS says to name the server from a real delivery while the switch is off, never
+    from an example; the invented example is gone.
+  - The route test's header is labelled a fixture.
+  - Tests:
+    - a forged header with the named id below the real one;
+    - a forged header above it with another id;
+    - duplicate keys;
+    - no id named;
+    - enabling refused with no id.
+- **M2, what the check proves.**
+  - D-155 item 4 says DMARC, DKIM and SPF authenticate a domain, not a mailbox. Anyone who can
+    send as any address at that domain can be written as any member there: a colleague, a
+    Send-As grant, or any service in its SPF or holding its DKIM key.
+  - **Turning the switch on, and turning authentication off, are an owner's alone:**
+    403 `owner_only`, a check after `can()`. CHIEF confirmed both. An admin may turn it off and
+    change the rest.
+  - The card disables both controls for an admin, with the reason "Only an owner can turn this
+    on."
+  - D-155 item 7 and SPEC §4.103 and §6.4 say so.
+- **F1, payload shapes.** `SpamScore` at top level as well as `Spam.Score`, and plain-address
+  lists. The envelope `Recipients` decides the address (a Bcc'd space is found); To and Cc are
+  used only without an envelope.
+- **F2, rate limiting.** The webhook counts itself after the token: verified deliveries in
+  `inbound-email`, refused tokens in `inbound-email:refused` (30). The middleware leaves the
+  path alone. Junk cannot 429 Brevo.
+- **F3, one mail's fault.** Each mail is isolated: a fault records nothing of it, the rest are
+  still received, and the answer is 503 so Brevo redelivers (landed mails are duplicates). A
+  `refused` is logged at warn, and a fault at error with its name and frame, never mail text.
+- **F4, angle brackets.** `header.from=<user@domain>` is read as its domain.
+- **F5, strict alignment.** The domain authenticated must equal the From domain. SPF's
+  `smtp.helo` no longer counts.
+- **F6, the 4 MiB test.** It now also asserts that another route keeps 1 MiB.
+- **F7, the comment** in schema-spec-drift is fixed.
+- **Also:**
+  - `EmailInboundRowView.project` is named, `InboundProjectView` and `InboundProject`, and
+    paired in the drift test.
+  - `can_store_secrets` disables the API key field, with the reason, before Save.
+- The migration `0088_email_inbound` was regenerated with the CHECK and the column; it is still
+  new tables only.

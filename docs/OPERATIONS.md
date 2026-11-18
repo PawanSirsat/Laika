@@ -283,8 +283,9 @@ written as that member, and a reply in its thread becomes a comment. **Turn it
 on only on the owner's word**, after the DNS and Brevo steps below exist.
 
 It writes **as the person the mail says it is from**, so it accepts a mail only
-when the receiving server proved the sender's domain sent it: a DMARC pass, or
-an aligned DKIM or SPF pass. Leave *Require authenticated senders* on.
+when the receiving server you name proved the sender's domain sent it: a DMARC,
+DKIM or SPF pass for exactly that domain. Leave *Require authenticated senders*
+on.
 
 ### 1. The receiving subdomain (DNS — Hemanth)
 
@@ -330,16 +331,29 @@ api-key: <a Brevo API key>
 }
 ```
 
-### 4. A test mail, then the switch
+### 4. A real delivery, the receiving server, then the switch
 
-1. Send a mail from your own address to a space's address. Space settings
-   shows each space's address, with *Copy*.
-2. The card's list shows it **dropped `switch_off`**, with the receiving
-   server's verdicts beside it, for example `inbound1.brevo.com dmarc=pass`.
-   That proves Brevo reaches Laika with the right token.
-3. Optional, recommended: put that server name into **Receiving server**, so
-   that only its `Authentication-Results` count.
-4. Flip **Email to tasks on**, send the mail again, and see the task.
+Laika believes only the `Authentication-Results` header of the receiving server
+you name, so name it from **a real delivery**, never from an example or a guess
+(D-155 item 4). Until one is named, the switch cannot go on.
+
+1. With the switch still off, send a mail from your own address to a space's
+   address. Space settings shows each space's address, with *Copy*.
+2. The card's list shows it **dropped `switch_off`** — proof that Brevo reaches
+   Laika with the right token — and, beside it, **the servers its
+   `Authentication-Results` headers named**, topmost first. The *Receiving
+   server* field lists the same under *Seen in recent mail*.
+3. Pick the one Brevo's receiving server added, the topmost of a mail you sent
+   yourself, and put it into **Receiving server**. If the mail named none,
+   Brevo is not stamping its own header. Stop, and do not turn
+   authentication off to get round it; raise it with CHIEF.
+4. **An owner** flips **Email to tasks on** (an admin cannot), sends the mail
+   again, and sees the task.
+
+What turning it on accepts: authentication proves the sender's **domain**, not
+the person. Anyone who can send as an address at a member's domain can be
+written as any member there (D-155 item 4). *Require authenticated senders*
+stays on; only an owner can turn it off.
 
 If the list shows nothing at all, Brevo is not reaching Laika. Check the
 webhook URL and the token. A `401` in the server log as
