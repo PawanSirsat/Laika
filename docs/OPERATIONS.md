@@ -343,10 +343,17 @@ you name, so name it from **a real delivery**, never from an example or a guess
    Laika with the right token — and, beside it, **the servers its
    `Authentication-Results` headers named**, topmost first. The *Receiving
    server* field lists the same under *Seen in recent mail*.
-3. Pick the one Brevo's receiving server added, the topmost of a mail you sent
-   yourself, and put it into **Receiving server**. If the mail named none,
-   Brevo is not stamping its own header. Stop, and do not turn
-   authentication off to get round it; raise it with CHIEF.
+3. **Confirm it is Brevo's own receiving host** before you name it.
+   - Send a second mail from **a different provider** (one from Microsoft 365,
+     one from Gmail, say). Brevo's receiving server is the one name both
+     mails show, topmost.
+   - **Never name your own sending provider's server.** Microsoft 365 and
+     others stamp `Authentication-Results` on the mail they send, and a server
+     a sender's provider wrote is evidence of nothing here.
+   - Put the confirmed name into **Receiving server**. Only an owner can.
+   - If the mails named no common server, Brevo is not stamping its own
+     header. Stop, and do not turn authentication off to get round it; raise
+     it with CHIEF.
 4. **An owner** flips **Email to tasks on** (an admin cannot), sends the mail
    again, and sees the task.
 

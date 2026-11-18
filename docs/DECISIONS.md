@@ -7834,10 +7834,16 @@ POSTed as JSON to a webhook, with each attachment as a download token.
    - **Limits:** a 4 MiB body on this route alone, and its own rate-limit buckets, chosen **after**
      the token: a verified delivery spends one, a refused token another. A flood of junk then
      fills only its own and cannot stop Brevo's real deliveries (LAI-1315 review, F2).
+   - **The token is checked before a byte of the body is read** (round 2): a gate in front of
+     the body limit, because a body sent without a length is read by the limit itself. A
+     refused request costs one hash and one indexed read.
    - **One mail's fault is its own.** Each mail is received in its own transaction. A fault in
-     one leaves nothing of it recorded, and the mails after it are still received. The answer
-     is then `503`, so Brevo delivers again: every mail that landed is a `duplicate`, and the
-     failed one is received (F3).
+     one keeps nothing it would have written, and the mails after it are still received. Its
+     record says `failed`, and the answer is `503`, so Brevo delivers again: every mail that
+     landed is a `duplicate`, and the failed one is tried again (F3).
+   - **A poison mail stops** (round 2). On its third fault it is recorded `dropped`
+     `failed_repeatedly` and answered `200`, so Brevo stops sending it. A `Message-ID: <>`, which
+     the table could never store, is no id: the mail is keyed by its digest.
 2. **Each space has an address, `<slug>-<token>@<domain>`** (§4.104).
    - **The token is matched alone**: twelve characters of base32, sixty bits. A rename keeps it
      working.
@@ -7924,10 +7930,17 @@ POSTed as JSON to a webhook, with each attachment as a download token.
    - It cannot turn on without a domain and a token.
    - It is set under `org.email.configure`, signed in only, D-153's row, which owners **and**
      admins hold.
-   - **Two changes are an owner's alone** (M2), a separate check after `can()`: **turning the
-     switch on**, which accepts item 4's residual risk, and **turning authentication off**, which
-     widens it to anybody. An admin may turn it off and change the rest. The card says which
-     control is an owner's, and why.
+   - **Every change but turning it off is an owner's alone** (M2, rounds 1 and 2), a separate
+     check after `can()`:
+     - **turning the switch on**, which accepts item 4's residual risk;
+     - **turning authentication off**, which widens it to anybody;
+     - **making a webhook token**, since its holder posts deliveries whose headers they write;
+     - **naming the receiving server, or changing the domain or the Brevo key**, since each lets
+       whoever makes it choose whose verdict counts.
+
+     An admin may turn it off, and read the rest. The card disables every other control for
+     them, and says why. So item 4's "a receiving server an owner named" and "a bearer token
+     only Brevo holds" are both true.
    - It cannot turn on while authentication is required and no receiving server is named.
    - `OrgView.email_inbound = { enabled, domain }` is readable by everyone, so a space can show its
      address.

@@ -218,3 +218,33 @@ was checked by putting the bug back: each went red.
   - `can_store_secrets` disables the API key field, with the reason, before Save.
 - The migration `0088_email_inbound` was regenerated with the CHECK and the column; it is still
   new tables only.
+
+## Review round 2 (CHIEF / review-1315, 2026-11-18) — response
+
+review-1315 confirmed M1, F1 and F4–F7 at dbb8e9104. These are the rest, each with its test, and
+each checked by putting the bug back: each went red.
+
+- **M2, every write but turning it off is an owner's.**
+  - That covers token rotation, any receiving-server, domain or key change, and
+    `require_authenticated` either way.
+  - It is enforced with 403 `owner_only`, naming the field, as a check after `can()`.
+  - An admin may send `{ enabled: false }` and nothing else. The view's `can_change` replaces
+    round 1's two flags, and the card disables every other control with *Only an owner changes
+    these settings*.
+  - D-155 item 7 lists the paths, so item 4's "a receiving server an owner named" and "a bearer
+    token only Brevo holds" are true.
+- **F2, a regression.** The token and its bucket are now checked by `inboundEmailGate`, mounted
+  on `/webhooks/email` before the body limit: Hono's limit reads a body sent without a length.
+  A refused request reads no body. The test uses a `highWaterMark: 0` stream that throws if
+  pulled. The route re-checks the token.
+- **F3 and the poison mail.**
+  - An empty (`<>`) or spaced `Message-ID` is no id, and the mail is keyed by its digest.
+  - A fault is recorded `failed` with `attempts`. Each redelivery tries again, and the third
+    fault is `dropped` `failed_repeatedly` and answered 200, so Brevo stops.
+  - The card shows both in words.
+  - The migration (0088, regenerated) gains `email_inbound.attempts`.
+- **Follow-ups.**
+  - OPERATIONS step 4 says to confirm the named id is Brevo's own receiving host, seen on mail
+    from two different providers, and never the sender's provider's (Microsoft 365 stamps its
+    outbound mail).
+  - The three stale "null reads the topmost" comments are fixed.
