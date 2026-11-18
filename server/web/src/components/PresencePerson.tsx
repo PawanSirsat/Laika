@@ -1,8 +1,7 @@
 import { agentClientName } from '../api/agent-clients.ts';
 import { agentsOf, connectedVia, hasLocation, type PresenceEntry } from '../api/presence.ts';
 import { AgentMark } from './agent-mark/AgentMark.tsx';
-import { avatarColor } from '../theme/avatar-color.ts';
-import { initials } from '../theme/initials.ts';
+import { Avatar } from './avatar/Avatar.tsx';
 import type { Theme } from '../theme/theme.ts';
 import './markers.css';
 import './presence-person.css';
@@ -84,7 +83,6 @@ function where(entry: PresenceEntry, spaceSlug: string | undefined): string {
 }
 
 export function PresencePerson({ entry, theme, variant, spaceSlug }: PresencePersonProps) {
-  const ink = avatarColor(entry.user_id, theme);
   const located = hasLocation(entry);
   /*
    * **The design's short form is the chip's, not the row's** (LAI-271). A chip
@@ -103,13 +101,15 @@ export function PresencePerson({ entry, theme, variant, spaceSlug }: PresencePer
 
   return (
     <span className={`pp pp-${variant}`}>
-      <span
+      {/* Their synced photo when there is one (D-161), the initials otherwise. */}
+      <Avatar
+        name={entry.name}
+        userId={entry.user_id}
+        theme={theme}
+        size={28}
+        label={null}
         className="pp-avatar"
-        style={{ background: ink.background, color: ink.foreground, borderColor: ink.border }}
-        aria-hidden="true"
-      >
-        {initials(entry.name)}
-      </span>
+      />
 
       <span className="pp-body">
         <span className="pp-head">

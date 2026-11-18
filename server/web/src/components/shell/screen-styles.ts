@@ -54,6 +54,8 @@ import '../create-task/create-task.css';
 import '../create-task/create-task-hints.css';
 import '../space/space.css';
 import '../avatar/avatar.css';
+// D-161 (LAI-1330): a person's title, department and manager, on three screens.
+import '../person-facts/person-facts.css';
 import '../size-chip.css';
 import '../../routes/screens/board/column-composer.css';
 import '../../routes/screens/board/board.css';

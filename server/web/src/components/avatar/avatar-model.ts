@@ -3,8 +3,13 @@
  * `node --test` can pin them.
  */
 
-/** The four sizes, in px: rail rows, list rows, cards, headers. */
-export const AVATAR_SIZES = [16, 20, 24, 32] as const;
+/**
+ * The sizes, in px: rail rows, list rows, cards and headers (LAI-1206), and
+ * the three the people surfaces drew by hand before D-161 converged them —
+ * a row's and the header's 28, a Capacity card's or a comment's 36, and a
+ * profile's 60.
+ */
+export const AVATAR_SIZES = [16, 20, 24, 28, 32, 36, 60] as const;
 export type AvatarSize = (typeof AVATAR_SIZES)[number];
 
 /**

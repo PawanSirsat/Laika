@@ -387,7 +387,9 @@ export function oldestAge(ms: number | null): string | undefined {
 
 /**
  * What the page is narrowed to (LAI-1201), as the address carries it: `?q=`
- * the search, `?show=` the chip, `?space=` a space id and `?sort=`. A reload
+ * the search, `?show=` the chip, `?space=` a space id, `?sort=`, and
+ * `?team=mine` — only the people whose manager is the reader, by Microsoft's
+ * directory (D-161, LAI-1330). A reload
  * or a pasted link opens the same view; Back leaves the page rather than
  * stepping through every keystroke, because a filter replaces.
  */
@@ -396,6 +398,8 @@ export interface CapacityParams {
   readonly filter: CapacityFilter;
   readonly space: string | null;
   readonly sort: CapacitySort;
+  /** Only the reader's own reports. */
+  readonly team: boolean;
 }
 
 export const CAPACITY_DEFAULTS: CapacityParams = {
@@ -403,6 +407,7 @@ export const CAPACITY_DEFAULTS: CapacityParams = {
   filter: 'all',
   space: null,
   sort: 'online',
+  team: false,
 };
 
 function isFilter(value: string | null): value is CapacityFilter {
@@ -423,6 +428,7 @@ export function capacityParams(params: URLSearchParams): CapacityParams {
     filter: isFilter(show) ? show : CAPACITY_DEFAULTS.filter,
     space: space === null || space === '' ? null : space,
     sort: isSort(sort) ? sort : CAPACITY_DEFAULTS.sort,
+    team: params.get('team') === 'mine',
   };
 }
 
@@ -441,5 +447,6 @@ export function withCapacityParams(
   put('show', merged.filter, CAPACITY_DEFAULTS.filter);
   put('space', merged.space ?? '', '');
   put('sort', merged.sort, CAPACITY_DEFAULTS.sort);
+  put('team', merged.team ? 'mine' : '', '');
   return out;
 }

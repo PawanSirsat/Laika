@@ -24,6 +24,7 @@ import {
   type StoredRule,
 } from './calendar-sync.ts';
 import { CALENDARS_READ, graphClient, isClientId, isTenantId } from './microsoft-graph.ts';
+import { forgetDirectoryIdentity } from './people-sync.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import { assertTimeOn } from './time-settings.ts';
 
@@ -388,6 +389,11 @@ export function saveCalendarSource(
     db.update(orgCalendarSource).set(values).where(eq(orgCalendarSource.orgId, was.orgId)).run();
   }
   if (credentialsChanged) graphTokenCache(db).clear();
+  // Another tenant or app is another directory: the people sync's Entra ids
+  // are the old one's, and Leavers waits for a person again (D-161, F2).
+  if (was !== undefined && (was.tenantId !== tenantId || was.clientId !== clientId)) {
+    forgetDirectoryIdentity(db, now);
+  }
 
   if (enabled === 1 && (was?.enabled !== 1 || credentialsChanged)) {
     syncSoon(db, serverSecret, deps);
@@ -528,11 +534,13 @@ export async function backfillCalendar(
  * which writes only while the connection it read with is still there — never
  * puts one back.
  */
-export function disconnectCalendar(db: Db, actor: ResolvedActor): void {
+export function disconnectCalendar(db: Db, actor: ResolvedActor, now: number = Date.now()): void {
   assertCan(actor, 'org.calendar.configure');
   db.transaction((tx) => {
     tx.delete(orgCalendarSource).run();
     tx.delete(calendarAway).run();
   });
   graphTokenCache(db).clear();
+  // A connection made again may be another tenant's (D-161, F2).
+  forgetDirectoryIdentity(db, now);
 }

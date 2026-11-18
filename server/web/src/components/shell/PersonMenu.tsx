@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { useGates } from '../../api/permissions.ts';
 import { toggledTheme } from '../../theme/theme.ts';
-import { avatarColor } from '../../theme/avatar-color.ts';
-import { initials } from '../../theme/initials.ts';
+import { Avatar } from '../avatar/Avatar.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import { Icon } from '../icon/Icon.tsx';
 import { Spinner } from '../Spinner.tsx';
@@ -45,7 +44,6 @@ export function PersonMenu({ user }: PersonMenuProps) {
     route: { navigate: onNavigate },
   } = useShell();
   const { theme, setPreference, darkVariant } = useTheme();
-  const colour = avatarColor(user.id, theme);
   // From any dark theme to light; from light to the reader's dark variant (LAI-1212).
   const next = toggledTheme(theme, darkVariant);
   const [open, setOpen] = useState(false);
@@ -196,13 +194,15 @@ export function PersonMenu({ user }: PersonMenuProps) {
           }
         }}
       >
-        <span
-          className="sidebar-user-avatar t-avatar"
-          style={{ background: colour.background, color: colour.foreground }}
-          aria-hidden="true"
-        >
-          {initials(user.name)}
-        </span>
+        {/* Their synced photo when there is one (D-161), the initials otherwise. */}
+        <Avatar
+          name={user.name}
+          userId={user.id}
+          theme={theme}
+          size={28}
+          label={null}
+          className="sidebar-user-avatar"
+        />
         {/* The name, for whoever reads the text rather than the label. */}
         <span className="visually-hidden">{user.name}</span>
       </button>

@@ -10,8 +10,7 @@ import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import type { UseTaskDetail } from '../../../api/use-task-detail.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { avatarColorSolid } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { actorLine, describeActor } from '../board/actor-presentation.ts';
 import { threadOrder, type ThreadItem } from '../board/thread-order.ts';
@@ -270,14 +269,10 @@ export function ActivityFeed({
   };
 
   const avatar = (actor: Actor) => {
-    const ink = avatarColorSolid(actor.inkId, theme);
     return (
-      <span
-        className="cmt-avatar"
-        aria-hidden="true"
-        style={{ background: ink.background, color: ink.foreground }}
-      >
-        {initials(actor.name)}
+      <span className="cmt-avatar" aria-hidden="true">
+        {/* Their synced photo when there is one (D-161), the initials otherwise. */}
+        <Avatar name={actor.name} userId={actor.inkId} theme={theme} size={36} solid label={null} />
         {/* The bot mark rides on the avatar, as on a card and a presence chip. */}
         {actor.agent && (
           <span className="cmt-bot" aria-hidden="true">
@@ -461,15 +456,15 @@ export function ActivityFeed({
   const composer = (
     <div className="panel-composer feed-composer">
       {meId !== undefined && (
-        <span
-          className="cmt-avatar cmt-avatar-me"
-          aria-hidden="true"
-          style={{
-            background: avatarColorSolid(meId, theme).background,
-            color: avatarColorSolid(meId, theme).foreground,
-          }}
-        >
-          {initials(personName(meId, members))}
+        <span className="cmt-avatar cmt-avatar-me" aria-hidden="true">
+          <Avatar
+            name={personName(meId, members)}
+            userId={meId}
+            theme={theme}
+            size={28}
+            solid
+            label={null}
+          />
         </span>
       )}
       <CommentComposer

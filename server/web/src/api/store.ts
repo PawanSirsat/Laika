@@ -10,6 +10,7 @@ import { listStatuses } from './statuses.ts';
 import { resetUnreadNotices } from './notices.ts';
 import { createTaskStore } from './task-store.ts';
 import { listTasks } from './tasks.ts';
+import { forgetDirectory } from './people-directory.ts';
 import { forgetLooks } from './project-looks.ts';
 
 /**
@@ -141,4 +142,6 @@ export function setStoreUser(userId: string | undefined): void {
   // Every space's name, colour and icon the last person could read (D-152):
   // the next person's marks come from their own reads.
   forgetLooks();
+  // Everyone's synced photo, title and manager (D-161): read again for the next.
+  forgetDirectory();
 }

@@ -17,6 +17,7 @@ import {
   closeBrowser,
   defaultPermissions,
   open as openPage,
+  PEOPLE_SYNC_OFF,
   reply,
   setTheme,
   until,
@@ -100,6 +101,63 @@ const saved = (patch: Record<string, unknown> = {}) => ({
   ...patch,
 });
 
+/** The people sync on the same card (D-161), connected, profile on, Leavers off — a dry run. */
+const PEOPLE_DRY_RUN = {
+  connected: true,
+  profile_enabled: true,
+  leavers_enabled: false,
+  photos_stored: true,
+  sync_every_minutes: 60,
+  last_attempt_at: ago(12),
+  last_success_at: ago(12),
+  last_error: null,
+  last_result: {
+    people: 25,
+    found: 24,
+    not_found: 1,
+    denied: 0,
+    refused: 0,
+    changed: 0,
+    updated: 3,
+    photos_fetched: 2,
+    photos_unchanged: 21,
+    photos_removed: 0,
+    photos_refused: 0,
+    photos_deferred: 0,
+  },
+  leavers: {
+    at: ago(12),
+    state: 'dry_run',
+    breaker: false,
+    people: [
+      {
+        user_id: 'u7',
+        name: 'Grace Hopper',
+        email: 'grace@example.com',
+        reason: 'disabled',
+        protected: null,
+        failed: false,
+      },
+      {
+        user_id: 'u1',
+        name: 'Ada Lovelace',
+        email: 'u1@example.com',
+        reason: 'gone',
+        protected: 'owner',
+        failed: false,
+      },
+    ],
+    changed: [
+      {
+        user_id: 'u9',
+        name: 'Front Desk',
+        email: 'desk@example.com',
+        reason: 'disabled_at_match',
+      },
+    ],
+  },
+};
+
 const RESULT = {
   people: 9,
   no_mailbox: 1,
@@ -148,6 +206,8 @@ function orgStub(role: string, extra: ApiStub = {}): ApiStub {
     '/api/v1/permissions': permissionsFor(role),
     '/api/v1/org/holidays': { holidays: [] },
     '/api/v1/org/model-prices': { as_of: '2026-10-18', can_set: false, entries: [] },
+    // The card's people part (D-161), opted in: off and never run.
+    '/api/v1/org/people-sync': PEOPLE_SYNC_OFF,
     ...extra,
   };
 }
@@ -230,14 +290,14 @@ void describe('Outlook calendar: setting it up', () => {
       assert.match(lead, /“Busy”/);
       assert.match(lead, /later syncs leave it alone/);
       // The switch cannot be turned on with nothing saved.
-      const toggle = c.getByRole('switch');
+      const toggle = c.locator('[data-calendar-switch]').getByRole('switch');
       assert.equal(await toggle.getAttribute('aria-checked'), 'false');
       assert.equal(await toggle.isDisabled(), true);
       // Nothing saved: no test, no sync.
       assert.equal(await c.getByRole('button', { name: 'Test connection' }).count(), 0);
 
       // Saving with nothing typed names each field and sends nothing.
-      const form = c.getByRole('form', { name: 'Outlook calendar settings' });
+      const form = c.getByRole('form', { name: 'Microsoft 365 settings' });
       await form.getByRole('button', { name: 'Add a rule' }).click();
       await form.getByLabel('Directory (tenant) ID').fill('contoso');
       await form.getByRole('button', { name: 'Save', exact: true }).click();
@@ -268,7 +328,10 @@ void describe('Outlook calendar: setting it up', () => {
       assert.match(await form.innerText(), /Saved, ending ···page/);
       assert.equal((await h.page.content()).includes(SECRET), false, 'the secret is on the page');
       // Saved, the switch can be turned on and the connection tested.
-      assert.equal(await c.getByRole('switch').isDisabled(), false);
+      assert.equal(
+        await c.locator('[data-calendar-switch]').getByRole('switch').isDisabled(),
+        false,
+      );
       assert.equal(await c.getByRole('button', { name: 'Test connection' }).count(), 1);
     } finally {
       await h.close();
@@ -291,7 +354,7 @@ void describe('Outlook calendar: setting it up', () => {
       }),
     );
     try {
-      const form = card(h).getByRole('form', { name: 'Outlook calendar settings' });
+      const form = card(h).getByRole('form', { name: 'Microsoft 365 settings' });
       await form.getByLabel('Directory (tenant) ID').fill(TENANT);
       await form.getByLabel('Application (client) ID').fill(CLIENT);
       await form.locator('input[type="password"]').fill(SECRET);
@@ -346,7 +409,10 @@ void describe('Outlook calendar: testing the connection', () => {
       assert.equal(await c.locator('[data-calendar-grant]').count(), 0);
       assert.equal(tested.length, 1);
       assert.equal(tested[0]?.method, 'POST');
-      assert.equal(await c.getByRole('switch').getAttribute('aria-checked'), 'false');
+      assert.equal(
+        await c.locator('[data-calendar-switch]').getByRole('switch').getAttribute('aria-checked'),
+        'false',
+      );
     } finally {
       await h.close();
     }
@@ -434,7 +500,7 @@ void describe('Outlook calendar: the switch and syncing', () => {
       const c = card(h);
       assert.equal(await c.getByRole('button', { name: 'Sync now' }).count(), 0);
       assert.match(await c.locator('[data-calendar-last]').innerText(), /the switch is off/);
-      await c.getByRole('switch').click();
+      await c.locator('[data-calendar-switch]').getByRole('switch').click();
       await until(async () => (await c.getAttribute('data-calendar-status')) === 'on');
       assert.deepEqual(cal.puts, [
         {
@@ -486,7 +552,7 @@ void describe('Outlook calendar: the switch and syncing', () => {
       await c.getByRole('button', { name: 'Disconnect' }).click();
       const dialog = h.page.getByRole('alertdialog');
       await dialog.waitFor();
-      assert.match(await dialog.innerText(), /Disconnect Outlook\?/);
+      assert.match(await dialog.innerText(), /Disconnect Microsoft 365\?/);
       assert.match(await dialog.innerText(), /Meetings already logged stay/);
       assert.match(await dialog.innerText(), /stops showing anyone out of office from Outlook/);
       await dialog.getByRole('button', { name: 'Disconnect' }).click();
@@ -494,6 +560,104 @@ void describe('Outlook calendar: the switch and syncing', () => {
       assert.deepEqual(
         h.calls.filter((call) => call.path === '/api/v1/org/calendar').map((call) => call.method),
         ['GET', 'DELETE', 'GET'],
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('Microsoft 365: people (D-161)', () => {
+  void test('Leavers off is a dry run: who would go, why, and who never goes', async () => {
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved(),
+        '/api/v1/org/people-sync': PEOPLE_DRY_RUN,
+      }),
+      '[data-leavers="dry_run"]',
+    );
+    try {
+      const review = card(h).locator('[data-leavers="dry_run"]');
+      assert.match(
+        await review.innerText(),
+        /Leavers is off\. Turned on, the next sync would deactivate:/,
+      );
+      assert.match(
+        await review.locator('[data-leaver="u7"]').innerText(),
+        /Grace Hopper\s+grace@example\.com · account turned off in Microsoft/,
+      );
+      assert.match(
+        await review.locator('[data-leaver="u1"]').innerText(),
+        /no longer in Microsoft for over an hour · never deactivated: the owner/,
+      );
+      // Disabled since first matched: named to check, never on the list to go.
+      const check = card(h).locator('[data-people-changed]');
+      assert.match(
+        await check.innerText(),
+        /^Check this person in Microsoft by hand — the sync never deactivates them:/,
+      );
+      assert.match(
+        await check.locator('[data-changed="u9"]').innerText(),
+        /Front Desk\s+desk@example\.com · their Microsoft account was already turned off when first matched/,
+      );
+      assert.equal(await review.locator('[data-leaver="u9"]').count(), 0);
+      assert.match(
+        await card(h).locator('[data-people-counts]').innerText(),
+        /25 people read: 24 found, 1 not in Microsoft; 2 photos updated\./,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a switch saves when flipped, and Leavers waits for Photos and profile', async () => {
+    let state: unknown = { ...PEOPLE_DRY_RUN, profile_enabled: false, leavers: null };
+    const puts: unknown[] = [];
+    const h = await integrations(
+      orgStub('owner', {
+        '/api/v1/org/calendar': saved(),
+        '/api/v1/org/people-sync': (call: StubCall) => {
+          if (call.method === 'PUT') {
+            puts.push(call.body);
+            state = { ...(state as object), ...(call.body as object) };
+          }
+          return state;
+        },
+      }),
+      '[data-people-switch="profile"]',
+    );
+    try {
+      const leavers = card(h).locator('[data-people-switch="leavers"] [role="switch"]');
+      assert.equal(await leavers.isDisabled(), true, 'Leavers before Photos and profile');
+      await card(h).locator('[data-people-switch="profile"] [role="switch"]').click();
+      await until(() => puts.length === 1);
+      assert.deepEqual(puts, [{ profile_enabled: true, leavers_enabled: false }]);
+      await until(async () => !(await leavers.isDisabled()));
+      assert.equal(await leavers.isDisabled(), false, 'Leavers once Photos and profile is on');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin who may not deactivate people cannot turn Leavers on', async () => {
+    const base = permissionsFor('admin') as { me: { actions: string[] } };
+    const h = await integrations(
+      orgStub('admin', {
+        '/api/v1/permissions': {
+          ...base,
+          me: { ...base.me, actions: base.me.actions.filter((a) => a !== 'user.deactivate') },
+        },
+        '/api/v1/org/calendar': saved(),
+        '/api/v1/org/people-sync': PEOPLE_DRY_RUN,
+      }),
+      '[data-people-switch="leavers"]',
+    );
+    try {
+      const row = card(h).locator('[data-people-switch="leavers"]');
+      assert.equal(await row.locator('[role="switch"]').isDisabled(), true);
+      assert.match(
+        await row.innerText(),
+        /Only someone who may deactivate people can turn this on\./,
       );
     } finally {
       await h.close();
@@ -862,6 +1026,7 @@ void describe('both themes, 1440 and 390', () => {
           last_error: { code: 'not_granted', message: 'x' },
           last_result: RESULT,
         }),
+        '/api/v1/org/people-sync': PEOPLE_DRY_RUN,
       }),
       '[data-calendar-rule="1"]',
     );

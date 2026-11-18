@@ -22,8 +22,17 @@
 .avatar-24 {
   --avatar-size: 1.5rem;
 }
+.avatar-28 {
+  --avatar-size: 1.75rem;
+}
 .avatar-32 {
   --avatar-size: 2rem;
+}
+.avatar-36 {
+  --avatar-size: 2.25rem;
+}
+.avatar-60 {
+  --avatar-size: 3.75rem;
 }
 
 .avatar-disc {
@@ -45,6 +54,23 @@
 /* Initials at 16px are one letter's room: the tiny step, no tracking. */
 .avatar-16 .avatar-disc {
   letter-spacing: 0;
+}
+
+/*
+ * The people surfaces' sizes (D-161) keep the initials they drew by hand: the
+ * small step, heavy, from 28 up, and a heading's at a profile's 60.
+ */
+.avatar-28 .avatar-disc,
+.avatar-36 .avatar-disc {
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.avatar-60 .avatar-disc {
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
 }
 
 .avatar-img {

@@ -230,16 +230,9 @@
   border-style: dashed;
 }
 
+/* The shared Avatar, 36 on a card and 28 in a row (D-161): its own size and disc. */
 .cap-avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-round);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  letter-spacing: -0.02em;
+  flex: none;
 }
 
 .cap-dot {
@@ -829,12 +822,6 @@
 .cap-list-person .cap-who {
   display: inline-flex;
   max-width: calc(100% - 3rem);
-}
-
-.cap-avatar-sm {
-  width: 1.875rem;
-  height: 1.875rem;
-  font-size: var(--text-small);
 }
 
 .cap-list-bar {

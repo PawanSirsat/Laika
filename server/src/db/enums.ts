@@ -743,6 +743,27 @@ export const CALENDAR_SYNC_ERROR_CODES = [
 export type CalendarSyncErrorCode = (typeof CALENDAR_SYNC_ERROR_CODES)[number];
 
 /**
+ * Why a people sync from Microsoft changed nothing (D-161, LAI-1330): the
+ * calendar's four, since both read Graph through the one Microsoft 365
+ * connection — and `not_connected`, a switch on with no connection saved.
+ */
+export const PEOPLE_SYNC_ERROR_CODES = [
+  'not_connected',
+  'credentials_rejected',
+  'not_granted',
+  'unreachable',
+  'bad_answer',
+] as const;
+export type PeopleSyncErrorCode = (typeof PEOPLE_SYNC_ERROR_CODES)[number];
+
+/**
+ * The image types a person's synced photo may be (D-161, LAI-1330): a space
+ * icon's three, proved by their first bytes. Never SVG.
+ */
+export const USER_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+export type UserPhotoType = (typeof USER_PHOTO_TYPES)[number];
+
+/**
  * A calendar mapping rule's `kind` (D-157, LAI-1316): a keyword in the
  * meeting's subject, or the Teams channel a channel meeting is in.
  */

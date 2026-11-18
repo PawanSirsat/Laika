@@ -141,17 +141,9 @@
   outline-offset: 2px;
 }
 
+/* The shared Avatar at 28 (D-161): its own size, disc and initials. */
 .sidebar-user-avatar {
-  width: 1.75rem;
-  height: 1.75rem;
   flex: none;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  line-height: 1;
 }
 
 .user-menu {

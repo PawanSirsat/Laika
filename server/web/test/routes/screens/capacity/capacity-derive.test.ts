@@ -385,13 +385,26 @@ void describe('the view in the address (LAI-1201)', () => {
       filter: 'overdue',
       space: 'p1',
       sort: 'name',
+      team: false,
     });
     assert.deepEqual(capacityParams(new URLSearchParams('show=bogus&sort=&space=')), {
       query: '',
       filter: 'all',
       space: null,
       sort: 'online',
+      team: false,
     });
+  });
+
+  void test('My team is `team=mine`, and anything else is everyone (D-161)', () => {
+    assert.equal(capacityParams(new URLSearchParams('team=mine')).team, true);
+    assert.equal(capacityParams(new URLSearchParams('team=yes')).team, false);
+    const base = new URLSearchParams('tab=capacity');
+    assert.equal(withCapacityParams(base, { team: true }).toString(), 'tab=capacity&team=mine');
+    assert.equal(
+      withCapacityParams(new URLSearchParams('tab=capacity&team=mine'), { team: false }).toString(),
+      'tab=capacity',
+    );
   });
 
   void test('written back without defaults, keeping what else the address says', () => {

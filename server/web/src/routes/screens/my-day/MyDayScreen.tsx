@@ -79,8 +79,7 @@ import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
 import { TimelineMobile } from './TimelineMobile.tsx';
 import { keepZoom, readZoom } from './timeline-prefs.ts';
 import { usePhone } from './use-phone.ts';
-import { initials } from '../../../theme/initials.ts';
-import { avatarColorSolid } from '../../../theme/avatar-color.ts';
+import { Avatar } from '../../../components/avatar/Avatar.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import {
   addDays,
@@ -1616,16 +1615,15 @@ export function MyDayScreen({
   );
   const avatar =
     me === undefined ? null : (
-      <span
+      <Avatar
+        name={me.name}
+        userId={me.id}
+        theme={theme}
+        size={28}
+        solid
+        label={null}
         className="myday-bar-avatar"
-        aria-hidden="true"
-        style={{
-          background: avatarColorSolid(me.id, theme).background,
-          color: avatarColorSolid(me.id, theme).foreground,
-        }}
-      >
-        {initials(me.name)}
-      </span>
+      />
     );
   const phoneBar =
     phone && embedded === undefined ? (

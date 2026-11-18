@@ -154,19 +154,19 @@ export function useConnections(
       );
     }
     if (can.calendar) {
-      setCalendar({ key: 'calendar', name: 'Outlook calendar', state: 'reading', word: '…' });
+      setCalendar({ key: 'calendar', name: 'Microsoft 365', state: 'reading', word: '…' });
       getCalendarSource(controller.signal).then(
         (view) => {
           const word = statusWord(view);
           setCalendar({
             key: 'calendar',
-            name: 'Outlook calendar',
+            name: 'Microsoft 365',
             state: word === 'on' ? 'on' : 'off',
             word,
           });
         },
         () => {
-          if (!controller.signal.aborted) setCalendar(unread('calendar', 'Outlook calendar'));
+          if (!controller.signal.aborted) setCalendar(unread('calendar', 'Microsoft 365'));
         },
       );
     }
