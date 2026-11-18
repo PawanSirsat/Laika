@@ -27,10 +27,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { addDays, gitRunner, localDay, pushedKey, type GitRunner } from '../src/activity-census.ts';
 import { acquireLock, activityPaths, readState, writeState } from '../src/activity-store.ts';
+import { writeCredential } from '../src/agent-session.ts';
 import {
+  activityCredentials,
   compactEvents,
   credentialsFor,
   findCredentials,
+  machineCredentials,
   telemetryToBoard,
   MAX_BACKOFF_S,
   retryAfterSeconds,
@@ -576,7 +579,11 @@ void describe('credentials', () => {
     const outcome = await sync({ ...w.ctx, env: { PATH: process.env.PATH ?? '', HOME: w.home } });
     assert.equal(outcome.kind, 'error');
     assert.equal(w.board.requests.length, 0);
-    assert.match(readFileSync(w.paths.lastError, 'utf8'), /no token for/);
+    // It names the real fix: a personal token, or a tool added on this machine (LAI-1325).
+    assert.match(
+      readFileSync(w.paths.lastError, 'utf8'),
+      /no credential for .* no personal token in ~\/\.laika\/env, and no tool added with laika tool add/,
+    );
   });
 
   void test('Retry-After in either form', () => {
@@ -958,6 +965,136 @@ void describe('one board (review 1, item 3)', () => {
     assert.equal((await sync({ ...w.ctx, env: bare })).kind, 'sent');
     assert.ok(w.board.requests.every((r) => r.auth === `Bearer ${TOKEN}`));
     assert.equal(credentialsFor(w.home, {}, 'http://elsewhere'), undefined);
+  });
+
+  void test('this machine’s own connection: Claude Code’s first, then the others by name, for the board asked about (LAI-1325)', () => {
+    const home = dir('laika-machinehome-');
+    // What `laika tool add` writes, one file a tool (LAI-1060). Antigravity
+    // sorts before Claude Code, so "by name" alone would pick it.
+    writeCredential(
+      home,
+      'antigravity',
+      { url: 'http://board/', token: 'lai_antigravity' },
+      { source: 'tool-add' },
+    );
+    writeCredential(home, 'cursor', { url: 'http://other', token: 'lai_cursor' });
+    assert.deepEqual(machineCredentials(home), {
+      url: 'http://board',
+      token: 'lai_antigravity',
+      harness: 'antigravity',
+    });
+    writeCredential(home, 'claude-code', { url: 'http://board', token: 'lai_claude' });
+    assert.deepEqual(machineCredentials(home), {
+      url: 'http://board',
+      token: 'lai_claude',
+      harness: 'claude-code',
+    });
+    assert.deepEqual(machineCredentials(home, 'http://other'), {
+      url: 'http://other',
+      token: 'lai_cursor',
+      harness: 'cursor',
+    });
+    assert.equal(machineCredentials(home, 'http://nowhere'), undefined);
+  });
+
+  void test('with no personal token anywhere — no ~/.laika/env — activity uses the machine’s; nothing else does (LAI-1325)', () => {
+    const home = dir('laika-pairedhome-');
+    writeCredential(home, 'claude-code', { url: 'http://board', token: 'lai_claude' });
+    assert.equal(existsSync(join(home, '.laika', 'env')), false);
+
+    assert.deepEqual(activityCredentials(home, {}), {
+      url: 'http://board',
+      token: 'lai_claude',
+      via: 'claude-code',
+    });
+    assert.deepEqual(credentialsFor(home, {}, 'http://board'), {
+      url: 'http://board',
+      token: 'lai_claude',
+    });
+    assert.equal(credentialsFor(home, {}, 'http://elsewhere'), undefined);
+    // `laika time push` and the rest keep `findCredentials`, the person's own:
+    // activity's fallback widens nothing outside activity.
+    assert.equal(findCredentials(home, {}), undefined);
+
+    // A personal token in ~/.laika/env, where there is one, still comes first.
+    writeFileSync(
+      join(home, '.laika', 'env'),
+      'LAIKA_URL="http://board"\nLAIKA_TOKEN="lai_person"\n',
+    );
+    assert.deepEqual(activityCredentials(home, {}), {
+      url: 'http://board',
+      token: 'lai_person',
+      via: 'personal',
+    });
+    assert.deepEqual(credentialsFor(home, {}, 'http://board'), {
+      url: 'http://board',
+      token: 'lai_person',
+    });
+  });
+
+  void test('a token in the environment that is a tool’s own is named as that tool’s; a stale copy yields to the file (LAI-1325)', () => {
+    const home = dir('laika-claudehome-');
+    writeCredential(home, 'claude-code', { url: 'http://board', token: 'lai_claude_new' });
+    // What `laika-claude` exports: Claude Code's own token, as the session started.
+    const same = { LAIKA_URL: 'http://board', LAIKA_TOKEN: 'lai_claude_new' };
+    assert.deepEqual(activityCredentials(home, same), {
+      url: 'http://board',
+      token: 'lai_claude_new',
+      via: 'claude-code',
+    });
+    // The tool was added again since: the copy in the environment is revoked,
+    // the file holds the one that works.
+    const stale = { LAIKA_URL: 'http://board', LAIKA_TOKEN: 'lai_claude_old' };
+    assert.deepEqual(activityCredentials(home, stale), {
+      url: 'http://board',
+      token: 'lai_claude_new',
+      via: 'claude-code',
+    });
+    assert.deepEqual(credentialsFor(home, stale, 'http://board'), {
+      url: 'http://board',
+      token: 'lai_claude_new',
+    });
+    // An environment token for a board no tool's file names is still used.
+    assert.deepEqual(
+      credentialsFor(home, { LAIKA_URL: 'http://other', LAIKA_TOKEN: 'lai_x' }, 'http://other'),
+      {
+        url: 'http://other',
+        token: 'lai_x',
+      },
+    );
+  });
+
+  void test('a personal token for another board does not stop this board’s tool credential being used (LAI-1325)', () => {
+    const home = dir('laika-twoboards-');
+    mkdirSync(join(home, '.laika'), { recursive: true });
+    writeFileSync(
+      join(home, '.laika', 'env'),
+      'LAIKA_URL="http://elsewhere"\nLAIKA_TOKEN="lai_person_elsewhere"\n',
+    );
+    writeCredential(home, 'claude-code', { url: 'http://board', token: 'lai_claude' });
+    assert.deepEqual(credentialsFor(home, {}, 'http://board'), {
+      url: 'http://board',
+      token: 'lai_claude',
+    });
+    assert.deepEqual(credentialsFor(home, {}, 'http://elsewhere'), {
+      url: 'http://elsewhere',
+      token: 'lai_person_elsewhere',
+    });
+  });
+
+  void test('a sync launched by a hook, on a machine with no personal token, sends with the machine’s credential (LAI-1325)', async () => {
+    const w = await world();
+    writeCredential(
+      w.home,
+      'claude-code',
+      { url: w.board.url, token: TOKEN },
+      { source: 'tool-add' },
+    );
+    assert.equal(existsSync(join(w.home, '.laika', 'env')), false);
+    const bare = { PATH: process.env.PATH ?? '', HOME: w.home, GIT_CONFIG_NOSYSTEM: '1' };
+    assert.equal((await sync({ ...w.ctx, env: bare })).kind, 'sent');
+    assert.ok(w.board.requests.length > 0);
+    assert.ok(w.board.requests.every((r) => r.auth === `Bearer ${TOKEN}`));
   });
 
   void test('turning activity on for another board starts over', async () => {

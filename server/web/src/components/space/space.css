@@ -602,49 +602,6 @@
  * The tabs take the full width, which is what forces them onto their own row;
  * `order` keeps them last so the wrap lands between the two groups.
  */
-/*
- * *Spaces /* above the space's name (LAI-1227, Jira's project header): its
- * own line, first, small and quiet — the way back, not a heading.
- */
-.space-crumbs {
-  flex: 1 1 100%;
-  order: 0;
-  min-width: 0;
-  margin-bottom: calc(var(--space-1) * -1);
-}
-
-.space-crumbs-list {
-  display: flex;
-  align-items: center;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--text-small);
-  line-height: 1.4;
-}
-
-.space-crumb::after {
-  content: '/';
-  margin-inline-start: var(--space-1-5);
-  color: var(--text-muted);
-}
-
-.space-crumb-link {
-  color: var(--text-secondary);
-  text-decoration: none;
-  border-radius: var(--radius-xs);
-}
-
-.space-crumb-link:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
-}
-
-.space-crumb-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .space-bar-top > .space-bar-row {
   flex: 0 1 auto;
   min-width: 0;
@@ -1000,12 +957,6 @@
 
   .space-bar-top > nav {
     grid-column: 1 / -1;
-  }
-
-  /* The way back is the menu's on a phone (LAI-1227): the space's name
-     starts the page, and the content stays high. */
-  .space-crumbs {
-    display: none;
   }
 
   .space-name {
