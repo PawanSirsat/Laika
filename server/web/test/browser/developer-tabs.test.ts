@@ -266,8 +266,15 @@ void describe('two prompts, two scopes (D-111)', () => {
       assert.match(await tab.locator('.conn-chip-scope').innerText(), /Once per project/);
       const prompt = await tab.locator('.conn-project-prompt').innerText();
       assert.match(prompt, /CLAUDE\.md/);
-      assert.match(prompt, /once per project/);
       assert.match(prompt, /This project is tracked on a Laika board\./);
+      // owner, 2026-11-19: every setup path writes rules 7 and 8 (LAI-1352) —
+      // the marked current block, and a prompt that updates an older one.
+      const block = await tab.locator('.conn-project-block').innerText();
+      assert.match(block, /^<!-- laika:begin revision=3 project=onroute -->/);
+      assert.match(block, /7\. \*\*Show the result\.\*\*/);
+      assert.match(block, /8\. \*\*One parent per feature\.\*\*/);
+      assert.match(prompt, /revision of\s+3 or more and project=onroute/);
+      assert.match(prompt, /show me the exact old and new text\s+as a diff/);
       assert.doesNotMatch(prompt, /install\.sh|git clone|lai_/);
       assert.match(prompt, /onroute/);
       // The block beside it is the committed form, and carries no token either.

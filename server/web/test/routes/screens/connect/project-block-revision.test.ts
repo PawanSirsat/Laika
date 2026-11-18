@@ -25,7 +25,7 @@ import {
   PLACEHOLDER_TOKEN,
   PROJECT_BLOCK_REVISION,
   projectBlock,
-  projectPrompt,
+  projectHandover,
   projectSetupPrompt,
   replaceLaikaBlock,
   SHOW_THE_RESULT,
@@ -106,21 +106,58 @@ void describe('the marked block', () => {
     }
   });
 
-  void test('the classic, unmarked block stays revision 1: no rule 7 or 8', () => {
-    const classic = projectBlock(ORIGIN, PROJECT);
-    assert.ok(!classic.includes('Show the result'));
-    assert.ok(!classic.includes('One parent per feature'));
-    assert.equal(projectBlock(ORIGIN, PROJECT, 1), classic);
+  void test('every setup path writes rules 7 and 8: the classic Projects tab too', () => {
+    // owner, 2026-11-19: every setup path writes rules 7 and 8 (LAI-1352). The
+    // classic tab wrote the unmarked revision-1 block with a prompt that
+    // stopped at one already there; it hands over the marked current block
+    // and the Project setup prompt now, which updates an older one in place.
+    const classic = projectHandover(ORIGIN, PROJECT, instructionsTarget('claude-code'));
+    assert.equal(classic.block, BLOCK);
+    assert.ok(
+      classic.block.includes(SHOW_THE_RESULT) && classic.block.includes(ONE_PARENT_PER_FEATURE),
+    );
+    assert.equal(
+      classic.prompt,
+      projectSetupPrompt({ origin: ORIGIN, project: PROJECT, path: 'CLAUDE.md', block: BLOCK }),
+    );
+    // Revision 1's text — what an old file holds — has neither, and is what
+    // replaceLaikaBlock finds and replaces; the default is the current text.
+    const one = projectBlock(ORIGIN, PROJECT, 1);
+    assert.ok(!one.includes('Show the result') && !one.includes('One parent per feature'));
+    assert.equal(
+      projectBlock(ORIGIN, PROJECT),
+      projectBlock(ORIGIN, PROJECT, PROJECT_BLOCK_REVISION),
+    );
   });
 
-  void test('CONTROL: the classic block and prompt are byte-for-byte what master served', () => {
-    // Hashes of origin/master's projectBlock / projectPrompt for this fixture,
-    // taken before LAI-1052 touched the file.
-    const block = projectBlock(ORIGIN, PROJECT);
-    assert.equal(sha(block), 'dd09272699899abe7882b88741146a536067f6f33c447f44e9d58e5ab09271d6');
+  void test('the classic tab follows the tool: a rule file gets its frontmatter, no file no prompt', () => {
+    const cursor = instructionsTarget('cursor');
+    const rule = projectHandover(ORIGIN, PROJECT, cursor);
+    assert.equal(rule.block, cursor.wrap(BLOCK));
+    assert.ok(
+      rule.prompt?.includes(
+        `A new file starts with these lines, before the block:\n\n${cursor.wrap('').trimEnd()}`,
+      ),
+    );
+    const desktop = projectHandover(ORIGIN, PROJECT, instructionsTarget('claude-desktop'));
+    assert.equal(desktop.prompt, undefined);
+    assert.equal(desktop.block, BLOCK);
+  });
+
+  void test('CONTROL: revision 1 is byte-for-byte what master served, and the current text is pinned', () => {
+    // owner, 2026-11-19: every setup path writes rules 7 and 8 (LAI-1352), so
+    // this changed on purpose. Revision 1's hash is origin/master's, taken
+    // before LAI-1052; the classic tab's old prompt (`projectPrompt`) is gone.
     assert.equal(
-      sha(projectPrompt({ origin: ORIGIN, project: PROJECT, path: 'CLAUDE.md', block })),
-      'b8342a5a3712ac8048c5fda710e36a12dc002a54d6cedd369a48a1eeddd7d4b9',
+      sha(projectBlock(ORIGIN, PROJECT, 1)),
+      'dd09272699899abe7882b88741146a536067f6f33c447f44e9d58e5ab09271d6',
+    );
+    // The current text: a change to the block is a new revision, never a
+    // silent edit, so this hash moves only with PROJECT_BLOCK_REVISION.
+    assert.equal(PROJECT_BLOCK_REVISION, 3);
+    assert.equal(
+      sha(projectBlock(ORIGIN, PROJECT)),
+      '54815b61f27d14d5c7e56168b37543571d7863e6fc141245040379c2bf1730fc',
     );
   });
 });
@@ -147,7 +184,7 @@ void describe('replaceLaikaBlock', () => {
   });
 
   void test('revision 1 between human sections: only the ## Laika section is replaced', () => {
-    const old = projectBlock('http://old.example.test', PROJECT);
+    const old = projectBlock('http://old.example.test', PROJECT, 1);
     const before = `${HUMAN_TOP}\n${old}\n\n${HUMAN_BOTTOM}`;
     const out = replaceLaikaBlock(before, BLOCK);
     assert.equal(out.outcome, 'updated');
@@ -157,7 +194,7 @@ void describe('replaceLaikaBlock', () => {
   });
 
   void test('revision 1 at the end of the file: replaced, the trailing newline kept', () => {
-    const before = `${HUMAN_TOP}\n${projectBlock(ORIGIN, PROJECT)}\n`;
+    const before = `${HUMAN_TOP}\n${projectBlock(ORIGIN, PROJECT, 1)}\n`;
     const out = replaceLaikaBlock(before, BLOCK);
     assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n`);
   });
@@ -181,7 +218,7 @@ void describe('replaceLaikaBlock', () => {
   void test('a revision-2 block of this project is updated to revision 3 (LAI-1352)', () => {
     // What a repository set up before rules 7 and 8 holds: the same text,
     // markers at revision 2.
-    const two = `${blockBegin(PROJECT.slug, 2)}\n${projectBlock(ORIGIN, PROJECT)}\n${BLOCK_END}`;
+    const two = `${blockBegin(PROJECT.slug, 2)}\n${projectBlock(ORIGIN, PROJECT, 2)}\n${BLOCK_END}`;
     const before = `${HUMAN_TOP}\n${two}\n\n${HUMAN_BOTTOM}`;
     const out = replaceLaikaBlock(before, BLOCK);
     assert.equal(out.outcome, 'updated');

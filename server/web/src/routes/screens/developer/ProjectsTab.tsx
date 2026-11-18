@@ -13,7 +13,7 @@ import {
   instructionsTarget,
   type AgentChoice,
 } from '../connect/connect-agents.ts';
-import { projectBlock, projectPrompt, type ProjectRef } from '../connect/connect-copy.ts';
+import { projectHandover, type ProjectRef } from '../connect/connect-copy.ts';
 import '../connect/connect.css';
 
 /** The wizard's own key (`ConnectScreen`): read here so the tab opens on the agent just connected. */
@@ -44,8 +44,10 @@ export interface ProjectsTabProps {
  *
  * The machine was set up on Connect; this adds one repository to the board.
  * Pick the project and the agent, and the tab gives the block for that
- * agent's instructions file — to commit by hand — and a short prompt that has
- * the agent write it. Neither carries a token, and neither installs anything:
+ * agent's instructions file — to commit by hand — and the prompt that has
+ * the agent write it, or bring an older one up to date in place: the current
+ * marked revision, as Project setup hands over (LAI-1352). Neither carries a
+ * token, and neither installs anything:
  * the one prompt that did both (LAI-622) is what made every new repo look
  * like a fresh install.
  */
@@ -63,11 +65,9 @@ export function ProjectsTab({ origin }: ProjectsTabProps) {
     chosen === undefined
       ? undefined
       : { slug: chosen.slug, prefix: chosen.prefix, name: chosen.name };
-  const block = project === undefined ? undefined : target.wrap(projectBlock(origin, project));
-  const prompt =
-    project === undefined || block === undefined || !target.committable
-      ? undefined
-      : projectPrompt({ origin, project, path: target.path, block });
+  const handover = project === undefined ? undefined : projectHandover(origin, project, target);
+  const block = handover?.block;
+  const prompt = handover?.prompt;
 
   return (
     <section className="dev-card dev-projects" aria-labelledby="dev-projects-title">

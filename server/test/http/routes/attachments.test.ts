@@ -509,14 +509,16 @@ describe('a file, from asking to removing', () => {
     });
   });
 
-  it('adds the store to img-src, media-src and connect-src, and nowhere else', async () => {
+  it('adds the store to img-src, media-src, frame-src and connect-src, and nowhere else', async () => {
     const csp = (await call('GET', '/org')).headers.get('content-security-policy') ?? '';
     const directive = (name: string) => csp.split('; ').find((d) => d.startsWith(`${name} `));
     expect(directive('img-src')).toBe(`img-src 'self' data: ${FAKE_STORE.endpoint}`);
     // An inline recording plays through the same 302 (D-162).
     expect(directive('media-src')).toBe(`media-src 'self' ${FAKE_STORE.endpoint}`);
+    // The output viewer's PDF frame, through the same 302 (LAI-1352).
+    expect(directive('frame-src')).toBe(`frame-src 'self' ${FAKE_STORE.endpoint}`);
     expect(directive('connect-src')).toBe(`connect-src 'self' ${FAKE_STORE.endpoint}`);
-    expect(csp.split(FAKE_STORE.endpoint)).toHaveLength(4);
+    expect(csp.split(FAKE_STORE.endpoint)).toHaveLength(5);
   });
 });
 

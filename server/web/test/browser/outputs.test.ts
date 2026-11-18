@@ -138,6 +138,7 @@ const C_3 = id(9);
 const C_ONE = id(10);
 const NOTE_SHOT = id(11);
 const NOTE_LOG = id(12);
+const NOTE_GONE = id(13);
 const url = (id: string): string => `/api/v1/attachments/${id}/content`;
 
 const CORE = {
@@ -357,21 +358,42 @@ const SHOTS = new Map<string, Buffer>([
   [NOTE_SHOT, png(200, 120, [124, 58, 237], [24, 24, 32])],
 ]);
 
-/**
- * Every file's content route. `pdfVia302` answers the PDF as production
- * does — a 302 to the store's origin — so a page whose policy refuses that
- * origin in a frame sees the refusal.
- */
-async function routeContent(page: Page, options: { pdfVia302?: boolean } = {}): Promise<void> {
+interface ContentOptions {
+  /**
+   * Answer the PDF as production does: a 302 to the store's origin, carrying
+   * the board's own `X-Frame-Options: DENY` and `frame-ancestors 'none'`, so
+   * a page's `frame-src` decides and the redirect's headers are the real ones.
+   */
+  readonly pdfVia302?: boolean;
+  /** Files the board answers `404` for: gone, or not this reader's (LAI-1302). */
+  readonly missing?: ReadonlySet<string>;
+}
+
+/** Every file's content route, as the board and the store answer it. */
+async function routeContent(page: Page, options: ContentOptions = {}): Promise<void> {
   await page.route('**/api/v1/attachments/*/content', async (route: Route) => {
     const id = /attachments\/([^/]+)\/content/.exec(route.request().url())?.[1] ?? '';
+    if (options.missing?.has(id) === true) {
+      return route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'not_found', message: 'No attachment' } }),
+      });
+    }
     const shot = SHOTS.get(id);
     if (shot !== undefined)
       return route.fulfill({ status: 200, contentType: 'image/png', body: shot });
     if (id === REC) return route.fulfill({ status: 200, contentType: 'video/webm', body: WEBM });
     if (id === REPORT) {
       if (options.pdfVia302 === true) {
-        return route.fulfill({ status: 302, headers: { location: `${STORE}/report.pdf` } });
+        return route.fulfill({
+          status: 302,
+          headers: {
+            location: `${STORE}/report.pdf`,
+            'x-frame-options': 'DENY',
+            'content-security-policy': "frame-ancestors 'none'",
+          },
+        });
       }
       return route.fulfill({ status: 200, contentType: 'application/pdf', body: PDF });
     }
@@ -387,19 +409,37 @@ async function routeContent(page: Page, options: { pdfVia302?: boolean } = {}): 
   );
 }
 
-/** The board's own policy on the document, as the server sends it: frames from itself only. */
-async function frameSelfOnly(page: Page): Promise<void> {
+/**
+ * A policy on the board's document, as the server sends one — `frame-src`
+ * only, the directive the PDF frame lives or dies by — and every violation
+ * the page reports, kept for the test to read.
+ */
+async function withPolicy(page: Page, policy: string): Promise<void> {
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __violations: string[] }).__violations = seen;
+    document.addEventListener(
+      'securitypolicyviolation',
+      (event) => {
+        seen.push(event.effectiveDirective);
+      },
+      true,
+    );
+  });
   await page.route(
     (target) => target.pathname === '/board',
     async (route) => {
       const response = await route.fetch();
       await route.fulfill({
         response,
-        headers: { ...response.headers(), 'content-security-policy': "frame-src 'self'" },
+        headers: { ...response.headers(), 'content-security-policy': policy },
       });
     },
   );
 }
+
+const violations = (page: Page): Promise<string[]> =>
+  page.evaluate(() => [...(window as unknown as { __violations: string[] }).__violations]);
 
 const SIZES = [
   { name: '1440', width: 1440, height: 900 },
@@ -408,14 +448,14 @@ const SIZES = [
 
 async function panel(
   size: (typeof SIZES)[number] = SIZES[0],
-  options: { pdfVia302?: boolean; csp?: boolean } = {},
+  options: ContentOptions & { readonly policy?: string } = {},
 ): Promise<Harness> {
   const h = await open('/board?project=laika-core&task=t3', stub(), {
     before: async (page) => {
       await page.setViewportSize({ width: size.width, height: size.height });
       await fakeStream(page);
       await routeContent(page, options);
-      if (options.csp === true) await frameSelfOnly(page);
+      if (options.policy !== undefined) await withPolicy(page, options.policy);
     },
   });
   await h.page.locator('[data-section="proof"]').waitFor({ timeout: 20_000 });
@@ -442,6 +482,19 @@ async function imagesDecoded(scope: Locator): Promise<boolean> {
         (img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0,
       ),
     );
+}
+
+/**
+ * Wait for `check`, then **assert** it: the harness's `until` returns quietly
+ * when it times out, so a wait alone proves nothing.
+ */
+async function settle(
+  check: () => boolean | Promise<boolean>,
+  what: string,
+  ms = 10_000,
+): Promise<void> {
+  await until(check, ms);
+  assert.ok(await check(), `${what}, after ${String(ms)} ms`);
 }
 
 const SHOT_DIR = process.env.LAIKA_OUTPUT_SHOTS;
@@ -516,7 +569,7 @@ void describe('the Outputs line under Proof (D-162)', () => {
           );
           // Image tiles are the images, loaded lazily; the recording its glyph.
           assert.equal(await strip.locator('img[loading="lazy"]').count(), 3);
-          await until(() => imagesDecoded(strip), 10_000);
+          await settle(() => imagesDecoded(strip), 'the strip’s images decoded');
           assert.equal(await strip.locator('[data-kind="recording"] .file-glyph').count(), 1);
 
           // No sideways scroll of the page itself, even at 390.
@@ -539,7 +592,10 @@ void describe('the Outputs line under Proof (D-162)', () => {
             '2 / 6 · by Ada Lovelace’s Claude Code · Belka',
           );
           const image = viewer(h).locator('.ovw-stage img.ovw-image');
-          await until(() => imagesDecoded(viewer(h).locator('.ovw-stage')), 10_000);
+          await settle(
+            () => imagesDecoded(viewer(h).locator('.ovw-stage')),
+            'the viewer’s image decoded',
+          );
           assert.equal(await image.getAttribute('src'), url(SHOT_2));
           // Inside the screen at either size.
           const box = await viewer(h).boundingBox();
@@ -551,10 +607,11 @@ void describe('the Outputs line under Proof (D-162)', () => {
             await viewer(h).getByRole('link', { name: 'Open in a new tab' }).getAttribute('target'),
             '_blank',
           );
-          assert.equal(
-            await viewer(h).getByRole('link', { name: 'Download' }).getAttribute('download'),
-            'dark-1440.png',
-          );
+          const download = viewer(h).getByRole('link', { name: 'Download' });
+          assert.equal(await download.getAttribute('download'), 'dark-1440.png');
+          // Across the 302 a browser opens the file instead: never in the board's tab.
+          assert.equal(await download.getAttribute('target'), '_blank');
+          assert.match((await download.getAttribute('rel')) ?? '', /noopener/);
           await shoot(h.page, `outputs-viewer-${size.name}-${theme}`);
         } finally {
           await h.close();
@@ -582,15 +639,15 @@ void describe('the viewer', () => {
       );
 
       await h.page.keyboard.press('ArrowRight');
-      await until(async () => (await position()) === '3 / 6');
+      await settle(async () => (await position()) === '3 / 6', '→ stepped to 3 / 6');
       for (let i = 0; i < 3; i++) await h.page.keyboard.press('ArrowLeft');
-      await until(async () => (await position()) === '6 / 6');
+      await settle(async () => (await position()) === '6 / 6', '← three times wrapped to 6 / 6');
       assert.equal(
         (await viewer(h).locator('.overlay-dialog-title').innerText()).trim(),
         'Run report',
       );
       await h.page.keyboard.press('ArrowRight');
-      await until(async () => (await position()) === '1 / 6');
+      await settle(async () => (await position()) === '1 / 6', '→ from 6 wrapped to 1 / 6');
 
       // The trap: Tab and Shift+Tab never leave the dialog.
       for (const key of ['Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab']) {
@@ -628,8 +685,12 @@ void describe('the viewer', () => {
       await video.waitFor({ timeout: 10_000 });
       assert.equal(await video.getAttribute('src'), url(REC));
       assert.equal(await video.evaluate((v) => (v as HTMLVideoElement).controls), true);
-      // It played as far as its metadata: the browser read a real recording.
-      await until(() => video.evaluate((v) => (v as HTMLVideoElement).readyState >= 1), 10_000);
+      // `readyState` 1 or more: the browser read the recording's metadata —
+      // the bytes are a WebM it understood, not a player over a broken file.
+      await settle(
+        () => video.evaluate((v) => (v as HTMLVideoElement).readyState >= 1),
+        'the recording’s metadata was read',
+      );
       await h.page.keyboard.press('Escape');
       await viewer(h).waitFor({ state: 'detached', timeout: 10_000 });
 
@@ -657,7 +718,7 @@ void describe('the viewer', () => {
   });
 
   void test('where the board’s policy refuses the store in a frame, the PDF is a card instead', async () => {
-    const h = await panel(SIZES[0], { pdfVia302: true, csp: true });
+    const h = await panel(SIZES[0], { pdfVia302: true, policy: "frame-src 'self'" });
     try {
       const strip = await openStrip(h);
       await strip.locator('.out-more').click();
@@ -668,8 +729,43 @@ void describe('the viewer', () => {
       await card.waitFor({ timeout: 10_000 });
       assert.match(await card.innerText(), /This board does not show PDFs inside the page/);
       assert.equal(await viewer(h).locator('iframe').count(), 0);
+      // The refusal was the policy's, which is what turned the frame into a card.
+      assert.ok((await violations(h.page)).includes('frame-src'), 'no frame-src refusal seen');
       // Download and Open in a new tab are still there for it.
       assert.equal(await viewer(h).getByRole('link', { name: 'Download' }).count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('where the policy names the store under frame-src, the PDF frame reaches it', async () => {
+    // Production's policy since LAI-1352: `frame-src 'self' <store>`. The 302
+    // carries the board's own X-Frame-Options and frame-ancestors, as it does
+    // live, and they bind the board's pages, not a redirect away from it.
+    const h = await panel(SIZES[0], { pdfVia302: true, policy: `frame-src 'self' ${STORE}` });
+    try {
+      const fromStore: string[] = [];
+      h.page.on('request', (request) => {
+        if (request.url().startsWith(STORE) && request.resourceType() === 'document') {
+          fromStore.push(request.url());
+        }
+      });
+      const strip = await openStrip(h);
+      await strip.locator('.out-more').click();
+      await viewer(h).waitFor({ timeout: 10_000 });
+      await h.page.keyboard.press('ArrowRight');
+      const frame = viewer(h).locator('iframe.ovw-frame');
+      await frame.waitFor({ timeout: 10_000 });
+      // The frame followed the 302 to the store: allowed, and asked for the PDF.
+      await settle(() => fromStore.length > 0, 'the frame asked the store for the PDF');
+      assert.deepEqual(fromStore, [`${STORE}/report.pdf`]);
+      assert.deepEqual(await violations(h.page), [], 'the policy refused something');
+      assert.equal(
+        await viewer(h).locator('.ovw-card').count(),
+        0,
+        'the frame gave way to the card',
+      );
+      assert.equal(await frame.count(), 1);
     } finally {
       await h.close();
     }
@@ -694,7 +790,27 @@ void describe('a comment with several images (D-162)', () => {
       assert.equal(await several.locator('a.md-image').count(), 0);
       assert.equal(await several.locator('.md li:not(.out-cell)').count(), 0);
       assert.equal(await several.locator('.md p').count(), 1, 'an emptied paragraph stayed');
-      await until(() => imagesDecoded(row), 10_000);
+      // One row from the text's own edge: no list indent, no step between
+      // tiles (`.md ul` and `.md li + li` are the reading view's, not the strip's).
+      const layout = await row.evaluate((el) => {
+        const cells = [...el.querySelectorAll('.out-cell')].map((c) => c.getBoundingClientRect());
+        const text = el.closest('.md')?.querySelector('p')?.getBoundingClientRect();
+        const strip = el.querySelector('.out-strip');
+        return {
+          tops: cells.map((c) => Math.round(c.top)),
+          firstLeft: Math.round(cells[0]?.left ?? -1),
+          textLeft: Math.round(text?.left ?? -2),
+          padding: strip === null ? '?' : getComputedStyle(strip).paddingLeft,
+        };
+      });
+      assert.equal(
+        new Set(layout.tops).size,
+        1,
+        `the tiles stepped down: ${layout.tops.join(', ')}`,
+      );
+      assert.equal(layout.padding, '0px', 'the strip is indented as a list');
+      assert.equal(layout.firstLeft, layout.textLeft, 'the first tile is not at the text’s edge');
+      await settle(() => imagesDecoded(row), 'the comment row’s images decoded');
 
       const one = h.page.locator('.cmt', { hasText: 'Just one' });
       await one.locator('a.md-image img').waitFor({ timeout: 10_000 });
@@ -707,9 +823,10 @@ void describe('a comment with several images (D-162)', () => {
         '2 / 3 · by Grace Hopper',
       );
       await h.page.keyboard.press('ArrowRight');
-      await until(
+      await settle(
         async () =>
           (await viewer(h).locator('.overlay-dialog-title').innerText()).trim() === 'The diff',
+        '→ stepped to The diff',
       );
       await shoot(h.page, 'outputs-comment-row-viewer');
     } finally {
@@ -735,7 +852,7 @@ void describe('the Attachments section (D-162)', () => {
       );
       const outputs = section.locator('.att-group[data-group="outputs"]');
       assert.equal(await outputs.locator('.att-preview img').count(), 3);
-      await until(() => imagesDecoded(outputs), 10_000);
+      await settle(() => imagesDecoded(outputs), 'the Outputs group’s thumbnails decoded');
       await outputs.getByRole('button', { name: 'Preview dark-1440.png' }).click();
       await viewer(h).waitFor({ timeout: 10_000 });
       // The caption the round gave it, and the agent that finished the round.
@@ -760,7 +877,7 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
       user_id: 'u1',
       token_id: 'tok1',
       repo: 'PawanSirsat/Laika',
-      note: `The deploy script fails on a clean clone.\n\n**Attached**\n\n- ![The error](${url(NOTE_SHOT)})\n- [deploy.log](${url(NOTE_LOG)})`,
+      note: `The deploy script fails on a clean clone.\n\n**Attached**\n\n- ![The error](${url(NOTE_SHOT)})\n- [deploy.log](${url(NOTE_LOG)})\n- ![Before the fix](${url(NOTE_GONE)})`,
       promoted_task_id: null,
       dismissed_at: null,
       created_at: NOW - 3_600_000,
@@ -784,7 +901,8 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
         '/api/v1/unlisted': () => ({ data: [note], next_cursor: null }),
         '/api/v1/unlisted/n1': () => reply(204, undefined),
       },
-      { before: (page) => routeContent(page) },
+      // Two of its files are not this reader's to open (LAI-1302's gate): 404.
+      { before: (page) => routeContent(page, { missing: new Set([NOTE_LOG, NOTE_GONE]) }) },
     );
     try {
       const line = h.page.locator('.unl-line').first();
@@ -801,15 +919,40 @@ void describe('Inbox › Unlisted (D-162 item 8)', () => {
         await strip
           .locator('.out-tile')
           .evaluateAll((tiles) => tiles.map((t) => t.getAttribute('aria-label'))),
-        ['The error', 'deploy.log'],
+        ['The error', 'deploy.log', 'Before the fix'],
       );
-      await until(() => imagesDecoded(strip), 10_000);
+      // An image the reader may not open is its glyph, never a broken frame;
+      // the one they may is a picture.
+      const gone = strip.locator(`[data-output="${NOTE_GONE}"]`);
+      await settle(
+        async () => (await gone.locator('img').count()) === 0,
+        'the 404 image’s tile became its glyph',
+      );
+      assert.equal(await gone.locator('.file-glyph').count(), 1);
+      await settle(() => imagesDecoded(strip), 'the finding’s readable image decoded');
+      assert.equal(await strip.locator('img').count(), 1);
+
       await strip.locator('.out-tile').first().click();
       await viewer(h).waitFor({ timeout: 10_000 });
       assert.equal(
         (await viewer(h).locator('.overlay-dialog-desc').innerText()).trim(),
-        '1 / 2 · by Ada Lovelace’s agent',
+        '1 / 3 · by Ada Lovelace’s agent',
       );
+      // A file the board answers 404 for says so, not that it opens elsewhere.
+      const note = viewer(h).locator('.ovw-card-note');
+      for (const caption of ['deploy.log', 'Before the fix']) {
+        await h.page.keyboard.press('ArrowRight');
+        await settle(
+          async () =>
+            (await viewer(h).locator('.overlay-dialog-title').innerText()).trim() === caption,
+          `→ stepped to ${caption}`,
+        );
+        await settle(
+          async () => (await note.getAttribute('data-readable')) === 'no',
+          `${caption}: the board said 404`,
+        );
+        assert.equal((await note.innerText()).trim(), 'This file isn’t available to you.');
+      }
     } finally {
       await h.close();
     }

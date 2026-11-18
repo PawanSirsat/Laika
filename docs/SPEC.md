@@ -6850,7 +6850,8 @@ relative, and never a store URL, so a stored body never expires.
   to the new task; dismissing it (`DELETE /unlisted/:id`) removes them.
 - **Recordings play inline** (D-162): an mp4 or webm whose first bytes say so
   is `inline`, and with attachments on the store's origin is in the CSP's
-  `media-src` as well as `img-src` and `connect-src` (§13.1).
+  `media-src` as well as `img-src` and `connect-src` (§13.1) — and in
+  `frame-src`, where the output viewer shows an inline PDF (LAI-1352).
 
 **The history export (LAI-984).** `GET /activity/history?format=csv` is the
 JSON answer's rows — same gate, same filters, same validation, newest first —
@@ -8072,11 +8073,15 @@ anything missing sends the task back.
   reader may not see it, nobody's agent for a person's file) under it; the
   image, an mp4 or webm recording in `<video controls>`, or a PDF in a frame,
   for a file the server serves inline; any other file a card with its name,
-  size and the way to get it; previous and next, which wrap, ← and →, Escape
-  closing it and focus going back to what opened it; **Open in a new tab**
-  and **Download** on every file. A PDF needs the board's `frame-src` to
-  name the store; refused, the frame gives way to the card. Both themes; on a
-  phone it is the whole screen.
+  size and the way to get it — and, for a file the board answers `404` for
+  (an unlisted finding's, to a reader its gate refuses), *This file isn’t
+  available to you*; previous and next, which wrap, ← and →, Escape closing
+  it and focus going back to what opened it; **Open in a new tab** and
+  **Download** on every file, Download in a new tab too, since a browser
+  ignores `download` across the 302 and would otherwise take the board's tab.
+  The PDF frame goes through the same 302, which the CSP's `frame-src` allows
+  (§13.1); under a policy that refuses it, the frame gives way to the card.
+  Both themes; on a phone it is the whole screen.
   **A comment with two or more of the board's images** draws them as one
   row of the same tiles at its foot, which opens the viewer on them; a
   paragraph or list item they leave empty goes, so an agent's `**Outputs**`
@@ -9324,9 +9329,11 @@ active content from rendering on its origin. Uploads are presigned `PUT`s that
 sign the size and type, so the store refuses anything else; the bytes never
 reach Laika, and Laika never echoes the store's own response text. **The CSP
 names the store's origin only when attachments are on**, and only in
-`img-src`, `media-src` — where an inline recording plays (D-162) — and
-`connect-src`; never in `script-src`, `style-src`, `frame-src` or
-`object-src`.
+`img-src`, `media-src` — where an inline recording plays (D-162) — `frame-src`
+— where the output viewer shows an inline PDF (LAI-1352); the store renders
+nothing but the seven sniffed types, so a frame of it shows a PDF and no page —
+and `connect-src`; never in `script-src`, `style-src` or `object-src`. With
+attachments off, `frame-src` is `'self'`, which `default-src` already gave.
 
 ### 13.2 Errors and logging
 
