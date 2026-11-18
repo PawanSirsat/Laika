@@ -1,10 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { newId } from '../../../src/db/ids.ts';
 import {
   activity,
+  agents,
   localActivityDays,
   orgs,
+  orgTimeSettings,
   pushedCommitKeys,
+  tokens,
+  userTimeSettings,
   users,
 } from '../../../src/db/schema.ts';
 import { RateLimiter } from '../../../src/http/rate-limit.ts';
@@ -595,5 +600,105 @@ describe('GET and DELETE /me/local-activity', () => {
     expect(res.status).toBe(204);
     expect(h.db.select().from(localActivityDays).all()).toEqual([]);
     expect(h.db.select().from(pushedCommitKeys).all()).toEqual([]);
+  });
+});
+
+describe("a registered agent's token, as `laika tool add` saves it (LAI-1325)", () => {
+  /**
+   * A machine set up the current way — Add device, `laika device pair`,
+   * `laika tool add` — holds no personal token, only its tools' own: a
+   * registered agent's token acting as the person who paired it. The CLI's
+   * collector sends with that one (`cli/src/activity-sync.ts`,
+   * `machineCredentials`), so two things are a contract, held here: **the
+   * collector's routes take it**, and turning collection on, reading back and
+   * erasing stay session only, refused to it as to any token. (An agent's
+   * token keeps other org actions besides — `AGENT_TOKEN_ORG_ACTIONS` — which
+   * this does not assert.)
+   */
+  async function toolToken(): Promise<string> {
+    const created = (await ok(
+      req(
+        '/api/v1/tokens',
+        { method: 'POST', body: JSON.stringify({ name: 'Claude Code', scope: 'full' }) },
+        bea.cookie,
+      ),
+      201,
+    )) as { token: { id: string }; secret: string };
+    const agentId = newId();
+    h.db
+      .insert(agents)
+      .values({
+        id: agentId,
+        orgId,
+        ownerUserId: bea.id,
+        displayName: 'Claude Code',
+        harness: 'claude-code',
+        createdAt: Date.now(),
+      })
+      .run();
+    h.db.update(tokens).set({ agentId }).where(eq(tokens.id, created.token.id)).run();
+    return created.secret;
+  }
+
+  it('reads the switch, sends a report, posts telemetry and reads the time settings', async () => {
+    switchOn(true, false);
+    const secret = await toolToken();
+
+    expect(await ok(req('/api/v1/me/activity-sharing', {}, secret))).toMatchObject({
+      org_enabled: true,
+    });
+    await ok(put(report(), secret));
+    expect(
+      h.db.select().from(localActivityDays).where(eq(localActivityDays.userId, bea.id)).all(),
+    ).toHaveLength(1);
+    await ok(
+      req(
+        '/api/v1/otlp/v1/metrics',
+        { method: 'POST', body: JSON.stringify({ resourceMetrics: [] }) },
+        secret,
+      ),
+    );
+    await ok(req('/api/v1/me/time-settings', {}, secret));
+    // Drafts, with both Time switches on so the request reaches `can()`: the
+    // route asks the switches first, so with them off a refused agent would
+    // look the same as a granted one.
+    h.db.insert(orgTimeSettings).values({ orgId, mode: 'drafts', updatedAt: Date.now() }).run();
+    h.db
+      .insert(userTimeSettings)
+      .values({ userId: bea.id, draftMyTime: 1, updatedAt: Date.now() })
+      .run();
+    await ok(
+      req(
+        '/api/v1/me/time-drafts',
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            v: 1,
+            collector_id: COLLECTOR,
+            tz: 'UTC',
+            days: [{ day: yesterday(), blocks: [] }],
+          }),
+        },
+        secret,
+      ),
+    );
+  });
+
+  it('is refused consent, and reading back or erasing what was held: session only', async () => {
+    switchOn(true, false);
+    const secret = await toolToken();
+    for (const [path, method, body] of [
+      ['/api/v1/me/activity-sharing', 'PUT', { scope: 'laika-repos' }],
+      ['/api/v1/me/local-activity', 'GET', undefined],
+      ['/api/v1/me/local-activity', 'DELETE', undefined],
+    ] as const) {
+      const res = await req(
+        path,
+        { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
+        secret,
+      );
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect((await errorOf(res)).details.reason, `${method} ${path}`).toBe('session_required');
+    }
   });
 });
