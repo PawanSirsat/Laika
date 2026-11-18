@@ -921,6 +921,10 @@ describe('patch', () => {
       'time_timers.task_id': { not_shown: 'time tracking, per person' },
       'solidtime_entries.task_id': { not_shown: 'time tracking, per person' },
       'email_outbox.task_id': { not_shown: 'notification mail, read only by the sender' },
+      'email_inbound.task_id': {
+        not_shown:
+          'the record of a mail that made or commented on it; read by GET /org/email-inbound (LAI-1315)',
+      },
     };
 
     it('classifies every table that references a task (schema census)', () => {
