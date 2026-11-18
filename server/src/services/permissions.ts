@@ -121,11 +121,13 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'availability.set_own': 'Set own availability',
   'availability.read': 'See availability of people in your spaces',
   'notices.own': 'Read and dismiss own notices',
+  'email_prefs.own': 'Read and set own email preferences',
   'developer_setup.read_own': 'View own developer setup',
   'org.hr.configure': "Connect the organisation's HR system",
   'project.icon.write': "Change a space's icon",
   'org.email.configure': "Configure the organisation's email",
   'org.teams.configure': 'Configure Teams posting',
+  'org.calendar.configure': "Connect the organisation's Outlook calendar",
 
   'project.members.manage': 'Manage project members',
   'project.settings.edit': 'Edit project settings and context_md',

@@ -642,10 +642,11 @@ export type TimeDraftState = (typeof TIME_DRAFT_STATES)[number];
 
 /**
  * §4.48's `source` (D-088 item 2, LAI-787): what a confirmed entry came
- * from — a draft the person confirmed, one they typed, or one imported from
- * the billing record (LAI-788).
+ * from — a draft the person confirmed, one they typed, one imported from
+ * the billing record (LAI-788), or a meeting read from their Outlook
+ * calendar (D-157, LAI-1316).
  */
-export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import'] as const;
+export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import', 'calendar'] as const;
 export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
 
 /**
@@ -727,6 +728,28 @@ export const LEAVE_STATUSES = ['approved', 'pending'] as const;
 export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
 
 /**
+ * `org_calendar_source`'s `last_error_code` (D-157, LAI-1316): why the last
+ * calendar sync changed nothing. Microsoft refused the tenant, client id or
+ * secret (or the stored secret could not be read — saving it again is the
+ * remedy either way); the app has not been granted `Calendars.Read`; Microsoft
+ * could not be reached; or it answered something Laika could not read.
+ */
+export const CALENDAR_SYNC_ERROR_CODES = [
+  'credentials_rejected',
+  'not_granted',
+  'unreachable',
+  'bad_answer',
+] as const;
+export type CalendarSyncErrorCode = (typeof CALENDAR_SYNC_ERROR_CODES)[number];
+
+/**
+ * A calendar mapping rule's `kind` (D-157, LAI-1316): a keyword in the
+ * meeting's subject, or the Teams channel a channel meeting is in.
+ */
+export const CALENDAR_RULE_KINDS = ['title', 'channel'] as const;
+export type CalendarRuleKind = (typeof CALENDAR_RULE_KINDS)[number];
+
+/**
  * `attachments`' `state` (§4.92, D-150, LAI-1300): asked for and not yet
  * confirmed in the store, or confirmed there and readable.
  */
@@ -734,11 +757,19 @@ export const ATTACHMENT_STATES = ['pending', 'ready'] as const;
 export type AttachmentState = (typeof ATTACHMENT_STATES)[number];
 
 /**
- * `email_outbox`' `kind` (§4.93, D-153, LAI-1312): what a message is. `test`
- * is the settings card's *Send test email*; the other two carry a one-time
- * link an admin issued. Part B (LAI-1313) adds the notification kinds.
+ * `email_outbox`' `kind` (§4.93, D-153): what a message is. `test` is the
+ * settings card's *Send test email*; `invite` and `password_reset` carry a
+ * one-time link an admin issued (LAI-1312); `assignment` and `mention` are a
+ * person's instant mail and `digest` their daily one (LAI-1313).
  */
-export const EMAIL_KINDS = ['test', 'invite', 'password_reset'] as const;
+export const EMAIL_KINDS = [
+  'test',
+  'invite',
+  'password_reset',
+  'assignment',
+  'mention',
+  'digest',
+] as const;
 export type EmailKind = (typeof EMAIL_KINDS)[number];
 
 /**
@@ -774,7 +805,16 @@ export const EMAIL_SUPPRESSED_REASONS = [
   // revoked, re-issued or accepted, or a newer reset link replaced it, or it
   // was used (LAI-1312 review). Nobody gets a dead link, or two mails.
   'superseded',
+  // The person turned this kind of mail off in their profile (LAI-1313).
+  'pref_off',
+  // The person may no longer read the task's project, or is inactive (LAI-1313):
+  // asked when the mail is written and again before a digest goes.
+  'no_access',
 ] as const;
+
+/** `email_digests`' `state` (§4.98, LAI-1313): collecting, or done with. */
+export const EMAIL_DIGEST_STATES = ['open', 'closed'] as const;
+export type EmailDigestState = (typeof EMAIL_DIGEST_STATES)[number];
 export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];
 
 /**

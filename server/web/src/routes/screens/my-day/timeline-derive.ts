@@ -83,7 +83,11 @@ export interface LaneBlock {
   readonly minutes: number;
   /** A drafted block on no card, no space and not General. */
   readonly needsCard: boolean;
-  /** Imported from Solidtime: changed there, never dragged here (LAI-788). */
+  /**
+   * Imported from Solidtime: changed there, never dragged here (LAI-788). A
+   * meeting the Outlook sync logged is not locked (D-157): it is the
+   * person's to move, and moving it keeps the sync off it.
+   */
   readonly locked: boolean;
 }
 

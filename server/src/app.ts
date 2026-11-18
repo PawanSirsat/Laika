@@ -21,7 +21,7 @@ import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-
 import { DEFAULT_CLI_SOURCE_URL, type DeveloperAccessMode } from './env.ts';
 import { developerRoutes } from './http/routes/developer.ts';
 import { healthRoutes } from './http/routes/health.ts';
-import { meNoticeRoutes, meRoutes, meWatchRoutes } from './http/routes/me.ts';
+import { meEmailPrefsRoutes, meNoticeRoutes, meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { permissionsRoutes } from './http/routes/permissions.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
@@ -50,6 +50,7 @@ import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
 import { emailRoutes } from './http/routes/email.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
+import { calendarRoutes } from './http/routes/calendar.ts';
 import { ssoRoutes } from './http/routes/sso.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
@@ -109,6 +110,7 @@ import { setTokenAlertLogger } from './services/token-budgets.ts';
 import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type TeamsPostingDeps } from './services/teams-posting.ts';
+import { type CalendarSyncDeps } from './services/calendar-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 import { type MailTransport, noTransport } from './services/email-transport.ts';
 
@@ -230,6 +232,12 @@ export interface CreateAppOptions {
    * `ENOTRANSPORT` instead.
    */
   emailTransport?: MailTransport;
+  /**
+   * The Outlook calendar sync's `fetch`, clock and waits (D-157, LAI-1316).
+   * Injected by the tests so **none of them calls Microsoft**; `index.ts`
+   * passes nothing and the real `fetch` is used.
+   */
+  calendarSync?: CalendarSyncDeps;
 }
 
 /**
@@ -406,6 +414,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
     // A member's own notices (D-134, LAI-1136).
     app.route(`${API_BASE}/me`, meNoticeRoutes({ db }));
+    // A person's own email switches (D-153, LAI-1313).
+    app.route(`${API_BASE}/me`, meEmailPrefsRoutes({ db }));
     // D-079's developer side (LAI-751): sharing, reports, and what is held.
     app.route(`${API_BASE}/me`, localActivityRoutes({ db }));
     // A person's own token alerts and plan limit (LAI-773, D-087).
@@ -516,6 +526,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     };
     app.route(`${API_BASE}/org`, orgTeamsRoutes(teams));
     app.route(`${API_BASE}/projects`, projectTeamsRoutes(teams));
+    // The Outlook calendar connection (D-157, LAI-1316): `/calendar*`, a path
+    // `orgRoutes` does not have.
+    app.route(
+      `${API_BASE}/org`,
+      calendarRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        calendarSync: options.calendarSync,
+      }),
+    );
     // How people sign in, for Organisation → Security (LAI-1239).
     app.route(
       `${API_BASE}/org`,

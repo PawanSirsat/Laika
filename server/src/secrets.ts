@@ -84,7 +84,9 @@ export type SecretPurpose =
   | 'email_body'
   // D-154 (LAI-1314): a space's Power Automate webhook address, whose `sig=`
   // is the credential, in `project_teams_channels.webhook_url_enc`.
-  | 'teams_webhook_url';
+  | 'teams_webhook_url'
+  // D-157 (LAI-1316): the Entra app's client secret, in `org_calendar_source.secret_enc`.
+  | 'calendar_client_secret';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.

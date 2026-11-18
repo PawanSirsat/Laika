@@ -1012,10 +1012,13 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       /** Refuse completing an image, or removing the icon, with this. */
       readonly refuseComplete?: boolean;
       readonly refuseDelete?: boolean;
+      /** Fail the first complete in a way worth retrying, then take it. */
+      readonly failCompleteOnce?: boolean;
     } = {},
   ): { stub: ApiStub; served: () => Record<string, unknown> } {
     let current: Record<string, unknown> = { ...PROJECT, icon: options.icon ?? null };
     const storeDown = () => refuse(503, 'unavailable', 'The file store could not be reached');
+    let failsLeft = options.failCompleteOnce === true ? 1 : 0;
     const base = stub(me);
     return {
       served: () => current,
@@ -1058,6 +1061,10 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
         },
         [`/api/v1/projects/${SLUG}/icon/complete`]: () => {
           if (options.refuseComplete === true) return storeDown();
+          if (failsLeft > 0) {
+            failsLeft -= 1;
+            return refuse(500, 'internal', 'Something went wrong');
+          }
           current = { ...current, icon: IMAGE };
           return current;
         },
@@ -1209,14 +1216,22 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       await until(async () => (await frame.getAttribute('data-zoom')) === '1.50');
       const box = await frame.boundingBox();
       assert.ok(box !== null);
+      // The slider says its own value: the frame's live region stays quiet.
+      const said = h.page.locator('[data-frame-status]');
+      assert.equal(await said.innerText(), '');
       await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await h.page.mouse.down();
       await h.page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 30, {
         steps: 5,
       });
+      // Moved, still held: nothing said yet — every move would flood it.
+      assert.equal(await frame.getAttribute('data-x'), '20.0');
+      assert.equal(await said.innerText(), '');
       await h.page.mouse.up();
       assert.equal(await frame.getAttribute('data-x'), '20.0');
       assert.equal(await frame.getAttribute('data-y'), '30.0');
+      // Said once, where the drag ends.
+      await until(async () => (await said.innerText()) === 'Zoom 1.5×, 20 right, 30 down.');
 
       // A box drawn at half the frame's size: the image still follows the
       // pointer, so 10 pixels of drag is 20 of frame (LAI-1321 review).
@@ -1394,6 +1409,41 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
     }
   });
 
+  void test('Retry after the fields saved sends only the icon — not the fields again, over a rename made since', async () => {
+    const { stub: answers, served } = iconStub(
+      ME,
+      { max_bytes: 26_214_400 },
+      { failCompleteOnce: true },
+    );
+    const puts = new Map<string, Buffer>();
+    const h = await open(SETTINGS, answers, { before: (page) => fakeStore(page, puts) });
+    try {
+      await settled(h);
+      await h.page.locator('#ss-name').fill('Laika Two');
+      await frameAndUse(h, WIDE);
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 1);
+
+      await save(h).click();
+      const retry = h.page.locator('[data-save-retry]');
+      await until(async () => (await retry.count()) === 1);
+      assert.equal(served().name, 'Laika Two');
+      // Meanwhile another tab renames the space.
+      served().name = 'Laika Three';
+
+      await retry.click();
+      await until(async () => (await h.page.locator('[data-icon-held]').count()) === 0);
+      const sent = (path: string) =>
+        h.calls.filter((c) => c.method !== 'GET' && c.path.endsWith(path)).length;
+      assert.equal(sent(SLUG), 1, 'Retry sent the fields again');
+      assert.equal(sent('/icon/complete'), 2);
+      assert.equal(served().name, 'Laika Three');
+      assert.deepEqual(served().icon, IMAGE);
+      assert.equal(await h.page.locator('.ss-foot-error').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a refused remove after the fields saved: the fields count as saved, the removal stays held', async () => {
     const { stub: answers, served } = iconStub(ME, null, {
       icon: { emoji: '🚀' },
@@ -1484,6 +1534,36 @@ void describe('the icon (D-152, LAI-1311; held, framed — LAI-1321)', () => {
       assert.match(
         await h.page.locator('[data-icon-error]').innerText(),
         /10000 × 5000 — too large to work with\. 40 megapixels at most\./,
+      );
+      assert.equal(await h.page.locator('[data-frame]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a picked file the browser cannot read is said so, and opens nothing', async () => {
+    const { stub: answers } = iconStub(ME, { max_bytes: 26_214_400 });
+    const h = await open(SETTINGS, answers, {
+      // A file moved or deleted after it was picked: reading it rejects.
+      before: async (page) => {
+        await page.addInitScript(() => {
+          File.prototype.arrayBuffer = () =>
+            Promise.reject(new DOMException('The file is gone', 'NotReadableError'));
+        });
+      },
+    });
+    try {
+      await settled(h);
+      await h.page.locator('[data-action="icon-upload"]').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-icon-file]').setInputFiles({
+        name: 'logo.png',
+        mimeType: 'image/png',
+        buffer: WIDE,
+      });
+      await until(async () => (await h.page.locator('[data-icon-error]').count()) === 1);
+      assert.equal(
+        await h.page.locator('[data-icon-error]').innerText(),
+        'That file could not be read as an image.',
       );
       assert.equal(await h.page.locator('[data-frame]').count(), 0);
     } finally {

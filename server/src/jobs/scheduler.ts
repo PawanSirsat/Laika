@@ -14,6 +14,13 @@ import {
   type HrSyncDeps,
   runHrSync,
 } from '../services/hr-sync.ts';
+import { notifyEmail, pruneEmailDigests } from '../services/email-notify.ts';
+import {
+  CALENDAR_SYNC_EVERY_MINUTES,
+  type CalendarSyncDeps,
+  changedBy as calendarChanged,
+  runCalendarSync,
+} from '../services/calendar-sync.ts';
 import {
   changedBy as emailChangedBy,
   type EmailOutboxDeps,
@@ -76,6 +83,8 @@ export interface SchedulerDeps {
   serverSecret?: string;
   /** The HR sync's `fetch` and waits — injected by the tests, which never call Clan. */
   hr?: HrSyncDeps;
+  /** The Outlook calendar sync's `fetch` and waits — injected by the tests, which never call Microsoft. */
+  calendar?: CalendarSyncDeps;
   /** Microsoft SSO (LAI-1238); its `directorySync` switches the directory job on. */
   sso?: MicrosoftSso | null;
   /** The directory sync's `fetch` — injected by the tests, which never call Graph. */
@@ -97,7 +106,11 @@ export interface SchedulerDeps {
    * tests, which never call Teams.
    */
   teams?: TeamsPostingDeps;
-  /** `LAIKA_PUBLIC_URL`, for the links back a Teams post carries. */
+  /**
+   * `LAIKA_PUBLIC_URL`, for the links back a Teams post carries and every
+   * link in a notification mail (LAI-1313). Empty: the mails go without a
+   * link.
+   */
   publicUrl?: string;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
@@ -200,8 +213,22 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     {
       name: 'email.retention',
       everyMs: DAY,
-      run: (now) => ({ changed: pruneEmailOutbox(db, now) }),
+      run: (now) => ({ changed: pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) }),
       atStart: true,
+    },
+    // Assignment and mention mail, and the daily digests (§4.97 – §4.100,
+    // D-153, LAI-1313), read from `activity` and `member_notices` every 30
+    // seconds under `system.email.notify`. Only writes to the outbox — the
+    // `email.send` job sends — so it needs no transport, and a board with
+    // email off still records each instant mail as `email_off`. Not
+    // `atStart`: its first run only sets the watermark.
+    {
+      name: 'email.notify',
+      everyMs: EMAIL_SEND_EVERY_MS,
+      run: (now) => {
+        const result = notifyEmail(db, deps.serverSecret ?? '', deps.publicUrl ?? '', now);
+        return { changed: result.instant + result.collected + result.digests };
+      },
     },
     // Claims whose lease lapsed become `expired` (§9.1, proposal §4.2,
     // LAI-541), every `LAIKA_CLAIM_SCAN_SECONDS`. Not `atStart`: the boot
@@ -252,6 +279,25 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
         return {
           changed: ticked.sent + ticked.failed + ticked.suppressed + ticked.pruned,
         };
+      },
+    },
+    // Members' Outlook meetings logged as their time (D-157, LAI-1316),
+    // every 15 minutes; nothing unless the connection is saved **and its
+    // switch is on**. Not `atStart`: a boot should not wait on Microsoft, and
+    // the first tick comes within 15 minutes — so it need not be last, as the
+    // HR sync below is. A run still going is joined,
+    // never doubled (`runCalendarSync`); a failed read is recorded on the
+    // connection and thrown here by its code alone.
+    {
+      name: 'calendar.sync',
+      everyMs: CALENDAR_SYNC_EVERY_MINUTES * 60 * 1000,
+      run: async (now) => {
+        const outcome = await runCalendarSync(db, deps.serverSecret ?? '', {
+          ...deps.calendar,
+          now: () => now,
+        });
+        if (outcome.kind === 'failed') throw new Error(`calendar sync failed: ${outcome.code}`);
+        return { changed: calendarChanged(outcome) };
       },
     },
     // Every enabled Member of the Microsoft directory as a Laika member

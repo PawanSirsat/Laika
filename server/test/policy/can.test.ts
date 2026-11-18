@@ -516,6 +516,8 @@ describe('the cases LAI-004 calls out by name', () => {
       const ownAvailability = action === 'availability.set_own' || action === 'availability.read';
       // D-134 (LAI-1136): reading and marking read their own notices.
       const ownNotices = action === 'notices.own';
+      // D-153 (LAI-1313): their own email switches.
+      const ownEmailPrefs = action === 'email_prefs.own';
       // D-139 item 1 (LAI-1150): reading their own profile and heatmap,
       // session only — `profile.read`'s reason for not being a read action.
       const ownProfile = action === 'profile.read_own';
@@ -536,6 +538,7 @@ describe('the cases LAI-004 calls out by name', () => {
           ownAgents ||
           ownAvailability ||
           ownNotices ||
+          ownEmailPrefs ||
           ownProfile ||
           ownDeveloperSetup,
       );
@@ -752,6 +755,50 @@ describe('Teams posting refuses every token (LAI-1314)', () => {
   it('follows the admin grant it is carried by', () => {
     const withdrawn = { ...actor('admin', null), orgGrants: { admin: [], member: [], viewer: [] } };
     expect(can(withdrawn, 'org.teams.configure')).toBe(false);
+  });
+});
+
+/**
+ * D-157 (LAI-1316): the Outlook calendar connection holds an app secret that
+ * reads every member's calendar, so every token is refused — an owner's full
+ * one included — and an owner or admin may, signed in.
+ */
+describe('the Outlook calendar connection refuses every token (LAI-1316)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+
+  it('allows an owner and an admin on a cookie session, and refuses each to any token', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role, null), 'org.calendar.configure'), role).toBe(true);
+      for (const token of tokens) {
+        expect(
+          can(actor(role, null, token), 'org.calendar.configure'),
+          `${role} / ${token.id}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('says a token is refused for being a token, not for the role', () => {
+    try {
+      assertCan(actor('owner', null, tokens[0]), 'org.calendar.configure');
+      expect.unreachable('a token reached the calendar connection');
+    } catch (err) {
+      expect((err as ApiError).details).toEqual({
+        action: 'org.calendar.configure',
+        reason: 'session_required',
+      });
+    }
+  });
+
+  it('gives a member and a viewer none of it, and follows the admin grant', () => {
+    expect(can(actor('member', null), 'org.calendar.configure')).toBe(false);
+    expect(can(actor('viewer', null), 'org.calendar.configure')).toBe(false);
+    const withdrawn = { ...actor('admin', null), orgGrants: { admin: [], member: [], viewer: [] } };
+    expect(can(withdrawn, 'org.calendar.configure')).toBe(false);
   });
 });
 

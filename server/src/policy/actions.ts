@@ -103,6 +103,8 @@ export const ORG_ACTIONS = [
   // D-134 (LAI-1136): a person's own notices — being added to a space, and
   // their tool, device or token revoked by somebody else.
   'notices.own',
+  // D-153 (LAI-1313): a person's own email switches — instant and digest.
+  'email_prefs.own',
   // D-139 (LAI-1151): a person's own developer setup — their pending pairing
   // requests and their recent setup activity, as Developer access draws them.
   'developer_setup.read_own',
@@ -117,6 +119,9 @@ export const ORG_ACTIONS = [
   // D-154 (LAI-1314): turn Teams posting on or off, and set, clear and test a
   // space's Teams channel.
   'org.teams.configure',
+  // D-157 (LAI-1316): the Outlook calendar connection — its app credentials,
+  // mapping rules and switch, a test of the grant, sync now, disconnect.
+  'org.calendar.configure',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -222,9 +227,15 @@ export const SYSTEM_ACTIONS = [
   // (D-153, LAI-1312) — nobody sends a queued email, so nobody is the actor.
   'system.email.send',
   'system.email.prune',
+  // §11.6: assignment and mention mail, and the daily digests, read from
+  // `activity` and `member_notices` (D-153, LAI-1313).
+  'system.email.notify',
   // §11.6: each space's Teams stand-ups, digest and notices, every minute,
   // and the posts' record kept 90 days (D-154, LAI-1314).
   'system.teams.post',
+  // §11.6: members' Outlook meetings logged as their time every 15 minutes,
+  // while the switch is on (D-157, LAI-1316).
+  'system.calendar.sync',
   // §11.6: every enabled Member of the Microsoft directory added as a member,
   // every 15 minutes, when directory sync is on (D-158, LAI-1239, LAI-1317).
   'system.directory.sync',
@@ -439,6 +450,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // message an adder wrote to them is addressed to the person, not to an
   // agent acting for them, and marking one read is the person having seen it.
   'notices.own',
+  // **A person's own email switches are theirs** (D-153, LAI-1313): what an
+  // agent acting for them may not decide is whether they hear from Laika.
+  'email_prefs.own',
   // **Your own developer setup is read signed in** (D-139, LAI-1151): the
   // pairing requests an agent's token could approve for itself are the
   // person's to see, and `developer_setup.read_any`'s reason holds for one's
@@ -459,6 +473,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // stand-up, title and comment to an address of its own choosing, and one
   // that could turn posting on would speak for the organisation.
   'org.teams.configure',
+  // **The calendar connection holds an app secret that reads every member's
+  // calendar** (D-157, LAI-1316): an agent's token must neither set it, nor
+  // turn the sync on, nor send a meeting's time to a space.
+  'org.calendar.configure',
 ]);
 
 /**

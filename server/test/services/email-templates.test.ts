@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assignmentEmail,
+  digestEmail,
   escapeHtml,
   inviteEmail,
+  mentionEmail,
   resetEmail,
   testEmail,
+  type TaskRef,
   validFor,
 } from '../../src/services/email-templates.ts';
 
@@ -16,6 +20,13 @@ const NOW = Date.UTC(2026, 10, 18, 9, 0, 0);
 const HOUR = 60 * 60 * 1000;
 const brand = { product: 'Ksage', orgName: 'Kvell Dynamics' };
 const LINK = 'https://ksage.kvelld.com/invite?token=abc_DEF-123';
+const PREFS = 'https://ksage.kvelld.com/people?user=01USER';
+const TASK: TaskRef = {
+  key: 'LAI-7',
+  title: 'Ship the thing',
+  projectName: 'Laika',
+  url: 'https://ksage.kvelld.com/task/LAI-7',
+};
 
 describe('every template', () => {
   const all = [
@@ -35,6 +46,15 @@ describe('every template', () => {
       now: NOW,
     }),
     testEmail({ brand, userName: 'Pawan' }),
+    assignmentEmail({ brand, actorName: 'Pawan', task: TASK, prefsUrl: PREFS }),
+    mentionEmail({ brand, actorName: 'Pawan', task: TASK, excerpt: 'Look', prefsUrl: PREFS }),
+    digestEmail({
+      brand,
+      userName: 'Ada',
+      tasks: [{ task: TASK, lines: ['Pawan commented'] }],
+      notices: ['Pawan revoked your token laptop'],
+      prefsUrl: PREFS,
+    }),
   ];
 
   it('loads nothing remote: no image, no stylesheet, no script', () => {
@@ -110,6 +130,82 @@ describe('testEmail', () => {
     expect(mail.subject).toBe('Ksage test email');
     expect(mail.text).toContain('Ksage can send mail');
     expect(mail.text).toContain('while Email is switched on');
+  });
+});
+
+describe('the notification mails (LAI-1313)', () => {
+  /** What a person might type into a title, a comment or a name. */
+  const HOSTILE = '<b>"x"</b>';
+  const ESCAPED = '&lt;b&gt;&quot;x&quot;&lt;/b&gt;';
+  const hostileTask: TaskRef = { ...TASK, title: HOSTILE, projectName: HOSTILE };
+
+  it('escapes a title, a project and a name in the assignment mail', () => {
+    const mail = assignmentEmail({ brand, actorName: HOSTILE, task: hostileTask, prefsUrl: PREFS });
+    expect(mail.html).not.toContain(HOSTILE);
+    expect(mail.html).toContain(`in ${ESCAPED}: ${ESCAPED}`);
+    expect(mail.html).toContain(`${ESCAPED} assigned you`);
+  });
+
+  it('escapes the excerpt it quotes in the mention mail', () => {
+    const mail = mentionEmail({
+      brand,
+      actorName: 'Pawan',
+      task: hostileTask,
+      excerpt: `${HOSTILE} and <img src=x onerror=alert(1)>`,
+      prefsUrl: PREFS,
+    });
+    expect(mail.html).not.toContain(HOSTILE);
+    expect(mail.html).not.toContain('<img');
+    expect(mail.html).toContain(`${ESCAPED} and &lt;img src=x onerror=alert(1)&gt;`);
+  });
+
+  it('escapes every title, line and notice in the digest', () => {
+    const mail = digestEmail({
+      brand,
+      userName: HOSTILE,
+      tasks: [{ task: hostileTask, lines: [`${HOSTILE} commented`] }],
+      notices: [`${HOSTILE} revoked your token`],
+      prefsUrl: PREFS,
+    });
+    expect(mail.html).not.toContain(HOSTILE);
+    expect(mail.html).toContain(`LAI-7: ${ESCAPED}`);
+    expect(mail.html).toContain(`<li>${ESCAPED} commented</li>`);
+    expect(mail.html).toContain(`<li>${ESCAPED} revoked your token</li>`);
+  });
+
+  it('links the reader’s own profile to change what they are mailed, or names it without a public URL', () => {
+    const linked = assignmentEmail({ brand, actorName: 'Pawan', task: TASK, prefsUrl: PREFS });
+    expect(linked.text).toContain(`Change what Ksage emails you: ${PREFS}`);
+    expect(linked.html).toContain(`<a href="${PREFS}"`);
+    expect(linked.html).toContain('>Change what Ksage emails you</a>');
+
+    const unlinked = mentionEmail({
+      brand,
+      actorName: 'Pawan',
+      task: { ...TASK, url: null },
+      excerpt: 'Look',
+      prefsUrl: null,
+    });
+    expect(unlinked.text).toContain('Change what Ksage emails you on your profile.');
+    expect(unlinked.html).not.toContain('<a ');
+  });
+
+  it('puts no list inside a paragraph, and says since the last digest, not yesterday', () => {
+    const mail = digestEmail({
+      brand,
+      userName: 'Ada',
+      tasks: [{ task: TASK, lines: ['Pawan commented', 'Pawan moved it to Done'] }],
+      notices: ['Pawan revoked your token laptop'],
+      prefsUrl: PREFS,
+    });
+    const paragraphs = mail.html.match(/<p\b[^>]*>[\s\S]*?<\/p>/g) ?? [];
+    expect(paragraphs.length).toBeGreaterThan(0);
+    for (const p of paragraphs) expect(p).not.toMatch(/<ul|<li/);
+    expect(mail.html.match(/<ul/g)).toHaveLength(2);
+    expect(mail.text).toContain('since your last digest');
+    expect(mail.html).toContain('since your last digest');
+    expect(mail.text).not.toContain('yesterday');
+    expect(mail.html).not.toContain('yesterday');
   });
 });
 

@@ -98,6 +98,8 @@ describe('migrations', () => {
     // LAI-1300, D-150: files in the operator's store, by project, task and comment.
     'attachments',
     'board_activity_days',
+    // LAI-1316, D-157: which time entry holds which Outlook meeting.
+    'calendar_events',
     // LAI-1038, D-126: capacity pings and the one answer each got.
     'capacity_pings',
     // LAI-545, D-116: every ref a checkpoint has, and every push that moved one.
@@ -109,8 +111,13 @@ describe('migrations', () => {
     'device_pairing_requests',
     // LAI-1045, D-122: the devices an owner's agents run on.
     'devices',
+    // LAI-1313, D-153: a person's daily digest and what it will say.
+    'email_digest_items',
+    'email_digests',
     // LAI-1312, D-153: every email sent, and every one suppressed with its reason.
     'email_outbox',
+    // LAI-1313: how far the notify job has read activity and notices.
+    'email_watermarks',
     // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
     'github_checks',
     'github_commits',
@@ -129,6 +136,8 @@ describe('migrations', () => {
     // LAI-1136, D-134: a member's own notices, kept 90 days.
     'member_notices',
     'member_ratings',
+    // LAI-1316, D-157: the Outlook calendar connection.
+    'org_calendar_source',
     // LAI-1181, D-149: holidays, synced or typed, and the HR connection.
     'org_holidays',
     'org_hr_source',
@@ -217,6 +226,8 @@ describe('migrations', () => {
     // LAI-1130, D-131: a person's own availability and away periods.
     'user_availability',
     'user_away_periods',
+    // LAI-1313, D-153: a person's own email switches; no row is both on.
+    'user_email_prefs',
     // LAI-787, D-088: a person's own Draft my time.
     'user_time_settings',
     'users',

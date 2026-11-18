@@ -168,6 +168,8 @@ const ORG_MATRIX: OrgRow[] = [
   // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
   // D-134 (LAI-1136): the person's own, every role.
   ['notices.own', true, true, true, true],
+  // | Read and set own email preferences | ✓ (session only) ×4 | — D-153 (LAI-1313).
+  ['email_prefs.own', true, true, true, true],
   // | View own developer setup | ✓ (session only) | … | ✓ (session only) |
   // D-139 (LAI-1151): the person's own, every role.
   ['developer_setup.read_own', true, true, true, true],
@@ -184,6 +186,10 @@ const ORG_MATRIX: OrgRow[] = [
   // | Configure Teams posting | ✓ (session only) | ✓ (session only) | — | — |
   // D-154 (LAI-1314): the same grant; a token is refused in `can.test.ts`.
   ['org.teams.configure', true, true, false, false],
+  // | Connect the organisation's Outlook calendar | ✓ (session only) | ✓ (session only) | — | — |
+  // D-157 (LAI-1316): the same grant as the HR connection; a token is
+  // refused in `can.test.ts`.
+  ['org.calendar.configure', true, true, false, false],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -521,9 +527,11 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.checkpoint.prune', {}],
     ['system.notices.prune', {}],
     ['system.hr.sync', {}],
+    ['system.calendar.sync', {}],
     ['system.attachment.prune', {}],
     ['system.email.send', {}],
     ['system.email.prune', {}],
+    ['system.email.notify', {}],
     ['system.teams.post', {}],
     ['system.directory.sync', {}],
     ['task.write', { projectId: PROJECT }],

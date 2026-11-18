@@ -9,9 +9,10 @@ import {
   unreadNoticeCount,
 } from '../../services/notices.ts';
 import { tasksWatchedBy } from '../../services/watchers.ts';
+import { type EmailPrefsView, getEmailPrefs, setEmailPrefs } from '../../services/email-prefs.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery } from '../pagination.ts';
-import { parseQuery, strictObject, z } from '../validation.ts';
+import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
 export { type MeProfile };
 
@@ -118,4 +119,37 @@ function requireActor(
 ): NonNullable<AppEnv['Variables']['actor']> {
   if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
   return actor;
+}
+
+const EmailPrefsBody = strictObject({
+  instant: z.boolean().optional(),
+  digest: z.boolean().optional(),
+});
+
+/**
+ * `GET` and `PUT /api/v1/me/email-prefs` (§6.4, D-153, LAI-1313): a person's
+ * own two switches. Transport only — `email_prefs.own`, session only, is the
+ * service's.
+ */
+export function meEmailPrefsRoutes(options: { db: Db }): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const { db } = options;
+
+  app.get('/email-prefs', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json<EmailPrefsView>(getEmailPrefs(db, actor));
+  });
+
+  app.put('/email-prefs', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(EmailPrefsBody, await c.req.json().catch(() => null));
+    if (body.instant === undefined && body.digest === undefined) {
+      throw ApiError.badRequest('Give instant, digest or both', {});
+    }
+    return c.json<EmailPrefsView>(setEmailPrefs(db, actor, body));
+  });
+
+  return app;
 }
