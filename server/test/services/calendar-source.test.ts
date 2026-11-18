@@ -29,7 +29,7 @@ import {
 } from '../helpers/fake-graph.ts';
 
 /**
- * The Outlook calendar connection (§4.97, D-157, LAI-1316): the app's
+ * The Outlook calendar connection (§4.101, D-157, LAI-1316): the app's
  * credentials kept as ciphertext and never served, the rules, the switch that
  * starts off, a test of the grant that works while it is off, sync now, and
  * disconnect.

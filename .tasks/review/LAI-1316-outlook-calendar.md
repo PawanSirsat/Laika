@@ -115,11 +115,11 @@ merge.
 
 ## Build notes (2026-11-18, PR #364, green at `ecc09ee00`)
 
-- Numbers moved while it was built: the migration is **0086**
-  (`0086_calendar_sync`, renumbered through `db:generate` after icons 0083,
-  email 0084 and Teams 0085), and the tables are SPEC **§4.97**
-  `org_calendar_source` and **§4.98** `calendar_events` (email took §4.93,
-  Teams §4.94 – §4.96).
+- Numbers moved while it was built: the migration is **0087**
+  (`0087_calendar_sync`, renumbered through `db:generate` after icons 0083,
+  email 0084, Teams 0085 and email notify 0086), and the tables are SPEC
+  **§4.101** `org_calendar_source` and **§4.102** `calendar_events` (email
+  took §4.93, Teams §4.94 – §4.96, email notify §4.97 – §4.100).
 - The rebuild needs one hand line: `DROP TRIGGER IF EXISTS
   time_entry_revisions_is_append_only_no_delete` before it. SQLite refuses
   the `RENAME` while that trigger names the dropped `time_entries`, and

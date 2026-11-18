@@ -757,11 +757,19 @@ export const ATTACHMENT_STATES = ['pending', 'ready'] as const;
 export type AttachmentState = (typeof ATTACHMENT_STATES)[number];
 
 /**
- * `email_outbox`' `kind` (§4.93, D-153, LAI-1312): what a message is. `test`
- * is the settings card's *Send test email*; the other two carry a one-time
- * link an admin issued. Part B (LAI-1313) adds the notification kinds.
+ * `email_outbox`' `kind` (§4.93, D-153): what a message is. `test` is the
+ * settings card's *Send test email*; `invite` and `password_reset` carry a
+ * one-time link an admin issued (LAI-1312); `assignment` and `mention` are a
+ * person's instant mail and `digest` their daily one (LAI-1313).
  */
-export const EMAIL_KINDS = ['test', 'invite', 'password_reset'] as const;
+export const EMAIL_KINDS = [
+  'test',
+  'invite',
+  'password_reset',
+  'assignment',
+  'mention',
+  'digest',
+] as const;
 export type EmailKind = (typeof EMAIL_KINDS)[number];
 
 /**
@@ -797,7 +805,16 @@ export const EMAIL_SUPPRESSED_REASONS = [
   // revoked, re-issued or accepted, or a newer reset link replaced it, or it
   // was used (LAI-1312 review). Nobody gets a dead link, or two mails.
   'superseded',
+  // The person turned this kind of mail off in their profile (LAI-1313).
+  'pref_off',
+  // The person may no longer read the task's project, or is inactive (LAI-1313):
+  // asked when the mail is written and again before a digest goes.
+  'no_access',
 ] as const;
+
+/** `email_digests`' `state` (§4.98, LAI-1313): collecting, or done with. */
+export const EMAIL_DIGEST_STATES = ['open', 'closed'] as const;
+export type EmailDigestState = (typeof EMAIL_DIGEST_STATES)[number];
 export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];
 
 /**

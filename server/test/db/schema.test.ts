@@ -111,8 +111,13 @@ describe('migrations', () => {
     'device_pairing_requests',
     // LAI-1045, D-122: the devices an owner's agents run on.
     'devices',
+    // LAI-1313, D-153: a person's daily digest and what it will say.
+    'email_digest_items',
+    'email_digests',
     // LAI-1312, D-153: every email sent, and every one suppressed with its reason.
     'email_outbox',
+    // LAI-1313: how far the notify job has read activity and notices.
+    'email_watermarks',
     // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
     'github_checks',
     'github_commits',
@@ -221,6 +226,8 @@ describe('migrations', () => {
     // LAI-1130, D-131: a person's own availability and away periods.
     'user_availability',
     'user_away_periods',
+    // LAI-1313, D-153: a person's own email switches; no row is both on.
+    'user_email_prefs',
     // LAI-787, D-088: a person's own Draft my time.
     'user_time_settings',
     'users',

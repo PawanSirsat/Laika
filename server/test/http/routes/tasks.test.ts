@@ -920,6 +920,7 @@ describe('patch', () => {
       'time_entries.task_id': { not_shown: 'time tracking, per person' },
       'time_timers.task_id': { not_shown: 'time tracking, per person' },
       'solidtime_entries.task_id': { not_shown: 'time tracking, per person' },
+      'email_outbox.task_id': { not_shown: 'notification mail, read only by the sender' },
     };
 
     it('classifies every table that references a task (schema census)', () => {

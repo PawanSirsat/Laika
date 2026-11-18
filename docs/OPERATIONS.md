@@ -256,7 +256,11 @@ the only send that works while the switch is off.
 ### 3. Flip *Email on*
 
 From then on, an invite with an address and an admin-issued reset link are
-also mailed. The sender job runs every 30 seconds, and each message is recorded
+also mailed. So is each person's own notification mail (LAI-1313): a message
+when they are assigned a task or @mentioned, and one digest a morning, around
+07:00 in their own time zone, for everything else on the tasks they watch. Each
+person can turn either off in the *Email* section of their own profile. Nothing
+from before the switch went on is ever mailed. The sender job runs every 30 seconds, and each message is recorded
 in the outbox:
 
 - **A refusal** (5xx) is final.

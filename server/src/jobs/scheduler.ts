@@ -12,6 +12,7 @@ import {
   type HrSyncDeps,
   runHrSync,
 } from '../services/hr-sync.ts';
+import { notifyEmail, pruneEmailDigests } from '../services/email-notify.ts';
 import {
   CALENDAR_SYNC_EVERY_MINUTES,
   type CalendarSyncDeps,
@@ -99,7 +100,11 @@ export interface SchedulerDeps {
    * tests, which never call Teams.
    */
   teams?: TeamsPostingDeps;
-  /** `LAIKA_PUBLIC_URL`, for the links back a Teams post carries. */
+  /**
+   * `LAIKA_PUBLIC_URL`, for the links back a Teams post carries and every
+   * link in a notification mail (LAI-1313). Empty: the mails go without a
+   * link.
+   */
   publicUrl?: string;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
@@ -202,8 +207,22 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     {
       name: 'email.retention',
       everyMs: DAY,
-      run: (now) => ({ changed: pruneEmailOutbox(db, now) }),
+      run: (now) => ({ changed: pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) }),
       atStart: true,
+    },
+    // Assignment and mention mail, and the daily digests (§4.97 – §4.100,
+    // D-153, LAI-1313), read from `activity` and `member_notices` every 30
+    // seconds under `system.email.notify`. Only writes to the outbox — the
+    // `email.send` job sends — so it needs no transport, and a board with
+    // email off still records each instant mail as `email_off`. Not
+    // `atStart`: its first run only sets the watermark.
+    {
+      name: 'email.notify',
+      everyMs: EMAIL_SEND_EVERY_MS,
+      run: (now) => {
+        const result = notifyEmail(db, deps.serverSecret ?? '', deps.publicUrl ?? '', now);
+        return { changed: result.instant + result.collected + result.digests };
+      },
     },
     // Claims whose lease lapsed become `expired` (§9.1, proposal §4.2,
     // LAI-541), every `LAIKA_CLAIM_SCAN_SECONDS`. Not `atStart`: the boot

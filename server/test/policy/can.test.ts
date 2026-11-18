@@ -516,6 +516,8 @@ describe('the cases LAI-004 calls out by name', () => {
       const ownAvailability = action === 'availability.set_own' || action === 'availability.read';
       // D-134 (LAI-1136): reading and marking read their own notices.
       const ownNotices = action === 'notices.own';
+      // D-153 (LAI-1313): their own email switches.
+      const ownEmailPrefs = action === 'email_prefs.own';
       // D-139 item 1 (LAI-1150): reading their own profile and heatmap,
       // session only — `profile.read`'s reason for not being a read action.
       const ownProfile = action === 'profile.read_own';
@@ -536,6 +538,7 @@ describe('the cases LAI-004 calls out by name', () => {
           ownAgents ||
           ownAvailability ||
           ownNotices ||
+          ownEmailPrefs ||
           ownProfile ||
           ownDeveloperSetup,
       );

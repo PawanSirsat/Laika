@@ -1,5 +1,15 @@
 import { useState, useSyncExternalStore } from 'react';
 import { lookOf, subscribeLooks } from '../api/project-looks.ts';
+import {
+  analyseMark,
+  coverSquare,
+  plateFor,
+  plateOf,
+  rememberPlate,
+  SAMPLE_SIZE,
+  subscribePlates,
+  type Plate,
+} from './mark-plate.ts';
 import { markName, markOf, type MarkedSpace } from './project-mark-model.ts';
 import './project-mark.css';
 
@@ -20,7 +30,35 @@ export interface ProjectMarkProps {
    * image named for the space.
    */
   readonly labelled?: boolean;
+  /**
+   * Draw `project.icon` as given, not what was last read for the slug — a
+   * preview of a change that is not saved yet (LAI-1321).
+   */
+  readonly preview?: boolean;
   readonly className?: string;
+}
+
+/**
+ * Read a loaded image for the ring or plate it needs (`mark-plate.ts`): the
+ * square the mark shows, drawn into a small canvas. Every image a mark draws
+ * is same-origin or a `data:` preview, so the canvas is never tainted — but a
+ * read that fails anyway, or a browser with no 2D canvas, means no plate,
+ * never a broken mark.
+ */
+function measurePlate(img: HTMLImageElement): Plate | null {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = SAMPLE_SIZE;
+    canvas.height = SAMPLE_SIZE;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (context === null) return null;
+    const { x, y, size } = coverSquare(img.naturalWidth, img.naturalHeight);
+    context.drawImage(img, x, y, size, size, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+    const { data } = context.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+    return plateFor(analyseMark(data, SAMPLE_SIZE, SAMPLE_SIZE));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -39,16 +77,35 @@ export interface ProjectMarkProps {
  * no `style-src` allowance for it. **The letter or emoji is drawn by CSS from
  * `data-glyph`, never written as text**: a mark is decoration, so the row it
  * leads reads — and copies — as `Acme Billing`, not `AAcme Billing`.
+ *
+ * **An image that would vanish into a theme gets a ring or a plate there**
+ * (LAI-1321): once it loads it is drawn small and read (`mark-plate.ts`), and
+ * the answer goes on the mark as `data-plate` for the CSS. Until then it has
+ * none; the answer is kept per URL, so a mark drawn again has it at once.
+ * **Except a `data:` preview's** (LAI-1321 review): a held image's preview is
+ * the whole file as a URL, so it is measured into this mark's own state and
+ * forgotten with it, never kept in the shared cache.
  */
 export function ProjectMark({
   project,
   size = 'sm',
   labelled = false,
+  preview = false,
   className,
 }: ProjectMarkProps) {
-  const look = useSyncExternalStore(subscribeLooks, () => lookOf(project.slug));
+  const remembered = useSyncExternalStore(subscribeLooks, () => lookOf(project.slug));
+  const look = preview ? undefined : remembered;
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
   const mark = markOf(project, look, brokenUrl);
+  const imageUrl = mark.kind === 'image' ? mark.url : null;
+  const isPreview = imageUrl?.startsWith('data:') ?? false;
+  const shared = useSyncExternalStore(subscribePlates, () =>
+    imageUrl !== null && !isPreview ? plateOf(imageUrl) : undefined,
+  );
+  const [own, setOwn] = useState<{ readonly url: string; readonly plate: Plate | null } | null>(
+    null,
+  );
+  const plate = isPreview ? (own?.url === imageUrl ? own?.plate : undefined) : shared;
   const classes = ['project-mark', `project-mark-${size}`, `project-mark-${mark.kind}`, className]
     .filter((c) => c !== undefined && c !== '')
     .join(' ');
@@ -58,12 +115,19 @@ export function ProjectMark({
 
   if (mark.kind === 'image') {
     return (
-      <span className={classes} data-mark="image" {...a11y}>
+      <span className={classes} data-mark="image" data-plate={plate ?? undefined} {...a11y}>
         <img
           src={mark.url}
           alt=""
           decoding="async"
           draggable={false}
+          onLoad={(event) => {
+            if (isPreview) {
+              setOwn({ url: mark.url, plate: measurePlate(event.currentTarget) });
+            } else if (plateOf(mark.url) === undefined) {
+              rememberPlate(mark.url, measurePlate(event.currentTarget));
+            }
+          }}
           onError={() => {
             setBrokenUrl(mark.url);
           }}

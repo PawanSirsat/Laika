@@ -1081,6 +1081,13 @@ const PAIRS: readonly Pair[] = [
     client: 'EmailDispatch',
     clientFile: 'email.ts',
   },
+  // D-153 (LAI-1313): a person's own switches.
+  {
+    server: 'EmailPrefsView',
+    serverFile: 'services/email-prefs.ts',
+    client: 'EmailPrefs',
+    clientFile: 'email.ts',
+  },
   {
     server: 'HrSyncErrorView',
     serverFile: 'services/hr-source.ts',

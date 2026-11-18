@@ -600,8 +600,15 @@
     {
       "idx": 85,
       "version": "6",
-      "when": 1794950625824,
-      "tag": "0086_calendar_sync",
+      "when": 1794981512532,
+      "tag": "0086_email_notify",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "6",
+      "when": 1794983508663,
+      "tag": "0087_calendar_sync",
       "breakpoints": true
     }
   ]

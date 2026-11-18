@@ -7821,7 +7821,7 @@ Consent is still pending, so the feature ships whole and **off**.
    or admin (`org.calendar.configure`, session only) on Organisation → Integrations: the
    tenant, the app's client id and its client secret, kept as D-009's provider key is (purpose
    `calendar_client_secret`), never returned or logged, its last four shown. The credentials
-   live in the database (§4.97), not in the environment, so the master build carries the
+   live in the database (§4.101), not in the environment, so the master build carries the
    feature and Ksage gets it by the usual merge.
 2. **The switch ships off.** Saving credentials reads nothing. **Test connection** asks
    Microsoft for a fresh token and shows the roles it carries — whether `Calendars.Read` has
@@ -7842,7 +7842,7 @@ Consent is still pending, so the feature ships whole and **off**.
    change or delete like one they typed, and it is never pushed to Solidtime.
 4. **What is kept — amends D-088 item 4.** The meeting's **subject** as the entry's title
    (≤ 120), its span and minutes, its space by the rules, and Graph's event and iCalendar ids
-   (§4.98) — **immutable ids** (`Prefer: IdType="ImmutableId"`), so a meeting moved between
+   (§4.102) — **immutable ids** (`Prefer: IdType="ImmutableId"`), so a meeting moved between
    folders keeps its id and is never logged twice. A **private, confidential or personal**
    meeting is titled *Busy*, and no rule reads its subject or its location. **Never a join link, a body or an attendee** — not asked for, so not read. A
    meeting that runs past the person's midnight ends at midnight.

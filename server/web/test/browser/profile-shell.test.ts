@@ -657,3 +657,96 @@ void describe('your own profile (frame C)', () => {
     }
   });
 });
+
+void describe('your own email switches (D-153, LAI-1313)', () => {
+  /** `/me/email-prefs` from state a test can read back, and `PUT` saving into it. */
+  const prefsState = () => {
+    let state = { instant: true, digest: true };
+    const puts: unknown[] = [];
+    return {
+      puts,
+      route: (call: StubCall) => {
+        if (call.method === 'PUT') {
+          puts.push(call.body);
+          state = { ...state, ...(call.body as Partial<typeof state>) };
+        }
+        return state;
+      },
+    };
+  };
+  const withEmail = (enabled: boolean, prefs: (call: StubCall) => unknown): ApiStub => ({
+    ...BASE,
+    '/api/v1/me/availability': RECORD,
+    '/api/v1/org': {
+      ...(BASE['/api/v1/org'] as Record<string, unknown>),
+      email: { enabled, configured: enabled },
+    },
+    '/api/v1/me/email-prefs': prefs,
+  });
+
+  for (const theme of ['Dark', 'Light'] as const) {
+    void test(`two switches on your own Overview, saved as they flip, and the off line (${theme})`, async () => {
+      const prefs = prefsState();
+      const h = await open('/people?user=u1', withEmail(false, prefs.route));
+      try {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
+        await setTheme(h.page, theme);
+        const card = h.page.locator('[data-section="email-prefs"]');
+        await card.waitFor({ timeout: 20_000 });
+        const instant = card.getByRole('switch', {
+          name: 'Email me when I’m assigned or mentioned',
+        });
+        const digest = card.getByRole('switch', {
+          name: 'Send me a daily digest of the tasks I watch',
+        });
+        assert.equal(await instant.getAttribute('aria-checked'), 'true');
+        assert.equal(await digest.getAttribute('aria-checked'), 'true');
+        assert.match(
+          await card.locator('[data-email-off]').innerText(),
+          /Email is off for this organisation/,
+        );
+
+        await digest.click();
+        await until(async () => (await digest.getAttribute('aria-checked')) === 'false');
+        assert.deepEqual(prefs.puts, [{ digest: false }]);
+        await assertFits(h.page, `${theme} 1440`);
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await assertFits(h.page, `${theme} 390`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('says nothing about the switch when the organisation’s email is on', async () => {
+    const prefs = prefsState();
+    const h = await open('/people?user=u1', withEmail(true, prefs.route));
+    try {
+      const card = h.page.locator('[data-section="email-prefs"]');
+      await card.waitFor({ timeout: 20_000 });
+      assert.equal(await card.locator('[data-email-off]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('is not on somebody else’s profile', async () => {
+    const prefs = prefsState();
+    const h = await open('/people?user=u2', {
+      ...withEmail(true, prefs.route),
+      '/api/v1/permissions': WITH_SETUP,
+    });
+    try {
+      await headReady(h.page);
+      await h.page.waitForTimeout(300);
+      assert.equal(await h.page.locator('[data-section="email-prefs"]').count(), 0);
+      assert.equal(
+        h.calls.some((c) => c.path === '/api/v1/me/email-prefs'),
+        false,
+        'nothing asked for anybody’s switches',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

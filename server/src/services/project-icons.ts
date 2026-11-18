@@ -42,9 +42,12 @@ import { requireReadableProjectBySlug } from './projects.ts';
  *
  * Nothing is stored between asking and completing: the upload id names the
  * key, under this space's own prefix, and completing proves the object is
- * there. An upload asked for and put but never completed stays in the store,
- * at most a megabyte, until someone deletes it — only an owner or admin can
- * make one, and the board's own page always completes what it put.
+ * there. **An image put and never completed is normal** since LAI-1321: Space
+ * settings stages a cropped image when *Use this* is pressed and completes it
+ * only on Save, so one that is discarded, replaced before Save, or left when
+ * the page closes stays in the store — at most a megabyte, and only an owner
+ * or admin can make one — until the sweep of leftover images (LAI-1324)
+ * removes it.
  *
  * ## Read through Laika, not redirected
  *
