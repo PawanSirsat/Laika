@@ -103,38 +103,46 @@ export function iconFileProblem(
   return null;
 }
 
-/** The steps an upload takes — the network's by default, a test's in a test. */
-export interface IconUploadSteps {
+/** The steps staging takes — the network's by default, a test's in a test. */
+export interface IconStageSteps {
   readonly ask: typeof askProjectIcon;
-  readonly complete: typeof completeProjectIcon;
   readonly makeRequest?: (() => UploadRequest) | undefined;
 }
 
-const NETWORK: IconUploadSteps = { ask: askProjectIcon, complete: completeProjectIcon };
+const NETWORK: IconStageSteps = { ask: askProjectIcon };
+
+/** An image in the store, not yet the space's icon: what `completeProjectIcon` takes. */
+export interface StagedIcon {
+  readonly upload_id: string;
+  readonly content_type: IconType;
+  readonly size_bytes: number;
+}
 
 /**
- * Upload `file` as the space's icon and answer the space as it now stands.
- * A file of the wrong type or size is refused here, before anything is sent
- * (`IconFileError`); the server checks the same and the first bytes besides.
+ * Put `file` in the store as a candidate icon (LAI-1321): ask, then `PUT` —
+ * **not** complete. The space's icon does not change until Save changes
+ * completes it (`completeProjectIcon`), so a person can still discard it.
+ *
+ * Nothing is stored between asking and completing (D-152), so a staged image
+ * has no deadline: only the presigned `PUT` is ten minutes long, and it is
+ * spent here, at once. One that is never completed stays in the store — the
+ * limit D-152 records. A file of the wrong type or size is refused before
+ * anything is sent (`IconFileError`).
  */
-export async function uploadProjectIcon(
+export async function stageProjectIcon(
   slug: string,
   file: Blob & { readonly type: string },
   onProgress: (fraction: number) => void = () => undefined,
   signal?: AbortSignal,
-  steps: IconUploadSteps = NETWORK,
-): Promise<Project> {
+  steps: IconStageSteps = NETWORK,
+): Promise<StagedIcon> {
   const problem = iconFileProblem(file);
   if (problem !== null) throw problem;
   const contentType = file.type as IconType;
   // A board whose limit is under a megabyte refuses a bigger file here, `413`.
   const ticket = await steps.ask(slug, { content_type: contentType, size_bytes: file.size });
   await putToStore(ticket.upload, file, onProgress, signal, steps.makeRequest);
-  return steps.complete(slug, {
-    upload_id: ticket.upload_id,
-    content_type: contentType,
-    size_bytes: file.size,
-  });
+  return { upload_id: ticket.upload_id, content_type: contentType, size_bytes: file.size };
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });

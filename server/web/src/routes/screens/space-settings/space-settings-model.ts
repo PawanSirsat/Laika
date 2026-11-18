@@ -1,4 +1,5 @@
-import type { Project } from '../../../api/projects.ts';
+import type { StagedIcon } from '../../../api/project-icons.ts';
+import type { Project, ProjectIcon } from '../../../api/projects.ts';
 import type { SpaceSettingsPatch } from '../../../api/space-settings.ts';
 import type { SpaceColor } from '../../../theme/space-color.ts';
 
@@ -51,6 +52,59 @@ export function generalPatch(project: Project, draft: GeneralDraft): SpaceSettin
 
 export function isDirty(project: Project, draft: GeneralDraft): boolean {
   return Object.keys(generalPatch(project, draft)).length > 0;
+}
+
+/**
+ * An icon change made in Space settings and **held until Save changes**
+ * (LAI-1321), as every other General field is: an image already put in the
+ * store but not completed, an emoji, or taking the icon away.
+ */
+export type HeldIcon =
+  | {
+      readonly kind: 'image';
+      readonly staged: StagedIcon;
+      /** A `data:` URL of the same bytes, so the preview needs no store and no CSP change. */
+      readonly preview: string;
+    }
+  | { readonly kind: 'emoji'; readonly emoji: string }
+  | { readonly kind: 'remove' };
+
+/** What the space's icon will be once the held change is saved — the preview's. */
+export function heldIconPreview(
+  current: ProjectIcon | null,
+  held: HeldIcon | null,
+): ProjectIcon | null {
+  if (held === null) return current;
+  if (held.kind === 'image') return { url: held.preview, updated_at: 0 };
+  if (held.kind === 'emoji') return { emoji: held.emoji };
+  return null;
+}
+
+/**
+ * The held change, or `null` when it would change nothing: choosing the emoji
+ * the space already shows, or removing an icon it does not have.
+ */
+export function holdIcon(current: ProjectIcon | null, change: HeldIcon): HeldIcon | null {
+  if (change.kind === 'emoji' && current !== null && 'emoji' in current) {
+    return current.emoji === change.emoji ? null : change;
+  }
+  if (change.kind === 'remove' && current === null) return null;
+  return change;
+}
+
+/**
+ * The `PATCH` Save changes sends: General's changed fields, and the held
+ * emoji with them — one request, one `project.updated`. An image is completed
+ * and a removal sent after it (`POST …/icon/complete`, `DELETE …/icon`).
+ */
+export function savePatch(
+  project: Project,
+  draft: GeneralDraft,
+  mayEdit: boolean,
+  held: HeldIcon | null,
+): SpaceSettingsPatch {
+  const fields = mayEdit ? generalPatch(project, draft) : {};
+  return held?.kind === 'emoji' ? { ...fields, icon_emoji: held.emoji } : fields;
 }
 
 /**

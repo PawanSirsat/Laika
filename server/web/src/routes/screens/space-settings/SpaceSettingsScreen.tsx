@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -57,6 +57,11 @@ export function SpaceSettingsScreen({
   /** Every space the reader can see, archived too — counts for *Next task*, and Copy members' list. */
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const members = useMembers(slug);
+  /** The space this page is on now — what a late save answer is checked against. */
+  const currentSlug = useRef(slug);
+  useEffect(() => {
+    currentSlug.current = slug;
+  }, [slug]);
   /** General holds unsaved changes: leaving it asks first (B11, LAI-1129). */
   const [generalDirty, setGeneralDirty] = useState(false);
   const confirm = useConfirm();
@@ -156,7 +161,9 @@ export function SpaceSettingsScreen({
   const archived = project.archived_at !== null;
 
   const saved = (next: Project): void => {
-    setProject(next);
+    // A save answered after the page moved to another space is not this
+    // page's to show (LAI-1321 review); the list still takes it.
+    if (next.slug === currentSlug.current) setProject(next);
     // A new name, key or colour is the Spaces list's too.
     reloadSpaces();
   };

@@ -19,7 +19,7 @@ import {
   type ProjectIconUpload,
   removeProjectIcon,
   setProjectEmoji,
-  uploadProjectIcon,
+  stageProjectIcon,
 } from '../../src/api/project-icons.ts';
 import { forgetLooks, lookOf } from '../../src/api/project-looks.ts';
 import type { Project } from '../../src/api/projects.ts';
@@ -186,34 +186,33 @@ function okRequest(sent: { method?: string; url?: string; body?: unknown }): () 
   };
 }
 
-void describe('uploadProjectIcon', () => {
-  void test('asks, puts the bytes to the ticket, then completes with the upload id', async () => {
+void describe('stageProjectIcon', () => {
+  void test('asks and puts the bytes to the ticket — and never completes (LAI-1321)', async () => {
     const order: string[] = [];
     const sent: { method?: string; url?: string; body?: unknown } = {};
     const file = new Blob([new Uint8Array(20)], { type: 'image/png' });
-    const done = project({ icon: { url: '/api/v1/projects/laika/icon?v=7', updated_at: 7 } });
-    const answer = await uploadProjectIcon('laika', file, () => undefined, undefined, {
+    const staged = await stageProjectIcon('laika', file, () => undefined, undefined, {
       ask: (slug, input) => {
         order.push(`ask ${slug} ${input.content_type} ${String(input.size_bytes)}`);
         return Promise.resolve(TICKET);
       },
-      complete: (slug, input) => {
-        order.push(`complete ${slug} ${input.upload_id} ${String(input.size_bytes)}`);
-        return Promise.resolve(done);
-      },
       makeRequest: okRequest(sent),
     });
-    assert.deepEqual(order, ['ask laika image/png 20', `complete laika ${TICKET.upload_id} 20`]);
+    assert.deepEqual(order, ['ask laika image/png 20']);
     assert.equal(sent.method, 'PUT');
     assert.equal(sent.url, TICKET.upload.url);
     assert.equal(sent.body, file);
-    assert.equal(answer, done);
+    assert.deepEqual(staged, {
+      upload_id: TICKET.upload_id,
+      content_type: 'image/png',
+      size_bytes: 20,
+    });
   });
 
   void test('refuses an SVG before anything is sent', async () => {
     let asked = false;
     await assert.rejects(
-      uploadProjectIcon(
+      stageProjectIcon(
         'laika',
         new Blob(['<svg/>'], { type: 'image/svg+xml' }),
         undefined,
@@ -223,7 +222,6 @@ void describe('uploadProjectIcon', () => {
             asked = true;
             return Promise.resolve(TICKET);
           },
-          complete: () => Promise.resolve(project()),
         },
       ),
       (error: unknown) => error instanceof IconFileError && error.reason === 'type',
