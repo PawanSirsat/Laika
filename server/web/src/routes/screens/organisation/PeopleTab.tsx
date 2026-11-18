@@ -31,11 +31,12 @@ import {
   lastActive,
   lastSignIn,
   nextSort,
-  presenceTitle,
   roleCounts,
   seatLine,
   readPeopleView,
+  signInLine,
   sortPeople,
+  toolsLine,
   withPeopleView,
   type PeopleFilter,
   type PeopleView,
@@ -848,11 +849,19 @@ export function PeopleTab({
                     </span>
                     <span
                       role="cell"
-                      className={`org-people-seen org-people-seen-${seen.tone}`}
-                      data-last-active
-                      title={presenceTitle(seen, agents, signedIn)}
+                      className={`org-people-seen org-people-seen-${seen.tone} org-people-active`}
                     >
-                      {seen.text}
+                      <span data-last-active title={seen.note}>
+                        {seen.text}
+                      </span>
+                      {/* What a narrow table drops (LAI-1345), in sight under
+                          Last active once its column steps out — for a mouse,
+                          a keyboard and a finger alike. A screen reader reads
+                          the dropped cell itself, so not these. */}
+                      <span className="org-people-also" aria-hidden="true">
+                        <span className="org-people-also-sign-in">{signInLine(signedIn)}</span>
+                        <span className="org-people-also-tools">{toolsLine(agents, running)}</span>
+                      </span>
                     </span>
                     <span
                       role="cell"

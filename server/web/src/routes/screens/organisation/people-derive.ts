@@ -91,23 +91,24 @@ export function lastSignIn(at: number | null | undefined, now: number): LastActi
 }
 
 /**
- * Last active's tooltip (LAI-1345): its own note, then the two columns a
- * narrow table drops first — Tools running and Last sign-in — so a reader
- * beside the hub's side menu still finds them. One line each, in the
- * columns' own words.
+ * Last sign-in as a line under Last active (LAI-1345), for when a narrow
+ * table drops its column: *Signed in 3h ago*, *Signed in yesterday*,
+ * *Never signed in*.
  */
-export function presenceTitle(
-  seen: LastActive,
-  tools: number | undefined,
-  signedIn: LastActive,
-): string {
-  return [
-    seen.note,
-    `Tools running: ${tools === undefined ? '—' : String(tools)}`,
-    `Last sign-in: ${signedIn.text}`,
-  ]
-    .filter((line) => line !== undefined)
-    .join('\n');
+export function signInLine(signedIn: LastActive): string {
+  if (signedIn.text === 'Never') return 'Never signed in';
+  return `Signed in ${signedIn.text === 'Yesterday' ? 'yesterday' : signedIn.text}`;
+}
+
+/**
+ * Tools running as a line under Last active (LAI-1345): the column's count
+ * and its dot in words — *No tools*, *1 tool*, *2 tools · running* — and
+ * *Tools not known* where the column shows a dash.
+ */
+export function toolsLine(tools: number | undefined, running: boolean): string {
+  if (tools === undefined) return 'Tools not known';
+  if (tools === 0) return 'No tools';
+  return `${String(tools)} ${tools === 1 ? 'tool' : 'tools'}${running ? ' · running' : ''}`;
 }
 
 /** A space to narrow to: its slug, and the slugs each person is in (`GET /capacity`). */

@@ -1648,11 +1648,29 @@
   border-bottom: none;
 }
 
+/* Under Last active, a line for each column a narrow table drops (LAI-1345):
+   out of sight while that column shows. */
+.org-people-also {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-0-5);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: normal;
+  /* "Signed in / 5m ago", not "Signed in 5m / ago". */
+  text-wrap: balance;
+}
+
+.org-people-also-sign-in,
+.org-people-also-tools {
+  display: none;
+}
+
 /* Too narrow for every column — a laptop beside the hub's side menu (the owner,
    2026-11-18: "side menu, table adapts"). Last sign-in goes first, then Tools
    running: out of sight, still read by a screen reader (as .visually-hidden,
-   index.css), and both named in Last active's tooltip. Below the last floor the
-   table scrolls. */
+   index.css), and each in sight again as a line under Last active. Below the
+   last floor the table scrolls. */
 @container people (width < 52.5rem) {
   .org-people-table {
     min-width: 45.75rem;
@@ -1662,6 +1680,10 @@
     grid-template-columns:
       1.25rem minmax(12rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
       minmax(4.5rem, 0.7fr) minmax(5.5rem, 1fr) 5.5rem;
+  }
+
+  .org-people-also-sign-in {
+    display: block;
   }
 
   .org-people-header > [data-col='sign-in'],
@@ -1688,6 +1710,10 @@
     grid-template-columns:
       1.25rem minmax(12rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
       minmax(5.5rem, 1fr) 5.5rem;
+  }
+
+  .org-people-also-tools {
+    display: block;
   }
 
   .org-people-header > [data-col='tools'],
@@ -2994,9 +3020,10 @@
     grid-area: role;
   }
 
-  .org-person > [data-last-active] {
+  .org-person > .org-people-active {
     grid-area: seen;
     justify-self: end;
+    text-align: right;
   }
 
   .org-person > [data-spaces],

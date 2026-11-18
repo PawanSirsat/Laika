@@ -13,10 +13,11 @@ import {
   spaceRolesFor,
   nextSort,
   parseEmails,
-  presenceTitle,
   roleCounts,
   seatLine,
+  signInLine,
   sortPeople,
+  toolsLine,
 } from '../../../../src/routes/screens/organisation/people-derive.ts';
 
 /**
@@ -174,18 +175,15 @@ void describe('LAI-987 features in the LAI-893 tab', () => {
   });
 
   // LAI-1345: beside the hub's side menu the table drops Last sign-in, then
-  // Tools running; Last active's tooltip still names both.
-  void test('Last active’s tooltip names the two columns a narrow table drops, after its own note', () => {
-    const seen = lastActive({ status: 'away', last_seen: NOW - 2 * HOUR }, true, true, NOW);
-    assert.equal(
-      presenceTitle(seen, 2, lastSignIn(NOW - 3 * HOUR, NOW)),
-      'Tools running: 2\nLast sign-in: 3h ago',
-    );
-    const off = lastActive({ status: null, last_seen: null }, false, true, NOW);
-    assert.equal(
-      presenceTitle(off, undefined, lastSignIn(null, NOW)),
-      'Presence is off\nTools running: —\nLast sign-in: Never',
-    );
+  // Tools running; each comes back as a line under Last active.
+  void test('the lines under Last active say what the dropped columns said', () => {
+    assert.equal(signInLine(lastSignIn(NOW - 3 * HOUR, NOW)), 'Signed in 3h ago');
+    assert.equal(signInLine(lastSignIn(NOW - 30 * HOUR, NOW)), 'Signed in yesterday');
+    assert.equal(signInLine(lastSignIn(null, NOW)), 'Never signed in');
+    assert.equal(toolsLine(undefined, false), 'Tools not known');
+    assert.equal(toolsLine(0, false), 'No tools');
+    assert.equal(toolsLine(1, false), '1 tool');
+    assert.equal(toolsLine(2, true), '2 tools · running');
   });
 
   void test('the Deactivated filter shows only deactivated people', () => {

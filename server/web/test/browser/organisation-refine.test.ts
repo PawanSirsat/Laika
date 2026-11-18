@@ -624,8 +624,8 @@ void describe('a wide table says it scrolls', () => {
 
 // LAI-1345: beside the side menu, People's table answers to its own room.
 // At 1440 every column shows; narrower, Last sign-in steps out first, then
-// Tools running — out of sight, still read, and named in Last active's
-// tooltip.
+// Tools running — out of sight, still read, and each a line under Last
+// active.
 void describe("People's columns adapt to the room beside the side menu", () => {
   const columns = async (h: Awaited<ReturnType<typeof open>>) =>
     h.page.locator('.org-people-header [role="columnheader"]').evaluateAll((els) =>
@@ -673,12 +673,20 @@ void describe("People's columns adapt to the room beside the side menu", () => {
           'false',
         );
 
-        // What stepped out is still on the row, for hover and for a reader.
+        // What stepped out is in sight under Last active — for a keyboard and
+        // a finger, not only a mouse — with no tooltip saying it again, and
+        // still a cell for a screen reader.
+        const gone = new Set<string>(out);
         const tomas = h.page.locator(rows, { hasText: 'Tomas Nel' });
-        assert.equal(
-          await tomas.locator('[data-last-active]').getAttribute('title'),
-          'Tools running: 0\nLast sign-in: 3h ago',
-        );
+        const signIn = tomas.locator('.org-people-also-sign-in');
+        const tools = tomas.locator('.org-people-also-tools');
+        assert.equal(await signIn.isVisible(), gone.has('Last sign-in'));
+        assert.equal(await tools.isVisible(), gone.has('Tools running'));
+        if (gone.has('Last sign-in')) {
+          assert.equal((await signIn.innerText()).trim(), 'Signed in 3h ago');
+        }
+        if (gone.has('Tools running')) assert.equal((await tools.innerText()).trim(), 'No tools');
+        assert.equal(await tomas.locator('[data-last-active]').getAttribute('title'), null);
         assert.equal((await tomas.locator('[data-last-sign-in]').textContent())?.trim(), '3h ago');
       } finally {
         await h.close();
