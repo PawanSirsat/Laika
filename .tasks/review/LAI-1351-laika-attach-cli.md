@@ -77,19 +77,11 @@ once #405 lands, so the PR shows only this task's diff.
   files**, and says so in its help and in the skill. The board has no API to
   add files to an existing finding; CHIEF said not to file one.
 - **Repo block revision 3 needs two owners (§4.4).** The CLI holds
-  `PROJECT_BLOCK_REVISION = 3`. Rules 7 and 8 are in LAI-1352's words
-  (`connect-copy.ts` `SHOW_THE_RESULT` and `ONE_PARENT_PER_FEATURE`, at
-  5d1b38121), quoted exactly in the skill and the launcher's work prompt. Three
-  assertions read the web's copy and stay red until LAI-1352 lands:
-  - `project-check.test.ts`, "the same template revision…": `The input did
-    not match the regular expression /export const PROJECT_BLOCK_REVISION =
-    3;/`
-  - `plugin-skills.test.ts` and `agent-launcher.test.ts`, the rule tests:
-    `connect-copy.ts has no SHOW_THE_RESULT: the web's revision-3 block
-    (LAI-1352) is not here`
-
-  With LAI-1352's `connect-copy.ts` in place all three pass: checked locally
-  by copying it in, then restoring it by name.
+  `PROJECT_BLOCK_REVISION = 3`. Rules 7 and 8 are LAI-1352's words
+  (`connect-copy.ts` `SHOW_THE_RESULT` and `ONE_PARENT_PER_FEATURE`), quoted
+  exactly in the skill and the launcher's work prompt, and tests read the web's
+  copy. This branch has merged `origin/LAI-1352-outputs-popup`, so #407's CI
+  runs both halves together; CHIEF merges #409 and #407 back to back.
 - **Both design points approved by CHIEF:** the project-only uploads, and
   `--unlisted` logging a new finding. An upload that cannot be deleted after a
   failure is now named by id, in capitals.
@@ -98,4 +90,12 @@ once #405 lands, so the PR shows only this task's diff.
   output from a local run, and `laika doctor`'s attach line against Ksage.
 - **Ksage's limit is 25 MB, not 100 MB:** `LAIKA_ATTACHMENT_MAX_BYTES` isn't
   set there yet. That's a deploy setting, for CHIEF.
+- **review-407's should-fixes are folded in** (round 3, see the log):
+  - every cleanup checked and named;
+  - an unreadable read-back reported as linked, unverified, never undone;
+  - linear office reading with a total budget;
+  - a reference to no character, or unclosed XML, makes the file unreadable;
+  - no `Authorization` on the store `PUT`.
+
+  A zip inside a file is not opened: a known limit.
 
