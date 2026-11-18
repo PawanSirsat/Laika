@@ -4190,22 +4190,28 @@ is on:
 ### 4.100 `email_watermarks`
 
 How far the notify job has read (LAI-1313): one row per source, `activity`
-and `member_notices`. **A keyset cursor, `(read_to, read_to_id)`** — the last
-row handled — and each run reads up to 2,000 rows after it in `(created_at, id)`
-order, so it always moves on, however many rows share one millisecond. **Not
-`rowid`**: `activity` has a text key, so a VACUUM may renumber its rowids, and
-a stored rowid would then skip rows. **Not a time alone**: more rows at one
-instant than a run reads would hold it still for good (LAI-1313 review). Each
-run also re-reads up to 2,000 rows from the two minutes behind the cursor, for
-a row written late; every effect is idempotent, so one seen twice changes
-nothing. The first run records "now" and reads nothing: history is never
-mailed.
+and `member_notices`. **A keyset cursor, `(read_to, read_to_rowid)`** — the
+last row handled — and each run reads up to 2,000 rows after it in
+`(created_at, rowid)` order, so it always moves on, however many rows share one
+millisecond. **Not a time alone**: more rows at one instant than a run reads
+would hold it still for good (LAI-1313 review). **The rowid breaks the tie, not
+`id`**, because the indexes the reads ride end in it: `activity`'s read names
+the organisation and is a range on `(org_id, created_at)`, `member_notices`'
+a range on `(created_at)`, each in the index's own order — never a scan of the
+board's largest table and never a sort, every 30 seconds, email on or off. A
+VACUUM may renumber rowids, but that can only reorder the cursor's own
+millisecond, and each row there is either behind the cursor — read again below
+— or after it, read fresh. Each run also re-reads up to 2,000 rows from the two
+minutes behind the cursor, for a row written late; every effect is idempotent,
+so one seen twice changes nothing. The first run records "now", rowid 0, and
+reads nothing, and **nothing is looked behind that first cursor**: history is
+never mailed, not even the two minutes before the job started.
 
 | field | notes |
 | --- | --- |
 | `source` | PK — `activity` \| `member_notices` |
 | `read_to` | the `created_at` of the last row handled |
-| `read_to_id` | its `id` — `''` before the first, which sorts before every id |
+| `read_to_rowid` | its rowid — 0 before the first, which is "now, nothing behind it" |
 | `updated_at` | |
 
 ## 5. Task lifecycle
@@ -8446,7 +8452,9 @@ One interval-driven scheduler in the same process:
   with their items. No `activity` row
 - **email notify** (§4.97 – §4.100, D-153, LAI-1313) — every 30 seconds, not at
   boot, under `system.email.notify`: reads `activity` and `member_notices` past
-  their keyset cursors (§4.100; two minutes re-read behind them), writes an
+  their keyset cursors (§4.100; two minutes re-read behind them), each read an
+  index range — **also while the switch is off**, because an instant mail is
+  still written then, `email_off`, as the record D-153 keeps — writes an
   `assignment` mail for `task.assigned` — and for `task.created` with an
   assignee, unless it was reassigned since — and a `mention` mail for each
   person a comment @mentions, never to the actor, each through the outbox
