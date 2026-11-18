@@ -276,6 +276,9 @@ const EXEMPT: Record<string, string> = {
   create_task: 'a new task has no claim; its blockers and sprint are on the new task',
   propose_time_entry: "a draft in the person's own time, not a change to the task",
   log_unlisted_work: 'belongs to no task',
+  // D-162 (LAI-1302): as their REST twins, unfenced in agent-sessions.test.ts.
+  request_upload: 'asks for an upload; writes no field of a task, as its REST twin does not',
+  complete_upload: 'the upload’s own state; changes no field of a task',
   laika_whoami: 'reads nothing',
   list_projects: 'a read',
   list_ready_tasks: 'a read',

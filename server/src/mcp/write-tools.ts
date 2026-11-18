@@ -4,6 +4,15 @@ import type Database from 'better-sqlite3';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
+import {
+  appendAttachmentBlock,
+  ATTACHMENT_REF_LIMITS,
+  attachmentLinksMarkdown,
+  type AttachmentsDeps,
+  type AttachmentUploadTicketView,
+  completeAttachment,
+  createAttachment,
+} from '../services/attachments.ts';
 import { reclaimTask } from '../services/claims.ts';
 import { CHECKPOINT_LIMITS, registerCheckpoint } from '../services/checkpoints.ts';
 import {
@@ -15,7 +24,12 @@ import {
 } from '../services/handoffs.ts';
 import { addComment } from '../services/comments.ts';
 import { CAPACITY_PING_LIMITS, pingAndWait } from '../services/agent-capacity.ts';
-import { listMembers, projectSlugById, reviseProjectContext } from '../services/projects.ts';
+import {
+  listMembers,
+  projectSlugById,
+  requireProjectBySlug,
+  reviseProjectContext,
+} from '../services/projects.ts';
 import {
   addTasksToSprint,
   createSprint,
@@ -225,11 +239,58 @@ function underClaim(actor: ResolvedActor, generation: number | undefined): Resol
   return generation === undefined ? actor : { ...actor, claimGeneration: generation };
 }
 
+/**
+ * Files to show a person with a write (D-162), each with its caption — what
+ * `request_upload` and `complete_upload` made. The service checks each one
+ * and writes them into the text as captioned links.
+ */
+const ATTACHMENT_REFS = z
+  .array(
+    z.strictObject({
+      attachment: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64)
+        .describe('The attachment id `request_upload` returned, completed.'),
+      caption: z
+        .string()
+        .trim()
+        .min(1)
+        .max(ATTACHMENT_REF_LIMITS.caption)
+        .describe('What a person sees in it, in a few words: “Board, dark, 390 px”.'),
+    }),
+  )
+  .min(1)
+  .max(ATTACHMENT_REF_LIMITS.items);
+
+/** A string as one shell word: single-quoted, a `'` inside closed and reopened. */
+function shellWord(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * The upload as one command an agent runs where the file is: `curl -T` sends
+ * the bytes and their length, and the two headers exactly as signed.
+ */
+function curlLine(filename: string, upload: AttachmentUploadTicketView): string {
+  return [
+    'curl -fsS -T',
+    shellWord(filename),
+    ...Object.entries(upload.headers).map(
+      ([name, value]) => `-H ${shellWord(`${name}: ${value}`)}`,
+    ),
+    shellWord(upload.url),
+  ].join(' ');
+}
+
 export interface WriteToolContext {
   db: Db;
   sqlite: Database.Database;
   actor: ResolvedActor;
   now?: () => number;
+  /** The file store (D-150), for the upload tools (D-162); absent is off. */
+  attachments?: AttachmentsDeps | undefined;
 }
 
 export function registerWriteTools(server: McpServer, context: WriteToolContext): void {
@@ -243,7 +304,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Create a task',
       description:
-        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim. Fill `deliverables` (what it ships, as nouns), `solves` (the problems it removes) and `unlocks` (what it makes possible) when you file it: a person reads them as the task’s promise, `checkpoint_task` marks a deliverable in progress and `finish_task` ticks it off.',
+        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim. Fill `deliverables` (what it ships, as nouns), `solves` (the problems it removes) and `unlocks` (what it makes possible) when you file it: a person reads them as the task’s promise, `checkpoint_task` marks a deliverable in progress and `finish_task` ticks it off. Attach a mockup, a screenshot of the bug or a repro with `attachments` — files `request_upload` made in this `project`, each with a caption.',
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         title: TASK_FIELDS.title,
@@ -277,6 +338,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe(
             'Select a registered agent (its id) to do this task from the start — a work request, as `update_task`’s `agent`; it does not assign or claim it. Only your own agents, active and granted full access here.',
           ),
+        attachments: ATTACHMENT_REFS.optional().describe(
+          'Mockups, screenshots of the problem, a repro — each a completed upload in this project, with a caption. Added to the description.',
+        ),
       }),
     },
     ({
@@ -299,6 +363,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       size,
       external_ref,
       agent,
+      attachments,
     }) => {
       try {
         const now = clock();
@@ -308,10 +373,21 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // filed without the dependency it was asked for.
         const blockers = (blocked_by ?? []).map((ref) => resolveTaskRef(db, ref, actor));
         for (const blocker of blockers) assertTaskExists(db, blocker);
+        // The files too (D-162): checked first, then written into the
+        // description, whose save links them to the new task.
+        const files = attachmentLinksMarkdown(
+          db,
+          actor,
+          { projectId: requireProjectBySlug(db, project).id, taskId: null },
+          attachments ?? [],
+          'Attached',
+        );
+        const describedAs =
+          files === '' ? description : appendAttachmentBlock(description ?? '', files).trim();
 
         const task = createTask(sqlite, db, actor, project, {
           title,
-          ...(description === undefined ? {} : { description_md: description }),
+          ...(describedAs === undefined ? {} : { description_md: describedAs }),
           ...(acceptance === undefined ? {} : { acceptance_md: acceptance }),
           ...(deliverables === undefined ? {} : { deliverables }),
           ...(solves === undefined ? {} : { solves }),
@@ -487,14 +563,140 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     'add_comment',
     {
       title: 'Comment on a task',
-      description: 'Post a comment. Markdown is kept verbatim.',
-      inputSchema: z.strictObject({ task: TASK_REF, body: z.string().trim().min(1).max(50_000) }),
+      description:
+        'Post a comment. Markdown is kept verbatim. When you hit an error, an incident or a blocker, attach what shows it — the error screenshot, the log, the failing report — with `attachments`: files `request_upload` made, each with a caption.',
+      inputSchema: z.strictObject({
+        task: TASK_REF,
+        body: z.string().trim().min(1).max(50_000),
+        attachments: ATTACHMENT_REFS.optional().describe(
+          'Screenshots, logs or reports that show what you describe — each a completed upload on this task’s project, with a caption. Added under the comment.',
+        ),
+      }),
     },
-    ({ task, body }) => {
+    ({ task, body, attachments }) => {
       try {
-        const comment = addComment(db, actor, resolveTaskRef(db, task, actor), body, clock());
+        const id = resolveTaskRef(db, task, actor);
+        const files =
+          attachments === undefined
+            ? ''
+            : attachmentLinksMarkdown(
+                db,
+                actor,
+                { projectId: getTask(db, actor, id).project_id, taskId: id },
+                attachments,
+                'Attached',
+              );
+        const comment = addComment(db, actor, id, appendAttachmentBlock(body, files), clock());
 
         return answer(`Commented on the task, ${ago(comment.created_at, clock())}.`, { comment });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // --------------------------------------------- request_upload (D-162)
+
+  server.registerTool(
+    'request_upload',
+    {
+      title: 'Ask to upload a file',
+      description:
+        'Upload a file a person should see — a screenshot, a generated document, a test or run report, a short recording — straight to the board’s file store (D-162). Name the `task` (a key such as `LAI-42`), or only a `project` for a task you have not created yet or an unlisted finding. It returns the `attachment` and a presigned `upload`, ten minutes long, with a ready-to-run `curl` line: run it where the file is (or put its path after `-T`), then call `complete_upload`. The bytes never pass through Laika or this tool. Then attach it with a caption: `finish_task`’s `outputs`, or `attachments` on `add_comment`, `create_task` or `log_unlisted_work`. `size_bytes` is the exact size — the store refuses any other. Never upload a secret: attach a masked copy, or the list of accounts made, and say where the real file is; a text file that holds a recognisable secret is refused and deleted.',
+      inputSchema: z.strictObject({
+        task: TASK_REF.optional().describe(
+          'The task the file is for — its key, outside id or id. Give this or `project`.',
+        ),
+        project: PROJECT_REF.optional().describe(
+          'Only for a file with no task yet — one `create_task` or `log_unlisted_work` will attach. Give this or `task`.',
+        ),
+        filename: z
+          .string()
+          .trim()
+          .min(1)
+          .max(255)
+          .describe(
+            'Its name as a person should see it, such as `board-dark-390.png`. Not a path.',
+          ),
+        content_type: z
+          .string()
+          .trim()
+          .min(1)
+          .max(127)
+          .describe(
+            'Its media type, such as `image/png`, `application/pdf`, `text/csv` or `video/mp4`.',
+          ),
+        size_bytes: z.number().int().min(1).describe('Its exact size in bytes.'),
+      }),
+    },
+    ({ task, project, filename, content_type, size_bytes }) => {
+      try {
+        if ((task === undefined) === (project === undefined)) {
+          throw new ApiError(
+            'unprocessable',
+            'Name the task, or — for a file with no task yet — the project',
+            {
+              field: task === undefined ? 'task' : 'project',
+              reason: 'task_or_project',
+            },
+          );
+        }
+        const taskId = task === undefined ? undefined : resolveTaskRef(db, task, actor);
+        const slug =
+          taskId === undefined
+            ? (project ?? '')
+            : projectSlugById(db, actor, getTask(db, actor, taskId).project_id);
+        const asked = createAttachment(db, actor, context.attachments, slug, {
+          filename,
+          content_type,
+          size_bytes,
+          ...(taskId === undefined ? {} : { task_id: taskId }),
+        });
+        const curl = curlLine(asked.attachment.filename, asked.upload);
+
+        return answer(
+          [
+            `Upload \`${asked.attachment.filename}\` within ten minutes, from where the file is:`,
+            '',
+            '```sh',
+            curl,
+            '```',
+            '',
+            `Then \`complete_upload\` with \`attachment: ${asked.attachment.id}\`, and attach it with a caption.`,
+          ].join('\n'),
+          { attachment: asked.attachment, upload: asked.upload, curl },
+        );
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // -------------------------------------------- complete_upload (D-162)
+
+  server.registerTool(
+    'complete_upload',
+    {
+      title: 'Finish an upload',
+      description:
+        'Say a file `request_upload` gave you is uploaded. Laika checks the store has it at the size you named and, for a text file, that it holds no secret it can recognise — one that does is refused (`unprocessable`, `reason: secret_detected`, naming the rule and the line) and deleted: mask it and upload again. Within an hour of asking, and only by whoever asked. Then attach it with a caption: `finish_task`’s `outputs`, or `attachments` on `add_comment`, `create_task` or `log_unlisted_work`.',
+      inputSchema: z.strictObject({
+        attachment: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64)
+          .describe('The attachment id `request_upload` returned.'),
+      }),
+    },
+    async ({ attachment }) => {
+      try {
+        const ready = await completeAttachment(db, actor, context.attachments, attachment);
+
+        return answer(
+          `\`${ready.filename}\` is ready${ready.inline ? ' and shows in the page' : ''}. Attach it with a caption — \`finish_task\`’s \`outputs\`, or \`attachments\` on \`add_comment\`, \`create_task\` or \`log_unlisted_work\`.`,
+          { attachment: ready },
+        );
       } catch (error) {
         return toolError(error);
       }
@@ -508,7 +710,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Hand a task back for review',
       description:
-        'Move a task to review, post your summary as a comment, attach your proof so a person can check it — the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes — and tick the Ships items you delivered: each `checklist` line that is a deliverable’s id or exact title marks it done; any other line is kept as a `- [x]` note under your summary. Proof is optional but it is what the reviewer reads first, so send what you have. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.',
+        'Move a task to review, post your summary as a comment, attach your proof so a person can check it — the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes — and tick the Ships items you delivered: each `checklist` line that is a deliverable’s id or exact title marks it done; any other line is kept as a `- [x]` note under your summary. Proof is optional but it is what the reviewer reads first, so send what you have. When a person needs to see the result — a UI change, a generated file — attach it in `outputs`: screenshots (before and after, light and dark), the document, the report or a short recording, each uploaded with `request_upload` and captioned; skip it when the tests are the whole proof, and never attach a secret. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         summary: z.string().trim().min(1).max(50_000),
@@ -567,10 +769,23 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .max(EVIDENCE_LIMITS.tests)
           .optional()
           .describe('Each test, lint or build command you ran, with its exit code.'),
+        outputs: ATTACHMENT_REFS.optional().describe(
+          'What a person should see of the result — screenshots, the generated file, a report, a short recording — each a completed upload on this task’s project, with a caption. Shown with this round’s proof.',
+        ),
         claim_generation: CLAIM_GENERATION,
       }),
     },
-    ({ task, summary, checklist, commits, branch, pull_request, tests, claim_generation }) => {
+    ({
+      task,
+      summary,
+      checklist,
+      commits,
+      branch,
+      pull_request,
+      tests,
+      outputs,
+      claim_generation,
+    }) => {
       try {
         const claimed = underClaim(actor, claim_generation);
         const finished = finishTask(sqlite, db, claimed, resolveTaskRef(db, task, actor), {
@@ -580,6 +795,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(branch === undefined ? {} : { branch }),
           ...(pull_request === undefined ? {} : { pull_request }),
           ...(tests === undefined ? {} : { tests }),
+          ...(outputs === undefined ? {} : { outputs }),
           now: clock(),
         });
 
@@ -592,6 +808,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           tests === undefined || tests.length === 0
             ? null
             : `${String(tests.length)} test run${tests.length === 1 ? '' : 's'}`,
+          outputs === undefined
+            ? null
+            : `${String(outputs.length)} output${outputs.length === 1 ? '' : 's'}`,
         ].filter((part): part is string => part !== null);
 
         return answer(
@@ -842,7 +1061,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Log work outside any project',
       description:
-        'Record something you noticed that belongs to no project — a repo-level chore, an idea, a problem with no home yet. A person triages it later and may promote it to a real task. Use this instead of inventing a task on a project it does not belong to.',
+        'Record something you noticed that belongs to no project — a repo-level chore, an idea, a problem with no home yet. A person triages it later and may promote it to a real task. Use this instead of inventing a task on a project it does not belong to. Attach evidence a person should see — a screenshot, a log — with `attachments`: your own completed uploads (`request_upload` with any `project` you can upload to), each with a caption; they move to the task if it is promoted, and go if it is dismissed.',
       inputSchema: z.strictObject({
         repo: z
           .string()
@@ -858,11 +1077,19 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe(
             'What you noticed, in your own words. No file contents, no diffs, no prompt text (D-005).',
           ),
+        attachments: ATTACHMENT_REFS.optional().describe(
+          'Evidence you chose to show — your own completed uploads, each with a caption (D-162). Linked under the note.',
+        ),
       }),
     },
-    ({ repo, note }) => {
+    ({ repo, note, attachments }) => {
       try {
-        const logged = logUnlistedWork(db, actor, { repo, note, now: clock() });
+        const logged = logUnlistedWork(db, actor, {
+          repo,
+          note,
+          ...(attachments === undefined ? {} : { attachments }),
+          now: clock(),
+        });
 
         return answer(
           `Logged against \`${logged.repo}\`. It is in the triage pile — somebody may promote it to a task.`,

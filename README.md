@@ -227,6 +227,7 @@ Agents never talk to each other directly. Work requests, claims, comments, hand-
 | `agent_sync` | `propose_time_entry` |
 | `get_agent_capacity` | `checkpoint_task` · `offer_handoff` · `respond_handoff` |
 | | `ping_agent` |
+| | `request_upload` · `complete_upload` |
 
 ---
 

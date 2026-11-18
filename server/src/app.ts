@@ -378,8 +378,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   );
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
-  // The store's origin joins `img-src` and `connect-src` only when attachments
-  // are on: the browser shows its images and uploads to it (D-150).
+  // The store's origin joins `img-src`, `media-src` and `connect-src` only when
+  // attachments are on: the browser shows its images, plays its recordings
+  // (D-162) and uploads to it (D-150).
   app.use(
     '*',
     createSecurityHeaders(
@@ -703,7 +704,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // already excludes `/mcp` from the SPA fallback while `rate-limit.ts`
     // already counts it as a reserved API prefix — the routing hole was
     // pre-cut for this.
-    app.route('/mcp', mcpRoutes({ version: options.version, db, sqlite: options.sqlite }));
+    app.route(
+      '/mcp',
+      mcpRoutes({
+        version: options.version,
+        db,
+        sqlite: options.sqlite,
+        attachments: options.attachments,
+      }),
+    );
   }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`

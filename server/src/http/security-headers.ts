@@ -72,7 +72,8 @@ export interface ContentSecurityPolicyOptions {
   /**
    * The attachments store's origin (D-150, LAI-1300), or `null` when
    * attachments are off. On, it joins `img-src` — a file is shown through a
-   * 302 to it — and `connect-src`, where the browser uploads; **nothing
+   * 302 to it — `media-src`, where an inline recording plays the same way
+   * (D-162), and `connect-src`, where the browser uploads; **nothing
    * else**: no script, style, frame or object may come from it.
    */
   storageOrigin?: string | null;
@@ -98,6 +99,8 @@ export function buildContentSecurityPolicy(
     "style-src-attr 'unsafe-inline'",
 
     `img-src 'self' data:${fromStore}`,
+    // An mp4 or webm recording plays in a <video> through the same 302 (D-162).
+    `media-src 'self'${fromStore}`,
     "font-src 'self'",
     // The SPA talks to its own origin only — SSE (§11.5) is same-origin too —
     // and, with attachments on, uploads to the store.

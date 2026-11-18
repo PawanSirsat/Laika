@@ -6,6 +6,7 @@ import { recordMcpClientReport } from '../services/client-reports.ts';
 import { type LogFields, type Logger } from '../log.ts';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
+import { type AttachmentsDeps } from '../services/attachments.ts';
 import {
   type ContextStampArgs,
   contextNotice,
@@ -61,19 +62,23 @@ export const MCP_SERVER_NAME = 'laika';
  * text as `how_to_work`.
  *
  * The rules are the Connect screen's `claudeMdBlock` without the per-project
- * lines: claim before coding, and finishing means review, never done. Two
+ * lines: claim before coding, finishing means review, never done, and — D-162
+ * — show the result a person needs to see, never a secret. Two
  * limits shape it: Claude Code truncates at 2,048 characters, and Codex asks
  * for the first 512 to stand alone, so the must-follow rules come first. They
  * are repeated in the tool descriptions, which every client shows the model.
  * Every backticked name must be a served tool; `test/mcp/server.test.ts`
  * checks the names against `tools/list`.
  */
-export const MCP_INSTRUCTIONS = `Laika is this team's project board, shared by people and coding agents. Rules:
-claim a task with \`start_working\` before you write code; if no task fits the
-work, \`create_task\` first. One task at a time. \`finish_task\` moves it to
-review with your proof (commits, branch, pull request, test commands and exit
-codes): an agent never marks work done, a person does. Comment with
-\`add_comment\` as you go. Refer to tasks by key, such as LAI-42.
+export const MCP_INSTRUCTIONS = `Laika is this team's project board, for people and agents. Claim a task
+with \`start_working\` before you write code; if no task fits the work,
+\`create_task\` first. \`finish_task\` moves it to review with your proof
+(commits, branch, pull request, test commands and exit codes): an agent
+never marks work done, a person does. Show your work: when a person needs
+to see the result (UI changes, generated files), attach screenshots or
+outputs with \`laika attach\` or \`request_upload\`, captioned. Never upload
+secrets. One task at a time. Comment with \`add_comment\` as you go. Refer to
+tasks by key, such as LAI-42.
 
 How to work:
 1. Call \`laika_whoami\` to confirm who this token acts as.
@@ -100,6 +105,8 @@ export interface McpRequestContext {
   requestId?: string;
   /** Injectable so a test can prove a failing record never fails the call. */
   recordUse?: (db: Db, tokenId: string, now: number, clientName: unknown) => unknown;
+  /** The file store (D-150), as the REST routes have it; absent is off (D-162). */
+  attachments?: AttachmentsDeps | undefined;
 }
 
 /**
@@ -179,11 +186,17 @@ export function createMcpServer(context: McpRequestContext): McpServer {
 
   const clock = context.now === undefined ? {} : { now: context.now };
 
-  registerReadTools(server, { db: context.db, actor: context.actor, ...clock });
+  registerReadTools(server, {
+    db: context.db,
+    actor: context.actor,
+    attachments: context.attachments,
+    ...clock,
+  });
   registerWriteTools(server, {
     db: context.db,
     sqlite: context.sqlite,
     actor: context.actor,
+    attachments: context.attachments,
     ...clock,
   });
 
