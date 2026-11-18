@@ -5,8 +5,9 @@ area: cli
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T07:07:54Z
+finished: 2026-11-18T07:29:51Z
 ---
 
 ## Goal
@@ -44,11 +45,11 @@ Scope: area `cli`, plus whatever server route turns out to be needed (CHIEF, 202
 
 ## Acceptance criteria
 
-- [ ] On a machine set up only by `device pair` and `tool add`, `laika activity on`, `status`
+- [x] On a machine set up only by `device pair` and `tool add`, `laika activity on`, `status`
       and `sync` work against a board with Developer insights on.
-- [ ] Tests cover a fixture home directory with no `~/.laika/env`.
-- [ ] A personal token, where present, still works as today.
-- [ ] The README's activity section describes the device path.
+- [x] Tests cover a fixture home directory with no `~/.laika/env`.
+- [x] A personal token, where present, still works as today.
+- [x] The README's activity section describes the device path.
 
 ## Notes
 
