@@ -157,3 +157,22 @@
 .avatar-more .avatar-disc {
   padding: 0 var(--space-1);
 }
+
+/* ---------------------------------------------------------------- ring */
+
+/*
+ * A status ring on a face drawn alone (LAI-1349): green online, amber away,
+ * as Capacity's and the header's who's-here. Outside the disc, so it moves
+ * nothing; the words are the person's status elsewhere, never colour alone.
+ */
+.avatar-ring {
+  border-radius: var(--radius-round);
+}
+
+.avatar-ring-online {
+  box-shadow: 0 0 0 2px var(--chip-green);
+}
+
+.avatar-ring-away {
+  box-shadow: 0 0 0 2px var(--chip-orange);
+}
