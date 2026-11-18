@@ -985,6 +985,22 @@ export interface OpenOptions {
   readonly insecure?: boolean;
 }
 
+/**
+ * The Organisation page's folded sections (LAI-1318) this file's pages open
+ * with, as they are for a viewer who opened them before: the page remembers
+ * that choice in `localStorage` under `laika.org.section.<name>`.
+ */
+let sectionsOpen: readonly string[] = [];
+
+/**
+ * Every page this test file opens shows these folded sections open — for a
+ * file about what a section holds rather than about the fold itself. Call it
+ * once, at the top; `node --test` runs each file in its own process.
+ */
+export function openSectionsByDefault(...names: readonly string[]): void {
+  sectionsOpen = names;
+}
+
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
 export async function open(
   path: string,
@@ -999,6 +1015,11 @@ export async function open(
   const origin =
     options.insecure === true ? served.origin.replace('127.0.0.1', INSECURE_HOST) : served.origin;
   const page = await (await browser()).newPage();
+  if (sectionsOpen.length > 0) {
+    await page.addInitScript((list: readonly string[]) => {
+      for (const name of list) window.localStorage.setItem(`laika.org.section.${name}`, '1');
+    }, sectionsOpen);
+  }
   if (options.before !== undefined) await options.before(page);
   await page.goto(`${origin}${path}`);
 

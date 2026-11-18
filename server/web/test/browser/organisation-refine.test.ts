@@ -269,10 +269,11 @@ void describe('a failed refresh keeps the last good answer', () => {
     }
   });
 
-  void test('Overview says the settings could not be read, with a Retry that works', async () => {
+  void test('General says the settings could not be read, with a Retry that works', async () => {
     let failing = true;
+    // The settings are General's, in the settings hub (LAI-1318).
     const h = await open(
-      '/organisation',
+      '/organisation?tab=general',
       OWNER({
         '/api/v1/org': () =>
           failing
@@ -463,6 +464,59 @@ void describe('a wide table says it scrolls', () => {
       for (let i = 0; i < 4; i += 1) await h.page.keyboard.press('ArrowRight');
       await until(async () => (await inner.evaluate((el) => el.scrollLeft)) > start);
       assert.ok((await inner.evaluate((el) => el.scrollLeft)) > start, 'the arrows did not scroll');
+    } finally {
+      await h.close();
+    }
+  });
+
+  // The owner, 2026-11-18 (LAI-1345): below 1600 the hub's sections are one
+  // strip above the page, so a laptop's People table needs no sideways scroll.
+  void test('at 1280 People fits with no sideways scroll, and the strip reaches every section', async () => {
+    const h = await open('/organisation?tab=people', OWNER(), {
+      before: async (page) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+      },
+    });
+    try {
+      await ready(h);
+      const region = h.page.locator('[data-scroll-region]').first();
+      await h.page.waitForTimeout(300);
+      assert.equal(await region.getAttribute('data-overflow'), 'false');
+      assert.equal(await region.locator('[data-scroll-hint]').count(), 0);
+      const sideways = await h.page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      assert.ok(sideways <= 0, `the page scrolls ${String(sideways)}px sideways`);
+
+      // A strip above the page, not a column beside it.
+      const [nav, body] = await Promise.all([
+        h.page.locator('.org-nav').boundingBox(),
+        h.page.locator('.org-body').boundingBox(),
+      ]);
+      assert.ok(nav !== null && body !== null);
+      assert.ok(nav.y + nav.height <= body.y + 1, 'the sections are not above the page');
+
+      // Every section in it is reachable: scrolled to, opened, and the page it
+      // names is the one shown — attached, since a page this fixture has no
+      // data for (Time) draws nothing to be seen.
+      const ids = await h.page
+        .locator('.org-nav .page-tab')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab') ?? ''));
+      for (const id of ['overview', 'general', 'people', 'integrations', 'ai', 'work']) {
+        assert.ok(ids.includes(id), `${id} is not in the strip: ${ids.join(', ')}`);
+      }
+      for (const id of ids) {
+        const item = h.page.locator(`.org-nav .page-tab[data-tab="${id}"]`);
+        await item.scrollIntoViewIfNeeded();
+        await item.click();
+        await h.page
+          .locator(`.org-nav .page-tab[data-tab="${id}"][aria-current="page"]`)
+          .waitFor({ timeout: 10_000 });
+        await h.page
+          .locator(`.org-body[data-tab="${id}"]`)
+          .waitFor({ state: 'attached', timeout: 10_000 });
+        assert.equal(new URL(h.page.url()).searchParams.get('tab') ?? 'overview', id);
+      }
     } finally {
       await h.close();
     }

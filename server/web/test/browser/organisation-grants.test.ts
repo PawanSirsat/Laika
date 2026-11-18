@@ -24,8 +24,12 @@ import {
   until,
   type ApiStub,
   type StubCall,
+  openSectionsByDefault,
 } from './harness.ts';
 import { DEACTIVATES } from './row-menu.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('grants');
 
 const user = (id: string, name: string, org_role: string) => ({
   id,

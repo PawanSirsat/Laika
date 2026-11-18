@@ -3691,3 +3691,1571 @@
     gap: var(--space-1);
   }
 }
+
+/* ===========================================================================
+ * LAI-1318 — the modern layer. Grids on every tab, folded sections, and one
+ * set of interaction states (hover, focus-visible, pressed, disabled) for
+ * every control the page draws. Colours are theme.css tokens only, mixed;
+ * nothing here invents a value, so both themes follow automatically.
+ * ======================================================================== */
+
+.org {
+  /* One motion curve for the page: quick out, soft landing. */
+  /* On the shared motion tokens, so reduced motion (motion.css) stills them too. */
+  --org-ease: var(--ease-enter);
+  --org-fast: var(--duration-fast);
+  --org-slow: var(--duration-slow);
+  --org-lift:
+    0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent),
+    0 8px 24px -12px color-mix(in srgb, var(--text-primary) 18%, transparent);
+  --org-tile: color-mix(in srgb, var(--glass-solid) 50%, transparent);
+  --org-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.org-body {
+  gap: var(--space-5);
+  align-content: start;
+}
+
+/* --- cards: a soft surface that answers the pointer ----------------------- */
+
+/* The glass surface stays the theme's (LAI-1132): tint, sheen and highlight. */
+.org-card {
+  border-radius: calc(var(--radius-card) + var(--radius-chip));
+  padding: var(--space-5);
+  transition:
+    border-color var(--org-fast) var(--org-ease),
+    box-shadow var(--org-slow) var(--org-ease);
+}
+
+.org-card:hover,
+.org-card:focus-within {
+  border-color: var(--glass-border-strong);
+}
+
+.org-card-head {
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.org-card-sub {
+  flex-basis: 100%;
+  order: 3;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 72ch;
+}
+
+.org-stat {
+  position: relative;
+  overflow: hidden;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: calc(var(--radius-card) + var(--radius-hairline));
+  transition:
+    transform var(--org-fast) var(--org-ease),
+    border-color var(--org-fast) var(--org-ease),
+    box-shadow var(--org-slow) var(--org-ease);
+}
+
+.org-stat::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--org-fast) var(--org-ease);
+}
+
+.org-stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-default);
+  box-shadow: var(--org-lift);
+}
+
+.org-stat:hover::before {
+  opacity: 1;
+}
+
+/* The pulse's warnings read as warnings: blocked and overdue are amber and red. */
+.org-stat[data-pulse='blocked']::before {
+  background: var(--chip-orange);
+}
+
+.org-stat[data-pulse='overdue']::before {
+  background: var(--overdue);
+}
+
+.org-stat dt {
+  font-size: var(--text-small);
+}
+
+.org-stat-value {
+  font-size: var(--text-heading-lg);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Overview: the spaces table answers the pointer ------------------------ */
+
+.org-table tbody tr {
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+.org-table tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+
+.org-table td:first-child,
+.org-table th:first-child {
+  padding-left: var(--space-2);
+}
+
+.org-space {
+  border-radius: var(--radius-control);
+}
+
+/* --- folded sections (OrgAccordion) ---------------------------------------- */
+
+.org-acc {
+  padding: 0;
+  overflow: hidden;
+  /* Animate the native disclosure's height where the browser can. */
+  interpolate-size: allow-keywords;
+}
+
+.org-acc-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  user-select: none;
+  border-radius: inherit;
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+.org-acc-summary::-webkit-details-marker {
+  display: none;
+}
+
+.org-acc-summary:hover {
+  background: var(--bg-card-hover);
+}
+
+.org-acc-summary:active {
+  background: color-mix(in srgb, var(--bg-card-hover) 70%, var(--accent-bg));
+}
+
+.org-acc-summary:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.org-acc-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+  flex: 1;
+}
+
+.org-acc-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.org-acc-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.org-acc-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.org-acc-flag {
+  font-family: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+}
+
+.org-acc-flag[data-unsaved] {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+
+.org-acc-desc {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.org-acc-state {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  transition: color var(--org-fast) var(--org-ease);
+}
+
+.org-acc-summary:hover .org-acc-state {
+  color: var(--accent);
+}
+
+/* A chevron drawn from two borders, so it takes the text colour in both themes. */
+.org-acc-chevron {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0 var(--space-1) var(--space-1);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: var(--text-muted);
+  transform: rotate(45deg);
+  transition:
+    transform var(--org-slow) var(--org-ease),
+    color var(--org-fast) var(--org-ease);
+}
+
+details[open] > summary .org-acc-chevron,
+[aria-expanded='true'] > .org-acc-chevron {
+  transform: translateY(0.2rem) rotate(-135deg);
+}
+
+.org-acc-summary:hover .org-acc-chevron,
+.org-sec-head:hover .org-acc-chevron {
+  color: var(--accent);
+}
+
+.org-acc::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition:
+    block-size var(--org-slow) var(--org-ease),
+    content-visibility var(--org-slow) allow-discrete;
+}
+
+.org-acc[open]::details-content {
+  block-size: auto;
+}
+
+.org-acc-body {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  animation: org-reveal var(--org-slow) var(--org-ease);
+}
+
+.org-acc-body > .org-note:first-child,
+.org-acc-actions + .org-note {
+  margin-top: 0;
+}
+
+.org-acc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.org-acc-actions .org-head-action {
+  margin-left: 0;
+}
+
+@keyframes org-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Wide tables scroll inside their card, never the page. */
+.perm-table-scroll {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+}
+
+.perm-table tbody tr {
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+.perm-table tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+
+.perm-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+}
+
+.perm-cell[data-holding='yes'] .perm-cell-value {
+  color: var(--chip-green);
+  font-weight: var(--weight-semibold);
+}
+
+.perm-cell[data-holding='no'] .perm-cell-value {
+  color: var(--text-muted);
+}
+
+/* --- Roles: what you can do ------------------------------------------------ */
+
+.perm-me {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: var(--space-3);
+}
+
+.perm-me-fact {
+  padding: var(--space-3) var(--space-4);
+  background: var(--org-tile);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.perm-me-fact dd {
+  text-transform: capitalize;
+}
+
+/* --- Integrations: a directory of connections ----------------------------- */
+
+/* Folded, two to a row; opened, the whole width, so a form is never squeezed. */
+.org-integrations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.org-integrations > .org-acc[open],
+.org-integrations > :not(.org-acc) {
+  grid-column: 1 / -1;
+}
+
+/* A folded connection is a tile: its row fills it, the description wraps. */
+.org-integrations > .org-acc:not([open]) {
+  height: 100%;
+}
+
+.org-integrations > .org-acc:not([open]) > .org-acc-summary {
+  height: 100%;
+  align-items: flex-start;
+}
+
+.org-integrations .org-acc-summary .org-status-badge {
+  font-family: var(--font-ui);
+}
+
+.org-ai-card .org-fact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The card's title already says *AI provider*; the row's own label would repeat it. */
+.org-ai-card .org-fact > dt {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Model prices: numbers line up, rows answer the pointer. */
+.org-prices-table tbody tr {
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+.org-prices-table tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+
+.org-prices-table tbody tr[data-editing] {
+  background: color-mix(in srgb, var(--bg-card) 85%, var(--accent-bg));
+}
+
+.org-prices-table .org-price {
+  font-variant-numeric: tabular-nums;
+}
+
+.org-prices-scroll {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  margin-top: var(--space-4);
+}
+
+.org-prices-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--org-tile);
+}
+
+.org-prices-table th:first-child,
+.org-prices-table td:first-child {
+  padding-left: var(--space-3);
+}
+
+.org-price-new {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+}
+
+/* Handing over the organisation is the one irreversible thing here: it says so. */
+.org-transfer {
+  border-color: color-mix(in srgb, var(--overdue) 30%, var(--border-subtle));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-card) 94%, var(--overdue)),
+    var(--bg-card)
+  );
+}
+
+/* --- Security: one accordion row per person -------------------------------- */
+
+.org-sec-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.org-people li.org-sec-row {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--org-tile);
+  transition:
+    border-color var(--org-fast) var(--org-ease),
+    box-shadow var(--org-slow) var(--org-ease);
+}
+
+.org-people li.org-sec-row:last-child {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.org-people li.org-sec-row:hover,
+.org-people li.org-sec-row[data-open] {
+  border-color: var(--border-default);
+}
+
+.org-people li.org-sec-row[data-open] {
+  box-shadow: var(--org-lift);
+}
+
+.org-sec-head {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: inherit;
+}
+
+button.org-sec-head {
+  cursor: pointer;
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+button.org-sec-head:hover {
+  background: var(--bg-card-hover);
+}
+
+button.org-sec-head:active {
+  background: color-mix(in srgb, var(--bg-card-hover) 70%, var(--accent-bg));
+}
+
+button.org-sec-head:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.org-sec-head .org-person-who {
+  flex: 1;
+  min-width: 0;
+}
+
+.org-sec-head .org-person-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.org-sec-role {
+  text-transform: capitalize;
+}
+
+.org-sec-action {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  transition: color var(--org-fast) var(--org-ease);
+}
+
+button.org-sec-head:hover .org-sec-action,
+button.org-sec-head[aria-expanded='true'] .org-sec-action {
+  color: var(--accent);
+}
+
+.org-sec-link {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.org-sec-row > .org-tokens {
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  /* A slide, never a fade: the panel is never dimmed, even for a moment, so a
+     deactivated person's tokens read at full strength (LAI-238). */
+  animation: org-slide var(--org-slow) var(--org-ease);
+}
+
+@keyframes org-slide {
+  from {
+    transform: translateY(-4px);
+  }
+}
+
+@media (max-width: 640px) {
+  .org-sec-role,
+  .org-sec-action {
+    display: none;
+  }
+
+  /* Your own row: the link drops beneath your name rather than over it. */
+  div.org-sec-head {
+    flex-wrap: wrap;
+  }
+
+  div.org-sec-head > .org-person-controls {
+    flex-basis: 100%;
+    margin-left: calc(var(--space-6) + var(--space-2));
+  }
+}
+
+/* A model id is one word: it never breaks across lines. */
+.org-prices-table th[scope='row'] code {
+  white-space: nowrap;
+}
+
+/* On a phone each model is a card: its id, then four labelled prices. */
+@media (max-width: 640px) {
+  .org-prices-scroll {
+    border: none;
+    overflow: visible;
+  }
+
+  .org-prices-table thead {
+    display: none;
+  }
+
+  .org-prices-table,
+  .org-prices-table tbody {
+    display: block;
+  }
+
+  .org-prices-table tbody {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .org-prices-table tbody tr:not([data-editing]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    background: var(--org-tile);
+  }
+
+  .org-prices-table tbody tr:not([data-editing]) > * {
+    padding: 0;
+    border: none;
+  }
+
+  .org-prices-table tbody tr:not([data-editing]) > th,
+  .org-prices-table .org-price-from,
+  .org-prices-table .org-price-change {
+    grid-column: 1 / -1;
+  }
+
+  .org-prices-table .org-price {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .org-prices-table .org-price::before {
+    content: attr(data-label);
+    font-family: var(--font-ui);
+    font-size: var(--text-small);
+    color: var(--text-muted);
+  }
+}
+
+/* --- Activity: filters as a toolbar, rows that answer the pointer --------- */
+
+.oh-filters {
+  padding: var(--space-3);
+  background: var(--org-tile);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.oh-row {
+  border-radius: var(--radius-control);
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+.oh-row:hover {
+  background: var(--bg-card-hover);
+}
+
+/* --- every control: one set of states -------------------------------------- */
+
+.org .bar-control,
+.org-github-done,
+.org-tokens-toggle,
+.org .input {
+  transition:
+    background-color var(--org-fast) var(--org-ease),
+    border-color var(--org-fast) var(--org-ease),
+    color var(--org-fast) var(--org-ease),
+    box-shadow var(--org-fast) var(--org-ease),
+    transform var(--org-fast) var(--org-ease);
+}
+
+/* Press feedback on named controls only. Never a blanket `button:active`: a
+   transform makes the button the containing block of its own `::after`, and
+   Work's rows open from a title button whose `::after` covers the row — the
+   overlay shrank under the pointer on mouse-down and the click was lost. */
+.org .bar-control:active:not(:disabled),
+.org-github-done:active:not(:disabled),
+.bento-button:active {
+  transform: scale(0.97);
+}
+
+.org .input:focus-visible,
+.oh-date:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--org-ring);
+}
+
+.org button:disabled,
+.org .input:disabled {
+  cursor: not-allowed;
+}
+
+.org a:focus-visible,
+.org .org-github-done:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* --- small screens --------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .org-card {
+    padding: var(--space-4);
+  }
+
+  .org-acc {
+    padding: 0;
+  }
+
+  .org-acc-summary {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .org-acc-body {
+    padding: var(--space-3) var(--space-4) var(--space-4);
+  }
+
+  .org-acc-state {
+    display: none;
+  }
+
+  .org-stat {
+    padding: var(--space-3);
+  }
+
+  .org-stat-value {
+    font-size: var(--text-heading-lg);
+  }
+}
+
+/* --- reduced motion ---------------------------------------------------------
+   No block of its own: every duration here is a motion token (`--org-fast`,
+   `--org-slow`, `--duration-pulse`), and motion.css zeroes those and runs any
+   loop once under `prefers-reduced-motion` — the one place that media query
+   is written (motion-tokens.test.ts). */
+
+/* ===========================================================================
+ * LAI-1318 — Overview as a bento dashboard, in the Forge-style glass look:
+ * tinted panes, a soft accent glow per tile, bold titles. The glass itself is
+ * the theme's tokens (LAI-1132); no blur here — cards are tinted, not blurred.
+ * ======================================================================== */
+
+.org-bento {
+  container: bento / inline-size;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.org-bento > [data-span='4'] {
+  grid-column: span 4;
+}
+
+.org-bento > [data-span='6'] {
+  grid-column: span 6;
+}
+
+.org-bento > [data-span='8'] {
+  grid-column: span 8;
+}
+
+.org-bento > [data-span='12'] {
+  grid-column: span 12;
+}
+
+/* Medium: a third becomes a half, two thirds the whole row. */
+@container bento (max-width: 62rem) {
+  .org-bento > [data-span='4'] {
+    grid-column: span 6;
+  }
+
+  .org-bento > [data-span='8'] {
+    grid-column: span 12;
+  }
+}
+
+/* Narrow: one column. */
+@container bento (max-width: 38rem) {
+  .org-bento > [data-span] {
+    grid-column: span 12;
+  }
+}
+
+/* --- the tile ------------------------------------------------------------- */
+
+.bento-tile,
+.bento-slot > .org-card {
+  --tone: var(--chip-purple);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: calc(var(--radius-card) + var(--radius-sm));
+  background:
+    radial-gradient(
+      120% 90% at 0% 0%,
+      color-mix(in srgb, var(--tone) 16%, transparent),
+      transparent 62%
+    ),
+    var(--glass-sheen), var(--glass-2);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--shadow-card);
+  transition:
+    border-color var(--org-fast) var(--org-ease),
+    box-shadow var(--org-slow) var(--org-ease),
+    transform var(--org-slow) var(--org-ease);
+}
+
+/* A thin line of the tile's colour along its top edge. */
+.bento-tile::after,
+.bento-slot > .org-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, var(--tone), transparent 70%);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.bento-tile:hover,
+.bento-slot > .org-card:hover {
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--glass-border));
+  box-shadow:
+    var(--glass-highlight),
+    0 12px 32px -18px color-mix(in srgb, var(--tone) 60%, transparent),
+    var(--shadow-card);
+}
+
+.bento-tile[data-tone='blue'] {
+  --tone: var(--chip-blue);
+}
+
+.bento-tile[data-tone='green'] {
+  --tone: var(--chip-green);
+}
+
+.bento-tile[data-tone='orange'] {
+  --tone: var(--chip-orange);
+}
+
+.bento-tile[data-tone='pink'] {
+  --tone: var(--chip-pink);
+}
+
+.bento-slot > .org-card {
+  --tone: var(--chip-blue);
+}
+
+.bento-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.bento-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+
+.bento-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.bento-sub {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.bento-link {
+  flex: none;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  text-decoration: none;
+  padding: var(--space-0-5) var(--space-2);
+  border-radius: var(--radius-pill);
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+.bento-link:hover {
+  background: var(--accent-bg);
+}
+
+.bento-quiet {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.bento-chevron {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  color: var(--text-muted);
+  transition:
+    transform var(--org-fast) var(--org-ease),
+    color var(--org-fast) var(--org-ease);
+}
+
+/* --- At a glance: the figures, flat inside their tile --------------------- */
+
+.bento-figures {
+  container: figures / inline-size;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.bento-figures .org-stats {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bento-figures .org-pulse {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@container figures (max-width: 40rem) {
+  .bento-figures .org-pulse,
+  .bento-figures .org-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Two a row: an odd last figure takes the row rather than half of it. */
+  .bento-figures .org-stats > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+.bento-figures .org-stat {
+  background: color-mix(in srgb, var(--glass-solid) 55%, transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: none;
+  padding: var(--space-3);
+}
+
+.bento-figures .org-stat-value {
+  font-size: var(--text-heading-lg);
+}
+
+/* --- Connections ---------------------------------------------------------- */
+
+.bento-conns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-0-5);
+}
+
+.bento-conn,
+.bento-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 calc(-1 * var(--space-3));
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background-color var(--org-fast) var(--org-ease);
+}
+
+a.bento-conn:hover,
+a.bento-row:hover {
+  background: var(--glass-hover);
+}
+
+a.bento-conn:hover .bento-chevron,
+a.bento-row:hover .bento-chevron {
+  color: var(--accent);
+  transform: translateX(2px) rotate(-45deg);
+}
+
+a.bento-conn:active,
+a.bento-row:active {
+  background: color-mix(in srgb, var(--glass-hover) 60%, var(--accent-bg));
+}
+
+.bento-conn-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-round);
+  border: 2px solid var(--text-muted);
+  box-sizing: border-box;
+}
+
+.bento-conn-dot[data-state='on'] {
+  border-color: var(--chip-green);
+  background: var(--chip-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip-green) 22%, transparent);
+}
+
+.bento-conn-dot[data-state='unread'] {
+  border-color: var(--overdue);
+}
+
+.bento-conn-dot[data-state='reading'] {
+  animation: bento-pulse var(--duration-pulse) var(--ease-standard) infinite;
+}
+
+@keyframes bento-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.bento-conn-name,
+.bento-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bento-conn-word,
+.bento-row-note {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.bento-conn-word[data-state='on'] {
+  color: var(--chip-green);
+  font-weight: var(--weight-semibold);
+}
+
+/* --- People --------------------------------------------------------------- */
+
+.bento-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  padding-left: var(--space-1-5);
+}
+
+.bento-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-left: calc(-1 * var(--space-1-5));
+  border-radius: var(--radius-round);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  box-shadow: 0 0 0 2px var(--glass-2-solid);
+  transition: transform var(--org-fast) var(--org-ease);
+}
+
+.bento-avatar:hover {
+  transform: translateY(-3px);
+  z-index: 1;
+}
+
+.bento-avatar-more {
+  background: var(--chip-neutral-bg);
+  color: var(--text-secondary);
+}
+
+.bento-roles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.bento-role {
+  padding: var(--space-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--glass-solid) 45%, transparent);
+  text-align: center;
+}
+
+.bento-role dt {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--weight-heavy);
+}
+
+.bento-role dd {
+  margin: var(--space-0-5) 0 0;
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.bento-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.bento-button {
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background-color var(--org-fast) var(--org-ease),
+    transform var(--org-fast) var(--org-ease);
+}
+
+.bento-button:hover {
+  background: color-mix(in srgb, var(--accent-bg) 60%, var(--accent) 18%);
+}
+
+.bento-button:focus-visible,
+.bento-link:focus-visible,
+.bento-pill:focus-visible,
+.bento-conn:focus-visible,
+.bento-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bento-pill {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+  text-decoration: none;
+}
+
+.bento-label {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* --- Recent activity ------------------------------------------------------ */
+
+.bento-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.bento-feed-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+/* A thread down the dots, so the rows read as one timeline. */
+.bento-feed-row:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 0.21rem;
+  top: 1.35rem;
+  bottom: -0.35rem;
+  width: 1px;
+  background: var(--glass-border);
+}
+
+.bento-feed-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-round);
+  background: var(--tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 20%, transparent);
+  transform: translateY(-1px);
+}
+
+.bento-feed-text {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bento-feed-text strong {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.bento-feed-when {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* --- Access --------------------------------------------------------------- */
+
+.bento-access {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-0-5);
+}
+
+.bento-row-static {
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* --- below the bento ------------------------------------------------------ */
+
+.org-group-title {
+  margin: var(--space-2) 0 calc(-1 * var(--space-2));
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+/* --- every tab in the same glass: one accent per tab (LAI-1318) ----------- */
+
+.org-body {
+  --tone: var(--chip-purple);
+}
+
+.org-body[data-tab='work'] {
+  --tone: var(--chip-purple);
+}
+
+.org-body[data-tab='people'] {
+  --tone: var(--chip-green);
+}
+
+.org-body[data-tab='roles'] {
+  --tone: var(--chip-orange);
+}
+
+.org-body[data-tab='integrations'] {
+  --tone: var(--chip-blue);
+}
+
+.org-body[data-tab='security'],
+.org-body[data-tab='activity'] {
+  --tone: var(--chip-pink);
+}
+
+/* Cards outside the bento: the theme's glass, a faint glow of the tab's
+   colour from the corner, and its colour along the top edge. */
+.org-body:not([data-tab='overview']) .org-card,
+.org-body[data-tab='overview'] .org-settings-grid > .org-card {
+  background:
+    radial-gradient(
+      90% 70% at 0% 0%,
+      color-mix(in srgb, var(--tone) 10%, transparent),
+      transparent 60%
+    ),
+    var(--glass-sheen), var(--glass-2);
+  box-shadow:
+    var(--glass-highlight),
+    inset 0 2px 0 color-mix(in srgb, var(--tone) 55%, transparent);
+}
+
+.org-body:not([data-tab='overview']) .org-card:hover {
+  border-color: color-mix(in srgb, var(--tone) 40%, var(--glass-border));
+}
+
+/* A folded section's row lights in the tab's colour when pointed at. */
+.org-acc-summary:hover .org-acc-title {
+  color: color-mix(in srgb, var(--tone) 35%, var(--text-primary));
+}
+
+/* Security's person rows and Roles' figures take the same accent. */
+.org-people li.org-sec-row[data-open] {
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--glass-border));
+}
+
+.perm-me-fact {
+  background: color-mix(in srgb, var(--glass-solid) 50%, transparent);
+  border-color: var(--glass-border);
+}
+
+.perm-me-fact dt {
+  color: var(--text-muted);
+}
+
+.perm-me-fact dd {
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+/* ===========================================================================
+ * LAI-1318 — the settings hub: sections down the side, one page each.
+ * ======================================================================== */
+
+.org-hub {
+  display: grid;
+  grid-template-columns: 14.5rem minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+  margin-left: 1.125rem;
+  margin-right: 1.125rem;
+}
+
+.org-hub > .org-body {
+  margin: 0;
+  min-width: 0;
+}
+
+.org-nav {
+  position: sticky;
+  top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--glass-border);
+  border-radius: calc(var(--radius-card) + var(--radius-chip));
+  background: var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+}
+
+.org-nav-heading {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.org-nav .org-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-0-5);
+}
+
+.org-nav .org-nav-item {
+  height: auto;
+  min-height: 0;
+  line-height: 1.3;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--org-fast) var(--org-ease),
+    color var(--org-fast) var(--org-ease);
+}
+
+.org-nav .org-nav-item::after {
+  display: none;
+}
+
+.org-nav .org-nav-item:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.org-nav .org-nav-item[aria-current='page'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.org-nav .org-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.org-nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A connection's page: its one card, at a readable width. */
+.org-conn-page {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 64rem;
+}
+
+.org-conn-refused {
+  margin: 0;
+}
+
+/* The Connections index: a tile per connection. */
+.conn-index {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.conn-index-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.conn-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: var(--space-3);
+}
+
+.conn-tile {
+  --tone: var(--chip-blue);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: calc(var(--radius-card) + var(--radius-chip));
+  background:
+    radial-gradient(
+      100% 80% at 0% 0%,
+      color-mix(in srgb, var(--tone) 12%, transparent),
+      transparent 60%
+    ),
+    var(--glass-sheen), var(--glass-2);
+  box-shadow: var(--glass-highlight);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition:
+    border-color var(--org-fast) var(--org-ease),
+    transform var(--org-slow) var(--org-ease),
+    box-shadow var(--org-slow) var(--org-ease);
+}
+
+.conn-tile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--glass-border));
+  box-shadow:
+    var(--glass-highlight),
+    0 12px 28px -18px color-mix(in srgb, var(--tone) 60%, transparent);
+}
+
+.conn-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.conn-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.conn-tile-name {
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+}
+
+.conn-tile-line {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.conn-tile-go {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+}
+
+/* A section on its own page: open, with its header as the card's. */
+.org-flat-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  margin-bottom: var(--space-4);
+}
+
+/* Below ultra (1600px): the sections become one row that scrolls above the
+   page. Beside the page the nav and its gap take ~256px, and People's table
+   needs 60rem — it would scroll sideways on every laptop width (1280 – 1513px;
+   the owner, 2026-11-18). `ultra` is the first breakpoint token above that. */
+@media (max-width: 1599px) {
+  .org-hub {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .org-nav {
+    position: static;
+    flex-direction: row;
+    gap: var(--space-3);
+    overflow-x: auto;
+    padding: var(--space-2);
+    scrollbar-width: none;
+  }
+
+  .org-nav-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+  }
+
+  .org-nav-heading {
+    display: none;
+  }
+
+  .org-nav .org-nav-list {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-1);
+  }
+
+  .org-nav .org-nav-item[aria-current='page'] {
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .org-hub {
+    margin-left: var(--space-4);
+    margin-right: var(--space-4);
+  }
+}

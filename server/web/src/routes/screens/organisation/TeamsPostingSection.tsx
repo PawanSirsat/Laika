@@ -14,6 +14,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Switch } from '../../../components/Switch.tsx';
 import { spaceSettingsHref } from '../../space-settings-url.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 export interface TeamsPostingSectionProps {
   readonly onNavigate: (to: string) => void;
@@ -72,16 +73,22 @@ export function TeamsPostingSection({ onNavigate }: TeamsPostingSectionProps) {
   const on = read.kind === 'ready' && read.settings.posting_enabled;
 
   return (
-    <section className="org-card org-teams" aria-labelledby="org-teams" data-section="teams">
-      <header className="org-card-head">
-        <h2 id="org-teams">Microsoft Teams</h2>
-        {read.kind === 'ready' && (
+    // Folded to one row that says its state (LAI-1318).
+    <OrgAccordion
+      name="teams"
+      id="org-teams"
+      title="Microsoft Teams"
+      className="org-teams"
+      section="teams"
+      description="Stand-ups, the nightly digest and notices, posted to each space’s channel."
+      meta={
+        read.kind === 'ready' ? (
           <span className="org-status-badge" data-tone={on ? 'on' : 'off'} data-posting={on}>
             {on ? 'posting on' : 'off'}
           </span>
-        )}
-      </header>
-
+        ) : undefined
+      }
+    >
       <p className="org-note org-teams-lead">
         Each space’s stand-ups, nightly digest and notices, posted to that space’s own Power
         Automate flow in Teams. While posting is off nothing is sent, and every post that would have
@@ -185,6 +192,6 @@ export function TeamsPostingSection({ onNavigate }: TeamsPostingSectionProps) {
           </div>
         </dl>
       )}
-    </section>
+    </OrgAccordion>
   );
 }

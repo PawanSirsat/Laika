@@ -21,6 +21,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SaveStatus, useSaveStatus } from '../../../components/SaveStatus.tsx';
 import { Switch } from '../../../components/Switch.tsx';
 import { taskHref } from '../../task-href.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 import {
   attachmentsLabel,
   inboundBadge,
@@ -210,14 +211,16 @@ export function EmailInboundSection({ onChanged, onNavigate }: EmailInboundSecti
   const badge = settings === undefined ? undefined : inboundBadge(settings);
 
   return (
-    <section
-      className="org-card org-inbound"
-      aria-labelledby="org-inbound"
-      data-section="email-inbound"
-    >
-      <header className="org-card-head">
-        <h2 id="org-inbound">Email to tasks</h2>
-        {settings !== undefined && badge !== undefined && (
+    // Folded to one row that says its state, as the outbound card is (LAI-1318).
+    <OrgAccordion
+      name="email-inbound"
+      id="org-inbound"
+      title="Email to tasks"
+      className="org-inbound"
+      section="email-inbound"
+      description="Mail to a space’s own address becomes a task there, and a reply a comment."
+      meta={
+        settings !== undefined && badge !== undefined ? (
           <span
             className="org-status-badge"
             data-tone={badge.tone}
@@ -225,9 +228,9 @@ export function EmailInboundSection({ onChanged, onNavigate }: EmailInboundSecti
           >
             {badge.label}
           </span>
-        )}
-      </header>
-
+        ) : undefined
+      }
+    >
       <p className="org-note org-inbound-lead">
         Mail to a space’s own address becomes a task there, written as the member who sent it, and a
         reply in the thread becomes a comment. Mail Laika cannot trust is recorded below and never
@@ -279,7 +282,7 @@ export function EmailInboundSection({ onChanged, onNavigate }: EmailInboundSecti
           onNavigate={onNavigate}
         />
       )}
-    </section>
+    </OrgAccordion>
   );
 }
 

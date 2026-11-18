@@ -562,7 +562,8 @@ void describe('invites', () => {
 void describe('the organisation’s name (D-104 item 7)', () => {
   void test('a holder of org.settings.edit renames it; a reader without it sees text', async () => {
     let body: unknown;
-    const h = await open('/organisation', {
+    // The name is General's, in the settings hub (LAI-1318).
+    const h = await open('/organisation?tab=general', {
       ...OWNER(),
       '/api/v1/org': (call: StubCall) => {
         if (call.method === 'PATCH') {
@@ -583,7 +584,7 @@ void describe('the organisation’s name (D-104 item 7)', () => {
       await h.close();
     }
 
-    const member = await open('/organisation', base('u2', 'member', []));
+    const member = await open('/organisation?tab=general', base('u2', 'member', []));
     try {
       await member.page.locator('[data-fact="name"]').waitFor({ timeout: 20_000 });
       assert.equal(await member.page.locator('.org-name-input').count(), 0);

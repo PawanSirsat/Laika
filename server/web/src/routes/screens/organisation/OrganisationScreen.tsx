@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SsoSection } from './SsoSection.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
-import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
 import { DEVELOPER_ACTIVITY_HREF, ownTokensHref, type PageTab } from '../../page-tabs.ts';
 import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
@@ -24,6 +23,10 @@ import { TokenRow } from '../../../components/TokenRow.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
 import { updateUser } from '../../../api/users.ts';
 import { initials } from '../../../theme/initials.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { OrgAccordion, OrgFoldMode } from './OrgAccordion.tsx';
+import { OrgNav } from './OrgNav.tsx';
+import { ConnectionsIndex, OverviewBento } from './OverviewBento.tsx';
 import { RISK_LABELS, riskSummary, searchPeople, tokenRisks } from './security-derive.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
@@ -301,11 +304,31 @@ export function OrganisationScreen({
       });
   };
 
-  const tabStrip = (
-    <PageTabs
-      label="Organisation sections"
-      path="/organisation"
-      tabs={tabs}
+  /**
+   * The sections this reader is offered (LAI-1318): each connection only to a
+   * reader its section always admitted — the page decides, as it did when
+   * they were cards on one tab.
+   */
+  const hubTabs = tabs.filter((t) => {
+    switch (t.id) {
+      case 'github':
+        return org?.github_webhook !== undefined;
+      case 'hr':
+        return canConfigureHr;
+      case 'email':
+        return canConfigureEmail;
+      case 'teams':
+        return canConfigureTeams;
+      case 'calendar':
+        return canConfigureCalendar;
+      default:
+        return true;
+    }
+  });
+
+  const nav = (
+    <OrgNav
+      tabs={hubTabs}
       current={tab}
       counts={{
         people: state.status === 'ready' && !state.truncated ? state.people.length : undefined,
@@ -326,7 +349,6 @@ export function OrganisationScreen({
         )
       }
       description={context}
-      below={tabStrip}
     >
       {canInvite && (
         <button
@@ -416,680 +438,823 @@ export function OrganisationScreen({
         </div>
       )}
 
-      <div className="org-body" data-tab={tab}>
-        {tab === 'overview' && (
-          <>
-            {orgError !== null && (
-              <div className="org-refresh-error" role="alert" data-org-error>
-                <span>
-                  {org === undefined
-                    ? 'Couldn’t load the organisation’s settings.'
-                    : 'Couldn’t refresh the organisation’s settings — these may be out of date.'}{' '}
-                  {orgError instanceof Error ? orgError.message : ''}
-                </span>
-                <button
-                  type="button"
-                  className="bar-control"
-                  data-org-retry
-                  onClick={() => {
-                    setOrgAttempt((n) => n + 1);
-                  }}
-                >
-                  Retry
-                </button>
-              </div>
-            )}
-            {/* This week's pulse (LAI-989): `GET /org/overview`'s figures. */}
-            <OrgPulse onNavigate={onNavigate} />
-
-            {/* The figures (LAI-796) — each a count the page already holds, and
-                each leads where its next step is (LAI-1210). */}
-            <dl className="org-stats">
-              <OrgStat
-                label="Members"
-                value={`${String(active)}${state.truncated ? '+' : ''}`}
-                sub={`${String(admins)} ${admins === 1 ? 'admin' : 'admins'}${
-                  active === state.people.length
-                    ? ''
-                    : ` · ${String(state.people.length - active)} deactivated`
-                }`}
-                to="/organisation?tab=people"
-                destination="People"
-                onNavigate={onNavigate}
-                data={{ 'data-stat': 'members' }}
-              />
-              <OrgStat
-                label="Spaces"
-                value={
-                  projects.status === 'ready'
-                    ? `${String(projects.projects.length)}${projects.nextCursor === null ? '' : '+'}`
-                    : '—'
-                }
-                sub={
-                  projects.status === 'ready'
-                    ? `${String(projects.projects.filter((p) => p.archived_at === null).length)} active`
-                    : 'reading'
-                }
-                to="/projects"
-                destination="Spaces"
-                onNavigate={onNavigate}
-                data={{ 'data-stat': 'spaces' }}
-              />
-              {canInvite && (
-                <OrgStat
-                  label="Pending invites"
-                  value={String(state.invites.length)}
-                  sub={state.invites.length === 0 ? 'nobody is waiting' : 'waiting to be accepted'}
-                  to={
-                    state.invites.length === 0 ? undefined : '/organisation?tab=people&show=pending'
-                  }
-                  destination="pending invites"
-                  onNavigate={onNavigate}
-                  data={{ 'data-stat': 'invites' }}
-                />
+      <div className="org-hub">
+        {nav}
+        <div className="org-body" data-tab={tab}>
+          {(tab === 'overview' || tab === 'general' || tab === 'time') && (
+            <>
+              {orgError !== null && (
+                <div className="org-refresh-error" role="alert" data-org-error>
+                  <span>
+                    {org === undefined
+                      ? 'Couldn’t load the organisation’s settings.'
+                      : 'Couldn’t refresh the organisation’s settings — these may be out of date.'}{' '}
+                    {orgError instanceof Error ? orgError.message : ''}
+                  </span>
+                  <button
+                    type="button"
+                    className="bar-control"
+                    data-org-retry
+                    onClick={() => {
+                      setOrgAttempt((n) => n + 1);
+                    }}
+                  >
+                    Retry
+                  </button>
+                </div>
               )}
-            </dl>
+            </>
+          )}
 
-            {org !== undefined && (
-              <div className="org-settings-grid">
-                <section className="org-card" aria-labelledby="org-name">
-                  <header className="org-card-head">
-                    <h2 id="org-name">Organisation settings</h2>
-                  </header>
-                  <dl className="org-facts">
-                    {/* D-104 item 7 (LAI-999, from LAI-987). */}
-                    <OrgNameFact org={org} canEdit={canEditOrg} onSaved={setOrg} />
+          {tab === 'overview' && (
+            <>
+              {/* The overview as a dashboard (LAI-1318): the week, the
+                connections, the people, the spaces and what just happened. */}
+              <OverviewBento
+                org={org}
+                people={state.people}
+                truncated={state.truncated}
+                invites={canInvite ? state.invites.length : 0}
+                theme={theme}
+                myRole={orgRoleLabel(me.org_role as OrgRole).toLowerCase()}
+                can={{
+                  invite: canInvite,
+                  hr: canConfigureHr,
+                  teams: canConfigureTeams,
+                  calendar: canConfigureCalendar,
+                  activity: tabs.some((t) => t.id === 'activity'),
+                  tokens: canListTokens,
+                  roles: tabs.some((t) => t.id === 'roles'),
+                }}
+                figures={
+                  <div className="bento-figures">
+                    {/* This week's pulse (LAI-989): `GET /org/overview`'s figures. */}
+                    <OrgPulse onNavigate={onNavigate} />
 
-                    <div className="org-fact">
-                      <dt>Presence</dt>
-                      <dd>
-                        {org.presence_enabled ? 'recorded' : 'off'}
-                        <span className="org-fact-note">
-                          {org.presence_enabled
-                            ? 'Sessions appear on Capacity and the board.'
-                            : 'Nobody’s sessions are recorded. Capacity says so rather than showing an empty list.'}
-                        </span>
-                      </dd>
-                    </div>
+                    {/* The figures (LAI-796) — each a count the page already holds, and
+                each leads where its next step is (LAI-1210). */}
+                    <dl className="org-stats">
+                      <OrgStat
+                        label="Members"
+                        value={`${String(active)}${state.truncated ? '+' : ''}`}
+                        sub={`${String(admins)} ${admins === 1 ? 'admin' : 'admins'}${
+                          active === state.people.length
+                            ? ''
+                            : ` · ${String(state.people.length - active)} deactivated`
+                        }`}
+                        to="/organisation?tab=people"
+                        destination="People"
+                        onNavigate={onNavigate}
+                        data={{ 'data-stat': 'members' }}
+                      />
+                      <OrgStat
+                        label="Spaces"
+                        value={
+                          projects.status === 'ready'
+                            ? `${String(projects.projects.length)}${projects.nextCursor === null ? '' : '+'}`
+                            : '—'
+                        }
+                        sub={
+                          projects.status === 'ready'
+                            ? `${String(projects.projects.filter((p) => p.archived_at === null).length)} active`
+                            : 'reading'
+                        }
+                        to="/projects"
+                        destination="Spaces"
+                        onNavigate={onNavigate}
+                        data={{ 'data-stat': 'spaces' }}
+                      />
+                      {canInvite && (
+                        <OrgStat
+                          label="Pending invites"
+                          value={String(state.invites.length)}
+                          sub={
+                            state.invites.length === 0
+                              ? 'nobody is waiting'
+                              : 'waiting to be accepted'
+                          }
+                          to={
+                            state.invites.length === 0
+                              ? undefined
+                              : '/organisation?tab=people&show=pending'
+                          }
+                          destination="pending invites"
+                          onNavigate={onNavigate}
+                          data={{ 'data-stat': 'invites' }}
+                        />
+                      )}
+                    </dl>
+                  </div>
+                }
+                spaces={<OrgSpaces projects={projects} onNavigate={onNavigate} />}
+                onInvite={() => {
+                  onNavigate('/organisation?tab=people');
+                  setInvite({ text: '' });
+                }}
+                onNavigate={onNavigate}
+              />
+            </>
+          )}
 
-                    {/* Where everyone's tokens are (LAI-1210), for a reader who
+          {/* Workspace → General (LAI-1318): the organisation's name and what it
+            records, and Developer insights. */}
+          {tab === 'general' && org !== undefined && (
+            <div className="org-settings-grid">
+              <section className="org-card" aria-labelledby="org-name">
+                <header className="org-card-head">
+                  <h2 id="org-name">Organisation settings</h2>
+                </header>
+                <dl className="org-facts">
+                  {/* D-104 item 7 (LAI-999, from LAI-987). */}
+                  <OrgNameFact org={org} canEdit={canEditOrg} onSaved={setOrg} />
+
+                  <div className="org-fact">
+                    <dt>Presence</dt>
+                    <dd>
+                      {org.presence_enabled ? 'recorded' : 'off'}
+                      <span className="org-fact-note">
+                        {org.presence_enabled
+                          ? 'Sessions appear on Capacity and the board.'
+                          : 'Nobody’s sessions are recorded. Capacity says so rather than showing an empty list.'}
+                      </span>
+                    </dd>
+                  </div>
+
+                  {/* Where everyone's tokens are (LAI-1210), for a reader who
                         may list them. A place, not a count: there is no
                         aggregate to count without reading every person's. */}
-                    {canListTokens && (
-                      <div className="org-fact" data-fact="tokens">
-                        <dt>Tokens</dt>
-                        <dd>
-                          <a
-                            className="org-fact-link"
-                            href="/organisation?tab=security"
-                            data-security-link
-                            onClick={(event) => {
-                              if (
-                                event.metaKey ||
-                                event.ctrlKey ||
-                                event.shiftKey ||
-                                event.altKey
-                              ) {
-                                return;
-                              }
-                              event.preventDefault();
-                              onNavigate('/organisation?tab=security');
-                            }}
-                          >
-                            Review everyone’s tokens on Security
-                          </a>
-                          <span className="org-fact-note">
-                            Each person’s, with the ones unused or about to expire marked.
-                          </span>
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
-                </section>
-
-                {/* D-079 (LAI-751): the organisation's half of local activity
-                    sharing. A switch for an owner or admin, a word for everyone
-                    else — they are who it is about, so they can always read it. */}
-                <section className="org-card" aria-labelledby="org-insights-head">
-                  <header className="org-card-head">
-                    <h2 id="org-insights-head">Developer insights</h2>
-                  </header>
-                  <dl className="org-facts">
-                    <div className="org-fact" data-fact="developer-insights">
-                      <dt id="org-insights-label">Developer insights</dt>
+                  {canListTokens && (
+                    <div className="org-fact" data-fact="tokens">
+                      <dt>Tokens</dt>
                       <dd>
-                        {canSetInsights ? (
-                          <Switch
-                            checked={org.developer_insights}
-                            labelledBy="org-insights-label"
-                            describedBy="org-insights-note"
-                            disabled={insightsBusy}
-                            onChange={setInsights}
-                          >
-                            {org.developer_insights ? 'On' : 'Off'}
-                          </Switch>
-                        ) : (
-                          <span>{org.developer_insights ? 'on' : 'off'}</span>
-                        )}
-                        <span className="org-fact-note org-fact-measure" id="org-insights-note">
-                          When on, every connected machine’s local activity is collected: daily
-                          counts of prompts to agents, agent sessions, and commits pushed or not yet
-                          pushed, and agents’ token counts. They appear on that person’s profile as
-                          activity, and each person is told so on Developer access and Connect —
-                          never prompt text, file or repository names, branches or commit messages.
-                          Off stops it for everyone at once.{' '}
-                          <a
-                            className="org-fact-link"
-                            href={ACTIVITY_HREF}
-                            onClick={(event) => {
-                              if (
-                                event.metaKey ||
-                                event.ctrlKey ||
-                                event.shiftKey ||
-                                event.altKey
-                              ) {
-                                return;
-                              }
-                              event.preventDefault();
-                              onNavigate(ACTIVITY_HREF);
-                            }}
-                          >
-                            What developers see: Developer access · Activity
-                          </a>
+                        <a
+                          className="org-fact-link"
+                          href="/organisation?tab=security"
+                          data-security-link
+                          onClick={(event) => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                              return;
+                            }
+                            event.preventDefault();
+                            onNavigate('/organisation?tab=security');
+                          }}
+                        >
+                          Review everyone’s tokens on Security
+                        </a>
+                        <span className="org-fact-note">
+                          Each person’s, with the ones unused or about to expire marked.
                         </span>
-                        {insightsError !== undefined && (
-                          <span className="org-fact-error" role="alert">
-                            {insightsError}
-                          </span>
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-                </section>
-
-                {/* D-088 (LAI-787) and D-101 (LAI-956): the organisation's half
-                    of time — the mode, and the breaks drawn on every My day.
-                    Controls for whoever sets Time; words for everyone else. */}
-                <section
-                  className="org-card org-settings-wide org-time-card"
-                  aria-labelledby="org-time-head"
-                >
-                  <header className="org-card-head">
-                    <h2 id="org-time-head">Time</h2>
-                  </header>
-                  <dl className="org-facts">
-                    <TimeModeFact canManage={canSetTime} />
-                    <BreakScheduleFact canManage={canSetTime} />
-                    {/* D-149 (LAI-1182): the holidays everyone reads, added to
-                        by whoever sets Time. The HR system they sync from is
-                        on Integrations. */}
-                    <HolidaysFact canManage={canSetTime} />
-                  </dl>
-                </section>
-              </div>
-            )}
-
-            <OrgSpaces projects={projects} onNavigate={onNavigate} />
-
-            {/* Which build this board is (LAI-1069): owners and admins only. */}
-            {(me.org_role === 'owner' || me.org_role === 'admin') && <BoardBuildLine />}
-          </>
-        )}
-
-        {tab === 'work' && (
-          <WorkTab
-            me={me}
-            params={params}
-            setParams={setParams}
-            onOpenTask={onOpenTask}
-            onNavigate={onNavigate}
-          />
-        )}
-
-        {tab === 'people' && (
-          <>
-            <PeopleTab
-              meId={me.id}
-              theme={theme}
-              people={state.people}
-              truncated={state.truncated}
-              invites={state.invites}
-              invitesError={state.invitesError}
-              capacity={state.capacity}
-              canInvite={canInvite}
-              canDeactivate={canDeactivate}
-              canListTokens={canListTokens}
-              canChangeRoles={canChangeRoles}
-              projects={projects.projects}
-              changing={changing}
-              roleError={roleError}
-              onChange={change}
-              onTokens={(id) => {
-                // That person's tokens, on Security, opened (LAI-238's panel).
-                setTokensFor(id);
-                onNavigate('/organisation?tab=security');
-              }}
-              onInvite={(text) => {
-                setInvite({ text: text ?? '' });
-              }}
-              onReload={reload}
-              params={params}
-              setParams={setParams}
-            />
-            {canChangeRoles && (org?.extra_owners ?? []).length > 0 && (
-              <ExtraOwners
-                owners={org?.extra_owners ?? []}
-                onMakeAdmin={(id) => change(id, { org_role: 'admin' })}
-              />
-            )}
-            {/* Served to the owner alone, so its presence is the gate (LAI-181). */}
-            {(org?.owner_invites_pending ?? []).length > 0 && (
-              <OwnerInvites
-                invites={org?.owner_invites_pending ?? []}
-                onRevoke={(id) =>
-                  revokeInvite(id).then(() => {
-                    setOrg((current) =>
-                      current?.owner_invites_pending === undefined
-                        ? current
-                        : {
-                            ...current,
-                            owner_invites_pending: current.owner_invites_pending.filter(
-                              (invite) => invite.id !== id,
-                            ),
-                          },
-                    );
-                    reload();
-                  })
-                }
-              />
-            )}
-
-            {/* D-104 item 2: the owner's, by role, not a grant. */}
-            {canChangeRoles && <TransferOwnership me={me} people={state.people} />}
-
-            {invite !== undefined && (
-              <InviteDialog
-                orgName={org?.name ?? 'this organisation'}
-                roles={invitableRoles(me.org_role)}
-                projects={projects.projects.filter((p) => p.archived_at === null)}
-                initialText={invite.text}
-                onClose={() => {
-                  setInvite(undefined);
-                }}
-                onIssued={reload}
-                restore={() => inviteButton.current}
-                emailOn={org !== undefined && emailOn(org)}
-              />
-            )}
-          </>
-        )}
-
-        {tab === 'roles' && (
-          <RolesPermissionsSection
-            canChangeRoles={canChangeRoles}
-            projects={projects.projects}
-            onNavigate={onNavigate}
-          />
-        )}
-
-        {tab === 'integrations' && (
-          <>
-            {/* Owners and admins on a web session (§3.1 *Configure webhooks*):
-                absent, not null, for anyone else, so the card is simply not here. */}
-            {org?.github_webhook !== undefined && (
-              <GithubWebhookSection
-                webhook={org.github_webhook}
-                onChanged={(configured) => {
-                  setOrg((current) =>
-                    current?.github_webhook === undefined
-                      ? current
-                      : { ...current, github_webhook: { ...current.github_webhook, configured } },
-                  );
-                }}
-              />
-            )}
-
-            {/* D-149 (LAI-1182): the HR system holidays and leave come from,
-                beside the other connection GitHub is — its holder's alone. */}
-            {canConfigureHr && (
-              <HrSourceSection members={state.people.filter((p) => p.is_active)} />
-            )}
-
-            {/* D-153 (LAI-1312): outbound email — `org.email.configure`,
-                signed in only, as the server asks. */}
-            {canConfigureEmail && (
-              <EmailSection
-                onChanged={(email) => {
-                  setOrg((current) => (current === undefined ? current : { ...current, email }));
-                }}
-              />
-            )}
-
-            {/* D-155 (LAI-1315): email to tasks — the same `org.email.configure`,
-                beside the outbound card it shares Brevo with. */}
-            {canConfigureEmail && (
-              <EmailInboundSection
-                onChanged={(email_inbound) => {
-                  setOrg((current) =>
-                    current === undefined ? current : { ...current, email_inbound },
-                  );
-                }}
-                onNavigate={onNavigate}
-              />
-            )}
-
-            {/* D-154 (LAI-1314): each space's Teams channel, and the one
-                switch that turns posting on — its holder's alone. */}
-            {canConfigureTeams && <TeamsPostingSection onNavigate={onNavigate} />}
-
-            {/* D-157 (LAI-1316): Outlook meetings logged as time on My day,
-                after the HR card — the other connection held for everyone. */}
-            {canConfigureCalendar && (
-              <CalendarSourceSection
-                spaces={projects.projects.filter((p) => p.archived_at === null)}
-              />
-            )}
-
-            {/* LAI-773: the prices every cost on Usage is computed with — read by
-                anyone who may view the organisation, set by an owner or admin. */}
-            <ModelPricesSection />
-
-            {/* AI provider: absent for a reader without `org.settings.edit`,
-                as it was on the single page — so is its card. */}
-            {org?.ai !== undefined && (
-              <section className="org-card" aria-labelledby="org-ai" data-section="ai">
-                <header className="org-card-head">
-                  <h2 id="org-ai">AI provider</h2>
-                  <span className="org-status-badge" data-tone={org.ai.configured ? 'on' : 'off'}>
-                    {org.ai.configured ? 'configured' : 'not set up'}
-                  </span>
-                </header>
-                <p className="org-note">
-                  The model Meeting reviews use to turn a transcript into proposals.
-                </p>
-                <dl className="org-facts">
-                  {/* **Absent, not null**, for a reader without `org.settings.edit`
-                      — so the question is whether the key is there, never whether it
-                      is `null`. Somebody who may not see the AI settings is shown no
-                      row at all rather than an empty one, which would tell them a
-                      provider is unconfigured when they simply may not be told. */}
-                  {org.ai !== undefined && (
-                    <div className="org-fact">
-                      <dt>AI provider</dt>
-                      <dd>
-                        {org.ai.configured ? (
-                          <>
-                            {/* The wrapper is load-bearing: `dd` is a flex column, so
-                                without it the key tail is its own row. See
-                                `.org-ai` in the stylesheet. */}
-                            <span className="org-ai">
-                              {org.ai.provider ?? 'configured'}
-                              {org.ai.key_last4 !== null && (
-                                <span className="org-key">···{org.ai.key_last4}</span>
-                              )}
-                            </span>
-                            <span className="org-fact-note">
-                              The key itself is never shown — §12 stores it encrypted and nothing
-                              decrypts it to build this page.
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            none
-                            <span className="org-fact-note">
-                              Meeting reviews need one; without it a transcript is accepted and no
-                              proposals come back.
-                            </span>
-                          </>
-                        )}
                       </dd>
                     </div>
                   )}
                 </dl>
               </section>
-            )}
-          </>
-        )}
 
-        {tab === 'activity' &&
-          (refused ? (
-            <PermissionDenied
-              resource="the organisation’s activity"
-              requiredRole="admin"
-              scope="organisation"
-            />
-          ) : (
-            <OrgActivity
-              people={state.people}
+              {/* D-079 (LAI-751): the organisation's half of local activity
+                    sharing. A switch for an owner or admin, a word for everyone
+                    else — they are who it is about, so they can always read it. */}
+              <section className="org-card" aria-labelledby="org-insights-head">
+                <header className="org-card-head">
+                  <h2 id="org-insights-head">Developer insights</h2>
+                </header>
+                <dl className="org-facts">
+                  <div className="org-fact" data-fact="developer-insights">
+                    <dt id="org-insights-label">Developer insights</dt>
+                    <dd>
+                      {canSetInsights ? (
+                        <Switch
+                          checked={org.developer_insights}
+                          labelledBy="org-insights-label"
+                          describedBy="org-insights-note"
+                          disabled={insightsBusy}
+                          onChange={setInsights}
+                        >
+                          {org.developer_insights ? 'On' : 'Off'}
+                        </Switch>
+                      ) : (
+                        <span>{org.developer_insights ? 'on' : 'off'}</span>
+                      )}
+                      <span className="org-fact-note org-fact-measure" id="org-insights-note">
+                        When on, every connected machine’s local activity is collected: daily counts
+                        of prompts to agents, agent sessions, and commits pushed or not yet pushed,
+                        and agents’ token counts. They appear on that person’s profile as activity,
+                        and each person is told so on Developer access and Connect — never prompt
+                        text, file or repository names, branches or commit messages. Off stops it
+                        for everyone at once.{' '}
+                        <a
+                          className="org-fact-link"
+                          href={ACTIVITY_HREF}
+                          onClick={(event) => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                              return;
+                            }
+                            event.preventDefault();
+                            onNavigate(ACTIVITY_HREF);
+                          }}
+                        >
+                          What developers see: Developer access · Activity
+                        </a>
+                      </span>
+                      {insightsError !== undefined && (
+                        <span className="org-fact-error" role="alert">
+                          {insightsError}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+          )}
+
+          {/* Which build this board is (LAI-1069): owners and admins only. */}
+          {tab === 'general' && (me.org_role === 'owner' || me.org_role === 'admin') && (
+            <BoardBuildLine />
+          )}
+
+          {/* Workspace → Time & breaks (LAI-1318). */}
+          {tab === 'time' && org !== undefined && (
+            <div className="org-settings-grid">
+              {/* D-088 (LAI-787) and D-101 (LAI-956): the organisation's half
+                    of time — the mode, and the breaks drawn on every My day.
+                    Controls for whoever sets Time; words for everyone else. */}
+              <section
+                className="org-card org-settings-wide org-time-card"
+                aria-labelledby="org-time-head"
+              >
+                <header className="org-card-head">
+                  <h2 id="org-time-head">Time</h2>
+                </header>
+                <dl className="org-facts">
+                  <TimeModeFact canManage={canSetTime} />
+                  <BreakScheduleFact canManage={canSetTime} />
+                  {/* D-149 (LAI-1182): the holidays everyone reads, added to
+                        by whoever sets Time. The HR system they sync from is
+                        on Integrations. */}
+                  <HolidaysFact canManage={canSetTime} />
+                </dl>
+              </section>
+            </div>
+          )}
+
+          {/* Workspace → Spaces (LAI-1318): every space, its members and open work. */}
+          {tab === 'spaces' && <OrgSpaces projects={projects} onNavigate={onNavigate} />}
+
+          {tab === 'work' && (
+            <WorkTab
+              me={me}
               params={params}
               setParams={setParams}
+              onOpenTask={onOpenTask}
               onNavigate={onNavigate}
             />
-          ))}
+          )}
 
-        {/* How people sign in, above the tokens they hold (LAI-1239). */}
-        {tab === 'security' && canEditOrg && <SsoSection />}
-
-        {tab === 'security' && canListTokens && (
-          <section className="org-card" aria-labelledby="org-security">
-            <header className="org-card-head">
-              <h2 id="org-security">Tokens by person</h2>
-            </header>
-            <p className="org-note">
-              Every token anyone holds, person by person — revoke one and whatever uses it stops at
-              once. Your own are on Developer access.
-            </p>
-            {/* Finding one person among hundreds (LAI-1210); the search lives in
-                the address, `q`, as People's does. */}
-            <div className="org-security-tools">
-              <label className="org-people-search">
-                <span className="org-people-search-glyph" aria-hidden="true">
-                  ⌕
-                </span>
-                <input
-                  type="search"
-                  className="org-people-search-input"
-                  data-security-search
-                  placeholder="Find a person by name or email"
-                  aria-label="Find a person by name or email"
-                  value={securityQuery}
-                  onChange={(event) => {
-                    const next = new URLSearchParams(params);
-                    if (event.target.value === '') next.delete('q');
-                    else next.set('q', event.target.value);
-                    setParams(next);
-                  }}
+          {tab === 'people' && (
+            <>
+              <PeopleTab
+                meId={me.id}
+                theme={theme}
+                people={state.people}
+                truncated={state.truncated}
+                invites={state.invites}
+                invitesError={state.invitesError}
+                capacity={state.capacity}
+                canInvite={canInvite}
+                canDeactivate={canDeactivate}
+                canListTokens={canListTokens}
+                canChangeRoles={canChangeRoles}
+                projects={projects.projects}
+                changing={changing}
+                roleError={roleError}
+                onChange={change}
+                onTokens={(id) => {
+                  // That person's tokens, on Security, opened (LAI-238's panel).
+                  setTokensFor(id);
+                  onNavigate('/organisation?tab=security');
+                }}
+                onInvite={(text) => {
+                  setInvite({ text: text ?? '' });
+                }}
+                onReload={reload}
+                params={params}
+                setParams={setParams}
+              />
+              {canChangeRoles && (org?.extra_owners ?? []).length > 0 && (
+                <ExtraOwners
+                  owners={org?.extra_owners ?? []}
+                  onMakeAdmin={(id) => change(id, { org_role: 'admin' })}
                 />
-              </label>
-              <span className="org-people-shown" data-security-shown>
-                {securityPeople.length === state.people.length
-                  ? `${String(state.people.length)}${state.truncated ? '+' : ''} people`
-                  : `${String(securityPeople.length)} of ${String(state.people.length)}${state.truncated ? '+' : ''}`}
-              </span>
-            </div>
-            {securityPeople.length === 0 && (
-              <div className="org-people-empty" data-security-empty>
-                <p className="org-people-empty-title">No one matches “{securityQuery.trim()}”</p>
-                <p className="org-people-empty-body">Check the spelling of the name or email.</p>
-                <button
-                  type="button"
-                  className="org-people-empty-clear"
-                  onClick={() => {
-                    const next = new URLSearchParams(params);
-                    next.delete('q');
-                    setParams(next);
+              )}
+              {/* Served to the owner alone, so its presence is the gate (LAI-181). */}
+              {(org?.owner_invites_pending ?? []).length > 0 && (
+                <OwnerInvites
+                  invites={org?.owner_invites_pending ?? []}
+                  onRevoke={(id) =>
+                    revokeInvite(id).then(() => {
+                      setOrg((current) =>
+                        current?.owner_invites_pending === undefined
+                          ? current
+                          : {
+                              ...current,
+                              owner_invites_pending: current.owner_invites_pending.filter(
+                                (invite) => invite.id !== id,
+                              ),
+                            },
+                      );
+                      reload();
+                    })
+                  }
+                />
+              )}
+
+              {/* D-104 item 2: the owner's, by role, not a grant. */}
+              {canChangeRoles && <TransferOwnership me={me} people={state.people} />}
+
+              {invite !== undefined && (
+                <InviteDialog
+                  orgName={org?.name ?? 'this organisation'}
+                  roles={invitableRoles(me.org_role)}
+                  projects={projects.projects.filter((p) => p.archived_at === null)}
+                  initialText={invite.text}
+                  onClose={() => {
+                    setInvite(undefined);
                   }}
-                >
-                  Show everyone
-                </button>
+                  onIssued={reload}
+                  restore={() => inviteButton.current}
+                  emailOn={org !== undefined && emailOn(org)}
+                />
+              )}
+            </>
+          )}
+
+          {tab === 'roles' && (
+            <RolesPermissionsSection
+              canChangeRoles={canChangeRoles}
+              projects={projects.projects}
+              onNavigate={onNavigate}
+            />
+          )}
+
+          {/* Connections (LAI-1318): an index of every connection, then each on
+            a page of its own — open, not folded, since the page is the section. */}
+          {tab === 'integrations' && (
+            <ConnectionsIndex
+              org={org}
+              can={{ hr: canConfigureHr, teams: canConfigureTeams, calendar: canConfigureCalendar }}
+              onNavigate={onNavigate}
+            />
+          )}
+
+          <OrgFoldMode.Provider value="flat">
+            {tab === 'github' && (
+              <div className="org-conn-page">
+                {/* Owners and admins on a web session (§3.1 *Configure webhooks*):
+                absent, not null, for anyone else, so the card is simply not here. */}
+                {org?.github_webhook !== undefined && (
+                  <GithubWebhookSection
+                    webhook={org.github_webhook}
+                    onChanged={(configured) => {
+                      setOrg((current) =>
+                        current?.github_webhook === undefined
+                          ? current
+                          : {
+                              ...current,
+                              github_webhook: { ...current.github_webhook, configured },
+                            },
+                      );
+                    }}
+                  />
+                )}
               </div>
             )}
-            <ul className="org-people">
-              {securityPeople.map((person) => (
-                <li
-                  key={person.id}
-                  className={`org-person${person.is_active ? '' : ' org-person-inactive'}`}
-                >
-                  <span className="org-person-who">
-                    <span className="org-person-name">
-                      {person.name}
-                      {person.id === me.id && <span className="org-chip org-chip-you">YOU</span>}
-                      <span className="org-chip" data-security-role>
-                        {orgRoleLabel(person.org_role as OrgRole)}
-                      </span>
-                      {!person.is_active && (
-                        <span className="org-chip org-chip-off">DEACTIVATED</span>
-                      )}
-                    </span>
-                    <span className="org-person-email">{person.email}</span>
-                  </span>
-                  {/* **`token.list_any`** — Owner and Admin (§3.1), the same
-                      grade as this tab's own gate. Not on the reader's own
-                      row, as it never was: theirs are on Developer access. */}
-                  <span className="org-person-controls">
-                    {person.id === me.id ? (
-                      <a
-                        className="org-person-role"
-                        href={ownTokens}
-                        onClick={(event) => {
-                          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-                            return;
-                          }
-                          event.preventDefault();
-                          onNavigate(ownTokens);
-                        }}
-                      >
-                        On Developer access
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        className="org-tokens-toggle"
-                        aria-expanded={tokensFor === person.id}
-                        aria-controls={`tokens-${person.id}`}
-                        aria-label={
-                          tokensFor === person.id
-                            ? `Hide ${person.name}’s tokens`
-                            : `Show ${person.name}’s tokens`
-                        }
-                        onClick={() => {
-                          setTokenError(undefined);
-                          setTokenResult(undefined);
-                          setTokensFor((open) => (open === person.id ? undefined : person.id));
-                        }}
-                      >
-                        {tokensFor === person.id ? 'Hide tokens' : 'Tokens'}
-                      </button>
-                    )}
-                  </span>
 
-                  {tokensFor === person.id && (
-                    <div className="org-tokens" id={`tokens-${person.id}`}>
-                      <p className="org-tokens-head">
-                        {person.name}&rsquo;s tokens
-                        {/* Said on the screen, not only in a doc comment. An admin
+            {tab === 'hr' && (
+              <div className="org-conn-page">
+                {/* D-149 (LAI-1182): the HR system holidays and leave come from,
+                beside the other connection GitHub is — its holder's alone. */}
+                {canConfigureHr && (
+                  <HrSourceSection members={state.people.filter((p) => p.is_active)} />
+                )}
+              </div>
+            )}
+
+            {tab === 'email' && (
+              <div className="org-conn-page">
+                {/* D-153 (LAI-1312): outbound email — `org.email.configure`,
+                signed in only, as the server asks. */}
+                {canConfigureEmail && (
+                  <EmailSection
+                    onChanged={(email) => {
+                      setOrg((current) =>
+                        current === undefined ? current : { ...current, email },
+                      );
+                    }}
+                  />
+                )}
+                {/* D-155 (LAI-1315): email to tasks — the same `org.email.configure`,
+                beside the outbound card it shares Brevo with. */}
+                {canConfigureEmail && (
+                  <EmailInboundSection
+                    onChanged={(email_inbound) => {
+                      setOrg((current) =>
+                        current === undefined ? current : { ...current, email_inbound },
+                      );
+                    }}
+                    onNavigate={onNavigate}
+                  />
+                )}
+              </div>
+            )}
+
+            {tab === 'teams' && (
+              <div className="org-conn-page">
+                {/* D-154 (LAI-1314): each space's Teams channel, and the one
+                switch that turns posting on — its holder's alone. */}
+                {canConfigureTeams && <TeamsPostingSection onNavigate={onNavigate} />}
+              </div>
+            )}
+
+            {tab === 'calendar' && (
+              <div className="org-conn-page">
+                {/* D-157 (LAI-1316): Outlook meetings logged as time on My day,
+                after the HR card — the other connection held for everyone. */}
+                {canConfigureCalendar && (
+                  <CalendarSourceSection
+                    spaces={projects.projects.filter((p) => p.archived_at === null)}
+                  />
+                )}
+              </div>
+            )}
+
+            {tab === 'ai' && (
+              <div className="org-conn-page">
+                {/* AI provider: absent for a reader without `org.settings.edit`,
+                as it was on the single page — so is its card. */}
+                {org?.ai !== undefined && (
+                  <OrgAccordion
+                    name="ai"
+                    id="org-ai"
+                    title="AI provider"
+                    className="org-ai-card"
+                    section="ai"
+                    description="The model Meeting reviews use to turn a transcript into proposals."
+                    meta={
+                      <span
+                        className="org-status-badge"
+                        data-tone={org.ai.configured ? 'on' : 'off'}
+                      >
+                        {org.ai.configured ? 'configured' : 'not set up'}
+                      </span>
+                    }
+                  >
+                    <dl className="org-facts">
+                      {/* **Absent, not null**, for a reader without `org.settings.edit`
+                      — so the question is whether the key is there, never whether it
+                      is `null`. Somebody who may not see the AI settings is shown no
+                      row at all rather than an empty one, which would tell them a
+                      provider is unconfigured when they simply may not be told. */}
+                      {org.ai !== undefined && (
+                        <div className="org-fact">
+                          <dt>AI provider</dt>
+                          <dd>
+                            {org.ai.configured ? (
+                              <>
+                                {/* The wrapper is load-bearing: `dd` is a flex column, so
+                                without it the key tail is its own row. See
+                                `.org-ai` in the stylesheet. */}
+                                <span className="org-ai">
+                                  {org.ai.provider ?? 'configured'}
+                                  {org.ai.key_last4 !== null && (
+                                    <span className="org-key">···{org.ai.key_last4}</span>
+                                  )}
+                                </span>
+                                <span className="org-fact-note">
+                                  The key itself is never shown — §12 stores it encrypted and
+                                  nothing decrypts it to build this page.
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                none
+                                <span className="org-fact-note">
+                                  Meeting reviews need one; without it a transcript is accepted and
+                                  no proposals come back.
+                                </span>
+                              </>
+                            )}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  </OrgAccordion>
+                )}
+                {/* Model prices stay folded (the owner's ask): a long table read
+                when asked. */}
+                <OrgFoldMode.Provider value="fold">
+                  {/* LAI-773: the prices every cost on Usage is computed with — read by
+                anyone who may view the organisation, set by an owner or admin. */}
+                  <ModelPricesSection />
+                </OrgFoldMode.Provider>
+              </div>
+            )}
+          </OrgFoldMode.Provider>
+
+          {/* A connection's page named in the address for a reader its section
+            does not admit: said, rather than an empty page. */}
+          {((tab === 'github' && org !== undefined && org.github_webhook === undefined) ||
+            (tab === 'hr' && !canConfigureHr) ||
+            (tab === 'email' && !canConfigureEmail) ||
+            (tab === 'teams' && !canConfigureTeams) ||
+            (tab === 'calendar' && !canConfigureCalendar)) && (
+            <p className="org-note org-conn-refused" data-conn-refused>
+              Only an owner or someone given this connection can set it up. Ask them, or see{' '}
+              <a
+                className="org-fact-link"
+                href="/organisation?tab=integrations"
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  onNavigate('/organisation?tab=integrations');
+                }}
+              >
+                every connection
+              </a>
+              .
+            </p>
+          )}
+
+          {tab === 'activity' &&
+            (refused ? (
+              <PermissionDenied
+                resource="the organisation’s activity"
+                requiredRole="admin"
+                scope="organisation"
+              />
+            ) : (
+              <OrgActivity
+                people={state.people}
+                params={params}
+                setParams={setParams}
+                onNavigate={onNavigate}
+              />
+            ))}
+
+          {/* How people sign in, above the tokens they hold (LAI-1239). */}
+          {tab === 'security' && canEditOrg && <SsoSection />}
+
+          {tab === 'security' && canListTokens && (
+            <section className="org-card" aria-labelledby="org-security">
+              <header className="org-card-head">
+                <h2 id="org-security">Tokens by person</h2>
+                <span className="org-card-sub">
+                  Every token anyone holds — revoke one and whatever uses it stops at once. Your own
+                  are on Developer access.
+                </span>
+              </header>
+              {/* Finding one person among hundreds (LAI-1210); the search lives in
+                the address, `q`, as People's does. */}
+              <div className="org-security-tools">
+                <label className="org-people-search">
+                  <span className="org-people-search-glyph" aria-hidden="true">
+                    ⌕
+                  </span>
+                  <input
+                    type="search"
+                    className="org-people-search-input"
+                    data-security-search
+                    placeholder="Find a person by name or email"
+                    aria-label="Find a person by name or email"
+                    value={securityQuery}
+                    onChange={(event) => {
+                      const next = new URLSearchParams(params);
+                      if (event.target.value === '') next.delete('q');
+                      else next.set('q', event.target.value);
+                      setParams(next);
+                    }}
+                  />
+                </label>
+                <span className="org-people-shown" data-security-shown>
+                  {securityPeople.length === state.people.length
+                    ? `${String(state.people.length)}${state.truncated ? '+' : ''} people`
+                    : `${String(securityPeople.length)} of ${String(state.people.length)}${state.truncated ? '+' : ''}`}
+                </span>
+              </div>
+              {securityPeople.length === 0 && (
+                <div className="org-people-empty" data-security-empty>
+                  <p className="org-people-empty-title">No one matches “{securityQuery.trim()}”</p>
+                  <p className="org-people-empty-body">Check the spelling of the name or email.</p>
+                  <button
+                    type="button"
+                    className="org-people-empty-clear"
+                    onClick={() => {
+                      const next = new URLSearchParams(params);
+                      next.delete('q');
+                      setParams(next);
+                    }}
+                  >
+                    Show everyone
+                  </button>
+                </div>
+              )}
+              <ul className="org-people org-sec-list">
+                {securityPeople.map((person) => (
+                  <li
+                    key={person.id}
+                    className={`org-person org-sec-row${person.is_active ? '' : ' org-person-inactive'}`}
+                    data-open={tokensFor === person.id ? '' : undefined}
+                  >
+                    {(() => {
+                      const ink = avatarColor(person.id, theme);
+                      const who = (
+                        <>
+                          <span
+                            className="org-avatar"
+                            style={{ background: ink.background, color: ink.foreground }}
+                            aria-hidden="true"
+                          >
+                            {initials(person.name)}
+                          </span>
+                          <span className="org-person-who">
+                            <span className="org-person-name">
+                              {person.name}
+                              {person.id === me.id && (
+                                <span className="org-chip org-chip-you">YOU</span>
+                              )}
+                              {!person.is_active && (
+                                <span className="org-chip org-chip-off">DEACTIVATED</span>
+                              )}
+                            </span>
+                            <span className="org-person-email">{person.email}</span>
+                          </span>
+                          <span className="org-chip org-sec-role" data-security-role>
+                            {orgRoleLabel(person.org_role as OrgRole)}
+                          </span>
+                        </>
+                      );
+                      // **`token.list_any`** — Owner and Admin (§3.1), the same
+                      // grade as this tab's own gate. Not on the reader's own
+                      // row, as it never was: theirs are on Developer access.
+                      // Each other row is one accordion header (LAI-1318): the
+                      // whole line opens that person's tokens in place.
+                      return person.id === me.id ? (
+                        <div className="org-sec-head">
+                          {who}
+                          <span className="org-person-controls">
+                            <a
+                              className="org-person-role org-sec-link"
+                              href={ownTokens}
+                              onClick={(event) => {
+                                if (
+                                  event.metaKey ||
+                                  event.ctrlKey ||
+                                  event.shiftKey ||
+                                  event.altKey
+                                ) {
+                                  return;
+                                }
+                                event.preventDefault();
+                                onNavigate(ownTokens);
+                              }}
+                            >
+                              On Developer access
+                            </a>
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="org-sec-head org-tokens-toggle"
+                          aria-expanded={tokensFor === person.id}
+                          aria-controls={`tokens-${person.id}`}
+                          aria-label={
+                            tokensFor === person.id
+                              ? `Hide ${person.name}’s tokens`
+                              : `Show ${person.name}’s tokens`
+                          }
+                          onClick={() => {
+                            setTokenError(undefined);
+                            setTokenResult(undefined);
+                            setTokensFor((open) => (open === person.id ? undefined : person.id));
+                          }}
+                        >
+                          {who}
+                          <span className="org-sec-action">
+                            {tokensFor === person.id ? 'Hide tokens' : 'Tokens'}
+                          </span>
+                          <span className="org-acc-chevron" aria-hidden="true" />
+                        </button>
+                      );
+                    })()}
+
+                    {tokensFor === person.id && (
+                      <div className="org-tokens" id={`tokens-${person.id}`}>
+                        <p className="org-tokens-head">
+                          {person.name}&rsquo;s tokens
+                          {/* Said on the screen, not only in a doc comment. An admin
                             arriving to revoke a departed colleague's access is
                             exactly the person who will look for the value, and the
                             answer is that §4.9 stores a hash and there has never
                             been one to show. */}
-                        <span className="org-tokens-note">
-                          The token itself is never shown — Laika stores only a hash of it. The
-                          prefix is there to tell them apart.
-                        </span>
-                      </p>
-
-                      {canRevokeTokens && !mayActOnSetupOf(me.org_role, person.org_role) && (
-                        // D-133, LAI-1143: the server refuses an admin the owner's tokens.
-                        <p className="org-tokens-note" data-owner-tokens>
-                          {OWNER_SETUP_NOTE}
+                          <span className="org-tokens-note">
+                            The token itself is never shown — Laika stores only a hash of it. The
+                            prefix is there to tell them apart.
+                          </span>
                         </p>
-                      )}
 
-                      {tokens?.status === 'loading' && (
-                        <LoadingState
-                          shape="row"
-                          count={2}
-                          label={`Loading ${person.name}'s tokens`}
-                        />
-                      )}
-
-                      {tokens?.status === 'error' && (
-                        <ApiErrorState
-                          error={tokens.error}
-                          resource="these tokens"
-                          scope="organisation"
-                          onRetry={reloadTokens}
-                        />
-                      )}
-
-                      {tokens?.status === 'ready' && tokens.tokens.length > 0 && (
-                        // What deserves a look, from the fields alone (LAI-1210).
-                        <p className="org-tokens-summary" data-token-summary>
-                          {riskSummary(tokens.tokens, now)}
-                          {tokens.truncated ? ' — the first page only' : ''}
-                        </p>
-                      )}
-
-                      {tokens?.status === 'ready' &&
-                        (tokens.tokens.length === 0 ? (
-                          <p className="org-tokens-empty" data-tokens-empty>
-                            No tokens. Nothing of theirs is signed in to the API, so there is
-                            nothing to revoke.
+                        {canRevokeTokens && !mayActOnSetupOf(me.org_role, person.org_role) && (
+                          // D-133, LAI-1143: the server refuses an admin the owner's tokens.
+                          <p className="org-tokens-note" data-owner-tokens>
+                            {OWNER_SETUP_NOTE}
                           </p>
-                        ) : (
-                          // Grouped by kind (LAI-1046): a tool's credential is
-                          // named as the tool, never as an anonymous token.
-                          (
-                            [
-                              ['personal', 'Personal tokens'],
-                              ['agent', 'Tool credentials (Tool · Device)'],
-                            ] as const
-                          ).map(([kind, heading]) => {
-                            const group = tokensByKind(tokens.tokens)[kind];
-                            if (group.length === 0) return null;
-                            return (
-                              <div key={kind} className="org-tokens-group" data-kind={kind}>
-                                <p className="org-tokens-group-head">{heading}</p>
-                                <ul className="tok-list org-tokens-list">
-                                  {group.map((token) => (
-                                    <TokenRow
-                                      key={token.id}
-                                      token={token}
-                                      now={now}
-                                      flags={tokenRisks(token, now).map(
-                                        (risk) => RISK_LABELS[risk],
-                                      )}
-                                      onRevoke={
-                                        canRevokeTokens &&
-                                        mayActOnSetupOf(me.org_role, person.org_role)
-                                          ? (revoked) => {
-                                              revoke(person, revoked);
-                                            }
-                                          : undefined
-                                      }
-                                    />
-                                  ))}
-                                </ul>
-                              </div>
-                            );
-                          })
-                        ))}
+                        )}
 
-                      {tokenError !== undefined && (
-                        <p className="org-error" role="alert">
-                          {tokenError}
+                        {tokens?.status === 'loading' && (
+                          <LoadingState
+                            shape="row"
+                            count={2}
+                            label={`Loading ${person.name}'s tokens`}
+                          />
+                        )}
+
+                        {tokens?.status === 'error' && (
+                          <ApiErrorState
+                            error={tokens.error}
+                            resource="these tokens"
+                            scope="organisation"
+                            onRetry={reloadTokens}
+                          />
+                        )}
+
+                        {tokens?.status === 'ready' && tokens.tokens.length > 0 && (
+                          // What deserves a look, from the fields alone (LAI-1210).
+                          <p className="org-tokens-summary" data-token-summary>
+                            {riskSummary(tokens.tokens, now)}
+                            {tokens.truncated ? ' — the first page only' : ''}
+                          </p>
+                        )}
+
+                        {tokens?.status === 'ready' &&
+                          (tokens.tokens.length === 0 ? (
+                            <p className="org-tokens-empty" data-tokens-empty>
+                              No tokens. Nothing of theirs is signed in to the API, so there is
+                              nothing to revoke.
+                            </p>
+                          ) : (
+                            // Grouped by kind (LAI-1046): a tool's credential is
+                            // named as the tool, never as an anonymous token.
+                            (
+                              [
+                                ['personal', 'Personal tokens'],
+                                ['agent', 'Tool credentials (Tool · Device)'],
+                              ] as const
+                            ).map(([kind, heading]) => {
+                              const group = tokensByKind(tokens.tokens)[kind];
+                              if (group.length === 0) return null;
+                              return (
+                                <div key={kind} className="org-tokens-group" data-kind={kind}>
+                                  <p className="org-tokens-group-head">{heading}</p>
+                                  <ul className="tok-list org-tokens-list">
+                                    {group.map((token) => (
+                                      <TokenRow
+                                        key={token.id}
+                                        token={token}
+                                        now={now}
+                                        flags={tokenRisks(token, now).map(
+                                          (risk) => RISK_LABELS[risk],
+                                        )}
+                                        onRevoke={
+                                          canRevokeTokens &&
+                                          mayActOnSetupOf(me.org_role, person.org_role)
+                                            ? (revoked) => {
+                                                revoke(person, revoked);
+                                              }
+                                            : undefined
+                                        }
+                                      />
+                                    ))}
+                                  </ul>
+                                </div>
+                              );
+                            })
+                          ))}
+
+                        {tokenError !== undefined && (
+                          <p className="org-error" role="alert">
+                            {tokenError}
+                          </p>
+                        )}
+                        <p className="org-tokens-result" role="status" data-token-result>
+                          {tokenResult}
                         </p>
-                      )}
-                      <p className="org-tokens-result" role="status" data-token-result>
-                        {tokenResult}
-                      </p>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
       </div>
     </div>
   );

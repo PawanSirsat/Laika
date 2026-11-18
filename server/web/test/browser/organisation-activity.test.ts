@@ -132,7 +132,8 @@ void describe('who is offered it', () => {
         const tabs = await h.page
           .locator('.page-tab')
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-tab')));
-        assert.deepEqual(tabs.slice(-2), ['security', 'activity']);
+        // Last, under Records after Work, in the settings hub (LAI-1318).
+        assert.deepEqual(tabs.slice(-2), ['work', 'activity']);
       } finally {
         await h.close();
       }

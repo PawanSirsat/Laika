@@ -24,7 +24,11 @@ import {
   type ApiStub,
   type Harness,
   type StubCall,
+  openSectionsByDefault,
 } from './harness.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('calendar');
 
 const MINUTE = 60_000;
 const TENANT = '5abd4f6b-f235-4d86-a90c-08f2e5f56fbb';
@@ -254,9 +258,9 @@ function calendarState(initial: unknown) {
   };
 }
 
-/** Integrations, where the calendar card is. */
+/** The Outlook calendar's own page (LAI-1318), where its card is. */
 async function integrations(stub: ApiStub, ready = '[data-section="calendar"]'): Promise<Harness> {
-  const h = await openPage('/organisation?tab=integrations', stub);
+  const h = await openPage('/organisation?tab=calendar', stub);
   await h.page.locator(ready).waitFor({ timeout: 20_000 });
   return h;
 }
@@ -761,7 +765,7 @@ void describe('Outlook calendar: backfill (LAI-1335)', () => {
       backfill_running: { days: 30, started_at: ago(2) },
     });
     const h = await openPage(
-      '/organisation?tab=integrations',
+      '/organisation?tab=calendar',
       orgStub('owner', { '/api/v1/org/calendar': () => state }),
       {
         before: async (page) => {
@@ -916,7 +920,8 @@ void describe('Outlook calendar: backfill (LAI-1335)', () => {
 
 void describe('Outlook calendar: who sees it', () => {
   void test('a member on Integrations is shown no calendar card, and it is never asked', async () => {
-    const h = await integrations(orgStub('member'), '[data-section="prices"]');
+    // Its page says who sets it up, rather than drawing an empty card.
+    const h = await integrations(orgStub('member'), '[data-conn-refused]');
     try {
       await h.page.waitForTimeout(300);
       assert.equal(await card(h).count(), 0);

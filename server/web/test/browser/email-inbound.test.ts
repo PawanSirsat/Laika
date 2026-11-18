@@ -221,8 +221,9 @@ function orgStub(extra: ApiStub): ApiStub {
   };
 }
 
+/** The Email page (LAI-1318), where Email to tasks sits under the outbound card. */
 async function integrations(stub: ApiStub): Promise<Harness> {
-  const h = await open('/organisation?tab=integrations', stub);
+  const h = await open('/organisation?tab=email', stub);
   await card(h).waitFor({ timeout: 20_000 });
   await card(h).getByRole('switch').waitFor();
   return h;

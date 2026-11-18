@@ -32,6 +32,7 @@ import {
   twoFactorMethodName,
   twoFactorWords,
 } from './hr-derive.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 export interface HrSourceSectionProps {
   /** Active members, for the picker beside each Clan person an owner maps. */
@@ -56,7 +57,7 @@ const CONNECT_WAYS: readonly { readonly way: ConnectWay; readonly label: string 
 const MINUTE = 60_000;
 
 /** The card head's chip, as the GitHub webhook card's says *secret set*. */
-const STATUS_WORDS: Readonly<Record<HrSource['status'], string>> = {
+export const HR_STATUS_WORDS: Readonly<Record<HrSource['status'], string>> = {
   off: 'not connected',
   pending_2fa: 'waiting for a code',
   connected: 'connected',
@@ -362,19 +363,25 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
   const chosenMethod = method ?? methods[0];
 
   return (
-    <section
-      className="org-card org-hr"
-      aria-labelledby="org-hr"
-      data-section="hr"
-      data-hr-status={view.status}
-    >
-      <header className="org-card-head">
-        <h2 id="org-hr">HR system</h2>
-        <span className="org-count" data-configured={view.status === 'connected'}>
-          {STATUS_WORDS[view.status]}
+    // Folded to one row that says its state (LAI-1318).
+    <OrgAccordion
+      name="hr"
+      id="org-hr"
+      title="HR system"
+      className="org-hr"
+      section="hr"
+      hooks={{ 'data-hr-status': view.status }}
+      description="Holidays and leave from Clan, kept in step on its own."
+      meta={
+        <span
+          className="org-status-badge"
+          data-tone={view.status === 'connected' ? 'on' : 'off'}
+          data-configured={view.status === 'connected'}
+        >
+          {HR_STATUS_WORDS[view.status]}
         </span>
-      </header>
-
+      }
+    >
       <p className="org-note org-hr-lead" data-hr-lead>
         Holidays and leave from Clan, every {String(view.sync_every_minutes)} minutes. Laika keeps
         the sign-in token, never the password.
@@ -582,7 +589,7 @@ export function HrSourceSection({ members }: HrSourceSectionProps) {
           </span>
         )}
       </div>
-    </section>
+    </OrgAccordion>
   );
 }
 
