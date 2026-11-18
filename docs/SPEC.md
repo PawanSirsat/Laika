@@ -4060,6 +4060,15 @@ Every notification mail ends by saying why it came and linking the reader's own
 profile (`/people?user=<id>`, *Change what … emails you*), where their two
 switches are (§4.97); without a public URL it names the profile instead.
 
+**An agent is named as its owner's, never as its owner** (LAI-1341, the owner's
+decision). A token acts as the person who owns it, so `actor_id` is the owner
+either way; `actor_kind` `agent` is what tells them apart. Mail and digest lines
+say `<the agent's display name> (Ada's agent)` for a registered agent's row
+(`agent_id`), and `Ada's agent` for a token no agent was registered for. And
+**nobody is told what they did themselves in person** — but what their agent did
+on their behalf they are told: Ada's agent assigning Ada, or @mentioning her,
+mails Ada, and its work on the tasks she watches is in her digest.
+
 ### 4.94 `org_teams_settings`
 
 The organisation's Teams posting switch (D-154, LAI-1314) — one row, or none.
@@ -4179,9 +4188,10 @@ Indexes: unique `(user_id, activity_id)` and `(user_id, notice_id)`,
 is on:
 - `task.status_changed`, `task.assigned` (to someone else), `task.updated`
   (not a claim), `comment.added`, `attachment.added` and `task.stale_flagged`,
-  on a task the person watches (§4.18), done by someone else, that they were
-  not already mailed at once — **mailed means the mail is queued or sent**, so
-  one recorded `pref_off` or `too_old` does not count;
+  on a task the person watches (§4.18), not done by them in person (their
+  agent's doing counts, LAI-1341), that they were not already mailed at once —
+  **mailed means the mail is queued or sent**, so one recorded `pref_off` or
+  `too_old` does not count;
 - an assignment or an @mention the person was **not** mailed at once for one of
   those two reasons, watching the task or not — instant off is "tell me in the
   digest", not "never tell me";
@@ -8482,11 +8492,13 @@ One interval-driven scheduler in the same process:
   still written then, `email_off`, as the record D-153 keeps — writes an
   `assignment` mail for `task.assigned` — and for `task.created` with an
   assignee, unless it was reassigned since — and a `mention` mail for each
-  person a comment @mentions, never to the actor, each through the outbox
-  (`pref_off`, `no_access`, and `too_old` for activity first read over an hour
-  late, recorded there) and each written once — a re-read renders nothing;
-  collects digest items (§4.99); and closes every digest whose morning has come
-  (§4.98). Only writes to the outbox — `email.send` sends. No `activity` row
+  person a comment @mentions — never to a person for what they did in person,
+  but to an agent's owner for what the agent did (LAI-1341) — each through the
+  outbox (`pref_off`, `no_access`, and `too_old` for activity first read over
+  an hour late, recorded there) and each written once — a re-read renders
+  nothing; collects digest items (§4.99); and closes every digest whose morning
+  has come (§4.98). Only writes to the outbox — `email.send` sends. No
+  `activity` row
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.
