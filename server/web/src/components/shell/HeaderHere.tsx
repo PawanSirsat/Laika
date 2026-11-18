@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { getPresencePeople, type PresencePerson } from '../../api/presence.ts';
-import { usePolled } from '../../api/use-polled.ts';
+import type { PresencePerson } from '../../api/presence.ts';
+import { usePresencePeople } from '../../api/use-presence-people.ts';
 import { atOrBelow } from '../../theme/breakpoints.ts';
 import { prefersReducedMotion } from '../../theme/motion.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -24,9 +24,6 @@ const HerePopover = lazy(async () => {
   const module = await import('./HerePopover.tsx');
   return { default: module.HerePopover };
 });
-
-/** How often the top bar asks who is here, while the tab is visible. */
-export const HERE_POLL_MS = 30_000;
 
 /** A leaving face is gone by now whatever its animation did (it may never end). */
 const LEAVE_BACKSTOP_MS = 1_000;
@@ -73,11 +70,9 @@ export function HeaderHere() {
     route: { navigate },
   } = useShell();
   const { theme } = useTheme();
-  const polled = usePolled(getPresencePeople, {
-    ms: HERE_POLL_MS,
-    keepOnError: true,
-    pauseWhenHidden: true,
-  });
+  // The page's one read of who is here (LAI-1349): the board's faces and the
+  // person pickers ring theirs from the same answer.
+  const polled = usePresencePeople();
   const narrow = useMedia(NARROW_QUERY);
   const max = narrow ? HERE_MAX_NARROW : HERE_MAX;
 

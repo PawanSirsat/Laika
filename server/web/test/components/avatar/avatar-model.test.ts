@@ -7,6 +7,7 @@ import {
   groupOverflow,
   overflowWords,
   PRESENCE_WORDS,
+  ringClass,
 } from '../../../src/components/avatar/avatar-model.ts';
 
 void describe('groupOverflow', () => {
@@ -41,5 +42,13 @@ void describe('words', () => {
 
   void test('nine sizes, smallest first', () => {
     assert.deepEqual([...AVATAR_SIZES], [16, 20, 22, 24, 26, 28, 32, 36, 60]);
+  });
+});
+
+void describe('ringClass (LAI-1349)', () => {
+  void test('green online, amber away, and no ring when not told', () => {
+    assert.equal(ringClass('online'), 'avatar-ring avatar-ring-online');
+    assert.equal(ringClass('away'), 'avatar-ring avatar-ring-away');
+    assert.equal(ringClass(undefined), '');
   });
 });

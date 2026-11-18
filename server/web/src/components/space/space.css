@@ -163,6 +163,14 @@
   line-height: 1;
 }
 
+.space-member[data-ring='online'] {
+  border-color: var(--chip-green);
+}
+
+.space-member[data-ring='away'] {
+  border-color: var(--chip-orange);
+}
+
 .space-member + .space-member {
   margin-left: -7px;
 }

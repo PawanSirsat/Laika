@@ -53,3 +53,15 @@ export function groupOverflow(count: number, max: number): GroupOverflow {
 export function overflowWords(names: readonly string[]): string {
   return `and ${String(names.length)} more: ${names.join(', ')}`;
 }
+
+/** The two states a face is ringed for (LAI-1349): offline and unknown wear none. */
+export type Ring = 'online' | 'away';
+
+/**
+ * The class that rings a face by its status — green online, amber away, as
+ * Capacity's cards and the header's who's-here — or `''` for no ring. For a
+ * face drawn alone (a picker row); a stack's button rings its own border.
+ */
+export function ringClass(ring: Ring | undefined): string {
+  return ring === undefined ? '' : `avatar-ring avatar-ring-${ring}`;
+}

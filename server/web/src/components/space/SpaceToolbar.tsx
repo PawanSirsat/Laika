@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { usePresenceStatuses } from '../../api/use-presence-people.ts';
 import { Avatar } from '../avatar/Avatar.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import { cluster, memberFilterLabel } from './top-bar-derive.ts';
@@ -267,6 +268,8 @@ function FilterControls({
 }: FilterControlsProps) {
   const { theme } = useTheme();
   const { shown, overflow } = cluster(members);
+  // Who is online or away, from the page's one read (LAI-1349): each face's ring.
+  const statuses = usePresenceStatuses();
 
   return (
     <>
@@ -289,6 +292,7 @@ function FilterControls({
                 <button
                   type="button"
                   className={on ? 'space-member space-member-on' : 'space-member'}
+                  data-ring={statuses?.get(member.user_id)}
                   aria-pressed={on}
                   aria-label={memberFilterLabel(member.name, on)}
                   onClick={() => {
