@@ -308,15 +308,29 @@ describe('env contract: the image knows its own commit (LAI-1043)', () => {
    * it in from a build arg, and the deploy workflow supplies that arg. Lose
    * either half and every deployed board reports `build_commit: null` with
    * the gate green, because nothing else builds the image. This reads both.
+   *
+   * Coolify does not pass `LAIKA_BUILD_COMMIT`; it passes `SOURCE_COMMIT`
+   * when "Include source commit in build" is on (LAI-1332). The ENV line takes
+   * that only when `LAIKA_BUILD_COMMIT` is empty, so CI's arg still wins. The
+   * test pins the line's text; that Docker reads it that way was proved by
+   * building it, recorded in LAI-1332's log.
    */
-  it('declares the build arg in the shipped stage and turns it into ENV', () => {
+  it('declares the build args in the shipped stage and turns them into ENV', () => {
     const dockerfile = readFileSync(DOCKERFILE, 'utf8');
     const runtime = dockerfile.slice(dockerfile.search(/^FROM .* AS runtime$/m));
     expect(runtime.length, 'no runtime stage found in docker/Dockerfile').toBeLessThan(
       dockerfile.length,
     );
-    expect(runtime).toMatch(/^ARG LAIKA_BUILD_COMMIT(=.*)?$/m);
-    expect(runtime).toMatch(/^ENV LAIKA_BUILD_COMMIT=\$\{LAIKA_BUILD_COMMIT\}$/m);
+    const env = runtime.search(
+      /^ENV LAIKA_BUILD_COMMIT=\$\{LAIKA_BUILD_COMMIT:-\$SOURCE_COMMIT\}$/m,
+    );
+    expect(env, 'no ENV LAIKA_BUILD_COMMIT with the SOURCE_COMMIT fallback').toBeGreaterThan(-1);
+    // An ARG declared after the ENV that reads it is empty there.
+    for (const arg of [/^ARG LAIKA_BUILD_COMMIT(=.*)?$/m, /^ARG SOURCE_COMMIT(=.*)?$/m]) {
+      const at = runtime.search(arg);
+      expect(at, `${arg} in the runtime stage`).toBeGreaterThan(-1);
+      expect(at, `${arg} before the ENV that reads it`).toBeLessThan(env);
+    }
   });
 
   it('passes the pushed commit as that build arg in the deploy workflow', () => {

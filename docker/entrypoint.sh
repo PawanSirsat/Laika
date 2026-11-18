@@ -3,7 +3,8 @@
 # Laika container entrypoint.
 #
 # One job: refuse to start on a configuration that would fail later or, worse,
-# succeed wrongly. Then exec the real process.
+# succeed wrongly. Then exec the real process. The one exception is the build
+# commit at the end, which is dropped rather than refused.
 #
 # `exec` matters — it makes node PID 1's direct child under tini, so SIGTERM
 # reaches it and LAI-002's graceful shutdown runs.
@@ -83,6 +84,26 @@ if [ ! -w "$data_dir" ]; then
   echo "laika: refusing to start — $data_dir is not writable by $(id -un) (uid $(id -u))." >&2
   echo "laika: the named volume should be owned by uid 1000; a host bind mount needs chown." >&2
   exit 1
+fi
+
+# --- LAIKA_BUILD_COMMIT ---------------------------------------------------
+# The one value here that is not refused: it is a label, not configuration.
+# Coolify's SOURCE_COMMIT, which the image bakes in when CI's arg is absent,
+# can be the literal HEAD or unknown. The server refuses to start on anything
+# but 7 to 40 lowercase hex digits (§11.7), so a deploy would fail over a
+# label. Drop a non-commit here and serve none instead (LAI-1332). Empty is
+# left alone: the server already reads it as none.
+if [ -n "${LAIKA_BUILD_COMMIT:-}" ]; then
+  case "$LAIKA_BUILD_COMMIT" in
+    # Spelled out rather than a-f: a range in a bracket follows the locale.
+    *[!0123456789abcdef]*) commit_ok=no ;;
+    *) commit_ok=yes ;;
+  esac
+  if [ "$commit_ok" = no ] || [ "${#LAIKA_BUILD_COMMIT}" -lt 7 ] || [ "${#LAIKA_BUILD_COMMIT}" -gt 40 ]; then
+    # printf, not echo: dash's echo would act on a backslash in the value.
+    printf "laika: LAIKA_BUILD_COMMIT '%s' is not a commit; serving none\n" "$LAIKA_BUILD_COMMIT" >&2
+    unset LAIKA_BUILD_COMMIT
+  fi
 fi
 
 exec "$@"
