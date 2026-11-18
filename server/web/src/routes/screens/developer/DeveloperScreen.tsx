@@ -197,6 +197,7 @@ export function DeveloperScreen({
       {current === 'overview' && (
         <OverviewTab
           onNavigate={onNavigate}
+          readOnly={me?.org_role === 'viewer'}
           {...(preview ? { projectsHref: PREVIEW_SETUP_HREF } : {})}
         />
       )}
@@ -244,6 +245,7 @@ export function DeveloperScreen({
             origin={origin}
             canSetInsights={gates.org('org.developer_insights.set')}
             insightsSettled={gates.settled}
+            readOnly={me?.org_role === 'viewer'}
             onNavigate={onNavigate}
           />
         ) : (

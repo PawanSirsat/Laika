@@ -5,7 +5,9 @@ import {
   OVERVIEW_ADDRESSES,
   overviewState,
   receivedAgo,
+  reportsStand,
   toolAddress,
+  VIEWER_CANNOT_SEND,
   type OverviewLink,
 } from './overview-state.ts';
 
@@ -30,6 +32,13 @@ import {
  * done, and *pending* — its action locked, saying why — otherwise. Step 4 has
  * no signal of its own a browser can see; data arriving is how it shows, so it
  * is done when step 5 is.
+ *
+ * **Done is not the same as on** (LAI-1327 review 1). Step 4's line says *On*
+ * only while reports are fresh — a machine reported within the 14 days
+ * `collectors` counts. With the organisation's switch off it is *Paused*; with
+ * the last report older than that it says when, and to ask the machine. **A
+ * viewer's** credentials are read only, so for them step 4 is locked, and so
+ * is step 5 behind it.
  */
 
 export type ActivityStepKey = 'org' | 'device' | 'tool' | 'command' | 'data';
@@ -55,6 +64,8 @@ export interface ActivityInputs {
   readonly lastReceivedAt: number | null;
   /** Machines that reported in the last 14 days. */
   readonly collectors: number;
+  /** The reader is a viewer: their machines cannot send. */
+  readonly readOnly: boolean;
   readonly now: number;
 }
 
@@ -85,13 +96,15 @@ export function activitySteps(input: ActivityInputs): readonly ActivityStep[] {
   const connected = connectedCount(overview);
   const firstPending = overview.needSetup[0];
   const received = input.lastReceivedAt;
+  const stand = reportsStand(received, input.collectors);
+  const sends = !input.readOnly && received !== null;
 
   const done: Readonly<Record<ActivityStepKey, boolean>> = {
     org: input.orgEnabled,
     device: overview.devices.length > 0,
     tool: connected > 0,
-    command: received !== null,
-    data: received !== null,
+    command: sends,
+    data: sends,
   };
   const order: readonly ActivityStepKey[] = ['org', 'device', 'tool', 'command', 'data'];
 
@@ -112,10 +125,16 @@ export function activitySteps(input: ActivityInputs): readonly ActivityStep[] {
             ? 'Give a coding tool its own connection on that machine'
             : `${agentLabel(firstPending)} registered, not connected yet`;
       case 'command':
-        return done.command
-          ? 'On: the collector sends after each agent session'
-          : 'Run these on that machine: it uses its tool connection, no credential to paste';
+        if (input.readOnly)
+          return 'A viewer’s credentials are read only, so their machines cannot send';
+        if (received === null)
+          return 'Run these on that machine: it uses its tool connection, no credential to paste';
+        if (!input.orgEnabled) return 'Paused: Developer insights are off';
+        return stand === 'stalled'
+          ? `Last sent ${receivedAgo(received, input.now)}; run \`laika activity status\` on that machine`
+          : 'On: the collector sends after each agent session';
       case 'data':
+        if (input.readOnly && received === null) return 'Nothing arrives from a viewer’s machine';
         return received === null
           ? 'Waiting… start an agent session or run `laika activity sync`'
           : input.collectors > 0
@@ -139,37 +158,45 @@ export function activitySteps(input: ActivityInputs): readonly ActivityStep[] {
     return undefined;
   };
 
-  return order.map((key, i) => {
+  /** Why a step waits on `before`: a viewer waits on step 4 for good. */
+  const waitsOn = (before: ActivityStepKey): string =>
+    before === 'command' && input.readOnly ? VIEWER_CANNOT_SEND : WAITS_ON[before];
+
+  return order.map((key, i): ActivityStep => {
     const before = order.slice(0, i).find((earlier) => !done[earlier]);
-    const state = done[key] ? 'done' : before === undefined ? 'active' : 'pending';
     const link = action(key);
+    const base = { key, name: ACTIVITY_STEP_NAMES[key], line: line(key) };
+    const withLink = link === undefined ? {} : { action: link };
+    if (key === 'command' && input.readOnly) {
+      return { ...base, state: 'pending', ...withLink, locked: VIEWER_CANNOT_SEND };
+    }
+    const state = done[key] ? 'done' : before === undefined ? 'active' : 'pending';
     return {
-      key,
-      name: ACTIVITY_STEP_NAMES[key],
+      ...base,
       state,
-      line: line(key),
-      ...(link === undefined ? {} : { action: link }),
-      ...(state === 'pending' && before !== undefined ? { locked: WAITS_ON[before] } : {}),
+      ...withLink,
+      ...(state === 'pending' && before !== undefined ? { locked: waitsOn(before) } : {}),
     };
   });
 }
 
 /** The tab's one status line, over the checklist. */
 export interface ActivityHeadline {
-  readonly kind: 'off' | 'not-set-up' | 'collecting';
+  readonly kind: 'off' | 'not-set-up' | 'stalled' | 'collecting';
   readonly text: string;
 }
 
+/** *Collecting* only while reports are fresh; *Stalled* once the last is older than 14 days. */
 export function activityHeadline(
-  input: Pick<ActivityInputs, 'orgEnabled' | 'lastReceivedAt' | 'now'>,
+  input: Pick<ActivityInputs, 'orgEnabled' | 'lastReceivedAt' | 'collectors' | 'now'>,
 ): ActivityHeadline {
   if (!input.orgEnabled) return { kind: 'off', text: 'Off for the organisation' };
-  if (input.lastReceivedAt === null)
-    return { kind: 'not-set-up', text: 'Not set up on any machine' };
-  return {
-    kind: 'collecting',
-    text: `Collecting · last received ${receivedAgo(input.lastReceivedAt, input.now)}`,
-  };
+  const received = input.lastReceivedAt;
+  if (received === null) return { kind: 'not-set-up', text: 'Not set up on any machine' };
+  const ago = receivedAgo(received, input.now);
+  return reportsStand(received, input.collectors) === 'stalled'
+    ? { kind: 'stalled', text: `Stalled · last received ${ago}` }
+    : { kind: 'collecting', text: `Collecting · last received ${ago}` };
 }
 
 /**
@@ -184,7 +211,12 @@ export function activityCommands(origin: string): string {
 /** One row of *It isn't working*: what the CLI says, and what to do. */
 export interface Trouble {
   readonly key: 'org-off' | 'not-connected' | 'refused' | 'read-only';
-  /** What `laika activity on`, `status` or `sync` prints, as it prints it. */
+  /**
+   * The line `laika activity on` or `laika activity status` prints, word for
+   * word (`cli/src/activity.ts`) but for `…`, which stands for what differs
+   * from machine to machine — the board's address, the tool, the time — and
+   * the column padding `status` lines up with.
+   */
   readonly says: string;
   readonly fix: string;
 }
@@ -193,22 +225,22 @@ export interface Trouble {
 export const TROUBLES: readonly Trouble[] = [
   {
     key: 'org-off',
-    says: 'Your organisation has not turned on Developer insights',
+    says: 'Your organisation has not turned on Developer insights.',
     fix: 'An owner or admin turns it on, at step 1 here or in Organisation. Then run `laika activity on` again.',
   },
   {
     key: 'not-connected',
-    says: 'This machine is not connected to a board',
+    says: 'This machine is not connected to a board: no personal token, and no tool added here.',
     fix: 'Pair it and add a coding tool, steps 2 and 3, then run step 4’s commands. A personal token in ~/.laika/env works too.',
   },
   {
     key: 'refused',
-    says: 'refused this machine’s … credential, or refused the token (401)',
-    fix: 'The credential was revoked or replaced. Add the tool again from Tools; a personal token is replaced under Advanced.',
+    says: "… refused this machine's … credential.",
+    fix: 'The credential was revoked or replaced: add the tool again from Tools. With a personal token it says “… refused the token.”, and the token is replaced under Advanced.',
   },
   {
     key: 'read-only',
-    says: 'forbidden (403) on a sync, with Developer insights on',
+    says: 'Last sync … — failed (403)',
     fix: 'A viewer’s credentials are read only, so their machine cannot send. An owner or admin can change your role.',
   },
 ];

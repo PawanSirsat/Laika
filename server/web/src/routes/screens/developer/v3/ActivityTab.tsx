@@ -25,6 +25,7 @@ import {
 import type { ChipTone } from './DesignChip.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
+import { StaleNotice } from './StaleNotice.tsx';
 import '../../connect/connect.css';
 import './activity.css';
 
@@ -35,14 +36,22 @@ export interface ActivityTabProps {
   readonly canSetInsights: boolean;
   /** The grants have answered, so a switch is never offered and then taken away. */
   readonly insightsSettled: boolean;
+  /** The reader is a viewer: their machines cannot send, so step 4 is locked. */
+  readonly readOnly: boolean;
   readonly onNavigate: (to: string) => void;
 }
 
 const HEADLINE_TONE: Readonly<Record<ActivityHeadline['kind'], ChipTone>> = {
   off: 'warn',
   'not-set-up': 'accent',
+  stalled: 'warn',
   collecting: 'ok',
 };
+
+/** How often *4 min ago* moves on by itself. */
+const TICK_MS = 30_000;
+/** How often the tab asks again while it waits for a first report. */
+const POLL_MS = 20_000;
 
 /** An in-app link: a real `href`, and a plain click stays in the page. */
 function AppLink({
@@ -90,58 +99,107 @@ function withCode(text: string): ReactNode {
  * - **Step 4 is the two commands** for this board, to copy.
  * - **Step 5 is the board's own answer**, `last_received_at`.
  *
- * It reads again when the reader comes back to the tab — steps 2 to 5 finish
- * on their machine, not here.
+ * **It stays current by itself** (LAI-1327 review 1), since steps 2 to 5
+ * finish on the reader's machine, not here: it reads everything again when
+ * the reader comes back to the window, asks again every 20 s while step 5
+ * waits and the page is in view, and moves *4 min ago* on every 30 s. A
+ * re-read that fails keeps what is shown and says so (`StaleNotice`).
  */
 export function ActivityTab({
   origin,
   canSetInsights,
   insightsSettled,
+  readOnly,
   onNavigate,
 }: ActivityTabProps) {
   const model = useShareActivity();
-  const { reload } = model;
+  const { reload, poll } = model;
   const [devices, setDevices] = useState<readonly Device[] | undefined>(undefined);
   const [devicesError, setDevicesError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
   const [insightsBusy, setInsightsBusy] = useState(false);
   const [insightsError, setInsightsError] = useState<string | undefined>(undefined);
+  /**
+   * The organisation's switch as `PATCH /org` answered it, until a re-read
+   * shows the same — so the switch never flashes back to where it was.
+   */
+  const [insightsAnswer, setInsightsAnswer] = useState<boolean | undefined>(undefined);
+  const [retrying, setRetrying] = useState(false);
   const commandRef = useRef<HTMLPreElement | null>(null);
 
-  const loadDevices = useCallback((signal?: AbortSignal) => {
-    listDevices(signal)
-      .then((page) => {
-        setDevices(page.data);
-        setDevicesError(null);
-        setNow(Date.now());
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setDevicesError(cause);
-      });
-  }, []);
+  const loadDevices = useCallback(
+    (signal?: AbortSignal): Promise<void> =>
+      listDevices(signal)
+        .then((page) => {
+          setDevices(page.data);
+          setDevicesError(null);
+          setNow(Date.now());
+        })
+        .catch((cause: unknown) => {
+          if (cause instanceof DOMException && cause.name === 'AbortError') return;
+          setDevicesError(cause);
+        }),
+    [],
+  );
+
+  /** Every read again: the reader came back, or asked to retry. */
+  const refresh = useCallback(
+    (signal?: AbortSignal): Promise<void> =>
+      Promise.all([loadDevices(signal), reload()]).then(() => undefined),
+    [loadDevices, reload],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    loadDevices(controller.signal);
+    void loadDevices(controller.signal);
     const onVisible = (): void => {
-      if (document.visibilityState !== 'visible') return;
-      loadDevices(controller.signal);
-      reload();
+      if (document.visibilityState === 'visible') void refresh(controller.signal);
+    };
+    const onFocus = (): void => {
+      void refresh(controller.signal);
     };
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
     return () => {
       controller.abort();
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
     };
-  }, [loadDevices, reload]);
+  }, [loadDevices, refresh]);
+
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      setNow(Date.now());
+    }, TICK_MS);
+    return () => {
+      window.clearInterval(tick);
+    };
+  }, []);
+
+  // Step 5 waiting: ask again until a first report lands, while it is in view.
+  const waiting =
+    !readOnly && model.state.kind === 'ready' && model.state.held.last_received_at === null;
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const every = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void poll();
+    }, POLL_MS);
+    return () => {
+      window.clearInterval(every);
+    };
+  }, [waiting, poll]);
 
   const setInsights = (on: boolean): void => {
     setInsightsBusy(true);
     setInsightsError(undefined);
     updateOrg({ developer_insights: on })
-      .then(() => {
-        reload();
+      .then((org) => {
+        // Shown from the answer at once, as Organisation does; the switch stays
+        // busy until the re-read brings the steps that hang on it.
+        setInsightsAnswer(org.developer_insights);
+        return reload().then((fresh) => {
+          if (fresh) setInsightsAnswer(undefined);
+        });
       })
       .catch((cause: unknown) => {
         setInsightsError(cause instanceof Error ? cause.message : 'That change was refused.');
@@ -151,13 +209,22 @@ export function ActivityTab({
       });
   };
 
+  const retry = (): void => {
+    setRetrying(true);
+    void refresh().finally(() => {
+      setRetrying(false);
+    });
+  };
+
   if (model.state.kind === 'error') {
     return (
       <div className="dx dev-activity">
         <ApiErrorState
           error={new Error(model.state.message)}
           resource="your activity setting"
-          onRetry={reload}
+          onRetry={() => {
+            void reload();
+          }}
         />
       </div>
     );
@@ -170,7 +237,7 @@ export function ActivityTab({
           resource="your devices"
           onRetry={() => {
             setDevicesError(null);
-            loadDevices();
+            void loadDevices();
           }}
         />
       </div>
@@ -185,13 +252,17 @@ export function ActivityTab({
   }
 
   const { sharing, held, permissions } = model.state;
+  const orgEnabled = insightsAnswer ?? sharing.org_enabled;
   const inputs = {
-    orgEnabled: sharing.org_enabled,
+    orgEnabled,
     devices,
     lastReceivedAt: held.last_received_at,
     collectors: held.collectors,
-    now,
+    readOnly,
+    // Never before the answer shown was read: *4 min ago*, not *-1 min*.
+    now: Math.max(now, model.loadedAt ?? 0),
   };
+  const staleCause = model.stale !== undefined ? model.stale.cause : devicesError;
   const steps = activitySteps(inputs);
   const headline = activityHeadline(inputs);
   const commands = activityCommands(origin);
@@ -204,13 +275,13 @@ export function ActivityTab({
         return (
           <div className="dx-activity-switch">
             <Switch
-              checked={sharing.org_enabled}
+              checked={orgEnabled}
               labelledBy="dx-activity-org-name"
               describedBy="dx-activity-org-line"
               disabled={insightsBusy}
               onChange={setInsights}
             >
-              {sharing.org_enabled ? 'On' : 'Off'}
+              {orgEnabled ? 'On' : 'Off'}
             </Switch>
             {insightsBusy && <Spinner size="sm" />}
           </div>
@@ -239,6 +310,15 @@ export function ActivityTab({
 
   return (
     <div className="dx dev-activity" data-headline={headline.kind}>
+      {staleCause !== null && (
+        <StaleNotice
+          what="your activity setup"
+          error={staleCause}
+          loadedAt={model.loadedAt}
+          retrying={retrying}
+          onRetry={retry}
+        />
+      )}
       <section className="dx-card" aria-labelledby="dx-activity-title" data-checklist="">
         <div className="dx-card-pad dx-activity-head">
           <div className="dx-card-head">
@@ -285,14 +365,11 @@ export function ActivityTab({
                 >
                   {withCode(step.line)}
                 </span>
-                {step.key === 'org' &&
-                  !sharing.org_enabled &&
-                  insightsSettled &&
-                  !canSetInsights && (
-                    <span className="dx-flow-line" data-ask="">
-                      Ask {collectionManager(permissions)} to turn it on, in Organisation.
-                    </span>
-                  )}
+                {step.key === 'org' && !orgEnabled && insightsSettled && !canSetInsights && (
+                  <span className="dx-flow-line" data-ask="">
+                    Ask {collectionManager(permissions)} to turn it on, in Organisation.
+                  </span>
+                )}
                 {step.key === 'org' && insightsError !== undefined && (
                   <span className="dx-flow-line dx-activity-error" role="alert">
                     {insightsError}
@@ -336,7 +413,7 @@ export function ActivityTab({
           <h2 className="visually-hidden" id="dx-activity-more">
             Your choice, and what it sends
           </h2>
-          {sharing.org_enabled && (
+          {orgEnabled && (
             <ScopeChoice
               scope={sharing.scope}
               busy={model.busy}

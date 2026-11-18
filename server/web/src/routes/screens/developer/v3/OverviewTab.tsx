@@ -48,6 +48,8 @@ export interface OverviewTabProps {
   readonly onNavigate: (to: string) => void;
   /** Where *Set up a project* goes; `preview` sends it to the new flow (LAI-1052). */
   readonly projectsHref?: string;
+  /** The reader is a viewer: the journey's *Share activity* says they cannot send. */
+  readonly readOnly?: boolean;
 }
 
 /** The Overview's two reads, together: neither is drawn without the other. */
@@ -60,7 +62,12 @@ interface Loaded {
    * read failed: the step is then left out, never guessed.
    */
   readonly activity:
-    { readonly orgEnabled: boolean; readonly lastReceivedAt: number | null } | undefined;
+    | {
+        readonly orgEnabled: boolean;
+        readonly lastReceivedAt: number | null;
+        readonly collectors: number;
+      }
+    | undefined;
 }
 
 interface Failure {
@@ -224,6 +231,7 @@ function AttentionChip({
 export function OverviewTab({
   onNavigate,
   projectsHref = OVERVIEW_ADDRESSES.projects,
+  readOnly = false,
 }: OverviewTabProps) {
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [error, setError] = useState<Failure | null>(null);
@@ -264,6 +272,7 @@ export function OverviewTab({
             ? {
                 orgEnabled: sharing.value.org_enabled,
                 lastReceivedAt: held.value.last_received_at ?? null,
+                collectors: held.value.collectors,
               }
             : undefined,
       });
@@ -392,7 +401,7 @@ export function OverviewTab({
       state,
       projectsHref,
       toolsHref,
-      loaded?.activity === undefined ? undefined : { ...loaded.activity, now },
+      loaded?.activity === undefined ? undefined : { ...loaded.activity, readOnly, now },
     );
     body = (
       <>

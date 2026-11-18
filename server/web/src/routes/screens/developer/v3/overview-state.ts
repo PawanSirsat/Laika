@@ -361,12 +361,36 @@ export function receivedAgo(at: number, now: number): string {
   return `${String(Math.round(hours / 24))} d ago`;
 }
 
-/** What the journey's activity step reads (LAI-1327): the organisation's switch, and the first report. */
+/**
+ * A viewer's credentials are read only, so a machine of theirs cannot send
+ * (LAI-1327 review 1): the Activity tab's step 4 and the journey's step say so.
+ */
+export const VIEWER_CANNOT_SEND = 'Viewers can’t send activity: ask an owner for a member role';
+
+/**
+ * How the reader's reports stand (LAI-1327 review 1): none yet, **fresh** — a
+ * machine of theirs reported within `GET /me/local-activity`'s 14 days, its
+ * `collectors` — or **stalled**, the last one older than that. Only fresh is
+ * *Collecting* or *On*.
+ */
+export function reportsStand(
+  lastReceivedAt: number | null,
+  collectors: number,
+): 'none' | 'stalled' | 'fresh' {
+  if (lastReceivedAt === null) return 'none';
+  return collectors > 0 ? 'fresh' : 'stalled';
+}
+
+/** What the journey's activity step reads (LAI-1327): the organisation's switch, and the reports. */
 export interface JourneyActivity {
   /** The organisation's *Developer insights*. Off, and the step is not shown. */
   readonly orgEnabled: boolean;
   /** When a machine of the reader's last reported (`GET /me/local-activity`), or `null`. */
   readonly lastReceivedAt: number | null;
+  /** Machines of theirs that reported in the last 14 days. */
+  readonly collectors: number;
+  /** The reader is a viewer: their machines cannot send. */
+  readonly readOnly: boolean;
   readonly now: number;
 }
 
@@ -376,8 +400,10 @@ export interface JourneyActivity {
  *
  * **A fourth, *Share activity*, only while the organisation collects**
  * (LAI-1327): done once a machine of theirs has reported, and opening the
- * Activity tab's checklist. Without the organisation's switch there is
- * nothing for the reader to do, so there is no step to show.
+ * Activity tab's checklist — *Collecting* while reports are fresh, *Stalled*
+ * once the last is older than 14 days. Without the organisation's switch
+ * there is nothing for the reader to do, so there is no step to show; for a
+ * viewer it is locked, since their machines cannot send.
  */
 export function journeyRows(
   state: OverviewState,
@@ -464,13 +490,22 @@ export function journeyRows(
   if (activity?.orgEnabled !== true) return [device, tool, project];
 
   const received = activity.lastReceivedAt;
-  const share: JourneyRow =
-    received !== null
+  const stand = reportsStand(received, activity.collectors);
+  const share: JourneyRow = activity.readOnly
+    ? {
+        step: 'activity',
+        name: STEP_NAMES.activity,
+        state: 'pending',
+        line: VIEWER_CANNOT_SEND,
+        action: { label: 'Start', href: OVERVIEW_ADDRESSES.activity },
+        locked: VIEWER_CANNOT_SEND,
+      }
+    : received !== null
       ? {
           step: 'activity',
           name: STEP_NAMES.activity,
           state: 'done',
-          line: `Collecting · last received ${receivedAgo(received, activity.now)}`,
+          line: `${stand === 'fresh' ? 'Collecting' : 'Stalled'} · last received ${receivedAgo(received, activity.now)}`,
           action: { label: 'Open', href: OVERVIEW_ADDRESSES.activity },
         }
       : {

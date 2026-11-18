@@ -20,11 +20,13 @@ import {
 import {
   OVERVIEW_ADDRESSES,
   toolAddress,
+  VIEWER_CANNOT_SEND,
 } from '../../../../../src/routes/screens/developer/v3/overview-state.ts';
 import { NEVER_REPORTED } from '../../../../helpers/launcher.ts';
 
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 
 /** A tool's own credential, as the Overview's fixtures give one. */
 const credential: TokenView = {
@@ -91,6 +93,7 @@ const inputs = (over: Partial<ActivityInputs> = {}): ActivityInputs => ({
   devices: [],
   lastReceivedAt: null,
   collectors: 0,
+  readOnly: false,
   now: NOW,
   ...over,
 });
@@ -201,6 +204,10 @@ void describe('the checklist, in order (LAI-1327)', () => {
     );
     assert.equal(activitySteps(inputs(over))[4]?.line, 'Received from one machine, last 4 min ago');
     assert.equal(
+      activitySteps(inputs(over))[3]?.line,
+      'On: the collector sends after each agent session',
+    );
+    assert.equal(
       activitySteps(inputs({ ...over, collectors: 2 }))[4]?.line,
       'Received from 2 machines, last 4 min ago',
     );
@@ -229,6 +236,51 @@ void describe('the checklist, in order (LAI-1327)', () => {
         ['data', 'done'],
       ],
     );
+    // Done, not on (LAI-1327 review 1): the switch is what stopped it.
+    assert.equal(activitySteps(inputs(over))[3]?.line, 'Paused: Developer insights are off');
+  });
+
+  void test('stalled: the last report older than the 14 days says when, and to ask the machine', () => {
+    const over = {
+      devices: [device({ id: 'd1', agents: [connected('a1')] })],
+      lastReceivedAt: NOW - 20 * DAY,
+      collectors: 0,
+    };
+    const steps = activitySteps(inputs(over));
+    assert.equal(steps[3]?.state, 'done');
+    assert.equal(steps[3]?.line, 'Last sent 20 d ago; run `laika activity status` on that machine');
+    assert.doesNotMatch(steps[3]?.line ?? '', /^On/);
+    // Off and stalled: the switch is the reason, so it says that first.
+    assert.equal(
+      activitySteps(inputs({ ...over, orgEnabled: false }))[3]?.line,
+      'Paused: Developer insights are off',
+    );
+  });
+
+  void test('a viewer: step 4 locked, saying why, and step 5 behind it — whatever was held before', () => {
+    const over = {
+      readOnly: true,
+      devices: [device({ id: 'd1', agents: [connected('a1')] })],
+    };
+    assert.deepEqual(states(over), [
+      ['org', 'done', ''],
+      ['device', 'done', ''],
+      ['tool', 'done', ''],
+      ['command', 'pending', VIEWER_CANNOT_SEND],
+      ['data', 'pending', VIEWER_CANNOT_SEND],
+    ]);
+    assert.equal(VIEWER_CANNOT_SEND, 'Viewers can’t send activity: ask an owner for a member role');
+    const steps = activitySteps(inputs(over));
+    assert.equal(
+      steps[3]?.line,
+      'A viewer’s credentials are read only, so their machines cannot send',
+    );
+    assert.equal(steps[4]?.line, 'Nothing arrives from a viewer’s machine');
+    // Locked even before the steps ahead of it are done, and with history held.
+    assert.equal(activitySteps(inputs({ readOnly: true }))[3]?.locked, VIEWER_CANNOT_SEND);
+    const held = activitySteps(inputs({ ...over, lastReceivedAt: NOW - MIN, collectors: 1 }));
+    assert.equal(held[3]?.state, 'pending');
+    assert.equal(held[4]?.state, 'pending');
   });
 
   void test('a revoked device is no device', () => {
@@ -245,13 +297,26 @@ void describe('the headline, the commands, and what to do when it isn’t workin
       kind: 'off',
       text: 'Off for the organisation',
     });
+    // Off wins over a history: nothing is collected now.
+    assert.equal(
+      activityHeadline(inputs({ orgEnabled: false, lastReceivedAt: NOW - MIN, collectors: 1 }))
+        .kind,
+      'off',
+    );
     assert.deepEqual(activityHeadline(inputs()), {
       kind: 'not-set-up',
       text: 'Not set up on any machine',
     });
-    assert.deepEqual(activityHeadline(inputs({ lastReceivedAt: NOW - 4 * MIN })), {
+    assert.deepEqual(activityHeadline(inputs({ lastReceivedAt: NOW - 4 * MIN, collectors: 1 })), {
       kind: 'collecting',
       text: 'Collecting · last received 4 min ago',
+    });
+  });
+
+  void test('stalled, never collecting, once the last report is older than the 14 days', () => {
+    assert.deepEqual(activityHeadline(inputs({ lastReceivedAt: NOW - 20 * DAY, collectors: 0 })), {
+      kind: 'stalled',
+      text: 'Stalled · last received 20 d ago',
     });
   });
 
@@ -270,10 +335,16 @@ void describe('the headline, the commands, and what to do when it isn’t workin
     for (const trouble of TROUBLES) {
       assert.ok(trouble.says.length > 0 && trouble.fix.length > 0, trouble.key);
     }
-    // Word for word what `laika activity on` prints (cli/src/activity-sync.ts, LAI-1325).
-    assert.equal(
-      TROUBLES.find((t) => t.key === 'not-connected')?.says,
-      'This machine is not connected to a board',
+    // Word for word what the CLI prints, `…` for what varies (cli/src/activity.ts,
+    // cli/src/activity-sync.ts's NOT_CONNECTED).
+    assert.deepEqual(
+      TROUBLES.map((t) => t.says),
+      [
+        'Your organisation has not turned on Developer insights.',
+        'This machine is not connected to a board: no personal token, and no tool added here.',
+        "… refused this machine's … credential.",
+        'Last sync … — failed (403)',
+      ],
     );
   });
 });

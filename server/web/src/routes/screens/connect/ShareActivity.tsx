@@ -113,8 +113,23 @@ export interface ShareActivityModel {
   readonly change: (next: { scope: LocalActivityScope }) => void;
   /** Asks first, then deletes the person's local-activity history. */
   readonly erase: () => void;
-  /** Reads all three again — after the organisation's switch moved, say. */
-  readonly reload: () => void;
+  /**
+   * Reads all three again — after the organisation's switch moved, say —
+   * resolving `true` once a fresh answer is shown and `false` when it failed.
+   */
+  readonly reload: () => Promise<boolean>;
+  /**
+   * Reads the setting and what is held again, the grants kept — the Activity
+   * tab's poll while it waits for a first report (LAI-1327 review 1).
+   */
+  readonly poll: () => Promise<boolean>;
+  /**
+   * Why the last re-read failed **after** an answer was shown, or `undefined`:
+   * what is shown stays (LAI-1197), and the panel says it may be stale.
+   */
+  readonly stale: { readonly cause: unknown } | undefined;
+  /** When the answer shown was read. */
+  readonly loadedAt: number | undefined;
 }
 
 /**
@@ -129,37 +144,59 @@ export function useShareActivity(): ShareActivityModel {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [deleted, setDeleted] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [stale, setStale] = useState<{ readonly cause: unknown } | undefined>(undefined);
+  const [loadedAt, setLoadedAt] = useState<number | undefined>(undefined);
+  /** The read in flight: a newer one replaces it, so an older answer never lands last. */
+  const inFlight = useRef<AbortController | null>(null);
+  /** The grants last read, kept by a poll; `null` until the first answer. */
+  const shownPermissions = useRef<OrgPermissions | undefined | null>(null);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    Promise.all([
+  const load = useCallback((withPermissions: boolean): Promise<boolean> => {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const { signal } = controller;
+    const kept = shownPermissions.current;
+    return Promise.all([
       getActivitySharing(signal),
       getOwnLocalActivity(signal),
-      // Only the audience's wording rides on it, so a refusal never hides the panel.
-      getOrgPermissions(signal).catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
-        return undefined;
-      }),
+      !withPermissions && kept !== null
+        ? Promise.resolve(kept)
+        : // Only the audience's wording rides on it, so a refusal never hides the panel.
+          getOrgPermissions(signal).catch((cause: unknown) => {
+            if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+            return undefined;
+          }),
     ])
       .then(([sharing, held, permissions]) => {
+        if (signal.aborted) return false;
+        shownPermissions.current = permissions;
         setState({ kind: 'ready', sharing, held, permissions });
+        setStale(undefined);
+        setLoadedAt(Date.now());
+        return true;
       })
       .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        if (signal.aborted) return false;
+        // Once something is shown, a failed re-read keeps it and says so.
+        if (shownPermissions.current !== null) {
+          setStale({ cause });
+          return false;
+        }
         setState({
           kind: 'error',
           message: said(cause, 'Your sharing setting could not be read.'),
         });
+        return false;
       });
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    load(controller.signal);
+    void load(true);
     return () => {
-      controller.abort();
+      inFlight.current?.abort();
     };
-  }, [load, attempt]);
+  }, [load]);
 
   const change = (next: { scope: LocalActivityScope }): void => {
     if (state.kind !== 'ready') return;
@@ -208,11 +245,10 @@ export function useShareActivity(): ShareActivityModel {
     });
   };
 
-  const reload = useCallback(() => {
-    setAttempt((n) => n + 1);
-  }, []);
+  const reload = useCallback(() => load(true), [load]);
+  const poll = useCallback(() => load(false), [load]);
 
-  return { state, busy, error, deleted, change, erase, reload };
+  return { state, busy, error, deleted, change, erase, reload, poll, stale, loadedAt };
 }
 
 /** What the board shows it for, said once (D-079): on the profile, never a score. */

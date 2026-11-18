@@ -24,6 +24,7 @@ import {
   overviewState,
   overviewSummary,
   receivedAgo,
+  reportsStand,
   statusLines,
   toolAddress,
   wizardAddress,
@@ -840,7 +841,13 @@ void describe('addresses', () => {
 void describe('the journey’s Share activity step (LAI-1327)', () => {
   const connected = (): OverviewState =>
     state([device({ id: 'd1', agents: [seen({ id: 'a1' })] })]);
-  const collects = { orgEnabled: true, lastReceivedAt: null, now: NOW } as const;
+  const collects = {
+    orgEnabled: true,
+    lastReceivedAt: null,
+    collectors: 0,
+    readOnly: false,
+    now: NOW,
+  } as const;
 
   void test('not there while the organisation does not collect, nor when its read failed', () => {
     assert.equal(
@@ -873,6 +880,7 @@ void describe('the journey’s Share activity step (LAI-1327)', () => {
     const rows = journeyRows(connected(), PROJECTS, TOOLS, {
       ...collects,
       lastReceivedAt: NOW - 4 * 60_000,
+      collectors: 1,
     });
     assert.deepEqual(rows[3], {
       step: 'activity',
@@ -881,6 +889,34 @@ void describe('the journey’s Share activity step (LAI-1327)', () => {
       line: 'Collecting · last received 4 min ago',
       action: { label: 'Open', href: '/developer?tab=activity' },
     });
+  });
+
+  void test('stalled, not collecting, once the last report is older than the 14 days', () => {
+    const rows = journeyRows(connected(), PROJECTS, TOOLS, {
+      ...collects,
+      lastReceivedAt: NOW - 20 * 24 * 60 * 60_000,
+      collectors: 0,
+    });
+    assert.equal(rows[3]?.state, 'done');
+    assert.equal(rows[3]?.line, 'Stalled · last received 20 d ago');
+  });
+
+  void test('a viewer: locked, saying their machines cannot send', () => {
+    const rows = journeyRows(connected(), PROJECTS, TOOLS, { ...collects, readOnly: true });
+    assert.deepEqual(rows[3], {
+      step: 'activity',
+      name: 'Share activity',
+      state: 'pending',
+      line: 'Viewers can’t send activity: ask an owner for a member role',
+      action: { label: 'Start', href: '/developer?tab=activity' },
+      locked: 'Viewers can’t send activity: ask an owner for a member role',
+    });
+  });
+
+  void test('fresh, stalled or none: what the reports are, from the 14-day count', () => {
+    assert.equal(reportsStand(null, 0), 'none');
+    assert.equal(reportsStand(NOW, 1), 'fresh');
+    assert.equal(reportsStand(NOW - 20 * 24 * 60 * 60_000, 0), 'stalled');
   });
 
   void test('how long ago, coarse: just now, minutes, hours, days', () => {

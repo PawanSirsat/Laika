@@ -12,15 +12,27 @@
  *   working*; Advanced's old address lands here.
  * - The Overview's journey gains *Share activity* while the organisation
  *   collects.
+ * - Review 1: step 4 says *On* only for fresh data — *Paused* with the switch
+ *   off, *Last sent …* once stalled; a viewer's step 4 is locked; a refused
+ *   switch says why and stays put, and a slow one never flashes back; the tab
+ *   keeps itself current, and a failed re-read keeps what it shows.
  * - 390px, light and dark, with no sideways scroll. Set `LAIKA_SHOTS` to a
  *   directory to keep the pictures the review asks for.
  */
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { answerConfirm } from './confirm.ts';
-import { closeBrowser, open, setTheme, until, type ApiStub, type StubCall } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  refuse,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
@@ -30,11 +42,18 @@ async function shoot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
 }
 
+/** One part of the page, for a review that asks about that part. */
+async function shootPart(part: Locator, name: string): Promise<void> {
+  if (SHOTS === undefined) return;
+  await part.screenshot({ path: `${SHOTS}/${name}.png` });
+}
+
 after(async () => {
   await closeBrowser();
 });
 
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 
 const compat = {
   server: { version: '0.1.0', build_commit: null },
@@ -50,7 +69,7 @@ const compat = {
   release_notes: { ref: null, whats_new: [] },
 };
 
-type Role = 'owner' | 'member';
+type Role = 'owner' | 'member' | 'viewer';
 
 const me = (org_role: Role) => ({
   id: 'u1',
@@ -516,6 +535,267 @@ void describe('where Activity is', () => {
       await h.close();
     }
   });
+});
+
+void describe('the switch, refused or slow (LAI-1327 review 1)', () => {
+  for (const [status, code, message] of [
+    [403, 'forbidden', 'Only an owner or admin may change this.'],
+    [500, 'internal', 'The board could not save that.'],
+  ] as const) {
+    void test(`a ${String(status)} lands in the alert, and the switch stays where it truly is`, async () => {
+      const base = stub(WORLDS.off);
+      const org = base['/api/v1/org'] as (call: StubCall) => unknown;
+      const h = await open('/developer?tab=activity', {
+        ...base,
+        '/api/v1/org': (call: StubCall) =>
+          call.method === 'PATCH' ? refuse(status, code, message) : org(call),
+      });
+      try {
+        await ready(h.page);
+        const toggle = step(h.page, 'org').getByRole('switch');
+        await toggle.click();
+        const alert = step(h.page, 'org').getByRole('alert');
+        await alert.waitFor({ timeout: 10_000 });
+        assert.equal(await alert.innerText(), message);
+        assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+        assert.equal(await toggle.isDisabled(), false);
+        assert.equal(await headline(h.page), 'Off for the organisation');
+        assert.equal(await step(h.page, 'device').getAttribute('data-state'), 'pending');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('turned on, it shows on from the answer and stays busy until the re-read lands', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    let patched = false;
+    const base = stub(WORLDS.off);
+    const org = base['/api/v1/org'] as (call: StubCall) => unknown;
+    const sharing = base['/api/v1/me/activity-sharing'] as (call: StubCall) => unknown;
+    const h = await open('/developer?tab=activity', {
+      ...base,
+      '/api/v1/org': (call: StubCall) => {
+        if (call.method === 'PATCH') patched = true;
+        return org(call);
+      },
+      // The re-read after the change is held until the test has looked.
+      '/api/v1/me/activity-sharing': (call: StubCall) =>
+        patched ? gate.then(() => sharing(call)) : sharing(call),
+    });
+    try {
+      await ready(h.page);
+      const toggle = step(h.page, 'org').getByRole('switch');
+      await toggle.click();
+      await until(async () => (await toggle.getAttribute('aria-checked')) === 'true', 10_000);
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
+      assert.equal(await toggle.isDisabled(), true, 'busy while the re-read is out');
+      await h.page.waitForTimeout(300);
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true', 'never back to off');
+      release();
+      await until(async () => !(await toggle.isDisabled()), 10_000);
+      assert.equal(await toggle.isDisabled(), false);
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
+      assert.equal(await step(h.page, 'org').getAttribute('data-state'), 'done');
+    } finally {
+      release();
+      await h.close();
+    }
+  });
+});
+
+void describe('it keeps itself current (LAI-1327 review 1)', () => {
+  const localReads = (calls: readonly StubCall[]) =>
+    calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/me/local-activity').length;
+
+  void test('coming back to the window reads again; a failed re-read keeps what is shown and says so', async () => {
+    let fail = false;
+    const w = { ...WORLDS.received, lastReceivedAt: Date.now() - 4 * MIN };
+    const h = await open(
+      '/developer?tab=activity',
+      stub(w, {
+        '/api/v1/me/local-activity': () =>
+          fail ? refuse(500, 'internal', 'The board is restarting.') : held(w),
+      }),
+    );
+    try {
+      await ready(h.page);
+      fail = true;
+      const before = localReads(h.calls);
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      const notice = h.page.locator('.dev-activity [data-stale]');
+      await notice.waitFor({ timeout: 10_000 });
+      assert.ok(localReads(h.calls) > before, 'focus read it again');
+      assert.match(await notice.innerText(), /Couldn’t refresh your activity setup/);
+      assert.match(await notice.innerText(), /The board is restarting\./);
+      // What was shown stays.
+      assert.equal(await headline(h.page), 'Collecting · last received 4 min ago');
+      assert.equal(await step(h.page, 'data').getAttribute('data-state'), 'done');
+
+      fail = false;
+      await notice.getByRole('button', { name: 'Retry' }).click();
+      await until(async () => (await notice.count()) === 0, 10_000);
+      assert.equal(await notice.count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('while step 5 waits it asks every 20 s, only in view, and stops once data lands', async () => {
+    let w: World = WORLDS.waiting;
+    const h = await open(
+      '/developer?tab=activity',
+      stub(WORLDS.waiting, { '/api/v1/me/local-activity': () => held(w) }),
+      { before: async (page) => page.clock.install() },
+    );
+    const view = (state: 'visible' | 'hidden') =>
+      h.page.evaluate((to) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => to });
+      }, state);
+    try {
+      await ready(h.page);
+      const first = localReads(h.calls);
+      await h.page.clock.fastForward(21_000);
+      await until(() => localReads(h.calls) > first);
+      assert.equal(localReads(h.calls), first + 1, 'asked again while waiting');
+
+      await view('hidden');
+      const hidden = localReads(h.calls);
+      await h.page.clock.fastForward(45_000);
+      await h.page.waitForTimeout(300);
+      assert.equal(localReads(h.calls), hidden, 'not while the page is out of view');
+      await view('visible');
+
+      w = { ...WORLDS.waiting, lastReceivedAt: Date.now() - MIN, collectors: 1 };
+      await h.page.clock.fastForward(21_000);
+      await until(async () => (await step(h.page, 'data').getAttribute('data-state')) === 'done');
+      assert.equal(await step(h.page, 'data').getAttribute('data-state'), 'done');
+      const landed = localReads(h.calls);
+      await h.page.clock.fastForward(65_000);
+      await h.page.waitForTimeout(300);
+      assert.equal(localReads(h.calls), landed, 'no more asking once data has arrived');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('when it last came moves on by itself', async () => {
+    const w = { ...WORLDS.received, lastReceivedAt: Date.now() - 4 * MIN };
+    const h = await open('/developer?tab=activity', stub(w), {
+      before: async (page) => page.clock.install(),
+    });
+    try {
+      await ready(h.page);
+      assert.equal(await headline(h.page), 'Collecting · last received 4 min ago');
+      await h.page.clock.fastForward(2 * MIN);
+      await until(async () => (await headline(h.page)) === 'Collecting · last received 6 min ago');
+      assert.equal(await headline(h.page), 'Collecting · last received 6 min ago');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a viewer cannot send (LAI-1327 review 1)', () => {
+  const viewer: World = { ...WORLDS.waiting, role: 'viewer' };
+  const SAYS = 'Viewers can’t send activity: ask an owner for a member role';
+
+  void test('step 4 is locked, saying why, with no commands to copy; step 5 waits behind it', async () => {
+    const h = await open('/developer?tab=activity', stub(viewer));
+    try {
+      await ready(h.page);
+      await until(
+        async () => (await step(h.page, 'command').getAttribute('data-state')) === 'pending',
+      );
+      assert.equal(await step(h.page, 'command').getAttribute('data-state'), 'pending');
+      assert.equal(await step(h.page, 'command').locator('[data-locked]').innerText(), SAYS);
+      assert.equal(await step(h.page, 'command').locator('pre[data-commands]').count(), 0);
+      assert.equal(await step(h.page, 'data').getAttribute('data-state'), 'pending');
+      assert.equal(await step(h.page, 'data').locator('[data-locked]').innerText(), SAYS);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Overview journey says the same', async () => {
+    const h = await open('/developer?tab=overview', stub(viewer));
+    try {
+      const row = h.page.locator('[data-journey] [data-step="activity"]');
+      await row.waitFor({ timeout: 20_000 });
+      assert.equal(await row.getAttribute('data-state'), 'pending');
+      assert.equal(await row.locator('.dx-flow-line').innerText(), SAYS);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('step 4 says what is true now (LAI-1327 review 1)', () => {
+  const cases = [
+    {
+      name: 'paused',
+      world: (): World => ({
+        ...WORLDS.received,
+        org: false,
+        lastReceivedAt: Date.now() - 2 * 60 * MIN,
+      }),
+      line: 'Paused: Developer insights are off',
+      head: 'Off for the organisation',
+    },
+    {
+      name: 'stalled',
+      world: (): World => ({
+        ...WORLDS.received,
+        lastReceivedAt: Date.now() - 20 * DAY,
+        collectors: 0,
+      }),
+      line: 'Last sent 20 d ago; run laika activity status on that machine',
+      head: 'Stalled · last received 20 d ago',
+    },
+    {
+      name: 'fresh',
+      world: (): World => ({ ...WORLDS.received, lastReceivedAt: Date.now() - 4 * MIN }),
+      line: 'On: the collector sends after each agent session',
+      head: 'Collecting · last received 4 min ago',
+    },
+  ] as const;
+
+  for (const c of cases) {
+    void test(`${c.name}: “${c.line}”, light and dark, 1440 and 390`, async () => {
+      const h = await open('/developer?tab=activity', stub(c.world()));
+      try {
+        await ready(h.page);
+        const command = step(h.page, 'command');
+        assert.equal(await command.getAttribute('data-state'), 'done');
+        assert.equal((await command.locator('.dx-flow-line').first().innerText()).trim(), c.line);
+        assert.equal(await headline(h.page), c.head);
+        assert.equal(
+          await h.page.locator('.dev-activity').getAttribute('data-headline'),
+          c.name === 'paused' ? 'off' : c.name === 'stalled' ? 'stalled' : 'collecting',
+        );
+        for (const theme of ['light', 'dark'] as const) {
+          await h.page.setViewportSize({ width: 1440, height: 1000 });
+          await setTheme(h.page, theme);
+          await h.page.waitForTimeout(300);
+          await shootPart(
+            h.page.locator('.dev-activity [data-checklist]'),
+            `step4-${c.name}-1440-${theme}`,
+          );
+          await h.page.setViewportSize({ width: 390, height: 844 });
+          await h.page.waitForTimeout(500);
+          await shootPart(
+            h.page.locator('.dev-activity [data-checklist]'),
+            `step4-${c.name}-390-${theme}`,
+          );
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('look and fit', () => {
