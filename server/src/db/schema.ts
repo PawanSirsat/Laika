@@ -740,6 +740,21 @@ export const tasks = sqliteTable(
      * not. Compared with the policy's `max_handoffs`. Never decremented.
      */
     handoffCount: integer('handoff_count').notNull().default(0),
+    /**
+     * **Put away, kept whole** (§4.5, LAI-1353): when the task was archived,
+     * null while it is live. An archived task leaves every board, list and
+     * queue (`liveTask()`), keeps its history, and is read-only until it is
+     * restored. Archiving a parent stamps its subtasks with the **same**
+     * instant, which is how a restore knows which of them came along.
+     *
+     * A flag, not a status: a task keeps its status underneath, so a restore
+     * puts it back where it was. No CHECK pairing it with `archived_by` — a
+     * table-level CHECK would make drizzle-kit rebuild `tasks`; the one writer
+     * (`setTaskArchived`) sets both together.
+     */
+    archivedAt: integer('archived_at'),
+    /** Who archived it; null while it is live. `set null`: a task outlives its archiver. */
+    archivedBy: text('archived_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt,
     updatedAt,
   },
@@ -767,6 +782,12 @@ export const tasks = sqliteTable(
     index('tasks_external_ref_idx')
       .on(t.externalRef, t.projectId)
       .where(sql`${t.externalRef} IS NOT NULL`),
+    // A space's Archived view and its count (LAI-1353). Partial: most tasks are
+    // live, and no read of live work wants this index.
+    index('tasks_project_archived_at_idx')
+      .on(t.projectId, t.archivedAt)
+      .where(sql`${t.archivedAt} IS NOT NULL`),
+    index('tasks_archived_by_idx').on(t.archivedBy),
     // **Composite, and that is the point** (LAI-738). A plain `status_id`
     // reference would let a task hold another project's status, or a status
     // whose category disagrees with `status` — two ways for the board and the

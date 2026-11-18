@@ -80,4 +80,8 @@ export const STREAM_TYPES: readonly string[] = [
   // LAI-1300). Both reach the task panel live, so its Attachments follow.
   'attachment.added',
   'attachment.removed',
+  // A task put away and brought back (LAI-1353). Both reach the board live,
+  // so an archived card leaves every open screen and a restored one returns.
+  'task.archived',
+  'task.restored',
 ];

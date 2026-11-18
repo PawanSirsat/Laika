@@ -9,6 +9,7 @@ import {
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { projects, tasks, users } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertAgentsMay, can } from '../policy/can.ts';
 import { assertClaimFenceAll } from './claims.ts';
@@ -74,6 +75,8 @@ export function openTasksHeldBy(db: Db, userId: string, projectId?: string): Ope
       and(
         eq(tasks.assigneeId, userId),
         inArray(tasks.status, [...OPEN_STATUSES]),
+        // Archived work is nobody's to hand over (LAI-1353).
+        liveTask(),
         ...(projectId === undefined ? [] : [eq(tasks.projectId, projectId)]),
       ),
     )

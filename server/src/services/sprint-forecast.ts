@@ -3,6 +3,7 @@ import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type TaskStatus } from '../db/enums.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { LEVEL_WEIGHTS } from './estimate-model.ts';
@@ -151,7 +152,9 @@ export function getSprintForecast(
   const inSprint = db
     .select(COLUMNS)
     .from(tasks)
-    .where(and(eq(tasks.sprintId, sprint.id), ne(tasks.status, 'cancelled')))
+    // What the sprint still holds: an archived task left it (LAI-1353). The
+    // throughput below is history, and keeps what was finished.
+    .where(and(eq(tasks.sprintId, sprint.id), ne(tasks.status, 'cancelled'), liveTask()))
     .all();
   const since = now - THROUGHPUT_DAYS * DAY;
   const finished = db

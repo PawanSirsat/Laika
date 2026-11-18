@@ -179,6 +179,29 @@ describe('a size is optional on create_task and update_task (D-085, LAI-771)', (
   });
 });
 
+describe('a feature is one parent and its parts are children (LAI-1360)', () => {
+  it('create_task, its parent, finish_task’s outputs and request_upload say so', async () => {
+    const client = await connect(await mint());
+    const tools = new Map((await client.listTools()).tools.map((t) => [t.name, t]));
+    const field = (tool: string, name: string) =>
+      (tools.get(tool)?.inputSchema.properties?.[name] as { description?: string } | undefined)
+        ?.description ?? '';
+
+    const rule =
+      "One parent per feature. A new feature with several parts gets one parent task, with each part as a child task (`create_task` with `parent`). Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child.";
+    const outputs = "The main outputs go on the parent, a child's own outputs on the child.";
+    expect(tools.get('create_task')?.description).toContain(rule);
+    expect(tools.get('create_task')?.description).toMatch(/Look for that parent first/);
+    expect(field('create_task', 'parent')).toMatch(/One parent per feature/);
+    expect(field('create_task', 'parent')).toMatch(/find that parent first/);
+    expect(tools.get('finish_task')?.description).toContain(outputs);
+    expect(field('finish_task', 'outputs')).toContain(outputs);
+    expect(tools.get('request_upload')?.description).toContain(outputs);
+
+    await client.close();
+  });
+});
+
 describe('the tools are registered', () => {
   it('lists the five that have a §3 permission behind them', async () => {
     const client = await connect(await mint());

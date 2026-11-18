@@ -1164,6 +1164,9 @@ describe('started_at and completed_at', () => {
     expect(Object.keys(task).sort()).toEqual(
       [
         'acceptance_md',
+        // LAI-1353: when it was put away and by whom, both null while live.
+        'archived_at',
+        'archived_by',
         'assignee_id',
         'blocks',
         'claim',

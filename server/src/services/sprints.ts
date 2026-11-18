@@ -7,7 +7,9 @@ import { type SprintStatus, TASK_STATUSES, type TaskStatus } from '../db/enums.t
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
+import { assertTaskLive } from './task-archive.ts';
 import { assertClaimFence, assertClaimFenceAll } from './claims.ts';
 import { assertCan } from '../policy/can.ts';
 import { requireProjectBySlug } from './projects.ts';
@@ -266,10 +268,11 @@ export function sprintTaskCounts(
     .select({ sprintId: sprints.id, status: tasks.status, total: sql<number>`COUNT(*)` })
     .from(tasks)
     .innerJoin(sprints, eq(sprints.id, tasks.sprintId))
+    // The board's counts: live work only (LAI-1353).
     .where(
       only === undefined
-        ? eq(tasks.projectId, project.id)
-        : and(eq(tasks.projectId, project.id), inArray(sprints.id, [...only])),
+        ? and(eq(tasks.projectId, project.id), liveTask())
+        : and(eq(tasks.projectId, project.id), inArray(sprints.id, [...only]), liveTask()),
     )
     .groupBy(sprints.id, tasks.status)
     .all();
@@ -557,6 +560,9 @@ export function addTasksToSprint(
       throw ApiError.notFound('No task with that id', { task_ids: missing });
     }
 
+    // An archived task is read-only (LAI-1353), so it joins no sprint.
+    for (const row of rows) assertTaskLive(row);
+
     const foreign = rows.filter((row) => row.projectId !== sprint.projectId).map((row) => row.id);
     if (foreign.length > 0) {
       throw new ApiError(
@@ -608,6 +614,7 @@ export function removeTaskFromSprint(
         sprint_id: sprintId,
       });
     }
+    assertTaskLive(task);
 
     assertClaimFence(db, actor, taskId, now);
     db.update(tasks).set({ sprintId: null, updatedAt: now }).where(eq(tasks.id, taskId)).run();

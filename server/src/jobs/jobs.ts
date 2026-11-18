@@ -32,6 +32,7 @@ import {
   timeUndo,
   userAwayPeriods,
 } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { NOTICE_RETENTION_DAYS } from '../services/notices.ts';
 import { ARRIVALS_KEPT_MS } from '../services/plan-limit.ts';
 import { UNDO_WINDOW_MS } from '../services/time-undo-log.ts';
@@ -357,7 +358,8 @@ export function flagStaleTasks(db: Db, now: number): JobResult {
   const candidates = db
     .select({ id: tasks.id, projectId: tasks.projectId, updatedAt: tasks.updatedAt })
     .from(tasks)
-    .where(and(eq(tasks.status, 'in_progress'), isNull(tasks.staleFlaggedAt)))
+    // An archived task is nobody's work to chase (LAI-1353).
+    .where(and(eq(tasks.status, 'in_progress'), isNull(tasks.staleFlaggedAt), liveTask()))
     .all();
 
   const org = orgId(db);

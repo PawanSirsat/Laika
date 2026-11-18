@@ -259,13 +259,14 @@ void describe('the board toolbar', () => {
       assert.equal(await h.page.getByRole('menu', { name: 'More board actions' }).count(), 0);
 
       // Each its own button, in the order they had before the fold, each with
-      // the shared Tooltip rather than a native title.
+      // the shared Tooltip rather than a native title — and LAI-1353's
+      // Archived first among them, beside Hidden columns.
       const names = await actions
         .locator('button')
         .evaluateAll((buttons) => buttons.map((b) => b.getAttribute('aria-label') ?? ''));
       assert.deepEqual(
         names.filter((n) => !n.startsWith('Hidden columns')),
-        ['Insights', 'View settings', 'Refresh'],
+        ['Archived tasks', 'Insights', 'View settings', 'Refresh'],
         `the actions are not the original set and order: ${names.join(', ')}`,
       );
       const untipped = await actions

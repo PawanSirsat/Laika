@@ -63,7 +63,9 @@ export const MCP_SERVER_NAME = 'laika';
  *
  * The rules are the Connect screen's `claudeMdBlock` without the per-project
  * lines: claim before coding, finishing means review, never done, and — D-162
- * — show the result a person needs to see, never a secret. Two
+ * — show the result a person needs to see, never a secret; then, after the
+ * must-follow block, the owner's parent-and-child rule (LAI-1360), its
+ * parameter named in words because every backticked name must be a tool. Two
  * limits shape it: Claude Code truncates at 2,048 characters, and Codex asks
  * for the first 512 to stand alone, so the must-follow rules come first. They
  * are repeated in the tool descriptions, which every client shows the model.
@@ -79,6 +81,11 @@ needs to see the result (UI changes, generated files), attach screenshots or
 outputs with \`laika attach\` or \`request_upload\`, captioned. Never upload
 secrets. Comment with \`add_comment\` as you go. Refer to tasks by key, such
 as LAI-42.
+
+One parent per feature. A new feature with several parts gets one parent task,
+with each part as a child task (\`create_task\` with parent). Work on an existing
+feature becomes a new child of its parent. A genuinely small one-off may stand
+alone. The main outputs go on the parent, a child's own outputs on the child.
 
 How to work:
 1. Call \`laika_whoami\` to confirm who this token acts as.

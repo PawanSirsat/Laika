@@ -157,6 +157,9 @@ export const PROJECT_ACTIONS = [
   'attachment.create',
   'attachment.delete',
   'task.delete',
+  // LAI-1353: put a task away and bring it back — *Edit / move any task*'s
+  // holders, signed in (SESSION_ONLY_ACTIONS below).
+  'task.archive',
   'task.dependency.write',
   'task.watch',
   'project.read',
@@ -488,6 +491,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // calendar** (D-157, LAI-1316): an agent's token must neither set it, nor
   // turn the sync on, nor send a meeting's time to a space.
   'org.calendar.configure',
+  // **Archiving takes a task off every board and every agent's queue**
+  // (LAI-1353): a person decides that, signed in. An agent that could
+  // archive could make work it was asked to do disappear.
+  'task.archive',
 ]);
 
 /**

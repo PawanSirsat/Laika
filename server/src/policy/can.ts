@@ -970,6 +970,13 @@ function canProjectAction(
       if (role === 'member') return resource.ownerId === actor.userId;
       return false;
 
+    // | Archive or restore a task | ✓ (session only) | ✓ (session only) | — |
+    //
+    // LAI-1353: whoever may edit the task may put it away. A token never
+    // may (`SESSION_ONLY_ACTIONS`).
+    case 'task.archive':
+      return isMemberUp;
+
     // | Cancel / delete task | ✓ | own-created | — |
     case 'task.delete':
       if (isLead) return true;

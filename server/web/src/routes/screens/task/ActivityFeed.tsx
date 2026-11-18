@@ -49,6 +49,11 @@ export interface ActivityFeedProps {
    * and to the comment, so the comment owns it (LAI-1300).
    */
   readonly attach?: EditorAttach | undefined;
+  /**
+   * The task is archived (LAI-1353): read-only, so no composer and no edit
+   * or delete on a comment — the thread is read as it stands.
+   */
+  readonly archived?: boolean | undefined;
 }
 
 type Tab = 'all' | 'comments' | 'history' | 'changes';
@@ -113,6 +118,7 @@ export function ActivityFeed({
   rounds,
   leads,
   attach,
+  archived = false,
 }: ActivityFeedProps) {
   const { theme } = useTheme();
   const now = Date.now();
@@ -372,7 +378,7 @@ export function ActivityFeed({
             people={people}
             meId={meId}
             cards={cards}
-            mayChange={mayChangeComment(comment, meId, leads)}
+            mayChange={!archived && mayChangeComment(comment, meId, leads)}
             attach={attach}
             imagesBy={outputBy(
               actor.name,
@@ -458,7 +464,11 @@ export function ActivityFeed({
     </p>
   );
 
-  const composer = (
+  const composer = archived ? (
+    <p className="cmt-none feed-archived" data-archived-composer="">
+      This task is archived. Restore it to comment.
+    </p>
+  ) : (
     <div className="panel-composer feed-composer">
       {meId !== undefined && (
         <span className="cmt-avatar cmt-avatar-me" aria-hidden="true">

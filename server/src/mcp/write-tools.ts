@@ -304,7 +304,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Create a task',
       description:
-        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim. Fill `deliverables` (what it ships, as nouns), `solves` (the problems it removes) and `unlocks` (what it makes possible) when you file it: a person reads them as the task’s promise, `checkpoint_task` marks a deliverable in progress and `finish_task` ticks it off. Attach a mockup, a screenshot of the bug or a repro with `attachments` — files `request_upload` made in this `project`, each with a caption.',
+        "File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim. Fill `deliverables` (what it ships, as nouns), `solves` (the problems it removes) and `unlocks` (what it makes possible) when you file it: a person reads them as the task’s promise, `checkpoint_task` marks a deliverable in progress and `finish_task` ticks it off. One parent per feature. A new feature with several parts gets one parent task, with each part as a child task (`create_task` with `parent`). Work on an existing feature becomes a new child of its parent. A genuinely small one-off may stand alone. The main outputs go on the parent, a child's own outputs on the child. Look for that parent first: `get_project_context` lists the open work, and `get_task_context` on a candidate shows its subtasks. Attach a mockup, a screenshot of the bug or a repro with `attachments` — files `request_upload` made in this `project`, each with a caption.",
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         title: TASK_FIELDS.title,
@@ -324,7 +324,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe('Tasks this one is blocked by. Keys or ids.'),
         discovered_from: TASK_REF.optional(),
         parent: TASK_REF.optional().describe(
-          'Make this a subtask of that task. One level only — a subtask cannot have subtasks.',
+          'The feature’s parent task. One parent per feature: each part of a new feature is a child task, and work on an existing feature becomes a new child of its parent — find that parent first (`get_project_context`, then `get_task_context` for its subtasks). One level only — a subtask cannot have subtasks.',
         ),
         due_on: DATE_ONLY.optional(),
         planned_start: DATE_ONLY.optional(),
@@ -602,7 +602,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Ask to upload a file',
       description:
-        'Upload a file a person should see — a screenshot, a generated document, a test or run report, a short recording — straight to the board’s file store (D-162). Name the `task` (a key such as `LAI-42`), or only a `project` for a task you have not created yet or an unlisted finding. It returns the `attachment` and a presigned `upload`, ten minutes long, with a ready-to-run `curl` line: run it where the file is (or put its path after `-T`), then call `complete_upload`. The bytes never pass through Laika or this tool. Then attach it with a caption: `finish_task`’s `outputs`, or `attachments` on `add_comment`, `create_task` or `log_unlisted_work`. `size_bytes` is the exact size — the store refuses any other. Never upload a secret: attach a masked copy, or the list of accounts made, and say where the real file is; a text file that holds a recognisable secret is refused and deleted.',
+        "Upload a file a person should see — a screenshot, a generated document, a test or run report, a short recording — straight to the board’s file store (D-162). Name the `task` (a key such as `LAI-42`), or only a `project` for a task you have not created yet or an unlisted finding. The main outputs go on the parent, a child's own outputs on the child. It returns the `attachment` and a presigned `upload`, ten minutes long, with a ready-to-run `curl` line: run it where the file is (or put its path after `-T`), then call `complete_upload`. The bytes never pass through Laika or this tool. Then attach it with a caption: `finish_task`’s `outputs`, or `attachments` on `add_comment`, `create_task` or `log_unlisted_work`. `size_bytes` is the exact size — the store refuses any other. Never upload a secret: attach a masked copy, or the list of accounts made, and say where the real file is; a text file that holds a recognisable secret is refused and deleted.",
       inputSchema: z.strictObject({
         task: TASK_REF.optional().describe(
           'The task the file is for — its key, outside id or id. Give this or `project`.',
@@ -710,7 +710,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Hand a task back for review',
       description:
-        'Move a task to review, post your summary as a comment, attach your proof so a person can check it — the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes — and tick the Ships items you delivered: each `checklist` line that is a deliverable’s id or exact title marks it done; any other line is kept as a `- [x]` note under your summary. Proof is optional but it is what the reviewer reads first, so send what you have. When a person needs to see the result — a UI change, a generated file — attach it in `outputs`: screenshots (before and after, light and dark), the document, the report or a short recording, each uploaded with `request_upload` and captioned; skip it when the tests are the whole proof, and never attach a secret. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.',
+        "Move a task to review, post your summary as a comment, attach your proof so a person can check it — the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes — and tick the Ships items you delivered: each `checklist` line that is a deliverable’s id or exact title marks it done; any other line is kept as a `- [x]` note under your summary. Proof is optional but it is what the reviewer reads first, so send what you have. When a person needs to see the result — a UI change, a generated file — attach it in `outputs`: screenshots (before and after, light and dark), the document, the report or a short recording, each uploaded with `request_upload` and captioned; skip it when the tests are the whole proof, and never attach a secret. The main outputs go on the parent, a child's own outputs on the child. On a parent, attach them with `add_comment`’s `attachments`. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.",
       inputSchema: z.strictObject({
         task: TASK_REF,
         summary: z.string().trim().min(1).max(50_000),
@@ -770,7 +770,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .optional()
           .describe('Each test, lint or build command you ran, with its exit code.'),
         outputs: ATTACHMENT_REFS.optional().describe(
-          'What a person should see of the result — screenshots, the generated file, a report, a short recording — each a completed upload on this task’s project, with a caption. Shown with this round’s proof.',
+          "What a person should see of the result — screenshots, the generated file, a report, a short recording — each a completed upload on this task’s project, with a caption. Shown with this round’s proof. The main outputs go on the parent, a child's own outputs on the child.",
         ),
         claim_generation: CLAIM_GENERATION,
       }),

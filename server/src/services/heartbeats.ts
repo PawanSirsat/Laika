@@ -4,6 +4,7 @@ import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { presenceEnabled } from '../db/orgs.ts';
 import { heartbeats, projects, tasks } from '../db/schema.ts';
+import { liveTask } from '../db/live-task.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { claimFenceRefusal } from './claims.ts';
@@ -362,10 +363,13 @@ export function resolveBranchTask(
     return null;
   }
 
+  // An archived task's branch names no work (LAI-1353): a heartbeat on it
+  // matches nothing and a pull request moves nothing — its proof is still
+  // recorded, before this is asked.
   const task = db
     .select({ id: tasks.id })
     .from(tasks)
-    .where(and(eq(tasks.projectId, projectId), eq(tasks.number, ref.number)))
+    .where(and(eq(tasks.projectId, projectId), eq(tasks.number, ref.number), liveTask()))
     .get();
 
   return task === undefined ? null : { taskId: task.id, projectId };

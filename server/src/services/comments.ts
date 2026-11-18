@@ -12,6 +12,7 @@ import { type CreatedVia } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { comments, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { assertTaskLive } from './task-archive.ts';
 import { assertCan } from '../policy/can.ts';
 import { linkAttachmentRefs, removeCommentAttachments } from './attachments.ts';
 import { syncMentions } from './mentions.ts';
@@ -228,6 +229,7 @@ export function addComment(
 ): CommentView {
   const { task, project } = requireTaskContext(db, taskId);
   assertCan(withProject(actor, project.id), 'comment.create', { projectId: project.id });
+  assertTaskLive(task);
 
   const id = newId();
   // **No author, and `webhook` says why** (§10.1, LAI-449). The two fields are
@@ -295,6 +297,7 @@ export function editComment(
     projectId: project.id,
     ownerId: comment.authorId,
   });
+  assertTaskLive(task);
 
   db.update(comments)
     .set({ bodyMd, editedAt: now, updatedAt: now })
@@ -349,6 +352,7 @@ export function deleteComment(
     projectId: project.id,
     ownerId: comment.authorId,
   });
+  assertTaskLive(task);
 
   db.update(comments)
     .set({ deletedAt: now, updatedAt: now })
