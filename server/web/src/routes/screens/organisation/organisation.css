@@ -1731,6 +1731,25 @@
   }
 }
 
+/* Below that floor, before the table scrolls: Person's floor drops to 11rem
+   and the row's sides to 1rem, a 38.5rem floor. The side menu and the table
+   then fit from about 1018px with the app's rail, and from 1181px where the
+   app's sidebar opens. Only this narrow band gives up the card's 1.5rem
+   inset — at 1280 and 768 the rows still line up with the toolbar. */
+@container people (width < 40.5rem) {
+  .org-people-table {
+    min-width: 38.5rem;
+  }
+
+  .org-people-row {
+    grid-template-columns:
+      1.25rem minmax(11rem, 2.6fr) minmax(6rem, 1.1fr) minmax(3.5rem, 0.7fr)
+      minmax(5.5rem, 1fr) 5.5rem;
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}
+
 .org-people-header {
   position: sticky;
   top: 0;
