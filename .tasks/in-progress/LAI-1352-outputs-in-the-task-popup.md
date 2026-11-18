@@ -2,10 +2,11 @@
 id: LAI-1352
 title: 'Outputs in the task popup: a folded strip in Proof, a viewer, comment thumbnails, unlisted findings, repo block revision 3'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-1302]
-status: backlog
+status: in-progress
+started: 2026-11-18T21:53:51Z
 ---
 
 ## Goal
@@ -45,6 +46,8 @@ The web half of D-162. The owner chose (2026-11-19) a folded **Outputs** strip *
 - [ ] **Testing (owner):** attach this task's own screenshots to the parent card LAIKA-1153 on Ksage: the Outputs strip and viewer at 1440 and 390, in light and dark. Upload them through the existing REST API (agent tokens may already use it; see LAI-1302's notes). The parent then shows how the feature looks.
 
 ## Notes / context
+
+- **Deviation (§2 step 1):** built against PR #405 (LAI-1302, branch `LAI-1302-attachments-agents`) before it merged, at CHIEF's direction, 2026-11-19. LAI-1302 sits in review, not done.
 
 - No server thumbnails in phase 1. Generating them would need an image library, which is a new dependency and its own task.
 - Plan: section 3.
