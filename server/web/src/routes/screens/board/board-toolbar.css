@@ -714,6 +714,15 @@
   margin-left: calc(var(--space-2) * -1);
 }
 
+/*
+ * Positioned, so each ring paints over the face before it as the stack
+ * overlaps: the shared Avatar inside is positioned too (LAI-1336), and an
+ * unpositioned button would sit under its neighbour's face, ring and all.
+ */
+.bt-member {
+  position: relative;
+}
+
 /* The shared Avatar fills the ring (LAI-1336), whatever the button's box. */
 .bt-member > .avatar {
   width: 100%;

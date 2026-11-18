@@ -164,6 +164,18 @@ void describe('the board (LAI-1336)', () => {
         'lazy, async, sized, and silent beside the button’s own name',
       );
 
+      // Overlapped, each face's canvas ring stays over the face before it: the
+      // point just inside a button's left edge, where it overlaps its
+      // neighbour, is that button's ring — not the neighbour's face on top.
+      const rings = await stack.evaluateAll((buttons) =>
+        buttons.slice(1).map((button) => {
+          const box = button.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + 1, box.top + box.height / 2);
+          return hit?.closest('.bt-member') === button;
+        }),
+      );
+      assert.deepEqual(rings, [true, true, true], 'a face paints over the next one’s ring');
+
       // A card's assignee: the photo, or the initials.
       const card = (id: string) => h.page.locator(`[data-task-id="${id}"] .card-avatar`);
       assert.equal(await photoIn(card('t1')), photoOf('u1'));
@@ -202,14 +214,33 @@ void describe('the board (LAI-1336)', () => {
     }
   });
 
-  void test('the List view’s assignee cell draws the photo', async () => {
+  void test('the List view’s assignee cell draws the photo, and nobody as a dash', async () => {
     const asked: string[] = [];
-    const h = await open(`/list?project=${HOME.slug}`, BOARD, { before: photos(asked) });
+    const h = await open(
+      `/list?project=${HOME.slug}`,
+      {
+        ...BOARD,
+        [`/api/v1/projects/${HOME.slug}/tasks`]: {
+          data: [
+            task('t1', 'LAI-1', 'Photos on the board', 'todo', HOME, 'u1'),
+            task('t2', 'LAI-2', 'Nobody synced', 'todo', HOME, 'u2'),
+            { ...task('t5', 'LAI-5', 'Nobody on it', 'todo', HOME), assignee_id: null },
+          ],
+          next_cursor: null,
+        },
+      },
+      { before: photos(asked) },
+    );
     try {
       const row = (id: string) => h.page.locator(`tr[data-task-id="${id}"] .list-avatar`);
       await row('t1').waitFor({ timeout: 20_000 });
       assert.equal(await photoIn(row('t1')), photoOf('u1'));
       assert.equal(await initialsIn(row('t2')), 'GH');
+      // Unassigned is the dashed mark with its dash, never a face.
+      const nobody = h.page.locator('tr[data-task-id="t5"] .list-assignee');
+      assert.equal((await nobody.locator('.list-avatar-empty').innerText()).trim(), '—');
+      assert.equal(await nobody.locator('.avatar').count(), 0, 'a face for nobody');
+      assert.equal((await nobody.locator('.list-who').innerText()).trim(), 'Unassigned');
       await bothThemes(h, 'list', 'tr[data-task-id="t1"] .list-avatar');
     } finally {
       await h.close();

@@ -46,14 +46,47 @@ async function sources(): Promise<{ readonly file: string; readonly text: string
   );
 }
 
+/**
+ * Every `initials(…)` call in `text`, its argument read to the parenthesis
+ * that closes it — so `initials(nameOf(id))` is one call, not a miss. A
+ * property or method of that name (`x.initials(…)`) is not the function.
+ */
+function callsIn(text: string): string[] {
+  const calls: string[] = [];
+  for (const match of text.matchAll(/(?<![\w.$])initials\(/g)) {
+    const open = match.index + match[0].length;
+    let depth = 1;
+    let at = open;
+    while (at < text.length && depth > 0) {
+      if (text[at] === '(') depth += 1;
+      else if (text[at] === ')') depth -= 1;
+      at += 1;
+    }
+    calls.push(
+      `initials(${text
+        .slice(open, at - 1)
+        .replace(/\s+/g, ' ')
+        .trim()})`,
+    );
+  }
+  return calls;
+}
+
 void describe('a face is drawn by Avatar only', () => {
+  void test('the scan reads a call whose argument has parentheses of its own', () => {
+    assert.deepEqual(
+      callsIn(
+        'a(initials(nameOf(id))); b = initials(user.name); c.initials(x); initials((f(g(h))))',
+      ),
+      ['initials(nameOf(id))', 'initials(user.name)', 'initials((f(g(h))))'],
+    );
+  });
+
   void test('initials() is called only by Avatar and the listed exceptions', async () => {
     const calls: string[] = [];
     for (const { file, text } of await sources()) {
       if (file === join('theme', 'initials.ts')) continue;
-      for (const match of text.matchAll(/(?<![\w.])initials\(([^()]*)\)/g)) {
-        calls.push(`${file.split('\\').join('/')}: initials(${(match[1] ?? '').trim()})`);
-      }
+      for (const call of callsIn(text)) calls.push(`${file.split('\\').join('/')}: ${call}`);
     }
     assert.deepEqual(
       calls.sort(),
