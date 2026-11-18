@@ -35,6 +35,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { PROJECT_BLOCK_REVISION } from '../../src/routes/screens/connect/connect-copy.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -256,7 +257,7 @@ const checked = (over: Record<string, unknown> = {}) => ({
   repo_key: 'a'.repeat(64),
   instructions_path: 'CLAUDE.md',
   block_found: true,
-  template_revision: 2,
+  template_revision: PROJECT_BLOCK_REVISION,
   project_match: true,
   prefix_match: true,
   source: 'local_check',
@@ -325,7 +326,7 @@ void describe('Project setup, v3', () => {
           id: 's2',
           repo_label: null,
           block_found: true,
-          template_revision: 2,
+          template_revision: PROJECT_BLOCK_REVISION,
           project_match: null,
           prefix_match: null,
           source: 'self_reported_browser',
@@ -356,7 +357,7 @@ void describe('Project setup, v3', () => {
       ...local,
       id: 's2',
       repo_label: null,
-      template_revision: 2,
+      template_revision: PROJECT_BLOCK_REVISION,
       prefix_match: null,
       source: 'self_reported_browser',
     };
@@ -388,7 +389,7 @@ void describe('Project setup, v3', () => {
 
       // Presence off: the server sends no time, and the page shows none.
       world.setups = [
-        { ...local, template_revision: 2, checked_at: null },
+        { ...local, template_revision: PROJECT_BLOCK_REVISION, checked_at: null },
         { ...self, checked_at: null },
       ];
       await h.page.reload();
@@ -528,7 +529,7 @@ void describe('Project setup, v3', () => {
         {
           agent_id: 'a1',
           project_slug: 'onroute',
-          template_revision: 2,
+          template_revision: PROJECT_BLOCK_REVISION,
           instructions_path: 'CLAUDE.md',
         },
       ]);
