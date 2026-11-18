@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { attachmentReadable } from '../../../api/attachments.ts';
 import { Icon } from '../../../components/icon/Icon.tsx';
 import { Dialog } from '../../../components/overlay/Dialog.tsx';
 import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
@@ -108,10 +109,17 @@ export function OutputViewer({ items, start, onClose }: OutputViewerProps) {
             <Icon name="expand" size="small" />
             Open in a new tab
           </a>
+          {/*
+            A new tab as well as `download`: across the 302 to the store a
+            browser ignores `download` and opens the file instead, and this
+            way it never takes the board's own tab with it.
+          */}
           <a
             className="button button-secondary button-sm ovw-action"
             href={item.url}
             download={item.filename ?? ''}
+            target="_blank"
+            rel="noopener noreferrer"
           >
             <Icon name="download" size="small" />
             Download
@@ -184,8 +192,22 @@ function PdfFrame({ item }: { readonly item: OutputItem }) {
   return <iframe ref={frame} className="ovw-frame" src={item.url} aria-label={item.caption} />;
 }
 
-/** A file the page does not show: what it is, and the way to get it. */
+/**
+ * A file the page does not show: what it is, and the way to get it — or, for
+ * one the board answers `404` for, that it is not this reader's to open (an
+ * unlisted finding's file, LAI-1302), asked without following the redirect.
+ */
 function OutputCard({ item, blocked }: { readonly item: OutputItem; readonly blocked: boolean }) {
+  const [readable, setReadable] = useState<'yes' | 'no' | 'unknown' | undefined>(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    void attachmentReadable(item.url, controller.signal).then((answer) => {
+      if (!controller.signal.aborted) setReadable(answer);
+    });
+    return () => {
+      controller.abort();
+    };
+  }, [item.url]);
   return (
     <div className="ovw-card" data-kind={item.glyph}>
       <span className="ovw-card-glyph" aria-hidden="true">
@@ -193,10 +215,12 @@ function OutputCard({ item, blocked }: { readonly item: OutputItem; readonly blo
       </span>
       <span className="ovw-card-name">{item.filename ?? item.caption}</span>
       {item.size !== null && <span className="ovw-card-meta">{item.size}</span>}
-      <span className="ovw-card-note">
-        {blocked
-          ? 'This board does not show PDFs inside the page. Open it in a new tab, or download it.'
-          : 'This file opens outside the board. Download it, or open it in a new tab.'}
+      <span className="ovw-card-note" data-readable={readable}>
+        {readable === 'no'
+          ? 'This file isn’t available to you.'
+          : blocked
+            ? 'This board does not show PDFs inside the page. Open it in a new tab, or download it.'
+            : 'This file opens outside the board. Download it, or open it in a new tab.'}
       </span>
     </div>
   );

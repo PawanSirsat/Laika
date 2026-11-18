@@ -106,3 +106,27 @@ export function listTaskAttachments(taskId: string, signal?: AbortSignal): Promi
 export function deleteAttachment(attachmentId: string): Promise<void> {
   return request<void>(`/attachments/${encodeURIComponent(attachmentId)}`, { method: 'DELETE' });
 }
+
+/**
+ * May the reader open this file? Its content route answers a `302` to the
+ * store for a file they may read, and `404` for one gone or not theirs to see
+ * — an unlisted finding's file to anyone but its uploader and the pile's
+ * readers (D-162, LAI-1302). The redirect is not followed, so nothing is
+ * downloaded; `unknown` when the board could not be asked (LAI-1352).
+ */
+export async function attachmentReadable(
+  url: string,
+  signal?: AbortSignal,
+): Promise<'yes' | 'no' | 'unknown'> {
+  try {
+    const response = await fetch(url, {
+      redirect: 'manual',
+      credentials: 'include',
+      ...(signal === undefined ? {} : { signal }),
+    });
+    if (response.type === 'opaqueredirect' || response.ok) return 'yes';
+    return response.status === 404 ? 'no' : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}

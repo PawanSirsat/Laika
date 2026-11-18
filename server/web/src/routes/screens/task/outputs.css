@@ -131,6 +131,20 @@
   white-space: normal;
 }
 
+/*
+ * Inside the reading view the strip is a list, and `.md ul` indents a list
+ * and `.md li + li` drops each item a step (`task-markdown.css`): neither is
+ * the strip's, which is one row from the text's own edge.
+ */
+.md .out-strip {
+  margin: 0;
+  padding-left: 0;
+}
+
+.md .out-cell + .out-cell {
+  margin-top: 0;
+}
+
 /* --- the viewer ----------------------------------------------------------- */
 
 .overlay-dialog.ovw {
