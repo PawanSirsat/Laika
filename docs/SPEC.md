@@ -7324,10 +7324,15 @@ hold a result that is legitimately many.
     before today, UTC, and not finished — the client's `isOverdue`) and
     `due_soon` (due today or within the next seven days). Counted over the
     projects the reader may read, as `in_progress_tasks` always was.
-    `spaces[]` gives the same counts per project they have open work in, with
-    its `slug`, `name` and **its own `load`** by the rule below — the badge
-    shown while that space is selected (D-092, LAI-818). Most committed
-    first, then most open.
+    `spaces[]` gives the same counts per project, with its `slug`, `name` and
+    **its own `load`** by the rule below — the badge shown while that space
+    is selected (D-092, LAI-818) — for **every space they are a member of**
+    as well as every one they have open work in (LAI-1334): one they are in
+    with no open work of theirs carries every count `0` and load `none`, so
+    someone between tasks is not *No spaces*. Only spaces the reader may
+    read, as the counts; an archived space only while open work of theirs is
+    still in it. Most committed first, then most open — so the spaces with
+    open work come first — then A–Z.
   - `load`, **a fixed rule, not a setting**, on **committed work** (D-092
     item 3, LAI-818): `none` with nothing committed; `heavy` with more than
     **5** in progress **or** more than **15** committed; `light` with at most
@@ -8217,9 +8222,11 @@ anything missing sends the task back.
   running, or *No agents running*; for owners and admins *Activity · 14 days
   · total*, the fortnight as three figures, *by hand · by agents ·
   bookkeeping* from `activity_14d_split`, each with what it counts on hover
-  and **no bar chart** (LAI-996); *Spaces · N*, the spaces they have open work in as chips
-  carrying the space's colour (the sidebar badge's, keyed by slug) and its
-  committed count, with backlog and review on hover, or *No spaces*; the name
+  and **no bar chart** (LAI-996); *Spaces · N*, the spaces they are in or
+  have open work in as chips carrying the space's colour (the sidebar
+  badge's, keyed by slug) and its committed count, with backlog and review on
+  hover — **greyed, with no count, where they have no open work** (LAI-1334)
+  — or *No spaces*, and the label saying on hover what the chips are; the name
   linking to the profile for owners and admins. **No task is read and no
   task is listed** (LAI-992, the owner): the *Show tasks* footer and the
   *working on LAI-9* line LAI-767 drew each cost a `GET /tasks/:id`, and the
@@ -8232,7 +8239,8 @@ anything missing sends the task back.
   fold into one line at the bottom, unless searched for or filtered to.
   **List** draws the same people, filtered and sorted the same way, as a
   table: person, load, a workload bar, in progress, to do, review, agents
-  running, for owners and admins *hand · agents · bookkeeping*, and spaces.
+  running, for owners and admins *hand · agents · bookkeeping*, and spaces —
+  the cards' chips, the header saying on hover what they are.
   **Every row's bar is drawn to one scale, the heaviest committed count on
   the page, so the table is the team-load chart** — it replaced the *Team
   load* and *Agents running now* panels that LAI-767 put under the grid

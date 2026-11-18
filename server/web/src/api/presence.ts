@@ -120,9 +120,10 @@ export interface CapacityWorkload {
 }
 
 /**
- * One space a person has open work in, with the same counts and **that
- * space's load** by the server's rule — what the badge shows while the space
- * is selected (D-092, LAI-818).
+ * One space a person is in or has open work in, with the same counts and
+ * **that space's load** by the server's rule — what the badge shows while the
+ * space is selected (D-092, LAI-818). A space they are in with no open work
+ * of theirs has every count `0` (LAI-1334).
  */
 export interface CapacitySpace extends CapacityWorkload {
   readonly project_id: string;
@@ -179,6 +180,7 @@ export interface CapacityEntry {
   readonly status: PersonStatus | null;
   readonly workload: CapacityWorkload;
   readonly load: LoadLevel;
+  /** Open-work spaces first, most committed first; then the rest A–Z (LAI-1334). */
   readonly spaces: readonly CapacitySpace[];
   /** Running now for everyone; every agent they use for an owner or admin. */
   readonly agents: readonly CapacityAgent[];
