@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-1325
-status: in-progress
+status: review
 started: 2026-11-18T09:48:56Z
+finished: 2026-11-18T10:03:31Z
 ---
 
 ## Goal
@@ -24,9 +25,9 @@ lookup like it, as a census rather than a single patch.
 
 ## Acceptance criteria
 
-- [ ] A test with the environment's URL for board B and `~/.laika/env`'s URL and token for board
+- [x] A test with the environment's URL for board B and `~/.laika/env`'s URL and token for board
       C sends nothing to B, or uses C.
-- [ ] Every lookup site is listed in the PR as checked.
+- [x] Every lookup site is listed in the PR as checked.
 
 ## Notes
 
