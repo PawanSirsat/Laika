@@ -38,12 +38,16 @@ export const BREVO_TIMEOUT_MS = 30_000;
 
 /** Brevo would not hand the file over: its status, or why there was none. */
 export class BrevoFetchError extends Error {
-  constructor(
-    readonly why: string,
-    readonly status: number | null,
-  ) {
+  // Fields, not parameter properties, which Node's type stripping cannot load
+  // (the concurrency tests' workers run with it).
+  readonly why: string;
+  readonly status: number | null;
+
+  constructor(why: string, status: number | null) {
     super(`Brevo did not hand over the attachment: ${why}`);
     this.name = 'BrevoFetchError';
+    this.why = why;
+    this.status = status;
   }
 }
 

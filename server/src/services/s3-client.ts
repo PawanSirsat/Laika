@@ -245,15 +245,17 @@ export function signedHeaders(
  * null when it never did — `status` is Laika's own answer, 503.
  */
 export class StoreUnavailableError extends ApiError {
-  constructor(
-    why: string,
-    readonly storeStatus: number | null = null,
-  ) {
+  // A field, not a parameter property: the concurrency tests' workers load
+  // this file with Node's type stripping, which has no parameter properties.
+  readonly storeStatus: number | null;
+
+  constructor(why: string, storeStatus: number | null = null) {
     super('unavailable', 'The file store could not be reached', {
       reason: 'store_unreachable',
       why,
     });
     this.name = 'StoreUnavailableError';
+    this.storeStatus = storeStatus;
   }
 }
 
