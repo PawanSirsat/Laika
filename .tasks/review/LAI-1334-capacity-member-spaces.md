@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: [LAI-1331]
-status: in-progress
+status: review
 started: 2026-11-18T13:05:51Z
+finished: 2026-11-18T13:21:35Z
 ---
 
 ## Goal
@@ -36,12 +37,14 @@ merged, never folded into it.
 
 ## Acceptance criteria
 
-- [ ] A member with no open tasks lists their member spaces, greyed out.
-- [ ] Someone with open work in one of two spaces shows that space first with its count, and the
+- [x] A member with no open tasks lists their member spaces, greyed out.
+- [x] Someone with open work in one of two spaces shows that space first with its count, and the
       other greyed out.
-- [ ] Spaces the reader can't see never appear.
-- [ ] Browser tests for the list and the cards; view-type-drift kept.
+- [x] Spaces the reader can't see never appear.
+- [x] Browser tests for the list and the cards; view-type-drift kept.
 - [ ] CI is green on the PR; an independent review.
+      *(Builder: CI is read on the PR after this commit, and the review is independent — both
+      CHIEF's to tick.)*
 
 ## Notes
 
