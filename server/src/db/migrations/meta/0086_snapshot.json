@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6dfd6f52-63c5-434a-a03d-d1a5dbf5b880",
+  "id": "83989cd4-8c18-47da-80d1-c4ae28b1cb71",
   "prevId": "7259ad27-24e6-451e-89ec-dd825fdf593a",
   "tables": {
     "accounts": {
@@ -3092,9 +3092,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "read_to_id": {
-          "name": "read_to_id",
-          "type": "text",
+        "read_to_rowid": {
+          "name": "read_to_rowid",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false

@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, type SQL } from 'drizzle-orm';
-import { type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { readPayload } from '../db/activity.ts';
+import { type EmailSuppressedReason } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
+import { requireOrgId } from '../db/orgs.ts';
 import {
   activity,
   commentMentions,
@@ -43,27 +44,32 @@ import { canRead, watcherIdsOfTask } from './watchers.ts';
  * — the record every write already leaves — after a stored watermark, under
  * §3.4's `system.email.notify`, every 30 seconds:
  *
- * - **A keyset cursor, not `rowid`.** `activity` has a text key, so a VACUUM
- *   may renumber its rowids, and a stored rowid would then skip rows. The
- *   watermark is the last row handled, `(created_at, id)`, and each run reads
- *   the rows after it — so a run always moves on, however many rows share one
- *   millisecond (CHIEF's LAI-1313 review: a time alone stalled for good once a
- *   batch's worth did).
+ * - **A keyset cursor that never stands still.** The watermark is the last
+ *   row handled, `(created_at, rowid)`, and each run reads the rows after it
+ *   — so a run always moves on, however many rows share one millisecond
+ *   (CHIEF's LAI-1313 review: a time alone stalled for good once a batch's
+ *   worth did). The rowid only breaks a tie inside a millisecond, because the
+ *   indexes the reads ride end in it: **each read is an index range in index
+ *   order**, never a scan or a sort of `activity` (§4.100 says why a VACUUM's
+ *   renumbering loses nothing).
  * - **The two minutes behind it are read again**, for a row written late — a
  *   request that took its `now` before it wrote. **Every effect is
  *   idempotent**, so that costs a lookup: an instant mail is keyed by what it
  *   is about (`assignment:<activity>`, `mention:<comment>:<person>`) and is
  *   not written twice, and a digest item is unique per person.
- * - **The first run starts at "now".** History is never mailed, and an instant
- *   mail for something more than an hour old when first read — the board was
- *   down, or the job was — is recorded `too_old` rather than sent; the digest
- *   still carries it.
+ * - **The first run starts at "now".** History is never mailed — not even the
+ *   two minutes before it: the first cursor has no row behind it, so nothing
+ *   is looked behind until a row has been read. An instant mail for something
+ *   more than an hour old when first read — the board was down, or the job
+ *   was — is recorded `too_old` rather than sent; the digest still carries it.
  *
  * ## The switch first
  *
  * While the organisation's switch is off, an instant mail is still written —
  * `suppressed` / `email_off`, the audit LAI-1312 promised — but **no digest
  * collects**: nothing piles up to flood people the morning it is turned on.
+ * So the reads go on while it is off; they cost an index range over what was
+ * written since the last run, the same as when it is on.
  */
 
 const SYSTEM = systemPrincipal();
@@ -133,114 +139,152 @@ export function notifyEmail(
 
   const activityMark = readWatermark(db, 'activity', now);
   if (activityMark !== null) {
-    const columns = {
-      id: activity.id,
-      type: activity.type,
-      taskId: activity.taskId,
-      projectId: activity.projectId,
-      actorId: activity.actorId,
-      payloadJson: activity.payloadJson,
-      createdAt: activity.createdAt,
-    };
-    const late = db
-      .select(columns)
-      .from(activity)
-      .where(
-        and(
-          gte(activity.createdAt, activityMark.at - NOTIFY_OVERLAP_MS),
-          atOrBefore(activity.createdAt, activity.id, activityMark),
-        ),
-      )
-      .orderBy(desc(activity.createdAt), desc(activity.id))
-      .limit(NOTIFY_BATCH)
-      .all();
-    const fresh = db
-      .select(columns)
-      .from(activity)
-      .where(
-        and(after(activity.createdAt, activity.id, activityMark), lte(activity.createdAt, now)),
-      )
-      .orderBy(asc(activity.createdAt), asc(activity.id))
-      .limit(NOTIFY_BATCH)
-      .all();
+    const reads = activityReads(db, requireOrgId(db), activityMark, now);
+    const late = reads.late?.all() ?? [];
+    const fresh = reads.fresh.all();
     for (const row of [...late.reverse(), ...fresh]) run.activityRow(row, result);
     const last = fresh.at(-1);
-    if (last !== undefined) writeWatermark(db, 'activity', last.createdAt, last.id, now);
+    if (last !== undefined) writeWatermark(db, 'activity', last, now);
   }
 
   const noticesMark = readWatermark(db, 'member_notices', now);
   if (noticesMark !== null) {
-    const columns = {
-      id: memberNotices.id,
-      userId: memberNotices.userId,
-      createdAt: memberNotices.createdAt,
-    };
-    const late = db
-      .select(columns)
-      .from(memberNotices)
-      .where(
-        and(
-          gte(memberNotices.createdAt, noticesMark.at - NOTIFY_OVERLAP_MS),
-          atOrBefore(memberNotices.createdAt, memberNotices.id, noticesMark),
-        ),
-      )
-      .orderBy(desc(memberNotices.createdAt), desc(memberNotices.id))
-      .limit(NOTIFY_BATCH)
-      .all();
-    const fresh = db
-      .select(columns)
-      .from(memberNotices)
-      .where(
-        and(
-          after(memberNotices.createdAt, memberNotices.id, noticesMark),
-          lte(memberNotices.createdAt, now),
-        ),
-      )
-      .orderBy(asc(memberNotices.createdAt), asc(memberNotices.id))
-      .limit(NOTIFY_BATCH)
-      .all();
+    const reads = noticeReads(db, noticesMark, now);
+    const late = reads.late?.all() ?? [];
+    const fresh = reads.fresh.all();
     for (const row of [...late.reverse(), ...fresh]) {
       if (run.collect(row.userId, { noticeId: row.id }, row.createdAt)) result.collected += 1;
     }
     const last = fresh.at(-1);
-    if (last !== undefined) writeWatermark(db, 'member_notices', last.createdAt, last.id, now);
+    if (last !== undefined) writeWatermark(db, 'member_notices', last, now);
   }
 
   result.digests += closeDueDigests(db, serverSecret, run, now);
   return result;
 }
 
-/** The last row handled: its `created_at` and `id`. */
-interface Mark {
+/**
+ * The last row handled: its `created_at`, and its rowid to break a tie inside
+ * one millisecond. Rowid 0 is the first run's cursor — "now", no row yet.
+ */
+export interface NotifyMark {
   at: number;
-  id: string;
-}
-
-/** Rows after the cursor, in `(created_at, id)` order. */
-function after(createdAt: AnySQLiteColumn, id: AnySQLiteColumn, mark: Mark): SQL | undefined {
-  return or(gt(createdAt, mark.at), and(eq(createdAt, mark.at), gt(id, mark.id)));
-}
-
-/** Rows at or before the cursor. */
-function atOrBefore(createdAt: AnySQLiteColumn, id: AnySQLiteColumn, mark: Mark): SQL | undefined {
-  return or(lt(createdAt, mark.at), and(eq(createdAt, mark.at), lte(id, mark.id)));
+  rowid: number;
 }
 
 /**
- * The cursor, or null on the first run — which records `now` and reads
- * nothing. `''` sorts before every id, so the first cursor is "everything
- * from now on".
+ * The rowid: the last column of every SQLite index, so ordering by
+ * `(created_at, rowid)` is the order the `created_at` indexes already hold —
+ * an `id` tiebreak made SQLite sort what it read (CHIEF's LAI-1313 review).
  */
-function readWatermark(db: Db, source: string, now: number): Mark | null {
+const ROWID = sql<number>`rowid`;
+
+/**
+ * The two reads of `activity` a run makes — built here, run by
+ * {@link notifyEmail}, and EXPLAINed by its tests. **Every read names the
+ * organisation**, so it is a range on `activity_org_created_at_idx`
+ * `(org_id, created_at)`, in that index's order, never a scan of the board's
+ * largest table: `fresh`, up to a batch after the cursor; `late`, up to a
+ * batch from the two minutes behind it, for rows written late — none while
+ * the cursor is still the first run's "now", which has nothing behind it.
+ */
+export function activityReads(db: Db, orgId: string, mark: NotifyMark, now: number) {
+  const columns = {
+    id: activity.id,
+    type: activity.type,
+    taskId: activity.taskId,
+    projectId: activity.projectId,
+    actorId: activity.actorId,
+    payloadJson: activity.payloadJson,
+    createdAt: activity.createdAt,
+    rowid: ROWID,
+  };
+  const late =
+    mark.rowid === 0
+      ? null
+      : db
+          .select(columns)
+          .from(activity)
+          .where(
+            and(
+              eq(activity.orgId, orgId),
+              gte(activity.createdAt, mark.at - NOTIFY_OVERLAP_MS),
+              lte(activity.createdAt, mark.at),
+              or(lt(activity.createdAt, mark.at), lte(ROWID, mark.rowid)),
+            ),
+          )
+          .orderBy(desc(activity.createdAt), desc(ROWID))
+          .limit(NOTIFY_BATCH);
+  const fresh = db
+    .select(columns)
+    .from(activity)
+    .where(
+      and(
+        eq(activity.orgId, orgId),
+        gte(activity.createdAt, mark.at),
+        lte(activity.createdAt, now),
+        or(gt(activity.createdAt, mark.at), gt(ROWID, mark.rowid)),
+      ),
+    )
+    .orderBy(asc(activity.createdAt), asc(ROWID))
+    .limit(NOTIFY_BATCH);
+  return { late, fresh };
+}
+
+/** The same two reads of `member_notices`, on `member_notices_created_at_idx`. */
+export function noticeReads(db: Db, mark: NotifyMark, now: number) {
+  const columns = {
+    id: memberNotices.id,
+    userId: memberNotices.userId,
+    createdAt: memberNotices.createdAt,
+    rowid: ROWID,
+  };
+  const late =
+    mark.rowid === 0
+      ? null
+      : db
+          .select(columns)
+          .from(memberNotices)
+          .where(
+            and(
+              gte(memberNotices.createdAt, mark.at - NOTIFY_OVERLAP_MS),
+              lte(memberNotices.createdAt, mark.at),
+              or(lt(memberNotices.createdAt, mark.at), lte(ROWID, mark.rowid)),
+            ),
+          )
+          .orderBy(desc(memberNotices.createdAt), desc(ROWID))
+          .limit(NOTIFY_BATCH);
+  const fresh = db
+    .select(columns)
+    .from(memberNotices)
+    .where(
+      and(
+        gte(memberNotices.createdAt, mark.at),
+        lte(memberNotices.createdAt, now),
+        or(gt(memberNotices.createdAt, mark.at), gt(ROWID, mark.rowid)),
+      ),
+    )
+    .orderBy(asc(memberNotices.createdAt), asc(ROWID))
+    .limit(NOTIFY_BATCH);
+  return { late, fresh };
+}
+
+/** The cursor, or null on the first run — which records `now`, rowid 0, and reads nothing. */
+function readWatermark(db: Db, source: string, now: number): NotifyMark | null {
   const row = db.select().from(emailWatermarks).where(eq(emailWatermarks.source, source)).get();
-  if (row !== undefined) return { at: row.readTo, id: row.readToId };
-  db.insert(emailWatermarks).values({ source, readTo: now, readToId: '', updatedAt: now }).run();
+  if (row !== undefined) return { at: row.readTo, rowid: row.readToRowid };
+  db.insert(emailWatermarks).values({ source, readTo: now, readToRowid: 0, updatedAt: now }).run();
   return null;
 }
 
-function writeWatermark(db: Db, source: string, readTo: number, readToId: string, now: number) {
+function writeWatermark(
+  db: Db,
+  source: string,
+  last: { createdAt: number; rowid: number },
+  now: number,
+): void {
   db.update(emailWatermarks)
-    .set({ readTo, readToId, updatedAt: now })
+    .set({ readTo: last.createdAt, readToRowid: last.rowid, updatedAt: now })
     .where(eq(emailWatermarks.source, source))
     .run();
 }
@@ -252,7 +296,7 @@ interface Instant {
   /** The mail is queued, going or gone — the person is told, so the digest leaves it out. */
   queued: boolean;
   /** Why not, when it is not queued. */
-  reason: string | null;
+  reason: EmailSuppressedReason | null;
 }
 
 /**
@@ -357,15 +401,17 @@ class Run {
     if (task === null) return;
     const payload = asRecord(readPayload(row));
     // Who was mailed at once, and so is not told again in the digest — and who
-    // this row is about but was not mailed (instant off, or too old to send):
-    // they hear it in the digest instead, watching the task or not.
+    // this row is about but was not mailed because their instant mail is off
+    // or it was too old to send (§4.99): they hear it in the digest instead,
+    // watching the task or not. Any other reason — no access, email off or not
+    // set up — owes them nothing.
     const told = new Set<string>();
     const owed = new Set<string>();
     const tooOld = this.now - row.createdAt > INSTANT_LOOKBACK_MS;
     const settle = (userId: string, sent: Instant): void => {
       if (sent.inserted) result.instant += 1;
       if (sent.queued) told.add(userId);
-      else if (sent.reason !== 'no_access') owed.add(userId);
+      else if (sent.reason === 'pref_off' || sent.reason === 'too_old') owed.add(userId);
     };
 
     if (row.type === 'task.assigned' || row.type === 'task.created') {

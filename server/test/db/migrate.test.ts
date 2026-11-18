@@ -3737,7 +3737,7 @@ describe('0086 rebuilds the email outbox on a populated 0085 database and keeps 
           db
             .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('email_watermarks')`)
             .map((c) => c.name),
-        ).toEqual(['source', 'read_to', 'read_to_id', 'updated_at']);
+        ).toEqual(['source', 'read_to', 'read_to_rowid', 'updated_at']);
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
       } finally {
         sqlite.close();

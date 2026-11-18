@@ -7,6 +7,7 @@ import {
   emailDigestItems,
   emailDigests,
   emailOutbox,
+  emailWatermarks,
   memberNotices,
   orgs,
   projects,
@@ -14,12 +15,14 @@ import {
 } from '../../src/db/schema.ts';
 import { runEmailOutbox } from '../../src/services/email-outbox.ts';
 import {
+  activityReads,
   describe as describeActivity,
   DIGEST_HORIZON_MS,
   excerpt,
   INSTANT_LOOKBACK_MS,
   localMorning,
   NOTIFY_BATCH,
+  noticeReads,
   notifyEmail,
   pruneEmailDigests,
 } from '../../src/services/email-notify.ts';
@@ -436,6 +439,25 @@ describe('the daily digest', () => {
     ).toHaveLength(1);
   });
 
+  it('owes a digest line only for instant off or too old — not when no mail can go at all', async () => {
+    const grace = await join('grace');
+    const made = (await ok(
+      await call(owner, 'POST', '/projects/laika/tasks', { title: 'New', assignee_id: grace.id }),
+      201,
+    )) as { id: string };
+    // No server secret: every mail is `email_not_configured`, the digest's too.
+    notifyEmail(h.db, '', TEST_ORIGIN, Date.now());
+    expect(outbox().filter((r) => r.recipientUserId === grace.id)).toEqual([
+      expect.objectContaining({ kind: 'assignment', suppressedReason: 'email_not_configured' }),
+    ]);
+    const created = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.type, 'task.created'), eq(activity.taskId, made.id)))
+      .get()!;
+    expect(itemsOf(grace.id).map((i) => i.activityId)).not.toContain(created.id);
+  });
+
   it('collects nothing for a person whose digest is off', async () => {
     const grace = await join('grace');
     await ok(await call(grace.cookie, 'PUT', '/me/email-prefs', { digest: false }));
@@ -572,6 +594,51 @@ describe('a burst bigger than one run reads', () => {
     expect(collected(), 'the first run read a batch, and stopped inside the burst').toBeUndefined();
     notify(at + 10_000);
     expect(collected()).toMatchObject({ userId: grace.id });
+  });
+});
+
+describe('the reads ride an index — every 30 seconds, email on or off', () => {
+  /** SQLite's plan for one read, every step's detail on one line. */
+  const plan = (query: { toSQL: () => { sql: string; params: unknown[] } }): string => {
+    const { sql: text, params } = query.toSQL();
+    return (h.t.sqlite.prepare(`EXPLAIN QUERY PLAN ${text}`).all(...params) as { detail: string }[])
+      .map((step) => step.detail)
+      .join(' | ');
+  };
+  const mark = { at: 1_000_000, rowid: 7 };
+
+  it('reads activity as a range on (org_id, created_at), in that index’s order: no scan, no sort', () => {
+    const orgId = h.db.select().from(orgs).get()!.id;
+    const reads = activityReads(h.db, orgId, mark, 2_000_000);
+    for (const query of [reads.late!, reads.fresh]) {
+      const steps = plan(query);
+      expect(steps).toMatch(/USING (COVERING )?INDEX activity_org_created_at_idx/);
+      expect(steps).not.toMatch(/SCAN activity/);
+      expect(steps).not.toMatch(/TEMP B-TREE/);
+    }
+  });
+
+  it('reads member notices as a range on (created_at), in its order: no scan, no sort', () => {
+    const reads = noticeReads(h.db, mark, 2_000_000);
+    for (const query of [reads.late!, reads.fresh]) {
+      const steps = plan(query);
+      expect(steps).toMatch(/USING (COVERING )?INDEX member_notices_created_at_idx/);
+      expect(steps).not.toMatch(/SCAN member_notices/);
+      expect(steps).not.toMatch(/TEMP B-TREE/);
+    }
+  });
+
+  it('looks nothing behind the first cursor: what was written before the job started is history', async () => {
+    await emailOn();
+    const grace = await join('grace');
+    // As on a board where the job has never run: no cursor yet.
+    h.db.delete(emailWatermarks).run();
+    await assign(grace.id);
+    const start = Date.now() + 1_000;
+    notify(start); // records the cursor, reads nothing
+    expect(activityReads(h.db, 'any', { at: start, rowid: 0 }, start).late).toBeNull();
+    notify(start + 1_000); // nothing after the cursor — and nothing looked for behind it
+    expect(outbox().filter((r) => r.kind === 'assignment')).toEqual([]);
   });
 });
 

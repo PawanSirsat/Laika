@@ -41,7 +41,7 @@ CREATE INDEX `email_digests_state_idx` ON `email_digests` (`state`,`opened_at`);
 CREATE TABLE `email_watermarks` (
 	`source` text PRIMARY KEY NOT NULL,
 	`read_to` integer NOT NULL,
-	`read_to_id` text NOT NULL,
+	`read_to_rowid` integer NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint

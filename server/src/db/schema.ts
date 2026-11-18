@@ -2109,18 +2109,24 @@ export const emailDigestItems = sqliteTable(
 /**
  * How far the notify job has read (§4.100, LAI-1313): one row per source,
  * `activity` and `member_notices`, holding the last row it handled as a keyset
- * cursor, `(read_to, read_to_id)` — that row's `created_at` and `id`. **A time
- * and an id, not `rowid`**: a VACUUM may renumber the rowids of a table with a
- * text key, which would make a stored rowid skip rows. **And not a time
- * alone**: more rows sharing one millisecond than a run reads would hold a
- * time-only cursor still for ever (CHIEF's LAI-1313 review). Each run also
- * re-reads the two minutes behind it for rows written late; every effect is
- * idempotent, so one seen twice changes nothing.
+ * cursor, `(read_to, read_to_rowid)` — that row's `created_at`, and its rowid
+ * to break a tie inside one millisecond. **Not a time alone**: more rows
+ * sharing one millisecond than a run reads would hold a time-only cursor still
+ * for ever (CHIEF's LAI-1313 review). **The rowid, not `id`**: the indexes the
+ * reads ride — `(org_id, created_at)` on `activity`, `(created_at)` on
+ * `member_notices` — end in the rowid, so the order is the index's and nothing
+ * is sorted; an `id` tiebreak made SQLite sort. A VACUUM may renumber rowids,
+ * but only the cursor's own millisecond could be reordered by it, and each row
+ * there is either behind the cursor — read again by the look-behind — or after
+ * it, read fresh; every effect is idempotent, so one seen twice changes
+ * nothing. Each run also re-reads the two minutes behind the cursor for rows
+ * written late — except while the cursor is still the first run's "now", with
+ * no row behind it (rowid 0).
  */
 export const emailWatermarks = sqliteTable('email_watermarks', {
   source: text('source').primaryKey(),
   readTo: integer('read_to').notNull(),
-  readToId: text('read_to_id').notNull(),
+  readToRowid: integer('read_to_rowid').notNull(),
   updatedAt,
 });
 
