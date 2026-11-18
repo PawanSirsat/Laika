@@ -86,3 +86,14 @@ The web half of D-162. The owner chose (2026-11-19) a folded **Outputs** strip *
   by its caption, with no name, type or size.
 - **Screenshots** (strip and viewer, 1440 and 390, light and dark, local
   build) are on LAIKA-1153, comment 01M7RCMDV4QW2A3QBMXW1TCFC1.
+- **Two owners, §4.4: this half is red alone, by design.** `Gate · cli` fails
+  one assertion, `cli/test/project-check.test.ts:951`, *drift: the CLI reads
+  the block the web writes › the same template revision, end marker and
+  begin-marker shape*:
+  `The input did not match the regular expression /export const PROJECT_BLOCK_REVISION = 2;/`
+  — the web is at 3 and `cli/src/project-check.ts:92` still says 2.
+  **LAI-1351 (PR #407, branch `LAI-1351-laika-attach`) turns it green**: its
+  `cli/src/project-check.ts` is already at 3, and alone it fails the same
+  assertion the other way. Land the two together; no exemption taken, and
+  `cli/` is not crossed from here.
+
