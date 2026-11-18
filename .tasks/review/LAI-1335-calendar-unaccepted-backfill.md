@@ -5,8 +5,9 @@ area: server
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T12:38:21Z
+finished: 2026-11-18T12:57:31Z
 ---
 
 ## Goal
@@ -43,18 +44,25 @@ Scope: area `server` and, named, `server/web/`'s Organisation calendar card
 
 ## Acceptance criteria
 
-- [ ] `classify` is tested for each response and showAs value: tentative, not answered and
+- [x] `classify` is tested for each response and showAs value: tentative, not answered and
       `none` invitations are logged; declined, cancelled, free, OOF and all-day are skipped; an
       organised event still counts only as a Teams meeting.
-- [ ] Backfill refuses 0, 91 and a non-integer with codes; a token gets `session_required`; a
+- [x] Backfill refuses 0, 91 and a non-integer with codes; a token gets `session_required`; a
       member or viewer is refused.
-- [ ] Backfill respects closed periods, full days and a person's edit; a second run adds
+- [x] Backfill respects closed periods, full days and a person's edit; a second run adds
       nothing; it shares one flight with the regular run; its retire stays in its window.
-- [ ] Route tests assert the codes; a browser test drives the card's control.
-- [ ] SPEC §4.48, §6.4 and §11.6 updated; the D-157 amendment text sent to CHIEF.
+- [x] Route tests assert the codes; a browser test drives the card's control.
+- [x] SPEC §4.48, §6.4 and §11.6 updated; the D-157 amendment text sent to CHIEF.
 - [ ] CI is green on the PR; an independent review.
+      *(Builder: CI is read on the PR after this commit, and the review is independent — both
+      CHIEF's to tick.)*
 
 ## Notes
 
 - **Testing on Belka:** single test files only; CI runs the gate.
 - **Where it stops:** at a green PR into `master`. CHIEF merges, after #390.
+- **Also touched, said to CHIEF with the amendment text:** the same fact in SPEC §3.1's
+  `org.calendar.configure` paragraph, §3.4's `system.calendar.sync` row, §11.4.2's
+  Organisation endpoints and §13.4's Microsoft sentence; and `services/microsoft-graph.ts`'s
+  page cap, twenty pages of a hundred per week a read spans, so a 92-day read is not refused at
+  twenty pages.
