@@ -32,7 +32,7 @@ bigger, but not much. CHIEF dispatched it to builder session laika-c4.
 - [x] No *Spaces /* crumb on any space page
 - [x] The mark is one size larger and stays aligned with the name
 - [x] Screenshots in light and dark, at 1440 and 390
-- [x] CI green; CHIEF releases to master and Ksage
+- [ ] CI green; CHIEF releases to master and Ksage
 
 ## Build notes
 
