@@ -5,8 +5,9 @@ area: docker
 assignee: build-1332
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-18T11:39:52Z
+finished: 2026-11-18T12:00:14Z
 ---
 
 ## Goal
@@ -83,14 +84,14 @@ Named crossings, in addition to round 1's:
 
 ### Acceptance criteria (round 2)
 
-- [ ] `docker/entrypoint.sh`: a `LAIKA_BUILD_COMMIT` that is set and not empty, but not 7–40
+- [x] `docker/entrypoint.sh`: a `LAIKA_BUILD_COMMIT` that is set and not empty, but not 7–40
       lowercase hex, is unset before `exec`, with one line on stderr:
       `laika: LAIKA_BUILD_COMMIT '<value>' is not a commit; serving none`.
-- [ ] A valid value passes through untouched. An empty value stays set and empty, and an unset
+- [x] A valid value passes through untouched. An empty value stays set and empty, and an unset
       one stays unset, with no notice either way.
-- [ ] The server's own §11.7 validation (`server/src/env.ts`) is unchanged.
-- [ ] A test runs the real entrypoint under `sh`: `HEAD` unset with the notice; `unknown` unset;
+- [x] The server's own §11.7 validation (`server/src/env.ts`) is unchanged.
+- [x] A test runs the real entrypoint under `sh`: `HEAD` unset with the notice; `unknown` unset;
       a 40-hex value kept; empty unchanged; plus the 7/40-length edges, 6 and 41 characters, and
       uppercase hex.
-- [ ] Mutation: with the guard removed, the test goes red.
-- [ ] SPEC §11.7's `LAIKA_BUILD_COMMIT` row mentions the guard.
+- [x] Mutation: with the guard removed, the test goes red.
+- [x] SPEC §11.7's `LAIKA_BUILD_COMMIT` row mentions the guard.
