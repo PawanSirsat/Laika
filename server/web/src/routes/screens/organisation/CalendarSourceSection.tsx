@@ -301,7 +301,7 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       className="org-cal"
       section="calendar"
       hooks={{ 'data-calendar-status': statusWord(view) }}
-      description="Accepted meetings logged on each person’s My day as confirmed time."
+      description="Meetings each person has not declined, logged on their My day as confirmed time."
       meta={
         <span
           className="org-status-badge"

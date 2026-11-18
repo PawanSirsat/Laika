@@ -492,7 +492,7 @@ const CONNECTION_LINES: Readonly<Record<string, string>> = {
   hr: 'Holidays and leave from Clan, kept in step on its own.',
   email: 'Invite and password-reset links, sent through your SMTP relay.',
   teams: 'Stand-ups, the nightly digest and notices, posted to each space’s channel.',
-  calendar: 'Accepted meetings logged on each person’s My day as confirmed time.',
+  calendar: 'Meetings each person has not declined, logged on their My day as confirmed time.',
   ai: 'The model Meeting reviews use, and the prices every cost on Usage is computed with.',
 };
 
