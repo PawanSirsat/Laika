@@ -932,7 +932,7 @@ function filesText(files: readonly TaskFile[]): string {
   return bullets(
     files.map(
       (f) =>
-        `[${f.caption ?? f.filename}](${f.url}) — \`${f.filename}\`, ${f.content_type}, ${bytesText(f.size_bytes)}${
+        `[${(f.caption ?? f.filename).replace(/[\\[\]]/g, (c) => `\\${c}`)}](${f.url}) — \`${f.filename}\`, ${f.content_type}, ${bytesText(f.size_bytes)}${
           f.round === null ? '' : `, round ${String(f.round)}`
         }`,
     ),
