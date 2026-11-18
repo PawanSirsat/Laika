@@ -178,6 +178,7 @@ describe('a calendar', () => {
           showAs: 'busy',
           sensitivity: 'normal',
           response: 'accepted',
+          isOnlineMeeting: false,
           location: 'Room 4',
         }),
       ],
@@ -192,8 +193,25 @@ describe('a calendar', () => {
     expect(req?.url.searchParams.get('$select')?.split(',')).not.toEqual(
       expect.arrayContaining(['body']),
     );
+    const selected = req?.url.searchParams.get('$select')?.split(',');
+    expect(selected).toEqual([
+      'id',
+      'iCalUId',
+      'subject',
+      'start',
+      'end',
+      'isAllDay',
+      'isCancelled',
+      'showAs',
+      'sensitivity',
+      'responseStatus',
+      'isOrganizer',
+      // A boolean: Teams or not (D-157 item 3). The join link stays unasked.
+      'isOnlineMeeting',
+      'location',
+    ]);
     for (const field of ['body', 'attendees', 'onlineMeeting', 'onlineMeetingUrl', 'webLink']) {
-      expect(req?.url.searchParams.get('$select')?.split(',')).not.toContain(field);
+      expect(selected).not.toContain(field);
     }
     // UTC times, and ids that survive a move between folders (review F5).
     expect(req?.prefer).toBe('outlook.timezone="UTC", IdType="ImmutableId"');

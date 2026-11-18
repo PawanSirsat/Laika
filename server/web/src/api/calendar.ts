@@ -66,8 +66,10 @@ export interface CalendarSyncResult {
   readonly mailbox_denied: number;
   /** How many Microsoft would not look up (400): skipped the same way. */
   readonly mailbox_refused: number;
-  /** Accepted or organised meetings found in the window. */
+  /** Meetings logged or to be logged: invitations accepted, Teams meetings organised. */
   readonly meetings: number;
+  /** Events a person organised that are not Teams meetings — a lunch, focus time — left off. */
+  readonly not_a_meeting: number;
   readonly created: number;
   readonly updated: number;
   /** Entries retired: the meeting was cancelled, declined, or is gone. */

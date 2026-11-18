@@ -203,6 +203,9 @@ export function countsLine(result: CalendarSyncResult): string {
     result.removed > 0 ? `${String(result.removed)} removed` : '',
     result.kept_edits > 0 ? `${String(result.kept_edits)} left as people changed them` : '',
     result.skipped > 0 ? `${String(result.skipped)} held back (day full or closed)` : '',
+    result.not_a_meeting > 0
+      ? `${String(result.not_a_meeting)} of people’s own events left off (not Teams meetings)`
+      : '',
   ].filter((part) => part !== '');
   // The people skipped, by reason (LAI-1316 review F1): each is one person
   // not read, never the run failing.

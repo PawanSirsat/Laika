@@ -256,21 +256,23 @@ describe('what is logged', () => {
     expect(JSON.parse(sourceRow()?.lastResultJson ?? 'null')).toEqual(result);
   });
 
-  it('logs what they organised, and leaves out tentative, declined, cancelled, free, out-of-office and all-day', async () => {
+  it('logs organised Teams meetings and accepted invitations, and leaves out tentative, declined, cancelled, free, out-of-office and all-day', async () => {
     const at = nineOn(18);
-    const organised = graphEvent(at, {
-      subject: 'Organised',
-      responseStatus: { response: 'organizer' },
-      isOrganizer: true,
-    });
-    const organisedNone = graphEvent(at + 3_600_000, {
-      subject: 'Organised, no response',
-      responseStatus: { response: 'none' },
-      isOrganizer: true,
-    });
     fake.calendars.set('ada@kvelld.example', [
-      organised,
-      organisedNone,
+      graphEvent(at, {
+        subject: 'Organised Teams meeting',
+        responseStatus: { response: 'organizer' },
+        isOrganizer: true,
+        isOnlineMeeting: true,
+      }),
+      graphEvent(at + 3_600_000, {
+        subject: 'Organised Teams, no response',
+        responseStatus: { response: 'none' },
+        isOrganizer: true,
+        isOnlineMeeting: true,
+      }),
+      // Invited and accepted counts online or in person (the owner, 2026-11-18).
+      graphEvent(at + 7_200_000, { subject: 'Accepted, in person', isOnlineMeeting: false }),
       graphEvent(at, { responseStatus: { response: 'tentativelyAccepted' } }),
       graphEvent(at, { responseStatus: { response: 'declined' } }),
       graphEvent(at, { responseStatus: { response: 'notResponded' } }),
@@ -282,8 +284,62 @@ describe('what is logged', () => {
       graphEvent(Date.UTC(2026, 10, 18), { isAllDay: true, minutes: 1440 }),
     ]);
     connect();
-    expect(synced(await sync())).toMatchObject({ meetings: 2, created: 2 });
-    expect(entriesOf(ada).map((e) => e.title)).toEqual(['Organised', 'Organised, no response']);
+    expect(synced(await sync())).toMatchObject({ meetings: 3, created: 3, not_a_meeting: 0 });
+    expect(entriesOf(ada).map((e) => e.title)).toEqual([
+      'Organised Teams meeting',
+      'Organised Teams, no response',
+      'Accepted, in person',
+    ]);
+  });
+
+  it('leaves off what the person organised that is not a Teams meeting, and counts it (D-157 item 3)', async () => {
+    const at = nineOn(18);
+    fake.calendars.set('ada@kvelld.example', [
+      graphEvent(at, {
+        subject: 'Lunch',
+        responseStatus: { response: 'organizer' },
+        isOrganizer: true,
+        isOnlineMeeting: false,
+      }),
+      // Graph's `none` for something organised, not online: the same.
+      graphEvent(at + 3_600_000, {
+        subject: 'Focus time',
+        responseStatus: { response: 'none' },
+        isOrganizer: true,
+        isOnlineMeeting: false,
+      }),
+      graphEvent(at + 7_200_000, {
+        subject: 'Doctor',
+        responseStatus: { response: 'organizer' },
+        isOrganizer: false,
+        isOnlineMeeting: false,
+      }),
+      graphEvent(at + 10_800_000, {
+        subject: 'Team sync',
+        responseStatus: { response: 'organizer' },
+        isOrganizer: true,
+        isOnlineMeeting: true,
+      }),
+    ]);
+    connect();
+    expect(synced(await sync())).toMatchObject({ meetings: 1, created: 1, not_a_meeting: 3 });
+    expect(entriesOf(ada).map((e) => e.title)).toEqual(['Team sync']);
+  });
+
+  it('retires one logged before it was known not to be a Teams meeting', async () => {
+    const lunch = graphEvent(nineOn(18), {
+      subject: 'Lunch',
+      responseStatus: { response: 'organizer' },
+      isOrganizer: true,
+      isOnlineMeeting: true,
+    });
+    fake.calendars.set('ada@kvelld.example', [lunch]);
+    connect();
+    synced(await sync());
+    // Teams taken off it: no longer a meeting Laika logs.
+    fake.calendars.set('ada@kvelld.example', [{ ...lunch, isOnlineMeeting: false }]);
+    expect(synced(await sync(NOW + 1))).toMatchObject({ removed: 1, not_a_meeting: 1 });
+    expect(entriesOf(ada)).toEqual([expect.objectContaining({ deletedAt: NOW + 1 })]);
   });
 
   it('logs a private or confidential meeting as Busy, and keeps no link, body or attendee', async () => {

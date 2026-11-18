@@ -234,12 +234,14 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
       </header>
 
       <p className="org-note org-hr-lead" data-calendar-lead>
-        Every {String(view.sync_every_minutes)} minutes, the meetings each person accepted or
-        organised in Outlook are logged on their My day as confirmed time, as meetings — yesterday,
-        today and tomorrow. Laika keeps the subject and the times only, never join links, the
-        meeting’s text or who else was invited; a private meeting is logged as “Busy”. Tentative,
-        declined, cancelled, free and all-day ones are left out. Anyone can change or delete their
-        own, and once they do, later syncs leave it alone.
+        Every {String(view.sync_every_minutes)} minutes, the meetings each person accepted an
+        invitation to, and the Teams meetings they organised, are logged on their My day as
+        confirmed time, as meetings — yesterday, today and tomorrow. Something they put in their own
+        calendar that is not a Teams meeting, like lunch or focus time, is left off. Laika keeps the
+        subject and the times only, never join links, the meeting’s text or who else was invited; a
+        private meeting is logged as “Busy”. Tentative, declined, cancelled, free, out-of-office and
+        all-day ones are left out. Anyone can change or delete their own, and once they do, later
+        syncs leave it alone.
       </p>
 
       <div className="org-hr-body">

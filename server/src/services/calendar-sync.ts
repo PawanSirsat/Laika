@@ -42,8 +42,12 @@ import { closedThrough } from './time-solidtime.ts';
  *
  * For every active member, by their email: the events on their calendar from
  * the start of yesterday to the end of tomorrow **in their own zone** (§4.46's
- * place). A meeting is logged when they **accepted it or organised it**; one
- * that is tentative, declined, cancelled, shown as free, or all day is not.
+ * place). A meeting is logged when they **accepted an invitation to it**, in
+ * person or online, or **organised it as a Teams meeting** — an event they
+ * put in their own calendar that is not a Teams meeting (a lunch, a doctor,
+ * focus time) is counted as `not_a_meeting` and left off (the owner's choice,
+ * 2026-11-18). One that is tentative, declined, cancelled, shown as free or
+ * out of office, or all day is not logged either.
  * Each is a `time_entries` row with `source: 'calendar'`, `source_ref` the
  * event's Graph id, `kind: 'meeting'`, its span and minutes, and its subject
  * as the title — **`Busy` when the meeting is private, confidential or
@@ -112,8 +116,10 @@ export interface CalendarSyncResultView {
   mailbox_denied: number;
   /** How many Microsoft would not look up (`400`): skipped the same way. */
   mailbox_refused: number;
-  /** Accepted or organised meetings found in the window. */
+  /** Meetings logged or to be logged: invitations accepted, Teams meetings organised. */
   meetings: number;
+  /** Events the person organised that are not Teams meetings — a lunch, focus time — left off. */
+  not_a_meeting: number;
   created: number;
   updated: number;
   /** Entries retired: the meeting was cancelled, declined, or is gone. */
@@ -357,16 +363,27 @@ function isPrivate(e: GraphEvent): boolean {
 }
 
 /**
- * Accepted or organised, and something that holds working time — or not a
- * meeting Laika logs. Out of office (`oof`) is not working time, so it is
- * skipped with free and tentative.
+ * What an event is to the sync (D-157 item 3, the owner's choice of
+ * 2026-11-18): a `meeting` it logs, `not_a_meeting` — something the person
+ * organised that is not a Teams meeting — or `skip`.
+ *
+ * - Cancelled, all day, free, tentative or out of office: `skip`. None holds
+ *   working time.
+ * - **Organised by the person** (`isOrganizer`, or Graph's `organizer`
+ *   response — it answers `none` for some): a meeting **only when it is a
+ *   Teams meeting** (`isOnlineMeeting`). *Lunch*, *Doctor* and Viva's *Focus
+ *   time* are events in their own calendar, not meetings. Attendees are never
+ *   read to tell.
+ * - **Invited and accepted**: a meeting, online or in person.
+ * - Anything else — declined, not answered: `skip`.
  */
-export function isLogged(e: GraphEvent): boolean {
-  if (e.isCancelled || e.isAllDay) return false;
-  if (e.showAs === 'free' || e.showAs === 'tentative' || e.showAs === 'oof') return false;
-  if (e.response === 'organizer' || e.response === 'accepted') return true;
-  // Graph answers `none` for some meetings a person organised.
-  return e.isOrganizer && e.response === 'none';
+export function classify(e: GraphEvent): 'meeting' | 'not_a_meeting' | 'skip' {
+  if (e.isCancelled || e.isAllDay) return 'skip';
+  if (e.showAs === 'free' || e.showAs === 'tentative' || e.showAs === 'oof') return 'skip';
+  if (e.isOrganizer || e.response === 'organizer') {
+    return e.isOnlineMeeting ? 'meeting' : 'not_a_meeting';
+  }
+  return e.response === 'accepted' ? 'meeting' : 'skip';
 }
 
 /** A private, confidential or personal meeting is `Busy`; any other its subject, or nothing. */
@@ -458,6 +475,7 @@ function reconcile(
     mailbox_denied: 0,
     mailbox_refused: 0,
     meetings: 0,
+    not_a_meeting: 0,
     created: 0,
     updated: 0,
     removed: 0,
@@ -575,7 +593,9 @@ function reconcilePerson(
     const day = dayIn(zone, e.start);
     // An event that began before the window only overlaps it.
     if (!window.days.has(day)) continue;
-    if (!isLogged(e)) continue;
+    const is = classify(e);
+    if (is === 'not_a_meeting') result.not_a_meeting += 1;
+    if (is !== 'meeting') continue;
     seen.add(e.id);
     result.meetings += 1;
     const fields = fieldsOf(e, zone, titleOf(e), projectFor(e, rules, usable));

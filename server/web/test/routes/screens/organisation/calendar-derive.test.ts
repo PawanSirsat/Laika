@@ -180,6 +180,7 @@ void describe('the words', () => {
     mailbox_denied: 0,
     mailbox_refused: 0,
     meetings: 6,
+    not_a_meeting: 0,
     created: 0,
     updated: 0,
     removed: 0,
@@ -205,6 +206,13 @@ void describe('the words', () => {
         }),
       ),
       '1 meeting · 1 logged · 2 updated · 3 removed · 1 left as people changed them · 2 held back (day full or closed) · 1 person, 1 with no Outlook calendar',
+    );
+  });
+
+  void test('a person’s own events that are not Teams meetings are said as left off', () => {
+    assert.equal(
+      countsLine(result({ not_a_meeting: 2 })),
+      '6 meetings · 2 of people’s own events left off (not Teams meetings) · 4 people',
     );
   });
 

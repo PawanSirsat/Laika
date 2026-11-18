@@ -81,6 +81,9 @@ const EVENT_FIELDS = [
   'sensitivity',
   'responseStatus',
   'isOrganizer',
+  // A boolean: whether it is a Teams meeting. Never `onlineMeeting` or
+  // `onlineMeetingUrl`, which carry the join link (D-157 item 3).
+  'isOnlineMeeting',
   'location',
 ].join(',');
 
@@ -198,6 +201,8 @@ export interface GraphEvent {
   /** Lowercased `responseStatus.response`: `organizer`, `accepted`, `tentativelyaccepted`, … */
   response: string;
   isOrganizer: boolean;
+  /** A Teams meeting — what tells an organised meeting from an organised lunch (D-157 item 3). */
+  isOnlineMeeting: boolean;
   /** The location's name — a channel meeting's is its channel. */
   location: string | null;
 }
@@ -530,6 +535,7 @@ function eventOf(row: unknown): GraphEvent {
     sensitivity: (textOf(r.sensitivity, 40) ?? 'normal').toLowerCase(),
     response: (textOf(status.response, 40) ?? 'none').toLowerCase(),
     isOrganizer: r.isOrganizer === true,
+    isOnlineMeeting: r.isOnlineMeeting === true,
     location: textOf(location.displayName, 200),
   };
 }

@@ -101,6 +101,7 @@ const RESULT = {
   mailbox_denied: 1,
   mailbox_refused: 0,
   meetings: 14,
+  not_a_meeting: 0,
   created: 3,
   updated: 1,
   removed: 1,
@@ -213,7 +214,10 @@ void describe('Outlook calendar: setting it up', () => {
       const c = card(h);
       assert.equal(await c.getAttribute('data-calendar-status'), 'not set up');
       const lead = await c.locator('[data-calendar-lead]').innerText();
-      assert.match(lead, /accepted or organised/);
+      assert.match(lead, /accepted an\s+invitation to/);
+      // The owner's rule of 2026-11-18: only a Teams meeting they organised.
+      assert.match(lead, /Teams meetings they organised/);
+      assert.match(lead, /not a Teams meeting, like lunch or focus time, is left off/);
       assert.match(lead, /never join links/);
       assert.match(lead, /“Busy”/);
       assert.match(lead, /later syncs leave it alone/);

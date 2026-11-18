@@ -262,8 +262,9 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
 let counter = 0;
 
 /**
- * An event as Graph sends it with the `$select` Laika asks for: accepted,
- * busy, normal, an hour from `start` (unix ms) unless said otherwise.
+ * An event as Graph sends it with the `$select` Laika asks for: an
+ * invitation accepted, in person, busy, normal, an hour from `start` (unix
+ * ms) unless said otherwise.
  */
 export function graphEvent(
   start: number,
@@ -283,6 +284,7 @@ export function graphEvent(
     sensitivity: 'normal',
     responseStatus: { response: 'accepted', time: '2026-11-01T08:00:00Z' },
     isOrganizer: false,
+    isOnlineMeeting: false,
     location: { displayName: 'Room 4' },
     ...rest,
   };
