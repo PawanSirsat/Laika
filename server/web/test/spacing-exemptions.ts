@@ -467,8 +467,6 @@ export const SPACING_EXEMPT: Readonly<Record<string, readonly string[]>> = {
   'routes/screens/not-found.css': ['padding: 0.0625rem 0.3125rem'],
   'routes/screens/organisation/organisation.css': [
     'margin-left: 1.125rem',
-    'margin-left: 1.125rem',
-    'margin-right: 1.125rem',
     'margin-right: 1.125rem',
     'padding-left: 1.1rem',
     'padding: 0 var(--space-3) 0 1.875rem',

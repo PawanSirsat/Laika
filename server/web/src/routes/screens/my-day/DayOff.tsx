@@ -149,8 +149,8 @@ export function DayOff({ me, spaces, canTurnOn, now, onNavigate }: DayOffProps) 
         {canTurnOn && (
           <a
             className="myday-linkish dstate-off-link"
-            href="/organisation"
-            onClick={follow('/organisation')}
+            href="/organisation?tab=time"
+            onClick={follow('/organisation?tab=time')}
             data-day-off-settings
           >
             Organisation settings

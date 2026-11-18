@@ -93,11 +93,12 @@ const BASE: ApiStub = {
 };
 
 /**
- * Every control an admin loses with their grants — on Time & breaks, General
- * and People, where the settings hub puts them (LAI-1318).
+ * Every control an admin loses with their grants — on Overview, Time & breaks,
+ * General and People, where the settings hub puts them (LAI-1318).
  */
 const GRANTED_CONTROLS = [
   '[data-invite-open]',
+  '[data-bento-invite]',
   '[data-row-actions~="deactivate"]',
   '[data-fact="developer-insights"] [role="switch"]',
   '[data-fact="time"] .org-mode',
@@ -135,7 +136,7 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
   void test('while /permissions is slow, and after it answers', async () => {
     let release: (() => void) | undefined;
     const h = await open(
-      '/organisation?tab=time',
+      '/organisation',
       {
         ...BASE,
         '/api/v1/me': me('u3', 'admin'),
@@ -149,8 +150,12 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
       },
     );
     try {
-      // Time & breaks, then General, drawn while the answer is held: the old
-      // gates fell back to the role here and offered an admin every switch.
+      // Overview, Time & breaks, then General, drawn while the answer is held:
+      // the old gates fell back to the role here and offered an admin every
+      // switch, and the bento's own Invite button.
+      await h.page.locator('.org-bento').waitFor({ timeout: 20_000 });
+      await settle(1_000);
+      await h.page.locator('.page-tab[data-tab="time"]').click();
       await h.page.locator('[data-fact="time"]').waitFor({ timeout: 20_000 });
       await settle(1_000);
       await h.page.locator('.page-tab[data-tab="general"]').click();

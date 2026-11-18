@@ -919,7 +919,7 @@ void describe('Outlook calendar: backfill (LAI-1335)', () => {
 });
 
 void describe('Outlook calendar: who sees it', () => {
-  void test('a member on Integrations is shown no calendar card, and it is never asked', async () => {
+  void test('a member on the Outlook calendar’s page is shown no card, and it is never asked', async () => {
     // Its page says who sets it up, rather than drawing an empty card.
     const h = await integrations(orgStub('member'), '[data-conn-refused]');
     try {

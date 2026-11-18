@@ -52,6 +52,8 @@ void describe('one tab strip (LAI-1193)', () => {
     for (const rel of [
       'components/PageTabs.tsx',
       'components/space/ViewTabs.tsx',
+      // The Organisation hub's sections (LAI-1318), a strip below 1600px.
+      'routes/screens/organisation/OrgNav.tsx',
       'routes/screens/inbox/HandoffsTab.tsx',
       'routes/screens/dashboard/Contributors.tsx',
       'routes/screens/my-day/DayTabs.tsx',

@@ -522,6 +522,49 @@ void describe('a wide table says it scrolls', () => {
     }
   });
 
+  // LAI-1345 review: the strip is the one tab strip (LAI-1193) — a mouse sees
+  // where it scrolls, the keyboard has one stop and the arrow keys.
+  void test('at 1280 the strip fades where it scrolls, is one tab stop, and the arrows move between sections', async () => {
+    const h = await open('/organisation', OWNER(), {
+      before: async (page) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+      },
+    });
+    try {
+      const strip = h.page.locator('.org-nav [data-tab-strip]');
+      await strip.waitFor({ timeout: 20_000 });
+      await until(async () =>
+        ((await strip.getAttribute('class')) ?? '').includes('tab-strip-fade-end'),
+      );
+      assert.match((await strip.getAttribute('class')) ?? '', /tab-strip-fade-end/);
+      assert.equal(await strip.locator('[data-tab-item][tabindex="0"]').count(), 1);
+      assert.equal(
+        await strip.locator('[data-tab-item][tabindex="0"]').getAttribute('data-tab'),
+        'overview',
+      );
+      // The group names are out of sight, not gone.
+      const heading = h.page.locator('.org-nav-heading').first();
+      assert.equal(await heading.count(), 1);
+      assert.notEqual(await heading.evaluate((el) => getComputedStyle(el).display), 'none');
+
+      await strip.locator('[data-tab="overview"]').focus();
+      await h.page.keyboard.press('ArrowRight');
+      await h.page.waitForURL((url) => url.searchParams.get('tab') === 'general', {
+        timeout: 10_000,
+      });
+      await h.page.keyboard.press('End');
+      const last = await strip.locator('[data-tab-item]').last().getAttribute('data-tab');
+      await h.page.waitForURL((url) => url.searchParams.get('tab') === last, { timeout: 10_000 });
+      // At the end now, so the start fades.
+      await until(async () =>
+        ((await strip.getAttribute('class')) ?? '').includes('tab-strip-fade-start'),
+      );
+      assert.match((await strip.getAttribute('class')) ?? '', /tab-strip-fade-start/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('at 1440 nothing is hidden, so there is no hint and no extra tab stop', async () => {
     const h = await open('/organisation?tab=people', OWNER(), {
       before: async (page) => {

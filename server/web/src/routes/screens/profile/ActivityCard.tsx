@@ -679,7 +679,7 @@ function Legend({
 
 function OrgLink({ canManageOrg }: { readonly canManageOrg: boolean }) {
   return canManageOrg ? (
-    <a className="hm-link" href="/organisation">
+    <a className="hm-link" href="/organisation?tab=general">
       Turn on Developer insights in Organisation
     </a>
   ) : null;
