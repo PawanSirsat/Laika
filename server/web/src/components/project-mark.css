@@ -166,3 +166,37 @@
   height: 100%;
   object-fit: cover;
 }
+
+/*
+ * An image that would vanish into the theme (LAI-1321): `data-plate` is what
+ * `mark-plate.ts` measured once the image loaded, and each answer is drawn in
+ * the one theme that needs it — dark is every theme but light (`isDarkTheme`),
+ * so black takes the dark rules. Unmeasured, there is no attribute and the
+ * mark is the plain image above.
+ *
+ * Both tokens flip with the theme, which is what makes one name right in
+ * each rule — light in both dark themes, dark in light. Their values in
+ * `styles/theme.css`, with the luminance `mark-plate.ts` would measure (hex
+ * written without its `#`, which `states.test.ts` reads as a colour here):
+ *
+ *   token               dark            black           light
+ *   --text-muted        8fa7c6  0.64    8e8e98  0.56    56637a  0.38
+ *   --text-secondary    b9c2d6  0.76    b8b8c0  0.72    4b5a72  0.35
+ */
+
+/*
+ * A dark tile in a dark theme, a light one in light: a 1px ring in the
+ * contrasting text colour. An outline, inset, not a box-shadow — an inset
+ * shadow is painted under the image, which covers the whole box.
+ */
+:root:not([data-theme='light']) .project-mark-image[data-plate='ring-in-dark'],
+:root[data-theme='light'] .project-mark-image[data-plate='ring-in-light'] {
+  outline: 1px solid var(--text-muted);
+  outline-offset: -1px;
+}
+
+/* A cut-out drawn in dark on a dark theme, or light on light: a contrasting plate behind it. */
+:root:not([data-theme='light']) .project-mark-image[data-plate='plate-in-dark'],
+:root[data-theme='light'] .project-mark-image[data-plate='plate-in-light'] {
+  background: var(--text-secondary);
+}
