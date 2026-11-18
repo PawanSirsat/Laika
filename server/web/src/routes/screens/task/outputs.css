@@ -133,17 +133,17 @@
 
 /* --- the viewer ----------------------------------------------------------- */
 
-.overlay-dialog.ov {
+.overlay-dialog.ovw {
   --overlay-width: 60rem;
 }
 
-.ov .overlay-dialog-body {
+.ovw .overlay-dialog-body {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--space-3);
 }
 
-.ov-stage {
+.ovw-stage {
   display: grid;
   place-items: center;
   min-height: 14rem;
@@ -153,20 +153,20 @@
   background: var(--bg-column);
 }
 
-.ov-image,
-.ov-video {
+.ovw-image,
+.ovw-video {
   display: block;
   max-width: 100%;
   max-height: 70dvh;
   object-fit: contain;
 }
 
-.ov-video {
+.ovw-video {
   width: 100%;
   background: var(--bg-canvas);
 }
 
-.ov-frame {
+.ovw-frame {
   display: block;
   width: 100%;
   height: 70dvh;
@@ -174,7 +174,7 @@
   background: var(--bg-card);
 }
 
-.ov-card {
+.ovw-card {
   display: grid;
   justify-items: center;
   gap: var(--space-1);
@@ -183,13 +183,13 @@
   text-align: center;
 }
 
-.ov-card-glyph {
+.ovw-card-glyph {
   display: grid;
   place-items: center;
   margin-bottom: var(--space-1);
 }
 
-.ov-card-name {
+.ovw-card-name {
   max-width: 100%;
   overflow-wrap: anywhere;
   font-size: var(--text-body);
@@ -197,14 +197,14 @@
   color: var(--text-primary);
 }
 
-.ov-card-meta,
-.ov-card-note {
+.ovw-card-meta,
+.ovw-card-note {
   font-size: var(--text-small);
   line-height: var(--leading-small);
   color: var(--text-secondary);
 }
 
-.ov-bar {
+.ovw-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -212,13 +212,13 @@
   gap: var(--space-2);
 }
 
-.ov-steps {
+.ovw-steps {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.ov-step {
+.ovw-step {
   display: grid;
   place-items: center;
   width: 2rem;
@@ -232,17 +232,17 @@
   transition: var(--transition);
 }
 
-.ov-step:hover {
+.ovw-step:hover {
   border-color: var(--accent-border);
   background: var(--accent-bg);
 }
 
-.ov-step:focus-visible {
+.ovw-step:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.ov-count {
+.ovw-count {
   min-width: 3rem;
   font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
@@ -250,14 +250,14 @@
   text-align: center;
 }
 
-.ov-actions {
+.ovw-actions {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-left: auto;
 }
 
-.ov-action {
+.ovw-action {
   gap: var(--space-1);
   text-decoration: none;
 }
@@ -267,26 +267,26 @@
  * takes what the bar leaves, and the bar's two halves stack.
  */
 @media (max-width: 600px) {
-  .ov-image,
-  .ov-video,
-  .ov-frame {
+  .ovw-image,
+  .ovw-video,
+  .ovw-frame {
     max-height: 60dvh;
   }
 
-  .ov-frame {
+  .ovw-frame {
     height: 60dvh;
   }
 
-  .ov-bar {
+  .ovw-bar {
     justify-content: center;
   }
 
-  .ov-actions {
+  .ovw-actions {
     width: 100%;
     margin-left: 0;
   }
 
-  .ov-actions > .ov-action {
+  .ovw-actions > .ovw-action {
     flex: 1 1 0;
     justify-content: center;
   }

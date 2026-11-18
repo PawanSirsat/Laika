@@ -51,28 +51,28 @@ export function OutputViewer({ items, start, onClose }: OutputViewerProps) {
       title={item.caption}
       description={about === '' ? undefined : about}
       size="lg"
-      className="ov"
+      className="ovw"
       data={{ 'data-output-viewer': '', 'data-show': item.show }}
       onClose={onClose}
       onKeyDown={onKeyDown}
-      initialFocus={(box) => box.querySelector<HTMLElement>('[data-ov-step="next"]')}
+      initialFocus={(box) => box.querySelector<HTMLElement>('[data-ovw-step="next"]')}
     >
       {/* Said once per step, for a screen reader: where it is and what. */}
       <p className="visually-hidden" aria-live="polite">
         {many ? `${String(index + 1)} of ${String(count)}: ${item.caption}` : ''}
       </p>
-      <div className="ov-stage" data-show={item.show}>
+      <div className="ovw-stage" data-show={item.show}>
         <OutputMedia key={item.id} item={item} />
       </div>
-      <div className="ov-bar">
+      <div className="ovw-bar">
         {many && (
-          <span className="ov-steps">
+          <span className="ovw-steps">
             <Tooltip content="Previous" shortcut="ArrowLeft">
               <button
                 type="button"
-                className="ov-step"
+                className="ovw-step"
                 aria-label="Previous"
-                data-ov-step="previous"
+                data-ovw-step="previous"
                 onClick={() => {
                   step(-1);
                 }}
@@ -80,15 +80,15 @@ export function OutputViewer({ items, start, onClose }: OutputViewerProps) {
                 <Icon name="chevron-left" size="small" />
               </button>
             </Tooltip>
-            <span className="ov-count" aria-hidden="true">
+            <span className="ovw-count" aria-hidden="true">
               {position}
             </span>
             <Tooltip content="Next" shortcut="ArrowRight">
               <button
                 type="button"
-                className="ov-step"
+                className="ovw-step"
                 aria-label="Next"
-                data-ov-step="next"
+                data-ovw-step="next"
                 onClick={() => {
                   step(1);
                 }}
@@ -98,9 +98,9 @@ export function OutputViewer({ items, start, onClose }: OutputViewerProps) {
             </Tooltip>
           </span>
         )}
-        <span className="ov-actions">
+        <span className="ovw-actions">
           <a
-            className="button button-ghost button-sm ov-action"
+            className="button button-ghost button-sm ovw-action"
             href={item.url}
             target="_blank"
             rel="noopener noreferrer"
@@ -109,7 +109,7 @@ export function OutputViewer({ items, start, onClose }: OutputViewerProps) {
             Open in a new tab
           </a>
           <a
-            className="button button-secondary button-sm ov-action"
+            className="button button-secondary button-sm ovw-action"
             href={item.url}
             download={item.filename ?? ''}
           >
@@ -129,7 +129,7 @@ function OutputMedia({ item }: { readonly item: OutputItem }) {
   if (item.show === 'image') {
     return (
       <img
-        className="ov-image"
+        className="ovw-image"
         src={item.url}
         alt={item.caption}
         decoding="async"
@@ -142,7 +142,7 @@ function OutputMedia({ item }: { readonly item: OutputItem }) {
   if (item.show === 'video') {
     return (
       <video
-        className="ov-video"
+        className="ovw-video"
         src={item.url}
         controls
         playsInline
@@ -181,19 +181,19 @@ function PdfFrame({ item }: { readonly item: OutputItem }) {
     };
   }, []);
   if (blocked) return <OutputCard item={item} blocked />;
-  return <iframe ref={frame} className="ov-frame" src={item.url} title={item.caption} />;
+  return <iframe ref={frame} className="ovw-frame" src={item.url} title={item.caption} />;
 }
 
 /** A file the page does not show: what it is, and the way to get it. */
 function OutputCard({ item, blocked }: { readonly item: OutputItem; readonly blocked: boolean }) {
   return (
-    <div className="ov-card" data-kind={item.glyph}>
-      <span className="ov-card-glyph" aria-hidden="true">
+    <div className="ovw-card" data-kind={item.glyph}>
+      <span className="ovw-card-glyph" aria-hidden="true">
         <FileGlyph kind={item.glyph} size={40} />
       </span>
-      <span className="ov-card-name">{item.filename ?? item.caption}</span>
-      {item.size !== null && <span className="ov-card-meta">{item.size}</span>}
-      <span className="ov-card-note">
+      <span className="ovw-card-name">{item.filename ?? item.caption}</span>
+      {item.size !== null && <span className="ovw-card-meta">{item.size}</span>}
+      <span className="ovw-card-note">
         {blocked
           ? 'This board does not show PDFs inside the page. Open it in a new tab, or download it.'
           : 'This file opens outside the board. Download it, or open it in a new tab.'}

@@ -538,8 +538,8 @@ void describe('the Outputs line under Proof (D-162)', () => {
             (await viewer(h).locator('.overlay-dialog-desc').innerText()).trim(),
             '2 / 6 · by Ada Lovelace’s Claude Code · Belka',
           );
-          const image = viewer(h).locator('.ov-stage img.ov-image');
-          await until(() => imagesDecoded(viewer(h).locator('.ov-stage')), 10_000);
+          const image = viewer(h).locator('.ovw-stage img.ovw-image');
+          await until(() => imagesDecoded(viewer(h).locator('.ovw-stage')), 10_000);
           assert.equal(await image.getAttribute('src'), url(SHOT_2));
           // Inside the screen at either size.
           const box = await viewer(h).boundingBox();
@@ -573,11 +573,11 @@ void describe('the viewer', () => {
       await tile.click();
       await viewer(h).waitFor({ timeout: 10_000 });
       const position = async (): Promise<string> =>
-        (await viewer(h).locator('.ov-count').innerText()).trim();
+        (await viewer(h).locator('.ovw-count').innerText()).trim();
       assert.equal(await position(), '2 / 6');
       // Focus starts on Next, so Enter steps too.
       assert.equal(
-        await h.page.evaluate(() => document.activeElement?.getAttribute('data-ov-step')),
+        await h.page.evaluate(() => document.activeElement?.getAttribute('data-ovw-step')),
         'next',
       );
 
@@ -624,7 +624,7 @@ void describe('the viewer', () => {
       const strip = await openStrip(h);
       await strip.locator('[data-kind="recording"]').click();
       await viewer(h).waitFor({ timeout: 10_000 });
-      const video = viewer(h).locator('video.ov-video');
+      const video = viewer(h).locator('video.ovw-video');
       await video.waitFor({ timeout: 10_000 });
       assert.equal(await video.getAttribute('src'), url(REC));
       assert.equal(await video.evaluate((v) => (v as HTMLVideoElement).controls), true);
@@ -635,19 +635,22 @@ void describe('the viewer', () => {
 
       await strip.locator('.out-more').click();
       await viewer(h).waitFor({ timeout: 10_000 });
-      assert.equal((await viewer(h).locator('.ov-count').innerText()).trim(), '5 / 6');
+      assert.equal((await viewer(h).locator('.ovw-count').innerText()).trim(), '5 / 6');
       // The sheet is no picture: a card with its name, size and the ways out.
-      const card = viewer(h).locator('.ov-card');
+      const card = viewer(h).locator('.ovw-card');
       await card.waitFor({ timeout: 10_000 });
-      assert.equal((await card.locator('.ov-card-name').innerText()).trim(), 'accounts-masked.csv');
-      assert.equal((await card.locator('.ov-card-meta').innerText()).trim(), '48 KB');
+      assert.equal(
+        (await card.locator('.ovw-card-name').innerText()).trim(),
+        'accounts-masked.csv',
+      );
+      assert.equal((await card.locator('.ovw-card-meta').innerText()).trim(), '48 KB');
 
       await h.page.keyboard.press('ArrowRight');
-      const frame = viewer(h).locator('iframe.ov-frame');
+      const frame = viewer(h).locator('iframe.ovw-frame');
       await frame.waitFor({ timeout: 10_000 });
       assert.equal(await frame.getAttribute('src'), url(REPORT));
       assert.equal(await frame.getAttribute('title'), 'Run report');
-      assert.equal(await viewer(h).locator('.ov-card').count(), 0);
+      assert.equal(await viewer(h).locator('.ovw-card').count(), 0);
     } finally {
       await h.close();
     }
@@ -660,8 +663,8 @@ void describe('the viewer', () => {
       await strip.locator('.out-more').click();
       await viewer(h).waitFor({ timeout: 10_000 });
       await h.page.keyboard.press('ArrowRight');
-      assert.equal((await viewer(h).locator('.ov-count').innerText()).trim(), '6 / 6');
-      const card = viewer(h).locator('.ov-card');
+      assert.equal((await viewer(h).locator('.ovw-count').innerText()).trim(), '6 / 6');
+      const card = viewer(h).locator('.ovw-card');
       await card.waitFor({ timeout: 10_000 });
       assert.match(await card.innerText(), /This board does not show PDFs inside the page/);
       assert.equal(await viewer(h).locator('iframe').count(), 0);
