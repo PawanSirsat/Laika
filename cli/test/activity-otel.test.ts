@@ -170,6 +170,10 @@ void describe('on writes exactly the reference', () => {
     assert.deepEqual(JSON.parse(helper()), { Authorization: 'Bearer lai_ToolTokenFromToolAdd' });
     assert.ok(!read(otelPaths(h.home).helper).includes('lai_ToolTokenFromToolAdd'));
 
+    // ~/.laika/env naming this board with no token in it is no personal token.
+    writeFileSync(join(h.home, '.laika', 'env'), `LAIKA_URL="${h.board.url}"\n`);
+    assert.deepEqual(JSON.parse(helper()), { Authorization: 'Bearer lai_ToolTokenFromToolAdd' });
+
     // A personal token for this board, where there is one, still comes first.
     writeEnvFile(h.home, h.board.url, TOKEN);
     assert.deepEqual(JSON.parse(helper()), { Authorization: `Bearer ${TOKEN}` });
@@ -308,6 +312,19 @@ void describe('status says whether telemetry reaches the board', () => {
     assert.equal(await h.run('on'), 0);
     writeEnvFile(h.home, h.board.url, 'lai_NotTheBoardsFakeToken');
     assert.match(await statusOf(h), /OpenTelemetry\s+set up, but .* refuses the token \(401\)/);
+  });
+
+  void test('set up, but the board refuses this machine’s Claude Code credential (401): add the tool again (LAI-1325)', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    rmSync(join(h.home, '.laika', 'env'));
+    writeCredential(h.home, 'claude-code', { url: h.board.url, token: 'lai_RevokedToolToken' });
+    const said = await statusOf(h);
+    assert.match(
+      said,
+      /OpenTelemetry\s+set up, but .* refuses this machine's Claude Code credential \(401\) — add Claude Code again from the board \(`laika tool add claude-code`\)/,
+    );
+    assert.doesNotMatch(said, /laika init/);
   });
 
   void test('set up, but Developer insights are off (403 local_activity_off)', async () => {

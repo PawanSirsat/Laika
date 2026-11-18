@@ -3,11 +3,13 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { credentialPath } from './agent-session.ts';
+import { credentialPath, readCredential } from './agent-session.ts';
 import { shellQuote } from './agents.ts';
+import { normaliseUrl } from './api.ts';
 import { asJson, backupOnce, isObject, parseConfig, paths, replaceFile } from './activity-hooks.ts';
 import { REQUEST_TIMEOUT_MS } from './activity-sync.ts';
 import { writePrivately } from './connect.ts';
+import { readEnvFile } from './whoami.ts';
 
 /**
  * Claude Code's telemetry, set up once in `~/.claude/settings.json` by
@@ -107,6 +109,27 @@ export function helperScript(home: string, board: string): string {
     `printf '{"Authorization":"Bearer %s"}\\n' "$token"`,
     '',
   ].join('\n');
+}
+
+/**
+ * Which credential the header helper will send for `board` (LAI-1325) — the
+ * script's own order, read the same way: a personal token for that board in
+ * `~/.laika/env`, else this machine's Claude Code credential for it, else
+ * none. Claude Code's alone: the telemetry is Claude Code's, so a machine whose
+ * only tool is Codex or Cursor has activity but not these metrics.
+ */
+export function otelCredentialSource(
+  home: string,
+  board: string,
+): 'personal' | 'claude-code' | undefined {
+  const personal = readEnvFile(otelPaths(home).env);
+  const url = personal.LAIKA_URL?.trim().replace(/\/+$/, '');
+  if (url === board && (personal.LAIKA_TOKEN?.trim() ?? '') !== '') return 'personal';
+  const tool = readCredential(home, 'claude-code', {});
+  if (tool !== undefined && tool.token.trim() !== '' && normaliseUrl(tool.url) === board) {
+    return 'claude-code';
+  }
+  return undefined;
 }
 
 interface OtelRecord {
@@ -376,8 +399,15 @@ export async function checkOtel(home: string, board: string): Promise<OtelCheck>
   return { state: 'refused', status: response.status, ...(reason === undefined ? {} : { reason }) };
 }
 
-/** One line for `laika activity status`. */
-export function describeOtel(check: OtelCheck, board: string): string {
+/**
+ * One line for `laika activity status`. `source` is what the helper sent
+ * ({@link otelCredentialSource}), so a refused one names its own fix.
+ */
+export function describeOtel(
+  check: OtelCheck,
+  board: string,
+  source?: 'personal' | 'claude-code',
+): string {
   switch (check.state) {
     case 'not-set-up':
       return 'not set up — Claude Code’s background calls are not counted; run `laika activity on`';
@@ -387,7 +417,9 @@ export function describeOtel(check: OtelCheck, board: string): string {
       return `set up, but the header helper fails: ${check.why}`;
     case 'refused':
       return check.status === 401
-        ? `set up, but ${board} refuses the token (401) — run \`laika connect\` or \`laika init\``
+        ? source === 'claude-code'
+          ? `set up, but ${board} refuses this machine's Claude Code credential (401) — add Claude Code again from the board (\`laika tool add claude-code\`)`
+          : `set up, but ${board} refuses the token (401) — run \`laika connect\` or \`laika init\``
         : `set up, but ${board} refuses it (${String(check.status)}${check.reason === undefined ? '' : ` ${check.reason}`})${check.reason === 'local_activity_off' ? ' — Developer insights are off for your organisation' : ''}`;
     case 'unreachable':
       return `set up, but ${board} did not answer: ${check.why}`;

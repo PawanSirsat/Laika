@@ -1012,20 +1012,73 @@ void describe('one board (review 1, item 3)', () => {
       token: 'lai_claude',
     });
     assert.equal(credentialsFor(home, {}, 'http://elsewhere'), undefined);
-    // `laika time push` and the rest keep the person's own: the board refuses
-    // an agent's token their routes.
+    // `laika time push` and the rest keep `findCredentials`, the person's own:
+    // activity's fallback widens nothing outside activity.
     assert.equal(findCredentials(home, {}), undefined);
 
-    // A personal token, where there is one, still comes first.
-    const personal = { LAIKA_URL: 'http://board', LAIKA_TOKEN: 'lai_person' };
-    assert.deepEqual(activityCredentials(home, personal), {
+    // A personal token in ~/.laika/env, where there is one, still comes first.
+    writeFileSync(
+      join(home, '.laika', 'env'),
+      'LAIKA_URL="http://board"\nLAIKA_TOKEN="lai_person"\n',
+    );
+    assert.deepEqual(activityCredentials(home, {}), {
       url: 'http://board',
       token: 'lai_person',
       via: 'personal',
     });
-    assert.deepEqual(credentialsFor(home, personal, 'http://board'), {
+    assert.deepEqual(credentialsFor(home, {}, 'http://board'), {
       url: 'http://board',
       token: 'lai_person',
+    });
+  });
+
+  void test('a token in the environment that is a tool’s own is named as that tool’s; a stale copy yields to the file (LAI-1325)', () => {
+    const home = dir('laika-claudehome-');
+    writeCredential(home, 'claude-code', { url: 'http://board', token: 'lai_claude_new' });
+    // What `laika-claude` exports: Claude Code's own token, as the session started.
+    const same = { LAIKA_URL: 'http://board', LAIKA_TOKEN: 'lai_claude_new' };
+    assert.deepEqual(activityCredentials(home, same), {
+      url: 'http://board',
+      token: 'lai_claude_new',
+      via: 'claude-code',
+    });
+    // The tool was added again since: the copy in the environment is revoked,
+    // the file holds the one that works.
+    const stale = { LAIKA_URL: 'http://board', LAIKA_TOKEN: 'lai_claude_old' };
+    assert.deepEqual(activityCredentials(home, stale), {
+      url: 'http://board',
+      token: 'lai_claude_new',
+      via: 'claude-code',
+    });
+    assert.deepEqual(credentialsFor(home, stale, 'http://board'), {
+      url: 'http://board',
+      token: 'lai_claude_new',
+    });
+    // An environment token for a board no tool's file names is still used.
+    assert.deepEqual(
+      credentialsFor(home, { LAIKA_URL: 'http://other', LAIKA_TOKEN: 'lai_x' }, 'http://other'),
+      {
+        url: 'http://other',
+        token: 'lai_x',
+      },
+    );
+  });
+
+  void test('a personal token for another board does not stop this board’s tool credential being used (LAI-1325)', () => {
+    const home = dir('laika-twoboards-');
+    mkdirSync(join(home, '.laika'), { recursive: true });
+    writeFileSync(
+      join(home, '.laika', 'env'),
+      'LAIKA_URL="http://elsewhere"\nLAIKA_TOKEN="lai_person_elsewhere"\n',
+    );
+    writeCredential(home, 'claude-code', { url: 'http://board', token: 'lai_claude' });
+    assert.deepEqual(credentialsFor(home, {}, 'http://board'), {
+      url: 'http://board',
+      token: 'lai_claude',
+    });
+    assert.deepEqual(credentialsFor(home, {}, 'http://elsewhere'), {
+      url: 'http://elsewhere',
+      token: 'lai_person_elsewhere',
     });
   });
 

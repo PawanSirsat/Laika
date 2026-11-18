@@ -30,6 +30,7 @@ import {
   checkOtel,
   describeOtel,
   installOtel,
+  otelCredentialSource,
   otelPaths,
   removeOtel,
   type OtelReport,
@@ -346,6 +347,13 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   io.out('');
   printHooks(reports, io);
   printOtel(telemetry, io);
+  if (otelCredentialSource(io.home, creds.url) === undefined) {
+    // Activity sends with any tool's credential; the telemetry is Claude
+    // Code's, and its helper reads only a personal token or Claude Code's own.
+    io.out(
+      "      Claude Code's token metrics need its own connection here (`laika tool add claude-code`) or a personal token in ~/.laika/env — until then they are not sent; everything else is.",
+    );
+  }
   if (others.length > 0) {
     io.out(`  · not set up for Laika here: ${others.join(', ')} — after \`laika connect\`, run`);
     io.out('    `laika activity on` again, or add one with --agent <id>');
@@ -432,6 +440,13 @@ function otel(io: ActivityIo): number {
   io.err('`laika activity on` already sets this up for every Claude Code on this machine, in');
   io.err('~/.claude/settings.json, with no token written. These lines are for one shell by');
   io.err('hand; $LAIKA_TOKEN must hold your Laika token there.');
+  if ((io.env.LAIKA_TOKEN?.trim() ?? '') === '') {
+    // A machine set up by pairing has no personal token: the reference would
+    // expand to nothing (LAI-1325).
+    io.err('$LAIKA_TOKEN is empty in this shell, so these lines would send no token. On a machine');
+    io.err('set up by `laika device pair` and `laika tool add`, use `laika activity on` instead:');
+    io.err('its helper reads this machine’s Claude Code credential, and no token is pasted.');
+  }
   io.err('The board takes them only while your organisation has Developer insights on, adds');
   io.err('only what the session files missed, and drops the sessions');
   io.err('this collector leaves out (automated, or out of your scope) once a sync names them.');
@@ -534,7 +549,13 @@ async function status(io: ActivityIo): Promise<number> {
     } — Claude Code, Codex, Gemini CLI`,
   );
   if (state.board !== undefined) {
-    io.out(`OpenTelemetry   ${describeOtel(await checkOtel(io.home, state.board), state.board)}`);
+    io.out(
+      `OpenTelemetry   ${describeOtel(
+        await checkOtel(io.home, state.board),
+        state.board,
+        otelCredentialSource(io.home, state.board),
+      )}`,
+    );
   }
   // Time drafts (LAI-787): the board's answer as last given, never asked here.
   io.out(

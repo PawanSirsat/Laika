@@ -287,15 +287,44 @@ void describe('a machine set up by device pairing — no personal token (LAI-132
     assert.ok(h.board.requests.every((r) => r.auth === `Bearer ${TOKEN}`));
   });
 
-  void test('a personal token, where there is one, still comes first', async () => {
-    const h = await harness();
+  void test('a personal token in ~/.laika/env, where there is one, still comes first', async () => {
+    const { h, io } = await paired();
     // A tool credential the board would refuse: if it were used, `on` would fail.
     writeCredential(h.home, 'claude-code', { url: h.board.url, token: 'lai_ToolTokenRefusedHere' });
+    writeFileSync(
+      join(h.home, '.laika', 'env'),
+      `LAIKA_URL="${h.board.url}"\nLAIKA_TOKEN="${TOKEN}"\n`,
+    );
     h.board.sharing = { ...h.board.sharing, org_enabled: true };
-    assert.equal(await h.run('on'), 0, h.err.join('\n'));
+    assert.equal(await activity(['on'], io), 0, h.err.join('\n'));
     assert.doesNotMatch(h.out.join('\n'), /sending as this machine/);
-    assert.equal(await h.run('sync'), 0, h.err.join('\n'));
+    assert.equal(await activity(['sync'], io), 0, h.err.join('\n'));
     assert.ok(h.board.requests.every((r) => r.auth === `Bearer ${TOKEN}`));
+  });
+
+  void test('with only another tool’s credential, activity works and on says Claude Code’s metrics wait for its own', async () => {
+    const h = await harness();
+    writeCredential(h.home, 'codex', { url: h.board.url, token: TOKEN }, { source: 'tool-add' });
+    const env = Object.fromEntries(
+      Object.entries(h.io.env).filter(([key]) => key !== 'LAIKA_URL' && key !== 'LAIKA_TOKEN'),
+    );
+    const io = { ...h.io, env };
+    h.board.sharing = { ...h.board.sharing, org_enabled: true };
+    assert.equal(await activity(['on'], io), 0, h.err.join('\n'));
+    assert.match(h.out.join('\n'), /sending as this machine's codex connection/);
+    assert.match(
+      h.out.join('\n'),
+      /Claude Code's token metrics need its own connection here \(`laika tool add claude-code`\)/,
+    );
+    assert.equal(await activity(['sync'], io), 0, h.err.join('\n'));
+  });
+
+  void test('otel on a paired machine says $LAIKA_TOKEN is empty here, and points at on', async () => {
+    const { h, io } = await paired();
+    assert.equal(await activity(['otel'], io), 0, h.err.join('\n'));
+    assert.match(h.out.join('\n'), /Authorization=Bearer \$LAIKA_TOKEN/);
+    assert.match(h.err.join('\n'), /\$LAIKA_TOKEN is empty in this shell/);
+    assert.match(h.err.join('\n'), /use `laika activity on` instead/);
   });
 
   void test('a refused tool credential says to add the tool again, not `laika init`', async () => {
