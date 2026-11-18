@@ -580,10 +580,20 @@ void describe('a wide table says it scrolls', () => {
         await strip.locator('[data-tab-item][tabindex="0"]').getAttribute('data-tab'),
         'overview',
       );
-      // The group names are out of sight, not gone.
-      const heading = h.page.locator('.org-nav-heading').first();
-      assert.equal(await heading.count(), 1);
-      assert.notEqual(await heading.evaluate((el) => getComputedStyle(el).display), 'none');
+      // The group names are out of sight, not gone: each heading is in the
+      // document as a 1×1 visually hidden box — so a rule that wins by source
+      // order, such as the restyle's padding, shows up here.
+      const headings = await h.page.locator('.org-nav-heading').evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { display: getComputedStyle(el).display, w: r.width, h: r.height };
+        }),
+      );
+      assert.equal(headings.length, 4);
+      for (const box of headings) {
+        assert.notEqual(box.display, 'none');
+        assert.ok(box.w <= 1 && box.h <= 1, `a heading is ${String(box.w)}×${String(box.h)}`);
+      }
 
       await strip.locator('[data-tab="overview"]').focus();
       await h.page.keyboard.press('ArrowRight');
