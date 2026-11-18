@@ -649,6 +649,11 @@ void describe("People's columns adapt to the room beside the side menu", () => {
     [1440, []],
     [1366, ['Last sign-in']],
     [1280, ['Tools running', 'Last sign-in']],
+    // Beside the side menu at its narrowest: 636px of room with the app's
+    // sidebar open (1181 – 1200px scrolled before Person's floor fell to
+    // 11rem) and 622px with its rail, against the 616px floor.
+    [1190, ['Tools running', 'Last sign-in']],
+    [1024, ['Tools running', 'Last sign-in']],
     // Below the side menu's breakpoint: 682px of room against the 648px floor.
     [768, ['Tools running', 'Last sign-in']],
   ] as const) {
