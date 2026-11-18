@@ -73,6 +73,10 @@ describe('message ids', () => {
 
   it('stores an id without brackets, and a digest of one too long to index', () => {
     expect(storedMessageId(' <a@b> ')).toBe('a@b');
+    // No id at all (round 2): the caller digests the mail instead.
+    expect(storedMessageId('<>')).toBeNull();
+    expect(storedMessageId('  ')).toBeNull();
+    expect(storedMessageId('<a b@c>')).toBeNull();
     const long = storedMessageId(`<${'x'.repeat(600)}@b>`);
     expect(long).toMatch(/^sha256:[0-9a-f]{64}$/);
   });

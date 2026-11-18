@@ -306,27 +306,40 @@ describe('the card and the address: who may', () => {
     expect(cleared.api_key_last4).toBeNull();
   });
 
-  it('turning it on, and authentication off, are an owner’s alone — not an admin’s (M2)', async () => {
+  it('every change but turning it off is an owner’s: no admin path to writing a verdict (M2, round 2)', async () => {
     await ok(await call('PUT', '/org/email-inbound', { domain: DOMAIN, authserv_id: RECEIVER }));
     await ok(await call('POST', '/org/email-inbound/token'), 201);
+    await ok(await call('PUT', '/org/email-inbound', { enabled: true }));
     const admin = { Cookie: await join('bo@example.test', 'admin') };
-    const asAdmin = await ok<{ can_switch_on: boolean; can_allow_unauthenticated: boolean }>(
+    const asAdmin = await ok<{ can_change: boolean }>(
       await call('GET', '/org/email-inbound', undefined, admin),
     );
-    expect(asAdmin).toMatchObject({ can_switch_on: false, can_allow_unauthenticated: false });
-    for (const body of [{ enabled: true }, { require_authenticated: false }]) {
-      const res = await call('PUT', '/org/email-inbound', body, admin);
-      expect(res.status, JSON.stringify(body)).toBe(403);
-      expect((await errorOf(res)).details).toMatchObject({ reason: 'owner_only' });
+    expect(asAdmin.can_change).toBe(false);
+    // Each of these would let an admin write a mail's verdict themselves.
+    for (const [method, path, body, field] of [
+      ['PUT', '/org/email-inbound', { enabled: true }, 'enabled'],
+      ['PUT', '/org/email-inbound', { require_authenticated: false }, 'require_authenticated'],
+      ['PUT', '/org/email-inbound', { require_authenticated: true }, 'require_authenticated'],
+      ['PUT', '/org/email-inbound', { authserv_id: 'evil.example' }, 'authserv_id'],
+      ['PUT', '/org/email-inbound', { domain: 'tasks.evil.example' }, 'domain'],
+      ['PUT', '/org/email-inbound', { api_key: 'xkeysib-evil-0123' }, 'api_key'],
+      ['PUT', '/org/email-inbound', { enabled: false, authserv_id: 'evil.example' }, 'authserv_id'],
+      ['POST', '/org/email-inbound/token', undefined, 'token'],
+    ] as const) {
+      const res = await call(method, path, body, admin);
+      expect(res.status, JSON.stringify(body ?? path)).toBe(403);
+      expect((await errorOf(res)).details).toMatchObject({ reason: 'owner_only', field });
     }
-    // The owner turns it on; the admin may still turn it off, and change the rest.
-    await ok(await call('PUT', '/org/email-inbound', { enabled: true }));
+    const unchanged = await ok<{ authserv_id: string; domain: string; enabled: boolean }>(
+      await call('GET', '/org/email-inbound'),
+    );
+    expect(unchanged).toMatchObject({ authserv_id: RECEIVER, domain: DOMAIN, enabled: true });
+    // Turning it off is anybody's who may configure email.
     await ok(await call('PUT', '/org/email-inbound', { enabled: false }, admin));
-    await ok(await call('PUT', '/org/email-inbound', { require_authenticated: true }, admin));
-    const asOwner = await ok<{ can_switch_on: boolean; can_allow_unauthenticated: boolean }>(
+    const asOwner = await ok<{ can_change: boolean; enabled: boolean }>(
       await call('PUT', '/org/email-inbound', { require_authenticated: false }),
     );
-    expect(asOwner).toMatchObject({ can_switch_on: true, can_allow_unauthenticated: true });
+    expect(asOwner).toMatchObject({ can_change: true, enabled: false });
   });
 
   it('says on everyone’s OrgView whether it is on, and the domain', async () => {
@@ -402,6 +415,33 @@ describe('POST /webhooks/email: the bearer token', () => {
     expect((await deliver(token, [], '{not json')).status).toBe(422);
     expect((await deliver(token, [], '{"mails":[]}')).status).toBe(422);
     expect((await deliver(token, [])).status).toBe(200);
+  });
+
+  it('reads not a byte of the body for a refused token (F2, round 2)', async () => {
+    await switchOn();
+    let pulled = false;
+    // `highWaterMark: 0`: the stream is pulled only when something reads it —
+    // the default of 1 pulls once as it is made, and would pass for a read.
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          pulled = true;
+          throw new Error('a refused delivery read its body');
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const res = await h.app.request(
+      new Request('http://localhost/webhooks/email', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer not-the-token', 'Content-Type': 'application/json' },
+        body,
+        // Node's fetch needs `duplex` for a body that is a stream.
+        duplex: 'half',
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(pulled).toBe(false);
   });
 
   it('stops taking the old token the moment a new one is made', async () => {
@@ -734,7 +774,7 @@ describe('Brevo’s shapes, and one mail’s fault (F1, F3)', () => {
     expect(await delivered(token, [spam])).toEqual([{ outcome: 'dropped', reason: 'spam' }]);
   });
 
-  it('one mail’s fault stops none after it; 503 asks Brevo again, and the redelivery lands it once', async () => {
+  it('one mail’s fault stops none after it; 503 asks Brevo again, and a mail that always fails stops after three', async () => {
     const token = await switchOn();
     const to = await addressOf('murphy');
     const items = [
@@ -742,9 +782,11 @@ describe('Brevo’s shapes, and one mail’s fault (F1, F3)', () => {
       brevo({ to, messageId: '<two@x.test>', subject: 'BREAK ME' }),
       brevo({ to, messageId: '<three@x.test>', subject: 'After the fault' }),
     ];
+    const results = async (res: Response) => ((await res.json()) as { results: unknown[] }).results;
+
     const first = await deliver(token, items);
     expect(first.status).toBe(503);
-    expect(((await first.json()) as { results: unknown[] }).results).toEqual([
+    expect(await results(first)).toEqual([
       { outcome: 'task_created', reason: null },
       { outcome: 'failed', reason: null },
       { outcome: 'task_created', reason: null },
@@ -753,20 +795,64 @@ describe('Brevo’s shapes, and one mail’s fault (F1, F3)', () => {
       level: 'error',
       error: 'TypeError',
     });
-    // Nothing of the failed mail was recorded, so the retry finds it new.
-    expect(
-      inboundRows()
-        .map((r) => r.messageId)
-        .sort(),
-    ).toEqual(['one@x.test', 'three@x.test']);
-    const again = await deliver(token, items);
-    expect(again.status).toBe(503);
-    expect(((await again.json()) as { results: unknown[] }).results).toEqual([
+    // The fault is counted on a record of its own; nothing it would have written is.
+    const two = () => inboundRows().find((r) => r.messageId === 'two@x.test');
+    expect(two()).toMatchObject({ outcome: 'failed', reason: null, attempts: 1, taskId: null });
+
+    const second = await deliver(token, items);
+    expect(second.status).toBe(503);
+    expect(await results(second)).toEqual([
       { outcome: 'duplicate', reason: null },
       { outcome: 'failed', reason: null },
       { outcome: 'duplicate', reason: null },
     ]);
+    expect(two()).toMatchObject({ outcome: 'failed', attempts: 2 });
+
+    // The third fault: given up on, answered, so Brevo stops — a poison mail.
+    const third = await deliver(token, items);
+    expect(third.status).toBe(200);
+    expect(await results(third)).toEqual([
+      { outcome: 'duplicate', reason: null },
+      { outcome: 'dropped', reason: 'failed_repeatedly' },
+      { outcome: 'duplicate', reason: null },
+    ]);
+    expect(two()).toMatchObject({ outcome: 'dropped', reason: 'failed_repeatedly', attempts: 3 });
+    const fourth = await deliver(token, items);
+    expect(fourth.status).toBe(200);
     expect(h.db.select().from(tasks).all()).toHaveLength(2);
+
+    // The card shows it.
+    const view = await ok<{ recent: { reason: string | null }[] }>(
+      await call('GET', '/org/email-inbound'),
+    );
+    expect(view.recent.map((r) => r.reason)).toContain('failed_repeatedly');
+  });
+
+  it('a mail that failed once, then lands, keeps the count and is written once', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    // Fails as the first title, lands as the same mail redelivered: the mock
+    // keys on the subject, so the second delivery carries a fixed one.
+    await deliver(token, [brevo({ to, messageId: '<flaky@x.test>', subject: 'BREAK ME' })]);
+    expect(
+      await delivered(token, [brevo({ to, messageId: '<flaky@x.test>', subject: 'Now it works' })]),
+    ).toEqual([{ outcome: 'task_created', reason: null }]);
+    expect(inboundRows()).toHaveLength(1);
+    expect(inboundRows()[0]).toMatchObject({ outcome: 'task_created', attempts: 1 });
+  });
+
+  it('a Message-ID of <> is no id: the mail is received on its digest, and a redelivery is a duplicate', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    const empty = brevo({ to, messageId: '<>' });
+    expect(await delivered(token, [empty])).toEqual([{ outcome: 'task_created', reason: null }]);
+    expect(inboundRows()[0]?.messageId).toMatch(/^digest:[0-9a-f]{64}$/);
+    expect(await delivered(token, [empty])).toEqual([{ outcome: 'duplicate', reason: null }]);
+    // And with the switch off, it is recorded cleanly, not refused by the table.
+    await ok(await call('PUT', '/org/email-inbound', { enabled: false }));
+    expect(await delivered(token, [brevo({ to, messageId: '<>', subject: 'Another' })])).toEqual([
+      { outcome: 'dropped', reason: 'switch_off' },
+    ]);
   });
 
   it('a refusal no check named is recorded `refused` and logged at warn', async () => {

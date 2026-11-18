@@ -136,7 +136,7 @@ export interface EmailInboundSettingsView {
   domain: string | null;
   /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. */
   require_authenticated: boolean;
-  /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
+  /** The receiving server whose first `Authentication-Results` is believed; null believes nothing. */
   authserv_id: string | null;
   /** The webhook token's last four characters; null until one is made. */
   token_last4: string | null;
@@ -151,9 +151,11 @@ export interface EmailInboundSettingsView {
    * stored (§12) — so the card can say so before *Save*, not after.
    */
   can_store_secrets: boolean;
-  /** Owners only (M2): turning the switch on, and authentication off. */
-  can_switch_on: boolean;
-  can_allow_unauthenticated: boolean;
+  /**
+   * Whether the caller may change anything but turning it off (M2): an owner.
+   * An admin may turn it off and read the rest.
+   */
+  can_change: boolean;
   /**
    * The receiving servers the recent mail named, newest first — what an owner
    * names `authserv_id` from, read off a real delivery (M1).
@@ -276,8 +278,7 @@ export function getEmailInboundSettings(
     webhook_url: base === '' ? null : `${base}/webhooks/email`,
     own_address: boardFromAddress(db),
     can_store_secrets: serverSecret !== '',
-    can_switch_on: owner,
-    can_allow_unauthenticated: owner,
+    can_change: owner,
     authserv_seen: authservSeen(recent),
     example_domain: EXAMPLE_INBOUND_DOMAIN,
     updated_at: row?.updatedBy == null ? null : row.updatedAt,
@@ -306,10 +307,11 @@ function refuse(field: string, message: string): never {
 }
 
 function ownerOnly(field: string): ApiError {
-  return new ApiError('forbidden', 'Only an owner may make that change', {
-    field,
-    reason: 'owner_only',
-  });
+  return new ApiError(
+    'forbidden',
+    'Only an owner may change Email to tasks; an admin may turn it off',
+    { field, reason: 'owner_only' },
+  );
 }
 
 function ensureRow(db: Db, now: number): string {
@@ -339,7 +341,7 @@ export function setEmailInboundSettings(
   if (typeof domain === 'string' && !HOST_NAME.test(domain)) {
     refuse('domain', `domain must be a host name, such as ${EXAMPLE_INBOUND_DOMAIN}`);
   }
-  // An empty name is no name: the topmost header is read again.
+  // An empty name is no name: nothing is believed until one is given.
   const authserv =
     input.authserv_id === undefined
       ? undefined
@@ -364,15 +366,23 @@ export function setEmailInboundSettings(
   const nextRequire = input.require_authenticated ?? current.requireAuthenticated === 1;
   const nextAuthserv = authserv === undefined ? current.authservId : authserv;
 
-  // **An owner's decisions, not an admin's** (LAI-1315 review, M2): turning
-  // it on accepts D-155's residual risk — a member written as by anybody who
-  // can send as their domain — and turning authentication off widens it to
-  // anybody at all. `org.email.configure` reaches admins; these two do not.
+  // **Every change but turning it off is an owner's** (LAI-1315 review, M2,
+  // rounds 1 and 2). Turning it on accepts D-155's residual risk, and turning
+  // authentication off widens it — but so does every other write: a new
+  // domain or receiving server, a new key, let whoever makes them write a
+  // mail's verdict themselves. `org.email.configure` reaches admins; an admin
+  // may turn Email to tasks off, and nothing else.
   if (actor.orgRole !== 'owner') {
-    if (nextEnabled && current.enabled !== 1) throw ownerOnly('enabled');
-    if (!nextRequire && current.requireAuthenticated === 1) {
-      throw ownerOnly('require_authenticated');
-    }
+    const changing = (
+      [
+        ['enabled', input.enabled === true],
+        ['domain', domain !== undefined],
+        ['require_authenticated', input.require_authenticated !== undefined],
+        ['authserv_id', authserv !== undefined],
+        ['api_key', apiKey !== undefined],
+      ] as const
+    ).find(([, changed]) => changed);
+    if (changing !== undefined) throw ownerOnly(changing[0]);
   }
   if (nextEnabled && (nextDomain === null || current.tokenHash === null)) {
     throw new ApiError(
@@ -435,6 +445,8 @@ export function rotateEmailInboundToken(
   serverSecret = '',
 ): EmailInboundTokenView {
   assertCan(actor, 'org.email.configure');
+  // A new bearer is a delivery the holder writes themselves, verdicts and all (M2).
+  if (actor.orgRole !== 'owner') throw ownerOnly('token');
   const orgId = ensureRow(db, now);
   const token = randomBytes(32).toString('base64url');
   db.update(orgEmailInbound)
@@ -564,11 +576,12 @@ export function rotateProjectEmailAddress(
 
 /**
  * What became of one mail at one address — the webhook's answer, ids and
- * reasons only. `failed` is a fault, not a decision: nothing was recorded, so
- * Brevo's retry finds the mail new (F3).
+ * reasons only. `failed` is a fault, not a decision: nothing the mail would
+ * have written was kept, only a record that it failed, which Brevo's retry
+ * tries again — three faults, and it is `dropped` `failed_repeatedly` (F3).
  */
 export interface InboundItemOutcome {
-  outcome: EmailInboundOutcome | 'duplicate' | 'failed';
+  outcome: EmailInboundOutcome | 'duplicate';
   reason: EmailInboundReason | null;
 }
 
@@ -580,6 +593,8 @@ interface InboundRecord {
   userId: string | null;
   auth: string | null;
   authservIds: string | null;
+  /** Deliveries of it that failed before this one. */
+  attempts: number;
 }
 
 function recordInbound(
@@ -606,6 +621,7 @@ function recordInbound(
       auth: rec.auth,
       authservIds: rec.authservIds,
       attachmentCount: rec.mail.attachments.length,
+      attempts: rec.attempts,
       receivedAt: now,
     })
     .run();
@@ -690,13 +706,23 @@ function receiveAtAddress(
   return sqlite
     .transaction((): InboundItemOutcome => {
       const seen = db
-        .select({ id: emailInbound.id })
+        .select({
+          id: emailInbound.id,
+          outcome: emailInbound.outcome,
+          attempts: emailInbound.attempts,
+        })
         .from(emailInbound)
         .where(
           and(eq(emailInbound.messageId, mail.messageId), eq(emailInbound.addressToken, token)),
         )
         .get();
-      if (seen !== undefined) return { outcome: 'duplicate', reason: null };
+      // A mail decided about is decided. One that failed before is tried again:
+      // its record goes, and this attempt writes the next — or, if it fails
+      // again, the rollback keeps it for `recordFault` to count.
+      if (seen !== undefined && seen.outcome !== 'failed') {
+        return { outcome: 'duplicate', reason: null };
+      }
+      if (seen !== undefined) db.delete(emailInbound).where(eq(emailInbound.id, seen.id)).run();
 
       const project =
         token === ''
@@ -718,6 +744,7 @@ function receiveAtAddress(
         userId: null,
         auth: auth.summary,
         authservIds: authservIds(mail.headers).join(' ').slice(0, 300) || null,
+        attempts: seen?.attempts ?? 0,
       };
       const drop = (reason: EmailInboundReason): InboundItemOutcome => {
         recordInbound(db, rec, 'dropped', reason, {}, now);
@@ -793,6 +820,75 @@ function receiveAtAddress(
     .immediate();
 }
 
+/** A mail that fails this many times as it arrives is recorded and given up on. */
+export const INBOUND_FAILURES_MAX = 3;
+
+/**
+ * A mail whose receiving faulted (round 2, F3): counted on its record, outside
+ * the transaction that rolled back. Under {@link INBOUND_FAILURES_MAX} it is
+ * `failed`, and the route asks Brevo to deliver again; at it, it is `dropped`
+ * `failed_repeatedly` and answered, so a mail that can never be received —
+ * a poison mail — stops coming back. Either way the card shows it.
+ */
+function recordFault(
+  sqlite: Database.Database,
+  db: Db,
+  mail: InboundMail,
+  token: string,
+  now: number,
+): InboundItemOutcome {
+  return sqlite
+    .transaction((): InboundItemOutcome => {
+      const seen = db
+        .select({ id: emailInbound.id, attempts: emailInbound.attempts })
+        .from(emailInbound)
+        .where(
+          and(eq(emailInbound.messageId, mail.messageId), eq(emailInbound.addressToken, token)),
+        )
+        .get();
+      const attempts = (seen?.attempts ?? 0) + 1;
+      const final = attempts >= INBOUND_FAILURES_MAX;
+      const outcome = final ? ('dropped' as const) : ('failed' as const);
+      const reason = final ? ('failed_repeatedly' as const) : null;
+      if (seen !== undefined) {
+        db.update(emailInbound)
+          .set({ outcome, reason, attempts, receivedAt: now })
+          .where(eq(emailInbound.id, seen.id))
+          .run();
+      } else {
+        const project =
+          token === ''
+            ? undefined
+            : db
+                .select({ id: projectInboundAddresses.projectId })
+                .from(projectInboundAddresses)
+                .where(eq(projectInboundAddresses.token, token))
+                .get();
+        db.insert(emailInbound)
+          .values({
+            id: newId(),
+            messageId: mail.messageId,
+            addressToken: token,
+            projectId: project?.id ?? null,
+            fromAddress: mail.from,
+            userId: null,
+            outcome,
+            reason,
+            taskId: null,
+            commentId: null,
+            auth: null,
+            authservIds: authservIds(mail.headers).join(' ').slice(0, 300) || null,
+            attachmentCount: mail.attachments.length,
+            attempts,
+            receivedAt: now,
+          })
+          .run();
+      }
+      return { outcome, reason };
+    })
+    .immediate();
+}
+
 /**
  * `POST /webhooks/email` once the bearer token holds (§10.3, D-155): every
  * mail in the delivery, at every space address it was sent to. A mail sent to
@@ -843,15 +939,16 @@ export function receiveInboundEmail(
     ];
     for (const token of tokens.length === 0 ? [''] : tokens) {
       // **One mail's fault is its own** (LAI-1315 review, F3): its transaction
-      // rolled back, so nothing of it is recorded, and the mails after it are
-      // still received. The answer says `failed`, and the route asks Brevo to
-      // deliver again — a redelivery is a `duplicate` for every mail that
-      // landed, and new for this one.
+      // rolled back, so nothing it would have written is kept, and the mails
+      // after it are still received. Its record says `failed`, and the route
+      // asks Brevo to deliver again — a `duplicate` for every mail that landed,
+      // another try for this one, and on the third fault `failed_repeatedly`,
+      // answered, so a poison mail stops coming back.
       try {
         results.push(receiveAtAddress(sqlite, db, settings, mail, token, ownAddress, now));
       } catch (cause) {
         onFault?.(cause);
-        results.push({ outcome: 'failed', reason: null });
+        results.push(recordFault(sqlite, db, mail, token, now));
       }
     }
   }

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
 import type Database from 'better-sqlite3';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
@@ -15,7 +16,7 @@ import {
   verifyInboundToken,
 } from '../../services/email-inbound.ts';
 import { type AppEnv } from '../context.ts';
-import { LIMITS, RateLimiter } from '../rate-limit.ts';
+import { LIMITS, type RateLimiter } from '../rate-limit.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -53,8 +54,6 @@ export interface EmailInboundRouteOptions {
   publicUrl?: string | undefined;
   /** Injectable so a test can stamp a delivery. */
   now?: () => number;
-  /** The app's limiter: the webhook counts itself in it, after its token (F2). */
-  rateLimiter?: RateLimiter | undefined;
 }
 
 /** The first frame of a fault's stack — where, never what: no mail text reaches a log. */
@@ -63,27 +62,28 @@ function whereOf(cause: unknown): string {
   return (frame ?? '').trim().slice(0, 200);
 }
 
-/** `POST /webhooks/email`, mounted on `/webhooks`. */
-export function inboundEmailWebhookRoutes(options: EmailInboundRouteOptions): Hono<AppEnv> {
-  const app = new Hono<AppEnv>();
-  const { db } = options;
-  const sqlite = options.sqlite ?? db.$client;
-  const clock = options.now ?? Date.now;
-  const limiter = options.rateLimiter ?? new RateLimiter();
-
-  app.post('/email', async (c) => {
-    // Read as text, and nothing parses it until the token holds — the §10.1
-    // ordering: an unauthenticated caller cannot make this server parse JSON,
-    // and a malformed body answers exactly as a bad token does.
-    const raw = await c.req.text();
-    const verified = verifyInboundToken(db, c.req.header('authorization'));
-
-    // **Two buckets, chosen after the token** (LAI-1315 review, F2): a flood
-    // of bad tokens fills its own and is refused `429`, while Brevo's real
-    // deliveries keep theirs. One bucket for both would let anybody stop
-    // every space's mail by posting junk.
+/**
+ * Inbound email's gate, mounted on `POST /webhooks/email` **before the body
+ * limit** (LAI-1315 review round 2, F2). The bearer token is a header, so it
+ * is checked first, and the request is counted in one of two buckets chosen
+ * by the answer: a verified delivery spends `inbound-email`, a refused token
+ * `inbound-email:refused`, so junk is bounded and never spends Brevo's. A
+ * refused request costs one hash and one indexed read: the body limit — which
+ * reads a body sent without a length — is never reached, and not a byte of
+ * the body is read.
+ */
+export function inboundEmailGate(options: { db: Db; rateLimiter: RateLimiter }) {
+  return createMiddleware<AppEnv>(async (c, next) => {
+    if (c.req.method !== 'POST') {
+      await next();
+      return;
+    }
+    const verified = verifyInboundToken(options.db, c.req.header('authorization'));
     const policy = verified ? LIMITS.inboundEmail : LIMITS.inboundEmailRefused;
-    const decision = limiter.take(verified ? 'inbound-email' : 'inbound-email:refused', policy);
+    const decision = options.rateLimiter.take(
+      verified ? 'inbound-email' : 'inbound-email:refused',
+      policy,
+    );
     c.header('X-RateLimit-Limit', String(policy.burst));
     c.header('X-RateLimit-Remaining', String(decision.remaining));
     if (!decision.allowed) {
@@ -96,6 +96,26 @@ export function inboundEmailWebhookRoutes(options: EmailInboundRouteOptions): Ho
       c.get('log').warn('webhook.received', { source: 'email', verified: false });
       throw new ApiError('unauthorized', 'That delivery could not be verified');
     }
+    await next();
+  });
+}
+
+/** `POST /webhooks/email`, mounted on `/webhooks`. */
+export function inboundEmailWebhookRoutes(options: EmailInboundRouteOptions): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const { db } = options;
+  const sqlite = options.sqlite ?? db.$client;
+  const clock = options.now ?? Date.now;
+
+  app.post('/email', async (c) => {
+    // The gate (`inboundEmailGate`) checked the token and spent its bucket
+    // before the body limit read anything. Asked again here, cheaply, so the
+    // route never trusts a mount order it cannot see.
+    if (!verifyInboundToken(db, c.req.header('authorization'))) {
+      throw new ApiError('unauthorized', 'That delivery could not be verified');
+    }
+
+    const raw = await c.req.text();
 
     let payload: unknown;
     try {
@@ -112,15 +132,20 @@ export function inboundEmailWebhookRoutes(options: EmailInboundRouteOptions): Ho
     });
     for (const result of results) {
       if (result.outcome === 'failed') continue;
-      // `refused` is a write refused for a reason no check named: worth a look (F3).
+      // A write refused for a reason no check named, or a mail given up on
+      // after three faults: each worth a look (F3).
       const line = { outcome: result.outcome, reason: result.reason };
-      if (result.reason === 'refused') log.warn('email.inbound', line);
-      else log.info('email.inbound', line);
+      if (result.reason === 'refused' || result.reason === 'failed_repeatedly') {
+        log.warn('email.inbound', line);
+      } else {
+        log.info('email.inbound', line);
+      }
     }
     // `200` for every mail Laika decided about, dropped or not: Brevo retries
     // what is not, and a mail Laika chose to drop must not come back. **`503`
     // when one failed** (F3): Brevo delivers again, every mail that landed is
-    // a `duplicate`, and the failed one is received.
+    // a `duplicate`, and the failed one is tried again — until its third
+    // fault, which is `failed_repeatedly` and no longer asks for a retry.
     const failed = results.some((r) => r.outcome === 'failed');
     return c.json({ ok: !failed, results }, failed ? 503 : 200);
   });

@@ -51,6 +51,7 @@ import { orgRoutes } from './http/routes/orgs.ts';
 import { hrRoutes } from './http/routes/hr.ts';
 import { emailRoutes } from './http/routes/email.ts';
 import {
+  inboundEmailGate,
   inboundEmailWebhookRoutes,
   orgEmailInboundRoutes,
   projectEmailAddressRoutes,
@@ -374,6 +375,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // body — idempotency keeps the plain bytes it replays — and it decides for
   // itself which paths it may touch: never `/mcp`, never the SSE stream.
   app.use('*', apiCompression());
+  // One limiter: the middleware's buckets and inbound email's own (F2).
+  const limiter = options.rateLimiter ?? new RateLimiter();
+  // Inbound email's token and its bucket, before the body limit reads a byte
+  // (LAI-1315 review round 2, F2).
+  if (db !== undefined) {
+    app.use(INBOUND_EMAIL_PATH, inboundEmailGate({ db, rateLimiter: limiter }));
+  }
   const defaultLimit = bodyLimit({ maxSize: BODY_LIMIT_BYTES });
   const inboundEmailLimit = bodyLimit({ maxSize: INBOUND_EMAIL_BODY_LIMIT_BYTES });
   app.use(
@@ -390,8 +398,6 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       ? authMiddleware({ auth: options.auth, db: options.db })
       : anonymousAuth,
   );
-  // One limiter: the middleware's buckets and inbound email's own (F2).
-  const limiter = options.rateLimiter ?? new RateLimiter();
   app.use('*', rateLimitMiddleware(limiter));
 
   // After rateLimit, before the routes: an un-set-up instance answers `conflict`
@@ -551,7 +557,6 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       sqlite: options.sqlite,
       serverSecret: options.serverSecret ?? '',
       publicUrl: options.publicUrl,
-      rateLimiter: limiter,
     };
     app.route('/webhooks', inboundEmailWebhookRoutes(inbound));
     app.route(`${API_BASE}/org`, orgEmailInboundRoutes(inbound));

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "766b445d-e5a5-49be-a1c2-c3cc00f08231",
+  "id": "9ff06c75-9f66-4339-8e05-d30461499e23",
   "prevId": "cbc47527-0dd7-4a00-a417-28d287284a7e",
   "tables": {
     "accounts": {
@@ -3061,6 +3061,14 @@
           "autoincrement": false,
           "default": 0
         },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "received_at": {
           "name": "received_at",
           "type": "integer",
@@ -3144,11 +3152,11 @@
       "checkConstraints": {
         "email_inbound_outcome_check": {
           "name": "email_inbound_outcome_check",
-          "value": "outcome IN ('task_created', 'comment_added', 'dropped')"
+          "value": "outcome IN ('task_created', 'comment_added', 'dropped', 'failed')"
         },
         "email_inbound_reason_check": {
           "name": "email_inbound_reason_check",
-          "value": "reason IS NULL OR reason IN ('switch_off', 'unknown_address', 'own_sender', 'auto_reply', 'spam', 'unauthenticated', 'unknown_sender', 'not_allowed', 'empty', 'refused')"
+          "value": "reason IS NULL OR reason IN ('switch_off', 'unknown_address', 'own_sender', 'auto_reply', 'spam', 'unauthenticated', 'unknown_sender', 'not_allowed', 'empty', 'refused', 'failed_repeatedly')"
         },
         "email_inbound_reason_needed_check": {
           "name": "email_inbound_reason_needed_check",
@@ -3173,6 +3181,10 @@
         "email_inbound_attachments_check": {
           "name": "email_inbound_attachments_check",
           "value": "attachment_count >= 0"
+        },
+        "email_inbound_attempts_check": {
+          "name": "email_inbound_attempts_check",
+          "value": "attempts >= 0"
         }
       }
     },

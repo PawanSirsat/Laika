@@ -181,8 +181,13 @@ export function messageIdsIn(value: string): string[] {
 }
 
 /** A `Message-ID` as stored: no brackets, and a digest when it is too long to index. */
-export function storedMessageId(value: string): string {
-  const id = value.trim().replace(/^<|>$/g, '');
+export function storedMessageId(value: string): string | null {
+  const id = value.trim().replace(/^<|>$/g, '').trim();
+  // Empty (`<>`) or with space or control characters in it is no id at all
+  // (LAI-1315 review round 2): the caller digests the mail instead, so a
+  // `Message-ID: <>` can never be a row the table refuses on every retry.
+   
+  if (id === '' || /[\s\u0000-\u001f\u007f]/.test(id)) return null;
   if (id.length <= MESSAGE_ID_MAX) return id;
   return `sha256:${createHash('sha256').update(id).digest('hex')}`;
 }
@@ -227,19 +232,19 @@ export function readInboundMail(item: unknown): InboundMail | null {
   const text = capText(extracted !== '' ? extracted : trimQuoted(plain), INBOUND_TEXT_MAX);
   const from = mailbox(raw.From)?.address ?? null;
 
-  const declared = str(raw.MessageId)?.trim() ?? '';
   const messageId =
-    declared !== ''
-      ? storedMessageId(declared)
-      : `digest:${createHash('sha256')
-          .update(JSON.stringify([from, subject, str(raw.SentAtDate), plain, extracted]))
-          .digest('hex')}`;
+    storedMessageId(str(raw.MessageId) ?? '') ??
+    `digest:${createHash('sha256')
+      .update(JSON.stringify([from, subject, str(raw.SentAtDate), plain, extracted]))
+      .digest('hex')}`;
 
   const replyTo = [
     ...messageIdsIn(str(raw.InReplyTo) ?? ''),
     ...(headers.get('in-reply-to') ?? []).flatMap(messageIdsIn),
     ...(headers.get('references') ?? []).flatMap(messageIdsIn),
-  ].map(storedMessageId);
+  ]
+    .map(storedMessageId)
+    .filter((id): id is string => id !== null);
 
   // The envelope (`RCPT TO`) first: it is where the mail was delivered, and it
   // has a Bcc'd space's address, which To and Cc never show (F1). To and Cc

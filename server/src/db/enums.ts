@@ -819,9 +819,16 @@ export type EmailSuppressedReason = (typeof EMAIL_SUPPRESSED_REASONS)[number];
 
 /**
  * What became of one inbound mail at one space's address (`email_inbound`,
- * D-155, LAI-1315): a task, a comment on the task it replies to, or nothing.
+ * D-155, LAI-1315): a task, a comment on the task it replies to, or nothing —
+ * or, for now, nothing because it **failed**: a fault, not a decision, which
+ * Brevo's redelivery tries again, up to three times (LAI-1315 review round 2).
  */
-export const EMAIL_INBOUND_OUTCOMES = ['task_created', 'comment_added', 'dropped'] as const;
+export const EMAIL_INBOUND_OUTCOMES = [
+  'task_created',
+  'comment_added',
+  'dropped',
+  'failed',
+] as const;
 export type EmailInboundOutcome = (typeof EMAIL_INBOUND_OUTCOMES)[number];
 
 /**
@@ -850,6 +857,8 @@ export const EMAIL_INBOUND_REASONS = [
   'empty',
   // Any other refusal by the write, such as an archived space.
   'refused',
+  // It failed three times as it arrived: recorded, and answered so Brevo stops.
+  'failed_repeatedly',
 ] as const;
 export type EmailInboundReason = (typeof EMAIL_INBOUND_REASONS)[number];
 

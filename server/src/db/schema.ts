@@ -2283,7 +2283,7 @@ export const orgEmailInbound = sqliteTable(
     apiKeyLast4: text('api_key_last4'),
     /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. On unless an owner turns it off. */
     requireAuthenticated: integer('require_authenticated').notNull().default(1),
-    /** The receiving server whose `Authentication-Results` count; null reads the topmost. */
+    /** The receiving server whose first `Authentication-Results` is believed; null believes nothing. */
     authservId: text('authserv_id'),
     updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
     updatedAt,
@@ -2394,6 +2394,8 @@ export const emailInbound = sqliteTable(
     authservIds: text('authserv_ids'),
     /** How many attachments the mail announced. */
     attachmentCount: integer('attachment_count').notNull().default(0),
+    /** How many deliveries of it failed; three, and it is `failed_repeatedly`. */
+    attempts: integer('attempts').notNull().default(0),
     receivedAt: integer('received_at').notNull(),
   },
   (t) => [
@@ -2421,6 +2423,7 @@ export const emailInbound = sqliteTable(
       sql.raw('authserv_ids IS NULL OR length(authserv_ids) <= 300'),
     ),
     check('email_inbound_attachments_check', sql.raw('attachment_count >= 0')),
+    check('email_inbound_attempts_check', sql.raw('attempts >= 0')),
   ],
 );
 
