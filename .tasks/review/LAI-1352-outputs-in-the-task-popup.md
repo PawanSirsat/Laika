@@ -97,3 +97,33 @@ The web half of D-162. The owner chose (2026-11-19) a folded **Outputs** strip *
   assertion the other way. Land the two together; no exemption taken, and
   `cli/` is not crossed from here.
 
+## Fix round 1 (review-409, SHELL, Belka, 2026-11-19)
+
+1. **Every setup path writes rules 7 and 8** (the owner, 2026-11-19; CHIEF's
+   decision on the owner's behalf). The classic Projects tab hands over
+   `markedProjectBlock` and the Project setup prompt (`projectHandover` in
+   `connect-copy.ts`), which updates an older block in place; `projectPrompt`,
+   which stopped at a block already there, is gone. `projectBlock` defaults to
+   the current revision. The pinned test and the CONTROL hash changed on
+   purpose: revision 1's hash is kept, the current text is pinned beside it.
+2. **`frame-src` names the store** — a named crossing CHIEF authorised for
+   this task, `frame-src` only, as LAI-1302 did for `media-src`:
+   `server/src/http/security-headers.ts`, `docker/web/security-headers.conf`,
+   the two server tests that hold the policy
+   (`server/test/http/security-headers.test.ts`,
+   `server/test/http/routes/attachments.test.ts`) and SPEC §13.1 with the
+   §6.4 line, which said the store was never in `frame-src`. Off,
+   `frame-src 'self'` is what `default-src` already gave.
+3. **Download** opens in a new tab as well (`target="_blank"`), so the board
+   never leaves; a `?download=1` stays server work (CHIEF files it).
+4. **CSS:** `.md .out-strip` and `.md .out-cell + .out-cell` undo the reading
+   view's list indent and step; asserted (one row, from the text's edge).
+5. **Tests:** every wait in `outputs.test.ts` is asserted after it
+   (`settle`); the recording's comment says what `readyState >= 1` proves.
+   New: the PDF frame reaches the store under `frame-src 'self' <store>`
+   with the board's `X-Frame-Options: DENY` on the 302; a refusal is a
+   recorded `frame-src` violation.
+6. **404:** the card says *This file isn’t available to you* when the board
+   answers 404 (asked with `redirect: 'manual'`, nothing downloaded), and a
+   404 image's tile is its glyph; tested on an unlisted finding.
+
