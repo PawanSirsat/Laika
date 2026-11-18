@@ -3575,3 +3575,80 @@
       'meta meta';
   }
 }
+
+/* ------------------------------------------------ Sign-in / SSO (LAI-1239) */
+
+.org-sso-lead {
+  margin: 0 0 var(--space-3);
+}
+
+.org-sso-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.org-sso-fact {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.org-sso-fact dt {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.org-sso-fact dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.org-sso-fact code {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.org-sso-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.org-sso-hint {
+  margin-top: var(--space-2);
+}
+
+.org-sso-sync {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.org-sso-sub {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.org-sso-run {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-sso-run-failed {
+  color: var(--overdue);
+}
+
+@media (max-width: 599px) {
+  .org-sso-fact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+}

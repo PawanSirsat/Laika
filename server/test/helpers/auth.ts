@@ -73,6 +73,8 @@ export function authHarness(overrides: AuthHarnessOptions = {}): AuthHarness {
     baseUrl: TEST_ORIGIN,
     secureCookies: false,
     ...(now === undefined ? {} : { now }),
+    // Microsoft SSO reaches both halves, as `index.ts` passes it (LAI-1238).
+    ...(appOverrides.sso == null ? {} : { sso: appOverrides.sso }),
   });
 
   const app = createApp({

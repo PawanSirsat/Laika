@@ -243,6 +243,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: an inbound mail's attachments fetched from Brevo and stored, every
   // 30 seconds (D-155 item 6, LAI-1315) — each written as the mail's sender.
   'system.email.attachments',
+  // §11.6: every enabled Member of the Microsoft directory added as a member,
+  // every 15 minutes, when directory sync is on (D-158, LAI-1239, LAI-1317).
+  'system.directory.sync',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

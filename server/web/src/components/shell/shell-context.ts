@@ -2,7 +2,7 @@ import type { PersonInboxCounts } from '../../api/handoffs.ts';
 import { createContext, useContext } from 'react';
 import type { MeProfile } from '../../api/me.ts';
 import type { SessionState } from '../../api/use-session.ts';
-import type { SetupSystemStatus } from '../../api/setup.ts';
+import type { SetupSystemStatus, SignInMethod } from '../../api/setup.ts';
 import type { Credentials } from '../../api/auth.ts';
 import type { TokenAlert } from '../../api/token-alerts.ts';
 import type { ReviewQueueItem } from '../../api/review.ts';
@@ -34,6 +34,8 @@ export interface ShellValue {
   readonly retry: () => void;
   /** What the instance reports about itself, for first boot. */
   readonly system: SetupSystemStatus | undefined;
+  /** `email` or `microsoft` (LAI-1238); `undefined` until `/setup/status` answers. */
+  readonly signInMethod: SignInMethod | undefined;
   /** Setup finished in this tab — flips the gate without waiting for a refetch. */
   readonly markComplete: () => void;
   /** Re-read `/setup/status`, for when another tab got there first. */
