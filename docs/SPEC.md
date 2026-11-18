@@ -4397,7 +4397,7 @@ made from one.
 | `user_id` | FK `users`, cascade; the key with `event_id` |
 | `event_id` | 1–512 (CHECK) — Graph's **immutable** id for the event, or for one occurrence of a series |
 | `starts_at`, `ends_at` | unix ms, `ends_at > starts_at` (CHECK) |
-| `all_day` | 0 \| 1 (CHECK) — the span is whole days: the sync reads in UTC, so its two values are **UTC midnights standing for its calendar dates**, `ends_at` the midnight after its last day, read as dates and never shifted by a zone |
+| `all_day` | 0 \| 1 (CHECK) — the span is whole days: the sync reads in UTC, so its two values are **UTC midnights standing for its calendar dates**, `ends_at` the midnight after its last day, read as dates and never shifted by a zone. **An assumption**: that Graph returns an all-day event's start and end as UTC midnights under the read's `Prefer: outlook.timezone="UTC"` — to be checked live on Ksage after release |
 | `last_seen_at` | the last sync that read the event |
 | `retired_at` | nullable — when a complete read of a window it overlaps no longer had it; `null` while it stands |
 | `created_at` | |
@@ -4411,6 +4411,18 @@ window and is no longer read is retired. Unlike a meeting, a span counts
 **whenever it overlaps the window**, not only when it began inside it — a week
 away began days ago. **Nothing of the event is kept but its id and its span**:
 no subject, no body, no attendee.
+
+**Told only while the sync reads it.** Capacity names no span while the
+Outlook connection (§4.101) is missing or switched off, and none whose
+`last_seen_at` is a day old or more: the sync stamps every span it reads every
+15 minutes, so a standing one is never older while it works, and a mailbox it
+now skips (`403`, `404`, `400` — nothing of theirs retired) or a sync that
+keeps failing stops being shown after a day. **Disconnecting deletes every
+row** (`DELETE /api/v1/org/calendar`), in the transaction that forgets the
+credentials; a connection made again reads them afresh.
+
+**Retention**: a span that ended more than 90 days ago, retired or not, is
+deleted by §11.6's time retention. No index for it: a person has a handful.
 
 ## 5. Task lifecycle
 
@@ -4859,7 +4871,7 @@ GET    /api/v1/org/calendar                  the Outlook calendar connection →
 PUT    /api/v1/org/calendar                  body { tenant_id, client_id, client_secret?, enabled, rules: [{ kind, text (1–120), project: slug }] (≤ 50) } — reads nothing from Microsoft; the secret may be left out once one is stored; new credentials forget the last test; turning the switch on starts a sync → the connection; 422 reasons tenant_invalid, client_invalid, secret_required, unknown_project, too_many_rules (with max); turning the switch on while the organisation's Time is off is 403 forbidden reason time_off   (owner, admin; session only)
 POST   /api/v1/org/calendar/test             asks Microsoft for a fresh app token and keeps the roles it carries — reads no calendar, works with the switch off → the connection with last_test; 409 conflict reason calendar_not_configured or secret_unreadable (`LAIKA_SECRET` can no longer open the stored secret: save it again), 422 unprocessable reason graph_credentials_refused, 503 unavailable reason graph_unreachable or graph_bad_answer   (owner, admin; session only; its own rate-limit bucket)
 POST   /api/v1/org/calendar/sync             syncs now, or joins the sync already running → the connection; 409 conflict reason calendar_off unless saved and switched on; 403 forbidden reason time_off while the organisation's Time is off   (owner, admin; session only; its own rate-limit bucket)
-DELETE /api/v1/org/calendar                  disconnect: the credentials go, logged meetings stay (204)   (owner, admin; session only)
+DELETE /api/v1/org/calendar                  disconnect: the credentials and out-of-office spans (§4.107) go, logged meetings stay (204)   (owner, admin; session only)
 GET    /api/v1/org/holidays                  ?from=&to= (≤ 731 days) → { holidays: [{ id, day, label, source, everyone }] } by day   (every member; D-149)
 POST   /api/v1/org/holidays                  body { day, label } → 201 the holiday; 409 conflict reason holiday_exists with the live one's id   DELETE .../:id → 204; a synced one is 409 conflict reason holiday_from_clan   (owner, admin; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -7290,7 +7302,10 @@ hold a result that is legitimately many.
     present for the people whose availability the reader sees — everyone
     for *See everyone's analytics*, the people in the spaces a lead leads,
     the people who share a space with a member, and always the reader —
-    and **absent, not null**, for anyone else.
+    and **absent, not null**, for anyone else. **On a web session only**
+    (`availability.read`, D-131): an agent's token reading Capacity is told
+    nobody's, its own person's included. Outlook's half only while the
+    connection is on and the sync has seen the span within a day (§4.107).
   - **`meeting_minutes_week`** (LAI-1331): the minutes of `kind` `meeting`
     the person has logged (§4.48, not deleted) on the days of their own week,
     Monday to Sunday in their zone — the calendar's meetings and any they
@@ -8741,8 +8756,10 @@ One interval-driven scheduler in the same process:
   (LAI-788). With them, by the same job (LAI-831): `time_breaks` dated before
   30 days ago, as drafts are (§4.55), and `time_undo` rows older than
   `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). Away periods
-  that ended more than 30 days ago go with them (§4.86, LAI-1130). No
-  `activity` row, for the reason local activity's has none
+  that ended more than 30 days ago go with them (§4.86, LAI-1130), and
+  Outlook's out-of-office spans that ended more than 90 days ago, retired or
+  not (§4.107, LAI-1331). No `activity` row, for the reason local activity's
+  has none
 - **HR sync** (§4.88 – §4.91, D-149, LAI-1181) — every 30 minutes **and once
   at boot**, while the organisation is connected: the HR system's people,
   holidays and leave from 1 January last year to 31 December next year, read in
