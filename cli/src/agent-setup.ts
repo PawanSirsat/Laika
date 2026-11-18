@@ -101,6 +101,9 @@ async function login(io: AgentIo, argv: readonly string[]): Promise<number> {
     return 1;
   }
 
+  // Piped, there was no prompt to name the board: say where the token goes
+  // before it is sent (LAI-1343 review).
+  if (!io.isTTY) io.err(`laika agent login: checking the token with ${url}`);
   const checked = await checkAgentToken(url, token);
   if (!checked.ok) {
     io.err(`laika agent login: not saved — ${checked.why}`);

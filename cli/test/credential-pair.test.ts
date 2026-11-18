@@ -18,8 +18,9 @@ import { after, describe, test } from 'node:test';
 
 import { activity, HOOK_SCRIPT, type ActivityIo } from '../src/activity.ts';
 import { activityPaths, writeState } from '../src/activity-store.ts';
-import { activityCredentials, findCredentials } from '../src/activity-sync.ts';
-import { pairCredentials } from '../src/credential-pair.ts';
+import { activityCredentials, findCredentials, NOT_CONNECTED } from '../src/activity-sync.ts';
+import { writeCredential } from '../src/agent-session.ts';
+import { pairCredentials, unpairedLines } from '../src/credential-pair.ts';
 import { whoami } from '../src/whoami.ts';
 import { closeAll, stubBoard } from './support/stub-board.ts';
 
@@ -106,6 +107,36 @@ void describe('pairCredentials', () => {
   });
 });
 
+void describe('unpairedLines — why the board named has no token (LAI-1343 review)', () => {
+  const b = { url: 'http://b', from: 'the environment' };
+  void test('another place holds a token for another board: named, and not sent', () => {
+    assert.deepEqual(unpairedLines(b, [{ from: '~/.laika/env', url: 'http://c/', token: 't' }]), [
+      'No token for http://b. ~/.laika/env holds one for http://c, which is not sent to another board.',
+      'Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.',
+    ]);
+  });
+
+  void test('the board named by a file: the fix is in that file', () => {
+    assert.deepEqual(
+      unpairedLines({ url: 'http://b', from: '~/.claude/settings.json' }, [
+        { from: '~/.laika/env', url: 'http://c', token: 't' },
+      ])?.[1],
+      "Put http://b's token beside its URL in ~/.claude/settings.json, or remove that URL to use the other board.",
+    );
+  });
+
+  void test('a token with no URL beside it names no board', () => {
+    assert.deepEqual(unpairedLines(b, [{ from: 'the environment', token: 't' }]), [
+      'No token for http://b. LAIKA_TOKEN in the environment is not used: no LAIKA_URL beside it names its board.',
+      'Set LAIKA_URL and LAIKA_TOKEN together in the environment.',
+    ]);
+  });
+
+  void test('nothing held anywhere: nothing to explain', () => {
+    assert.equal(unpairedLines(b, [{ from: '~/.laika/env', url: 'http://b' }]), undefined);
+  });
+});
+
 void describe('findCredentials and activityCredentials', () => {
   void test("the environment's board B with ~/.laika/env's board C: no credential, never B with C's token", () => {
     const at = home();
@@ -180,7 +211,41 @@ void describe('nothing reaches board B (the acceptance case)', () => {
     assert.equal(await activity(['on'], io), 1);
     assert.deepEqual(b.requests, [], 'board B was sent a request');
     assert.deepEqual(c.requests, [], 'board C was asked although B was named');
-    assert.match(err.join('\n'), /not connected to a board/);
+    // Not "not connected — put a personal token in ~/.laika/env": it holds one, for C.
+    assert.deepEqual(err, [
+      `No token for ${b.url}. ~/.laika/env holds one for ${c.url}, which is not sent to another board.`,
+      'Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.',
+    ]);
+  });
+
+  void test("`laika activity on`: the shell on B and Claude Code's credential for C turn nothing on for C", async () => {
+    const b = await stubBoard(TOKEN_B);
+    const c = await stubBoard(TOKEN_C);
+    const at = home();
+    writeCredential(at, 'claude-code', { url: c.url, token: TOKEN_C });
+    assert.equal(activityCredentials(at, { LAIKA_URL: b.url }), undefined);
+    const { io, err } = activityIo(at, { LAIKA_URL: b.url });
+
+    assert.equal(await activity(['on'], io), 1);
+    assert.deepEqual(b.requests, []);
+    assert.deepEqual(c.requests, [], 'activity was turned on for C although the shell names B');
+    assert.deepEqual(err, [
+      `No token for ${b.url}. ~/.laika/agents/claude-code.json holds one for ${c.url}, which is not sent to another board.`,
+      'Set LAIKA_URL and LAIKA_TOKEN together, or unset LAIKA_URL to use that board.',
+    ]);
+    // With no board named anywhere, that credential is this machine's connection, as before.
+    assert.deepEqual(activityCredentials(at, {}), {
+      url: c.url,
+      token: TOKEN_C,
+      via: 'claude-code',
+    });
+  });
+
+  void test('`laika activity on` with nothing anywhere still says how to connect', async () => {
+    const at = home();
+    const { io, err } = activityIo(at, {});
+    assert.equal(await activity(['on'], io), 1);
+    assert.deepEqual(err, [...NOT_CONNECTED]);
   });
 
   void test('`laika whoami`: B is reported with no token, the file’s board named, nothing sent', async () => {
@@ -211,6 +276,31 @@ void describe('nothing reaches board B (the acceptance case)', () => {
       ),
     );
     assert.ok(!`${out.join('\n')}${err.join('\n')}`.includes(TOKEN_C), 'a token was printed');
+  });
+
+  void test('`laika whoami`: a LAIKA_TOKEN with no URL is said to be unused, not "not set"', async () => {
+    const c = await stubBoard(TOKEN_C);
+    const at = home();
+    const path = envFile(at, { LAIKA_URL: c.url });
+    const err: string[] = [];
+    const code = await whoami({
+      out: () => undefined,
+      err: (line) => err.push(line),
+      settingsPath: join(at, '.claude', 'settings.json'),
+      envPath: path,
+      home: at,
+      env: { LAIKA_TOKEN: TOKEN_B },
+    });
+    assert.equal(code, 1);
+    assert.deepEqual(c.requests, []);
+    assert.deepEqual(
+      err.filter((line) => line !== ''),
+      [
+        `No token for ${c.url}. LAIKA_TOKEN in the environment is not used: no LAIKA_URL beside it names its board.`,
+        'Set LAIKA_URL and LAIKA_TOKEN together in the environment.',
+      ],
+    );
+    assert.ok(!err.join('\n').includes(TOKEN_B), 'the token was printed');
   });
 
   void test('`laika whoami` with the pair in one place still asks that board', async () => {
@@ -269,5 +359,15 @@ void describe('nothing reaches board B (the acceptance case)', () => {
       same.out.join('\n'),
     );
     assert.deepEqual(b.requests, []);
+
+    // A shell with a token and no LAIKA_URL names no board for it: no lines either.
+    const orphan = activityIo(at, { LAIKA_TOKEN: TOKEN_B });
+    assert.equal(await activity(['otel'], orphan.io), 1);
+    assert.deepEqual(orphan.out, []);
+    assert.equal(
+      orphan.err[0],
+      'This shell has LAIKA_TOKEN but no LAIKA_URL naming its board, and these lines would send it to http://board-c.test. Nothing printed.',
+    );
+    assert.ok(!orphan.err.join('\n').includes(TOKEN_B), 'the token was printed');
   });
 });

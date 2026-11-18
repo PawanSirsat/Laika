@@ -2,11 +2,13 @@
 id: LAI-1344
 title: 'CLI: LAIKA_AGENT_TOKEN without LAIKA_AGENT_URL is sent to the tool file''s board'
 area: cli
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-1343
-status: backlog
+status: review
+started: 2026-11-18T10:14:40Z
+finished: 2026-11-18T10:44:08Z
 ---
 
 ## Goal
@@ -35,10 +37,13 @@ A token equal to the file's is the same credential either way.
 
 ## Acceptance criteria
 
-- [ ] CHIEF decides the rule: both or neither, or the current documented fallback kept.
-- [ ] If changed: a test with `LAIKA_AGENT_TOKEN` for board B and a tool file for board C sends
+- [x] CHIEF decides the rule: both or neither, or the current documented fallback kept.
+- [x] If changed: a test with `LAIKA_AGENT_TOKEN` for board B and a tool file for board C sends
       nothing to C with B's token; the D-118 test and the README say the new rule.
 
 ## Notes
 
+- **Decided** (CHIEF, 2026-11-18): both or neither — the environment's token only with
+  `LAIKA_AGENT_URL`, else the tool file's own pair. D-118 does not cover it: the test and README change.
+- **Also here** (CHIEF, 2026-11-18): LAI-1343's review follow-ups F1–F5, the same code.
 - **Testing on Belka:** single test files only; CI runs the gate.
