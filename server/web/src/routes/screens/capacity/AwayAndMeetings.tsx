@@ -1,4 +1,5 @@
 import type { CapacityEntry } from '../../../api/presence.ts';
+import { Tooltip } from '../../../components/tooltip/Tooltip.tsx';
 import { awayChips, meetingsText } from './capacity-derive.ts';
 
 /**
@@ -26,18 +27,14 @@ export function AwayAndMeetings({
   return (
     <Line className={card ? 'cap-cal cap-cal-card' : 'cap-cal'} data-cap-cal="">
       {chips.map((chip) => (
-        <span
-          key={chip.key}
-          className="avail-pill"
-          data-avail-pill="away"
-          data-away={chip.key}
-          title={`${chip.label} — ${chip.title}`}
-        >
-          <span className="avail-pill-glyph" aria-hidden="true">
-            ◐
+        <Tooltip key={chip.key} content={`${chip.label} — ${chip.title}`}>
+          <span className="avail-pill" data-avail-pill="away" data-away={chip.key}>
+            <span className="avail-pill-glyph" aria-hidden="true">
+              ◐
+            </span>
+            <span>{chip.label}</span>
           </span>
-          <span>{chip.label}</span>
-        </span>
+        </Tooltip>
       ))}
       {meetings !== undefined && (
         <span className="cap-meetings" data-meetings="">

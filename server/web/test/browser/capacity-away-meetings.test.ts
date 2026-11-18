@@ -16,6 +16,7 @@ import type { Page } from 'playwright';
 import { capacityFor, orgStub } from './capacity-org.ts';
 import { optionsOf, pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { tipText } from './tooltip-probe.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -100,7 +101,7 @@ void describe('an owner (See everyone’s analytics)', () => {
       );
       // The pill says where it comes from on hover.
       assert.equal(
-        await card(h.page, 'Bea Nkosi').locator('[data-away="outlook"]').getAttribute('title'),
+        await tipText(card(h.page, 'Bea Nkosi').locator('[data-away="outlook"]')),
         'Outlook · Out of office until Wed 25 Nov — Out of office in their Outlook calendar',
       );
       // The whole of it shows: nothing cut off behind an ellipsis.
