@@ -13,7 +13,6 @@ import {
   type TokenScope,
   type TokenView,
 } from '../../../../api/tokens.ts';
-import { asAgentClient, AGENT_CLIENT_NAMES } from '../../../../api/agent-clients.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../../components/CopyButton.tsx';
@@ -25,10 +24,12 @@ import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { OverflowMenu } from '../../../../components/wizard/OverflowMenu.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import {
+  credentialGroups,
   DEFAULT_EXPIRY,
   EXPIRY_CHOICES,
   expiresAtFor,
   isLegacyToolToken,
+  legacyToolName,
   upgradeHref,
 } from './advanced.ts';
 import '../../tokens/tokens.css';
@@ -52,10 +53,15 @@ const TOOLS_HREF = '/developer?tab=tools';
  *   anonymous token.
  * - **An expiry is chosen when creating**, 90 days by default; *Never* is still
  *   allowed (plan §L7) but is not the default.
+ * - **Credentials only, and only what matters in view** (LAI-1327, the
+ *   owner's decision). Activity is a tab of its own now. A revoked or expired
+ *   credential works nowhere, so it waits behind *Show N revoked/expired*,
+ *   and the count is of those in use.
  * - **A personal token a coding tool uses** is the pre-V3 way of connecting it.
- *   It is labelled *Personal (legacy)*, says how to move, and offers *Upgrade
- *   connection* — a link to Tools → Add a tool. Nothing is revoked by it: the
- *   old token keeps working until its owner revokes it here.
+ *   They are one callout — *N credentials are used by coding tools* — that
+ *   opens to their rows, each with a short *Used by …* chip and *Move to
+ *   Tools*, a link to Tools → Add a tool. Nothing is revoked by it: the old
+ *   token keeps working until its owner revokes it here.
  * - **Revoke is under the row's `⋯`**, behind a confirmation, and a failure
  *   is shown whether or not the form is open.
  *
@@ -86,6 +92,8 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [revealed, setRevealed] = useState<CreatedToken | undefined>(undefined);
+  const [showLegacy, setShowLegacy] = useState(false);
+  const [showRetired, setShowRetired] = useState(false);
 
   const newButtonRef = useRef<HTMLButtonElement | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
@@ -228,9 +236,10 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
     onNavigate(to);
   };
 
-  const legacyCount = tokens?.filter(
-    (token) => isLegacyToolToken(token) && tokenState(token, now) === 'active',
-  ).length;
+  const groups = tokens === undefined ? undefined : credentialGroups(tokens, now);
+  const row = (token: TokenView) => (
+    <AdvancedRow key={token.id} token={token} now={now} onRevoke={revoke} onNavigate={onNavigate} />
+  );
 
   return (
     <section className="dev-card dev-advanced" aria-labelledby={`${formId}-heading`}>
@@ -414,22 +423,13 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
 
         <h3 className="dev-adv-list-title" ref={listTitleRef} tabIndex={-1}>
           Your credentials
-          {tokens !== undefined && <span className="dev-adv-count"> · {tokens.length}</span>}
+          {groups !== undefined && (
+            <span className="dev-adv-count" data-count="">
+              {' '}
+              · {groups.active.length + groups.legacy.length}
+            </span>
+          )}
         </h3>
-
-        {legacyCount !== undefined && legacyCount > 0 && (
-          <p className="dev-adv-legacy-note" data-legacy-count={legacyCount}>
-            <strong>
-              {legacyCount === 1
-                ? 'One of these is used by a coding tool.'
-                : `${String(legacyCount)} of these are used by coding tools.`}
-            </strong>{' '}
-            {legacyCount === 1 ? 'It keeps working' : 'They keep working'};{' '}
-            <em>Upgrade connection</em>{' '}
-            {legacyCount === 1 ? 'on its row moves it' : 'on each row moves that one'} to Tools.
-            Nothing is revoked for you.
-          </p>
-        )}
 
         {loadError !== null ? (
           <ApiErrorState
@@ -443,25 +443,87 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
               reload();
             }}
           />
-        ) : tokens === undefined ? (
+        ) : groups === undefined ? (
           <LoadingState shape="row" count={3} label="Loading your credentials" />
-        ) : tokens.length === 0 ? (
+        ) : groups.active.length + groups.legacy.length + groups.retired.length === 0 ? (
           <EmptyState
             headline="No personal credentials yet"
             body="Create one for a script or a call to the API. To connect a coding tool, use Tools."
           />
         ) : (
-          <ul className="tok-list">
-            {tokens.map((token) => (
-              <AdvancedRow
-                key={token.id}
-                token={token}
-                now={now}
-                onRevoke={revoke}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </ul>
+          <>
+            {groups.active.length > 0 ? (
+              <ul className="tok-list" data-list="active">
+                {groups.active.map(row)}
+              </ul>
+            ) : (
+              groups.legacy.length === 0 && (
+                <p className="dev-adv-none" data-state="none-active">
+                  None in use. Create one for a script or a call to the API.
+                </p>
+              )
+            )}
+
+            {groups.legacy.length > 0 && (
+              <section
+                className="dev-adv-legacy-callout"
+                data-legacy-count={groups.legacy.length}
+                aria-labelledby={`${formId}-legacy-title`}
+              >
+                <p className="dev-adv-legacy-note" id={`${formId}-legacy-title`}>
+                  <strong>
+                    {groups.legacy.length === 1
+                      ? '1 credential is used by a coding tool'
+                      : `${String(groups.legacy.length)} credentials are used by coding tools`}
+                  </strong>{' '}
+                  — move {groups.legacy.length === 1 ? 'it' : 'them'} to{' '}
+                  <a href={TOOLS_HREF} onClick={go(TOOLS_HREF)}>
+                    Tools
+                  </a>
+                  , where each tool gets its own. Nothing is revoked for you.
+                </p>
+                <button
+                  type="button"
+                  className="dev-adv-toggle"
+                  aria-expanded={showLegacy}
+                  aria-controls={`${formId}-legacy`}
+                  onClick={() => {
+                    setShowLegacy((shown) => !shown);
+                  }}
+                >
+                  {showLegacy ? 'Hide them' : groups.legacy.length === 1 ? 'Show it' : 'Show them'}
+                </button>
+                {showLegacy && (
+                  <ul className="tok-list" id={`${formId}-legacy`} data-list="legacy">
+                    {groups.legacy.map(row)}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {groups.retired.length > 0 && (
+              <div className="dev-adv-retired">
+                <button
+                  type="button"
+                  className="dev-adv-toggle"
+                  aria-expanded={showRetired}
+                  aria-controls={`${formId}-retired`}
+                  onClick={() => {
+                    setShowRetired((shown) => !shown);
+                  }}
+                >
+                  {showRetired
+                    ? 'Hide revoked/expired'
+                    : `Show ${String(groups.retired.length)} revoked/expired`}
+                </button>
+                {showRetired && (
+                  <ul className="tok-list" id={`${formId}-retired`} data-list="retired">
+                    {groups.retired.map(row)}
+                  </ul>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         <details className="dev-fold dev-adv-fold" data-fold="how">
@@ -521,9 +583,7 @@ function AdvancedRow({
 }) {
   const state = tokenState(token, now);
   const legacy = isLegacyToolToken(token);
-  const client = asAgentClient(token.last_client);
-  const tool =
-    client === null ? (token.last_client_name ?? 'a coding tool') : AGENT_CLIENT_NAMES[client];
+  const tool = legacyToolName(token);
   const href = upgradeHref(token);
   return (
     <li
@@ -540,6 +600,11 @@ function AdvancedRow({
           {token.scope === 'full' ? 'full' : 'read only'}
         </span>
         {state !== 'active' && <span className="tok-state">{state}</span>}
+        {legacy && state === 'active' && (
+          <span className="dx-chip dev-adv-used-by" data-tone="neutral">
+            Used by {tool}
+          </span>
+        )}
       </div>
 
       <div className="tok-row-meta">
@@ -579,21 +644,18 @@ function AdvancedRow({
       )}
 
       {legacy && state === 'active' && (
-        <p className="dev-adv-legacy">
-          Used by {tool}. It keeps working; to give {tool} its own credential, connect it on Tools,
-          then revoke this one.{' '}
-          <a
-            href={href}
-            aria-label={`Upgrade connection for ${token.name}`}
-            onClick={(event) => {
-              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              onNavigate(href);
-            }}
-          >
-            Upgrade connection
-          </a>
-        </p>
+        <a
+          className="dev-adv-move"
+          href={href}
+          aria-label={`Move ${token.name} to Tools`}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            onNavigate(href);
+          }}
+        >
+          Move to Tools
+        </a>
       )}
     </li>
   );

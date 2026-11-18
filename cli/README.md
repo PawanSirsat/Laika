@@ -213,8 +213,10 @@ no credential for antigravity on this machine — nothing recorded; laika tool a
 ```
 
 That is all a credential can be here: the tool's own file
-(`~/.laika/agents/<tool>.json`); or `LAIKA_AGENT_TOKEN`, with its board from
-`LAIKA_AGENT_URL` or, when that is not set, from the tool's own file.
+(`~/.laika/agents/<tool>.json`); or `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL`,
+both in the environment. A token there without its URL is not used — it is
+never sent to the tool file's board, which may not be the board that issued it
+(LAI-1344); the file's own pair is used instead.
 The board's Project setup does not offer the check command for these tools;
 it asks you to record the block yourself with *I've added it*.
 
@@ -465,6 +467,20 @@ never holds the token under a wider mode. The shell rc only *sources*
 `laika whoami` prints an `Agents` line naming which agents have a `laika` entry
 at user scope. It only checks that the entry exists, not that it works.
 
+**A board and its token come as a pair** (LAI-1343). `whoami`, `laika time` and
+`laika activity on` take the first board the environment, `~/.claude/settings.json`
+or `~/.laika/env` names, and a token only from a place naming that same board — or,
+for activity, this machine's own tool credential for that board, never another
+board's. Once activity is on, its sync, `status` and `backfill` use the board `on`
+recorded in `~/.laika/activity/state.json`. `LAIKA_URL` in the environment beside
+`~/.laika/env`'s URL and token for another board is that board with no token —
+`whoami` and `activity on` say so and name the file — never the one board's URL
+with the other's token; a `LAIKA_TOKEN` with no `LAIKA_URL` beside it names no
+board and is not used. `laika activity otel` prints nothing in a shell whose
+`LAIKA_URL` names another board than activity's, or that has a `LAIKA_TOKEN` with
+no `LAIKA_URL`, since its lines send that shell's `$LAIKA_TOKEN`; `laika-claude`
+uses `~/.laika/env`'s pair when it holds both, else the environment's.
+
 ## `laika activity` — local activity for the heatmap (LAI-752)
 
 Counts, on this machine, what the profile heatmap's **Local** and **GitHub**
@@ -681,8 +697,12 @@ shell-profile line. It writes six variables into `~/.claude/settings.json`'s
 `env` (telemetry on, `otlp`, `http/json`, this board's metrics endpoint,
 `cumulative`, logs `none`) and an `otelHeadersHelper` naming
 `~/.laika/otel-headers`, a 0700 script that reads `LAIKA_TOKEN` from
-`~/.laika/env` each time it runs and prints the `Authorization` header. **The
-token is never written**, into settings.json or the script. A key you already
+`~/.laika/env` each time it runs — or, with no personal token for this board
+there, this machine's own Claude Code credential,
+`~/.laika/agents/claude-code.json` (LAI-1325) — and prints the `Authorization`
+header. **The token is never written**, into settings.json or the script. A
+machine whose only tool is Codex or Cursor sends its activity but not these
+metrics, and `on` says so. A key you already
 set to another value is left as you set it, and `on` says so; `off` removes
 only what `on` added, each key only while it still holds `on`'s value.
 `laika activity status` says whether telemetry reaches the board — not set up,
@@ -751,8 +771,28 @@ quotes 0.17.0's templates so that shows up red; and a child session the
 orchestrator defines itself on the `claude-sdk` harness cannot be told from
 it.
 
+**Which credential** (LAI-1325). Your personal token where this machine has
+one — `~/.laika/env`, `laika init`'s `~/.claude/settings.json`, or
+`LAIKA_URL`/`LAIKA_TOKEN` in the environment, each board with its own token,
+never mixed (LAI-1343, above). A machine set up the current way
+(**Add device** → `laika device pair` → `laika tool add`) has none, and then
+activity sends with **this machine's own connection**: the credential
+`laika tool add` saved for one of its tools, `~/.laika/agents/<tool>.json` —
+Claude Code's first, then the others by name — and only one for the board
+activity is on for. `on` says when it does. The collector's routes take a
+tool's token — reading whether collection is on, sending reports and telemetry,
+Time's settings and drafts — while turning collection on, reading back and
+erasing are session only, refused to any token. A token that is a tool's own
+(`laika-claude` puts Claude Code's in `LAIKA_TOKEN`) is named as that tool's,
+and for the board a tool's file names, the file wins over an environment
+variable: that copy goes stale when the tool is added again.
+With neither, `on` names the fix: `laika device pair`, then
+`laika tool add claude-code`, or a personal token in `~/.laika/env`.
+
 **Which board.** The one `laika activity on` was run against, recorded in
-`state.json`, with that board's token (from `~/.laika/env` first). A session
+`state.json`, with that board's token (from `~/.laika/env` first, then
+`~/.claude/settings.json`, then this machine's tool credential for that board,
+then the environment). A session
 whose environment points at a different board sends nothing — neither to that
 board nor to the recorded one — and wipes nothing; `status` says why. Running
 `on` against another board starts over: what was counted for one board is never
@@ -997,8 +1037,8 @@ laika agent session status                                                 # wha
 
 `login` refuses a person's token (the board answers `403 not_an_agent`), and
 keeps the agent's in `~/.laika/agents/<harness>.json` (0600, directory 0700).
-`LAIKA_AGENT_TOKEN` (with `LAIKA_AGENT_URL`) overrides it; `LAIKA_TOKEN` is
-never read. `hooks on` merges its entries into `~/.claude/settings.json` or
+`LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` overrides it — both, never the
+one with the file's other half (LAI-1344); `LAIKA_TOKEN` is never read. `hooks on` merges its entries into `~/.claude/settings.json` or
 `~/.codex/hooks.json` — `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
 `PostToolUse`, `Stop` and `SessionEnd` for both, and `PostToolUseFailure` for
 Claude Code, which Codex does not document — recognised by `laika-agent-hook` in the command, and
@@ -1266,7 +1306,7 @@ code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks.
 
 | Capability | Claude Code 2.1.280 | Codex 0.162.1 |
 | --- | --- | --- |
-| Agent credential | Verified-and-tested (`laika agent login`, own file; not `headers`) | Documented-not-tested (same file, or `LAIKA_AGENT_TOKEN` in the env Codex passes to hooks) |
+| Agent credential | Verified-and-tested (`laika agent login`, own file; not `headers`) | Documented-not-tested (same file, or `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` in the env Codex passes to hooks) |
 | `SessionStart` opens the session | Verified-and-tested (`claude -p`) | Documented-not-tested |
 | Harness found by PID walk from the hook | Verified-and-tested (real `claude` process) | Documented-not-tested (expects a process named `codex*`) |
 | Detached watcher outlives the hook | Verified-and-tested (13 beats over a 15 s `claude -p`) | Documented-not-tested |
@@ -1426,8 +1466,8 @@ that needs `GH_TOKEN` from the environment therefore does not get it; one that
 reads its own stored login (`gh auth`, the keychain) works. The agent's token
 is handled exactly as the session helper handles it (above): a header, a
 child's stdin, never argv, a record or the log — and a background save acts
-with the credential on its stdin, so an agent logged in by `LAIKA_AGENT_TOKEN`
-alone saves too.
+with the credential on its stdin, so an agent whose only credential is
+`LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` saves too.
 
 **The owner's password** (consent on/off) is read into a buffer, sent, and
 the buffer and the request body are zeroed once the board answers. The
@@ -2119,7 +2159,8 @@ LAIKA-BOARD-DATA>>>
 
 ### The credential
 
-The agent's own token (`laika agent login`, or `LAIKA_AGENT_TOKEN`). It goes
+The agent's own token (`laika agent login`, or `LAIKA_AGENT_TOKEN` with
+`LAIKA_AGENT_URL`). It goes
 only in the `Authorization` header. It never goes in the event file, the log, a
 child's argv or a child's environment; the watcher receives it on stdin. A
 `401` — a revoked or expired token, at connect, as the stream's `error` frame,

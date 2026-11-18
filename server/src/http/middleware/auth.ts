@@ -6,6 +6,9 @@ import { resolveActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
 import { recordRestWrite, restWriteCountsAsPresence, TokenAuthError } from '../../auth/tokens.ts';
 import { type AppEnv } from '../context.ts';
 
+/** Where deliveries prove themselves, and no credential is resolved (§10). */
+export const WEBHOOKS_PREFIX = '/webhooks/';
+
 /**
  * Resolve the credential to an `Actor` and attach it (SPEC §6.1, §11.2).
  *
@@ -23,6 +26,18 @@ import { type AppEnv } from '../context.ts';
  */
 export function authMiddleware(options: { auth: Auth; db: Db }) {
   return createMiddleware<AppEnv>(async (c, next) => {
+    // **`/webhooks/*` has no user session** (§10's first sentence): each
+    // delivery carries its own proof — GitHub's HMAC, the transcript's, and
+    // Brevo's bearer token for inbound email (§10.3, LAI-1315). That bearer is
+    // Brevo's credential, not a Laika token, so it is never resolved as one;
+    // resolving it would refuse every delivery as "That access token is not
+    // valid" before the route that checks it is reached.
+    if (c.req.path.startsWith(WEBHOOKS_PREFIX)) {
+      c.set('actor', null);
+      await next();
+      return;
+    }
+
     let actor: ResolvedActor | null = null;
     const sessionCookies: string[] = [];
 

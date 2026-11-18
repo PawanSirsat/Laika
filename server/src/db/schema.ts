@@ -88,6 +88,10 @@ import {
   ANALYTICS_VIEW_KINDS,
   ATTACHMENT_STATES,
   EMAIL_DIGEST_STATES,
+  EMAIL_INBOUND_ATTACHMENT_REASONS,
+  EMAIL_INBOUND_ATTACHMENT_STATES,
+  EMAIL_INBOUND_OUTCOMES,
+  EMAIL_INBOUND_REASONS,
   EMAIL_KINDS,
   EMAIL_STATES,
   EMAIL_SUPPRESSED_REASONS,
@@ -2237,6 +2241,256 @@ export const calendarEvents = sqliteTable(
     uniqueIndex('calendar_events_entry_id_unique').on(t.entryId),
     check('calendar_events_revision_check', sql.raw('entry_revision_synced >= 1')),
     check('calendar_events_event_id_check', sql.raw('length(event_id) BETWEEN 1 AND 512')),
+  ],
+);
+
+// ------------------------------------------------ §4.103 org_email_inbound
+
+/**
+ * The organisation's *Email to tasks* settings (§4.103, D-155, LAI-1315). **No
+ * row, or `enabled` 0, is off** — and off is how it ships: every inbound mail
+ * is recorded in `email_inbound` as dropped `switch_off`, and nothing is
+ * written. Set by an owner or admin, signed in (`org.email.configure`).
+ *
+ * **The webhook's bearer token is kept only as its SHA-256** (`token_hash`):
+ * it is compared, never sent anywhere, so nothing needs to read it back — the
+ * API-token precedent (§4.3). The Brevo API key is read back, to fetch
+ * attachments, so it is §12 ciphertext under `brevo_api_key`.
+ *
+ * `authserv_id` names the receiving server whose `Authentication-Results`
+ * Laika believes — the first header carrying it (LAI-1315 review, M1). A
+ * sender can put any `Authentication-Results` header in a mail; only the one
+ * the receiving server added is evidence. **With none named, nothing is
+ * believed**, and the switch cannot be on while authentication is required.
+ *
+ * Its own table rather than columns on `orgs`, the `org_teams_settings`
+ * precedent: additive, and a CHECK on `orgs` is a rebuild of `orgs`.
+ */
+export const orgEmailInbound = sqliteTable(
+  'org_email_inbound',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    enabled: integer('enabled').notNull().default(0),
+    /** The receiving subdomain, lower case: `tasks.kvelld.com`. */
+    domain: text('domain'),
+    /** SHA-256 of the webhook's bearer token, hex. Never the token. */
+    tokenHash: text('token_hash'),
+    tokenLast4: text('token_last4'),
+    /** §12 ciphertext under `brevo_api_key`: what fetches an attachment. */
+    apiKeyEnc: text('api_key_enc'),
+    apiKeyLast4: text('api_key_last4'),
+    /** Drop a mail without a DMARC, DKIM or SPF pass for its From domain. On unless an owner turns it off. */
+    requireAuthenticated: integer('require_authenticated').notNull().default(1),
+    /** The receiving server whose first `Authentication-Results` is believed; null believes nothing. */
+    authservId: text('authserv_id'),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt,
+  },
+  (t) => [
+    index('org_email_inbound_updated_by_idx').on(t.updatedBy),
+    check('org_email_inbound_enabled_check', sql.raw('enabled IN (0, 1)')),
+    check(
+      'org_email_inbound_require_authenticated_check',
+      sql.raw('require_authenticated IN (0, 1)'),
+    ),
+    check(
+      'org_email_inbound_domain_check',
+      sql.raw('domain IS NULL OR length(domain) BETWEEN 3 AND 253'),
+    ),
+    check('org_email_inbound_token_check', sql.raw('(token_hash IS NULL) = (token_last4 IS NULL)')),
+    check(
+      'org_email_inbound_api_key_check',
+      sql.raw('(api_key_enc IS NULL) = (api_key_last4 IS NULL)'),
+    ),
+    check(
+      'org_email_inbound_authserv_check',
+      sql.raw('authserv_id IS NULL OR length(authserv_id) BETWEEN 1 AND 253'),
+    ),
+    // The switch cannot be on without somewhere to receive and a way to prove it.
+    check(
+      'org_email_inbound_on_check',
+      sql.raw('enabled = 0 OR (domain IS NOT NULL AND token_hash IS NOT NULL)'),
+    ),
+    // Nor, while senders must be authenticated, without a server to believe.
+    check(
+      'org_email_inbound_authserv_needed_check',
+      sql.raw('enabled = 0 OR require_authenticated = 0 OR authserv_id IS NOT NULL'),
+    ),
+  ],
+);
+
+// ---------------------------------------- §4.104 project_inbound_addresses
+
+/**
+ * A space's inbound address (§4.104, D-155, LAI-1315):
+ * `<slug>-<token>@<domain>`. **Only the token is matched** — the slug is there
+ * for a person reading the address — so renaming the space changes the
+ * address shown and the old one keeps working; *New address* replaces the
+ * token, and the old address stops at once.
+ *
+ * Twelve characters of base32, sixty bits: the address is not a password —
+ * the sender must still be a member, authenticated — but it should not be
+ * guessable either, so a stranger cannot spam a space's log by trying names.
+ */
+export const projectInboundAddresses = sqliteTable(
+  'project_inbound_addresses',
+  {
+    projectId: text('project_id')
+      .primaryKey()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('project_inbound_addresses_token_unique').on(t.token),
+    index('project_inbound_addresses_created_by_idx').on(t.createdBy),
+    check(
+      'project_inbound_addresses_token_check',
+      sql.raw("length(token) = 12 AND token NOT GLOB '*[^a-z2-7]*'"),
+    ),
+  ],
+);
+
+// --------------------------------------------------- §4.105 email_inbound
+
+/**
+ * Every inbound mail at a space's address, and what became of it (§4.105,
+ * D-155, LAI-1315) — **the provenance of a task or comment that arrived by
+ * email**, since `created_via` says only `webhook`.
+ *
+ * **Never the mail's subject or text.** The row holds ids, the sender's
+ * address, the outcome, a closed reason, and `auth`: the receiving server's
+ * name and its verdicts (`mx.example dmarc=pass dkim=pass`), so an owner
+ * setting this up can see what Laika saw.
+ *
+ * One row per mail per address per sender (`message_id`, `address_token`,
+ * `from_address`): Brevo may deliver a mail again, and a retry must not make a
+ * second task — and a forger who guesses a Message-ID makes a row of their
+ * own, never the real sender's. A mail that
+ * matched no address keeps `address_token` empty. Kept 90 days (§11.6).
+ */
+export const emailInbound = sqliteTable(
+  'email_inbound',
+  {
+    id: text('id').primaryKey(),
+    /** The mail's `Message-ID` without its angle brackets; a digest of the mail when it had none. */
+    messageId: text('message_id').notNull(),
+    /** The address's token, or `''` when none matched. */
+    addressToken: text('address_token').notNull(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    /** The From address, lower case, as the mail gave it. */
+    /** `''` when the mail gave none that could be read — part of the key, so never null. */
+    fromAddress: text('from_address').notNull().default(''),
+    /** The person it was matched to. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    outcome: text('outcome', { enum: EMAIL_INBOUND_OUTCOMES }).notNull(),
+    reason: text('reason', { enum: EMAIL_INBOUND_REASONS }),
+    /** The task it made, or the task it commented on. */
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
+    /** The believed server and its verdicts, e.g. `mx.example dmarc=pass`. Never mail text. */
+    auth: text('auth'),
+    /** Every server the mail's `Authentication-Results` named, topmost first, space-separated. */
+    authservIds: text('authserv_ids'),
+    /** How many attachments the mail announced. */
+    attachmentCount: integer('attachment_count').notNull().default(0),
+    /** How many deliveries of it failed; three, and it is `failed_repeatedly`. */
+    attempts: integer('attempts').notNull().default(0),
+    receivedAt: integer('received_at').notNull(),
+  },
+  (t) => [
+    // The sender is part of the key (round 3): a mail forged with a predicted
+    // Message-ID cannot pre-claim the real one, which keeps its own row.
+    uniqueIndex('email_inbound_message_unique').on(t.messageId, t.addressToken, t.fromAddress),
+    index('email_inbound_project_received_idx').on(t.projectId, t.receivedAt),
+    index('email_inbound_received_at_idx').on(t.receivedAt),
+    index('email_inbound_user_id_idx').on(t.userId),
+    index('email_inbound_task_id_idx').on(t.taskId),
+    index('email_inbound_comment_id_idx').on(t.commentId),
+    check('email_inbound_outcome_check', oneOf('outcome', EMAIL_INBOUND_OUTCOMES)),
+    check('email_inbound_reason_check', oneOfOrNull('reason', EMAIL_INBOUND_REASONS)),
+    // A reason exactly when dropped, so the two can never disagree.
+    check(
+      'email_inbound_reason_needed_check',
+      sql.raw("(outcome = 'dropped') = (reason IS NOT NULL)"),
+    ),
+    check('email_inbound_message_id_check', sql.raw('length(message_id) BETWEEN 1 AND 512')),
+    check('email_inbound_from_check', sql.raw('length(from_address) <= 320')),
+    check('email_inbound_auth_check', sql.raw('auth IS NULL OR length(auth) <= 300')),
+    check(
+      'email_inbound_authserv_ids_check',
+      sql.raw('authserv_ids IS NULL OR length(authserv_ids) <= 300'),
+    ),
+    check('email_inbound_attachments_check', sql.raw('attachment_count >= 0')),
+    check('email_inbound_attempts_check', sql.raw('attempts >= 0')),
+  ],
+);
+
+// ---------------------------------------- §4.106 email_inbound_attachments
+
+/**
+ * An inbound mail's attachment, from Brevo's announcement to the store
+ * (§4.106, D-155, LAI-1315). Brevo sends a `DownloadToken`, not the bytes; the
+ * attachments job fetches it with the organisation's Brevo API key and puts it
+ * in the D-150 store as a ready `attachments` row the sender uploaded.
+ *
+ * `download_token` is useless without the API key, which is §12 ciphertext;
+ * it is cleared the moment the row is final. A row is never what blocks its
+ * task: a failure is a reason here, and the task stands without the file.
+ */
+export const emailInboundAttachments = sqliteTable(
+  'email_inbound_attachments',
+  {
+    id: text('id').primaryKey(),
+    inboundId: text('inbound_id')
+      .notNull()
+      .references(() => emailInbound.id, { onDelete: 'cascade' }),
+    /** Brevo's token for the bytes, while `pending`; null once final. */
+    downloadToken: text('download_token'),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    /** Brevo's estimate of the size. */
+    sizeBytes: integer('size_bytes').notNull(),
+    state: text('state', { enum: EMAIL_INBOUND_ATTACHMENT_STATES }).notNull(),
+    reason: text('reason', { enum: EMAIL_INBOUND_ATTACHMENT_REASONS }),
+    /** The stored file. */
+    attachmentId: text('attachment_id').references(() => attachments.id, {
+      onDelete: 'set null',
+    }),
+    attempts: integer('attempts').notNull().default(0),
+    createdAt,
+    finishedAt: integer('finished_at'),
+  },
+  (t) => [
+    index('email_inbound_attachments_inbound_idx').on(t.inboundId),
+    index('email_inbound_attachments_state_idx').on(t.state, t.createdAt),
+    index('email_inbound_attachments_attachment_idx').on(t.attachmentId),
+    check('email_inbound_attachments_state_check', oneOf('state', EMAIL_INBOUND_ATTACHMENT_STATES)),
+    check(
+      'email_inbound_attachments_reason_check',
+      oneOfOrNull('reason', EMAIL_INBOUND_ATTACHMENT_REASONS),
+    ),
+    check(
+      'email_inbound_attachments_reason_needed_check',
+      sql.raw("(state IN ('failed', 'skipped')) = (reason IS NOT NULL)"),
+    ),
+    check(
+      'email_inbound_attachments_pending_check',
+      sql.raw("(state = 'pending') = (download_token IS NOT NULL)"),
+    ),
+    check(
+      'email_inbound_attachments_filename_check',
+      sql.raw('length(filename) BETWEEN 1 AND 255'),
+    ),
+    check(
+      'email_inbound_attachments_content_type_check',
+      sql.raw('length(content_type) BETWEEN 1 AND 127'),
+    ),
+    check('email_inbound_attachments_size_check', sql.raw('size_bytes >= 0')),
+    check('email_inbound_attachments_attempts_check', sql.raw('attempts >= 0')),
   ],
 );
 

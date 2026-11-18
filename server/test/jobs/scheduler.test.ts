@@ -8,6 +8,8 @@ import { eq } from 'drizzle-orm';
 import {
   activity,
   attachments,
+  emailInbound,
+  emailInboundAttachments,
   orgCalendarSource,
   orgTimeSettings,
   timeEntries,
@@ -122,6 +124,7 @@ describe('the jobs §11.6 names', () => {
       'claim.expiry',
       'db.vacuum',
       'directory.sync',
+      'email.inbound_attachments',
       'email.notify',
       'email.retention',
       'email.send',
@@ -148,6 +151,59 @@ describe('the jobs §11.6 names', () => {
     expect(send?.atStart).toBeUndefined();
     expect(retention?.everyMs).toBe(24 * 60 * 60 * 1000);
     expect(retention?.atStart).toBe(true);
+  });
+
+  it('fetches inbound attachments every 30 seconds, not at boot — and asks Brevo nothing without inboundEmail (LAI-1315)', async () => {
+    const inboundId = newId();
+    t.db
+      .insert(emailInbound)
+      .values({
+        id: inboundId,
+        messageId: 'm@example.test',
+        addressToken: '',
+        outcome: 'task_created',
+        attachmentCount: 1,
+        receivedAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(emailInboundAttachments)
+      .values({
+        id: newId(),
+        inboundId,
+        downloadToken: 'dl-1',
+        filename: 'a.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 10,
+        state: 'pending',
+        createdAt: NOW,
+      })
+      .run();
+    const fetched: string[] = [];
+    const brevo: typeof fetch = (input) => {
+      fetched.push(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      );
+      return Promise.reject(new Error('no test calls Brevo'));
+    };
+
+    const off = buildJobs(deps()).find((j) => j.name === 'email.inbound_attachments')!;
+    expect(off.everyMs).toBe(30_000);
+    expect(off.atStart).toBeUndefined();
+    expect(await off.run(NOW)).toEqual({ changed: 0 });
+    expect(t.db.select().from(emailInboundAttachments).get()?.state).toBe('pending');
+
+    // With it, and Email to tasks off as it ships: skipped at once, still
+    // without a fetch.
+    const on = buildJobs(
+      deps({ inboundEmail: { fetchImpl: brevo }, attachments: { config: null } }),
+    ).find((j) => j.name === 'email.inbound_attachments')!;
+    expect(await on.run(NOW)).toEqual({ changed: 1 });
+    expect(t.db.select().from(emailInboundAttachments).get()).toMatchObject({
+      state: 'skipped',
+      reason: 'switch_off',
+    });
+    expect(fetched).toEqual([]);
   });
 
   it('runs time retention daily and once at boot (D-088 item 11, LAI-787)', () => {

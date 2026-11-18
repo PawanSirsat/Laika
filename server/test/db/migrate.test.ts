@@ -2822,6 +2822,10 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         // LAI-1316's calendar tables, and `time_entries` rebuilt for the
         // `calendar` source, every row kept.
         expect.stringMatching(/_calendar_sync$/),
+        // LAI-1315's email to tasks: four new tables, nothing rebuilt.
+        expect.stringMatching(/_email_inbound$/),
+        // LAI-1315's `switch_off` reason: one of those four rebuilt, every row kept.
+        expect.stringMatching(/_email_inbound_switch_off$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2985,6 +2989,8 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3086,6 +3092,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3117,8 +3125,9 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
         // LAI-1181's 0081 rides along and adds its four HR tables,
         // LAI-1300's 0082 its attachments, LAI-1312's 0084 the email outbox
         // LAI-1314's 0085 its three Teams tables, LAI-1313's 0086 its four
-        // email tables and LAI-1316's 0087 its two calendar tables; nothing
-        // else appears.
+        // email tables, LAI-1316's 0087 its two calendar tables and LAI-1315's
+        // 0088 its four inbound ones (its 0089 rebuilds one of them and adds
+        // none); nothing else appears.
         expect(tables()).toEqual(
           [
             ...before,
@@ -3138,6 +3147,10 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'teams_posts',
             'calendar_events',
             'org_calendar_source',
+            'email_inbound',
+            'email_inbound_attachments',
+            'org_email_inbound',
+            'project_inbound_addresses',
           ].sort(),
         );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
@@ -3190,6 +3203,8 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3309,6 +3324,8 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3394,6 +3411,8 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3484,6 +3503,8 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3585,6 +3606,8 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3675,8 +3698,15 @@ describe('0086 rebuilds the email outbox on a populated 0085 database and keeps 
     };
     const at = journal.entries.findIndex((e) => e.tag === '0086_email_notify');
     const dropped = journal.entries.splice(at);
-    // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0086_email_notify', '0087_calendar_sync']);
+    // The guard on this guard: a later migration lands here and says so —
+    // LAI-1316's 0087 and LAI-1315's 0088 add tables and touch nothing 0086
+    // made; LAI-1315's 0089 rebuilds one of 0088's.
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0086_email_notify',
+      '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3771,7 +3801,13 @@ describe('0087 rebuilds time_entries for the calendar source on a populated 0086
     const at = journal.entries.findIndex((e) => e.tag === '0087_calendar_sync');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0087_calendar_sync']);
+    // LAI-1315's 0088 adds four tables and touches nothing 0087 made; its
+    // 0089 rebuilds one of those four for a new reason, and nothing else.
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0087_calendar_sync',
+      '0088_email_inbound',
+      '0089_email_inbound_switch_off',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3992,6 +4028,92 @@ describe('0087 rebuilds time_entries for the calendar source on a populated 0086
           { from: 'entry_id', table: 'time_entries', on_delete: 'CASCADE' },
           { from: 'user_id', table: 'users', on_delete: 'CASCADE' },
         ]);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0089 rebuilds email_inbound_attachments for switch_off on a populated 0088 database (LAI-1315)', () => {
+  function folderAt0088(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0089_email_inbound_switch_off');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0089_email_inbound_switch_off']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps every queued file, its indexes and keys, and takes switch_off and nothing else new',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0088() });
+        const s = seed(db);
+        const now = Date.now();
+        const inboundId = newId();
+        db.run(sql`
+          INSERT INTO email_inbound (id, message_id, address_token, project_id, from_address,
+            user_id, outcome, attachment_count, received_at)
+          VALUES (${inboundId}, 'm@example.test', 'tok', ${s.projectId}, 'owner@example.test',
+            ${s.userId}, 'task_created', 2, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO email_inbound_attachments (id, inbound_id, download_token, filename,
+            content_type, size_bytes, state, reason, attempts, created_at, finished_at)
+          VALUES (${newId()}, ${inboundId}, 'dl-1', 'a.pdf', 'application/pdf', 10, 'pending',
+            NULL, 1, ${now}, NULL),
+            (${newId()}, ${inboundId}, NULL, 'b.pdf', 'application/pdf', 10, 'skipped',
+            'too_large', 0, ${now}, ${now})
+        `);
+        const rows = () => db.all(sql`SELECT * FROM email_inbound_attachments ORDER BY filename`);
+        const shape = () => ({
+          indexes: db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'email_inbound_attachments' ORDER BY name`,
+          ),
+          keys: db.all(
+            sql`SELECT "table", "from", "to", on_delete FROM pragma_foreign_key_list('email_inbound_attachments') ORDER BY "from"`,
+          ),
+        });
+        const before = rows();
+        const shapeBefore = shape();
+        expect(before).toHaveLength(2);
+        expectSqliteError(
+          () =>
+            db.run(
+              sql`UPDATE email_inbound_attachments SET state = 'skipped', reason = 'switch_off', download_token = NULL WHERE filename = 'a.pdf'`,
+            ),
+          /CHECK constraint failed/,
+        );
+
+        runMigrations(db);
+
+        expect(rows()).toEqual(before);
+        expect(shape()).toEqual(shapeBefore);
+        db.run(
+          sql`UPDATE email_inbound_attachments SET state = 'skipped', reason = 'switch_off', download_token = NULL WHERE filename = 'a.pdf'`,
+        );
+        expectSqliteError(
+          () =>
+            db.run(
+              sql`UPDATE email_inbound_attachments SET reason = 'made_up' WHERE filename = 'b.pdf'`,
+            ),
+          /CHECK constraint failed/,
+        );
+        // The key to its mail still cascades.
+        db.run(sql`DELETE FROM email_inbound WHERE id = ${inboundId}`);
+        expect(rows()).toHaveLength(0);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });

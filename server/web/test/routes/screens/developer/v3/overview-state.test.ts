@@ -23,6 +23,8 @@ import {
   journeyRows,
   overviewState,
   overviewSummary,
+  receivedAgo,
+  reportsStand,
   statusLines,
   toolAddress,
   wizardAddress,
@@ -833,5 +835,96 @@ void describe('addresses', () => {
   void test('Manage tools is the Tools tab, and a tool opens there with its Details (LAI-1080)', () => {
     assert.equal(OVERVIEW_ADDRESSES.tools, '/developer?tab=tools');
     assert.equal(toolAddress('a 1'), '/developer?tab=tools&agent=a%201');
+  });
+});
+
+void describe('the journey’s Share activity step (LAI-1327)', () => {
+  const connected = (): OverviewState =>
+    state([device({ id: 'd1', agents: [seen({ id: 'a1' })] })]);
+  const collects = {
+    orgEnabled: true,
+    lastReceivedAt: null,
+    collectors: 0,
+    readOnly: false,
+    now: NOW,
+  } as const;
+
+  void test('not there while the organisation does not collect, nor when its read failed', () => {
+    assert.equal(
+      journeyRows(connected(), PROJECTS, TOOLS, { ...collects, orgEnabled: false }).length,
+      3,
+    );
+    assert.equal(journeyRows(connected(), PROJECTS, TOOLS, undefined).length, 3);
+  });
+
+  void test('the organisation collects: a fourth step, next once a tool is connected, opening Activity', () => {
+    const rows = journeyRows(connected(), PROJECTS, TOOLS, collects);
+    assert.deepEqual(rows[3], {
+      step: 'activity',
+      name: 'Share activity',
+      state: 'active',
+      line: 'Your organisation collects it · turn it on on your machine',
+      action: { label: 'Start', href: '/developer?tab=activity' },
+    });
+    assert.equal(OVERVIEW_ADDRESSES.activity, '/developer?tab=activity');
+    assert.equal(journeyComplete(rows), '2 of 4 complete');
+  });
+
+  void test('locked, saying why, until a tool is connected', () => {
+    const rows = journeyRows(state([]), PROJECTS, TOOLS, collects);
+    assert.equal(rows[3]?.state, 'pending');
+    assert.equal(rows[3]?.locked, 'Connect a tool first');
+  });
+
+  void test('done once a machine has reported: when it last did, and Open', () => {
+    const rows = journeyRows(connected(), PROJECTS, TOOLS, {
+      ...collects,
+      lastReceivedAt: NOW - 4 * 60_000,
+      collectors: 1,
+    });
+    assert.deepEqual(rows[3], {
+      step: 'activity',
+      name: 'Share activity',
+      state: 'done',
+      line: 'Collecting · last received 4 min ago',
+      action: { label: 'Open', href: '/developer?tab=activity' },
+    });
+  });
+
+  void test('stalled, not collecting, once the last report is older than the 14 days', () => {
+    const rows = journeyRows(connected(), PROJECTS, TOOLS, {
+      ...collects,
+      lastReceivedAt: NOW - 20 * 24 * 60 * 60_000,
+      collectors: 0,
+    });
+    assert.equal(rows[3]?.state, 'done');
+    assert.equal(rows[3]?.line, 'Stalled · last received 20 d ago');
+  });
+
+  void test('a viewer: locked, saying their machines cannot send', () => {
+    const rows = journeyRows(connected(), PROJECTS, TOOLS, { ...collects, readOnly: true });
+    assert.deepEqual(rows[3], {
+      step: 'activity',
+      name: 'Share activity',
+      state: 'pending',
+      line: 'Viewers can’t send activity: ask an owner for a member role',
+      action: { label: 'Start', href: '/developer?tab=activity' },
+      locked: 'Viewers can’t send activity: ask an owner for a member role',
+    });
+  });
+
+  void test('fresh, stalled or none: what the reports are, from the 14-day count', () => {
+    assert.equal(reportsStand(null, 0), 'none');
+    assert.equal(reportsStand(NOW, 1), 'fresh');
+    assert.equal(reportsStand(NOW - 20 * 24 * 60 * 60_000, 0), 'stalled');
+  });
+
+  void test('how long ago, coarse: just now, minutes, hours, days', () => {
+    assert.equal(receivedAgo(NOW - 20_000, NOW), 'just now');
+    assert.equal(receivedAgo(NOW - 59 * 60_000, NOW), '59 min ago');
+    assert.equal(receivedAgo(NOW - 3 * 60 * 60_000, NOW), '3 h ago');
+    assert.equal(receivedAgo(NOW - 2 * 24 * 60 * 60_000, NOW), '2 d ago');
+    // A clock behind the server's never says "in the future".
+    assert.equal(receivedAgo(NOW + 60_000, NOW), 'just now');
   });
 });

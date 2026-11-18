@@ -36,6 +36,7 @@ import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { HolidaysFact } from './HolidaysFact.tsx';
 import { HrSourceSection } from './HrSourceSection.tsx';
 import { EmailSection } from './EmailSection.tsx';
+import { EmailInboundSection } from './EmailInboundSection.tsx';
 import { emailOn } from './email-derive.ts';
 import { TeamsPostingSection } from './TeamsPostingSection.tsx';
 import { CalendarSourceSection } from './CalendarSourceSection.tsx';

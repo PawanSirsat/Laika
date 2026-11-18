@@ -44,8 +44,8 @@ const HOME = '/my-day';
  * and menu.
  *
  * **It names no page** (the title rule, LAI-1227): each page names itself
- * once, in its own `h1` — a space under a *Spaces /* breadcrumb, a profile
- * under *People /* — so nothing up here repeats it.
+ * once, in its own `h1` — a space by its name and mark (no breadcrumb since
+ * LAI-1328), a profile under *People /* — so nothing up here repeats it.
  *
  * Pre-auth there is no sidebar and no person, and the theme control must stay
  * reachable — someone setting up an instance at night should not have to sign

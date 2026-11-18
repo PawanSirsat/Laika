@@ -1,4 +1,5 @@
 import { type AttachmentStoreEnv, type AttachmentsEnv } from '../../src/env.ts';
+import { createHash } from 'node:crypto';
 import { presignQuery, signedHeaders } from '../../src/services/s3-client.ts';
 
 /**
@@ -17,7 +18,10 @@ import { presignQuery, signedHeaders } from '../../src/services/s3-client.ts';
  * - a presigned `GET` honours `response-content-type` and
  *   `response-content-disposition`;
  * - a header-signed ranged `GET` answers `206` with those bytes;
- * - `DELETE` answers `204`, and `HEAD` is `404` after it.
+ * - `DELETE` answers `204`, and `HEAD` is `404` after it;
+ * - a header-signed `PUT` (Laika's own, for an inbound mail's attachment —
+ *   LAI-1315) is `403` unless its signature, over every header it names, and
+ *   its `x-amz-content-sha256`, the body's digest, both agree.
  *
  * Every refusal carries `STORE-SECRET-WORDS` in its body, which Laika must
  * never pass on. `intercept` answers a request before the fake does — a
@@ -140,12 +144,20 @@ export function fakeS3(store: AttachmentStoreEnv = FAKE_STORE): FakeS3 {
     const now = parseAmzDate(req.headers.get('x-amz-date'));
     const sent = req.headers.get('authorization');
     if (now === null || sent === null) return false;
-    const range = req.headers.get('range');
+    // Every header the signature names, besides the three the signer adds itself.
+    const named = (/SignedHeaders=([^,]+)/.exec(sent)?.[1] ?? '').split(';');
+    const headers: Record<string, string> = {};
+    for (const name of named) {
+      if (['host', 'x-amz-date', 'x-amz-content-sha256'].includes(name)) continue;
+      const value = req.headers.get(name);
+      if (value === null) return false;
+      headers[name] = value;
+    }
     const expected = signedHeaders(credentials, {
       method: req.method,
       host: origin.host,
       path: req.path,
-      headers: range === null ? {} : { range },
+      headers,
       payloadHash: req.headers.get('x-amz-content-sha256') ?? '',
       now,
     });
@@ -186,8 +198,22 @@ export function fakeS3(store: AttachmentStoreEnv = FAKE_STORE): FakeS3 {
       const key = req.path.slice(prefix.length);
       const presigned = req.query.has('X-Amz-Signature');
 
+      if (req.method === 'PUT' && !presigned) {
+        const body = bodyBytes(init?.body);
+        const digest = createHash('sha256').update(body).digest('hex');
+        if (!headerSignatureAgrees(req) || req.headers.get('x-amz-content-sha256') !== digest) {
+          return refuse(403, 'SignatureDoesNotMatch');
+        }
+        fake.objects.set(key, {
+          body,
+          contentType: req.headers.get('content-type') ?? 'binary/octet-stream',
+          contentDisposition: req.headers.get('content-disposition') ?? '',
+        });
+        return new Response(null, { status: 200, headers: { etag: '"fixture-etag"' } });
+      }
+
       if (req.method === 'PUT') {
-        if (!presigned || !presignedAgrees(req, 'PUT')) return refuse(403, 'SignatureDoesNotMatch');
+        if (!presignedAgrees(req, 'PUT')) return refuse(403, 'SignatureDoesNotMatch');
         const body = bodyBytes(init?.body);
         // The browser's `content-length` is the body's; a lie is refused too.
         if (String(body.length) !== req.headers.get('content-length')) {

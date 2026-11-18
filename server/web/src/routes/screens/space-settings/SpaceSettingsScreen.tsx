@@ -18,6 +18,7 @@ import { MembersTab } from './MembersTab.tsx';
 import { AccessTab } from './AccessTab.tsx';
 import { HandoffPolicySection } from './HandoffPolicySection.tsx';
 import { TeamsChannelSection } from './TeamsChannelSection.tsx';
+import { EmailAddressSection } from './EmailAddressSection.tsx';
 import { DangerTab } from './DangerTab.tsx';
 import './space-settings.css';
 
@@ -273,6 +274,11 @@ export function SpaceSettingsScreen({
             {/* D-154 (LAI-1314): the space's Teams channel — an owner's or
                 admin's, by `org.teams.configure`, not the space's own lead. */}
             {gates.org('org.teams.configure') && <TeamsChannelSection slug={project.slug} />}
+            {/* D-155 (LAI-1315): the space's own address — for anyone who may
+                create a task here, since mailing it is creating one. */}
+            {gates.project(project.id, 'task.create') && (
+              <EmailAddressSection slug={project.slug} />
+            )}
           </>
         )}
       </div>

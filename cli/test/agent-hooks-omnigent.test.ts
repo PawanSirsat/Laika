@@ -289,16 +289,21 @@ void describe('omnigentMarker', () => {
 /* -------------------------------------------------------------------------- */
 
 void describe('hookCredential — hooks and MCP speak as one agent (D-118, review B1)', () => {
-  const io = (home: string): AgentIo => ({
+  const URL_ = 'http://board.test';
+  const own = 'lai_FROMtheENVIRONMENT';
+  // The environment's own pair, token and URL together: what a harness that
+  // supplies an agent's credential sets (LAI-1344 — a token alone is not one).
+  const io = (
+    home: string,
+    env: Readonly<Record<string, string>> = { LAIKA_AGENT_TOKEN: own, LAIKA_AGENT_URL: URL_ },
+  ): AgentIo => ({
     out: () => undefined,
     err: () => undefined,
     home,
-    env: { LAIKA_AGENT_TOKEN: 'lai_FROMtheENVIRONMENT' },
+    env,
     stdin: () => '',
     isTTY: false,
   });
-  const URL_ = 'http://board.test';
-  const own = 'lai_FROMtheENVIRONMENT';
 
   void test('B1: Claude Code whose MCP is the switching helper — an Omnigent run is the Omnigent agent', () => {
     const home = join(root(), 'home');
@@ -308,7 +313,7 @@ void describe('hookCredential — hooks and MCP speak as one agent (D-118, revie
       hookCredential(io(home), 'claude-code', () => 'omnigent', home)?.token,
       OMNI_TOKEN,
     );
-    // A plain run keeps the harness's own rule, environment token included.
+    // A plain run keeps the harness's own rule, the environment's pair included.
     assert.equal(hookCredential(io(home), 'claude-code', () => 'plain', home)?.token, own);
     assert.equal(
       hookCredential(io(home), 'claude-code', () => 'unknown', home),
@@ -400,6 +405,37 @@ void describe('hookCredential — hooks and MCP speak as one agent (D-118, revie
     };
     assert.equal(hookCredential(io(home), 'claude-code', verdict, home)?.token, own);
     assert.equal(asked, 0);
+  });
+
+  void test("LAI-1344: a token in the environment without its URL is never sent to the tool file's board", () => {
+    const home = join(root(), 'home');
+    // The tool file is for board C; the environment's token, for some board B, has no URL.
+    credentials(home, 'http://board-c.test', ['claude-code']);
+    const alone = io(home, { LAIKA_AGENT_TOKEN: own });
+    assert.deepEqual(
+      hookCredential(alone, 'claude-code', () => 'plain', home),
+      {
+        url: 'http://board-c.test',
+        token: CLAUDE_TOKEN,
+      },
+    );
+    // With no file, a token alone is no credential at all.
+    const bare = join(root(), 'bare');
+    mkdirSync(bare, { recursive: true });
+    assert.equal(
+      hookCredential(io(bare, { LAIKA_AGENT_TOKEN: own }), 'claude-code', () => 'plain', bare),
+      undefined,
+    );
+    // With its URL, it is the environment's pair, whatever the file says.
+    assert.deepEqual(
+      hookCredential(
+        io(home, { LAIKA_AGENT_TOKEN: own, LAIKA_AGENT_URL: URL_ }),
+        'claude-code',
+        () => 'plain',
+        home,
+      ),
+      { url: URL_, token: own },
+    );
   });
 });
 

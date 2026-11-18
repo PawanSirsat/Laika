@@ -533,6 +533,8 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.email.prune', {}],
     ['system.email.notify', {}],
     ['system.teams.post', {}],
+    ['system.email.receive', {}],
+    ['system.email.attachments', {}],
     ['system.directory.sync', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],

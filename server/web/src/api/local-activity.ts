@@ -40,7 +40,8 @@ export interface OwnLocalDay {
   readonly cache_read: number;
 }
 
-export interface OwnLocalActivity {
+/** What the board holds for a person — their own preview and an owner's read alike. */
+export interface LocalActivity {
   readonly start: string;
   readonly end: string;
   readonly tz: string;
@@ -48,6 +49,16 @@ export interface OwnLocalActivity {
   readonly days: readonly OwnLocalDay[];
   readonly collectors: number;
   readonly oldest_day: string | null;
+}
+
+/** `GET /me/local-activity`: the reader's own, and only theirs says when it last arrived. */
+export interface OwnLocalActivity extends LocalActivity {
+  /**
+   * When a machine of theirs last reported, at all — epoch ms, or `null` when
+   * none ever has (LAI-1327). The Activity checklist's *first data arrived*.
+   * `GET /people/:id/local-activity` never carries it.
+   */
+  readonly last_received_at: number | null;
 }
 
 export function getActivitySharing(signal?: AbortSignal): Promise<ActivitySharing> {

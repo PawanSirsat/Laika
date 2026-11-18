@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { OwnLocalActivity } from '../../../api/local-activity.ts';
+import type { LocalActivity } from '../../../api/local-activity.ts';
 import { getPersonLocalActivity } from '../../../api/people-analytics.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
@@ -8,7 +8,7 @@ import { dayLabel, HeldDays } from '../connect/HeldDays.tsx';
 type Load =
   | { readonly kind: 'loading' }
   | { readonly kind: 'error'; readonly error: unknown }
-  | { readonly kind: 'ready'; readonly held: OwnLocalActivity };
+  | { readonly kind: 'ready'; readonly held: LocalActivity };
 
 /**
  * A member's shared local activity **as they see it** (D-102 rule 1,

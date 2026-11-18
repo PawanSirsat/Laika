@@ -791,7 +791,7 @@ void describe('laika project check', () => {
     }
   });
 
-  void test('LAIKA_AGENT_TOKEN alone takes its board from the tool’s own file, as the README says (review N3)', async () => {
+  void test('LAIKA_AGENT_TOKEN alone is not used: the tool’s own file is, as a pair, as the README says (review N3, LAI-1344)', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
       cwd: dir,
@@ -800,13 +800,15 @@ void describe('laika project check', () => {
     });
     assert.equal(r.code, 0, r.out);
     assert.equal(r.sent[0]?.url, `${BOARD}/api/v1/project-setups`);
-    assert.equal(r.sent[0]?.auth, `Bearer ${ENV_TOKEN}`);
+    // The file's own token to the file's board: the environment's never goes there.
+    assert.equal(r.sent[0]?.auth, `Bearer ${AGENT_TOKEN}`);
+    assert.ok(!r.sent.some((sent) => sent.auth === `Bearer ${ENV_TOKEN}`));
     const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8')
       .replace(/`/g, '')
       .replace(/\s+/g, ' ');
     assert.ok(
       readme.includes(
-        "That is all a credential can be here: the tool's own file (~/.laika/agents/<tool>.json); or LAIKA_AGENT_TOKEN, with its board from LAIKA_AGENT_URL or, when that is not set, from the tool's own file.",
+        "That is all a credential can be here: the tool's own file (~/.laika/agents/<tool>.json); or LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL, both in the environment. A token there without its URL is not used",
       ),
       'the README no longer lists every credential readCredential takes',
     );

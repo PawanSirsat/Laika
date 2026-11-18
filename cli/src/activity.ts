@@ -30,6 +30,7 @@ import {
   checkOtel,
   describeOtel,
   installOtel,
+  otelCredentialSource,
   otelPaths,
   removeOtel,
   type OtelReport,
@@ -46,9 +47,10 @@ import {
   writeState,
 } from './activity-store.ts';
 import {
+  activityCredentials,
   credentialsFor,
-  findCredentials,
   getSharing,
+  notConnectedLines,
   currentSharing,
   previewSnapshot,
   putActivity,
@@ -71,6 +73,7 @@ import {
   type UsageOutcome,
 } from './activity-usage.ts';
 import { buildDraft, primarySessions, timeDraftBody, type Block } from './activity-time.ts';
+import { normaliseUrl } from './api.ts';
 import { ask as askConsole, askSecret as askSecretConsole, closePrompt } from './prompt.ts';
 import { folderCommand, TIME_FOLDER_USAGE } from './time-folders.ts';
 import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
@@ -284,17 +287,21 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
     forced.push(agent);
   }
 
-  const creds = findCredentials(io.home, io.env);
+  // The person's own token, else this machine's own connection (LAI-1325).
+  const creds = activityCredentials(io.home, io.env);
   if (creds === undefined) {
-    io.err('This machine is not connected to a board (no LAIKA_URL / LAIKA_TOKEN).');
-    io.err('Run `laika connect <agent>` or `laika init` first.');
+    for (const line of notConnectedLines(io.home, io.env)) io.err(line);
     return 1;
   }
 
   const answer = await getSharing(creds, io.nowMs());
   if (!answer.ok) {
     if (answer.status === 401) {
-      io.err(`${creds.url} refused the token. Run \`laika init\` to mint a new one.`);
+      io.err(
+        creds.via === 'personal'
+          ? `${creds.url} refused the token. Run \`laika init\` to mint a new one.`
+          : `${creds.url} refused this machine's ${creds.via} credential. Add the tool again from the board (\`laika tool add ${creds.via}\`).`,
+      );
     } else if (answer.status === 404) {
       io.err(`${creds.url} does not offer local activity collection yet — it needs a newer Laika.`);
     } else {
@@ -319,6 +326,9 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   const nowS = Math.floor(io.nowMs() / 1000);
   const paths = activityPaths(io.home);
   startCollecting(paths, sharing, nowS, creds.url);
+  if (creds.via !== 'personal') {
+    io.out(`No personal token here: sending as this machine's ${creds.via} connection.`);
+  }
 
   const settingsExisted = existsSync(otelPaths(io.home).settings);
   const detected = configuredAgents(io.home, io.env);
@@ -338,6 +348,13 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   io.out('');
   printHooks(reports, io);
   printOtel(telemetry, io);
+  if (otelCredentialSource(io.home, creds.url) === undefined) {
+    // Activity sends with any tool's credential; the telemetry is Claude
+    // Code's, and its helper reads only a personal token or Claude Code's own.
+    io.out(
+      "      Claude Code's token metrics need its own connection here (`laika tool add claude-code`) or a personal token in ~/.laika/env — until then they are not sent; everything else is.",
+    );
+  }
   if (others.length > 0) {
     io.out(`  · not set up for Laika here: ${others.join(', ')} — after \`laika connect\`, run`);
     io.out('    `laika activity on` again, or add one with --agent <id>');
@@ -411,10 +428,31 @@ export function otelVariables(board: string): string[] {
 
 function otel(io: ActivityIo): number {
   // The board activity was turned on for, else the one this machine is connected to.
-  const board = readState(activityPaths(io.home))?.board ?? findCredentials(io.home, io.env)?.url;
+  const board =
+    readState(activityPaths(io.home))?.board ?? activityCredentials(io.home, io.env)?.url;
   if (board === undefined) {
-    io.err('This machine is not connected to a board (no LAIKA_URL / LAIKA_TOKEN).');
-    io.err('Run `laika connect <agent>` or `laika init` first.');
+    for (const line of notConnectedLines(io.home, io.env)) io.err(line);
+    return 1;
+  }
+  // `$LAIKA_TOKEN` expands in this shell: when the shell names another board,
+  // that token is the other board's, and these lines would send it here
+  // (LAI-1343). Nothing goes to stdout, so `eval "$(laika activity otel)"`
+  // sets nothing.
+  const shellBoard = io.env.LAIKA_URL?.trim() ?? '';
+  const shellToken = io.env.LAIKA_TOKEN?.trim() ?? '';
+  // A token with no LAIKA_URL beside it names no board, so it is not known to
+  // be this one's either (LAI-1343 review).
+  const wrong =
+    shellBoard !== '' && normaliseUrl(shellBoard) !== board
+      ? `This shell's LAIKA_URL is ${normaliseUrl(shellBoard)}, but these lines are for ${board}: its $LAIKA_TOKEN would go to the wrong board. Nothing printed.`
+      : shellBoard === '' && shellToken !== ''
+        ? `This shell has LAIKA_TOKEN but no LAIKA_URL naming its board, and these lines would send it to ${board}. Nothing printed.`
+        : undefined;
+  if (wrong !== undefined) {
+    io.err(wrong);
+    io.err(
+      `Run it where LAIKA_URL is ${board}, or use \`laika activity on\`, which writes no token anywhere.`,
+    );
     return 1;
   }
   for (const line of otelVariables(board)) io.out(line);
@@ -424,6 +462,13 @@ function otel(io: ActivityIo): number {
   io.err('`laika activity on` already sets this up for every Claude Code on this machine, in');
   io.err('~/.claude/settings.json, with no token written. These lines are for one shell by');
   io.err('hand; $LAIKA_TOKEN must hold your Laika token there.');
+  if ((io.env.LAIKA_TOKEN?.trim() ?? '') === '') {
+    // A machine set up by pairing has no personal token: the reference would
+    // expand to nothing (LAI-1325).
+    io.err('$LAIKA_TOKEN is empty in this shell, so these lines would send no token. On a machine');
+    io.err('set up by `laika device pair` and `laika tool add`, use `laika activity on` instead:');
+    io.err('its helper reads this machine’s Claude Code credential, and no token is pasted.');
+  }
   io.err('The board takes them only while your organisation has Developer insights on, adds');
   io.err('only what the session files missed, and drops the sessions');
   io.err('this collector leaves out (automated, or out of your scope) once a sync names them.');
@@ -526,7 +571,13 @@ async function status(io: ActivityIo): Promise<number> {
     } — Claude Code, Codex, Gemini CLI`,
   );
   if (state.board !== undefined) {
-    io.out(`OpenTelemetry   ${describeOtel(await checkOtel(io.home, state.board), state.board)}`);
+    io.out(
+      `OpenTelemetry   ${describeOtel(
+        await checkOtel(io.home, state.board),
+        state.board,
+        otelCredentialSource(io.home, state.board),
+      )}`,
+    );
   }
   // Time drafts (LAI-787): the board's answer as last given, never asked here.
   io.out(
@@ -722,7 +773,9 @@ async function backfill(args: readonly string[], io: ActivityIo): Promise<number
   }
   const creds = credentialsFor(io.home, io.env, state.board);
   if (creds === undefined) {
-    io.err(`No token for ${state.board} in ~/.laika/env — run laika connect.`);
+    io.err(
+      `No credential for ${state.board} on this machine: no personal token in ~/.laika/env, and no tool added with \`laika tool add\`.`,
+    );
     return 1;
   }
   const tokens = await backfillTokens(io, { paths, state, creds, yes });

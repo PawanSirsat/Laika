@@ -692,7 +692,24 @@ describe('what the server holds, for the person it is about', () => {
       ],
       collectors: 2,
       oldest_day: '2026-10-02',
+      last_received_at: NOW,
     });
+  });
+
+  it('says when a machine of theirs last reported — theirs alone, the newest report, null for none (LAI-1327)', () => {
+    const later = NOW + 5 * 60_000;
+    recordLocalActivity(
+      t.db,
+      actor(bea),
+      report([day(TODAY, { prompts: { 'claude-code': 1 } })], { collector_id: COLLECTOR_B }),
+      later,
+    );
+    // Someone else's newer report moves nobody's but theirs.
+    recordLocalActivity(t.db, actor(cal), report([day(TODAY, { sessions: 1 })]), later + 60_000);
+    expect(getOwnLocalActivity(t.db, actor(bea), 14, later).last_received_at).toBe(later);
+    expect(getOwnLocalActivity(t.db, actor(cal), 14, later).last_received_at).toBe(later + 60_000);
+    const dee = makeUser('Dee', 'member');
+    expect(getOwnLocalActivity(t.db, actor(dee), 14, later).last_received_at).toBeNull();
   });
 
   it('names their token totals too (D-084 item 4), a day of tokens alone included', () => {

@@ -138,6 +138,9 @@ function main(): void {
     // The outbox's sender (D-153, LAI-1312). Nothing goes while the
     // organisation's *Email on* switch is off — the default.
     email: { transport: smtpTransport() },
+    // An inbound mail's attachments, fetched from Brevo and stored (D-155,
+    // LAI-1315). Nothing is queued while *Email to tasks* is off — the default.
+    inboundEmail: {},
     // Teams posts and notification mail link back to this Laika (D-154,
     // LAI-1314; LAI-1313). The address each Teams post goes to is decrypted
     // with `serverSecret` above.

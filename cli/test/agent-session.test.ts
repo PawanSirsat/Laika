@@ -60,6 +60,7 @@ import {
   lostNotice,
   noteSelfReport,
   type ProcInfo,
+  ignoredAgentTokenNotice,
   readCredential,
   readSelfReport,
   readState,
@@ -487,7 +488,7 @@ void describe('lost claims', () => {
 });
 
 void describe('credentials', () => {
-  void test('saved 0600; LAIKA_AGENT_TOKEN wins; the person’s LAIKA_TOKEN is never read', () => {
+  void test('saved 0600; LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL wins; the person’s LAIKA_TOKEN is never read', () => {
     const home = temp();
     assert.equal(
       readCredential(home, 'codex', { LAIKA_TOKEN: 'personal', LAIKA_URL: 'u' }),
@@ -495,10 +496,67 @@ void describe('credentials', () => {
     );
     writeCredential(home, 'codex', CRED);
     assert.deepEqual(readCredential(home, 'codex', { LAIKA_TOKEN: 'personal' }), CRED);
-    assert.deepEqual(readCredential(home, 'codex', { LAIKA_AGENT_TOKEN: 'from-env' }), {
-      url: CRED.url,
-      token: 'from-env',
+    assert.deepEqual(
+      readCredential(home, 'codex', {
+        LAIKA_AGENT_TOKEN: 'from-env',
+        LAIKA_AGENT_URL: 'http://env-board.test',
+      }),
+      { url: 'http://env-board.test', token: 'from-env' },
+    );
+  });
+
+  void test('LAIKA_AGENT_TOKEN without LAIKA_AGENT_URL is never paired with the file’s board (LAI-1344)', () => {
+    const home = temp();
+    // No file: a token alone names no board.
+    assert.equal(readCredential(home, 'codex', { LAIKA_AGENT_TOKEN: 'from-env' }), undefined);
+    // The file is for another board: its own pair, never the environment's token with its URL.
+    writeCredential(home, 'codex', CRED);
+    assert.deepEqual(readCredential(home, 'codex', { LAIKA_AGENT_TOKEN: 'from-env' }), CRED);
+    // A URL alone is no credential either: the file's pair.
+    assert.deepEqual(
+      readCredential(home, 'codex', { LAIKA_AGENT_URL: 'http://env-board.test' }),
+      CRED,
+    );
+  });
+
+  void test('an ignored LAIKA_AGENT_TOKEN is said once by `laika agent` and `project check`, never the token (LAI-1344)', () => {
+    assert.equal(ignoredAgentTokenNotice({}), undefined);
+    assert.equal(
+      ignoredAgentTokenNotice({ LAIKA_AGENT_TOKEN: 'from-env', LAIKA_AGENT_URL: 'http://b' }),
+      undefined,
+    );
+    assert.equal(
+      ignoredAgentTokenNotice({ LAIKA_AGENT_TOKEN: 'from-env' }),
+      'laika: LAIKA_AGENT_TOKEN is set without LAIKA_AGENT_URL, so it is not used — set both, or neither to use the tool’s own credential file.',
+    );
+    const entry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+    const home = temp();
+    const secret = 'lai_IGNOREDAGENTTOKENNEVERPRINTED01';
+    for (const argv of [
+      ['agent', '--help'],
+      ['project', 'check', '--help'],
+    ]) {
+      const ran = spawnSync(process.execPath, [entry, ...argv], {
+        env: { PATH: process.env.PATH ?? '', HOME: home, LAIKA_AGENT_TOKEN: secret },
+        encoding: 'utf8',
+      });
+      const lines = ran.stderr
+        .split('\n')
+        .filter((line) => line.includes('LAIKA_AGENT_TOKEN is set'));
+      assert.equal(lines.length, 1, `${argv.join(' ')}: ${ran.stderr}`);
+      assert.ok(!`${ran.stdout}${ran.stderr}`.includes(secret), 'the token was printed');
+    }
+    // With its URL, nothing is said.
+    const paired = spawnSync(process.execPath, [entry, 'agent', '--help'], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: home,
+        LAIKA_AGENT_TOKEN: secret,
+        LAIKA_AGENT_URL: 'http://b',
+      },
+      encoding: 'utf8',
     });
+    assert.doesNotMatch(paired.stderr, /LAIKA_AGENT_TOKEN is set/);
   });
 
   void test('a hook with no agent credential does nothing and prints nothing', async () => {

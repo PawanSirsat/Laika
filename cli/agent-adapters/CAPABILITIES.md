@@ -87,7 +87,8 @@ differently.
   names the process, and the watcher renews the session only while that PID
   lives with the same start time, exactly as for Claude Code.
 - **The credential** is the agent's own token in `~/.laika/agents/<harness>.json`
-  (0600) or `LAIKA_AGENT_TOKEN`. It is never written into a harness's config.
+  (0600) or `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` — both, never one with
+  the file's other half (LAI-1344). It is never written into a harness's config.
 - **Delivery.** Nothing arrives mid-turn in any harness, Claude Code included:
   the earliest is the next boundary at which something runs. With no hooks,
   that boundary is the next time the agent or person runs `laika agent inbox`,

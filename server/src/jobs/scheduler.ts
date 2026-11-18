@@ -4,6 +4,10 @@ import { runDirectorySync, type DirectoryDeps } from '../services/microsoft-dire
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { type AttachmentsDeps, pruneAttachments } from '../services/attachments.ts';
+import {
+  type InboundAttachmentDeps,
+  runInboundAttachments,
+} from '../services/email-inbound-attachments.ts';
 import { pruneCheckpoints } from '../services/checkpoints.ts';
 import { claimSettings, expireClaims } from '../services/claims.ts';
 import { expireOffers } from '../services/handoffs.ts';
@@ -27,6 +31,7 @@ import {
   pruneEmailOutbox,
   runEmailOutbox,
 } from '../services/email-outbox.ts';
+import { pruneEmailInbound } from '../services/email-inbound.ts';
 import { runTeamsTick, TEAMS_TICK_MS, type TeamsPostingDeps } from '../services/teams-posting.ts';
 import { snapshot } from './backup.ts';
 import {
@@ -95,6 +100,12 @@ export interface SchedulerDeps {
    * nothing.
    */
   attachments?: AttachmentsDeps;
+  /**
+   * Brevo's `fetch` for an inbound mail's attachments (D-155, LAI-1315).
+   * Absent, the attachments job does nothing — no test can reach Brevo by
+   * leaving it out; `index.ts` passes `{}` for the real `fetch`.
+   */
+  inboundEmail?: Omit<InboundAttachmentDeps, 'attachments'>;
   /**
    * The outbox's transport (D-153, LAI-1312): `smtpTransport()` from
    * `index.ts`, a recorder in the tests. Absent, the sender does nothing — no
@@ -187,6 +198,33 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       everyMs: HOUR,
       run: (now) => pruneAttachments(db, deps.attachments, now),
     },
+    // An inbound mail's attachments, from Brevo to the store (§11.6, D-155
+    // item 6, LAI-1315), every 30 seconds under `system.email.attachments`.
+    // Not `atStart`, and nothing at all without `inboundEmail`; a tick still
+    // running when the next comes is joined, never doubled.
+    {
+      name: 'email.inbound_attachments',
+      everyMs: 30_000,
+      run: async (now) => {
+        if (deps.inboundEmail === undefined) return { changed: 0 };
+        const tick = await runInboundAttachments(
+          db,
+          deps.serverSecret ?? '',
+          {
+            ...deps.inboundEmail,
+            attachments: deps.attachments,
+            // One file's surprise is logged and retried; the tick goes on (M1).
+            onFault: (cause) => {
+              deps.log.error('email.inbound_attachment_fault', {
+                error: cause instanceof Error ? cause.message : String(cause),
+              });
+            },
+          },
+          now,
+        );
+        return { changed: tick.stored + tick.failed + tick.skipped };
+      },
+    },
     { name: 'db.vacuum', everyMs: 7 * DAY, run: () => vacuum(db) },
     // The outbox (§4.93, D-153, LAI-1312): what is queued is sent every 30
     // seconds, under §3.4's `system.email.send`. Not `atStart`: nothing queued
@@ -213,7 +251,10 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     {
       name: 'email.retention',
       everyMs: DAY,
-      run: (now) => ({ changed: pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) }),
+      run: (now) => ({
+        changed:
+          pruneEmailOutbox(db, now) + pruneEmailDigests(db, now) + pruneEmailInbound(db, now),
+      }),
       atStart: true,
     },
     // Assignment and mention mail, and the daily digests (§4.97 – §4.100,

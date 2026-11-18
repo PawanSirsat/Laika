@@ -19,6 +19,7 @@ import { after, describe, test } from 'node:test';
 
 import { activity, HOOK_SCRIPT, type ActivityIo } from '../src/activity.ts';
 import { helperCommand, otelEnv, otelPaths } from '../src/activity-otel.ts';
+import { writeCredential } from '../src/agent-session.ts';
 import { closeAll, stubBoard, type StubBoard } from './support/stub-board.ts';
 
 const TOKEN = 'lai_OtelTestTokenK2mVqNeverWritten';
@@ -144,6 +145,47 @@ void describe('on writes exactly the reference', () => {
     );
   });
 
+  void test('with no personal token, the helper reads this machine’s Claude Code credential — for this board only (LAI-1325)', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    const helper = () =>
+      execFileSync('/bin/sh', ['-c', helperCommand(h.home)], {
+        env: { PATH: process.env.PATH ?? '' },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    const fails = (why: RegExp) => (error: unknown) => {
+      const failed = error as { status?: unknown; stderr?: unknown };
+      return failed.status === 1 && why.test(String(failed.stderr));
+    };
+
+    // A machine set up by `device pair` and `tool add`: no ~/.laika/env at all.
+    rmSync(join(h.home, '.laika', 'env'));
+    writeCredential(
+      h.home,
+      'claude-code',
+      { url: `${h.board.url}/`, token: 'lai_ToolTokenFromToolAdd' },
+      { agent_id: 'agt_1', device_id: 'dev_1', source: 'tool-add' },
+    );
+    assert.deepEqual(JSON.parse(helper()), { Authorization: 'Bearer lai_ToolTokenFromToolAdd' });
+    assert.ok(!read(otelPaths(h.home).helper).includes('lai_ToolTokenFromToolAdd'));
+
+    // ~/.laika/env naming this board with no token in it is no personal token.
+    writeFileSync(join(h.home, '.laika', 'env'), `LAIKA_URL="${h.board.url}"\n`);
+    assert.deepEqual(JSON.parse(helper()), { Authorization: 'Bearer lai_ToolTokenFromToolAdd' });
+
+    // A personal token for this board, where there is one, still comes first.
+    writeEnvFile(h.home, h.board.url, TOKEN);
+    assert.deepEqual(JSON.parse(helper()), { Authorization: `Bearer ${TOKEN}` });
+    // One for another board is passed over for the machine's own.
+    writeEnvFile(h.home, 'https://elsewhere.test', TOKEN);
+    assert.deepEqual(JSON.parse(helper()), { Authorization: 'Bearer lai_ToolTokenFromToolAdd' });
+
+    // And the machine's own for another board is never sent here.
+    writeCredential(h.home, 'claude-code', { url: 'https://elsewhere.test', token: 'lai_Other' });
+    assert.throws(helper, fails(/no credential for/));
+  });
+
   void test('a second on leaves every byte as it was', async () => {
     const h = await harness();
     seed(h);
@@ -260,7 +302,7 @@ void describe('status says whether telemetry reaches the board', () => {
     writeFileSync(join(h.home, '.laika', 'env'), `LAIKA_URL="${h.board.url}"\n`);
     assert.match(
       await statusOf(h),
-      /OpenTelemetry\s+set up, but the header helper fails: .*no LAIKA_TOKEN/,
+      /OpenTelemetry\s+set up, but the header helper fails: .*no credential for .*\.laika\/env or .*claude-code\.json/,
     );
     assert.equal(probes(h).length, 0);
   });
@@ -270,6 +312,19 @@ void describe('status says whether telemetry reaches the board', () => {
     assert.equal(await h.run('on'), 0);
     writeEnvFile(h.home, h.board.url, 'lai_NotTheBoardsFakeToken');
     assert.match(await statusOf(h), /OpenTelemetry\s+set up, but .* refuses the token \(401\)/);
+  });
+
+  void test('set up, but the board refuses this machine’s Claude Code credential (401): add the tool again (LAI-1325)', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    rmSync(join(h.home, '.laika', 'env'));
+    writeCredential(h.home, 'claude-code', { url: h.board.url, token: 'lai_RevokedToolToken' });
+    const said = await statusOf(h);
+    assert.match(
+      said,
+      /OpenTelemetry\s+set up, but .* refuses this machine's Claude Code credential \(401\) — add Claude Code again from the board \(`laika tool add claude-code`\)/,
+    );
+    assert.doesNotMatch(said, /laika init/);
   });
 
   void test('set up, but Developer insights are off (403 local_activity_off)', async () => {
