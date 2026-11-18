@@ -93,6 +93,9 @@ const SWEEP_BATCH = 500;
 /** The bytes read to decide `inline`. */
 const SNIFF_BYTES = 16;
 
+/** The bytes read of a file not declared as text, to tell whether it is text anyway. */
+const TEXT_PROBE_BYTES = 1024;
+
 /** The most files one write attaches, and the longest caption (D-162). */
 export const ATTACHMENT_REF_LIMITS = { items: 20, caption: 200 } as const;
 
@@ -272,6 +275,16 @@ export function sniffInlineType(bytes: Uint8Array): string | null {
   return null;
 }
 
+/**
+ * Text by what it holds, whatever it was called (LAI-1302 review): not one of
+ * the seven a browser is shown — a PDF's first kilobyte can be NUL-free — and
+ * no NUL in its first bytes, which every binary format this board sees has
+ * early: a zip (xlsx, docx), a gzip, a video's box sizes.
+ */
+function isTextByContent(head: Uint8Array): boolean {
+  return sniffInlineType(head.subarray(0, SNIFF_BYTES)) === null && !head.includes(0);
+}
+
 // ------------------------------------------------------------------- upload
 
 export interface CreateAttachmentInput {
@@ -444,14 +457,25 @@ export async function completeAttachment(
       found: found.size,
     });
   }
-  const scanned = isScannedFile(row.contentType, row.filename);
+  // A file that says it is text is read for the scan at once; any other is
+  // probed first, and read too when its first bytes say it is text after all
+  // — a key named `id_rsa`, or a CSV called `.png` (LAI-1302 review).
+  const scanBytes = Math.min(row.sizeBytes, SECRET_SCAN_BYTES);
+  const declaredText = isScannedFile(row.contentType, row.filename);
   const head = await store.readRange(
     row.storageKey,
     0,
-    (scanned ? Math.min(row.sizeBytes, SECRET_SCAN_BYTES) : SNIFF_BYTES) - 1,
+    (declaredText ? scanBytes : Math.min(row.sizeBytes, TEXT_PROBE_BYTES)) - 1,
   );
-  if (scanned) {
-    const hit = scanForSecrets(new TextDecoder().decode(head));
+  const text = declaredText
+    ? head
+    : isTextByContent(head)
+      ? head.length >= scanBytes
+        ? head
+        : await store.readRange(row.storageKey, 0, scanBytes - 1)
+      : null;
+  if (text !== null) {
+    const hit = scanForSecrets(new TextDecoder().decode(text));
     if (hit !== null) await refuseSecret(db, actor, store, row, clockOf(deps), hit);
   }
   const inline = sniffInlineType(head.subarray(0, SNIFF_BYTES)) === row.contentType;
@@ -528,7 +552,11 @@ async function refuseSecret(
  * store must answer with — the declared type and `inline` only for an
  * `inline` file, `application/octet-stream` and `attachment` for anything
  * else. Pending, removed, or in a project the caller cannot read, is the
- * same `404`.
+ * same `404` — and so is **a file on an unlisted finding not yet promoted**
+ * to anyone but its uploader and those who read the pile (`audit_log.export`,
+ * as `GET /unlisted` asks): a finding is nobody's project work yet, and the
+ * project its file was uploaded under is only where the upload was asked for
+ * (D-162 item 8, LAI-1302 review).
  */
 export function attachmentContentUrl(
   db: Db,
@@ -541,6 +569,10 @@ export function attachmentContentUrl(
   const missing = ApiError.notFound(`No attachment with id "${id}"`);
   if (row?.state !== 'ready' || row.deletedAt !== null) throw missing;
   if (!can(withProject(actor, row.projectId), 'project.read', { projectId: row.projectId })) {
+    throw missing;
+  }
+  const onFinding = row.unlistedWorkId !== null && row.taskId === null;
+  if (onFinding && row.uploadedBy !== actor.userId && !can(actor, 'audit_log.export')) {
     throw missing;
   }
 
@@ -722,6 +754,9 @@ export function linkAttachmentRefs(
     // Only a file no task has yet: one this task already has was linked by
     // something else first, and one another task has is never relinked.
     if (row.taskId !== null) continue;
+    // Nor one an unlisted finding holds: it reaches a task by the finding's
+    // promotion, or goes with its dismissal, and by nothing else (D-162).
+    if (row.unlistedWorkId !== null) continue;
     const fillComment = commentId !== null && row.commentId === null;
 
     db.update(attachments)
@@ -991,10 +1026,11 @@ export function attachToUnlisted(
 }
 
 /**
- * A promoted finding's files follow it to its task (D-162 item 8): each one
- * the task's own text did not already link is moved to the task — and to its
- * project, when it was uploaded in another — with `attachment.added`. Inside
- * the promotion's write, after the task exists.
+ * A promoted finding's files follow it to its task (D-162 item 8): each is
+ * moved to the task — and to its project, when it was uploaded in another —
+ * with `attachment.added`. The only way one reaches a task: text that embeds
+ * it links nothing (`linkAttachmentRefs`). Inside the promotion's write,
+ * after the task exists.
  */
 export function moveUnlistedAttachments(
   db: Db,
