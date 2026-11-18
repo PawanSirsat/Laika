@@ -50,3 +50,8 @@ Scope: area `server` and, named, `server/web/`'s Capacity screen and its API mir
 
 - **Testing on Belka:** single test files only; CI runs the gate.
 - **Where it stops:** at a green PR. CHIEF merges.
+- **Review round 1 (review-1316), 2026-11-18:** the migration is now **0090** (#390 merges
+  first; LAI-1330 takes 0091), so the Goal's *0091 for now* line is superseded. Also fixed: a
+  token is told nobody's `away`; Outlook spans only while the connection is on and the sync
+  saw them within a day; disconnect deletes them; 90-day retention. All under
+  `logs/chief-2026-11-18-LAI-1331.md`.
