@@ -815,6 +815,9 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/org/calendar/test': 'session only (org.calendar.configure)',
   'POST /api/v1/org/calendar/sync': 'session only (org.calendar.configure); time, not a task',
   'DELETE /api/v1/org/calendar': 'session only (org.calendar.configure)',
+  // D-161 (LAI-1330): the people sync's switches on the same card, session only.
+  'PUT /api/v1/org/people-sync': 'session only (org.calendar.configure)',
+  'POST /api/v1/org/people-sync/sync': 'session only (org.calendar.configure); people, not a task',
   'POST /api/v1/otlp/v1/logs': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/metrics': 'telemetry, not a task',
   'POST /api/v1/otlp/v1/traces': 'telemetry, not a task',

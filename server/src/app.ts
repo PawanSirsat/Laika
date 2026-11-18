@@ -58,6 +58,11 @@ import {
 } from './http/routes/email-inbound.ts';
 import { orgTeamsRoutes, projectTeamsRoutes } from './http/routes/teams.ts';
 import { calendarRoutes } from './http/routes/calendar.ts';
+import {
+  orgPeopleSyncRoutes,
+  peopleDirectoryRoutes,
+  userPhotoRoutes,
+} from './http/routes/people-sync.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
 import {
@@ -116,6 +121,7 @@ import { setTokenUsageLogger } from './services/token-usage.ts';
 import { type HrSyncDeps } from './services/hr-sync.ts';
 import { type TeamsPostingDeps } from './services/teams-posting.ts';
 import { type CalendarSyncDeps } from './services/calendar-sync.ts';
+import { type PeopleSyncDeps } from './services/people-sync.ts';
 import { type AttachmentsDeps } from './services/attachments.ts';
 import { type MailTransport, noTransport } from './services/email-transport.ts';
 
@@ -247,6 +253,11 @@ export interface CreateAppOptions {
    * passes nothing and the real `fetch` is used.
    */
   calendarSync?: CalendarSyncDeps;
+  /**
+   * The people sync's `fetch`, clock and waits (D-161, LAI-1330): injected by
+   * the tests so **none of them calls Microsoft**; `index.ts` passes nothing.
+   */
+  peopleSync?: PeopleSyncDeps;
 }
 
 /**
@@ -487,6 +498,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // The profile's heatmap (D-079, LAI-751), by day; a person's day and local
     // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db, sqlite: options.sqlite }));
+    // Everyone's title, department, manager and photo version, and each
+    // photo's bytes, from Microsoft's directory (D-161, LAI-1330).
+    app.route(
+      `${API_BASE}/people`,
+      peopleDirectoryRoutes({ db, attachments: options.attachments }),
+    );
+    app.route(`${API_BASE}/users`, userPhotoRoutes({ db, attachments: options.attachments }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
     // Your own profile and heatmap, every role (D-139 item 1, LAI-1150).
     app.route(`${API_BASE}/me`, meProfileRoutes({ db }));
@@ -540,6 +558,16 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
         db,
         serverSecret: options.serverSecret ?? '',
         calendarSync: options.calendarSync,
+      }),
+    );
+    // The people sync's switches on the same card (D-161, LAI-1330).
+    app.route(
+      `${API_BASE}/org`,
+      orgPeopleSyncRoutes({
+        db,
+        serverSecret: options.serverSecret ?? '',
+        attachments: options.attachments,
+        peopleSync: options.peopleSync,
       }),
     );
 

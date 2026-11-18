@@ -19,6 +19,17 @@
  *   is not answered at all** — the fetch throws, as a request the real Graph
  *   would answer in another zone and with other ids must not pass quietly.
  *
+ * And the directory the people sync reads (D-161, LAI-1330), from
+ * `directory` — each person by their user principal name:
+ *
+ * - `GET /users/{id or upn}` and `GET /users?$filter=mail eq '…'`, which
+ *   need `User.Read.All` (`403` without) and answer `404` for no one, `403`
+ *   for a person in `denied` and `400` for one in `refused`;
+ * - `GET /users/{id}/manager`, `404` when they have none;
+ * - `GET /users/{id}/photos/240x240` (`@odata.mediaEtag`) and its `$value`,
+ *   `404` when they have no photo. **A directory read carrying the
+ *   calendar's `Prefer` headers is not answered** — the fetch throws.
+ *
  * `intercept` answers a request before the fake does — a `429`, a `500`, a
  * hang until the client gives up — and `hold` keeps every calendar read
  * waiting until released, so a test can start a second sync while the first
@@ -36,8 +47,12 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 export interface FakeGraphRequest {
   method: string;
   url: URL;
-  /** `token` or `calendarView`; anything else is `other`. */
-  kind: 'token' | 'calendarView' | 'other';
+  /**
+   * `token`, `calendarView`, or a directory read: `user` (by id or user
+   * principal name), `users` (by `mail`), `manager`, `photo` (its tag) or
+   * `photoValue` (its bytes). Anything else is `other`.
+   */
+  kind: 'token' | 'calendarView' | 'user' | 'users' | 'manager' | 'photo' | 'photoValue' | 'other';
   /** The user a calendar read names, decoded. */
   user: string | null;
   authorization: string | null;
@@ -45,6 +60,20 @@ export interface FakeGraphRequest {
   /** What the client asked fetch to do with a redirect. */
   redirect: RequestInit['redirect'];
   body: string;
+}
+
+/** One person in the fake directory. Unset fields are absent from its answers. */
+export interface FakeDirectoryUser {
+  id: string;
+  /** The user principal name, which `/users/{x}` answers to. */
+  upn: string;
+  mail?: string | null;
+  jobTitle?: string | null;
+  department?: string | null;
+  accountEnabled?: boolean;
+  /** Their manager's user principal name. */
+  manager?: string;
+  photo?: { etag: string; bytes: Uint8Array; contentType?: string };
 }
 
 /** What `intercept` may answer: a response, a hang until the client aborts, or nothing — the fake answers. */
@@ -63,6 +92,8 @@ export interface FakeGraph {
   denied: Set<string>;
   /** Users Graph will not look up: `400`. */
   refused: Set<string>;
+  /** The directory, by lowercased user principal name. */
+  directory: Map<string, FakeDirectoryUser>;
   /** How long each token lives, in seconds. */
   expiresIn: number;
   /** Answer a request before the fake does; return undefined to let it. */
@@ -76,6 +107,7 @@ export interface FakeGraph {
 export interface FakeGraphOptions {
   calendars?: Record<string, Record<string, unknown>[]>;
   roles?: string[];
+  directory?: FakeDirectoryUser[];
 }
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
@@ -124,6 +156,7 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
     tokens: [],
     denied: new Set(),
     refused: new Set(),
+    directory: new Map((options.directory ?? []).map((u) => [u.upn.toLowerCase(), u])),
     expiresIn: 3599,
     intercept: null,
     hold() {
@@ -150,6 +183,22 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
       }
       const headers = new Headers(init?.headers);
       const view = /^\/v1\.0\/users\/([^/]+)\/calendarView$/.exec(url.pathname);
+      const dir =
+        /^\/v1\.0\/users(?:\/([^/]+)(?:\/(manager|photos\/240x240(?:\/\$value)?))?)?$/.exec(
+          url.pathname,
+        );
+      const dirKind: FakeGraphRequest['kind'] | null =
+        dir === null
+          ? null
+          : dir[1] === undefined
+            ? 'users'
+            : dir[2] === undefined
+              ? 'user'
+              : dir[2] === 'manager'
+                ? 'manager'
+                : dir[2].endsWith('$value')
+                  ? 'photoValue'
+                  : 'photo';
       const req: FakeGraphRequest = {
         method: init?.method ?? 'GET',
         url,
@@ -157,8 +206,13 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
           ? 'token'
           : view !== null
             ? 'calendarView'
-            : 'other',
-        user: view === null ? null : decodeURIComponent(view[1] ?? ''),
+            : (dirKind ?? 'other'),
+        user:
+          view !== null
+            ? decodeURIComponent(view[1] ?? '')
+            : dir?.[1] === undefined
+              ? null
+              : decodeURIComponent(dir[1]),
         authorization: headers.get('authorization'),
         prefer: headers.get('prefer'),
         redirect: init?.redirect,
@@ -253,10 +307,93 @@ export function fakeGraph(options: FakeGraphOptions = {}): FakeGraph {
         });
       }
 
+      if (dirKind !== null && req.method === 'GET') return directoryAnswer(fake, req, dirKind);
+
       return json(404, { error: { code: 'NotFound' } });
     },
   };
   return fake;
+}
+
+/** A directory object as Graph answers a `$select` of it. */
+function userJson(u: FakeDirectoryUser): Record<string, unknown> {
+  return {
+    id: u.id,
+    userPrincipalName: u.upn,
+    ...(u.mail === undefined ? {} : { mail: u.mail }),
+    ...(u.jobTitle === undefined ? {} : { jobTitle: u.jobTitle }),
+    ...(u.department === undefined ? {} : { department: u.department }),
+    ...(u.accountEnabled === undefined ? {} : { accountEnabled: u.accountEnabled }),
+  };
+}
+
+function directoryAnswer(
+  fake: FakeGraph,
+  req: FakeGraphRequest,
+  kind: FakeGraphRequest['kind'],
+): Response {
+  const bearer = req.authorization?.replace(/^Bearer /, '') ?? '';
+  if (!fake.tokens.includes(bearer)) {
+    return json(401, { error: { code: 'InvalidAuthenticationToken', message: 'MS-SECRET-WORDS' } });
+  }
+  const payload = JSON.parse(
+    Buffer.from(bearer.split('.')[1] ?? '', 'base64url').toString('utf8'),
+  ) as { roles?: string[] };
+  if (!(payload.roles ?? []).includes('User.Read.All')) {
+    return json(403, {
+      error: { code: 'Authorization_RequestDenied', message: 'MS-SECRET-WORDS insufficient' },
+    });
+  }
+  if (req.prefer !== null) {
+    throw new TypeError(`the fake Graph refuses a directory read with Prefer: ${req.prefer}`);
+  }
+  const notFound = () =>
+    json(404, { error: { code: 'Request_ResourceNotFound', message: 'MS-SECRET-WORDS gone' } });
+
+  if (kind === 'users') {
+    const filter = /^mail eq '(.*)'$/.exec(req.url.searchParams.get('$filter') ?? '');
+    if (filter === null) return json(400, { error: { code: 'BadRequest' } });
+    const address = (filter[1] ?? '').replace(/''/g, "'").toLowerCase();
+    const value = [...fake.directory.values()]
+      .filter((u) => (u.mail ?? '').toLowerCase() === address)
+      .map(userJson);
+    return json(200, { value });
+  }
+
+  const key = (req.user ?? '').toLowerCase();
+  if (fake.denied.has(key)) {
+    return json(403, {
+      error: { code: 'Authorization_RequestDenied', message: 'MS-SECRET-WORDS' },
+    });
+  }
+  if (fake.refused.has(key)) {
+    return json(400, { error: { code: 'Request_BadRequest', message: 'MS-SECRET-WORDS' } });
+  }
+  const who =
+    fake.directory.get(key) ?? [...fake.directory.values()].find((u) => u.id === req.user);
+  if (who === undefined) return notFound();
+
+  if (kind === 'user') return json(200, userJson(who));
+  if (kind === 'manager') {
+    const boss = who.manager === undefined ? undefined : fake.directory.get(who.manager);
+    return boss === undefined ? notFound() : json(200, userJson(boss));
+  }
+  if (who.photo === undefined) {
+    return json(404, { error: { code: 'ImageNotFound', message: 'MS-SECRET-WORDS no photo' } });
+  }
+  if (kind === 'photo') {
+    return json(200, {
+      '@odata.mediaContentType': who.photo.contentType ?? 'image/jpeg',
+      '@odata.mediaEtag': who.photo.etag,
+      id: '240X240',
+      width: 240,
+      height: 240,
+    });
+  }
+  return new Response(who.photo.bytes, {
+    status: 200,
+    headers: { 'content-type': who.photo.contentType ?? 'image/jpeg' },
+  });
 }
 
 let counter = 0;

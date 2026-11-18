@@ -101,6 +101,8 @@ import {
   TEAMS_POST_REASONS,
   AVAILABILITY_STATUSES,
   CALENDAR_SYNC_ERROR_CODES,
+  PEOPLE_SYNC_ERROR_CODES,
+  USER_PHOTO_TYPES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -2491,6 +2493,127 @@ export const emailInboundAttachments = sqliteTable(
     ),
     check('email_inbound_attachments_size_check', sql.raw('size_bytes >= 0')),
     check('email_inbound_attachments_attempts_check', sql.raw('attempts >= 0')),
+  ],
+);
+
+// ------------------------------------------------------ §4.108 user_directory
+
+/**
+ * What Microsoft's directory says of one person (§4.108, D-161, LAI-1330),
+ * read by the people sync through the Microsoft 365 connection: their Entra
+ * object id, job title, department, manager and whether their account is
+ * enabled, and their profile photo, **kept in the operator's store** so
+ * Microsoft is never asked on a view. **No row is not synced.**
+ *
+ * `seen_at` is when the directory last answered for them; `missing_since`
+ * when it first did not, for someone it had answered for before — the
+ * leaver rule's first miss, cleared when they are found again. The photo's
+ * four columns are all set or all null, and `photo_etag` is Microsoft's, so
+ * an unchanged photo is never fetched twice.
+ *
+ * Its own table rather than columns on `users`, whose cut-back fixtures name
+ * every column (LAI-1330).
+ */
+export const userDirectory = sqliteTable(
+  'user_directory',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Their Entra object id; null until the directory has answered for them. */
+    entraOid: text('entra_oid'),
+    jobTitle: text('job_title'),
+    department: text('department'),
+    /** Their manager, when the directory names one who is a Laika user. */
+    managerUserId: text('manager_user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** 1 enabled, 0 disabled, null not known. */
+    accountEnabled: integer('account_enabled'),
+    seenAt: integer('seen_at'),
+    missingSince: integer('missing_since'),
+    /** `u/<user_id>/photo/<id>` in the operator's store. */
+    photoKey: text('photo_key'),
+    photoType: text('photo_type', { enum: USER_PHOTO_TYPES }),
+    /** Microsoft's `@odata.mediaEtag` for the photo stored. */
+    photoEtag: text('photo_etag'),
+    photoUpdatedAt: integer('photo_updated_at'),
+    updatedAt,
+  },
+  (t) => [
+    index('user_directory_manager_idx').on(t.managerUserId),
+    check('user_directory_photo_type_check', oneOfOrNull('photo_type', USER_PHOTO_TYPES)),
+    check(
+      'user_directory_account_enabled_check',
+      sql.raw('account_enabled IS NULL OR account_enabled IN (0, 1)'),
+    ),
+    // A photo has its key, type, tag and time, or none of them.
+    check(
+      'user_directory_photo_check',
+      sql.raw(
+        '(photo_key IS NULL) = (photo_type IS NULL) AND (photo_key IS NULL) = (photo_etag IS NULL) AND (photo_key IS NULL) = (photo_updated_at IS NULL)',
+      ),
+    ),
+    check(
+      'user_directory_oid_check',
+      sql.raw('entra_oid IS NULL OR length(entra_oid) BETWEEN 1 AND 64'),
+    ),
+    check(
+      'user_directory_job_title_check',
+      sql.raw('job_title IS NULL OR length(job_title) BETWEEN 1 AND 200'),
+    ),
+    check(
+      'user_directory_department_check',
+      sql.raw('department IS NULL OR length(department) BETWEEN 1 AND 200'),
+    ),
+    check('user_directory_etag_check', sql.raw('photo_etag IS NULL OR length(photo_etag) <= 200')),
+  ],
+);
+
+// ----------------------------------------------------- §4.109 org_people_sync
+
+/**
+ * The people sync's switches and its last run (§4.109, D-161, LAI-1330). It
+ * reads Microsoft through the calendar's connection (§4.101), so it keeps no
+ * credentials of its own. **No row is both switches off.**
+ *
+ * `profile_enabled` is *Photos and profile*: job title, department, manager
+ * and photo. `leavers_enabled` lets the sync deactivate a person Microsoft
+ * says has left, and may be on only with the first. `leavers_json` is the
+ * last run's leaver review — who it found, and whether it deactivated them,
+ * held them at the breaker, or, with the switch off, only listed them.
+ */
+export const orgPeopleSync = sqliteTable(
+  'org_people_sync',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    profileEnabled: integer('profile_enabled').notNull().default(0),
+    leaversEnabled: integer('leavers_enabled').notNull().default(0),
+    configuredBy: text('configured_by').references(() => users.id, { onDelete: 'set null' }),
+    lastAttemptAt: integer('last_attempt_at'),
+    lastSuccessAt: integer('last_success_at'),
+    lastErrorCode: text('last_error_code', { enum: PEOPLE_SYNC_ERROR_CODES }),
+    /** Laika's own words for the failure — never Microsoft's response text. */
+    lastError: text('last_error'),
+    /** The last complete run's counts, as `PeopleSyncResultView`. */
+    lastResultJson: text('last_result_json'),
+    /** The last complete run's leaver review, as `LeaverReviewView`. */
+    leaversJson: text('leavers_json'),
+    updatedAt,
+  },
+  (t) => [
+    index('org_people_sync_configured_by_idx').on(t.configuredBy),
+    check('org_people_sync_profile_check', sql.raw('profile_enabled IN (0, 1)')),
+    check('org_people_sync_leavers_check', sql.raw('leavers_enabled IN (0, 1)')),
+    // Leavers are found by the profile read: never on without it.
+    check(
+      'org_people_sync_leavers_needs_profile_check',
+      sql.raw('leavers_enabled <= profile_enabled'),
+    ),
+    check(
+      'org_people_sync_last_error_code_check',
+      oneOfOrNull('last_error_code', PEOPLE_SYNC_ERROR_CODES),
+    ),
   ],
 );
 
@@ -5184,6 +5307,8 @@ export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;
 export type OrgHrSource = typeof orgHrSource.$inferSelect;
 export type OrgCalendarSource = typeof orgCalendarSource.$inferSelect;
+export type UserDirectory = typeof userDirectory.$inferSelect;
+export type OrgPeopleSync = typeof orgPeopleSync.$inferSelect;
 export type HrPerson = typeof hrPeople.$inferSelect;
 export type OrgHoliday = typeof orgHolidays.$inferSelect;
 export type LeaveDay = typeof leaveDays.$inferSelect;

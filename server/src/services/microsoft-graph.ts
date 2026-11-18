@@ -68,6 +68,28 @@ const GRAPH_ROOT = `${GRAPH_ORIGIN}/v1.0`;
 /** The application permission the sync needs, as Entra names it in a token's `roles`. */
 export const CALENDARS_READ = 'Calendars.Read';
 
+/**
+ * The application permission the people sync needs (D-161, LAI-1330): a
+ * person's profile, manager, account state and photo.
+ */
+export const USER_READ_ALL = 'User.Read.All';
+
+/** What a person read asks for — their id, the two names they go by, and the three fields kept. */
+const USER_FIELDS = [
+  'id',
+  'mail',
+  'userPrincipalName',
+  'jobTitle',
+  'department',
+  'accountEnabled',
+].join(',');
+
+/** A manager is matched to a Laika user by address, and nothing else of theirs is read. */
+const MANAGER_FIELDS = ['id', 'mail', 'userPrincipalName'].join(',');
+
+/** The photo size the people sync keeps (D-161): big enough for every avatar Laika draws. */
+const PHOTO_SIZE = '240x240';
+
 /** What a calendar read asks for, so the answer carries only what Laika reads. */
 const EVENT_FIELDS = [
   'id',
@@ -181,6 +203,41 @@ export type MailboxSkip = 'no_mailbox' | 'denied' | 'refused';
 export type CalendarRead = { events: GraphEvent[] } | { skipped: MailboxSkip };
 
 /**
+ * Why one person was not read from the directory: Graph does not have them
+ * (`404`, by address and by `mail`), will not show them (`403`), or will not
+ * look them up (`400`, or an address two people answer to).
+ */
+export type DirectorySkip = 'not_found' | 'denied' | 'refused';
+
+/** One person as the directory describes them. Addresses lowercased. */
+export interface GraphUser {
+  id: string;
+  mail: string | null;
+  userPrincipalName: string | null;
+  jobTitle: string | null;
+  department: string | null;
+  /** Null when the answer did not say. */
+  accountEnabled: boolean | null;
+}
+
+/** One person's directory entry, or why it was not read. */
+export type UserRead = { user: GraphUser } | { skipped: DirectorySkip };
+
+/**
+ * A person's photo: its bytes, at most the cap, or `too_large` past it.
+ * `none` is a `404` — they have no photo — and `skipped` a `403` or `400`,
+ * which says nothing about whether they do, so nothing stored is removed.
+ */
+export type PhotoRead =
+  | { kind: 'bytes'; bytes: Uint8Array }
+  | { kind: 'too_large' }
+  | { kind: 'none' }
+  | { kind: 'skipped' };
+
+/** A photo's tag (`@odata.mediaEtag`, `''` when the answer has none), or `none` / `skipped` as {@link PhotoRead}'s. */
+export type PhotoTagRead = { kind: 'tag'; tag: string } | { kind: 'none' } | { kind: 'skipped' };
+
+/**
  * One event, as the sync reads it. **Nothing here is stored but the ids, the
  * subject and the times** — `location` is read only to match a channel rule,
  * and no link, body or attendee is ever asked for.
@@ -223,6 +280,18 @@ export interface GraphClient {
    * not look them up (`400`), on any page.
    */
   calendarView(user: string, from: number, to: number): Promise<CalendarRead>;
+  /**
+   * One person by address (D-161): `/users/{address}`, which answers to a
+   * user principal name, and when that is a `404` the one person whose
+   * `mail` it is — or **that person skipped**, by reason.
+   */
+  user(address: string): Promise<UserRead>;
+  /** Their manager, or null when they have none or Graph will not say. */
+  manager(userId: string): Promise<GraphUser | null>;
+  /** Their photo's tag (`@odata.mediaEtag`), which changes when the photo does. */
+  photoTag(userId: string): Promise<PhotoTagRead>;
+  /** Their photo's bytes, read no further than `maxBytes` (`readBinary`). */
+  photo(userId: string, maxBytes: number): Promise<PhotoRead>;
 }
 
 export interface GraphClientOptions {
@@ -246,7 +315,38 @@ interface Answer {
   status: number;
   /** The parsed JSON body, or undefined when there was none or it was not JSON. */
   body: unknown;
+  /**
+   * A binary read's bytes (`readBinary`), only on a `2xx`: what arrived, or
+   * `too_large` once it ran past the cap — the rest never read.
+   */
+  bytes?: Uint8Array | 'too_large';
   retryAfter: string | null;
+}
+
+/** A body read no further than `maxBytes`, by what arrives — never a declared length. */
+async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array | 'too_large'> {
+  const reader: ReadableStreamDefaultReader<Uint8Array> | undefined = res.body?.getReader();
+  if (reader === undefined) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) return 'too_large';
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return bytes;
 }
 
 /** `Retry-After` in milliseconds: its seconds, or a second when it names none. */
@@ -298,8 +398,11 @@ export function graphClient(options: GraphClientOptions): GraphClient {
   // Asked once here: a tenant that is not one is never put in a URL.
   const allowed = isTenantId(options.tenantId) && isClientId(options.clientId);
 
-  /** One request, body read inside the same timeout. */
-  async function once(url: string, init: RequestInit): Promise<Answer> {
+  /**
+   * One request, body read inside the same timeout. With `maxBinary`, a
+   * `2xx` body is bytes read no further than it, and any other is JSON.
+   */
+  async function once(url: string, init: RequestInit, maxBinary?: number): Promise<Answer> {
     if (!allowed) throw new GraphUnavailableError('not a tenant and client id', false);
     const controller = new AbortController();
     const timer = setTimeout(() => {
@@ -307,6 +410,10 @@ export function graphClient(options: GraphClientOptions): GraphClient {
     }, timeoutMs);
     try {
       const res = await fetchImpl(url, { ...init, signal: controller.signal, redirect: 'error' });
+      if (maxBinary !== undefined && res.status >= 200 && res.status < 300) {
+        const bytes = await readCapped(res, maxBinary);
+        return { status: res.status, body: undefined, bytes, retryAfter: null };
+      }
       const text = await res.text();
       let body: unknown;
       try {
@@ -326,8 +433,8 @@ export function graphClient(options: GraphClientOptions): GraphClient {
   }
 
   /** {@link once}, and once more after a `429` or `503` that asks for a short wait. */
-  async function send(url: string, init: RequestInit): Promise<Answer> {
-    const first = await once(url, init);
+  async function send(url: string, init: RequestInit, maxBinary?: number): Promise<Answer> {
+    const first = await once(url, init, maxBinary);
     if (first.status !== 429 && first.status !== 503) return first;
     const wait = retryAfterMs(first.retryAfter);
     if (wait > GRAPH_RETRY_AFTER_MAX_MS) {
@@ -337,7 +444,7 @@ export function graphClient(options: GraphClientOptions): GraphClient {
       );
     }
     await sleep(wait);
-    return once(url, init);
+    return once(url, init, maxBinary);
   }
 
   async function newToken(): Promise<GraphToken> {
@@ -406,19 +513,26 @@ export function graphClient(options: GraphClientOptions): GraphClient {
   /**
    * A token-carrying read of a Graph URL: `2xx` is the body, a `404`, `403`
    * or `400` is that mailbox skipped, a `401` the token refused, anything else
-   * a named failure.
+   * a named failure. `outlook` asks for the calendar's UTC times and
+   * immutable ids; `maxBinary` reads a `2xx` body as bytes ({@link readBinary}).
    */
-  async function read(url: string, access: GraphToken): Promise<{ body: unknown } | MailboxSkip> {
+  async function readAnswer(
+    url: string,
+    access: GraphToken,
+    options: { outlook: boolean; maxBinary?: number },
+  ): Promise<Answer | MailboxSkip> {
     const headers = new Headers({
-      Accept: 'application/json',
+      Accept: options.maxBinary === undefined ? 'application/json' : 'image/*',
       Authorization: `Bearer ${access.accessToken}`,
     });
-    // Every start and end in UTC, whatever the mailbox's own zone; and ids that
-    // survive a move between folders (LAI-1316 review F5).
-    headers.append('Prefer', 'outlook.timezone="UTC"');
-    headers.append('Prefer', 'IdType="ImmutableId"');
-    const answer = await send(url, { method: 'GET', headers });
-    if (answer.status >= 200 && answer.status < 300) return { body: answer.body };
+    if (options.outlook) {
+      // Every start and end in UTC, whatever the mailbox's own zone; and ids
+      // that survive a move between folders (LAI-1316 review F5).
+      headers.append('Prefer', 'outlook.timezone="UTC"');
+      headers.append('Prefer', 'IdType="ImmutableId"');
+    }
+    const answer = await send(url, { method: 'GET', headers }, options.maxBinary);
+    if (answer.status >= 200 && answer.status < 300) return answer;
     const skip = SKIPS[answer.status];
     if (skip !== undefined) return skip;
     if (answer.status === 401) {
@@ -431,6 +545,41 @@ export function graphClient(options: GraphClientOptions): GraphClient {
     }
     throw new GraphAnswerError(`answered ${String(answer.status)}`);
   }
+
+  /** {@link readAnswer} of the calendar's JSON. */
+  async function read(url: string, access: GraphToken): Promise<{ body: unknown } | MailboxSkip> {
+    const answer = await readAnswer(url, access, { outlook: true });
+    return typeof answer === 'string' ? answer : { body: answer.body };
+  }
+
+  /** {@link readAnswer} of a directory resource's JSON. */
+  async function readDirectory(
+    url: string,
+    access: GraphToken,
+  ): Promise<{ body: unknown } | MailboxSkip> {
+    const answer = await readAnswer(url, access, { outlook: false });
+    return typeof answer === 'string' ? answer : { body: answer.body };
+  }
+
+  /**
+   * A resource's bytes rather than its JSON — a photo's `$value` (D-161) —
+   * read no further than `maxBytes`. The status rules are {@link read}'s.
+   */
+  async function readBinary(
+    url: string,
+    access: GraphToken,
+    maxBytes: number,
+  ): Promise<Uint8Array | 'too_large' | MailboxSkip> {
+    const answer = await readAnswer(url, access, { outlook: false, maxBinary: maxBytes });
+    if (typeof answer === 'string') return answer;
+    return answer.bytes ?? new Uint8Array();
+  }
+
+  const DIRECTORY_SKIPS: Readonly<Record<MailboxSkip, DirectorySkip>> = {
+    no_mailbox: 'not_found',
+    denied: 'denied',
+    refused: 'refused',
+  };
 
   return {
     token,
@@ -464,6 +613,85 @@ export function graphClient(options: GraphClientOptions): GraphClient {
       if (url === null) return { events };
       throw new GraphAnswerError(`calendarView: more than ${String(MAX_PAGES)} pages`);
     },
+
+    async user(address) {
+      const access = await token();
+      const select = new URLSearchParams({ $select: USER_FIELDS });
+      const direct = await readDirectory(
+        `${GRAPH_ROOT}/users/${encodeURIComponent(address)}?${select.toString()}`,
+        access,
+      );
+      if (typeof direct !== 'string') return { user: userOf(direct.body) };
+      if (direct !== 'no_mailbox') return { skipped: DIRECTORY_SKIPS[direct] };
+      // `/users/{x}` answers to an id or a user principal name; an address
+      // that is only someone's `mail` is asked for by that, once, and must
+      // name exactly one person.
+      const query = new URLSearchParams({
+        $filter: `mail eq '${address.replace(/'/g, "''")}'`,
+        $select: USER_FIELDS,
+        $top: '2',
+      });
+      const listed = await readDirectory(`${GRAPH_ROOT}/users?${query.toString()}`, access);
+      if (typeof listed === 'string') return { skipped: DIRECTORY_SKIPS[listed] };
+      const page = (listed.body ?? {}) as { value?: unknown };
+      if (!Array.isArray(page.value)) throw new GraphAnswerError('users: no value list');
+      const found = page.value as unknown[];
+      if (found.length === 0) return { skipped: 'not_found' };
+      if (found.length > 1) return { skipped: 'refused' };
+      return { user: userOf(found[0]) };
+    },
+
+    async manager(userId) {
+      const access = await token();
+      const select = new URLSearchParams({ $select: MANAGER_FIELDS });
+      const answer = await readDirectory(
+        `${GRAPH_ROOT}/users/${encodeURIComponent(userId)}/manager?${select.toString()}`,
+        access,
+      );
+      // No manager is a `404`; one Graph will not show is no manager to Laika.
+      return typeof answer === 'string' ? null : userOf(answer.body);
+    },
+
+    async photoTag(userId) {
+      const access = await token();
+      const answer = await readDirectory(
+        `${GRAPH_ROOT}/users/${encodeURIComponent(userId)}/photos/${PHOTO_SIZE}`,
+        access,
+      );
+      if (answer === 'no_mailbox') return { kind: 'none' };
+      if (typeof answer === 'string') return { kind: 'skipped' };
+      const meta = (answer.body ?? {}) as { '@odata.mediaEtag'?: unknown };
+      return { kind: 'tag', tag: textOf(meta['@odata.mediaEtag'], 200) ?? '' };
+    },
+
+    async photo(userId, maxBytes) {
+      const access = await token();
+      const answer = await readBinary(
+        `${GRAPH_ROOT}/users/${encodeURIComponent(userId)}/photos/${PHOTO_SIZE}/$value`,
+        access,
+        maxBytes,
+      );
+      if (answer === 'too_large') return { kind: 'too_large' };
+      if (answer === 'no_mailbox') return { kind: 'none' };
+      if (typeof answer === 'string') return { kind: 'skipped' };
+      if (answer.length === 0) return { kind: 'none' };
+      return { kind: 'bytes', bytes: answer };
+    },
+  };
+}
+
+/** A directory object: its id, its two names lowercased, and the three fields the sync keeps. */
+function userOf(row: unknown): GraphUser {
+  const r = (row ?? {}) as Record<string, unknown>;
+  const id = textOf(r.id, 64);
+  if (id === null) throw new GraphAnswerError('user: no id');
+  return {
+    id,
+    mail: textOf(r.mail, 320)?.toLowerCase() ?? null,
+    userPrincipalName: textOf(r.userPrincipalName, 320)?.toLowerCase() ?? null,
+    jobTitle: textOf(r.jobTitle, 200),
+    department: textOf(r.department, 200),
+    accountEnabled: typeof r.accountEnabled === 'boolean' ? r.accountEnabled : null,
   };
 }
 
