@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, min, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, max, min, ne, sql } from 'drizzle-orm';
 import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -188,6 +188,13 @@ export interface OwnLocalActivityView {
   collectors: number;
   /** The oldest day held at all, or null when nothing is. */
   oldest_day: string | null;
+  /**
+   * When a machine of theirs last reported, at all — not only in the window —
+   * as epoch ms, or null when none ever has (LAI-1327): the newest
+   * `local_activity_days.updated_at`. Developer access's Activity checklist
+   * reads it as *first data arrived* and *last received 4 min ago*.
+   */
+  last_received_at: number | null;
 }
 
 // ------------------------------------------------------------------ sharing
@@ -681,6 +688,12 @@ export function localActivityOf(
     .filter((d): d is string => d !== null && d !== undefined)
     .sort()[0];
 
+  const received = db
+    .select({ at: max(localActivityDays.updatedAt) })
+    .from(localActivityDays)
+    .where(eq(localActivityDays.userId, userId))
+    .get();
+
   return {
     start,
     end,
@@ -688,6 +701,7 @@ export function localActivityOf(
     days: [...byDay.values()].sort((a, b) => (a.day < b.day ? 1 : -1)),
     collectors: new Set(rows.map((r) => r.collectorId)).size,
     oldest_day: oldestDay ?? null,
+    last_received_at: received?.at ?? null,
   };
 }
 

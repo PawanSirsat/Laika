@@ -48,6 +48,11 @@ export interface OwnLocalActivity {
   readonly days: readonly OwnLocalDay[];
   readonly collectors: number;
   readonly oldest_day: string | null;
+  /**
+   * When a machine of theirs last reported, at all — epoch ms, or `null` when
+   * none ever has (LAI-1327). The Activity checklist's *first data arrived*.
+   */
+  readonly last_received_at: number | null;
 }
 
 export function getActivitySharing(signal?: AbortSignal): Promise<ActivitySharing> {
