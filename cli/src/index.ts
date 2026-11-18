@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { activity, time } from './activity.ts';
+import { ignoredAgentTokenNotice } from './agent-session.ts';
 import { withBoardNotice } from './board-notice.ts';
 import { connect } from './connect.ts';
 import { device } from './device.ts';
@@ -71,6 +72,12 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === 'connect') return connect(argv.slice(1));
   if (command === 'device') return device(argv.slice(1));
   if (command === 'tool') return tool(argv.slice(1));
+  // The commands that act with an agent's credential say when the
+  // environment's token is not used for want of its URL (LAI-1344).
+  if (command === 'project' || command === 'agent') {
+    const notice = ignoredAgentTokenNotice(process.env);
+    if (notice !== undefined) process.stderr.write(`${notice}\n`);
+  }
   if (command === 'project') {
     if (argv[1] === 'check') return projectCheck(argv.slice(2));
     process.stderr.write(
