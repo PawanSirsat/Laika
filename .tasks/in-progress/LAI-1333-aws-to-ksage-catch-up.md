@@ -41,18 +41,19 @@ dry-run report through CHIEF.
 
 ## Acceptance criteria
 
-- [ ] Fresh read-only copies of both production DBs are on Belka, taken without disturbing
+- [x] Fresh read-only copies of both production DBs are on Belka, taken without disturbing
       either live board.
-- [ ] A merge script runs against the copies only and writes (a) a dry-run report per space:
+- [x] A merge script runs against the copies only and writes (a) a dry-run report per space:
       added, changed, renumbered, conflicts, mirrored time-log edits and deletes, created
       spaces/people/sprints; (b) a merged DB to a scratch file; (c) proof checks: nothing on
       Ksage lost apart from the planned changes, every AWS row since the copy present,
       `foreign_key_check` and `integrity_check` clean.
-- [ ] The report, a proposed apply method with its trade-offs, and a cutover checklist go to
+- [x] The report, a proposed apply method with its trade-offs, and a cutover checklist go to
       CHIEF for the owner. The owner approves the report.
-- [ ] The real run happens with a full backup taken first.
-- [ ] The proof shows nothing missing and nothing unexpected changed.
-- [ ] Spot checks: 3 tasks, 3 time logs and 1 renumbered task.
+- [x] The real run happens with a full backup taken first.
+- [x] The proof shows nothing missing and nothing unexpected changed.
+- [x] Spot checks: 3 tasks, 3 time logs and 1 renumbered task. (No task needed renumbering:
+      Ksage created none before the run. The renumber path was tested on a fixture instead.)
 - [ ] Cutover checklist done.
 
 ## Notes / context
@@ -66,3 +67,14 @@ dry-run report through CHIEF.
   `/data/ksage-seed.db`, reached by a Coolify scheduled task (255-char commands). Auto
   deploy is on for the `laika` branch of KvellDynamics/ksage-2.0.
 - Database copies and the merged DB live in the session scratchpad, never in the repo.
+
+## Progress (2026-11-18)
+
+- Dry run reported to CHIEF; the owner approved: apply method A (swap), extras proof + unlisted
+  + new-agent, no space settings, cursors moved, Pawan's overlap brought as is.
+- Swap done 12:56–13:09Z. The pre-swap backup is `/data/backups/pre-lai1333-20261118T125629Z.db`
+  on Ksage, kept until the owner says.
+  - Calendar sync was paused 12:56:20Z and is back on through the restore.
+  - Post-swap verify is in `logs/chief-2026-11-18-LAI-1333.md`.
+- Left: the cutover checklist (`tools/lai-1333-aws-to-ksage/dry-run-report.md`) and a delta run
+  for AWS writes after 2026-11-18T12:59:59Z. The delta run needs its own go.
