@@ -601,7 +601,7 @@ void describe('Outlook calendar: backfill (LAI-1335)', () => {
       backfill_running: { days: 30, started_at: ago(2) },
     });
     const h = await openPage(
-      '/organisation?tab=integrations',
+      '/organisation?tab=calendar',
       orgStub('owner', { '/api/v1/org/calendar': () => state }),
       {
         before: async (page) => {
