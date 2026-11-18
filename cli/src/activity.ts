@@ -73,6 +73,7 @@ import {
   type UsageOutcome,
 } from './activity-usage.ts';
 import { buildDraft, primarySessions, timeDraftBody, type Block } from './activity-time.ts';
+import { normaliseUrl } from './api.ts';
 import { ask as askConsole, askSecret as askSecretConsole, closePrompt } from './prompt.ts';
 import { folderCommand, TIME_FOLDER_USAGE } from './time-folders.ts';
 import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
@@ -431,6 +432,20 @@ function otel(io: ActivityIo): number {
     readState(activityPaths(io.home))?.board ?? activityCredentials(io.home, io.env)?.url;
   if (board === undefined) {
     for (const line of NOT_CONNECTED) io.err(line);
+    return 1;
+  }
+  // `$LAIKA_TOKEN` expands in this shell: when the shell names another board,
+  // that token is the other board's, and these lines would send it here
+  // (LAI-1343). Nothing goes to stdout, so `eval "$(laika activity otel)"`
+  // sets nothing.
+  const shellBoard = io.env.LAIKA_URL?.trim();
+  if (shellBoard !== undefined && shellBoard !== '' && normaliseUrl(shellBoard) !== board) {
+    io.err(
+      `This shell's LAIKA_URL is ${normaliseUrl(shellBoard)}, but these lines are for ${board}: its $LAIKA_TOKEN would go to the wrong board. Nothing printed.`,
+    );
+    io.err(
+      `Run it where LAIKA_URL is ${board}, or use \`laika activity on\`, which writes no token anywhere.`,
+    );
     return 1;
   }
   for (const line of otelVariables(board)) io.out(line);
