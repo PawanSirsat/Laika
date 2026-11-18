@@ -56,10 +56,27 @@ export const GRAPH_TOKEN_EARLY_MS = 5 * 60 * 1000;
 const PAGE_SIZE = 100;
 
 /**
- * Three days of one person's calendar that has not ended after this many
- * pages of a hundred is not an answer Laika can use.
+ * A week of one person's calendar that has not ended after this many pages of
+ * a hundred is not an answer Laika can use: the regular read of three days
+ * gets twenty, a backfill's twenty for each week it spans (LAI-1335) — so a
+ * backfill of 90 days reads at most 28,000 events of one person, under
+ * SQLite's 32,766 bound variables when the sync looks their links up at once.
  */
 const MAX_PAGES = 20;
+
+const WEEK_MS = 7 * 86_400_000;
+
+function pagesFor(from: number, to: number): number {
+  return MAX_PAGES * Math.max(1, Math.ceil((to - from) / WEEK_MS));
+}
+
+/**
+ * The most events one read of `from`–`to` may return before it is refused —
+ * what the sync's links lookup may bind at once (LAI-1335 review F4).
+ */
+export function calendarViewMaxEvents(from: number, to: number): number {
+  return pagesFor(from, to) * PAGE_SIZE;
+}
 
 const LOGIN_ORIGIN = 'https://login.microsoftonline.com';
 const GRAPH_ORIGIN = 'https://graph.microsoft.com';
@@ -450,7 +467,8 @@ export function graphClient(options: GraphClientOptions): GraphClient {
       let url: string | null =
         `${GRAPH_ROOT}/users/${encodeURIComponent(user)}/calendarView?${query.toString()}`;
       const events: GraphEvent[] = [];
-      for (let n = 0; n < MAX_PAGES; n += 1) {
+      const pages = pagesFor(from, to);
+      for (let n = 0; n < pages; n += 1) {
         if (url === null) return { events };
         const answer = await read(url, access);
         // On any page: the person's read is incomplete, so it is theirs
@@ -462,7 +480,7 @@ export function graphClient(options: GraphClientOptions): GraphClient {
         url = nextLinkOf(page['@odata.nextLink']);
       }
       if (url === null) return { events };
-      throw new GraphAnswerError(`calendarView: more than ${String(MAX_PAGES)} pages`);
+      throw new GraphAnswerError(`calendarView: more than ${String(pages)} pages`);
     },
   };
 }
