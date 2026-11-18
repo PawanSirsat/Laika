@@ -248,3 +248,24 @@ each checked by putting the bug back: each went red.
     from two different providers, and never the sender's provider's (Microsoft 365 stamps its
     outbound mail).
   - The three stale "null reads the topmost" comments are fixed.
+
+## Review round 3 (CHIEF, 2026-11-18) — response
+
+review-1315 confirmed every round-2 fix at a62dedde7. CHIEF raised two more before merging; both
+are done, and each was checked by putting the bug back, which turned its test red.
+
+- **Non-POST methods.**
+  - The gate answers `405` with `Allow: POST` to every other method before anything else,
+    counted in the anonymous bucket every uncredentialed request spends.
+  - The 4 MiB body limit and the limiter's exemption are now POST-only.
+  - Test: a chunked PUT with a stream that throws if pulled gets 405 and is never read, its
+    `X-RateLimit-Remaining` falls by one per request, and GET, DELETE and PATCH get 405.
+- **Pre-claim.**
+  - The sender is part of a mail's key: unique `(message_id, address_token, from_address)`.
+    `from_address` is now `''` rather than null when there is none, and the view maps `''` back
+    to null.
+  - A forged mail with a predicted id is a row of its own. The real one is received, then a
+    duplicate.
+  - Another sender's mail with a failed record's id does not touch it.
+  - Migration 0088 is regenerated.
+- **Nit.** `ensureRow` now runs after the owner check, so a refused change writes nothing.

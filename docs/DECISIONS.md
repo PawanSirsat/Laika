@@ -7837,6 +7837,10 @@ POSTed as JSON to a webhook, with each attachment as a download token.
    - **The token is checked before a byte of the body is read** (round 2): a gate in front of
      the body limit, because a body sent without a length is read by the limit itself. A
      refused request costs one hash and one indexed read.
+   - **POST only, and one record per mail per address per sender** (round 3). Every other
+     method is `405`, counted like any anonymous request, before its body is read. The sender
+     is part of a mail's key, so a forged mail carrying a predicted `Message-ID` makes a record
+     of its own and cannot pre-claim, or take over the failed record of, the real one.
    - **One mail's fault is its own.** Each mail is received in its own transaction. A fault in
      one keeps nothing it would have written, and the mails after it are still received. Its
      record says `failed`, and the answer is `503`, so Brevo delivers again: every mail that

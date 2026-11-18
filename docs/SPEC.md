@@ -4342,10 +4342,10 @@ row per mail per address, so a redelivery makes nothing twice. Kept 90 days
 | field | notes |
 | --- | --- |
 | `id` | pk |
-| `message_id` | 1–512 (CHECK) — the mail's `Message-ID` without brackets; a digest when it had none or one too long. Unique with `address_token` |
+| `message_id` | 1–512 (CHECK) — the mail's `Message-ID` without brackets; a digest when it had none or one too long. Unique with `address_token` and `from_address` |
 | `address_token` | the space address's token, or `''` when the mail went to none |
 | `project_id` | nullable, FK `projects`, cascade |
-| `from_address` | nullable, ≤ 320 (CHECK) — the From address, lower case |
+| `from_address` | ≤ 320 (CHECK), default `''` — the From address, lower case; `''` when the mail gave none readable. Part of the unique key: a forged mail with a predicted `Message-ID` is a row of its own, never the real sender's |
 | `user_id` | nullable, FK `users`, set null — the person it was matched to |
 | `outcome` | `task_created` \| `comment_added` \| `dropped` \| `failed` — a fault, tried again on Brevo's redelivery |
 | `reason` | nullable — exactly when `dropped` (CHECK): `switch_off` \| `unknown_address` \| `own_sender` \| `auto_reply` \| `spam` \| `unauthenticated` \| `unknown_sender` \| `not_allowed` \| `empty` \| `refused` \| `failed_repeatedly` (its third fault) |
@@ -7393,13 +7393,17 @@ MX records point at Brevo, is parsed and posted here as `{ items: [...] }`.
 - **Limits.** A 4 MiB body (every other route has 1 MiB), and two rate-limit
   buckets chosen **after** the token: a verified delivery spends one, a refused
   token another, so junk never spends Brevo's.
+- **POST only.** Every other method is `405` with `Allow: POST`, counted like
+  any anonymous request, before a byte of its body is read.
 - **At most 50 mails** a delivery. Brevo's list fields may be mailboxes or plain
   addresses, and its spam score `Spam.Score` or `SpamScore`; both are read.
 
 **Each mail, at each space address it went to** — the envelope's recipients,
 which carry a Bcc'd space; To and Cc only when there is no envelope — (§4.104,
-matched on the token alone) is one §4.105 row. It is idempotent on `(message_id, address_token)`: a
-redelivery answers `duplicate` and makes nothing.
+matched on the token alone) is one §4.105 row. It is idempotent on
+`(message_id, address_token, from_address)`: a redelivery answers `duplicate`
+and makes nothing, and — the sender being part of the key — a forged mail with
+a predicted id is a row of its own, never the real one's.
 
 **What a mail becomes**, written **as its sender** — the active person whose
 address is the From, under their own `can()`:
