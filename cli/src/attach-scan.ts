@@ -6,12 +6,16 @@ import { scanForSecrets, type SecretPatternName } from './secret-scan.ts';
  * Whether a file may leave this machine, decided **by what is in it**
  * (D-162 item 4, LAI-1351).
  *
- * The board scans a completed upload by its declared type and name; this
- * runs first, here, and reads more: **any file with no NUL byte is text** and
- * is scanned whatever it is called, an `.xlsx` or `.docx` is opened and its
- * cells and paragraphs are scanned, and a file named as a key — `*.pem`,
- * `*.key`, `id_rsa` and the other `id_*` — is refused by its name alone,
- * because a key in binary form has no text to recognise.
+ * The board scans a text file again when its upload completes; this runs
+ * first, here, before a byte is sent, and reads more: **any file with no NUL
+ * byte is text** and
+ * is scanned whatever it is called, and an `.xlsx` or `.docx` is opened and
+ * its cells and paragraphs are scanned. A file named as a key — `*.pem`,
+ * `*.key`, `id_rsa` and the other `id_*` — is scanned like any text, so a
+ * certificate passes and a private key does not; **in binary form it is
+ * refused by its name**, because a binary key has no text to recognise. A
+ * keystore — `*.p12`, `*.pfx`, `*.jks` — always holds a private key, and is
+ * refused by its name alone.
  *
  * The verdict names the rule and where — a line, a sheet's row — and never
  * the text that matched. There is no override: the answer is a masked copy.
@@ -27,8 +31,11 @@ export type ScanVerdict =
       readonly where: string;
     };
 
-/** Names that are a key whatever they hold. `.pub` is a public key, and passes. */
-const KEY_NAME = /(?:\.(?:pem|key|p12|pfx)|^id_[a-z0-9_-]+)$/i;
+/** Names that are a key file. `.pub` is a public key, and is not one. */
+const KEY_NAME = /(?:\.(?:pem|key)|^id_[a-z0-9_-]+)$/i;
+
+/** Names that are a keystore, which always holds a private key. */
+const KEYSTORE_NAME = /\.(?:p12|pfx|jks|keystore)$/i;
 
 export function isKeyName(filename: string): boolean {
   const name = basename(filename);
@@ -36,7 +43,9 @@ export function isKeyName(filename: string): boolean {
 }
 
 export function scanFile(filename: string, bytes: Uint8Array): ScanVerdict {
-  if (isKeyName(filename)) return { ok: false, pattern: 'private_key', where: 'its name' };
+  if (KEYSTORE_NAME.test(basename(filename))) {
+    return { ok: false, pattern: 'private_key', where: 'its name' };
+  }
 
   if (isZip(bytes)) {
     const parts = officeText(bytes);
@@ -55,7 +64,11 @@ export function scanFile(filename: string, bytes: Uint8Array): ScanVerdict {
     }
   }
 
-  if (bytes.includes(0)) return { ok: true, scanned: 'binary' };
+  if (bytes.includes(0)) {
+    return isKeyName(filename)
+      ? { ok: false, pattern: 'private_key', where: 'its name' }
+      : { ok: true, scanned: 'binary' };
+  }
   const hit = scanForSecrets(new TextDecoder().decode(bytes));
   return hit === null
     ? { ok: true, scanned: 'text' }

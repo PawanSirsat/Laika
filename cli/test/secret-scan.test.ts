@@ -161,10 +161,23 @@ void describe('what is read, and how', () => {
     );
   });
 
-  void test('a key is refused by its name, and a public key is not', () => {
-    for (const name of ['id_rsa', 'id_ed25519', 'server.pem', 'tls.key', 'deploy.p12']) {
-      assert.ok(isKeyName(name), name);
-      assert.deepEqual(scanFile(name, Buffer.from([0, 1, 2])), {
+  void test('a key file is read as text: a private key is refused, a certificate passes', () => {
+    assert.deepEqual(scanFile('id_ed25519', Buffer.from(`${KEY_BLOCK}\nb3Bl\n`)), {
+      ok: false,
+      pattern: 'private_key',
+      where: 'line 1',
+    });
+    const cert = '-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----\n';
+    assert.deepEqual(scanFile('server.pem', Buffer.from(cert)), { ok: true, scanned: 'text' });
+    assert.deepEqual(scanFile('id_rsa.pub', Buffer.from('ssh-ed25519 AAAAC3Nz ada\n')), {
+      ok: true,
+      scanned: 'text',
+    });
+  });
+
+  void test('a binary key, or any keystore, is refused by its name', () => {
+    for (const name of ['id_rsa', 'tls.key', 'server.pem', 'deploy.p12', 'cert.pfx', 'app.jks']) {
+      assert.deepEqual(scanFile(name, Buffer.from([0x30, 0x82, 0, 1])), {
         ok: false,
         pattern: 'private_key',
         where: 'its name',
