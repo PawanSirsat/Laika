@@ -480,6 +480,7 @@ export function OrganisationScreen({
                 can={{
                   invite: canInvite,
                   hr: canConfigureHr,
+                  email: canConfigureEmail,
                   teams: canConfigureTeams,
                   calendar: canConfigureCalendar,
                   activity: tabs.some((t) => t.id === 'activity'),
@@ -801,7 +802,12 @@ export function OrganisationScreen({
           {tab === 'integrations' && (
             <ConnectionsIndex
               org={org}
-              can={{ hr: canConfigureHr, teams: canConfigureTeams, calendar: canConfigureCalendar }}
+              can={{
+                hr: canConfigureHr,
+                email: canConfigureEmail,
+                teams: canConfigureTeams,
+                calendar: canConfigureCalendar,
+              }}
               onNavigate={onNavigate}
             />
           )}

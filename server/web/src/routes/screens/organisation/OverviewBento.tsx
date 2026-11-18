@@ -102,7 +102,12 @@ export interface Connection {
  */
 export function useConnections(
   org: Org | undefined,
-  can: { readonly hr: boolean; readonly teams: boolean; readonly calendar: boolean },
+  can: {
+    readonly hr: boolean;
+    readonly email: boolean;
+    readonly teams: boolean;
+    readonly calendar: boolean;
+  },
 ): readonly Connection[] {
   const [hr, setHr] = useState<Connection | undefined>(undefined);
   const [teams, setTeams] = useState<Connection | undefined>(undefined);
@@ -180,7 +185,9 @@ export function useConnections(
     });
   }
   if (hr !== undefined) list.push(hr);
-  if (org?.email !== undefined) {
+  // Email is `org.email.configure`'s, as its page is: a reader who may not
+  // set it up is shown no tile to *Set up* or *Manage*.
+  if (can.email && org?.email !== undefined) {
     const badge = emailBadge(org.email);
     list.push({
       key: 'email',
@@ -267,6 +274,7 @@ export interface OverviewBentoProps {
   readonly can: {
     readonly invite: boolean;
     readonly hr: boolean;
+    readonly email: boolean;
     readonly teams: boolean;
     readonly calendar: boolean;
     readonly activity: boolean;
@@ -420,7 +428,7 @@ export function OverviewBento({
         )}
         <div className="bento-actions">
           {can.invite && (
-            <button type="button" className="bento-button" onClick={onInvite}>
+            <button type="button" className="bento-button" data-bento-invite onClick={onInvite}>
               + Invite people
             </button>
           )}
@@ -507,7 +515,12 @@ export function ConnectionsIndex({
   onNavigate,
 }: {
   readonly org: Org | undefined;
-  readonly can: { readonly hr: boolean; readonly teams: boolean; readonly calendar: boolean };
+  readonly can: {
+    readonly hr: boolean;
+    readonly email: boolean;
+    readonly teams: boolean;
+    readonly calendar: boolean;
+  };
   readonly onNavigate: (to: string) => void;
 }) {
   const connections = useConnections(org, can);
