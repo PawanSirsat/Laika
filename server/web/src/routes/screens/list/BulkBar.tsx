@@ -35,6 +35,8 @@ export interface BulkBarProps {
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
   /** Assigning to a sprint is member+ (§3.2) — absent otherwise, not disabled. */
   readonly maySetSprint: boolean;
+  /** `task.archive` here (LAI-1353) — *Archive* is absent otherwise, not disabled. */
+  readonly mayArchive?: boolean | undefined;
   readonly run: BulkRun | undefined;
   readonly onAction: (action: BulkAction) => void;
   readonly onDismissReport: () => void;
@@ -87,6 +89,7 @@ export function BulkBar({
   sprintsLoading = false,
   sprintLabels,
   maySetSprint,
+  mayArchive = false,
   run,
   onAction,
   onDismissReport,
@@ -305,6 +308,34 @@ export function BulkBar({
           )}
 
         <span className="list-bulk-sep" aria-hidden="true" />
+
+        {/*
+          **Archive** (LAI-1353): no confirm — nothing is lost, and the
+          Archived panel puts each one back. Beside Cancel, the other way to
+          take work off the board.
+        */}
+        {mayArchive && !confirming && (
+          <button
+            type="button"
+            className="list-bulk-action"
+            data-bulk-action="archive"
+            disabled={busy}
+            onClick={() => {
+              setOpen(undefined);
+              onAction({ kind: 'archive' });
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M3.5 4.5h17v4h-17zM5 8.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.5M10 12.5h4"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Archive
+          </button>
+        )}
 
         {confirming ? (
           <span className="list-bulk-confirm" role="group" aria-label="Confirm cancelling">

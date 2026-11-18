@@ -11,7 +11,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  ARCHIVED_CHOICE,
   allTasksFilter,
+  statusChoiceChange,
+  statusChoiceOf,
   groupWorkRows,
   DEFAULT_PAGE_SIZE,
   pageRange,
@@ -64,6 +67,24 @@ void describe('the filters in the URL', () => {
       space: 'onroute',
       sprint: 's1',
     });
+  });
+
+  void test('Archived is its own key, chosen from the Status filter (LAI-1353)', () => {
+    assert.deepEqual(readWorkFilter(new URLSearchParams('archived=only')), { archived: 'only' });
+    assert.deepEqual(readWorkFilter(new URLSearchParams('archived=yes')), {});
+    assert.deepEqual(allTasksFilter({ archived: 'only' }), { archived: 'only', limit: 25 });
+    // The summary counts the same set.
+    assert.deepEqual(summaryFilter({ archived: 'only', status: 'done' }), { archived: 'only' });
+
+    assert.equal(statusChoiceOf({ archived: 'only', status: 'done' }), ARCHIVED_CHOICE);
+    assert.equal(statusChoiceOf({ status: 'done' }), 'done');
+    assert.equal(statusChoiceOf({}), '');
+    const chosen = withWorkFilter(
+      new URLSearchParams('status=todo'),
+      statusChoiceChange(ARCHIVED_CHOICE),
+    );
+    assert.equal(chosen.toString(), 'archived=only');
+    assert.equal(withWorkFilter(chosen, statusChoiceChange('done')).toString(), 'status=done');
   });
 
   void test('a status the server does not know is dropped, not sent to be refused', () => {

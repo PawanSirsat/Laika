@@ -66,7 +66,8 @@ export type IconName =
   | 'question'
   | 'minus'
   | 'arrow-left'
-  | 'bell';
+  | 'bell'
+  | 'archive';
 
 /** The stroke every icon is drawn in. One number, so the family stays one weight. */
 export const ICON_STROKE = 1.9;
@@ -235,4 +236,6 @@ export const ICON_PATHS: Readonly<Record<IconName, readonly string[]>> = {
   'arrow-left': ['M19 12H5', 'm11 6-6 6 6 6'],
   // LAI-1221: the header's notifications.
   bell: ['M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z', 'M10 21h4'],
+  // LAI-1353: a box with its lid — a task put away, and the Archived view.
+  archive: ['M3.5 4.5h17v4h-17z', 'M5 8.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.5', 'M10 12.5h4'],
 };

@@ -61,6 +61,8 @@ export interface ListViewProps {
    */
   readonly mayEdit: boolean;
   readonly maySetSprint: boolean;
+  /** `task.archive` here (LAI-1353): the bulk bar's *Archive*. */
+  readonly mayArchive?: boolean | undefined;
   readonly onOpen: (taskId: string) => void;
   readonly onAdd: () => void;
   /**
@@ -132,6 +134,7 @@ export function ListView({
   canAdd,
   mayEdit,
   maySetSprint,
+  mayArchive = false,
   onOpen,
   onAdd,
   sort,
@@ -627,6 +630,7 @@ export function ListView({
             sprints={sprints}
             sprintLabels={sprintLabels}
             maySetSprint={maySetSprint}
+            mayArchive={mayArchive}
             run={bulkRun}
             onAction={runBulk}
             onDismissReport={() => {

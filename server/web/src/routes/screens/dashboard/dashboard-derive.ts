@@ -227,6 +227,10 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   // did it, on the project's work, which is what this feed narrates.
   'attachment.added': 'attached a file to a task',
   'attachment.removed': 'removed a file from a task',
+  // A task put away and brought back (LAI-1353): a person's decision about
+  // the project's work, so the feed tells it.
+  'task.archived': 'archived a task',
+  'task.restored': 'restored a task from the archive',
 };
 
 /**

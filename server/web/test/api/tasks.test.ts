@@ -20,6 +20,7 @@ import {
   listAllTasks,
   listMembers,
   listTasks,
+  setTaskArchived,
   SLIM_OMITS,
   toSummary,
   type Task,
@@ -93,6 +94,23 @@ void describe('listTasks query string', () => {
     assert.equal(query.get('assignee'), 'none');
     assert.equal(query.get('ready'), 'true');
     assert.equal(query.get('limit'), '200');
+  });
+
+  void test('archived=only is sent, and a tombstone in a catch-up page is dropped (LAI-1353)', async () => {
+    const live = { id: 't1', key: 'LAI-1' };
+    const calls = stub({ data: [live, { id: 't2', deleted: true }], next_cursor: null });
+    const read = await listTasks('p', { updated_since: 5 });
+    assert.deepEqual(read.data, [live]);
+    await listTasks('p', { archived: 'only' });
+    assert.equal(new URL(calls[1]?.url ?? '', 'http://x').searchParams.get('archived'), 'only');
+  });
+
+  void test('setTaskArchived sends archived on its own (LAI-1353)', async () => {
+    const calls = stub({ id: 't1' });
+    await setTaskArchived('t1', true);
+    assert.equal(calls[0]?.url, '/api/v1/tasks/t1');
+    assert.equal(calls[0]?.init.method, 'PATCH');
+    assert.deepEqual(body(calls[0]), { archived: true });
   });
 
   void test('ready=false is sent, not dropped', async () => {
