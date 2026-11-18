@@ -1049,6 +1049,137 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
   return { enabled, people };
 }
 
+/** One person the header's *who's here* names (LAI-1348): online or away now. */
+export interface PresencePersonView {
+  user_id: string;
+  name: string;
+  /** {@link statusOf}, only ever these two: the read is the last hour. */
+  status: 'online' | 'away';
+  last_seen: number;
+  last_seen_via: SeenVia;
+}
+
+export interface PresencePeopleView {
+  /** `false` when the org has turned presence off (§4.2). Not the same as nobody. */
+  enabled: boolean;
+  /** Online first, then the most recently seen. */
+  people: PresencePersonView[];
+}
+
+/**
+ * `GET /presence/people` (LAI-1348): who is **online or away** now, for the
+ * header on every page — Capacity's status and nothing else of it.
+ *
+ * **The same signals and token rules as {@link capacityNow}** — a sign-in, an
+ * activity-log row (an agent's only while its token can still make a
+ * request), a heartbeat on a cookie or a usable token, and a token's `/mcp`
+ * call or REST write — so the two never disagree about who is here. **Each
+ * read only the last hour** (`AWAY_WINDOW_MS`), the most a person can be
+ * away: the activity log by `activity_org_created_at_idx`, heartbeats by
+ * their time, sessions and tokens being small. A fixed handful of statements
+ * whatever the headcount, and **nothing written** — unlike `/capacity`, whose
+ * time figures are logged looks, which is why the header does not read it.
+ *
+ * Active people only. Presence off is `enabled: false` and nobody, never a
+ * guess from the activity log.
+ */
+export function presencePeopleNow(
+  db: Db,
+  actor: ResolvedActor,
+  now: number = Date.now(),
+): PresencePeopleView {
+  assertCan(actor, 'presence.read');
+  if (!presenceEnabled(db)) return { enabled: false, people: [] };
+
+  const since = now - AWAY_WINDOW_MS;
+  const seen = new Map<string, Signal>();
+  const note = (userId: string | null, at: number | null, via: SeenVia): void => {
+    if (userId === null || at === null || at <= since) return;
+    seen.set(userId, newer(seen.get(userId), { at, via }));
+  };
+
+  for (const call of tokenSessionsSince(db, since, now)) note(call.userId, call.at, 'agent');
+
+  for (const row of db
+    .select({
+      userId: heartbeats.userId,
+      byToken: sql<number>`${heartbeats.tokenId} IS NOT NULL`,
+      at: sql<number>`max(${heartbeats.createdAt})`,
+    })
+    .from(heartbeats)
+    .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
+    .where(and(gt(heartbeats.createdAt, since), liveHeartbeat(now)))
+    // `+user_id`: grouped by the person, but never *through* their index —
+    // `(user_id, created_at)` would serve the grouping by walking every
+    // heartbeat ever kept. The hour is the time index's range (at most one
+    // post a session per 90 s), grouped after.
+    .groupBy(sql`+${heartbeats.userId}`, sql`${heartbeats.tokenId} IS NOT NULL`)
+    .all()) {
+    note(row.userId, row.at, row.byToken === 1 ? 'agent' : 'web');
+  }
+
+  const org = db.select({ id: orgs.id }).from(orgs).limit(1).get();
+  if (org !== undefined) {
+    for (const row of db
+      .select({
+        actorId: activity.actorId,
+        actorKind: activity.actorKind,
+        at: sql<number>`max(${activity.createdAt})`,
+      })
+      .from(activity)
+      .leftJoin(tokens, eq(tokens.id, activity.actorTokenId))
+      .where(
+        and(
+          eq(activity.orgId, org.id),
+          gt(activity.createdAt, since),
+          or(eq(activity.actorKind, 'user'), and(isNotNull(tokens.id), tokenStillUsable(now))),
+        ),
+      )
+      .groupBy(activity.actorId, activity.actorKind)
+      .all()) {
+      note(row.actorId, row.at, row.actorKind === 'user' ? 'board' : 'agent');
+    }
+  }
+
+  // A sign-in: `created_at`, not `updated_at` — see `capacityNow`.
+  for (const row of db
+    .select({ userId: sessions.userId, at: sql<number>`max(${sessions.createdAt})` })
+    .from(sessions)
+    // `timestamp_ms`: the column takes a Date, stored as the same milliseconds.
+    .where(gt(sessions.createdAt, new Date(since)))
+    .groupBy(sessions.userId)
+    .all()) {
+    note(row.userId, row.at, 'web');
+  }
+
+  if (seen.size === 0) return { enabled: true, people: [] };
+  const people: PresencePersonView[] = [];
+  for (const person of db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(inArray(users.id, [...seen.keys()]), eq(users.isActive, 1)))
+    .all()) {
+    const signal = seen.get(person.id);
+    if (signal === undefined) continue;
+    const status = statusOf(signal.at, now);
+    if (status !== 'online' && status !== 'away') continue;
+    people.push({
+      user_id: person.id,
+      name: person.name,
+      status,
+      last_seen: signal.at,
+      last_seen_via: signal.via,
+    });
+  }
+  people.sort(
+    (a, b) =>
+      Number(b.status === 'online') - Number(a.status === 'online') ||
+      b.last_seen - a.last_seen ||
+      a.name.localeCompare(b.name),
+  );
+  return { enabled: true, people };
+}
+
 /** One person's live agents, for the member profile (LAI-743). */
 export interface AgentPresence {
   /** `false` when the org has turned presence off (§4.2). Not the same as nobody. */
