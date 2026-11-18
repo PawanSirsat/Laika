@@ -2,11 +2,12 @@
 id: LAI-1341
 title: 'Notification mail when an agent acts for its owner: should the owner be mailed about what their own agent did, and in what words?'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1313
-status: backlog
+status: in-progress
+started: 2026-11-18T06:30:57Z
 ---
 
 ## Goal
