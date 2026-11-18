@@ -85,7 +85,11 @@ async function login(io: AgentIo, argv: readonly string[]): Promise<number> {
   let token: string;
   if (io.isTTY) {
     try {
-      token = (await askSecret('Agent token (shown once when the agent was registered)')).trim();
+      // The board it is for, named (LAI-1343): the URL came from --url, the
+      // environment or ~/.laika/env, and the token is checked and saved there.
+      token = (
+        await askSecret(`Agent token for ${url} (shown once when the agent was registered)`)
+      ).trim();
     } finally {
       closePrompt();
     }
@@ -97,6 +101,9 @@ async function login(io: AgentIo, argv: readonly string[]): Promise<number> {
     return 1;
   }
 
+  // Piped, there was no prompt to name the board: say where the token goes
+  // before it is sent (LAI-1343 review).
+  if (!io.isTTY) io.err(`laika agent login: checking the token with ${url}`);
   const checked = await checkAgentToken(url, token);
   if (!checked.ok) {
     io.err(`laika agent login: not saved — ${checked.why}`);

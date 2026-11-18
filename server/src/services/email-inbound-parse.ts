@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DOWNLOAD_TOKEN } from './brevo-inbound.ts';
 
 /**
  * Reading one inbound mail as Brevo's inbound parsing posts it (D-155,
@@ -261,7 +262,7 @@ export function readInboundMail(item: unknown): InboundMail | null {
     .map((a): InboundAttachment | null => {
       const one = record(a);
       const token = str(one?.DownloadToken)?.trim() ?? '';
-      if (one === null || token === '' || token.length > 2048) return null;
+      if (one === null || !DOWNLOAD_TOKEN.test(token)) return null;
       const name = capText(oneLine(str(one.Name) ?? ''), 255);
       const type = oneLine(str(one.ContentType) ?? '').toLowerCase();
       const size = typeof one.ContentLength === 'number' ? one.ContentLength : 0;
