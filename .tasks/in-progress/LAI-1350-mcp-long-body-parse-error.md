@@ -2,10 +2,11 @@
 id: LAI-1350
 title: 'MCP: long add_comment and finish_task bodies fail with -32700; log the cause and fix it'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-18T21:09:35Z
 ---
 
 ## Goal
