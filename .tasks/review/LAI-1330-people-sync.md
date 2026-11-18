@@ -32,7 +32,7 @@ inert there.
   going. It reads Microsoft through the calendar's connection (`org_calendar_source`, §4.101).
   The connection's card is renamed **Microsoft 365**, with separate switches: Calendar, Photos
   and profile, and Leavers.
-- **Storage (migration 0090).**
+- **Storage (migration 0091; LAI-1331 took 0090 first).**
   - `user_directory`, keyed by user: entra_oid, job_title, department, manager_user_id,
     account_enabled, seen_at, missing_since, photo_key, photo_type, photo_etag and
     photo_updated_at.
@@ -82,7 +82,7 @@ inert there.
     through `readBinary`.
   - `deactivateLeaver` and `leaverProtection` in `users.ts`. The offboarding steps now take
     §3.4's principal.
-  - Migration 0090. Routes `/org/people-sync`, `/people/directory` and `/users/:id/photo`.
+  - Migration 0091. Routes `/org/people-sync`, `/people/directory` and `/users/:id/photo`.
 - **Web.**
   - `api/people-directory.ts`, a look-store, and its hooks.
   - `api/people-sync.ts`.
@@ -114,3 +114,33 @@ BoardToolbar's dropdown and member stack, MembersPopover, SpaceToolbar, Subtasks
 DependenciesSection, ManageMemberPanel, ProfileWhoLooked, TimeReport's own Avatar, the
 dashboard's Contributors, TimeLoggingView, SpaceActions, space settings' MembersTab (×2),
 MembersScreen, AddMemberForm and InviteScreen.
+
+## Review round 1 (review-1317, 2026-11-18)
+
+Asked by CHIEF on PR #391. What changed, one item each:
+
+- **M1.** Once a row holds an Entra id the person is read by it (`/users/{entra_oid}`); the
+  address is used only for the first match. An id answered with another account, or a `404`
+  whose address now answers with another id, saves nothing, makes no leaver and is listed as
+  *Microsoft account changed: check* (`changed` on the run and on the review).
+- **M2.** `disabled_since` is kept only for a read by the id the row already held, and the
+  verdict needs it at least an hour old: a first match never deactivates anyone.
+- **F1.** The breaker counts the sync's own `user.deactivated` rows (`via:
+  'microsoft_directory'`) over a rolling 24 hours, plus this run's.
+- **F2.** Another tenant or client id saved, or a disconnect, forgets every Entra id,
+  `missing_since` and `disabled_since`, and turns *Leavers* off. **Found while testing it:** a
+  run still reading the old tenant would have written its ids back, leaving those people
+  *changed* for ever. Each write now asks whether the connection is still the one the run read
+  with, and the run stops, recording nothing, when it is not.
+- **F3.** A deactivated leaver's photo object and directory row are deleted.
+- **F4.** A `404` on the 240px photo asks for the default size (`/photo`).
+- **F5.** An empty `2xx` body is skipped: nothing removed, nothing counted refused.
+- **F6.** Each leaver is deactivated on their own; one that throws is marked `failed`, and the
+  rest still go.
+- **F7.** Viewers and read-only tokens get photos only from `/people/directory`.
+- **F8.** The browser harness answers the directory and the people sync only when a test asks.
+- **F9.** A directory read that fails on the network, a `5xx` or a `429` is tried again,
+  waiting 2 s and doubling to a minute, six times at most.
+- **Renumbered** to `0091_people_directory` after #390 took 0090, regenerated for a newer
+  journal time; SPEC §4.108 and §4.109 kept.
+
