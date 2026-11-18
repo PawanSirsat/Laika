@@ -90,6 +90,27 @@ export function lastSignIn(at: number | null | undefined, now: number): LastActi
   return ago(at, now);
 }
 
+/**
+ * Last sign-in as a line under Last active (LAI-1345), for when a narrow
+ * table drops its column: *Signed in 3h ago*, *Signed in yesterday*,
+ * *Never signed in*.
+ */
+export function signInLine(signedIn: LastActive): string {
+  if (signedIn.text === 'Never') return 'Never signed in';
+  return `Signed in ${signedIn.text === 'Yesterday' ? 'yesterday' : signedIn.text}`;
+}
+
+/**
+ * Tools running as a line under Last active (LAI-1345): the column's count
+ * and its dot in words — *No tools*, *1 tool*, *2 tools · running* — and
+ * *Tools not known* where the column shows a dash.
+ */
+export function toolsLine(tools: number | undefined, running: boolean): string {
+  if (tools === undefined) return 'Tools not known';
+  if (tools === 0) return 'No tools';
+  return `${String(tools)} ${tools === 1 ? 'tool' : 'tools'}${running ? ' · running' : ''}`;
+}
+
 /** A space to narrow to: its slug, and the slugs each person is in (`GET /capacity`). */
 export interface SpaceFilter {
   readonly slug: string;

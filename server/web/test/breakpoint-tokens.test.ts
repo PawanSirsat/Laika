@@ -119,11 +119,36 @@ const BREAKPOINT_EXEMPT: Readonly<Record<string, Readonly<Record<string, string>
   },
 };
 
-/** Every `(min|max)-width: N` in a query, as `min-width: Npx`. */
+/**
+ * Every width in a query, as `min-width: Npx` or `max-width: Npx`. Range
+ * syntax reads as the form it means (LAI-1345): `width <= N` is
+ * `max-width: N`, `width < N` is `max-width: N-1`, `width >= N` is
+ * `min-width: N`, and `width > N` is `min-width: N+1` — so a range query is
+ * held to the same scale, not skipped by a pattern that cannot see it.
+ */
 function widths(query: string): string[] {
-  return [...query.matchAll(/\((min|max)-width\s*:\s*([\d.]+)(px|rem|em)\s*\)/g)].map(
+  const classic = [...query.matchAll(/\((min|max)-width\s*:\s*([\d.]+)(px|rem|em)\s*\)/g)].map(
     (m) => `${m[1] ?? ''}-width: ${m[2] ?? ''}${m[3] ?? ''}`,
   );
+  const range = [...query.matchAll(/\(\s*width\s*(<=|<|>=|>)\s*([\d.]+)(px|rem|em)\s*\)/g)].map(
+    (m) => {
+      const n = Number(m[2]);
+      const unit = m[3] ?? '';
+      // Off by one only in px: a rem or em width is refused for its unit anyway.
+      const step = unit === 'px' ? 1 : 0;
+      switch (m[1]) {
+        case '<=':
+          return `max-width: ${String(n)}${unit}`;
+        case '<':
+          return `max-width: ${String(n - step)}${unit}`;
+        case '>=':
+          return `min-width: ${String(n)}${unit}`;
+        default:
+          return `min-width: ${String(n + step)}${unit}`;
+      }
+    },
+  );
+  return [...classic, ...range];
 }
 
 const NAMED = new Set<number>(Object.values(BREAKPOINTS));
@@ -165,6 +190,13 @@ void describe('breakpoints: one scale', () => {
       '@media (max-width: 1000px) {}',
       '@media (min-width: 899px) {}',
       '@media screen and (min-width: 768px) and (max-width: 1023px) {}',
+      // Range syntax (LAI-1345), held to the same scale.
+      '@media (width <= 900px) {}',
+      '@media (width > 900px) {}',
+      '@media (width < 900px) {}',
+      '@media (width >= 900px) {}',
+      '@media (width <= 1000px) {}',
+      '@media (width > 40rem) {}',
     ].flatMap((css) => mediaQueries(css).flatMap((q) => widths(q.query).map(offence)));
     assert.deepEqual(probe, [
       null,
@@ -175,6 +207,12 @@ void describe('breakpoints: one scale', () => {
       'not a named breakpoint',
       null,
       null,
+      null,
+      null,
+      null,
+      null,
+      'not a named breakpoint',
+      'not in px',
     ]);
   });
 

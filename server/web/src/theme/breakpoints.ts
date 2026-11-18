@@ -17,6 +17,13 @@
  * | `(min-width: Npx)` | at or above N |
  * | `(min-width: N+1px)` | above N, the exact complement of `max-width: N` |
  *
+ * Range syntax says the same with the width named once: `(width <= Npx)`
+ * is the first form, `(width < Npx)` the second, `(width >= Npx)` the
+ * third and `(width > Npx)` the fourth, and the guard reads it as those.
+ * `(width <= Npx)` with `(width > Npx)` is the pair that leaves no gap at a
+ * fractional width (LAI-1345: 900.5px under zoom matched neither of
+ * `max-width: 900px` and `min-width: 901px`).
+ *
  * Widths are written in `px`. A `rem` inside `@media` is relative to the
  * browser's default font size, not the root's, so `40rem` and `640px` agree
  * only at the default; LAI-1220 moved every `rem` query onto `px`.

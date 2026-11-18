@@ -34,7 +34,9 @@ import {
   roleCounts,
   seatLine,
   readPeopleView,
+  signInLine,
   sortPeople,
+  toolsLine,
   withPeopleView,
   type PeopleFilter,
   type PeopleView,
@@ -709,10 +711,15 @@ export function PeopleTab({
                 <span role="columnheader">Person</span>
                 <span role="columnheader">Role</span>
                 <span role="columnheader">Spaces</span>
-                {/* Presence, not registered agents (LAI-1058, plan §B.7). */}
-                <span role="columnheader">Tools running</span>
+                {/* Presence, not registered agents (LAI-1058, plan §B.7). `data-col`
+                    names the two a narrow table drops first (LAI-1345). */}
+                <span role="columnheader" data-col="tools">
+                  Tools running
+                </span>
                 <span role="columnheader">Last active</span>
-                <span role="columnheader">Last sign-in</span>
+                <span role="columnheader" data-col="sign-in">
+                  Last sign-in
+                </span>
                 <span role="columnheader" className="visually-hidden">
                   Actions
                 </span>
@@ -789,7 +796,9 @@ export function PeopleTab({
                             <span className="org-chip org-chip-off">DEACTIVATED</span>
                           )}
                         </span>
-                        <span className="org-person-email">{person.email}</span>
+                        <span className="org-person-email" title={person.email}>
+                          {person.email}
+                        </span>
                         <PersonFacts userId={person.id} className="org-person-facts" />
                       </span>
                     </span>
@@ -840,11 +849,19 @@ export function PeopleTab({
                     </span>
                     <span
                       role="cell"
-                      className={`org-people-seen org-people-seen-${seen.tone}`}
-                      data-last-active
-                      title={seen.note}
+                      className={`org-people-seen org-people-seen-${seen.tone} org-people-active`}
                     >
-                      {seen.text}
+                      <span data-last-active title={seen.note}>
+                        {seen.text}
+                      </span>
+                      {/* What a narrow table drops (LAI-1345), in sight under
+                          Last active once its column steps out — for a mouse,
+                          a keyboard and a finger alike. A screen reader reads
+                          the dropped cell itself, so not these. */}
+                      <span className="org-people-also" aria-hidden="true">
+                        <span className="org-people-also-sign-in">{signInLine(signedIn)}</span>
+                        <span className="org-people-also-tools">{toolsLine(agents, running)}</span>
+                      </span>
                     </span>
                     <span
                       role="cell"
