@@ -8,6 +8,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -61,6 +62,7 @@ import {
   noteSelfReport,
   type ProcInfo,
   ignoredAgentTokenNotice,
+  logPath,
   readCredential,
   readSelfReport,
   readState,
@@ -557,6 +559,35 @@ void describe('credentials', () => {
       encoding: 'utf8',
     });
     assert.doesNotMatch(paired.stderr, /LAIKA_AGENT_TOKEN is set/);
+  });
+
+  void test('a hook that ignores a token-only LAIKA_AGENT_TOKEN logs it once per session opened, never the token (LAI-1344)', async () => {
+    const secret = 'lai_HOOKIGNOREDTOKENNEVERLOGGED0001';
+    const run = async (env: Record<string, string>, session: string): Promise<string> => {
+      const home = temp();
+      // An address nothing answers at: the session never opens, the line is
+      // written before it is asked to.
+      writeCredential(home, 'claude-code', { url: 'http://127.0.0.1:1', token: 'lai_file' });
+      const io: AgentIo = {
+        out: () => undefined,
+        err: () => undefined,
+        home,
+        env,
+        stdin: () => JSON.stringify({ session_id: session }),
+        isTTY: false,
+      };
+      await hook(io, 'session-start', 'claude-code');
+      return existsSync(logPath(home)) ? readFileSync(logPath(home), 'utf8') : '';
+    };
+    const alone = await run({ LAIKA_AGENT_TOKEN: secret }, 'hs-alone');
+    assert.match(alone, /hook claude-code: LAIKA_AGENT_TOKEN ignored: no LAIKA_AGENT_URL/);
+    assert.ok(!alone.includes(secret), 'the token was logged');
+    const paired = await run(
+      { LAIKA_AGENT_TOKEN: secret, LAIKA_AGENT_URL: 'http://127.0.0.1:1' },
+      'hs-paired',
+    );
+    assert.doesNotMatch(paired, /LAIKA_AGENT_TOKEN ignored/);
+    assert.ok(!paired.includes(secret), 'the token was logged');
   });
 
   void test('a hook with no agent credential does nothing and prints nothing', async () => {
