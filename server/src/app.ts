@@ -387,7 +387,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   app.use(
     '*',
     createMiddleware<AppEnv>((c, next) =>
-      c.req.path === INBOUND_EMAIL_PATH ? inboundEmailLimit(c, next) : defaultLimit(c, next),
+      // POST only: no other method is accepted there (the gate answers 405).
+      c.req.path === INBOUND_EMAIL_PATH && c.req.method === 'POST'
+        ? inboundEmailLimit(c, next)
+        : defaultLimit(c, next),
     ),
   );
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;

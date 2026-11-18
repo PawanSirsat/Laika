@@ -444,6 +444,44 @@ describe('POST /webhooks/email: the bearer token', () => {
     expect(pulled).toBe(false);
   });
 
+  it('refuses every other method 405 before the body is read — and counts it like any request (round 3)', async () => {
+    await switchOn();
+    const put = async () => {
+      let pulled = false;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull() {
+            pulled = true;
+            throw new Error('a PUT read its body');
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      const res = await h.app.request(
+        new Request('http://localhost/webhooks/email', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          duplex: 'half',
+        }),
+      );
+      return { res, pulled };
+    };
+    const first = await put();
+    expect(first.res.status).toBe(405);
+    expect(first.res.headers.get('allow')).toBe('POST');
+    expect(first.pulled).toBe(false);
+    // Counted in the anonymous bucket every request without a credential spends.
+    const remaining = Number(first.res.headers.get('x-ratelimit-remaining'));
+    expect(Number.isInteger(remaining)).toBe(true);
+    const second = await put();
+    expect(Number(second.res.headers.get('x-ratelimit-remaining'))).toBe(remaining - 1);
+    for (const method of ['GET', 'DELETE', 'PATCH']) {
+      const res = await h.app.request('/webhooks/email', { method });
+      expect(res.status, method).toBe(405);
+    }
+  });
+
   it('stops taking the old token the moment a new one is made', async () => {
     const old = await switchOn();
     await ok(await call('POST', '/org/email-inbound/token'), 201);
@@ -841,6 +879,54 @@ describe('Brevo’s shapes, and one mail’s fault (F1, F3)', () => {
     expect(inboundRows()[0]).toMatchObject({ outcome: 'task_created', attempts: 1 });
   });
 
+  it('a forged mail with a predicted Message-ID cannot pre-claim the real one (round 3)', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    // The forger guesses the id the owner's next mail will carry.
+    const forged = brevo({
+      to,
+      from: 'stranger@elsewhere.test',
+      messageId: '<next@mail.example.test>',
+      headers: { 'Authentication-Results': [] },
+    });
+    expect(await delivered(token, [forged])).toEqual([
+      { outcome: 'dropped', reason: 'unauthenticated' },
+    ]);
+    // The real mail, same id, its own sender: received, not a duplicate.
+    const real = brevo({ to, messageId: '<next@mail.example.test>' });
+    expect(await delivered(token, [real])).toEqual([{ outcome: 'task_created', reason: null }]);
+    expect(await delivered(token, [real])).toEqual([{ outcome: 'duplicate', reason: null }]);
+    expect(inboundRows()).toHaveLength(2);
+  });
+
+  it('a failed record is the same sender’s to retry — another sender’s mail with its id is another mail', async () => {
+    const token = await switchOn();
+    const to = await addressOf('murphy');
+    await join('bo@example.test');
+    await ok(
+      await call('POST', '/projects/murphy/members', {
+        user_id: userId('bo@example.test'),
+        role: 'member',
+      }),
+      201,
+    );
+    const failing = brevo({ to, messageId: '<shared@x.test>', subject: 'BREAK ME' });
+    expect((await deliver(token, [failing])).status).toBe(503);
+    // Bo, same id: a mail of his own, which does not touch Ada's failed record.
+    expect(
+      await delivered(token, [
+        brevo({ to, from: 'bo@example.test', messageId: '<shared@x.test>' }),
+      ]),
+    ).toEqual([{ outcome: 'task_created', reason: null }]);
+    const adas = () =>
+      inboundRows().find(
+        (r) => r.messageId === 'shared@x.test' && r.fromAddress === 'ada@example.test',
+      );
+    expect(adas()).toMatchObject({ outcome: 'failed', attempts: 1 });
+    expect((await deliver(token, [failing])).status).toBe(503);
+    expect(adas()).toMatchObject({ outcome: 'failed', attempts: 2 });
+  });
+
   it('a Message-ID of <> is no id: the mail is received on its digest, and a redelivery is a duplicate', async () => {
     const token = await switchOn();
     const to = await addressOf('murphy');
@@ -870,8 +956,9 @@ describe('Brevo’s shapes, and one mail’s fault (F1, F3)', () => {
 describe('limits and retention', () => {
   it('counts itself after the token: junk fills its own bucket, never Brevo’s (F2)', async () => {
     const token = await switchOn();
-    // The middleware leaves the path alone; the route decides, once it knows.
-    expect(isLimited('/webhooks/email')).toBe(false);
+    // The middleware leaves its POST alone; the gate decides, once it knows.
+    expect(isLimited('/webhooks/email', 'POST')).toBe(false);
+    expect(isLimited('/webhooks/email', 'PUT')).toBe(true);
     for (let i = 0; i < LIMITS.inboundEmailRefused.burst; i += 1) {
       expect((await deliver(`junk-${String(i)}`, [])).status).toBe(401);
     }

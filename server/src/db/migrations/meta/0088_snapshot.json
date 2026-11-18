@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9ff06c75-9f66-4339-8e05-d30461499e23",
+  "id": "e290577c-0fd4-4d2c-bb20-351a50ec8a2f",
   "prevId": "cbc47527-0dd7-4a00-a417-28d287284a7e",
   "tables": {
     "accounts": {
@@ -3001,8 +3001,9 @@
           "name": "from_address",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
         },
         "user_id": {
           "name": "user_id",
@@ -3080,7 +3081,7 @@
       "indexes": {
         "email_inbound_message_unique": {
           "name": "email_inbound_message_unique",
-          "columns": ["message_id", "address_token"],
+          "columns": ["message_id", "address_token", "from_address"],
           "isUnique": true
         },
         "email_inbound_project_received_idx": {
@@ -3168,7 +3169,7 @@
         },
         "email_inbound_from_check": {
           "name": "email_inbound_from_check",
-          "value": "from_address IS NULL OR length(from_address) <= 320"
+          "value": "length(from_address) <= 320"
         },
         "email_inbound_auth_check": {
           "name": "email_inbound_auth_check",

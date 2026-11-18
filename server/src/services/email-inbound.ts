@@ -241,7 +241,7 @@ function recentRows(db: Db, actor: ResolvedActor): EmailInboundRowView[] {
         received_at: row.receivedAt,
         outcome: row.outcome,
         reason: row.reason,
-        from_address: row.fromAddress,
+        from_address: row.fromAddress === '' ? null : row.fromAddress,
         sender: personView(db, row.userId),
         project: project === null ? null : { slug: project.slug, name: project.name },
         task_key:
@@ -358,14 +358,6 @@ export function setEmailInboundSettings(
     throw new ApiError('internal', 'This server cannot store secrets');
   }
 
-  const orgId = ensureRow(db, now);
-  const current = settingsRow(db)!;
-  const nextDomain = domain === undefined ? current.domain : domain;
-  // Clearing the domain turns the switch off with it: there is nowhere to receive.
-  const nextEnabled = domain === null ? false : (input.enabled ?? current.enabled === 1);
-  const nextRequire = input.require_authenticated ?? current.requireAuthenticated === 1;
-  const nextAuthserv = authserv === undefined ? current.authservId : authserv;
-
   // **Every change but turning it off is an owner's** (LAI-1315 review, M2,
   // rounds 1 and 2). Turning it on accepts D-155's residual risk, and turning
   // authentication off widens it — but so does every other write: a new
@@ -384,6 +376,15 @@ export function setEmailInboundSettings(
     ).find(([, changed]) => changed);
     if (changing !== undefined) throw ownerOnly(changing[0]);
   }
+
+  const orgId = ensureRow(db, now);
+  const current = settingsRow(db)!;
+  const nextDomain = domain === undefined ? current.domain : domain;
+  // Clearing the domain turns the switch off with it: there is nowhere to receive.
+  const nextEnabled = domain === null ? false : (input.enabled ?? current.enabled === 1);
+  const nextRequire = input.require_authenticated ?? current.requireAuthenticated === 1;
+  const nextAuthserv = authserv === undefined ? current.authservId : authserv;
+
   if (nextEnabled && (nextDomain === null || current.tokenHash === null)) {
     throw new ApiError(
       'unprocessable',
@@ -612,7 +613,7 @@ function recordInbound(
       messageId: rec.mail.messageId,
       addressToken: rec.addressToken,
       projectId: rec.projectId,
-      fromAddress: rec.mail.from,
+      fromAddress: rec.mail.from ?? '',
       userId: rec.userId,
       outcome,
       reason,
@@ -712,9 +713,7 @@ function receiveAtAddress(
           attempts: emailInbound.attempts,
         })
         .from(emailInbound)
-        .where(
-          and(eq(emailInbound.messageId, mail.messageId), eq(emailInbound.addressToken, token)),
-        )
+        .where(sameMail(mail, token))
         .get();
       // A mail decided about is decided. One that failed before is tried again:
       // its record goes, and this attempt writes the next — or, if it fails
@@ -820,6 +819,20 @@ function receiveAtAddress(
     .immediate();
 }
 
+/**
+ * The record of this mail, at this address, **from this sender** (round 3):
+ * the same Message-ID from another sender is another mail — so a forged one
+ * with a predicted id neither pre-claims the real one as a `duplicate` nor
+ * takes over its `failed` record.
+ */
+function sameMail(mail: InboundMail, token: string) {
+  return and(
+    eq(emailInbound.messageId, mail.messageId),
+    eq(emailInbound.addressToken, token),
+    eq(emailInbound.fromAddress, mail.from ?? ''),
+  );
+}
+
 /** A mail that fails this many times as it arrives is recorded and given up on. */
 export const INBOUND_FAILURES_MAX = 3;
 
@@ -842,9 +855,7 @@ function recordFault(
       const seen = db
         .select({ id: emailInbound.id, attempts: emailInbound.attempts })
         .from(emailInbound)
-        .where(
-          and(eq(emailInbound.messageId, mail.messageId), eq(emailInbound.addressToken, token)),
-        )
+        .where(sameMail(mail, token))
         .get();
       const attempts = (seen?.attempts ?? 0) + 1;
       const final = attempts >= INBOUND_FAILURES_MAX;
@@ -870,7 +881,7 @@ function recordFault(
             messageId: mail.messageId,
             addressToken: token,
             projectId: project?.id ?? null,
-            fromAddress: mail.from,
+            fromAddress: mail.from ?? '',
             userId: null,
             outcome,
             reason,

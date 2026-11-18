@@ -2366,8 +2366,10 @@ export const projectInboundAddresses = sqliteTable(
  * name and its verdicts (`mx.example dmarc=pass dkim=pass`), so an owner
  * setting this up can see what Laika saw.
  *
- * One row per mail per address (`message_id`, `address_token`): Brevo may
- * deliver a mail again, and a retry must not make a second task. A mail that
+ * One row per mail per address per sender (`message_id`, `address_token`,
+ * `from_address`): Brevo may deliver a mail again, and a retry must not make a
+ * second task — and a forger who guesses a Message-ID makes a row of their
+ * own, never the real sender's. A mail that
  * matched no address keeps `address_token` empty. Kept 90 days (§11.6).
  */
 export const emailInbound = sqliteTable(
@@ -2380,7 +2382,8 @@ export const emailInbound = sqliteTable(
     addressToken: text('address_token').notNull(),
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** The From address, lower case, as the mail gave it. */
-    fromAddress: text('from_address'),
+    /** `''` when the mail gave none that could be read — part of the key, so never null. */
+    fromAddress: text('from_address').notNull().default(''),
     /** The person it was matched to. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     outcome: text('outcome', { enum: EMAIL_INBOUND_OUTCOMES }).notNull(),
@@ -2399,7 +2402,9 @@ export const emailInbound = sqliteTable(
     receivedAt: integer('received_at').notNull(),
   },
   (t) => [
-    uniqueIndex('email_inbound_message_unique').on(t.messageId, t.addressToken),
+    // The sender is part of the key (round 3): a mail forged with a predicted
+    // Message-ID cannot pre-claim the real one, which keeps its own row.
+    uniqueIndex('email_inbound_message_unique').on(t.messageId, t.addressToken, t.fromAddress),
     index('email_inbound_project_received_idx').on(t.projectId, t.receivedAt),
     index('email_inbound_received_at_idx').on(t.receivedAt),
     index('email_inbound_user_id_idx').on(t.userId),
@@ -2413,10 +2418,7 @@ export const emailInbound = sqliteTable(
       sql.raw("(outcome = 'dropped') = (reason IS NOT NULL)"),
     ),
     check('email_inbound_message_id_check', sql.raw('length(message_id) BETWEEN 1 AND 512')),
-    check(
-      'email_inbound_from_check',
-      sql.raw('from_address IS NULL OR length(from_address) <= 320'),
-    ),
+    check('email_inbound_from_check', sql.raw('length(from_address) <= 320')),
     check('email_inbound_auth_check', sql.raw('auth IS NULL OR length(auth) <= 300')),
     check(
       'email_inbound_authserv_ids_check',

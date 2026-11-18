@@ -48,7 +48,7 @@ import { isReservedPath } from '../static.ts';
  */
 export function rateLimitMiddleware(limiter: RateLimiter) {
   return createMiddleware<AppEnv>(async (c, next) => {
-    if (!isLimited(c.req.path)) {
+    if (!isLimited(c.req.path, c.req.method)) {
       await next();
       return;
     }
@@ -88,11 +88,12 @@ export const HEALTH_PATH = '/api/v1/health';
  * Reserved prefixes — `/api`, `/mcp`, `/webhooks` — are the API surface. Anything
  * else is a static asset or the SPA document.
  */
-export function isLimited(path: string): boolean {
+export function isLimited(path: string, method = 'GET'): boolean {
   if (path === HEALTH_PATH) return false;
-  // Inbound email counts itself, after its token is checked (LAI-1315
+  // Inbound email's POST counts itself, after its token is checked (LAI-1315
   // review, F2): a bucket decided before that would let junk spend Brevo's.
-  if (path === INBOUND_EMAIL_PATH) return false;
+  // Every other method there is counted like any request (round 3).
+  if (path === INBOUND_EMAIL_PATH && method === 'POST') return false;
   return isReservedPath(path);
 }
 

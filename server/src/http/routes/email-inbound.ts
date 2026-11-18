@@ -16,6 +16,7 @@ import {
   verifyInboundToken,
 } from '../../services/email-inbound.ts';
 import { type AppEnv } from '../context.ts';
+import { classify } from '../middleware/rate-limit.ts';
 import { LIMITS, type RateLimiter } from '../rate-limit.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -74,9 +75,22 @@ function whereOf(cause: unknown): string {
  */
 export function inboundEmailGate(options: { db: Db; rateLimiter: RateLimiter }) {
   return createMiddleware<AppEnv>(async (c, next) => {
+    // **Every other method is refused here, before the body limit** (round 3):
+    // counted as any anonymous request is, and answered `405`, so a PUT or a
+    // DELETE can neither be buffered nor go uncounted.
     if (c.req.method !== 'POST') {
-      await next();
-      return;
+      const anonymous = classify(c.req.path, null, c.req.method);
+      const counted = options.rateLimiter.take(anonymous.key, anonymous.policy);
+      c.header('X-RateLimit-Limit', String(anonymous.policy.burst ?? anonymous.policy.perMinute));
+      c.header('X-RateLimit-Remaining', String(counted.remaining));
+      if (!counted.allowed) {
+        c.header('Retry-After', String(counted.retryAfterSeconds));
+        throw new ApiError('rate_limited', 'Too many requests', {
+          retry_after_seconds: counted.retryAfterSeconds,
+        });
+      }
+      c.header('Allow', 'POST');
+      throw new ApiError('method_not_allowed', 'Brevo posts here; nothing else is accepted');
     }
     const verified = verifyInboundToken(options.db, c.req.header('authorization'));
     const policy = verified ? LIMITS.inboundEmail : LIMITS.inboundEmailRefused;

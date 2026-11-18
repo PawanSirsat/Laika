@@ -3,7 +3,7 @@ CREATE TABLE `email_inbound` (
 	`message_id` text NOT NULL,
 	`address_token` text NOT NULL,
 	`project_id` text,
-	`from_address` text,
+	`from_address` text DEFAULT '' NOT NULL,
 	`user_id` text,
 	`outcome` text NOT NULL,
 	`reason` text,
@@ -22,14 +22,14 @@ CREATE TABLE `email_inbound` (
 	CONSTRAINT "email_inbound_reason_check" CHECK(reason IS NULL OR reason IN ('switch_off', 'unknown_address', 'own_sender', 'auto_reply', 'spam', 'unauthenticated', 'unknown_sender', 'not_allowed', 'empty', 'refused', 'failed_repeatedly')),
 	CONSTRAINT "email_inbound_reason_needed_check" CHECK((outcome = 'dropped') = (reason IS NOT NULL)),
 	CONSTRAINT "email_inbound_message_id_check" CHECK(length(message_id) BETWEEN 1 AND 512),
-	CONSTRAINT "email_inbound_from_check" CHECK(from_address IS NULL OR length(from_address) <= 320),
+	CONSTRAINT "email_inbound_from_check" CHECK(length(from_address) <= 320),
 	CONSTRAINT "email_inbound_auth_check" CHECK(auth IS NULL OR length(auth) <= 300),
 	CONSTRAINT "email_inbound_authserv_ids_check" CHECK(authserv_ids IS NULL OR length(authserv_ids) <= 300),
 	CONSTRAINT "email_inbound_attachments_check" CHECK(attachment_count >= 0),
 	CONSTRAINT "email_inbound_attempts_check" CHECK(attempts >= 0)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `email_inbound_message_unique` ON `email_inbound` (`message_id`,`address_token`);--> statement-breakpoint
+CREATE UNIQUE INDEX `email_inbound_message_unique` ON `email_inbound` (`message_id`,`address_token`,`from_address`);--> statement-breakpoint
 CREATE INDEX `email_inbound_project_received_idx` ON `email_inbound` (`project_id`,`received_at`);--> statement-breakpoint
 CREATE INDEX `email_inbound_received_at_idx` ON `email_inbound` (`received_at`);--> statement-breakpoint
 CREATE INDEX `email_inbound_user_id_idx` ON `email_inbound` (`user_id`);--> statement-breakpoint
