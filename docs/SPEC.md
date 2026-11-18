@@ -7318,14 +7318,37 @@ anything missing sends the task back.
   item 4) — never a colour hashed from the slug. Beside a written name the
   mark is decoration, hidden from assistive tech; where it stands alone (the
   task drawer's breadcrumb, the workroom's key line) it is an image named for
-  the space. An image that will not load shows the letter.
-- **Space settings → General → Icon** (D-152) — shown to org owners and admins
-  only (`project.icon.write`): the mark as it will look, *Upload image* (only
-  when `GET /org`'s `attachments` is set; PNG, JPEG or WebP up to 1 MB, refused
-  before sending otherwise), *Choose emoji* opening a grid of forty-eight and a
-  field for any one emoji, and *Remove* while an icon is set. Each change saves
-  at once, outside General's form, and every mark of the space on the page
-  changes with it; a refusal is said under the row.
+  the space. An image that will not load shows the letter. **An image mark
+  stays visible in every theme** (LAI-1321): once loaded it is sampled on a
+  32×32 canvas, cached per image URL, and an opaque dark tile gets a light 1px
+  ring in the dark themes, an opaque light tile a dark ring in light, and a
+  transparent logo a plate of the opposite tone behind it; a mid-tone one gets
+  nothing — colour exempts nothing, so a navy tile is ringed in dark — and
+  nothing shows before it is measured. A `data:` preview's measure is the
+  mark's own, never kept in the shared cache.
+- **Space settings → General → Icon** (D-152; LAI-1321) — shown to org owners
+  and admins only (`project.icon.write`), and to them only while they may edit
+  the space's settings: the mark as it will look, *Upload image* (only when
+  `GET /org`'s `attachments` is set; PNG, JPEG or WebP), *Choose emoji* opening
+  a grid of forty-eight and a field for any one emoji, and *Remove* while an
+  icon is set. A picked image is checked before it is decoded — PNG, JPEG or
+  WebP, its size read from its header, at most 40 megapixels. **It then opens
+  a square frame editor**: drag (or arrow keys) to place it, zoom from the whole image fitted up to 4× (slider, wheel,
+  pinch, `+`/`-`), *Reset*, a background where the logo does not fill the
+  square — transparent, white, black or the space's colour — and a preview at
+  sidebar and settings size, and its position said in a polite live region.
+  *Use this* crops on the client to a square of at most 512 pixels, PNG or
+  WebP whichever is smaller, under the smaller of 1 MB and the board's
+  attachment limit — at a lower quality or a smaller square when it must, and
+  saying so — and puts it in the store at once; Save stays off until it is
+  there. *Cancel* changes nothing. **Every icon change is
+  held until Save changes**, like General's other fields: it marks the form
+  unsaved (*Not saved yet* beside the preview), Save sends it — an emoji in
+  the same `PATCH` as the fields, then the image completed or the removal sent
+  — and Discard drops it; leaving with one held asks first. **Each step counts
+  as saved the moment it lands**: if the icon step is refused after the
+  fields saved, the page says *Saved. The icon was not saved: … Try Save
+  again.*, the fields are the saved ones, and only the icon stays held.
 - **Board** — five columns (`backlog`, `todo`, `in_progress`, `review`, `done`)
   with counts; cards showing key, title, assignee, priority, **blocked / ready
   markers**, subtasks and a due date that is today or past; drag between columns issuing a real status call with snap-back
