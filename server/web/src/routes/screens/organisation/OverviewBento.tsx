@@ -216,7 +216,7 @@ function RecentActivity({
   onNavigate,
 }: {
   readonly people: readonly OrgUser[];
-  readonly span: 6 | 8 | 12;
+  readonly span: 4 | 6 | 8 | 12;
   readonly onNavigate: (to: string) => void;
 }) {
   const { state } = useOrgHistory({});
@@ -246,11 +246,12 @@ function RecentActivity({
               const who =
                 event.actor_id === null ? 'Laika' : (names.get(event.actor_id) ?? 'Someone');
               const when = timeLabel(event.created_at, now);
+              const what = pushSummary(event) ?? describeEvent(event);
               return (
                 <li key={event.id} className="bento-feed-row">
                   <span className="bento-feed-dot" aria-hidden="true" />
-                  <span className="bento-feed-text">
-                    <strong>{who}</strong> {pushSummary(event) ?? describeEvent(event)}
+                  <span className="bento-feed-text" title={`${who} ${what}`}>
+                    <strong>{who}</strong> {what}
                   </span>
                   <time className="bento-feed-when" dateTime={when.iso} title={when.full}>
                     {when.text}
@@ -368,128 +369,140 @@ export function OverviewBento({
         </Tile>
       )}
 
-      <Tile
-        id="people"
-        title="People"
-        sub={`${String(active.length)}${truncated ? '+' : ''} active${
-          deactivated > 0 ? ` · ${String(deactivated)} deactivated` : ''
-        }`}
-        span={4}
-        tone="green"
-        action={
-          <Go to="/organisation?tab=people" onNavigate={onNavigate}>
-            Open →
-          </Go>
-        }
-      >
-        <div className="bento-avatars" aria-label={`${String(active.length)} active people`}>
-          {shown.map((person) => {
-            const ink = avatarColor(person.id, theme);
-            return (
-              <span
-                key={person.id}
-                className="bento-avatar"
-                style={{ background: ink.background, color: ink.foreground }}
-                title={person.name}
-              >
-                {initials(person.name)}
-              </span>
-            );
-          })}
-          {active.length > shown.length && (
-            <span className="bento-avatar bento-avatar-more">
-              +{String(active.length - shown.length)}
-            </span>
-          )}
-        </div>
-        <dl className="bento-roles">
-          {byRole.map(({ role, count }) => (
-            <div key={role} className="bento-role" data-role={role}>
-              <dt>{orgRoleLabel(role)}</dt>
-              <dd>{String(count)}</dd>
+      {/* Two columns that stack on their own (LAI-1345, the owner): People,
+          Access and Recent activity down the left, Spaces on the right, so no
+          card stretches to match another. One column keeps this order. */}
+      <div className="bento-split" data-span={12}>
+        <div className="bento-col">
+          <Tile
+            id="people"
+            title="People"
+            sub={`${String(active.length)}${truncated ? '+' : ''} active${
+              deactivated > 0 ? ` · ${String(deactivated)} deactivated` : ''
+            }`}
+            span={4}
+            tone="green"
+            action={
+              <Go to="/organisation?tab=people" onNavigate={onNavigate}>
+                Open →
+              </Go>
+            }
+          >
+            <div className="bento-avatars" aria-label={`${String(active.length)} active people`}>
+              {shown.map((person) => {
+                const ink = avatarColor(person.id, theme);
+                return (
+                  <span
+                    key={person.id}
+                    className="bento-avatar"
+                    style={{ background: ink.background, color: ink.foreground }}
+                    title={person.name}
+                  >
+                    {initials(person.name)}
+                  </span>
+                );
+              })}
+              {active.length > shown.length && (
+                <span className="bento-avatar bento-avatar-more">
+                  +{String(active.length - shown.length)}
+                </span>
+              )}
             </div>
-          ))}
-        </dl>
-        {newest.length > 0 && (
-          <div className="bento-newest">
-            <p className="bento-label">Newest</p>
+            <dl className="bento-roles">
+              {byRole.map(({ role, count }) => (
+                <div key={role} className="bento-role" data-role={role}>
+                  <dt>{orgRoleLabel(role)}</dt>
+                  <dd>{String(count)}</dd>
+                </div>
+              ))}
+            </dl>
+            {newest.length > 0 && (
+              <div className="bento-newest">
+                <p className="bento-label">Newest</p>
+                <ul className="bento-access">
+                  {newest.map((person) => {
+                    const note = `${orgRoleLabel(person.org_role as OrgRole)} · joined ${
+                      timeLabel(person.created_at, now).text
+                    }`;
+                    return (
+                      <li key={person.id} className="bento-row bento-row-static">
+                        <span className="bento-row-name">{person.name}</span>
+                        {/* Whole in its title when the column cuts it short. */}
+                        <span className="bento-row-note" title={note}>
+                          {note}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            <div className="bento-actions">
+              {can.invite && (
+                <button type="button" className="bento-button" data-bento-invite onClick={onInvite}>
+                  + Invite people
+                </button>
+              )}
+              {can.invite && invites > 0 && (
+                <Go
+                  to="/organisation?tab=people&show=pending"
+                  onNavigate={onNavigate}
+                  className="bento-pill"
+                >
+                  {String(invites)} pending {invites === 1 ? 'invite' : 'invites'}
+                </Go>
+              )}
+            </div>
+          </Tile>
+
+          <Tile
+            id="access"
+            title="Access"
+            sub={`You are ${/^[aeiou]/i.test(myRole) ? 'an' : 'a'} ${myRole}`}
+            span={4}
+            tone="orange"
+          >
             <ul className="bento-access">
-              {newest.map((person) => (
-                <li key={person.id} className="bento-row bento-row-static">
-                  <span className="bento-row-name">{person.name}</span>
+              {can.roles && (
+                <li>
+                  <Go to="/organisation?tab=roles" onNavigate={onNavigate} className="bento-row">
+                    <span className="bento-row-name">Roles &amp; permissions</span>
+                    <span className="bento-row-note">who can do what</span>
+                    <span className="bento-chevron" aria-hidden="true" />
+                  </Go>
+                </li>
+              )}
+              {can.tokens && (
+                <li>
+                  <Go to="/organisation?tab=security" onNavigate={onNavigate} className="bento-row">
+                    <span className="bento-row-name">Tokens &amp; sign-in</span>
+                    <span className="bento-row-note">everyone’s credentials</span>
+                    <span className="bento-chevron" aria-hidden="true" />
+                  </Go>
+                </li>
+              )}
+              {org !== undefined && (
+                <li className="bento-row bento-row-static">
+                  <span className="bento-row-name">Developer insights</span>
+                  <span className="bento-row-note">{org.developer_insights ? 'on' : 'off'}</span>
+                </li>
+              )}
+              {org !== undefined && (
+                <li className="bento-row bento-row-static">
+                  <span className="bento-row-name">Presence</span>
                   <span className="bento-row-note">
-                    {orgRoleLabel(person.org_role as OrgRole)} · joined{' '}
-                    {timeLabel(person.created_at, now).text}
+                    {org.presence_enabled ? 'recorded' : 'off'}
                   </span>
                 </li>
-              ))}
+              )}
             </ul>
-          </div>
-        )}
-        <div className="bento-actions">
-          {can.invite && (
-            <button type="button" className="bento-button" data-bento-invite onClick={onInvite}>
-              + Invite people
-            </button>
-          )}
-          {can.invite && invites > 0 && (
-            <Go
-              to="/organisation?tab=people&show=pending"
-              onNavigate={onNavigate}
-              className="bento-pill"
-            >
-              {String(invites)} pending {invites === 1 ? 'invite' : 'invites'}
-            </Go>
-          )}
+          </Tile>
+
+          {can.activity && <RecentActivity people={people} span={4} onNavigate={onNavigate} />}
         </div>
-      </Tile>
 
-      <div className="bento-slot" data-span={8}>
-        {spaces}
+        <div className="bento-slot">{spaces}</div>
       </div>
-
-      {can.activity && <RecentActivity people={people} span={8} onNavigate={onNavigate} />}
-
-      <Tile
-        id="access"
-        title="Access"
-        sub={`You are ${/^[aeiou]/i.test(myRole) ? 'an' : 'a'} ${myRole}`}
-        span={can.activity ? 4 : 12}
-        tone="orange"
-      >
-        <ul className="bento-access">
-          {can.roles && (
-            <li>
-              <Go to="/organisation?tab=roles" onNavigate={onNavigate} className="bento-row">
-                <span className="bento-row-name">Roles &amp; permissions</span>
-                <span className="bento-row-note">who can do what</span>
-                <span className="bento-chevron" aria-hidden="true" />
-              </Go>
-            </li>
-          )}
-          {can.tokens && (
-            <li>
-              <Go to="/organisation?tab=security" onNavigate={onNavigate} className="bento-row">
-                <span className="bento-row-name">Tokens &amp; sign-in</span>
-                <span className="bento-row-note">everyone’s credentials</span>
-                <span className="bento-chevron" aria-hidden="true" />
-              </Go>
-            </li>
-          )}
-          {org !== undefined && (
-            <li className="bento-row bento-row-static">
-              <span className="bento-row-name">Developer insights</span>
-              <span className="bento-row-note">{org.developer_insights ? 'on' : 'off'}</span>
-            </li>
-          )}
-          {org !== undefined && (
-            <li className="bento-row bento-row-static">
-              <span className="bento-row-name">Presence</span>
-              <span className="bento-row-note">{org.presence_enabled ? 'recorded' : 'off'}</span>
-            </li>
-          )}
-        </ul>
-      </Tile>
     </div>
   );
 }

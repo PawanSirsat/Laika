@@ -4541,6 +4541,66 @@ button.org-sec-head[aria-expanded='true'] .org-sec-action {
   }
 }
 
+/* Below the glance (LAI-1345, the owner): People, Access and Recent activity
+   stacked down a third, Spaces down the rest. Each column keeps its own
+   height, so nothing stretches to match a long list of spaces. The left one
+   never narrows past 19rem, where People's four role counts still fit, and
+   Spaces past 24rem, where its four columns do. */
+.bento-split {
+  display: grid;
+  grid-template-columns: minmax(19rem, 1fr) minmax(24rem, 2fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.bento-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.bento-col > .bento-tile {
+  height: auto;
+}
+
+/* In the column a Newest row's name keeps its width, and its note — a role
+   and a join date — takes what is left, ending in an ellipsis rather than
+   running past the tile. The list's one track may be narrower than a row's
+   whole text, so the note can give. */
+.bento-col .bento-newest .bento-access {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bento-col .bento-newest .bento-row-name {
+  flex: 0 0 auto;
+  max-width: 65%;
+}
+
+.bento-col .bento-newest .bento-row-note {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+/* Medium: the glance takes the row, so Connections does too, rather than sit
+   beside nothing. */
+@container bento (max-width: 62rem) {
+  .org-bento > [data-tile='connections'] {
+    grid-column: span 12;
+  }
+}
+
+/* One column — People, Access, Recent activity, then Spaces — once the two
+   floors and the gap (19 + 1 + 24rem) no longer fit side by side. */
+@container bento (max-width: 44rem) {
+  .bento-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* --- the tile ------------------------------------------------------------- */
 
 .bento-tile,
@@ -4870,12 +4930,12 @@ a.bento-row:active {
   font-variant-numeric: tabular-nums;
 }
 
+/* Right under the Newest list, not pinned to the tile's foot (LAI-1345). */
 .bento-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin-top: auto;
 }
 
 .bento-button {

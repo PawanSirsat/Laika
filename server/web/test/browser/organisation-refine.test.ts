@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, refuse, until, type StubCall } from './harness.ts';
 import { pick } from './dropdown.ts';
-import { MEMBER, OWNER, PEOPLE, user } from './organisation-refine-fixtures.ts';
+import { MEMBER, OWNER, PEOPLE, PROJECTS, user } from './organisation-refine-fixtures.ts';
 
 const rows = '.org-person';
 
@@ -685,4 +685,92 @@ void describe("People's columns adapt to the room beside the side menu", () => {
       }
     });
   }
+});
+
+// LAI-1345, the owner: below the glance, People, Access and Recent activity
+// stack down the left and Spaces runs down the right, each column its own
+// height — a long list of spaces no longer stretches People into an empty
+// card with its Invite button pinned to the foot.
+void describe('Overview: People, Access and Recent activity beside Spaces', () => {
+  const MANY = Array.from({ length: 28 }, (_, i) => ({
+    ...PROJECTS[0],
+    id: `p${String(i + 1)}`,
+    slug: `space-${String(i + 1)}`,
+    name: `Space ${String(i + 1)}`,
+  }));
+  const overview = (width: number) =>
+    open(
+      '/organisation',
+      OWNER({
+        '/api/v1/projects': { data: MANY, next_cursor: null },
+        '/api/v1/activity/history': { data: [], next_cursor: null },
+      }),
+      {
+        before: async (page) => {
+          await page.setViewportSize({ width, height: 1000 });
+        },
+      },
+    );
+  const boxes = (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.evaluate(() => {
+      const box = (selector: string) => {
+        const r = document.querySelector(selector)?.getBoundingClientRect();
+        return r === undefined ? null : { x: r.x, y: r.y + scrollY, w: r.width, h: r.height };
+      };
+      return {
+        people: box('[data-tile="people"]'),
+        access: box('[data-tile="access"]'),
+        activity: box('[data-tile="activity"]'),
+        spaces: box('.org-bento .org-spaces'),
+        newest: box('[data-tile="people"] .bento-newest'),
+        invite: box('[data-bento-invite]'),
+      };
+    });
+
+  void test('at 1600 the three stack on the left at their own height, Spaces on the right, Invite under Newest', async () => {
+    const h = await overview(1600);
+    try {
+      await h.page
+        .locator('.org-spaces tbody tr')
+        .nth(27)
+        .waitFor({ state: 'attached', timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const b = await boxes(h);
+      assert.ok(b.people && b.access && b.activity && b.spaces && b.newest && b.invite);
+      // One column on the left, in order, and Spaces beside it.
+      assert.equal(b.access.x, b.people.x);
+      assert.equal(b.activity.x, b.people.x);
+      assert.ok(
+        b.people.y < b.access.y && b.access.y < b.activity.y,
+        'not People, Access, Activity',
+      );
+      assert.ok(b.spaces.x >= b.people.x + b.people.w, 'Spaces is not beside the column');
+      assert.ok(Math.abs(b.spaces.y - b.people.y) <= 1, 'Spaces does not start level with People');
+      // Invite sits under Newest, and People ends there — its own height, not
+      // stretched toward Spaces' (the tile's padding and border are 25px).
+      const gap = b.invite.y - (b.newest.y + b.newest.h);
+      assert.ok(gap >= 0 && gap <= 24, `Invite is ${String(gap)}px below Newest`);
+      const foot = b.people.y + b.people.h - (b.invite.y + b.invite.h);
+      assert.ok(foot <= 32, `People runs ${String(foot)}px past its Invite button`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('at 390 one column: People, Access, Recent activity, then Spaces', async () => {
+    const h = await overview(390);
+    try {
+      await h.page.locator('.org-bento .org-spaces').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const b = await boxes(h);
+      assert.ok(b.people && b.access && b.activity && b.spaces);
+      assert.ok(
+        b.people.y < b.access.y && b.access.y < b.activity.y && b.activity.y < b.spaces.y,
+        'the order is not People, Access, Recent activity, Spaces',
+      );
+      for (const tile of [b.access, b.activity, b.spaces]) assert.equal(tile.x, b.people.x);
+    } finally {
+      await h.close();
+    }
+  });
 });
