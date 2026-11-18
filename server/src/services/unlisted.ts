@@ -11,6 +11,13 @@ import { requireOrgId } from '../db/orgs.ts';
 import { unlistedWork } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import {
+  appendAttachmentBlock,
+  type AttachmentRefInput,
+  attachToUnlisted,
+  moveUnlistedAttachments,
+  removeUnlistedAttachments,
+} from './attachments.ts';
 import { createTask, type TaskView } from './tasks.ts';
 
 /**
@@ -77,6 +84,11 @@ export interface LogUnlistedWorkInput {
   repo: string;
   /** Agent-authored prose. No file contents, no diffs, no prompt text (D-005). */
   note: string;
+  /**
+   * Files the agent chose to show a person with it (D-162 item 8): its own
+   * ready uploads, linked to the finding and embedded in the note.
+   */
+  attachments?: readonly AttachmentRefInput[] | undefined;
   now?: number;
 }
 
@@ -94,6 +106,10 @@ export interface LogUnlistedWorkInput {
  *
  * The token id is recorded beside the user id so triage can tell *which* agent
  * session noticed it — §4.14 has the column and nothing was filling it.
+ *
+ * `attachments` (D-162 item 8) are checked and linked in the same write, and
+ * the note carries a link to each, captioned — so a person triaging sees
+ * them, and promoting the note carries them into the task's description.
  */
 export function logUnlistedWork(
   db: Db,
@@ -126,7 +142,19 @@ export function logUnlistedWork(
     createdAt: now,
   };
 
-  db.insert(unlistedWork).values(row).run();
+  const items = input.attachments ?? [];
+  db.transaction((tx) => {
+    const writer = tx as unknown as Db;
+    writer.insert(unlistedWork).values(row).run();
+    // After the insert: `attachments.unlisted_work_id` is a foreign key.
+    if (items.length === 0) return;
+    const block = attachToUnlisted(writer, actor, row.id, items);
+    writer
+      .update(unlistedWork)
+      .set({ note: appendAttachmentBlock(note, block) })
+      .where(eq(unlistedWork.id, row.id))
+      .run();
+  });
 
   appendActivity(db, {
     orgId: requireOrgId(db),
@@ -266,6 +294,16 @@ export function promoteUnlisted(
       .where(eq(unlistedWork.id, row.id))
       .run();
 
+    // Its files follow it (D-162 item 8). The description already linked any
+    // of the task's own project; the rest move with it.
+    moveUnlistedAttachments(
+      db,
+      actor,
+      row.id,
+      { projectId: task.project_id, taskId: task.id },
+      now,
+    );
+
     appendActivity(db, {
       orgId: requireOrgId(db),
       // Org-scoped, like the `unlisted.logged` row it follows: the pile belongs
@@ -298,7 +336,8 @@ export function promoteUnlisted(
  *
  * Idempotent, and the second call writes **no** activity row: nothing changed,
  * and this codebase already refuses a no-op status transition on exactly that
- * ground. Same rule as revoking a token twice (LAI-402).
+ * ground. Same rule as revoking a token twice (LAI-402). The files attached to
+ * it are removed with it (D-162 item 8).
  */
 export function dismissUnlisted(
   db: Db,
@@ -319,6 +358,8 @@ export function dismissUnlisted(
   }
 
   db.update(unlistedWork).set({ dismissedAt: now }).where(eq(unlistedWork.id, row.id)).run();
+  // Its files go with it (D-162 item 8); the sweep deletes the objects.
+  removeUnlistedAttachments(db, actor, row.id, now);
 
   appendActivity(db, {
     orgId: requireOrgId(db),

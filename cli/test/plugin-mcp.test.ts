@@ -75,10 +75,12 @@ void describe('the tool surface, from both sides', () => {
     // added four on 2026-10-29: checkpoint_task (LAI-545), and agent_sync,
     // offer_handoff and respond_handoff (LAI-546) — mirrored here by LAI-549.
     // D-126 added ping_agent and get_agent_capacity on 2026-11-03 (LAI-1038).
+    // D-162 added request_upload and complete_upload on 2026-11-19 (LAI-1302).
     assert.deepEqual(registeredTools(), [
       'add_comment',
       'agent_sync',
       'checkpoint_task',
+      'complete_upload',
       'create_sprint',
       'create_task',
       'finish_task',
@@ -94,6 +96,7 @@ void describe('the tool surface, from both sides', () => {
       'offer_handoff',
       'ping_agent',
       'propose_time_entry',
+      'request_upload',
       'respond_handoff',
       'set_task_sprint',
       'start_working',

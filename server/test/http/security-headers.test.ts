@@ -188,17 +188,20 @@ describe('the attachments store in the policy (D-150, LAI-1300)', () => {
     );
     expect(buildContentSecurityPolicy(hashes)).toContain("img-src 'self' data:; ");
     expect(buildContentSecurityPolicy(hashes)).toContain("connect-src 'self'; ");
+    expect(buildContentSecurityPolicy(hashes)).toContain("media-src 'self'; ");
   });
 
-  it('adds the store to img-src and connect-src, and to nothing else', () => {
+  it('adds the store to img-src, media-src and connect-src, and to nothing else', () => {
     const off = directives(buildContentSecurityPolicy([]));
     const on = directives(buildContentSecurityPolicy([], { storageOrigin: STORE }));
 
     expect(on.get('img-src')).toBe(`img-src 'self' data: ${STORE}`);
+    // An inline recording plays through the same 302 an image is shown through (D-162).
+    expect(on.get('media-src')).toBe(`media-src 'self' ${STORE}`);
     expect(on.get('connect-src')).toBe(`connect-src 'self' ${STORE}`);
     // Every other directive is the off policy's, word for word.
     for (const [name, directive] of off) {
-      if (name === 'img-src' || name === 'connect-src') continue;
+      if (name === 'img-src' || name === 'media-src' || name === 'connect-src') continue;
       expect(on.get(name), name).toBe(directive);
     }
     expect([...on.keys()]).toEqual([...off.keys()]);
