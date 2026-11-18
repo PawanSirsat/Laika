@@ -347,3 +347,97 @@ void describe('every rule is linear on a crafted 2 MiB file', () => {
     assert.ok(total < 1500, `all of them took ${total.toFixed(0)} ms`);
   });
 });
+
+void describe('office files are read in linear time, and what cannot be read is refused', () => {
+  const MIB2 = 2 * 1024 * 1024;
+  const fill = (unit: string, prefix = '', suffix = ''): string =>
+    prefix + unit.repeat(Math.ceil((MIB2 - prefix.length - suffix.length) / unit.length)) + suffix;
+  const sheetOf = (xml: string): Buffer =>
+    zip({
+      'xl/workbook.xml': '<workbook/>',
+      'xl/worksheets/sheet1.xml': xml,
+    });
+  const docOf = (xml: string): Buffer => zip({ 'word/document.xml': xml });
+
+  // Each crafted the way a lazy `[\s\S]*?…</x>` pattern goes quadratic: many
+  // openings and no closing — 80k unclosed rows took 4 s before (LAI-1351 review).
+  const CRAFTED: Record<string, Buffer> = {
+    'unclosed rows': sheetOf(fill('<row>', '<worksheet><sheetData>')),
+    'unclosed cells in a row': sheetOf(fill('<c ', '<sheetData><row>', '</row>')),
+    'unclosed shared strings': zip({
+      'xl/workbook.xml': '<workbook/>',
+      'xl/sharedStrings.xml': fill('<si><t>', '<sst>'),
+    }),
+    'unclosed Word tags': docOf(fill('<w:p ', '<w:document><w:body>')),
+    'unclosed Word text runs': docOf(fill('<w:t>a', '<w:document><w:body><w:p>')),
+    'one long run of references': docOf(fill('&#x41;', '<w:p><w:r><w:t>', '</w:t></w:r></w:p>')),
+    'many closed rows': sheetOf(
+      fill('<row><c t="inlineStr"><is><t>ok</t></is></c></row>', '<sheetData>', '</sheetData>'),
+    ),
+  };
+
+  void test('each crafted 2 MiB part is read or refused in well under a second, all within 1.5 s', () => {
+    let total = 0;
+    for (const [what, file] of Object.entries(CRAFTED)) {
+      const started = performance.now();
+      scanFile('crafted.xlsx', file);
+      const took = performance.now() - started;
+      assert.ok(took < 750, `${what} took ${took.toFixed(0)} ms`);
+      total += took;
+    }
+    assert.ok(total < 1500, `all of them took ${total.toFixed(0)} ms`);
+  });
+
+  void test('an unclosed element is unreadable, so what follows it never passes unscanned', () => {
+    const token = ['gh', 'p_', 'Zz9'.repeat(12)].join('');
+    // Row 2 never closes: stopping there would leave its token unread.
+    const sheet = sheetOf(
+      `<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>ok</t></is></c></row><row r="2"><c t="inlineStr"><is><t>${token}</t></is></c></sheetData>`,
+    );
+    assert.deepEqual(scanFile('cut.xlsx', sheet), {
+      ok: false,
+      pattern: 'unreadable',
+      where: 'its contents',
+    });
+    assert.equal(officeText(CRAFTED['unclosed rows'] ?? Buffer.alloc(0)), undefined);
+  });
+
+  void test('a reference to no character is unreadable, not a crash', () => {
+    const doc = docOf(
+      '<w:document><w:body><w:p><w:r><w:t>&#x110000;</w:t></w:r></w:p></w:body></w:document>',
+    );
+    assert.deepEqual(scanFile('bad.docx', doc), {
+      ok: false,
+      pattern: 'unreadable',
+      where: 'its contents',
+    });
+  });
+
+  void test('a spreadsheet written with a namespace prefix is read all the same', () => {
+    const token = ['gh', 'p_', 'Zz9'.repeat(12)].join('');
+    const sheet = sheetOf(
+      `<x:worksheet><x:sheetData><x:row r="1"><x:c t="inlineStr"><x:is><x:t>ok</x:t></x:is></x:c></x:row><x:row r="2"><x:c t="inlineStr"><x:is><x:t>${token}</x:t></x:is></x:c></x:row></x:sheetData></x:worksheet>`,
+    );
+    assert.deepEqual(scanFile('prefixed.xlsx', sheet), {
+      ok: false,
+      pattern: 'github_token',
+      where: 'sheet 1, row 2',
+    });
+  });
+
+  void test('parts that together pass the total budget are unreadable, each under the part limit', () => {
+    const big = `<sheetData>${'<row><c t="inlineStr"><is><t>ok</t></is></c></row>'.repeat(4000)}</sheetData>`;
+    const three = zip({
+      'xl/workbook.xml': '<workbook/>',
+      'xl/worksheets/sheet1.xml': big,
+      'xl/worksheets/sheet2.xml': big,
+      'xl/worksheets/sheet3.xml': big,
+    });
+    const limits = { part: big.length + 1, total: big.length * 2 + 100 };
+    assert.equal(officeText(three, limits), undefined);
+    assert.equal(
+      officeText(three, { part: big.length + 1, total: big.length * 3 + 100 })?.length,
+      3,
+    );
+  });
+});

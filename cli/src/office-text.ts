@@ -13,13 +13,26 @@ import { inflateRawSync } from 'node:zlib';
  * blank line where a table ends.
  *
  * It reads only what it needs and refuses what it cannot read rather than
- * guessing: a ZIP64 archive, an encrypted entry or a part that inflates past
- * {@link MAX_PART_BYTES} is `undefined`, and the caller treats that as a file
- * it could not check.
+ * guessing: a ZIP64 archive, an encrypted entry, a part that inflates past
+ * {@link MAX_PART_BYTES}, parts that together pass {@link MAX_TOTAL_BYTES}, or
+ * XML with a character reference no character has is `undefined`, and the
+ * caller treats that as a file it could not check.
+ *
+ * **Every scan is linear** (LAI-1351 review). The XML is the file's, so it may
+ * be crafted: elements are found with `indexOf` — an opening tag, its `>`, its
+ * closing tag, each searched forward from the last — and an element left
+ * unclosed makes the file unreadable instead of being searched for again from
+ * every later `<`. `secret-scan.test.ts` times crafted 2 MiB parts.
  */
 
 /** The largest part inflated: a sheet's XML is far smaller than this unless it is a zip bomb. */
 export const MAX_PART_BYTES = 64 * 1024 * 1024;
+
+/** The most inflated across every part read from one file. */
+export const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
+
+/** XML this cannot read for what it says: a reference to no character. */
+class UnreadableXml extends Error {}
 
 /** The most entries read from one archive. */
 const MAX_ENTRIES = 10_000;
@@ -79,8 +92,8 @@ function zipEntries(buf: Buffer): ZipEntry[] | undefined {
   return entries;
 }
 
-/** One entry's bytes, inflated, or `undefined` when it cannot be read. */
-function readEntry(buf: Buffer, entry: ZipEntry): Buffer | undefined {
+/** One entry's bytes, inflated to at most `limit`, or `undefined` when it cannot be read. */
+function readEntry(buf: Buffer, entry: ZipEntry, limit: number): Buffer | undefined {
   // Bit 0: the entry is encrypted, and there is nothing to read without its key.
   if ((entry.flags & 1) !== 0) return undefined;
   const at = entry.localOffset;
@@ -88,10 +101,10 @@ function readEntry(buf: Buffer, entry: ZipEntry): Buffer | undefined {
   const start = at + 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28);
   const data = buf.subarray(start, start + entry.compressedSize);
   if (data.length !== entry.compressedSize) return undefined;
-  if (entry.method === 0) return data.length > MAX_PART_BYTES ? undefined : data;
+  if (entry.method === 0) return data.length > limit ? undefined : data;
   if (entry.method !== 8) return undefined;
   try {
-    return inflateRawSync(data, { maxOutputLength: MAX_PART_BYTES });
+    return inflateRawSync(data, { maxOutputLength: limit });
   } catch {
     return undefined;
   }
@@ -105,23 +118,78 @@ const ENTITIES: Readonly<Record<string, string>> = {
   apos: "'",
 };
 
-/** XML character data with its five entities and numeric references decoded. */
+/**
+ * XML character data with its five entities and numeric references decoded.
+ * A reference to no character — `&#x110000;` — is unreadable XML, and the
+ * file one that could not be checked.
+ */
 function decodeXml(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (whole, ref: string) => {
-    if (ref.startsWith('#x') || ref.startsWith('#X')) {
-      return String.fromCodePoint(Number.parseInt(ref.slice(2), 16));
+  if (!text.includes('&')) return text;
+  return text.replace(/&(#x[0-9a-f]{1,8}|#[0-9]{1,10}|[a-z]{1,8});/gi, (whole, ref: string) => {
+    const hex = ref.startsWith('#x') || ref.startsWith('#X');
+    if (hex || ref.startsWith('#')) {
+      const code = Number.parseInt(ref.slice(hex ? 2 : 1), hex ? 16 : 10);
+      if (!(code >= 0 && code <= 0x10ffff)) throw new UnreadableXml(`no character ${ref}`);
+      return String.fromCodePoint(code);
     }
-    if (ref.startsWith('#')) return String.fromCodePoint(Number.parseInt(ref.slice(1), 10));
     return ENTITIES[ref.toLowerCase()] ?? whole;
   });
 }
 
-/** The text of every `<t>` in a run of XML, joined. */
+const NAME_ENDS = new Set([' ', '\t', '\n', '\r', '>', '/']);
+
+interface Element {
+  /** What is between the name and the `>`. */
+  readonly attrs: string;
+  /** What is between the opening and the closing tag; empty for `<name/>`. */
+  readonly body: string;
+}
+
+/**
+ * Every `<name …>…</name>` and `<name …/>` in `xml`, in order, found with
+ * `indexOf` only: linear in `xml`. One left unclosed is XML that cannot be
+ * read — never a place to stop reading, which would let what follows it pass
+ * unscanned.
+ */
+function* elements(xml: string, name: string): Generator<Element> {
+  const open = `<${name}`;
+  const close = `</${name}>`;
+  let at = 0;
+  for (;;) {
+    const start = xml.indexOf(open, at);
+    if (start < 0) return;
+    // `<c` is not `<cols`: the name ends at a space, `>` or `/`.
+    if (!NAME_ENDS.has(xml.charAt(start + open.length))) {
+      at = start + open.length;
+      continue;
+    }
+    const end = xml.indexOf('>', start + open.length);
+    if (end < 0) throw new UnreadableXml(`an unclosed <${name}`);
+    if (xml.charAt(end - 1) === '/') {
+      yield { attrs: xml.slice(start + open.length, end - 1), body: '' };
+      at = end + 1;
+      continue;
+    }
+    const finish = xml.indexOf(close, end + 1);
+    if (finish < 0) throw new UnreadableXml(`an unclosed <${name}>`);
+    yield { attrs: xml.slice(start + open.length, end), body: xml.slice(end + 1, finish) };
+    at = finish + close.length;
+  }
+}
+
+/**
+ * SpreadsheetML with its element prefixes taken off — `<x:row>` is `<row>` —
+ * for the generators that write a prefixed namespace. A file written that way
+ * must not pass because its rows go unrecognised.
+ */
+function unprefixed(xml: string): string {
+  return xml.replace(/<(\/?)[A-Za-z_][\w.-]{0,31}:/g, '<$1');
+}
+
+/** The text of every `<t>` in a run of a spreadsheet's XML, joined. */
 function texts(xml: string): string {
   let out = '';
-  for (const match of xml.matchAll(/<(?:\w+:)?t(?:\s[^>]*)?>([^<]*)<\/(?:\w+:)?t>/g)) {
-    out += decodeXml(match[1] ?? '');
-  }
+  for (const t of elements(xml, 't')) out += decodeXml(t.body);
   return out;
 }
 
@@ -149,8 +217,8 @@ function sheetText(xml: string, shared: readonly string[], where: string): PartT
   const lines: string[] = [];
   const rows: (number | null)[] = [];
   let last = 0;
-  for (const row of xml.matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
-    const number = Number(/\br="(\d+)"/.exec(row[1] ?? '')?.[1] ?? last + 1);
+  for (const row of elements(xml, 'row')) {
+    const number = Number(/\br="(\d{1,7})"/.exec(row.attrs)?.[1] ?? last + 1);
     // A gap of empty rows separates two tables, as a blank line does in a CSV.
     if (number > last + 1 && lines.length > 0) {
       lines.push('');
@@ -158,16 +226,18 @@ function sheetText(xml: string, shared: readonly string[], where: string): PartT
     }
     last = number;
     const cells: string[] = [];
-    for (const cell of (row[2] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const attrs = cell[1] ?? '';
-      const body = cell[2] ?? '';
-      const ref = /\br="([A-Z]+)\d+"/i.exec(attrs)?.[1];
+    for (const cell of elements(row.body, 'c')) {
+      const ref = /\br="([A-Z]{1,3})\d{1,7}"/i.exec(cell.attrs)?.[1];
       const at = ref === undefined ? cells.length : column(ref);
-      const type = /\bt="(\w+)"/.exec(attrs)?.[1];
-      const value = /<v>([^<]*)<\/v>/.exec(body)?.[1];
+      const type = /\bt="(\w{1,16})"/.exec(cell.attrs)?.[1];
+      let value: string | undefined;
+      for (const v of elements(cell.body, 'v')) {
+        value = v.body;
+        break;
+      }
       let text: string;
       if (type === 's') text = shared[Number(value)] ?? '';
-      else if (type === 'inlineStr') text = texts(body);
+      else if (type === 'inlineStr') text = texts(cell.body);
       else text = decodeXml(value ?? '');
       while (cells.length < at) cells.push('');
       cells[at] = text.replace(/[\t\r\n]+/g, ' ');
@@ -185,40 +255,46 @@ function documentText(xml: string, where: string): PartText {
   let cell = '';
   let cells: string[] | null = null;
   let inText = false;
-  const tokens = /<(\/?)w:(tbl|tr|tc|p|t|tab|br|cr)\b[^>]*?(\/?)>|<[^>]*>|([^<]+)/g;
-  for (const match of xml.matchAll(tokens)) {
-    const [, close, tag, selfClose, chars] = match;
-    if (chars !== undefined) {
-      if (!inText) continue;
-      if (cells !== null) cell += decodeXml(chars);
-      else line += decodeXml(chars);
-      continue;
+  const add = (text: string): void => {
+    if (cells !== null) cell += text;
+    else line += text;
+  };
+  const endLine = (): void => {
+    if (cells !== null) cell += ' ';
+    else {
+      lines.push(line);
+      line = '';
     }
-    if (tag === undefined) continue;
-    const closing = close === '/';
-    switch (tag) {
+  };
+  // A tag at a time, with `indexOf`: linear however the XML is shaped.
+  let at = 0;
+  while (at < xml.length) {
+    const lt = xml.indexOf('<', at);
+    if (inText) add(decodeXml(xml.slice(at, lt < 0 ? xml.length : lt)));
+    if (lt < 0) break;
+    const gt = xml.indexOf('>', lt + 1);
+    if (gt < 0) throw new UnreadableXml('a tag with no end');
+    at = gt + 1;
+    const closing = xml.charAt(lt + 1) === '/';
+    const selfClose = xml.charAt(gt - 1) === '/';
+    const from = lt + (closing ? 2 : 1);
+    let end = from;
+    while (end < gt && !NAME_ENDS.has(xml.charAt(end))) end++;
+    // The local name, whatever prefix the document gave WordprocessingML.
+    const name = xml.slice(from, end);
+    switch (name.slice(name.indexOf(':') + 1)) {
       case 't':
-        inText = !closing && selfClose !== '/';
+        inText = !closing && !selfClose;
         break;
       case 'tab':
-        if (cells !== null) cell += ' ';
-        else line += '\t';
+        add(cells !== null ? ' ' : '\t');
         break;
       case 'br':
       case 'cr':
-        if (cells !== null) cell += ' ';
-        else {
-          lines.push(line);
-          line = '';
-        }
+        endLine();
         break;
       case 'p':
-        if (!closing) break;
-        if (cells !== null) cell += ' ';
-        else {
-          lines.push(line);
-          line = '';
-        }
+        if (closing) endLine();
         break;
       case 'tc':
         if (closing && cells !== null) cells.push(cell.trim());
@@ -244,12 +320,38 @@ function documentText(xml: string, where: string): PartText {
  * The text of a spreadsheet's sheets or a Word document's parts, or `null`
  * for a zip that is neither, or `undefined` for one this cannot read.
  */
-export function officeText(bytes: Uint8Array): PartText[] | null | undefined {
+export interface OfficeLimits {
+  readonly part: number;
+  readonly total: number;
+}
+
+export function officeText(
+  bytes: Uint8Array,
+  limits: OfficeLimits = { part: MAX_PART_BYTES, total: MAX_TOTAL_BYTES },
+): PartText[] | null | undefined {
+  try {
+    return readOffice(bytes, limits);
+  } catch (error) {
+    if (error instanceof UnreadableXml) return undefined;
+    throw error;
+  }
+}
+
+function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null | undefined {
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const entries = zipEntries(buf);
   if (entries === undefined) return undefined;
   const byName = new Map(entries.map((e) => [e.name, e]));
-  const read = (entry: ZipEntry): string | undefined => readEntry(buf, entry)?.toString('utf8');
+  // Every part read counts against one budget, so many small parts cannot
+  // add up to what one large part is refused for.
+  let budget = limits.total;
+  const read = (entry: ZipEntry): string | undefined => {
+    if (budget <= 0) return undefined;
+    const data = readEntry(buf, entry, Math.min(limits.part, budget));
+    if (data === undefined) return undefined;
+    budget -= data.length;
+    return data.toString('utf8');
+  };
 
   if (byName.has('xl/workbook.xml')) {
     const sharedEntry = byName.get('xl/sharedStrings.xml');
@@ -257,7 +359,7 @@ export function officeText(bytes: Uint8Array): PartText[] | null | undefined {
     if (sharedEntry !== undefined) {
       const xml = read(sharedEntry);
       if (xml === undefined) return undefined;
-      shared = [...xml.matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((m) => texts(m[1] ?? ''));
+      shared = [...elements(unprefixed(xml), 'si')].map((si) => texts(si.body));
     }
     const parts: PartText[] = [];
     const sheets = entries
@@ -266,7 +368,7 @@ export function officeText(bytes: Uint8Array): PartText[] | null | undefined {
     for (const entry of sheets) {
       const xml = read(entry);
       if (xml === undefined) return undefined;
-      parts.push(sheetText(xml, shared, `sheet ${/\d+/.exec(entry.name)?.[0] ?? '?'}`));
+      parts.push(sheetText(unprefixed(xml), shared, `sheet ${/\d+/.exec(entry.name)?.[0] ?? '?'}`));
     }
     return parts;
   }
