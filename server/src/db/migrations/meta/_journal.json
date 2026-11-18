@@ -631,6 +631,13 @@
       "when": 1795005669937,
       "tag": "0090_calendar_away",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "6",
+      "when": 1795008665258,
+      "tag": "0091_calendar_stopped_partway",
+      "breakpoints": true
     }
   ]
 }

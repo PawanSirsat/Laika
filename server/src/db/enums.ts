@@ -739,6 +739,9 @@ export const CALENDAR_SYNC_ERROR_CODES = [
   'not_granted',
   'unreachable',
   'bad_answer',
+  // LAI-1335 review F5: a backfill the switch stopped between two people —
+  // those before it written, the rest not.
+  'stopped_partway',
 ] as const;
 export type CalendarSyncErrorCode = (typeof CALENDAR_SYNC_ERROR_CODES)[number];
 

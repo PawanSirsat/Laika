@@ -2828,6 +2828,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_email_inbound_switch_off$/),
         // LAI-1331's out-of-office spans: one new table, nothing rebuilt.
         expect.stringMatching(/_calendar_away$/),
+        // LAI-1335's `stopped_partway`: `org_calendar_source` rebuilt, its row kept.
+        expect.stringMatching(/_calendar_stopped_partway$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2994,6 +2996,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3098,6 +3101,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3211,6 +3215,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3333,6 +3338,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3421,6 +3427,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3514,6 +3521,7 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3618,6 +3626,7 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3717,6 +3726,7 @@ describe('0086 rebuilds the email outbox on a populated 0085 database and keeps 
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3819,6 +3829,7 @@ describe('0087 rebuilds time_entries for the calendar source on a populated 0086
       '0088_email_inbound',
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -4062,6 +4073,7 @@ describe('0089 rebuilds email_inbound_attachments for switch_off on a populated 
     expect(dropped.map((e) => e.tag)).toEqual([
       '0089_email_inbound_switch_off',
       '0090_calendar_away',
+      '0091_calendar_stopped_partway',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -4129,6 +4141,81 @@ describe('0089 rebuilds email_inbound_attachments for switch_off on a populated 
         // The key to its mail still cascades.
         db.run(sql`DELETE FROM email_inbound WHERE id = ${inboundId}`);
         expect(rows()).toHaveLength(0);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0091 rebuilds org_calendar_source for stopped_partway on a populated 0090 database (LAI-1335)', () => {
+  function folderAt0090(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0091_calendar_stopped_partway');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0091_calendar_stopped_partway']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps the connection row, its index and keys, and takes stopped_partway and nothing else new',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0090() });
+        const s = seed(db);
+        const now = Date.now();
+        db.run(sql`
+          INSERT INTO org_calendar_source (org_id, tenant_id, client_id, secret_enc, secret_last4,
+            enabled, rules_json, configured_by, configured_at, last_test_at, last_test_roles_json,
+            last_attempt_at, last_success_at, last_error_code, last_error, last_result_json,
+            updated_at)
+          VALUES (${s.orgId}, 'kvelld.onmicrosoft.com', 'ae9ce6ed-ef7a-45ff-9a05-6db164d947bd',
+            'ciphertext', 'Wxyz', 1, '[]', ${s.userId}, ${now}, ${now}, '["Calendars.Read"]',
+            ${now}, ${now - 1}, 'unreachable', 'Microsoft could not be reached.', '{"people":3}',
+            ${now})
+        `);
+        const rows = () => db.all(sql`SELECT * FROM org_calendar_source`);
+        const shape = () => ({
+          indexes: db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'org_calendar_source' ORDER BY name`,
+          ),
+          keys: db.all(
+            sql`SELECT "table", "from", "to", on_delete FROM pragma_foreign_key_list('org_calendar_source') ORDER BY "from"`,
+          ),
+        });
+        const before = rows();
+        const shapeBefore = shape();
+        expect(before).toHaveLength(1);
+        expectSqliteError(
+          () => db.run(sql`UPDATE org_calendar_source SET last_error_code = 'stopped_partway'`),
+          /CHECK constraint failed/,
+        );
+
+        runMigrations(db);
+
+        expect(rows()).toEqual(before);
+        expect(shape()).toEqual(shapeBefore);
+        db.run(sql`UPDATE org_calendar_source SET last_error_code = 'stopped_partway'`);
+        expectSqliteError(
+          () => db.run(sql`UPDATE org_calendar_source SET last_error_code = 'made_up'`),
+          /CHECK constraint failed/,
+        );
+        // Its other checks came across too.
+        expectSqliteError(
+          () => db.run(sql`UPDATE org_calendar_source SET enabled = 2`),
+          /CHECK constraint failed/,
+        );
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });
