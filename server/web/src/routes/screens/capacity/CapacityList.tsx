@@ -78,7 +78,9 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                 </Tooltip>
               </th>
             )}
-            <th scope="col">Spaces</th>
+            <Tooltip content={HOVER.spaces}>
+              <th scope="col">Spaces</th>
+            </Tooltip>
           </tr>
         </thead>
         <tbody>

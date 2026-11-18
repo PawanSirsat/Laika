@@ -533,6 +533,20 @@
   white-space: nowrap;
 }
 
+/* A space they are in with no open work of theirs (LAI-1334): greyed, with no
+   count — no fill, a dashed edge, muted text, the mark faded. Before
+   `.cap-space-on`, so the chosen space still shows as chosen. */
+.cap-space-idle {
+  border-style: dashed;
+  background: transparent;
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+.cap-space-idle .project-mark {
+  opacity: 0.55;
+}
+
 .cap-space-on {
   border-color: var(--accent-border);
   background: var(--accent-bg);

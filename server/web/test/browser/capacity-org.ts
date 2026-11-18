@@ -120,7 +120,7 @@ function counts(over: Partial<typeof zero>): typeof zero {
 }
 
 /** One space, with its own load as the server decides it (D-092). */
-const space = (project: typeof LAIKA, load: string, over: Partial<typeof zero>) => ({
+export const space = (project: typeof LAIKA, load: string, over: Partial<typeof zero>) => ({
   project_id: project.id,
   slug: project.slug,
   name: project.name,

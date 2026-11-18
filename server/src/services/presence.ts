@@ -10,6 +10,7 @@ import {
   boardActivityDays,
   heartbeats,
   orgs,
+  projectMemberships,
   projects,
   sessions,
   tasks,
@@ -170,9 +171,11 @@ export interface CapacityWorkload {
 }
 
 /**
- * One space a person has open work in, with the same counts and **that
- * space's load**, by the same rule (LAI-767, LAI-818): a badge shown while one
- * space is selected is that space's load (D-092 item 3).
+ * One space a person is in or has open work in, with the same counts and
+ * **that space's load**, by the same rule (LAI-767, LAI-818): a badge shown
+ * while one space is selected is that space's load (D-092 item 3). A space
+ * they are a member of with no open work of theirs has every count `0` and
+ * load `none` (LAI-1334).
  */
 export interface CapacitySpace extends CapacityWorkload {
   project_id: string;
@@ -240,7 +243,12 @@ export interface CapacityEntry {
   workload: CapacityWorkload;
   /** {@link loadOf} across every space the reader may read; each space has its own. */
   load: LoadLevel;
-  /** Spaces they have open work in, most committed first, then most open. */
+  /**
+   * The spaces the reader can see that they are a member of or have open work
+   * in (LAI-1334), most committed first, then most open — so the ones with
+   * open work come first — then A–Z. An archived space only while open work
+   * of theirs is still in it: a tombstone everywhere else a space is listed.
+   */
   spaces: CapacitySpace[];
   /**
    * Their agents. Everyone sees the ones running now, as `/presence` already
@@ -681,6 +689,28 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
     tasksOf.set(task.assigneeId, list);
   }
 
+  // The spaces each person is in (LAI-1334): listed with no open work too, so
+  // a person between tasks is not "No spaces". The same visibility as the
+  // tasks — never a space the reader cannot see — and no archived space.
+  const memberships = db
+    .select({
+      userId: projectMemberships.userId,
+      projectId: projects.id,
+      slug: projects.slug,
+      projectName: projects.name,
+    })
+    .from(projectMemberships)
+    .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
+    .where(and(inArray(projectMemberships.userId, ids), isNull(projects.archivedAt)))
+    .all();
+  const memberOf = new Map<string, typeof memberships>();
+  for (const m of memberships) {
+    if (!mayRead(m.projectId)) continue;
+    const list = memberOf.get(m.userId) ?? [];
+    list.push(m);
+    memberOf.set(m.userId, list);
+  }
+
   const since = now - PRESENCE_WINDOW_MS;
 
   const beats = enabled
@@ -867,21 +897,25 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
 
     const workload = emptyWorkload();
     const spaces = new Map<string, CapacitySpace>();
-    for (const task of theirs) {
-      countTask(workload, task, today);
-      let space = spaces.get(task.projectId);
+    const spaceOf = (ref: { projectId: string; slug: string; projectName: string }) => {
+      let space = spaces.get(ref.projectId);
       if (space === undefined) {
         space = {
-          project_id: task.projectId,
-          slug: task.slug,
-          name: task.projectName,
+          project_id: ref.projectId,
+          slug: ref.slug,
+          name: ref.projectName,
           ...emptyWorkload(),
           load: 'none',
         };
-        spaces.set(task.projectId, space);
+        spaces.set(ref.projectId, space);
       }
-      countTask(space, task, today);
+      return space;
+    };
+    for (const task of theirs) {
+      countTask(workload, task, today);
+      countTask(spaceOf(task), task, today);
     }
+    for (const m of memberOf.get(person.id) ?? []) spaceOf(m);
     for (const space of spaces.values()) space.load = loadOf(space);
 
     const theirBeats = beats.filter((b) => b.userId === person.id);
