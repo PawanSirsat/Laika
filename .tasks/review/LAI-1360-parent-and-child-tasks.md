@@ -5,8 +5,9 @@ area: server
 assignee: core
 priority: p1
 depends-on: [LAI-1302]
-status: in-progress
+status: review
 started: 2026-11-18T22:26:34Z
+finished: 2026-11-18T22:29:56Z
 ---
 
 ## Goal
@@ -22,11 +23,11 @@ This task is the server side. LAI-1351 and LAI-1352 carry the same rule into the
 
 ## Acceptance criteria
 
-- [ ] **`MCP_INSTRUCTIONS`** (server/src/mcp/server.ts) states the rule in one or two short lines. The 2,048-character and first-512 tests stay green; this rule may sit after the must-follow block.
-- [ ] **`create_task`** (write-tools.ts): its description and the `parent` parameter's text say to file the parts of a feature as children of one parent, and to look for an existing parent first (`get_project_context`, or `list_ready_tasks` and the parent's subtasks).
-- [ ] **`finish_task`**, or the outputs text from LAI-1302: main outputs go on the parent, a child's own outputs on the child.
-- [ ] **`get_project_context`**'s "Before you start" paragraph carries the rule in one line.
-- [ ] **SPEC §7.1** reflects the changed tool descriptions where the SPEC quotes them; `parity.test.ts` and `plugin-mcp.test.ts` are green.
+- [x] **`MCP_INSTRUCTIONS`** (server/src/mcp/server.ts) states the rule in one or two short lines. The 2,048-character and first-512 tests stay green; this rule may sit after the must-follow block.
+- [x] **`create_task`** (write-tools.ts): its description and the `parent` parameter's text say to file the parts of a feature as children of one parent, and to look for an existing parent first (`get_project_context`, or `list_ready_tasks` and the parent's subtasks).
+- [x] **`finish_task`**, or the outputs text from LAI-1302: main outputs go on the parent, a child's own outputs on the child.
+- [x] **`get_project_context`**'s "Before you start" paragraph carries the rule in one line.
+- [x] **SPEC §7.1** reflects the changed tool descriptions where the SPEC quotes them; `parity.test.ts` and `plugin-mcp.test.ts` are green.
 
 ## Notes / context
 
