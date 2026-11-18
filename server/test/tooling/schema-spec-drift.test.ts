@@ -601,6 +601,9 @@ describe('the parser itself', () => {
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
+      // LAI-1331: keyed by (person, Graph's event id), as `calendar_events`'
+      // link is unique on — the row is found again by that id at every sync.
+      'calendar_away',
       // LAI-1313: one row per source the email job reads, keyed by its name.
       'email_watermarks',
       'github_checks',

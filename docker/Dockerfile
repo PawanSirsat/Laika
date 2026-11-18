@@ -169,12 +169,15 @@ RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 
 # The commit this image was built from (LAI-1043, SPEC §11.7), served by
-# /health and /developer/compatibility. CI passes `github.sha`; a hand build
-# without the arg leaves it empty, which the server reads as "unknown".
-# Declared this late so a new commit invalidates only this layer, never the
-# install or build stages above.
+# /health and /developer/compatibility. CI passes `github.sha` as
+# LAIKA_BUILD_COMMIT, which wins. Otherwise SOURCE_COMMIT fills it: Coolify
+# passes that when "Include source commit in build" is on, so an auto-deploy
+# reports the commit it built (LAI-1332). A hand build with neither leaves it
+# empty, which the server reads as "unknown". Declared this late so a new
+# commit invalidates only this layer, never the install or build stages above.
 ARG LAIKA_BUILD_COMMIT=""
-ENV LAIKA_BUILD_COMMIT=${LAIKA_BUILD_COMMIT}
+ARG SOURCE_COMMIT=""
+ENV LAIKA_BUILD_COMMIT=${LAIKA_BUILD_COMMIT:-$SOURCE_COMMIT}
 
 USER node
 EXPOSE 3000

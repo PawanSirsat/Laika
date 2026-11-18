@@ -31,6 +31,12 @@ Callers that pass an environment (so are affected): `agent.ts` (hook identity, t
 `agent-handoff.ts`, `agent-watch.ts`, `project-check.ts` (two). Callers passing `{}` read only
 the file and are not affected.
 
+**Census, as merged** (corrected, CHIEF's count): **25 calls** — the 15 above pass an
+environment; **10 pass `{}`**: `activity-otel.ts`, `activity-sync.ts` (two — the second is
+`notConnectedLines`, which this task's F1 added), `agent-launcher-service.ts`, `agent-launcher.ts`
+(three), `agent-mcp-bridge.ts`, `agent.ts` (Omnigent) and `update.ts`. The PR said 24 and 9: it
+was counted before F1 added its call.
+
 **Proposed:** `LAIKA_AGENT_TOKEN` is used only with `LAIKA_AGENT_URL`; without it the tool's file
 is used as a pair (its URL and its own token), as `laika-claude` now does for the person's pair.
 A token equal to the file's is the same credential either way.

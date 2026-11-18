@@ -18,7 +18,11 @@ import {
   users,
 } from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { readLoggedMany } from './analytics-views.ts';
+import { availabilityFor } from './availability.ts';
+import { availabilityVisibleAmong } from './availability-audience.ts';
 import { addDays } from './calendar-days.ts';
+import { meetingMinutesThisWeek, outlookAwayFor } from './capacity-calendar.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
 /**
@@ -258,6 +262,29 @@ export interface CapacityEntry {
    * with `activity_14d`, by `profile.activity.read`. Absent, not empty.
    */
   activity_14d_split?: ActivitySplit;
+  /**
+   * Away now (LAI-1331, D-157 amended), for a person whose availability the
+   * reader sees (D-137): `null` when neither is so. **Absent, not null**, for
+   * anyone else — *not away* and *you may not be told* are different claims.
+   */
+  away?: CapacityAwayView | null;
+  /**
+   * Their meetings this week, in minutes — Monday to Sunday of their own week
+   * (LAI-1331). **Their time** (D-102): present only for a reader who may read
+   * it — *See everyone's analytics*, each person shown logged as a `time`
+   * look — and on the reader's own row. Absent for everyone else.
+   */
+  meeting_minutes_week?: number;
+}
+
+/**
+ * Why a person is away now (LAI-1331): the away period they set covering
+ * their today (§4.86), and an Outlook out-of-office span covering now
+ * (§4.107) — each the last day of it, a calendar day in their own zone.
+ */
+export interface CapacityAwayView {
+  own: { until: string } | null;
+  outlook: { until: string } | null;
 }
 
 export interface CapacityView {
@@ -805,6 +832,34 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
           .groupBy(activity.actorId, activity.actorKind)
           .all();
 
+  // Away (LAI-1331): the people whose availability the reader sees (D-137),
+  // and for them both their own away period and Outlook's out of office.
+  // Reading availability is session only (D-131) and the audience asks no
+  // `can()` of its own, so `capacity.read` on an agent's token is told nobody's.
+  const awaySeen = can(actor, 'availability.read')
+    ? availabilityVisibleAmong(db, actor, ids)
+    : new Set<string>();
+  const ownAway = availabilityFor(db, actor, [...awaySeen], now);
+  const outlookAway = outlookAwayFor(db, [...awaySeen], now);
+  // Meetings this week are time (D-102): the reader's own, and anyone else's
+  // only under *See everyone's analytics* — every one shown logged as a
+  // `time` look in this read's transaction, so a list that cannot be logged is
+  // not answered.
+  const mayReadTime = ids.filter((id) =>
+    id === actor.userId
+      ? can(actor, 'time_entries.read_own')
+      : can(actor, 'people.analytics.read', { targetUserId: id }),
+  );
+  const meetings = readLoggedMany(
+    db,
+    actor,
+    'time',
+    () => meetingMinutesThisWeek(db, mayReadTime, now),
+    (read) => [...read.keys()],
+    () => null,
+    now,
+  );
+
   const people: CapacityEntry[] = everyone.map((person) => {
     const theirs = tasksOf.get(person.id) ?? [];
     const inProgress = theirs.filter((t) => t.status === 'in_progress');
@@ -945,6 +1000,14 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
         bookkeeping: tidySelf + tidyAgents,
       };
     }
+
+    if (awaySeen.has(person.id)) {
+      const own = ownAway.get(person.id)?.away ?? null;
+      const outlook = outlookAway.get(person.id) ?? null;
+      entry.away = own === null && outlook === null ? null : { own, outlook };
+    }
+    const minutes = meetings.get(person.id);
+    if (minutes !== undefined) entry.meeting_minutes_week = minutes;
 
     return entry;
   });

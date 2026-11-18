@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
+  calendarAway,
   orgCalendarSource,
   orgTimeSettings,
   projects,
@@ -365,6 +366,21 @@ describe('sync now and disconnect', () => {
     expect(view.last_result).toMatchObject({ people: 1, no_mailbox: 0 });
   });
 
+  it('serves a result stored before LAI-1331 with no out-of-office count as 0, and a new one as counted', () => {
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    const old = { people: 2, no_mailbox: 0, mailbox_denied: 0, mailbox_refused: 0, meetings: 3 };
+    t.db
+      .update(orgCalendarSource)
+      .set({ lastResultJson: JSON.stringify(old) })
+      .run();
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 0 });
+    t.db
+      .update(orgCalendarSource)
+      .set({ lastResultJson: JSON.stringify({ ...old, away: 2 }) })
+      .run();
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 2 });
+  });
+
   it('forgets the credentials and keeps the meetings already logged', async () => {
     fake.calendars.set('owner@example.test', [graphEvent(Date.UTC(2026, 10, 18, 9))]);
     saveCalendarSource(t.db, owner, SECRET, { ...SAVE, enabled: true }, deps());
@@ -374,5 +390,26 @@ describe('sync now and disconnect', () => {
     expect(getCalendarSource(t.db, owner).configured).toBe(false);
     expect(t.db.select().from(orgCalendarSource).all()).toEqual([]);
     expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
+  });
+
+  it('forgets every out-of-office span with the connection: nothing reads them any more (§4.107)', () => {
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    for (const retiredAt of [null, NOW - 1]) {
+      t.db
+        .insert(calendarAway)
+        .values({
+          userId: owner.userId,
+          eventId: newId(),
+          startsAt: NOW - 3_600_000,
+          endsAt: NOW + 3_600_000,
+          lastSeenAt: NOW,
+          retiredAt,
+          createdAt: NOW,
+        })
+        .run();
+    }
+    expect(t.db.select().from(calendarAway).all()).toHaveLength(2);
+    disconnectCalendar(t.db, owner);
+    expect(t.db.select().from(calendarAway).all()).toEqual([]);
   });
 });

@@ -5,13 +5,18 @@ import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { appendActivity } from '../../src/db/activity.ts';
 import {
+  analyticsViews,
+  calendarAway,
   heartbeats,
+  orgCalendarSource,
   orgs,
   projects,
   sessions,
   tasks,
+  timeEntries,
   tokens,
   unlistedWork,
+  userAwayPeriods,
   users,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
@@ -271,6 +276,193 @@ describe('agent sessions are distinguishable from humans (§11.4.2)', () => {
 
     // Two tokens beating is two sessions; two beats from one token is one.
     expect(mine?.active_sessions).toBe(2);
+  });
+});
+
+describe('away and meetings on Capacity (LAI-1331)', () => {
+  /** 15 January 2027, a Friday: everyone here keeps UTC. */
+  const TODAY = '2027-01-15';
+  let ada: string;
+  let bea: string;
+  let cal: string;
+
+  beforeEach(() => {
+    ada = makeUser('member', 'Ada');
+    bea = makeUser('member', 'Bea');
+    cal = makeUser('member', 'Cal');
+    // Ada and Cal share Laika with the admin; Bea shares no space with anyone.
+    addMember(t.db, actor(adminId), 'laika', ada, 'member');
+    addMember(t.db, actor(adminId), 'laika', cal, 'member');
+    // The Outlook connection, on: out of office is told only while it is read.
+    const org = t.db.select({ id: orgs.id }).from(orgs).get();
+    t.db
+      .insert(orgCalendarSource)
+      .values({
+        orgId: org?.id ?? '',
+        tenantId: 'contoso.onmicrosoft.com',
+        clientId: '00000000-0000-4000-8000-000000000000',
+        secretEnc: 'not-a-secret',
+        secretLast4: 'cret',
+        enabled: 1,
+        configuredBy: adminId,
+        configuredAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+  });
+
+  const read = (reader: ResolvedActor, at = NOW) =>
+    new Map(capacityNow(t.db, reader, at).people.map((p) => [p.user_id, p]));
+  const withToken = (userId: string): ResolvedActor => ({
+    ...actor(userId),
+    token: { id: 'tok_x', scope: 'full', projectIds: null },
+  });
+  const looks = () =>
+    t.db
+      .select({
+        viewer: analyticsViews.viewerId,
+        subject: analyticsViews.subjectId,
+        kind: analyticsViews.kind,
+      })
+      .from(analyticsViews)
+      .all();
+  const meeting = (userId: string, day: string, minutes: number) =>
+    t.db
+      .insert(timeEntries)
+      .values({
+        id: newId(),
+        userId,
+        day,
+        tz: 'UTC',
+        minutes,
+        source: 'calendar',
+        sourceRef: newId(),
+        kind: 'meeting',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+
+  it('says who is away — their own period and Outlook’s — to whoever sees their availability (D-137)', () => {
+    t.db
+      .insert(userAwayPeriods)
+      .values({
+        id: newId(),
+        userId: cal,
+        fromDay: '2027-01-14',
+        toDay: '2027-01-20',
+        createdAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: cal,
+        eventId: 'oof-1',
+        startsAt: Date.UTC(2027, 0, 11),
+        endsAt: Date.UTC(2027, 0, 23),
+        allDay: 1,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: bea,
+        eventId: 'oof-2',
+        startsAt: NOW - 3_600_000,
+        endsAt: NOW + 3_600_000,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+
+    // A member: the people who share a space with them, and themselves.
+    const asAda = read(actor(ada));
+    expect(asAda.get(cal)?.away).toEqual({
+      own: { until: '2027-01-20' },
+      outlook: { until: '2027-01-22' },
+    });
+    expect(asAda.get(ada)?.away).toBeNull();
+    expect(asAda.get(adminId)?.away).toBeNull();
+    // Bea shares no space with Ada: not *not away* — not told at all.
+    expect('away' in (asAda.get(bea) ?? {})).toBe(false);
+
+    // *See everyone's analytics*: everyone.
+    const asAdmin = read(actor(adminId));
+    expect(asAdmin.get(bea)?.away).toEqual({ own: null, outlook: { until: TODAY } });
+    expect(asAdmin.get(cal)?.away?.outlook).toEqual({ until: '2027-01-22' });
+
+    // Bea sees herself, and nobody she shares no space with.
+    const asBea = read(actor(bea));
+    expect(asBea.get(bea)?.away).toEqual({ own: null, outlook: { until: TODAY } });
+    expect('away' in (asBea.get(cal) ?? {})).toBe(false);
+  });
+
+  it('tells an agent’s token nobody’s away, its own person’s included: reading availability is session only (D-131)', () => {
+    t.db
+      .insert(calendarAway)
+      .values({
+        userId: cal,
+        eventId: 'oof-1',
+        startsAt: NOW - 3_600_000,
+        endsAt: NOW + 3_600_000,
+        lastSeenAt: NOW,
+        createdAt: NOW,
+      })
+      .run();
+    // The same owner signed in is told — so the token's silence is the gate.
+    expect(read(actor(adminId)).get(cal)?.away).toEqual({
+      own: null,
+      outlook: { until: TODAY },
+    });
+    const asToken = read(withToken(adminId));
+    expect(asToken.size).toBeGreaterThan(0);
+    for (const id of [adminId, ada, bea, cal]) {
+      expect('away' in (asToken.get(id) ?? {})).toBe(false);
+    }
+  });
+
+  it('gives everyone’s meetings this week to *See everyone’s analytics*, each a logged time look (D-102)', () => {
+    meeting(ada, '2027-01-11', 90);
+    meeting(ada, '2027-01-15', 30);
+    // Last week's: not this week's.
+    meeting(ada, '2027-01-10', 600);
+
+    const asAdmin = read(actor(adminId));
+    expect(asAdmin.get(ada)?.meeting_minutes_week).toBe(120);
+    expect(asAdmin.get(bea)?.meeting_minutes_week).toBe(0);
+    expect(asAdmin.get(adminId)?.meeting_minutes_week).toBe(0);
+    // One look at each other person's time — none at the admin's own.
+    expect(
+      looks()
+        .map((l) => [l.viewer, l.subject, l.kind])
+        .sort(),
+    ).toEqual([ada, bea, cal].map((id) => [adminId, id, 'time']).sort());
+    // Read again within the dedupe window: no second row.
+    read(actor(adminId), NOW + 60_000);
+    expect(looks()).toHaveLength(3);
+  });
+
+  it('gives a member only their own meetings, and logs nothing', () => {
+    meeting(ada, '2027-01-12', 45);
+    meeting(cal, '2027-01-12', 60);
+    const asAda = read(actor(ada));
+    expect(asAda.get(ada)?.meeting_minutes_week).toBe(45);
+    for (const id of [adminId, bea, cal]) {
+      expect('meeting_minutes_week' in (asAda.get(id) ?? {})).toBe(false);
+    }
+    expect(looks()).toEqual([]);
+  });
+
+  it('gives a token nobody else’s meetings: reading another person’s time is session only (D-102)', () => {
+    meeting(ada, '2027-01-12', 45);
+    const asToken = read(withToken(adminId));
+    for (const id of [ada, bea, cal]) {
+      expect('meeting_minutes_week' in (asToken.get(id) ?? {})).toBe(false);
+    }
+    expect(looks()).toEqual([]);
   });
 });
 

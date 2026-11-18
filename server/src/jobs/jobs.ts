@@ -9,6 +9,7 @@ import {
   agentTimeBuckets,
   agentTimeDays,
   analyticsViews,
+  calendarAway,
   heartbeats,
   invites,
   localActivityDays,
@@ -233,6 +234,8 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
 export const TIME_DRAFTS_RETENTION_DAYS = 30;
 /** D-088 item 11 and BCEA s31: confirmed entries are kept three years. */
 export const TIME_ENTRIES_RETENTION_YEARS = 3;
+/** §4.107, LAI-1331: an out-of-office span is kept 90 days after it ended. */
+export const CALENDAR_AWAY_RETENTION_DAYS = 90;
 
 /**
  * Time retention (§11.6, D-088 item 11, LAI-787): drafts dated before 30 days
@@ -240,7 +243,9 @@ export const TIME_ENTRIES_RETENTION_YEARS = 3;
  * three years ago, with their revisions. Daily, and once at boot. Solidtime's
  * rows (§4.54) follow: a person's go with their entry, by its foreign key,
  * and *people not on Laika* are kept three years by the same cutoff (LAI-788).
- * Away periods that ended more than 30 days ago go too (§4.86, LAI-1130).
+ * Away periods that ended more than 30 days ago go too (§4.86, LAI-1130),
+ * and Outlook's out-of-office spans 90 days after they ended (§4.107,
+ * LAI-1331) — by instant, as they are stored.
  *
  * **By day, not by instant**, as local activity's: both hold the person's
  * local dates. The entries' cutoff is three years before `now`; the trigger
@@ -276,6 +281,11 @@ export function pruneTime(db: Db, now: number): JobResult {
       .run();
     // Away periods that ended more than 30 days ago (§4.86, LAI-1130).
     const away = tx.delete(userAwayPeriods).where(lt(userAwayPeriods.toDay, draftCutoff)).run();
+    // Out-of-office spans that ended more than 90 days ago, retired or not (§4.107).
+    const outlook = tx
+      .delete(calendarAway)
+      .where(lt(calendarAway.endsAt, now - CALENDAR_AWAY_RETENTION_DAYS * DAY_MS))
+      .run();
     return (
       drafts.changes +
       breaks.changes +
@@ -283,7 +293,8 @@ export function pruneTime(db: Db, now: number): JobResult {
       entries.changes +
       notes.changes +
       elsewhere.changes +
-      away.changes
+      away.changes +
+      outlook.changes
     );
   });
   return { changed };

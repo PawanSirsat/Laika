@@ -98,6 +98,8 @@ describe('migrations', () => {
     // LAI-1300, D-150: files in the operator's store, by project, task and comment.
     'attachments',
     'board_activity_days',
+    // LAI-1331, D-157 amended: out-of-office spans from Outlook, never time.
+    'calendar_away',
     // LAI-1316, D-157: which time entry holds which Outlook meeting.
     'calendar_events',
     // LAI-1038, D-126: capacity pings and the one answer each got.

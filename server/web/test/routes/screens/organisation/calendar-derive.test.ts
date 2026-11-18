@@ -187,6 +187,7 @@ void describe('the words', () => {
     unchanged: 6,
     kept_edits: 0,
     skipped: 0,
+    away: 0,
     ...over,
   });
 
@@ -206,6 +207,13 @@ void describe('the words', () => {
         }),
       ),
       '1 meeting · 1 logged · 2 updated · 3 removed · 1 left as people changed them · 2 held back (day full or closed) · 1 person, 1 with no Outlook calendar',
+    );
+  });
+
+  void test('out-of-office spans are said as kept as away, never time (LAI-1331)', () => {
+    assert.equal(
+      countsLine(result({ away: 2 })),
+      '6 meetings · 2 out of office, kept as away (never time) · 4 people',
     );
   });
 
