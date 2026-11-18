@@ -36,7 +36,9 @@ import { scanFile, SECRET_WORDS } from './attach-scan.ts';
  * named with its task would join it as soon as its own upload completed, and a
  * failure on the third would leave the first two behind. When anything fails,
  * every upload already made is deleted, and the exit code says nothing was
- * linked.
+ * linked. An upload that cannot be deleted is named, by id, in capitals: the
+ * board's sweep removes an upload no task took within 24 hours, and that is
+ * the backstop, not the plan.
  *
  * `--unlisted <repo> --project <slug>` logs **a new unlisted finding** that
  * holds the files instead (`log_unlisted_work`, D-162 item 8): the board can
@@ -85,8 +87,9 @@ export const ATTACH_USAGE = [
   '',
   '  --caption   one per file, in order; a file with none is captioned by its name',
   '  --comment   the comment the files are attached under',
-  '  --unlisted  log a new unlisted finding holding the files, for <repo>;',
-  '              needs --project (where they are uploaded) and --comment (the note)',
+  '  --unlisted  log a NEW unlisted finding about <repo> that holds the files',
+  '              (it cannot add files to a finding already logged); needs',
+  '              --project (where they are uploaded) and --comment (its note)',
   '  --harness   whose credential to use: claude-code, codex, … (default: the tool',
   '              this runs in, else the only one here, else your own token)',
   '  --json      one JSON object on stdout',
@@ -721,10 +724,18 @@ async function upload(
 }
 
 /** Delete what was uploaded, best effort: the board's sweep takes anything left within a day. */
-async function cleanUp(io: AttachIo, c: AttachCredential, ids: readonly string[]): Promise<void> {
+async function cleanUp(
+  io: AttachIo,
+  c: AttachCredential,
+  ids: readonly string[],
+): Promise<string[]> {
+  const left: string[] = [];
   for (const id of ids) {
-    await api(io.fetch, c, 'DELETE', `/api/v1/attachments/${encodeURIComponent(id)}`);
+    const gone = await api(io.fetch, c, 'DELETE', `/api/v1/attachments/${encodeURIComponent(id)}`);
+    // 404 is gone too: a file the board already removed, as it does a secret.
+    if (!gone.ok || (gone.status !== 204 && gone.status !== 404)) left.push(id);
   }
+  return left;
 }
 
 /** The `**Attached**` block, one captioned link per file, as the board's own tools write it. */
@@ -753,10 +764,41 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
     return 0;
   }
   const args = parsed;
-  const fail = (lines: readonly string[]): number => {
-    if (args.json) io.out(JSON.stringify({ ok: false, linked: false, errors: lines }));
-    for (const line of lines) io.err(`laika attach: ${line}`);
-    io.err('laika attach: nothing was attached.');
+  const fail = (
+    lines: readonly string[],
+    left: { readonly uploads: readonly string[]; readonly comment?: string } = { uploads: [] },
+  ): number => {
+    // What could not be undone is said loudly, by id: the board's sweep
+    // removes an upload no task took within 24 hours, but a person should know.
+    const loud = [
+      ...(left.comment === undefined
+        ? []
+        : [
+            `COULD NOT REMOVE comment ${left.comment}, which links the files: delete it on the task`,
+          ]),
+      ...(left.uploads.length === 0
+        ? []
+        : [
+            `COULD NOT DELETE ${String(left.uploads.length)} upload${left.uploads.length === 1 ? '' : 's'} already made (${left.uploads.join(', ')}). ${left.comment === undefined ? 'They are on no task, and' : 'Unlinked ones'} the board's sweep removes them within 24 hours`,
+          ]),
+    ];
+    if (args.json) {
+      io.out(
+        JSON.stringify({
+          ok: false,
+          linked: left.comment !== undefined ? 'unknown' : false,
+          errors: [...lines, ...loud],
+          ...(left.uploads.length === 0 ? {} : { not_deleted: left.uploads }),
+          ...(left.comment === undefined ? {} : { comment_not_removed: left.comment }),
+        }),
+      );
+    }
+    for (const line of [...lines, ...loud]) io.err(`laika attach: ${line}`);
+    io.err(
+      left.comment === undefined
+        ? 'laika attach: nothing was attached.'
+        : `laika attach: the task may still show comment ${left.comment}.`,
+    );
     return 1;
   };
 
@@ -802,8 +844,7 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
   for (const file of files) {
     const result = await upload(io, c, slug, file, created);
     if (typeof result === 'string') {
-      await cleanUp(io, c, created);
-      return fail([result]);
+      return fail([result], { uploads: await cleanUp(io, c, created) });
     }
     done.push(result);
   }
@@ -831,10 +872,10 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
     const unlisted =
       logged.ok && isRecord(logged.value.unlisted) ? logged.value.unlisted : undefined;
     if (!logged.ok || typeof unlisted?.id !== 'string') {
-      await cleanUp(io, c, created);
-      return fail([
-        `the board did not log the finding: ${logged.ok ? 'no id in its answer' : logged.why}`,
-      ]);
+      return fail(
+        [`the board did not log the finding: ${logged.ok ? 'no id in its answer' : logged.why}`],
+        { uploads: await cleanUp(io, c, created) },
+      );
     }
     if (args.json) {
       io.out(
@@ -870,10 +911,12 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
   const comment =
     posted.ok && posted.status === 201 && isRecord(posted.body) ? posted.body : undefined;
   if (typeof comment?.id !== 'string') {
-    await cleanUp(io, c, created);
-    return fail([
-      `the comment was not posted: ${posted.ok ? refusal(posted.status, posted.body) : posted.why}`,
-    ]);
+    return fail(
+      [
+        `the comment was not posted: ${posted.ok ? refusal(posted.status, posted.body) : posted.why}`,
+      ],
+      { uploads: await cleanUp(io, c, created) },
+    );
   }
   const listed = await api(
     io.fetch,
@@ -890,11 +933,17 @@ export async function attach(argv: readonly string[], io: AttachIo = CONSOLE): P
   );
   const missing = done.filter((d) => !onTask.has(d.id));
   if (missing.length > 0) {
-    await api(io.fetch, c, 'DELETE', `/api/v1/comments/${encodeURIComponent(comment.id)}`);
-    await cleanUp(io, c, created);
-    return fail([
-      `the comment did not link ${missing.map((d) => d.filename).join(', ')}; it was removed`,
-    ]);
+    const removed = await api(
+      io.fetch,
+      c,
+      'DELETE',
+      `/api/v1/comments/${encodeURIComponent(comment.id)}`,
+    );
+    const commentGone = removed.ok && (removed.status === 204 || removed.status === 404);
+    return fail([`the comment did not link ${missing.map((d) => d.filename).join(', ')}`], {
+      uploads: await cleanUp(io, c, created),
+      ...(commentGone ? {} : { comment: comment.id }),
+    });
   }
 
   if (args.json) {

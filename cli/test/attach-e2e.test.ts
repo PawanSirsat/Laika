@@ -71,7 +71,10 @@ interface Ran {
   err: string[];
 }
 
-async function run(argv: readonly string[]): Promise<Ran> {
+async function run(
+  argv: readonly string[],
+  fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+): Promise<Ran> {
   const out: string[] = [];
   const err: string[] = [];
   const code = await attach(argv, {
@@ -79,7 +82,7 @@ async function run(argv: readonly string[]): Promise<Ran> {
     err: (l) => err.push(l),
     home,
     env: {},
-    fetch: (input, init) => fetch(input, init),
+    fetch: fetchImpl,
   });
   return { code, out, err };
 }
@@ -279,6 +282,38 @@ void describe('all or none', () => {
     );
   });
 
+  void test('an upload it cannot delete is named loudly, by id, with the sweep as the backstop', async () => {
+    const task = await newTask('Cleanup refused');
+    store.failPut = 2;
+    // The board answers every DELETE with a refusal, as a board mid-restart would.
+    const noDeletes: typeof fetch = (input, init) =>
+      init?.method === 'DELETE'
+        ? Promise.resolve(new Response('{}', { status: 503 }))
+        : fetch(input, init);
+    let ran: Ran;
+    try {
+      ran = await run(
+        [task.key, file('three.png', PNG), file('four.png', PNG), '--json'],
+        noDeletes,
+      );
+    } finally {
+      store.failPut = null;
+    }
+    assert.equal(ran.code, 1);
+    const answer = JSON.parse(ran.out.join('\n')) as { linked: boolean; not_deleted: string[] };
+    assert.equal(answer.linked, false);
+    // Both uploads were made — the second asked for, its PUT refused — and neither could go.
+    assert.equal(answer.not_deleted.length, 2);
+    const said = ran.err.join('\n');
+    assert.ok(
+      said.includes(`COULD NOT DELETE 2 uploads already made (${answer.not_deleted.join(', ')})`),
+      said,
+    );
+    assert.match(said, /the board's sweep removes them within 24 hours/);
+    // Still on no task: the comment that would link it was never written.
+    assert.deepEqual((await asOwner(`/api/v1/tasks/${task.id}/attachments`)).data, []);
+  });
+
   void test('a file over the board’s limit is refused before any upload', async () => {
     const task = await newTask('Too big');
     const creates = attachmentCreates();
@@ -290,7 +325,7 @@ void describe('all or none', () => {
 });
 
 void describe('an unlisted finding holding the files', () => {
-  void test('--unlisted logs a new finding with the files linked to it', async () => {
+  void test('--unlisted logs a NEW finding with the files linked to it', async () => {
     const ran = await run([
       '--unlisted',
       'PawanSirsat/Laika',

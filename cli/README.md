@@ -309,14 +309,16 @@ what it is).
 - **All or none.** Each file is uploaded into the task's project (create,
   a plain `PUT` to the presigned URL with exactly its headers, complete — where
   the board scans text again), and only the one comment links them to the
-  task. Any failure deletes the uploads already made.
+  task. Any failure deletes the uploads already made; one that cannot be
+  deleted is named by id, in capitals (`COULD NOT DELETE …`, and
+  `not_deleted` with `--json`), the board's 24-hour sweep the backstop.
 - **The credential** is the tool's own (`--harness`, else `LAIKA_AGENT_TOKEN`
   with `LAIKA_AGENT_URL`, else Claude Code's when run inside it, else the only
   tool here), so the files are attributed to the agent; your own token is the
   fallback.
 - `--unlisted` logs **a new** unlisted finding holding the files, with
-  `--comment` as its note: the board links files to a finding only as it is
-  logged.
+  `--comment` as its note. It cannot add files to a finding already logged:
+  the board links files to a finding only as it is logged.
 
 Exit codes: `0` every file attached; `1` nothing was linked (refused or
 failed, said on stderr — and as `{ "ok": false, … }` with `--json`); `64` a
