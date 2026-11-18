@@ -2822,6 +2822,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         // LAI-1316's calendar tables, and `time_entries` rebuilt for the
         // `calendar` source, every row kept.
         expect.stringMatching(/_calendar_sync$/),
+        // LAI-1315's email to tasks: four new tables, nothing rebuilt.
+        expect.stringMatching(/_email_inbound$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2985,6 +2987,7 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -3086,6 +3089,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3117,8 +3121,8 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
         // LAI-1181's 0081 rides along and adds its four HR tables,
         // LAI-1300's 0082 its attachments, LAI-1312's 0084 the email outbox
         // LAI-1314's 0085 its three Teams tables, LAI-1313's 0086 its four
-        // email tables and LAI-1316's 0087 its two calendar tables; nothing
-        // else appears.
+        // email tables, LAI-1316's 0087 its two calendar tables and LAI-1315's
+        // 0088 its four inbound ones; nothing else appears.
         expect(tables()).toEqual(
           [
             ...before,
@@ -3138,6 +3142,10 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
             'teams_posts',
             'calendar_events',
             'org_calendar_source',
+            'email_inbound',
+            'email_inbound_attachments',
+            'org_email_inbound',
+            'project_inbound_addresses',
           ].sort(),
         );
         expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
@@ -3190,6 +3198,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3309,6 +3318,7 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3394,6 +3404,7 @@ describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', ()
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3484,6 +3495,7 @@ describe('0082 adds attachments and two activity verbs to a populated 0081 datab
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3585,6 +3597,7 @@ describe('0084 adds the email outbox and two orgs columns to a populated 0083 da
       '0085_teams_posting',
       '0086_email_notify',
       '0087_calendar_sync',
+      '0088_email_inbound',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3675,8 +3688,13 @@ describe('0086 rebuilds the email outbox on a populated 0085 database and keeps 
     };
     const at = journal.entries.findIndex((e) => e.tag === '0086_email_notify');
     const dropped = journal.entries.splice(at);
-    // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0086_email_notify', '0087_calendar_sync']);
+    // The guard on this guard: a later migration lands here and says so —
+    // LAI-1316's 0087 and LAI-1315's 0088 add tables and touch nothing 0086 made.
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0086_email_notify',
+      '0087_calendar_sync',
+      '0088_email_inbound',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3771,7 +3789,8 @@ describe('0087 rebuilds time_entries for the calendar source on a populated 0086
     const at = journal.entries.findIndex((e) => e.tag === '0087_calendar_sync');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0087_calendar_sync']);
+    // LAI-1315's 0088 adds four tables and touches nothing 0087 made.
+    expect(dropped.map((e) => e.tag)).toEqual(['0087_calendar_sync', '0088_email_inbound']);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }

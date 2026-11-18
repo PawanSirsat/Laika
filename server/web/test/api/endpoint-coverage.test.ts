@@ -63,6 +63,8 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/attachments/*/content':
     'markdown embeds it; the browser follows its 302 from an img or a link, never through request()',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
+  // D-155 (LAI-1315): Brevo's inbound parsing, proved by its bearer token.
+  'webhooks/email': 'Brevo’s inbound parsing posts here (D-155); no browser is involved',
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
   'api/v1/tasks/*/finish':
     "finish_task's REST twin (D-082): an agent hands work back for review; a person accepts or sends back instead",

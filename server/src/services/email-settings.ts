@@ -156,6 +156,18 @@ function parseSettings(raw: string | null): StoredSettings | null {
   }
 }
 
+/**
+ * The address this board's mail is sent from, lower case: the saved From, or
+ * the default it is pre-filled with. Inbound email drops a mail from it, so a
+ * reply Laika sent can never come back as a task (D-155, LAI-1315).
+ */
+export function boardFromAddress(db: Db): string {
+  const row = db.select({ smtpSettings: orgs.smtpSettings }).from(orgs).limit(1).get();
+  return (parseSettings(row?.smtpSettings ?? null)?.from_address ?? EMAIL_DEFAULTS.from_address)
+    .trim()
+    .toLowerCase();
+}
+
 /** Settings saved and a key stored: the one definition of *configured*. */
 export function isEmailConfigured(row: EmailColumns): boolean {
   return parseSettings(row.smtpSettings) !== null && (row.smtpJsonEnc ?? '') !== '';

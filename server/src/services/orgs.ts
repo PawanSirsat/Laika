@@ -17,6 +17,7 @@ import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { type OrgAttachmentsView } from './attachments.ts';
 import { isEmailConfigured, orgEmailView, type OrgEmailView } from './email-settings.ts';
+import { orgEmailInboundView, type OrgEmailInboundView } from './email-inbound.ts';
 import { pendingOwnerInvites } from './invites.ts';
 import { extraOwners } from './users.ts';
 
@@ -153,6 +154,13 @@ export interface OrgView {
    * `GET /org/email`, `org.email.configure` only.
    */
   email: OrgEmailView;
+  /**
+   * *Email to tasks* (D-155, LAI-1315): the switch and the receiving domain.
+   * **Readable by everyone**, so a space's settings can show its address; the
+   * token, the API key and the record of mail are `GET /org/email-inbound`,
+   * `org.email.configure` only.
+   */
+  email_inbound: OrgEmailInboundView;
 }
 
 /**
@@ -191,6 +199,7 @@ export function getOrg(
     updated_at: row.updatedAt,
     attachments,
     email: orgEmailView(row),
+    email_inbound: orgEmailInboundView(db),
   };
 
   // Field-level, and the only gate on it. A Viewer gets the org and no `ai` key

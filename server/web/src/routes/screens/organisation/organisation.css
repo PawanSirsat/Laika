@@ -3379,3 +3379,183 @@
 .org-teams-last[data-tone='bad'] {
   color: var(--overdue);
 }
+
+/*
+ * D-155's Email to tasks (LAI-1315), a card on Integrations beside Email.
+ * Tokens only. A mail that made a task or a comment is green; a dropped one
+ * stays muted — dropping is the card working, not failing.
+ */
+.org-inbound-lead {
+  margin: 0 0 var(--space-3);
+}
+
+.org-inbound-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.org-inbound-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 32rem;
+  min-width: 0;
+  margin: var(--space-1) 0 var(--space-4);
+}
+
+.org-inbound-form .field,
+.org-inbound-form .checkbox {
+  margin-bottom: var(--space-2);
+}
+
+.org-inbound-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.org-inbound-facts {
+  margin-bottom: var(--space-3);
+}
+
+.org-inbound-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.org-inbound-code {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The token said once: drawn as a read-only field, so it reads as the thing to copy. */
+.org-inbound-secret {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.org-inbound-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.org-inbound-updated {
+  margin: 0 0 var(--space-3);
+}
+
+.org-inbound-recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.org-inbound-recent-head {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  color: var(--text-secondary);
+}
+
+.org-inbound-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.org-inbound-row {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    'when outcome task'
+    '. meta meta';
+  gap: var(--space-0-5) var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.org-inbound-when {
+  grid-area: when;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.org-inbound-outcome {
+  grid-area: outcome;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.org-inbound-row[data-tone='on'] .org-inbound-outcome {
+  color: var(--chip-green);
+}
+
+.org-inbound-task {
+  grid-area: task;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.org-inbound-task:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.org-inbound-meta {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-0-5) var(--space-3);
+  min-width: 0;
+  color: var(--text-muted);
+}
+
+.org-inbound-from,
+.org-inbound-space {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.org-inbound-from {
+  color: var(--text-primary);
+}
+
+@media (max-width: 640px) {
+  .org-inbound-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'when task'
+      'outcome outcome'
+      'meta meta';
+  }
+}

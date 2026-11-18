@@ -85,6 +85,9 @@ export type SecretPurpose =
   // D-154 (LAI-1314): a space's Power Automate webhook address, whose `sig=`
   // is the credential, in `project_teams_channels.webhook_url_enc`.
   | 'teams_webhook_url'
+  // D-155 (LAI-1315): the Brevo API key that fetches an inbound mail's
+  // attachments, in `org_email_inbound.api_key_enc`.
+  | 'brevo_api_key'
   // D-157 (LAI-1316): the Entra app's client secret, in `org_calendar_source.secret_enc`.
   | 'calendar_client_secret';
 

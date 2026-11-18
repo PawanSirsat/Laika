@@ -105,6 +105,18 @@ export const LIMITS = {
    */
   teamsTest: { perMinute: 6 },
   /**
+   * Brevo's inbound deliveries (D-155, LAI-1315): one sender, anonymous until
+   * its token is checked, on a bucket of its own so a flood of bad tokens never
+   * spends the session budget every anonymous page shares — and a burst big
+   * enough for a mailing that arrives at once.
+   */
+  inboundEmail: { perMinute: 120, burst: 60 },
+  /**
+   * The same path with a token that did not verify (LAI-1315 review, F2): its
+   * own small bucket, so junk is bounded and never spends Brevo's.
+   */
+  inboundEmailRefused: { perMinute: 30, burst: 30 },
+  /**
    * Testing the Outlook calendar connection and syncing it now (D-157,
    * LAI-1316): each calls Microsoft, so 6 a minute per person on its own
    * bucket, as the HR system's.
