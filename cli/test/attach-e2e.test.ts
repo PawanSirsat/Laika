@@ -20,7 +20,7 @@ import { after, before, describe, test } from 'node:test';
 import { attach } from '../src/attach.ts';
 import { type FakeStore, startFakeStore } from './support/fake-store.ts';
 import { must, type RealBoard, seed, type Seeded, startRealBoard } from './support/real-board.ts';
-import { xlsx } from './support/zip.ts';
+import { xlsx, zip } from './support/zip.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 
@@ -428,5 +428,33 @@ void describe('usage', () => {
     ]) {
       assert.equal((await run(argv)).code, 64, argv.join(' '));
     }
+  });
+});
+
+void describe('an office file that cannot be checked is refused, with --json', () => {
+  void test('a reference to no character: refused before anything is sent, said in the JSON', async () => {
+    // Written raw: the docx helper escapes `&`, and this must reach the reader as a reference.
+    const bad = file(
+      'bad.docx',
+      zip({
+        'word/document.xml':
+          '<w:document><w:body><w:p><w:r><w:t>&#x110000;</w:t></w:r></w:p></w:body></w:document>',
+      }),
+    );
+    const creates = attachmentCreates();
+    const before = board.requests.length;
+
+    const ran = await run(['LAI-1', bad, '--json']);
+
+    assert.equal(ran.code, 1);
+    const answer = JSON.parse(ran.out.join('\n')) as {
+      ok: boolean;
+      linked: boolean;
+      errors: string[];
+    };
+    assert.deepEqual([answer.ok, answer.linked], [false, false]);
+    assert.match(answer.errors[0] ?? '', /bad\.docx: could not be opened to check it for secrets/);
+    assert.equal(attachmentCreates(), creates);
+    assert.equal(board.requests.length, before, 'something was sent to the board');
   });
 });

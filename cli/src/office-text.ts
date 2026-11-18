@@ -14,9 +14,10 @@ import { inflateRawSync } from 'node:zlib';
  *
  * It reads only what it needs and refuses what it cannot read rather than
  * guessing: a ZIP64 archive, an encrypted entry, a part that inflates past
- * {@link MAX_PART_BYTES}, parts that together pass {@link MAX_TOTAL_BYTES}, or
- * XML with a character reference no character has is `undefined`, and the
- * caller treats that as a file it could not check.
+ * {@link MAX_PART_BYTES}, a file whose inflated parts **and the text read out
+ * of them** together pass {@link MAX_TOTAL_BYTES}, XML with a character
+ * reference no character has, or anything else the reader throws is
+ * `undefined`, and the caller treats that as a file it could not check.
  *
  * **Every scan is linear** (LAI-1351 review). The XML is the file's, so it may
  * be crafted: elements are found with `indexOf` — an opening tag, its `>`, its
@@ -33,6 +34,28 @@ export const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
 
 /** XML this cannot read for what it says: a reference to no character. */
 class UnreadableXml extends Error {}
+
+/**
+ * One allowance for a file, spent by the bytes inflated **and by the text
+ * read out of them** (LAI-1351 review): a 1 KiB shared string referenced by a
+ * thousand cells, or a cell at column ZZZ on every row, multiplies small XML
+ * into text far larger than it. Spending past the end makes the file
+ * unreadable before that text is built.
+ */
+class Budget {
+  // A field, not a parameter property: the CLI runs with Node's type
+  // stripping, which refuses `constructor(public left …)`.
+  left: number;
+
+  constructor(left: number) {
+    this.left = left;
+  }
+
+  spend(n: number): void {
+    this.left -= n;
+    if (this.left < 0) throw new UnreadableXml('more text than this reads');
+  }
+}
 
 /** The most entries read from one archive. */
 const MAX_ENTRIES = 10_000;
@@ -213,22 +236,32 @@ export interface PartText {
 }
 
 /** A worksheet's rows as tab-separated lines, a blank line where rows were skipped. */
-function sheetText(xml: string, shared: readonly string[], where: string): PartText {
-  const lines: string[] = [];
-  const rows: (number | null)[] = [];
+function sheetText(
+  xml: string,
+  shared: readonly string[],
+  where: string,
+  budget: Budget,
+): PartText {
+  // Read first, as references and column numbers, every cell and every tab
+  // of padding spent against the budget; the text is built only once the
+  // whole sheet is within it, so no amplified row is ever made.
+  const read: { readonly number: number | null; readonly cells: [number, string][] }[] = [];
   let last = 0;
   for (const row of elements(xml, 'row')) {
     const number = Number(/\br="(\d{1,7})"/.exec(row.attrs)?.[1] ?? last + 1);
     // A gap of empty rows separates two tables, as a blank line does in a CSV.
-    if (number > last + 1 && lines.length > 0) {
-      lines.push('');
-      rows.push(null);
+    if (number > last + 1 && read.length > 0) {
+      budget.spend(1);
+      read.push({ number: null, cells: [] });
     }
     last = number;
-    const cells: string[] = [];
+    const cells: [number, string][] = [];
+    let next = 0;
+    let widest = -1;
     for (const cell of elements(row.body, 'c')) {
       const ref = /\br="([A-Z]{1,3})\d{1,7}"/i.exec(cell.attrs)?.[1];
-      const at = ref === undefined ? cells.length : column(ref);
+      const at = ref === undefined ? next : column(ref);
+      next = at + 1;
       const type = /\bt="(\w{1,16})"/.exec(cell.attrs)?.[1];
       let value: string | undefined;
       for (const v of elements(cell.body, 'v')) {
@@ -239,27 +272,41 @@ function sheetText(xml: string, shared: readonly string[], where: string): PartT
       if (type === 's') text = shared[Number(value)] ?? '';
       else if (type === 'inlineStr') text = texts(cell.body);
       else text = decodeXml(value ?? '');
-      while (cells.length < at) cells.push('');
-      cells[at] = text.replace(/[\t\r\n]+/g, ' ');
+      budget.spend(text.length);
+      cells.push([at, text]);
+      widest = Math.max(widest, at);
     }
-    lines.push(cells.join('\t'));
-    rows.push(number);
+    // The tabs that put the last cell in its column, and the line's end.
+    budget.spend(Math.max(widest, 0) + 1);
+    read.push({ number, cells: cells.sort((a, b) => a[0] - b[0]) });
   }
-  return { where, text: lines.join('\n'), rows };
+
+  const lines = read.map(({ cells }) => {
+    let line = '';
+    let column = 0;
+    for (const [at, text] of cells) {
+      line += '\t'.repeat(Math.max(0, at - column)) + text.replace(/[\t\r\n]+/g, ' ');
+      column = at;
+    }
+    return line;
+  });
+  return { where, text: lines.join('\n'), rows: read.map((r) => r.number) };
 }
 
 /** A Word part's paragraphs as lines, a table's rows as tab-separated lines. */
-function documentText(xml: string, where: string): PartText {
+function documentText(xml: string, where: string, budget: Budget): PartText {
   const lines: string[] = [];
   let line = '';
   let cell = '';
   let cells: string[] | null = null;
   let inText = false;
   const add = (text: string): void => {
+    budget.spend(text.length);
     if (cells !== null) cell += text;
     else line += text;
   };
   const endLine = (): void => {
+    budget.spend(1);
     if (cells !== null) cell += ' ';
     else {
       lines.push(line);
@@ -331,9 +378,11 @@ export function officeText(
 ): PartText[] | null | undefined {
   try {
     return readOffice(bytes, limits);
-  } catch (error) {
-    if (error instanceof UnreadableXml) return undefined;
-    throw error;
+  } catch {
+    // Unreadable XML, a budget spent, or anything else the reader throws —
+    // a `RangeError` from a string too long among them: a file this could
+    // not check, refused, never a crash with nothing said.
+    return undefined;
   }
 }
 
@@ -344,12 +393,12 @@ function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null 
   const byName = new Map(entries.map((e) => [e.name, e]));
   // Every part read counts against one budget, so many small parts cannot
   // add up to what one large part is refused for.
-  let budget = limits.total;
+  const budget = new Budget(limits.total);
   const read = (entry: ZipEntry): string | undefined => {
-    if (budget <= 0) return undefined;
-    const data = readEntry(buf, entry, Math.min(limits.part, budget));
+    if (budget.left <= 0) return undefined;
+    const data = readEntry(buf, entry, Math.min(limits.part, budget.left));
     if (data === undefined) return undefined;
-    budget -= data.length;
+    budget.spend(data.length);
     return data.toString('utf8');
   };
 
@@ -359,7 +408,11 @@ function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null 
     if (sharedEntry !== undefined) {
       const xml = read(sharedEntry);
       if (xml === undefined) return undefined;
-      shared = [...elements(unprefixed(xml), 'si')].map((si) => texts(si.body));
+      shared = [...elements(unprefixed(xml), 'si')].map((si) => {
+        const text = texts(si.body);
+        budget.spend(text.length);
+        return text;
+      });
     }
     const parts: PartText[] = [];
     const sheets = entries
@@ -368,7 +421,9 @@ function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null 
     for (const entry of sheets) {
       const xml = read(entry);
       if (xml === undefined) return undefined;
-      parts.push(sheetText(unprefixed(xml), shared, `sheet ${/\d+/.exec(entry.name)?.[0] ?? '?'}`));
+      parts.push(
+        sheetText(unprefixed(xml), shared, `sheet ${/\d+/.exec(entry.name)?.[0] ?? '?'}`, budget),
+      );
     }
     return parts;
   }
@@ -382,7 +437,7 @@ function readOffice(bytes: Uint8Array, limits: OfficeLimits): PartText[] | null 
       const xml = read(entry);
       if (xml === undefined) return undefined;
       const name = /^word\/(\w+?)\d*\.xml$/.exec(entry.name)?.[1] ?? 'document';
-      parts.push(documentText(xml, name === 'document' ? 'the document' : `its ${name}`));
+      parts.push(documentText(xml, name === 'document' ? 'the document' : `its ${name}`, budget));
     }
     return parts;
   }

@@ -426,6 +426,8 @@ void describe('office files are read in linear time, and what cannot be read is 
   });
 
   void test('parts that together pass the total budget are unreadable, each under the part limit', () => {
+    // The budget is spent by the XML inflated and the text read from it: three
+    // sheets of `ok` cells need their XML plus some 36k characters of text.
     const big = `<sheetData>${'<row><c t="inlineStr"><is><t>ok</t></is></c></row>'.repeat(4000)}</sheetData>`;
     const three = zip({
       'xl/workbook.xml': '<workbook/>',
@@ -436,8 +438,73 @@ void describe('office files are read in linear time, and what cannot be read is 
     const limits = { part: big.length + 1, total: big.length * 2 + 100 };
     assert.equal(officeText(three, limits), undefined);
     assert.equal(
-      officeText(three, { part: big.length + 1, total: big.length * 3 + 100 })?.length,
+      officeText(three, { part: big.length + 1, total: big.length * 3 + 64 * 1024 })?.length,
       3,
     );
+  });
+});
+
+void describe('text multiplied out of small XML is spent against the budget, not built (LAI-1351 review)', () => {
+  /** Run `scanFile`, and say how long it took and how much the heap grew. */
+  const measured = (name: string, file: Buffer) => {
+    const heap = process.memoryUsage().heapUsed;
+    const started = performance.now();
+    const verdict = scanFile(name, file);
+    return {
+      verdict,
+      ms: performance.now() - started,
+      grewMiB: (process.memoryUsage().heapUsed - heap) / 1_048_576,
+    };
+  };
+
+  void test('one 1 MiB shared string referenced by 600 cells: unreadable, in under a second, with no 600 MiB built', () => {
+    const rows = Array.from(
+      { length: 600 },
+      (_, i) => `<row r="${String(i + 1)}"><c r="A${String(i + 1)}" t="s"><v>0</v></c></row>`,
+    ).join('');
+    const file = zip({
+      'xl/workbook.xml': '<workbook/>',
+      'xl/sharedStrings.xml': `<sst><si><t>${'a'.repeat(1_048_576)}</t></si></sst>`,
+      'xl/worksheets/sheet1.xml': `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
+    });
+    assert.ok(file.length < 64 * 1024, `the crafted file is ${String(file.length)} bytes`);
+
+    const { verdict, ms, grewMiB } = measured('amplified.xlsx', file);
+
+    assert.deepEqual(verdict, { ok: false, pattern: 'unreadable', where: 'its contents' });
+    assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
+    assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
+  });
+
+  void test('20,000 rows with one cell at column ZZZ: unreadable, in under a second, with no padding built', () => {
+    const rows = Array.from(
+      { length: 20_000 },
+      (_, i) => `<row r="${String(i + 1)}"><c r="ZZZ${String(i + 1)}"/></row>`,
+    ).join('');
+    const file = zip({
+      'xl/workbook.xml': '<workbook/>',
+      'xl/worksheets/sheet1.xml': `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
+    });
+
+    const { verdict, ms, grewMiB } = measured('padded.xlsx', file);
+
+    assert.deepEqual(verdict, { ok: false, pattern: 'unreadable', where: 'its contents' });
+    assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
+    assert.ok(grewMiB < 128, `the heap grew ${grewMiB.toFixed(0)} MiB`);
+  });
+
+  void test('the same shapes at a size a real sheet has are read, padding and all', () => {
+    const shared = zip({
+      'xl/workbook.xml': '<workbook/>',
+      'xl/sharedStrings.xml': '<sst><si><t>ok</t></si></sst>',
+      'xl/worksheets/sheet1.xml': `<worksheet><sheetData>${Array.from(
+        { length: 600 },
+        (_, i) =>
+          `<row r="${String(i + 1)}"><c r="A${String(i + 1)}" t="s"><v>0</v></c><c r="D${String(i + 1)}" t="s"><v>0</v></c></row>`,
+      ).join('')}</sheetData></worksheet>`,
+    });
+    const parts = officeText(shared);
+    assert.equal(parts?.[0]?.text.split('\n').length, 600);
+    assert.equal(parts?.[0]?.text.split('\n')[0], 'ok\t\t\tok');
   });
 });
