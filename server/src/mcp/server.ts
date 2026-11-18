@@ -70,14 +70,15 @@ export const MCP_SERVER_NAME = 'laika';
  * Every backticked name must be a served tool; `test/mcp/server.test.ts`
  * checks the names against `tools/list`.
  */
-export const MCP_INSTRUCTIONS = `Laika is this team's project board, shared by people and agents. Rules:
-claim a task with \`start_working\` before you write code; if no task fits the
-work, \`create_task\` first. \`finish_task\` moves it to review with your proof
-(commits, branch, PR, tests and exit codes): an agent never marks work done,
-a person does. Show your work: when a person needs to see the result (UI
-changes, generated files), attach screenshots or outputs with \`laika attach\`
-or \`request_upload\`, captioned. Never upload secrets. One task at a time.
-Comment with \`add_comment\` as you go. Refer to tasks by key, such as LAI-42.
+export const MCP_INSTRUCTIONS = `Laika is this team's project board, for people and agents. Claim a task
+with \`start_working\` before you write code; if no task fits the work,
+\`create_task\` first. \`finish_task\` moves it to review with your proof
+(commits, branch, pull request, test commands and exit codes): an agent
+never marks work done, a person does. Show your work: when a person needs
+to see the result (UI changes, generated files), attach screenshots or
+outputs with \`laika attach\` or \`request_upload\`, captioned. Never upload
+secrets. One task at a time. Comment with \`add_comment\` as you go. Refer to
+tasks by key, such as LAI-42.
 
 How to work:
 1. Call \`laika_whoami\` to confirm who this token acts as.
