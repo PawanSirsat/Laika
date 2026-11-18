@@ -73,21 +73,26 @@ once #405 lands, so the PR shows only this task's diff.
   `get_task_context`, and the files go up into that task's project. Any
   failure deletes the uploads already made. The comment owns the files, as MCP
   `add_comment`'s `attachments` do.
-- **`--unlisted <repo> --project <slug>` logs a new finding holding the
-  files.** The board has no API to add files to an existing finding by id
-  (they link only as `log_unlisted_work` logs it), so `--unlisted <id>` would
-  need a server route and a task of its own.
-- **Repo block revision 3 needs two owners (§4.4).** The CLI half is here; the
-  web half is LAI-1352's `connect-copy.ts`. Until LAI-1352 lands, two
-  assertions in `cli/test/project-check.test.ts` stay red, as the drift check
-  working:
-  - "the same template revision…": `The input did not match the regular
-    expression /export const PROJECT_BLOCK_REVISION = 3;/`
-  - "revision 3's two rules…": `connect-copy.ts lacks: 7. **Show the
-    result.** …`
+- **`--unlisted <repo> --project <slug>` logs a NEW finding holding the
+  files**, and says so in its help and in the skill. The board has no API to
+  add files to an existing finding; CHIEF said not to file one.
+- **Repo block revision 3 needs two owners (§4.4).** The CLI holds
+  `PROJECT_BLOCK_REVISION = 3`. Rules 7 and 8 are in LAI-1352's words
+  (`connect-copy.ts` `SHOW_THE_RESULT` and `ONE_PARENT_PER_FEATURE`, at
+  5d1b38121), quoted exactly in the skill and the launcher's work prompt. Three
+  assertions read the web's copy and stay red until LAI-1352 lands:
+  - `project-check.test.ts`, "the same template revision…": `The input did
+    not match the regular expression /export const PROJECT_BLOCK_REVISION =
+    3;/`
+  - `plugin-skills.test.ts` and `agent-launcher.test.ts`, the rule tests:
+    `connect-copy.ts has no SHOW_THE_RESULT: the web's revision-3 block
+    (LAI-1352) is not here`
 
-  LAI-1352 turns both green by writing rules 7 and 8 as `REVISION_3_RULES`
-  holds them.
+  With LAI-1352's `connect-copy.ts` in place all three pass: checked locally
+  by copying it in, then restoring it by name.
+- **Both design points approved by CHIEF:** the project-only uploads, and
+  `--unlisted` logging a new finding. An upload that cannot be deleted after a
+  failure is now named by id, in capitals.
 - **Live use:** `laika attach LAIKA-1153 …` on Ksage, exit 0. It created comment
   `01M7RC7KJTD3YQ09M1QZWQ3X86` with two captioned files: the command's own
   output from a local run, and `laika doctor`'s attach line against Ksage.
