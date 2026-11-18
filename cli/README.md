@@ -467,15 +467,19 @@ never holds the token under a wider mode. The shell rc only *sources*
 `laika whoami` prints an `Agents` line naming which agents have a `laika` entry
 at user scope. It only checks that the entry exists, not that it works.
 
-**A board and its token come as a pair** (LAI-1343). `whoami`, `laika activity`
-and `laika time` take the first board the environment, `~/.claude/settings.json`
-or `~/.laika/env` names, and a token only from a place naming that same board.
-`LAIKA_URL` in the environment beside `~/.laika/env`'s URL and token for another
-board is that board with no token — `whoami` says so and names the file — never
-the one board's URL with the other's token. `laika activity otel` prints nothing
-in a shell whose `LAIKA_URL` names another board than activity's, since its lines
-send that shell's `$LAIKA_TOKEN`; `laika-claude` uses `~/.laika/env`'s pair when
-it holds both, else the environment's.
+**A board and its token come as a pair** (LAI-1343). `whoami`, `laika time` and
+`laika activity on` take the first board the environment, `~/.claude/settings.json`
+or `~/.laika/env` names, and a token only from a place naming that same board — or,
+for activity, this machine's own tool credential for that board, never another
+board's. Once activity is on, its sync, `status` and `backfill` use the board `on`
+recorded in `~/.laika/activity/state.json`. `LAIKA_URL` in the environment beside
+`~/.laika/env`'s URL and token for another board is that board with no token —
+`whoami` and `activity on` say so and name the file — never the one board's URL
+with the other's token; a `LAIKA_TOKEN` with no `LAIKA_URL` beside it names no
+board and is not used. `laika activity otel` prints nothing in a shell whose
+`LAIKA_URL` names another board than activity's, or that has a `LAIKA_TOKEN` with
+no `LAIKA_URL`, since its lines send that shell's `$LAIKA_TOKEN`; `laika-claude`
+uses `~/.laika/env`'s pair when it holds both, else the environment's.
 
 ## `laika activity` — local activity for the heatmap (LAI-752)
 
