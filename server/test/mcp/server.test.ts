@@ -323,6 +323,22 @@ describe('the server tells any agent how to work the board (D-076)', () => {
     await client.close();
   });
 
+  it('states the owner’s parent-and-child rule after the must-follow block (LAI-1360)', async () => {
+    const client = await connect(await mint());
+
+    const instructions = client.getInstructions() ?? '';
+    const flat = instructions.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "A feature with several parts gets one parent task; file each part as a child (`create_task`'s parent). Work on an existing feature becomes a new child of its parent. Attach the main outputs to the parent.",
+    );
+    // After the rules that must stand in Codex's first 512, not among them.
+    expect(flat.indexOf('A feature with several parts')).toBeGreaterThan(
+      flat.indexOf('Never upload secrets.'),
+    );
+
+    await client.close();
+  });
+
   it('names only tools the server actually serves', async () => {
     // Names from both sides (CLAUDE.md §2), not a count: a renamed tool turns
     // this red instead of leaving the instructions pointing at nothing.
