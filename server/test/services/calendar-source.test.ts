@@ -365,6 +365,21 @@ describe('sync now and disconnect', () => {
     expect(view.last_result).toMatchObject({ people: 1, no_mailbox: 0 });
   });
 
+  it('serves a result stored before LAI-1331 with no out-of-office count as 0, and a new one as counted', () => {
+    saveCalendarSource(t.db, owner, SECRET, SAVE);
+    const old = { people: 2, no_mailbox: 0, mailbox_denied: 0, mailbox_refused: 0, meetings: 3 };
+    t.db
+      .update(orgCalendarSource)
+      .set({ lastResultJson: JSON.stringify(old) })
+      .run();
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 0 });
+    t.db
+      .update(orgCalendarSource)
+      .set({ lastResultJson: JSON.stringify({ ...old, away: 2 }) })
+      .run();
+    expect(getCalendarSource(t.db, owner).last_result).toEqual({ ...old, away: 2 });
+  });
+
   it('forgets the credentials and keeps the meetings already logged', async () => {
     fake.calendars.set('owner@example.test', [graphEvent(Date.UTC(2026, 10, 18, 9))]);
     saveCalendarSource(t.db, owner, SECRET, { ...SAVE, enabled: true }, deps());

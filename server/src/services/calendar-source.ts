@@ -162,8 +162,17 @@ function viewOf(db: Db): CalendarSourceView {
     last_success_at: row.lastSuccessAt,
     last_error:
       row.lastErrorCode === null ? null : { code: row.lastErrorCode, message: row.lastError ?? '' },
-    last_result: jsonOf<CalendarSyncResultView>(row.lastResultJson),
+    last_result: resultOf(row.lastResultJson),
   };
+}
+
+/**
+ * The last run's counts, as served: a result stored before LAI-1331 counted
+ * no out-of-office spans, so its `away` is `0` rather than missing.
+ */
+function resultOf(json: string | null): CalendarSyncResultView | null {
+  const stored = jsonOf<CalendarSyncResultView>(json);
+  return stored === null ? null : { ...stored, away: stored.away ?? 0 };
 }
 
 /** `GET /api/v1/org/calendar`. */
