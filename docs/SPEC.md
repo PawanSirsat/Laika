@@ -554,7 +554,9 @@ the defaults. **It amends the time rows' *"no admin row for drafts"*** — an
 owner, and whoever the owner grants it, reads a person's My day, drafts
 included, and their held local activity, **in the shape the person reads
 them**: the same answers as `GET /me/time` and `GET /me/local-activity`,
-from the same code. Read only — no row lets anybody write another person's
+from the same code — less `last_received_at`, which is the person's alone
+(LAI-1327): to anyone else, when their machine last reported is close to when
+they were last at their desk. Read only — no row lets anybody write another person's
 time, drafts, breaks or switches, and every `/me` write touches the
 caller's own rows. Reading follows no sharing switch, and collection
 follows only the organisation's Developer insights (D-102, amended).
@@ -4852,7 +4854,7 @@ GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's he
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /me/time/summary answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-526)
 GET    /api/v1/people/:id/time/days          ?from=&to=&tz= — that person's GET /me/time/days answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-1173)
-GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
+GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer, less last_received_at; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/me/developer-setup/activity   → { now, data: [{ at, kind: 'paired'|'tool_added'|'tool_revoked'|'device_unpaired'|'token_revoked'|'project_check_failed', subject, by: { id, name } | null }] } — your own last 30 days, newest first, the items /people/:id/developer-setup lists in activity; no look written (developer_setup.read_own, session only; D-139, LAI-1151; not paginated)
 GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summary, devices, tools, pending_pairing, repositories, tokens: { personal, tool_credentials }, activity } — the member's whole setup; no pairing code or token secret; a space the reader cannot open counted, never named; logged as kind developer_setup; yourself is 422 use_developer_access   (owner, admin by default; session only; D-132, LAI-1137)
 POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
@@ -5709,11 +5711,15 @@ reaches SSE, an MCP tool or an export (§4.21).
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for
   the caller over their last days — `{ start, end, tz, days: [{ day,
   prompts_by_agent, sessions, commits_local, pushed_commits, tokens,
-  cache_read }], collectors, oldest_day }`, newest first, only days with
-  something held — `tokens` and `cache_read` their agents' token totals that
-  day (D-084 item 4), automated sessions' rows included, since they are held
-  under the caller's account (§4.33), and `oldest_day` counting token rows
-  too — **whatever the switches say**: what was kept before sharing was
+  cache_read }], collectors, oldest_day, last_received_at }`, newest first,
+  only days with something held — `tokens` and `cache_read` their agents'
+  token totals that day (D-084 item 4), automated sessions' rows included,
+  since they are held under the caller's account (§4.33), `oldest_day`
+  counting token rows too, and `last_received_at` the newest `updated_at`
+  among the caller's own local rows in ms, or `null` when none has ever
+  arrived (LAI-1327: the Activity tab's *First data arrives*). It is **the
+  caller's own and nobody else's**: `GET /people/:id/local-activity` answers
+  the rest of this shape without it — **whatever the switches say**: what was kept before sharing was
   turned off is still theirs to see. `DELETE /me/local-activity` removes every
   local row, pushed key and token row of theirs, `204`. Both **web session
   only**: an agent must not read back or erase what is held about its person.
@@ -7615,7 +7621,7 @@ the decision currently governing it rather than the table naming one for all.
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer; `min(1280px, 94vw)` wide since the redesign (D-129) | D-059.2, amended by **D-063**, width by **D-129** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept, the hand-offs needing approval at its head and the whole Hand-offs list at `?view=handoffs` — D-146; `?tab=handoffs` is an alias to it, LAI-1169) and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* (opening on what the reader may decide, grouped by space, with a bulk Accept, the hand-offs needing approval at its head and the whole Hand-offs list at `?view=handoffs` — D-146; `?tab=handoffs` is an alias to it, LAI-1169) and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Activity*, *Project setup*, *Devices*, *Tools* and *Advanced* in the owner's design (LAI-1078), *Activity* being *Share local activity* as a live setup checklist and *Advanced* the personal credentials only (LAI-1327). A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`), `/work` → `/organisation?tab=work` (keeping its `person`, `status`, `space`, `sprint` and `size`) | **LAI-796**; **LAI-507**; **D-147** |
 | Organisation | seven tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*, *Holidays*; the spaces), **Work** (everyone's tasks across every space the reader can read, with the List's selection and bulk bar — D-147), **People** (members and invites), **Roles & permissions**, **Integrations** (GitHub webhook, model prices, AI provider, HR system, Email — D-153, Email to tasks — D-155), **Security** (everyone's tokens, owners and admins), **Activity** (owners and admins) | **LAI-796**; **D-147** |
 
@@ -7884,8 +7890,9 @@ anything missing sends the task back.
   LAI-1076), drawn in the owner's design (`laika-developer-access-v3.html`,
   LAI-1078) in Laika's own tokens: the page's sentence is *Pair your computer
   once, connect your coding tools, then set up each project repository.
-  Project setup is where work becomes connected.*, then **Overview · Project
-  setup · Devices · Tools · Advanced**. *Devices* lists the reader's devices
+  Project setup is where work becomes connected.*, then **Overview · Activity
+  · Project setup · Devices · Tools · Advanced** — at phone width *Project
+  setup* reads *Setup*, so the five fit without scrolling sideways (LAI-1327). *Devices* lists the reader's devices
   and *Tools* the coding tools on them (LAI-1080), one line a row from the
   same `GET /devices`; everything a row has no room for opens in a **details
   side panel** addressed by the URL (`?tab=devices&device=<id>`,
@@ -7894,9 +7901,38 @@ anything missing sends the task back.
   Escape and the scrim ask *Close without copying the new credential?* first
   (LAI-1081). *Add device* and *Add tool* stand in place of their list while
   open: a titled rail of three steps, *Step n of 3 · Device* or *· Tool*, and
-  a footer band with the note and the actions. *Advanced* is the reader's personal credentials, then the *Share local
-  activity* card (*Once per device*); the old `?tab=activity` lands on it as
-  `?tab=advanced&section=activity`, which scrolls to it and focuses its title.
+  a footer band with the note and the actions. *Overview*'s journey gains a
+  fourth step, *Share activity*, only while the organisation collects; it
+  opens *Activity*. **Activity** (LAI-1327) is *Share local activity* as a
+  checklist under a status line — *Off for the organisation*, *Not set up on
+  any machine*, *Collecting · last received …* while a machine reported in
+  the last 14 days (`collectors`), or *Stalled · last received …* once the
+  last report is older — of five live steps that lock in order, as the
+  journey's do: **the organisation collects**
+  (`GET /me/activity-sharing`'s `org_enabled`; an owner or admin gets the
+  same `PATCH /org {developer_insights}` switch as Organisation's, gated
+  `org.developer_insights.set`, and everyone else is told whom to ask);
+  **this machine is paired** (*Add device*); **a coding tool is connected**
+  (*Add tool*); **turn it on on that machine** — `laika update --board
+  <origin>` then `laika activity on`, to copy, no credential to paste since
+  the collector uses the machine's tool connection (LAI-1325) — once data
+  has arrived it says *On* only while reports are fresh, *Paused* with the
+  organisation's switch off, and *Last sent … ago; run `laika activity
+  status` on that machine* once stalled; for a viewer, whose credentials are
+  read only, it is locked: *Viewers can't send activity: ask an owner for a
+  member role*, and the journey's step says the same; and **first data
+  arrives** (`GET /me/local-activity`'s `last_received_at` and
+  `collectors`). The switch shows the `PATCH` answer and stays busy until
+  the re-read lands; a refusal is said beside it and the switch stays where
+  it is. Under it, the *Count work in* scope, the panel's folds, and *It
+  isn't working*, each line the collector prints beside its fix. It reads
+  again when the reader comes back to the window, asks every 20 s while
+  step 5 waits and the page is in view, and moves *… ago* on every 30 s; a
+  re-read that fails keeps what is shown and says so. The old
+  `?tab=advanced&section=activity` lands on *Activity*. *Advanced* is the
+  reader's personal credentials only: revoked and expired ones behind *Show
+  N revoked/expired*, and credentials coding tools still use in one callout,
+  each row marked *Used by …* with *Move to Tools*.
 - **Tokens** (on Developer access) — create with name and scope; **value shown exactly once** with a
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of
