@@ -82,3 +82,11 @@
 .dx-activity-trouble code {
   overflow-wrap: anywhere;
 }
+
+/* Done once, not working now — stalled, or paused by the switch (LAI-1327
+   follow-up): the headline's warn tone, not the green tick. */
+.dx-flow-row.dx-activity-step > .dx-flow-n[data-state='attention'] {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}

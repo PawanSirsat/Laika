@@ -101,6 +101,12 @@ function said(cause: unknown, fallback: string): string {
   return cause instanceof ApiError ? cause.message : fallback;
 }
 
+/**
+ * How a read ended: a fresh answer shown, a failure, or replaced by a newer
+ * read (or a change) before it landed — which is neither.
+ */
+export type LoadResult = 'fresh' | 'failed' | 'superseded';
+
 /** What {@link useShareActivity} gives a panel: the reads, and the two things the person may change. */
 export interface ShareActivityModel {
   readonly state: State;
@@ -113,16 +119,13 @@ export interface ShareActivityModel {
   readonly change: (next: { scope: LocalActivityScope }) => void;
   /** Asks first, then deletes the person's local-activity history. */
   readonly erase: () => void;
-  /**
-   * Reads all three again — after the organisation's switch moved, say —
-   * resolving `true` once a fresh answer is shown and `false` when it failed.
-   */
-  readonly reload: () => Promise<boolean>;
+  /** Reads all three again — after the organisation's switch moved, say. */
+  readonly reload: () => Promise<LoadResult>;
   /**
    * Reads the setting and what is held again, the grants kept — the Activity
    * tab's poll while it waits for a first report (LAI-1327 review 1).
    */
-  readonly poll: () => Promise<boolean>;
+  readonly poll: () => Promise<LoadResult>;
   /**
    * Why the last re-read failed **after** an answer was shown, or `undefined`:
    * what is shown stays (LAI-1197), and the panel says it may be stale.
@@ -151,7 +154,7 @@ export function useShareActivity(): ShareActivityModel {
   /** The grants last read, kept by a poll; `null` until the first answer. */
   const shownPermissions = useRef<OrgPermissions | undefined | null>(null);
 
-  const load = useCallback((withPermissions: boolean): Promise<boolean> => {
+  const load = useCallback((withPermissions: boolean): Promise<LoadResult> => {
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
@@ -168,26 +171,26 @@ export function useShareActivity(): ShareActivityModel {
             return undefined;
           }),
     ])
-      .then(([sharing, held, permissions]) => {
-        if (signal.aborted) return false;
+      .then(([sharing, held, permissions]): LoadResult => {
+        if (signal.aborted) return 'superseded';
         shownPermissions.current = permissions;
         setState({ kind: 'ready', sharing, held, permissions });
         setStale(undefined);
         setLoadedAt(Date.now());
-        return true;
+        return 'fresh';
       })
-      .catch((cause: unknown) => {
-        if (signal.aborted) return false;
+      .catch((cause: unknown): LoadResult => {
+        if (signal.aborted) return 'superseded';
         // Once something is shown, a failed re-read keeps it and says so.
         if (shownPermissions.current !== null) {
           setStale({ cause });
-          return false;
+          return 'failed';
         }
         setState({
           kind: 'error',
           message: said(cause, 'Your sharing setting could not be read.'),
         });
-        return false;
+        return 'failed';
       });
   }, []);
 
@@ -198,13 +201,24 @@ export function useShareActivity(): ShareActivityModel {
     };
   }, [load]);
 
+  /**
+   * A read sent before a change answered would land after it and show the old
+   * state again for a moment (LAI-1327 follow-up), so a change drops any read
+   * in flight — as it starts, and again as its answer lands.
+   */
+  const dropReads = (): void => {
+    inFlight.current?.abort();
+  };
+
   const change = (next: { scope: LocalActivityScope }): void => {
     if (state.kind !== 'ready') return;
     const { held, permissions } = state;
+    dropReads();
     setBusy(true);
     setError(undefined);
     setActivitySharing(next)
       .then((answer) => {
+        dropReads();
         setState({ kind: 'ready', sharing: answer, held, permissions });
       })
       .catch((cause: unknown) => {
@@ -218,11 +232,13 @@ export function useShareActivity(): ShareActivityModel {
   const eraseNow = (): void => {
     if (state.kind !== 'ready') return;
     const { sharing, permissions } = state;
+    dropReads();
     setBusy(true);
     setError(undefined);
     deleteOwnLocalActivity()
       .then(() => getOwnLocalActivity())
       .then((answer) => {
+        dropReads();
         setDeleted(true);
         setState({ kind: 'ready', sharing, held: answer, permissions });
       })
