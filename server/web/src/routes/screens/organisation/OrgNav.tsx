@@ -29,9 +29,9 @@ export interface OrgNavProps {
  *
  * **On the one tab strip** (LAI-1193), as the page tabs it replaced were:
  * one stop in the Tab order (the current section), Left/Right/Home/End
- * between sections across every group, and — as the row it becomes below
- * 1600px — an edge fade where it scrolls, with the current section scrolled
- * into view.
+ * between sections across every group, and — as the row it becomes at or
+ * below 900px — an edge fade where it scrolls, with the current section
+ * scrolled into view.
  */
 export function OrgNav({ tabs, current, counts, states, onNavigate }: OrgNavProps) {
   const groups: { readonly name: string | undefined; readonly items: PageTab[] }[] = [];

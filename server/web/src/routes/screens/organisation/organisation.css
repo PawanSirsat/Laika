@@ -5034,7 +5034,7 @@ a.bento-row:active {
 }
 
 /* The groups, inside the one tab strip (LAI-1193): a column beside the page,
-   a row that scrolls with an edge fade below 1600px. */
+   a row that scrolls with an edge fade at or below 900px. */
 .org-nav-strip {
   display: flex;
   flex-direction: column;
@@ -5215,64 +5215,6 @@ a.bento-row:active {
   margin-bottom: var(--space-4);
 }
 
-/* Below ultra (1600px): the sections become one row that scrolls above the
-   page. Beside the page the nav and its gap take ~256px, and People's table
-   needs 60rem — it would scroll sideways on every laptop width (1280 – 1513px;
-   the owner, 2026-11-18). `ultra` is the first breakpoint token above that. */
-@media (max-width: 1599px) {
-  .org-hub {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-3);
-  }
-
-  .org-nav {
-    position: static;
-    padding: var(--space-2);
-  }
-
-  /* The strip scrolls, hides its scrollbar and fades the edge that hides a
-     section — the one tab strip's rules (tabs.css), not a copy of them. */
-  .org-nav-strip {
-    position: relative;
-    flex-direction: row;
-    gap: var(--space-3);
-  }
-
-  .org-nav-group {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    flex: none;
-  }
-
-  /* Out of sight in the row, still read: the groups keep their names for a
-     screen reader. */
-  .org-nav-heading {
-    /* As .visually-hidden (index.css): anchored, so it never widens the
-       strip it sits in. */
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 1px;
-    height: 1px;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .org-nav .org-nav-list {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: var(--space-1);
-  }
-
-  .org-nav .org-nav-item[aria-current='page'] {
-    box-shadow: none;
-  }
-}
-
 @media (max-width: 600px) {
   .org-hub {
     margin-left: var(--space-4);
@@ -5283,8 +5225,13 @@ a.bento-row:active {
 /* --- the hub navigation: titles, top-level items and sub-items (LAI-1345) -- */
 
 .org-nav {
-  gap: var(--space-5);
   padding: var(--space-4) var(--space-3);
+}
+
+/* The groups sit in the one tab strip (OrgNav.tsx), so the room between them
+   is the strip's gap. */
+.org-nav .org-nav-strip {
+  gap: var(--space-5);
 }
 
 /* A group's title: heavier and brighter than its items, so the eye finds the
@@ -5347,11 +5294,69 @@ a.bento-row:active {
   outline-offset: 1px;
 }
 
+/* At or below tablet (900px), where the app's own sidebar goes off-canvas, the
+   sections become one row that scrolls above the page. Above it the side menu
+   stays, and People's table makes room instead (the owner, 2026-11-18: "side
+   menu, table adapts"). After the restyle above, so these win in the row. */
 @media (max-width: 900px) {
+  .org-hub {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .org-nav {
+    position: static;
+    padding: var(--space-2);
+  }
+
+  /* The strip scrolls, hides its scrollbar and fades the edge that hides a
+     section — the one tab strip's rules (tabs.css), not a copy of them. */
+  .org-nav .org-nav-strip {
+    position: relative;
+    flex-direction: row;
+    gap: var(--space-3);
+  }
+
+  .org-nav-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+  }
+
+  /* Out of sight in the row, still read: the groups keep their names for a
+     screen reader. */
+  .org-nav .org-nav-heading {
+    /* As .visually-hidden (index.css): anchored, so it never widens the
+       strip it sits in. */
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .org-nav .org-nav-list {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-1);
+  }
+
+  /* In the row nothing is indented: no guide line, no bar, one item height. */
   .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-list {
     margin-left: 0;
     padding-left: 0;
     border-left: 0;
+    gap: var(--space-1);
+  }
+
+  .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-item {
+    padding: var(--space-2);
   }
 
   .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-item[aria-current='page']::before {
