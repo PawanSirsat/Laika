@@ -1,5 +1,5 @@
-import { asAgentClient } from '../../../../api/agent-clients.ts';
-import type { TokenView } from '../../../../api/tokens.ts';
+import { AGENT_CLIENT_NAMES, asAgentClient } from '../../../../api/agent-clients.ts';
+import { tokenState, type TokenView } from '../../../../api/tokens.ts';
 import { AGENT_GUIDES } from '../../connect/connect-agents.ts';
 
 /**
@@ -69,4 +69,39 @@ export function upgradeHref(token: TokenView): string {
   const params = new URLSearchParams({ tab: 'tools', add: 'tool' });
   if (guide !== undefined) params.set('tool', guide.id);
   return `/developer?${params.toString()}`;
+}
+
+/** The credentials list, grouped as Advanced draws it (LAI-1327). */
+export interface CredentialGroups {
+  /** In use and not a coding tool's: the list itself. */
+  readonly active: readonly TokenView[];
+  /** In use by a coding tool, the pre-V3 way: one callout, *Move them to Tools*. */
+  readonly legacy: readonly TokenView[];
+  /** Revoked or expired: hidden until asked for. */
+  readonly retired: readonly TokenView[];
+}
+
+/**
+ * Advanced holds credentials only, and only what matters in view (LAI-1327,
+ * the owner's decision): a revoked or expired credential works nowhere, so it
+ * waits behind *Show N revoked/expired*; a personal token a coding tool still
+ * uses is one callout, not a row and a sentence each. The order within each
+ * is the server's.
+ */
+export function credentialGroups(tokens: readonly TokenView[], now: number): CredentialGroups {
+  const active: TokenView[] = [];
+  const legacy: TokenView[] = [];
+  const retired: TokenView[] = [];
+  for (const token of tokens) {
+    if (tokenState(token, now) !== 'active') retired.push(token);
+    else if (isLegacyToolToken(token)) legacy.push(token);
+    else active.push(token);
+  }
+  return { active, legacy, retired };
+}
+
+/** The coding tool that last used a legacy token, by name: *Claude Code*, or what it called itself. */
+export function legacyToolName(token: TokenView): string {
+  const client = asAgentClient(token.last_client);
+  return client === null ? (token.last_client_name ?? 'a coding tool') : AGENT_CLIENT_NAMES[client];
 }

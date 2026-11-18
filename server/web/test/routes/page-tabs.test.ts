@@ -240,20 +240,23 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
     ]);
   });
 
-  void test('v3 is Overview, Project setup, Devices, Tools, Advanced — Activity is a card on Advanced', () => {
-    assert.deepEqual(labels('v3'), ['Overview', 'Project setup', 'Devices', 'Tools', 'Advanced']);
-    assert.equal(
-      ids('v3').includes('activity'),
-      false,
-      'Share local activity is Advanced’s second card in v3 (LAI-1078)',
-    );
+  void test('v3 is Overview, Activity, Project setup, Devices, Tools, Advanced — Activity right after Overview (LAI-1327)', () => {
+    assert.deepEqual(labels('v3'), [
+      'Overview',
+      'Activity',
+      'Project setup',
+      'Devices',
+      'Tools',
+      'Advanced',
+    ]);
+    assert.equal(ids('v3')[1], 'activity');
   });
 
-  void test('v3 draws the design’s four tabs; Advanced is the quieter link after them (LAI-1096)', () => {
+  void test('v3 draws five tabs; Advanced is the quieter link after them (LAI-1096, LAI-1327)', () => {
     const { drawn, secondary } = splitTabs(developerTabs('v3'));
     assert.deepEqual(
       drawn.map((t) => t.label),
-      ['Overview', 'Project setup', 'Devices', 'Tools'],
+      ['Overview', 'Activity', 'Project setup', 'Devices', 'Tools'],
     );
     assert.deepEqual(
       secondary.map((t) => t.id),
@@ -261,10 +264,7 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
     );
     // Still a tab to the address: ?tab=advanced opens it, not the Overview.
     assert.equal(currentTab(developerTabs('v3'), new URLSearchParams('tab=advanced')), 'advanced');
-    assert.equal(
-      currentTab(developerTabs('v3'), new URLSearchParams('tab=advanced&section=activity')),
-      'advanced',
-    );
+    assert.equal(currentTab(developerTabs('v3'), new URLSearchParams('tab=activity')), 'activity');
   });
 
   void test('only v3 has a secondary tab: classic, preview and every other page draw all theirs', () => {
@@ -342,10 +342,13 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     ['tab=tools&add=tool&tool=codex', undefined],
     ['tab=tokens', 'tab=advanced'],
     ['tab=projects', undefined],
-    // LAI-1078: Activity is Advanced's second card, which `section` scrolls to.
-    ['tab=activity', 'tab=advanced&section=activity'],
-    ['tab=activity&section=other&x=1', 'tab=advanced&section=activity&x=1'],
-    ['tab=advanced&section=activity', undefined],
+    // LAI-1327: Activity is a tab of its own again, and Advanced's old
+    // `section=activity` — where LAI-1078 had sent it — lands on it.
+    ['tab=activity', undefined],
+    ['tab=activity&section=other&x=1', undefined],
+    ['tab=advanced&section=activity', 'tab=activity'],
+    ['tab=advanced&section=activity&x=1&utm=y', 'tab=activity&x=1&utm=y'],
+    ['tab=advanced&section=other', undefined],
     ['tab=overview', undefined],
     ['tab=advanced', undefined],
     ['', undefined],

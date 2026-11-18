@@ -46,6 +46,7 @@ export function activeTools(devices: readonly Pick<Device, 'agents'>[]): Registe
 }
 
 export const OVERVIEW_ADDRESSES = {
+  activity: '/developer?tab=activity',
   addDevice: '/developer?tab=devices&add=device',
   addTool: '/developer?tab=tools&add=tool',
   projects: '/developer?tab=projects',
@@ -329,7 +330,7 @@ export function attentionWord(items: readonly Pick<AttentionItem, 'setup' | 'upd
 
 // ------------------------------------------------------------------ the journey
 
-export type JourneyStep = 'device' | 'tool' | 'project';
+export type JourneyStep = 'device' | 'tool' | 'project' | 'activity';
 
 export interface JourneyRow {
   readonly step: JourneyStep;
@@ -347,17 +348,54 @@ export const STEP_NAMES: Readonly<Record<JourneyStep, string>> = {
   device: 'Connect a device',
   tool: 'Add your coding tool',
   project: 'Set up a project repository',
+  activity: 'Share activity',
 };
 
+/** `just now`, `4 min ago`, `3 h ago`, `2 d ago`: how long since a machine last reported. */
+export function receivedAgo(at: number, now: number): string {
+  const minutes = Math.max(0, Math.round((now - at) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${String(minutes)} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${String(hours)} h ago`;
+  return `${String(Math.round(hours / 24))} d ago`;
+}
+
+/** What the journey's activity step reads (LAI-1327): the organisation's switch, and the first report. */
+export interface JourneyActivity {
+  /** The organisation's *Developer insights*. Off, and the step is not shown. */
+  readonly orgEnabled: boolean;
+  /** When a machine of the reader's last reported (`GET /me/local-activity`), or `null`. */
+  readonly lastReceivedAt: number | null;
+  readonly now: number;
+}
+
 /**
- * The three steps, each done, the one to do now, or still to come. The
- * project step's *Open* is the reader's repositories; its *Start* the wizard.
+ * The steps, each done, the one to do now, or still to come. The project
+ * step's *Open* is the reader's repositories; its *Start* the wizard.
+ *
+ * **A fourth, *Share activity*, only while the organisation collects**
+ * (LAI-1327): done once a machine of theirs has reported, and opening the
+ * Activity tab's checklist. Without the organisation's switch there is
+ * nothing for the reader to do, so there is no step to show.
  */
 export function journeyRows(
   state: OverviewState,
   projectsHref: string,
   toolsHref: string,
-): readonly [JourneyRow, JourneyRow, JourneyRow] {
+): readonly [JourneyRow, JourneyRow, JourneyRow];
+export function journeyRows(
+  state: OverviewState,
+  projectsHref: string,
+  toolsHref: string,
+  activity: JourneyActivity | undefined,
+): readonly JourneyRow[];
+export function journeyRows(
+  state: OverviewState,
+  projectsHref: string,
+  toolsHref: string,
+  activity?: JourneyActivity,
+): readonly JourneyRow[] {
   const connected = connectedCount(state);
   const deviceDone = state.devices.length > 0;
   const toolDone = connected > 0;
@@ -423,7 +461,28 @@ export function journeyRows(
         ...(toolDone ? {} : { locked: 'Connect a tool first' }),
       };
 
-  return [device, tool, project];
+  if (activity?.orgEnabled !== true) return [device, tool, project];
+
+  const received = activity.lastReceivedAt;
+  const share: JourneyRow =
+    received !== null
+      ? {
+          step: 'activity',
+          name: STEP_NAMES.activity,
+          state: 'done',
+          line: `Collecting · last received ${receivedAgo(received, activity.now)}`,
+          action: { label: 'Open', href: OVERVIEW_ADDRESSES.activity },
+        }
+      : {
+          step: 'activity',
+          name: STEP_NAMES.activity,
+          state: toolDone ? 'active' : 'pending',
+          line: 'Your organisation collects it · turn it on on your machine',
+          action: { label: 'Start', href: OVERVIEW_ADDRESSES.activity },
+          ...(toolDone ? {} : { locked: 'Connect a tool first' }),
+        };
+
+  return [device, tool, project, share];
 }
 
 /** *2 of 3 complete*. */
