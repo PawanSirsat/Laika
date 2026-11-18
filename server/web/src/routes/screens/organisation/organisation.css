@@ -5303,7 +5303,7 @@ a.bento-row:active {
   margin-left: var(--space-3);
   padding-left: var(--space-2);
   border-left: 1px solid var(--glass-border);
-  gap: 2px;
+  gap: var(--space-0-5);
 }
 
 /* A top-level item (Overview): flush with the titles, and as weighty. */
@@ -5313,7 +5313,7 @@ a.bento-row:active {
 }
 
 .org-nav .org-nav-group:has(.org-nav-heading) .org-nav-item {
-  padding: 0.4rem var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
 }
 
 /* The open section: the accent's fill and a bar on the guide line — no ring. */
@@ -5337,7 +5337,7 @@ a.bento-row:active {
   top: 0.35rem;
   bottom: 0.35rem;
   width: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-hairline);
   background: var(--accent);
 }
 
