@@ -23,6 +23,7 @@ import {
   nextStep,
   testLine,
 } from './email-derive.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 export interface EmailSectionProps {
   /** Told when the switch or the configuration changes, so `OrgView.email` follows. */
@@ -198,9 +199,15 @@ export function EmailSection({ onChanged }: EmailSectionProps) {
   ].filter((part): part is string => part !== null);
 
   return (
-    <section className="org-card org-email" aria-labelledby="org-email" data-section="email">
-      <header className="org-card-head">
-        <h2 id="org-email">Email</h2>
+    // Folded to one row that says its state (LAI-1318).
+    <OrgAccordion
+      name="email"
+      id="org-email"
+      title="Email"
+      className="org-email"
+      section="email"
+      description="Invite and password-reset links, sent through your SMTP relay."
+      meta={
         <span
           className="org-status-badge"
           data-tone={badge.tone}
@@ -209,8 +216,8 @@ export function EmailSection({ onChanged }: EmailSectionProps) {
         >
           {badge.label}
         </span>
-      </header>
-
+      }
+    >
       <p className="org-note org-email-lead">
         Laika can email invite links and password-reset links through your SMTP relay. Every link is
         still shown to copy, whether email is on or off.
@@ -355,6 +362,6 @@ export function EmailSection({ onChanged }: EmailSectionProps) {
           {error}
         </p>
       )}
-    </section>
+    </OrgAccordion>
   );
 }

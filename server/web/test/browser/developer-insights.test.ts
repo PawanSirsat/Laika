@@ -72,7 +72,7 @@ void after(async () => {
 void describe('Organisation: Developer insights', () => {
   void test('an owner turns it on with a switch, and the page shows the server’s answer', async () => {
     let on = false;
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=general', {
       '/api/v1/me': me('owner'),
       '/api/v1/projects': { data: [], next_cursor: null },
       '/api/v1/users': { data: [user('u1', 'Ada Lovelace', 'owner')], next_cursor: null },
@@ -114,7 +114,7 @@ void describe('Organisation: Developer insights', () => {
   });
 
   void test('a member reads the setting, with no switch to press', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=general', {
       '/api/v1/me': me('member'),
       '/api/v1/projects': { data: [], next_cursor: null },
       '/api/v1/users': { data: [user('u1', 'Ada Lovelace', 'member')], next_cursor: null },
@@ -136,7 +136,7 @@ void describe('Organisation: Developer insights', () => {
       ['member', ['org.developer_insights.set'], true],
       ['owner', ['org.developer_insights.set'], true],
     ] as const) {
-      const h = await open('/organisation', {
+      const h = await open('/organisation?tab=general', {
         '/api/v1/me': me(role),
         '/api/v1/permissions': permissions(role, actions),
         '/api/v1/projects': { data: [], next_cursor: null },

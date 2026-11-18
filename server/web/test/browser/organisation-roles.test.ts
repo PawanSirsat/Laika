@@ -35,10 +35,14 @@ import {
   type StubCall,
   setTheme,
   until,
+  openSectionsByDefault,
 } from './harness.ts';
 import { DEACTIVATES, rowAction } from './row-menu.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { optionsOf, pick } from './dropdown.ts';
+
+// The folded sections this file reads inside open as a returning viewer has them (LAI-1318).
+openSectionsByDefault('ai', 'github');
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
   id,
@@ -99,10 +103,10 @@ void after(async () => {
 
 void describe('the org itself', () => {
   void test('its name and settings come from GET /org, and the key never does', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=general', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      // The name heads the page since LAI-796; the settings are Overview's.
-      const card = h.page.locator('.org-card').first();
+      // The name heads the page since LAI-796; the settings are General's (LAI-1318).
+      const card = h.page.locator('.org-card', { has: h.page.locator('#org-name') });
       await card.locator('#org-name').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.locator('.screen-page-title').innerText(),
@@ -111,18 +115,14 @@ void describe('the org itself', () => {
       );
       assert.match(await card.innerText(), /recorded/i, 'presence state is not rendered');
 
-      // The AI provider is an integration: its own tab, reached by its tab.
-      await h.page.locator('.page-tab[data-tab="integrations"]').click();
+      // The AI provider is a connection: its own page, reached from the side (LAI-1318).
+      await h.page.locator('.page-tab[data-tab="ai"]').click();
       const ai = h.page.locator('.org-card', { has: h.page.locator('#org-ai') });
       await ai.waitFor({ timeout: 20_000 });
       const text = await ai.innerText();
       assert.match(text, /anthropic/i, 'the AI provider is not rendered');
       assert.match(text, /9f2a/, 'the key tail is not rendered');
-      assert.equal(
-        new URL(h.page.url()).search,
-        '?tab=integrations',
-        'the tab is not in the address',
-      );
+      assert.equal(new URL(h.page.url()).search, '?tab=ai', 'the tab is not in the address');
 
       // It came from `/org`, not from a literal and not from `/me`.
       assert.ok(
@@ -150,10 +150,10 @@ void describe('the org itself', () => {
       '/api/v1/org': withheld,
     });
     try {
-      // Integrations is where the provider would be (LAI-796); for a viewer
-      // its card is absent, not empty.
-      await h.page.locator('.page-tab[data-tab="integrations"]').click();
-      await h.page.locator('.org-body[data-tab="integrations"]').waitFor({ timeout: 20_000 });
+      // The AI page is where the provider would be (LAI-796, LAI-1318); for a
+      // viewer its card is absent, not empty — Model prices are still there.
+      await h.page.locator('.page-tab[data-tab="ai"]').click();
+      await h.page.locator('.org-body[data-tab="ai"]').waitFor({ timeout: 20_000 });
       await h.page.locator('.org-card').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Kvelld Dynamics');
 
@@ -175,7 +175,7 @@ void describe('the org itself', () => {
  */
 void describe('what it actually looks like', () => {
   void test('the provider and its key tail share a line', async () => {
-    const h = await open('/organisation?tab=integrations', {
+    const h = await open('/organisation?tab=ai', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
     });

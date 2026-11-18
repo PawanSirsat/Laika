@@ -45,6 +45,7 @@ import {
   type CalendarForm,
   type RuleRow,
 } from './calendar-derive.ts';
+import { OrgAccordion } from './OrgAccordion.tsx';
 
 export interface CalendarSourceSectionProps {
   /** The spaces a rule may send a meeting to: the reader's, not archived. */
@@ -292,19 +293,25 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
   const running = view.backfill_running;
 
   return (
-    <section
-      className="org-card org-cal"
-      aria-labelledby="org-cal"
-      data-section="calendar"
-      data-calendar-status={statusWord(view)}
-    >
-      <header className="org-card-head">
-        <h2 id="org-cal">Outlook calendar</h2>
-        <span className="org-count" data-configured={view.configured}>
+    // Folded to one row that says its state (LAI-1318).
+    <OrgAccordion
+      name="calendar"
+      id="org-cal"
+      title="Outlook calendar"
+      className="org-cal"
+      section="calendar"
+      hooks={{ 'data-calendar-status': statusWord(view) }}
+      description="Meetings each person has not declined, logged on their My day as confirmed time."
+      meta={
+        <span
+          className="org-status-badge"
+          data-tone={view.configured ? 'on' : 'off'}
+          data-configured={view.configured}
+        >
           {statusWord(view)}
         </span>
-      </header>
-
+      }
+    >
       <p className="org-note org-hr-lead" data-calendar-lead>
         Every {String(view.sync_every_minutes)} minutes, the meetings each person was invited to and
         has not declined — accepted, tentative or not answered — and the Teams meetings they
@@ -686,6 +693,6 @@ export function CalendarSourceSection({ spaces }: CalendarSourceSectionProps) {
           </span>
         )}
       </div>
-    </section>
+    </OrgAccordion>
   );
 }

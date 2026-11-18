@@ -92,7 +92,10 @@ const BASE: ApiStub = {
   },
 };
 
-/** Every control an admin loses with their grants, on Overview and People. */
+/**
+ * Every control an admin loses with their grants — on Time & breaks, General
+ * and People, where the settings hub puts them (LAI-1318).
+ */
 const GRANTED_CONTROLS = [
   '[data-invite-open]',
   '[data-row-actions~="deactivate"]',
@@ -132,7 +135,7 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
   void test('while /permissions is slow, and after it answers', async () => {
     let release: (() => void) | undefined;
     const h = await open(
-      '/organisation',
+      '/organisation?tab=time',
       {
         ...BASE,
         '/api/v1/me': me('u3', 'admin'),
@@ -146,10 +149,18 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
       },
     );
     try {
-      // Overview is drawn while the answer is held: the old gates fell back
-      // to the role here and offered an admin every switch.
+      // Time & breaks, then General, drawn while the answer is held: the old
+      // gates fell back to the role here and offered an admin every switch.
       await h.page.locator('[data-fact="time"]').waitFor({ timeout: 20_000 });
       await settle(1_000);
+      await h.page.locator('.page-tab[data-tab="general"]').click();
+      await h.page.locator('[data-fact="developer-insights"]').waitFor({ timeout: 20_000 });
+      await settle(1_000);
+      assert.equal(
+        h.calls.some((c) => c.path === '/api/v1/permissions'),
+        false,
+        'the answer was not held',
+      );
       await assertNeverSeen(h.page, GRANTED_CONTROLS, 'an admin, before the answer');
 
       release?.();
