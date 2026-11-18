@@ -265,6 +265,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.teams.post',
   // §10.3, inbound email: resolving the address and the sender (D-155).
   'system.email.receive',
+  'system.email.attachments',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',

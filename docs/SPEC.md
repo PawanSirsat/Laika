@@ -794,6 +794,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.email.notify` | §11.6: every 30 seconds, assignment and @mention mail queued and daily digests collected and sent, read from `activity` and `member_notices` (§4.97 – §4.100, D-153, LAI-1313) |
 | `system.teams.post` | §11.6: every minute, each space's Teams stand-ups, nightly digest and instant notices, and the record of posts kept 90 days (§4.94 – §4.96, D-154, LAI-1314) |
 | `system.email.receive` | §10.3: an inbound mail's space address and sender resolved — the reads made before anyone is known. **Everything it writes is the matched sender's own `can()`** (§4.101 – §4.104, D-155, LAI-1315) |
+| `system.email.attachments` | §11.6: every 30 seconds, an inbound mail's queued attachments fetched from Brevo and stored — each stored as the mail's sender, under their own `attachment.create` (§4.104, D-155 item 6, LAI-1315) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -8621,6 +8622,15 @@ One interval-driven scheduler in the same process:
   another**; a tick joins the one going. No `activity` row. Nothing without a
   transport, and nothing mailed while the organisation's switch is off — the
   default
+- **inbound attachments** (§4.104, D-155 item 6, LAI-1315) — every 30 seconds,
+  not at boot, under `system.email.attachments`: the ten oldest queued files
+  are fetched from Brevo with §4.101's API key (at most the board's
+  attachment limit read) and put in the D-150 store, each a ready §4.92 row
+  the mail's sender uploaded, on the task or comment the mail made, with
+  `attachment.added` as them. Skipped at once — `store_off`, `no_api_key`,
+  `too_large`, `not_needed` — when it cannot work; a fetch or store that
+  fails is tried three times, a tick apart, then `failed`. A tick still
+  running when the next comes is joined. **Never blocks the task**
 - **email retention** (§4.93, §4.98, §4.103) — daily **and once at boot**, under
   `system.email.prune`: outbox rows written more than 90 days ago, never a
   `queued` or `sending` one, closed digests 90 days after they closed, with
@@ -8788,7 +8798,8 @@ to, the organisation's configured HR system (D-149) — read-only `GET`s of
 its holidays, leave and people, plus the one sign-in that makes the token
 when an owner connects it that way — and, when the operator configures one,
 **the attachments store** (D-150): signed `HEAD`, ranged `GET` and `DELETE` of
-the objects Laika itself names, nothing else. Browsers reach that store too,
+the objects Laika itself names — and, for an inbound mail's attachment only
+(D-155), a header-signed `PUT` of the bytes Brevo handed over — nothing else. Browsers reach that store too,
 through the short-lived URLs Laika signs; it is the operator's own, beside
 Laika, not a third party's. **And, when an owner or admin sets one and turns
 posting on, each space's Teams channel** (D-154): one `POST` of
@@ -8804,7 +8815,9 @@ With *Email to tasks* on, Brevo posts each mail sent to a space's address to
 makes, and are kept nowhere else; the record of it (§4.103) holds ids, the
 sender's address and the receiving server's verdict words, never the mail. Mail
 to the board goes through Brevo, which the organisation chose; nothing is
-fetched from a mailbox.
+fetched from a mailbox. **Its attachments are one more outbound call**: a `GET`
+of `https://api.brevo.com/v3/inbound/attachments/<token>` per announced file,
+with the organisation's Brevo API key, to that one host and no other (§11.6).
 
 **Local activity counts are inbound, the organisation's choice, and counts
 only** (D-079; D-102 amended). A developer's connected machine sends per-day

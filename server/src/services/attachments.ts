@@ -826,3 +826,91 @@ async function sweep(
 
   return { changed };
 }
+
+/** A file Laika itself puts in the store: an inbound mail's attachment (D-155). */
+export interface ServerAttachmentInput {
+  projectId: string;
+  taskId: string;
+  /** The comment it arrived with, for a reply; null for the mail that made the task. */
+  commentId: string | null;
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * An inbound mail's attachment, stored as `actor` uploaded it (D-155,
+ * LAI-1315) — the one upload whose bytes pass through Laika, because Brevo
+ * hands them to the server and never to a browser.
+ *
+ * **The same row a browser's upload makes, and the same lifecycle.** A
+ * `pending` row first, then the header-signed `PUT`, then `ready` and
+ * `attachment.added`: a `PUT` that fails leaves a `pending` row, which §11.6's
+ * sweep removes after 24 hours with its object, exactly as an upload nobody
+ * finished. `actor` must hold `attachment.create` in the space, as signed in.
+ */
+export async function storeServerAttachment(
+  db: Db,
+  actor: ResolvedActor,
+  deps: AttachmentsDeps | undefined,
+  input: ServerAttachmentInput,
+): Promise<AttachmentView> {
+  const config = requireOn(deps);
+  const store = storeFor(deps);
+  assertCan(withProject(actor, input.projectId), 'attachment.create', {
+    projectId: input.projectId,
+  });
+  if (input.bytes.length < 1 || input.bytes.length > config.maxBytes) {
+    throw new ApiError('payload_too_large', 'That file is larger than this board takes', {
+      max_bytes: config.maxBytes,
+    });
+  }
+  // A mail names its files freely; the store's rules are the browser's.
+  const cleaned = input.filename.replace(new RegExp(BAD_FILENAME.source, 'g'), '_').slice(0, 255);
+  const filename = cleaned === '' ? 'attachment' : cleaned;
+  const type = input.contentType.trim().toLowerCase();
+  const contentType = MEDIA_TYPE.test(type) ? type : 'application/octet-stream';
+
+  const now = clockOf(deps);
+  const id = newId();
+  db.insert(attachments)
+    .values({
+      id,
+      projectId: input.projectId,
+      taskId: input.taskId,
+      commentId: input.commentId,
+      uploadedBy: actor.userId,
+      filename,
+      contentType,
+      sizeBytes: input.bytes.length,
+      storageKey: `p/${input.projectId}/${id}`,
+      state: 'pending',
+      inline: 0,
+      createdAt: now,
+    })
+    .run();
+  const row = db.select().from(attachments).where(eq(attachments.id, id)).get()!;
+
+  await store.put(row.storageKey, input.bytes, {
+    contentType,
+    contentDisposition: contentDisposition('attachment', filename),
+  });
+
+  const inline = sniffInlineType(input.bytes.subarray(0, SNIFF_BYTES)) === contentType;
+  db.transaction((tx) => {
+    tx.update(attachments)
+      .set({ state: 'ready', inline: inline ? 1 : 0, readyAt: now })
+      .where(and(eq(attachments.id, id), eq(attachments.state, 'pending')))
+      .run();
+    appendActivity(tx as unknown as Db, {
+      orgId: orgOf(tx as unknown as Db, row.projectId),
+      projectId: row.projectId,
+      taskId: input.taskId,
+      ...activityActor(actor),
+      type: 'attachment.added',
+      payload: attachmentPayload(row),
+      now,
+    });
+  });
+  return toView(db.select().from(attachments).where(eq(attachments.id, id)).get()!);
+}

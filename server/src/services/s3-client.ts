@@ -284,6 +284,16 @@ export interface StoreClient {
     now: number,
   ): PresignedGet;
   head(key: string): Promise<StoredObject | null>;
+  /**
+   * The bytes put by Laika itself, header-signed with their SHA-256 — only
+   * an inbound mail's attachment, which Brevo hands to the server and never
+   * to a browser (D-155, LAI-1315).
+   */
+  put(
+    key: string,
+    body: Uint8Array,
+    object: { contentType: string; contentDisposition: string },
+  ): Promise<void>;
   /** Bytes `from`–`to` inclusive, or fewer when the object is shorter. */
   readRange(key: string, from: number, to: number): Promise<Uint8Array>;
   /** Removes the object; one that is already gone is not an error. */
@@ -345,10 +355,11 @@ export function storeClient(options: StoreClientOptions): StoreClient {
    * Nothing else of a body is read: an error's is the store's words.
    */
   async function send(
-    method: 'HEAD' | 'GET' | 'DELETE',
+    method: 'HEAD' | 'GET' | 'DELETE' | 'PUT',
     key: string,
     extra: Record<string, string> = {},
     readBytes = 0,
+    payload?: Uint8Array,
   ): Promise<{ status: number; headers: Headers; body: Uint8Array }> {
     const path = objectPath(store.bucket, key);
     const headers = signedHeaders(credentials, {
@@ -356,7 +367,9 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       host,
       path,
       headers: extra,
-      payloadHash: EMPTY_SHA256,
+      // A body is signed by its digest, so the store refuses one changed in flight.
+      payloadHash:
+        payload === undefined ? EMPTY_SHA256 : createHash('sha256').update(payload).digest('hex'),
       now: clock(),
     });
     const controller = new AbortController();
@@ -368,6 +381,7 @@ export function storeClient(options: StoreClientOptions): StoreClient {
         method,
         headers,
         signal: controller.signal,
+        ...(payload === undefined ? {} : { body: payload }),
       });
       // Read inside the timeout.
       const ok = res.status >= 200 && res.status < 300;
@@ -449,6 +463,22 @@ export function storeClient(options: StoreClientOptions): StoreClient {
       // A store that ignored the range answers `200` and the whole object;
       // `readUpTo` stopped reading it after the bytes asked for.
       return answer.body;
+    },
+
+    async put(key, body, object) {
+      const answer = await send(
+        'PUT',
+        key,
+        {
+          'content-type': object.contentType,
+          'content-disposition': object.contentDisposition,
+        },
+        0,
+        body,
+      );
+      if (answer.status < 200 || answer.status >= 300) {
+        throw new StoreUnavailableError(`PUT answered ${String(answer.status)}`);
+      }
     },
 
     async remove(key) {

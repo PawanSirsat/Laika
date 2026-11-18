@@ -234,6 +234,9 @@ export const SYSTEM_ACTIONS = [
   // written as the sender (D-155, LAI-1315) — nobody yet, so nobody is the
   // actor until the sender is matched.
   'system.email.receive',
+  // §11.6: an inbound mail's attachments fetched from Brevo and stored, every
+  // 30 seconds (D-155 item 6, LAI-1315) — each written as the mail's sender.
+  'system.email.attachments',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

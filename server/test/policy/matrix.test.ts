@@ -529,6 +529,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.email.notify', {}],
     ['system.teams.post', {}],
     ['system.email.receive', {}],
+    ['system.email.attachments', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],
