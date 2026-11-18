@@ -418,7 +418,9 @@ describe('one person, one Entra id (review M1)', () => {
       const { result, leavers } = await synced();
       expect(result.changed).toBe(1);
       expect(leavers.state).toBe('none');
-      expect(leavers.changed).toEqual([{ user_id: ada, name: 'Ada', email: 'ada@example.test' }]);
+      expect(leavers.changed).toEqual([
+        { user_id: ada, name: 'Ada', email: 'ada@example.test', reason: 'account_changed' },
+      ]);
     }
     expect(active(ada)).toBe(true);
     expect(row(ada)).toMatchObject({
@@ -454,7 +456,9 @@ describe('one person, one Entra id (review M1)', () => {
       const { result, leavers } = await synced();
       expect(result.changed).toBe(1);
       expect(leavers.state).toBe('none');
-      expect(leavers.changed).toEqual([{ user_id: ada, name: 'Ada', email: 'ada@example.test' }]);
+      expect(leavers.changed).toEqual([
+        { user_id: ada, name: 'Ada', email: 'ada@example.test', reason: 'account_changed' },
+      ]);
     }
     expect(active(ada)).toBe(true);
     expect(row(ada)).toMatchObject({
@@ -502,20 +506,88 @@ describe('leavers', () => {
     expect(active(ada)).toBe(true);
   });
 
-  it('a first match proves nothing: an account disabled from the start needs two later sightings (M2)', async () => {
+  it('an account disabled since its first match is never a leaver: it is named for a check (review round 2, M2)', async () => {
     switches(true, true);
     const shared = person('Shared mailbox', 'shared@example.test');
     entra('owner@example.test');
     entra('shared@example.test', { accountEnabled: false });
     crowd(10);
-    expect((await synced()).leavers.state).toBe('none');
-    expect(row(shared)?.disabledSince).toBeNull();
-    clock = NOW + HOUR;
-    expect((await synced()).leavers.state).toBe('none');
-    expect(row(shared)?.disabledSince).toBe(NOW + HOUR);
+    for (const at of [NOW, NOW + HOUR, NOW + 2 * HOUR, NOW + 3 * HOUR]) {
+      clock = at;
+      const { leavers } = await synced();
+      expect(leavers.people).toEqual([]);
+      expect(leavers.changed).toEqual([
+        {
+          user_id: shared,
+          name: 'Shared mailbox',
+          email: 'shared@example.test',
+          reason: 'disabled_at_match',
+        },
+      ]);
+    }
     expect(active(shared)).toBe(true);
+    expect(row(shared)).toMatchObject({
+      entraOid: 'oid-shared@example.test',
+      accountEnabled: 0,
+      disabledSince: null,
+    });
+  });
+
+  it('an account seen enabled and then disabled goes when the change is seen again an hour later (review round 2, M2)', async () => {
+    switches(true, true);
+    const ada = person('Ada', 'ada@example.test');
+    entra('owner@example.test');
+    const her = entra('ada@example.test');
+    crowd(10);
+    clock = NOW;
+    await synced();
+    clock = NOW + HOUR;
+    await synced();
+    her.accountEnabled = false;
     clock = NOW + 2 * HOUR;
-    expect((await synced()).leavers.people.map((p) => p.user_id)).toEqual([shared]);
+    const seen = await synced();
+    expect(seen.leavers).toMatchObject({ state: 'none', changed: [] });
+    expect(row(ada)?.disabledSince).toBe(NOW + 2 * HOUR);
+    expect(active(ada)).toBe(true);
+    clock = NOW + 3 * HOUR;
+    const confirmed = await synced();
+    expect(confirmed.leavers.state).toBe('deactivated');
+    expect(confirmed.leavers.people.map((p) => p.user_id)).toEqual([ada]);
+    expect(active(ada)).toBe(false);
+  });
+
+  it('two members at one Microsoft account: the first keeps it, the other is named to check and never goes (review round 2)', async () => {
+    switches(true, true);
+    const ada = person('Ada', 'ada@example.test');
+    const alias = person('Ada (alias)', 'a.lovelace@example.test');
+    entra('owner@example.test');
+    // Her address is her user principal name; the alias is her `mail`.
+    const her = entra('ada@example.test', { mail: 'a.lovelace@example.test' });
+    crowd(10);
+    const first = await synced();
+    const holders = [ada, alias].filter((id) => row(id)?.entraOid === 'oid-ada@example.test');
+    expect(holders).toHaveLength(1);
+    const holder = holders[0]!;
+    const other = holder === ada ? alias : ada;
+    expect(row(other)).toBeUndefined();
+    expect(first.result.changed).toBe(1);
+    expect(first.leavers.changed).toEqual([
+      expect.objectContaining({ user_id: other, reason: 'shared_account' }),
+    ]);
+
+    // Disabled in Microsoft: the member holding it goes; the other never does.
+    her.accountEnabled = false;
+    clock = NOW + HOUR;
+    await synced();
+    clock = NOW + 2 * HOUR;
+    const done = await synced();
+    expect(done.leavers.people.map((p) => p.user_id)).toEqual([holder]);
+    expect(active(holder)).toBe(false);
+    clock = NOW + 3 * HOUR;
+    expect((await synced()).leavers.changed).toEqual([
+      expect.objectContaining({ user_id: other, reason: 'disabled_at_match' }),
+    ]);
+    expect(active(other)).toBe(true);
   });
 
   it('with Leavers on, deactivates through the deactivation service, as the system, and forgets their photo (F3)', async () => {
@@ -808,4 +880,60 @@ describe('another tenant or app (F2)', () => {
     expect(rows[0]?.entraOid).toBeNull();
     expect(t.db.select().from(orgPeopleSync).get()?.lastResultJson).toBeNull();
   });
+
+  it('a photo fetched as another tenant is saved is not kept: its object is deleted, nothing recorded', async () => {
+    entra('owner@example.test', { photo: { etag: '"W/1"', bytes: JPEG } });
+    graph.intercept = (req) => {
+      if (req.kind === 'photoValue') saveAnotherTenant();
+      return undefined;
+    };
+    expect((await run()).kind).toBe('skipped');
+    expect(row(s.userId)).toMatchObject({ entraOid: null, photoKey: null });
+    expect(s3.objects.size).toBe(0);
+  });
+
+  it('a photo answered removed as another tenant is saved keeps the one stored', async () => {
+    entra('owner@example.test', { photo: { etag: '"W/1"', bytes: JPEG } });
+    await synced();
+    const key = row(s.userId)!.photoKey!;
+    graph.intercept = (req) => {
+      if (req.kind !== 'photo') return undefined;
+      saveAnotherTenant();
+      return new Response(null, { status: 404 });
+    };
+    clock = NOW + HOUR;
+    expect((await run()).kind).toBe('skipped');
+    expect(row(s.userId)?.photoKey).toBe(key);
+    expect(s3.objects.has(key)).toBe(true);
+  });
+
+  it('a failure on the old tenant is not recorded against the new one', async () => {
+    person('Ada', 'ada@example.test');
+    entra('owner@example.test');
+    entra('ada@example.test');
+    // The second person's read: another tenant saved, and an answer Laika cannot read.
+    let reads = 0;
+    graph.intercept = (req) => {
+      if (req.kind !== 'user' || ++reads !== 2) return undefined;
+      saveAnotherTenant();
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    expect((await run()).kind).toBe('skipped');
+    expect(reads).toBe(2);
+    expect(t.db.select().from(orgPeopleSync).get()).toMatchObject({
+      lastErrorCode: null,
+      lastAttemptAt: null,
+    });
+  });
 });
+
+/** Save the connection with another tenant, as an admin would mid-run (F2). */
+function saveAnotherTenant(): void {
+  saveCalendarSource(
+    t.db,
+    owner,
+    SECRET,
+    { tenant_id: 'contoso.onmicrosoft.com', client_id: GRAPH_CLIENT, enabled: false, rules: [] },
+    { now: () => clock },
+  );
+}

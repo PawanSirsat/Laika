@@ -40,16 +40,17 @@ let answer: unknown = { people: { 'u-ada': ada, 'u-bea': bea } };
 let status = 200;
 /** The statuses the next asks answer with, before `status`. */
 let next: number[] = [];
+/** While set, every answer waits for it — the body as it was when asked. */
+let held: Promise<void> | null = null;
 globalThis.fetch = ((input: string | URL) => {
   asked += 1;
   assert.equal(input instanceof URL ? input.href : input, '/api/v1/people/directory');
   const status = next.shift() ?? statusNow();
-  return Promise.resolve(
-    new Response(JSON.stringify(answer), {
-      status,
-      headers: { 'content-type': 'application/json' },
-    }),
-  );
+  const response = new Response(JSON.stringify(answer), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+  return held === null ? Promise.resolve(response) : held.then(() => response);
 }) as unknown as typeof fetch;
 
 function statusNow(): number {
@@ -61,6 +62,7 @@ beforeEach(() => {
   asked = 0;
   status = 200;
   next = [];
+  held = null;
   answer = { people: { 'u-ada': ada, 'u-bea': bea } };
 });
 
@@ -74,6 +76,28 @@ async function settle(): Promise<void> {
 }
 
 void describe('the read', () => {
+  void test('one that began before a change of user is dropped when it answers (review round 2)', async () => {
+    let release = (): void => undefined;
+    held = new Promise((done) => {
+      release = done;
+    });
+    // The admin's read, in flight as they sign out.
+    const admins = loadDirectory();
+    forgetDirectory();
+    // The viewer signs in: their directory has no words.
+    held = null;
+    answer = { people: { 'u-ada': { ...ada, job_title: null, department: null } } };
+    await loadDirectory();
+    assert.equal(directoryEntryOf('u-ada')?.job_title, null);
+    // The admin's answer arrives last, and is not the viewer's to see.
+    release();
+    await admins;
+    await settle();
+    assert.equal(directoryEntryOf('u-ada')?.job_title, null);
+    assert.equal(directoryEntryOf('u-bea'), undefined);
+    assert.equal(asked, 2);
+  });
+
   void test('happens once a session, however many ask, and again only when asked to', async () => {
     await Promise.all([loadDirectory(), loadDirectory(), loadDirectory()]);
     await loadDirectory();

@@ -142,7 +142,14 @@ const PEOPLE_DRY_RUN = {
         failed: false,
       },
     ],
-    changed: [],
+    changed: [
+      {
+        user_id: 'u9',
+        name: 'Front Desk',
+        email: 'desk@example.com',
+        reason: 'disabled_at_match',
+      },
+    ],
   },
 };
 
@@ -575,6 +582,17 @@ void describe('Microsoft 365: people (D-161)', () => {
         await review.locator('[data-leaver="u1"]').innerText(),
         /no longer in Microsoft for over an hour · never deactivated: the owner/,
       );
+      // Disabled since first matched: named to check, never on the list to go.
+      const check = card(h).locator('[data-people-changed]');
+      assert.match(
+        await check.innerText(),
+        /^Check this person in Microsoft by hand — the sync never deactivates them:/,
+      );
+      assert.match(
+        await check.locator('[data-changed="u9"]').innerText(),
+        /Front Desk\s+desk@example\.com · their Microsoft account was already turned off when first matched/,
+      );
+      assert.equal(await review.locator('[data-leaver="u9"]').count(), 0);
       assert.match(
         await card(h).locator('[data-people-counts]').innerText(),
         /25 people read: 24 found, 1 not in Microsoft; 2 photos updated\./,

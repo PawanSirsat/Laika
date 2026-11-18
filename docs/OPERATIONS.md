@@ -413,9 +413,15 @@ managers; it only keeps no photos.
    lists who it *would* deactivate, and why — an account turned off in
    Microsoft, or one Microsoft no longer has, seen on two runs an hour apart.
    Only someone matched before counts, and they are then followed by their
-   Entra id, so a rename is not a leaver; someone whose address now belongs
-   to another account is listed to **check by hand** instead. An owner and
-   the last admin are never taken.
+   Entra id, so a rename is not a leaver. An account counts as turned off only
+   when a run saw it on first. Three kinds of people are listed to **check by
+   hand** instead, and are never deactivated:
+   - someone whose address now belongs to another account;
+   - two members whose addresses reach one Microsoft account (the second);
+   - an account already turned off when it was first matched, such as a shared
+     mailbox.
+
+   An owner and the last admin are never taken.
 4. **Turn on *Leavers* last**, after at least one run whose list is right and
    whose breaker did not trip. Turning it on needs *Deactivate people* as well
    as the connection's own grant. More than 3 of the sync's deactivations, or

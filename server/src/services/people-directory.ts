@@ -61,16 +61,17 @@ export function getPeopleDirectory(
   assertCan(actor, 'member_list.read');
   const stored = (deps?.config ?? null) !== null;
   const words = readsProfiles(actor);
-  const names = new Map(
-    db
-      .select({ id: users.id, name: users.name })
-      .from(users)
-      .all()
-      .map((u) => [u.id, u.name]),
-  );
+  const everyone = db
+    .select({ id: users.id, name: users.name, isActive: users.isActive })
+    .from(users)
+    .all();
+  const names = new Map(everyone.map((u) => [u.id, u.name]));
+  // Someone deactivated has no photo served (review round 2): none to ask for.
+  const active = new Set(everyone.filter((u) => u.isActive === 1).map((u) => u.id));
   const people: Record<string, PersonDirectoryView> = {};
   for (const row of db.select().from(userDirectory).all()) {
-    const photo_v = stored && row.photoKey !== null ? row.photoUpdatedAt : null;
+    const photo_v =
+      stored && row.photoKey !== null && active.has(row.userId) ? row.photoUpdatedAt : null;
     people[row.userId] = words
       ? {
           photo_v,
@@ -93,9 +94,11 @@ export interface UserPhotoBytes {
 
 /**
  * A person's photo (`GET /users/:id/photo`), read from the store and answered
- * by Laika. A caller who may not see people, a person with no photo, no
- * store, and an object the store no longer has are **the same `404`**: the
- * answer says nothing about who exists to someone who may not see them.
+ * by Laika. A caller who may not see people, a person with no photo, a person
+ * deactivated (review round 2: by hand keeps the object, never the face on
+ * show), no store, and an object the store no longer has are **the same
+ * `404`**: the answer says nothing about who exists to someone who may not
+ * see them.
  */
 export async function readUserPhoto(
   db: Db,
@@ -109,6 +112,12 @@ export async function readUserPhoto(
   if ((deps?.config ?? null) === null) throw missing();
   const row = db.select().from(userDirectory).where(eq(userDirectory.userId, userId)).get();
   if (row?.photoKey == null || row.photoType === null) throw missing();
+  const person = db
+    .select({ isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  if (person?.isActive !== 1) throw missing();
   const store = storeFor(deps);
   // `HEAD` first: a ranged `GET` of a missing object is the store failing to
   // answer, a 503, where a missing photo is this route's 404.

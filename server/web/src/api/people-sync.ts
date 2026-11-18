@@ -22,7 +22,7 @@ export interface PeopleSyncResult {
   readonly not_found: number;
   readonly denied: number;
   readonly refused: number;
-  /** Matched before, gone by id, their address now another account's: to check. */
+  /** Not saved, to check by hand: their Microsoft account changed, or is another member's. */
   readonly changed: number;
   readonly updated: number;
   readonly photos_fetched: number;
@@ -47,11 +47,20 @@ export interface Leaver {
   readonly failed: boolean;
 }
 
-/** Someone whose Microsoft account changed — a rename, or an address handed on: check by hand. */
+/**
+ * Why someone is for a person to check in Microsoft: their account changed (a
+ * rename, or an address handed on), it is already another member's, or it
+ * has been disabled since it was first matched. The sync never deactivates
+ * them.
+ */
+export type ChangedReason = 'account_changed' | 'shared_account' | 'disabled_at_match';
+
+/** Someone to check in Microsoft by hand, and why. */
 export interface ChangedAccount {
   readonly user_id: string;
   readonly name: string;
   readonly email: string;
+  readonly reason: ChangedReason;
 }
 
 /**

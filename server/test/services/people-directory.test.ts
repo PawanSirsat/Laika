@@ -164,6 +164,16 @@ describe('a photo', () => {
     ).rejects.toMatchObject({ code: 'not_found' });
   });
 
+  it('is the same 404 for someone deactivated by hand, and the directory names no version for them', async () => {
+    const viewer = loadActor(t.db, ada)!;
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, s.userId)).run();
+    await expect(
+      readUserPhoto(t.db, viewer, storeDeps(), s.userId, String(NOW)),
+    ).rejects.toMatchObject({ code: 'not_found' });
+    expect(s3.of('GET')).toHaveLength(0);
+    expect(getPeopleDirectory(t.db, viewer, storeDeps()).people[s.userId]?.photo_v).toBeNull();
+  });
+
   it('is the same 404 — not a 403 — to a caller who may not see people', async () => {
     const viewer = loadActor(t.db, ada)!;
     t.db.update(users).set({ isActive: 0 }).where(eq(users.id, ada)).run();

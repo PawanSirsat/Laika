@@ -1,4 +1,5 @@
 import type {
+  ChangedAccount,
   Leaver,
   LeaverReview,
   PeopleSync,
@@ -27,7 +28,7 @@ export function peopleCountsLine(result: PeopleSyncResult): string {
     result.not_found > 0 ? `${String(result.not_found)} not in Microsoft` : null,
     result.denied > 0 ? `${String(result.denied)} Microsoft would not show` : null,
     result.refused > 0 ? `${String(result.refused)} Microsoft would not look up` : null,
-    result.changed > 0 ? `${String(result.changed)} whose Microsoft account changed` : null,
+    result.changed > 0 ? `${String(result.changed)} to check in Microsoft` : null,
   ].filter((part): part is string => part !== null);
   const read = `${plural(result.people, 'person', 'people')} read: ${String(result.found)} found${
     missed.length === 0 ? '' : `, ${missed.join(', ')}`
@@ -60,8 +61,20 @@ export function protectionWords(leaver: Leaver): string | null {
 export function changedHeadline(count: number): string | null {
   if (count === 0) return null;
   return count === 1
-    ? 'Microsoft account changed — check this person by hand. Nothing of theirs was changed:'
-    : 'Microsoft accounts changed — check these people by hand. Nothing of theirs was changed:';
+    ? 'Check this person in Microsoft by hand — the sync never deactivates them:'
+    : 'Check these people in Microsoft by hand — the sync never deactivates them:';
+}
+
+/** Why someone is on the list to check. */
+export function changedReasonWords(person: ChangedAccount): string {
+  switch (person.reason) {
+    case 'account_changed':
+      return 'their Microsoft account changed; nothing of theirs was saved';
+    case 'shared_account':
+      return 'the same Microsoft account as another member; nothing of theirs was saved';
+    case 'disabled_at_match':
+      return 'their Microsoft account was already turned off when first matched';
+  }
 }
 
 /** The breaker, in the card's words. */

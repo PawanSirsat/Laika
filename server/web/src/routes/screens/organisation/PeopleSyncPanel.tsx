@@ -16,6 +16,7 @@ import { Switch } from '../../../components/Switch.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import {
   changedHeadline,
+  changedReasonWords,
   leaverHeadline,
   leaverReasonWords,
   leaversNote,
@@ -216,7 +217,9 @@ export function PeopleSyncPanel({ connected, now }: PeopleSyncPanelProps) {
                       <PersonLink userId={person.user_id} className="org-person-link">
                         {person.name}
                       </PersonLink>
-                      <span className="org-leaver-why">{person.email}</span>
+                      <span className="org-leaver-why">
+                        {person.email} · {changedReasonWords(person)}
+                      </span>
                     </span>
                   </li>
                 ))}

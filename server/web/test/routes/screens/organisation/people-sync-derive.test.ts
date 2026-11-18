@@ -8,6 +8,7 @@ import { describe, test } from 'node:test';
 import type { Leaver, PeopleSync } from '../../../../src/api/people-sync.ts';
 import {
   changedHeadline,
+  changedReasonWords,
   leaverHeadline,
   leaverReasonWords,
   leaversNote,
@@ -131,13 +132,29 @@ void describe('the leaver review', () => {
     );
   });
 
-  void test('an account that changed in Microsoft is named for a person to check (review M1)', () => {
+  void test('someone to check in Microsoft is named, with why, and never said to be deactivated (review M1, round 2)', () => {
     assert.equal(changedHeadline(0), null);
-    assert.match(changedHeadline(1)!, /^Microsoft account changed — check this person by hand\./);
-    assert.match(changedHeadline(2)!, /^Microsoft accounts changed — check these people/);
+    assert.equal(
+      changedHeadline(1),
+      'Check this person in Microsoft by hand — the sync never deactivates them:',
+    );
+    assert.match(changedHeadline(2)!, /^Check these people in Microsoft by hand/);
+    const who = { user_id: 'u-ada', name: 'Ada', email: 'ada@example.test' };
+    assert.equal(
+      changedReasonWords({ ...who, reason: 'account_changed' }),
+      'their Microsoft account changed; nothing of theirs was saved',
+    );
+    assert.equal(
+      changedReasonWords({ ...who, reason: 'shared_account' }),
+      'the same Microsoft account as another member; nothing of theirs was saved',
+    );
+    assert.equal(
+      changedReasonWords({ ...who, reason: 'disabled_at_match' }),
+      'their Microsoft account was already turned off when first matched',
+    );
     assert.match(
       peopleCountsLine({ ...result, not_found: 0, changed: 1 }),
-      /8 found, 1 whose Microsoft account changed;/,
+      /8 found, 1 to check in Microsoft;/,
     );
   });
 });

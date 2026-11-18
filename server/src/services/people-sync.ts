@@ -1,4 +1,4 @@
-import { and, count, eq, gte, sql } from 'drizzle-orm';
+import { and, count, eq, gte, ne, sql } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type PeopleSyncErrorCode, USER_PHOTO_TYPES, type UserPhotoType } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
@@ -71,10 +71,12 @@ import { deactivateLeaver, type LeaverProtection, leaverProtection } from './use
  * ## Leavers, behind guards
  *
  * After a **complete** read, and only for someone already matched by their
- * Entra id, a member is a leaver when that id's account has been disabled,
- * or has answered `404`, on two runs at least {@link LEAVER_CONFIRM_MS}
- * apart (review M2). Someone never matched — another domain, a shared
- * mailbox, an address that is no one's there — is never a leaver. An owner,
+ * Entra id, a member is a leaver when that id's account has answered `404`,
+ * or has been disabled **after the sync saw it enabled**, on two runs at
+ * least {@link LEAVER_CONFIRM_MS} apart (review M2). Someone never matched —
+ * another domain, an address that is no one's there — is never a leaver; nor
+ * is an account disabled since its first match (a shared mailbox), or one
+ * another member's row already holds: those are named for a person to check. An owner,
  * and the last active admin, never go ({@link leaverProtection}). **The
  * breaker** counts the sync's own deactivations over a rolling
  * {@link LEAVERS_BREAKER_WINDOW_MS}: more than {@link LEAVERS_BREAKER_COUNT},
@@ -137,7 +139,7 @@ export interface PeopleSyncResultView {
   denied: number;
   /** How many it would not look up (`400`, or two people at one address). */
   refused: number;
-  /** Matched before, gone by id, and their address now someone else's: shown to check. */
+  /** Not saved, to check by hand: their account changed, or is another member's. */
   changed: number;
   /** Profiles whose title, department, manager or account state changed. */
   updated: number;
@@ -167,14 +169,23 @@ export interface LeaverView {
 }
 
 /**
- * Someone matched before whose id Microsoft no longer has, and whose address
- * now answers with another account — a rename, or an address handed on. The
- * sync saves nothing and takes nobody: a person checks (review M1).
+ * Why someone is for a person to check in Microsoft, never the sync to act on:
+ * - `account_changed`: their id answers with another account, or is gone while
+ *   their address answers with another (review M1) — nothing of theirs is saved;
+ * - `shared_account`: the account their address matched is already another
+ *   member's (review round 2) — nothing of theirs is saved;
+ * - `disabled_at_match`: their account has been disabled since the sync first
+ *   matched them, so it never saw them leave (review round 2, M2) — they are
+ *   never deactivated by the sync.
  */
+export type ChangedReason = 'account_changed' | 'shared_account' | 'disabled_at_match';
+
+/** Someone to check in Microsoft by hand, and why. */
 export interface ChangedAccountView {
   user_id: string;
   name: string;
   email: string;
+  reason: ChangedReason;
 }
 
 /**
@@ -261,7 +272,7 @@ interface Member {
 type PersonRead =
   | { member: Member; kind: 'found'; user: GraphUser; pinned: boolean }
   | { member: Member; kind: 'gone' }
-  | { member: Member; kind: 'changed' }
+  | { member: Member; kind: 'changed'; why: 'account_changed' | 'shared_account' }
   | { member: Member; kind: 'skipped'; why: 'not_found' | 'denied' | 'refused' };
 
 function emptyResult(people: number): PeopleSyncResultView {
@@ -370,7 +381,7 @@ export async function syncPeople(
     }
     // One person after another: a tenant's throttling is per app.
     for (const member of members) {
-      const read = await readPerson(client, member, known.get(member.id));
+      const read = claimedByAnother(db, await readPerson(client, member, known.get(member.id)));
       reads.push(read);
       if (read.kind === 'skipped') {
         result[read.why] += 1;
@@ -395,12 +406,14 @@ export async function syncPeople(
         result.updated += 1;
       }
       if (store !== null) {
-        await syncPhoto(db, client, store, member.id, read.user.id, result, photos, clock);
+        await syncPhoto(db, client, store, member.id, read.user.id, result, photos, ours, clock);
       }
     }
   } catch (err) {
     const code = failureCode(err);
     if (code === null) throw err;
+    // A failure on the old connection says nothing of the new one (F2).
+    if (!ours()) return { kind: 'skipped' };
     return recordFailure(db, settings, started, code);
   }
 
@@ -476,11 +489,13 @@ async function readPerson(
     // Graph answering for an id with another is an account changed, not them.
     return read.user.id === oid
       ? { member, kind: 'found', user: read.user, pinned: true }
-      : { member, kind: 'changed' };
+      : { member, kind: 'changed', why: 'account_changed' };
   }
   if (read.skipped !== 'not_found') return { member, kind: 'skipped', why: read.skipped };
   const now = await client.user(member.email);
-  if ('user' in now && now.user.id !== oid) return { member, kind: 'changed' };
+  if ('user' in now && now.user.id !== oid) {
+    return { member, kind: 'changed', why: 'account_changed' };
+  }
   return { member, kind: 'gone' };
 }
 
@@ -499,6 +514,24 @@ function managerOf(
 }
 
 /**
+ * A first match whose account another member's row already holds is not
+ * them (review round 2): two Laika people at one Microsoft account would
+ * otherwise both go when it is disabled. The member already holding it keeps
+ * it; this one is for a person to check, and nothing of theirs is saved.
+ */
+function claimedByAnother(db: Db, read: PersonRead): PersonRead {
+  if (read.kind !== 'found' || read.pinned) return read;
+  const other = db
+    .select({ userId: userDirectory.userId })
+    .from(userDirectory)
+    .where(and(eq(userDirectory.entraOid, read.user.id), ne(userDirectory.userId, read.member.id)))
+    .get();
+  return other === undefined
+    ? read
+    : { member: read.member, kind: 'changed', why: 'shared_account' };
+}
+
+/**
  * The directory's first miss of someone it had answered for (an Entra id on
  * their row); never set for someone it never had, and kept, not moved, on
  * every later miss.
@@ -514,9 +547,10 @@ function markMissing(db: Db, row: UserDirectory | undefined, now: number): void 
 
 /**
  * Keep what the directory says of them; whether anything shown changed. A
- * disabled account starts `disabled_since` only when read by the id the row
- * already held (`pinned`, review M2) — a first match proves nothing — and
- * keeps it while it stays disabled.
+ * disabled account starts `disabled_since` only on a change the sync saw:
+ * read by the id the row already held (`pinned`) and enabled on the read
+ * before (review round 2, M2). Disabled since the first match is never a
+ * change seen, so never a leaver. It is kept while the account stays disabled.
  */
 function saveProfile(
   db: Db,
@@ -528,7 +562,9 @@ function saveProfile(
   now: number,
 ): boolean {
   const disabledSince =
-    pinned && user.accountEnabled === false ? (row?.disabledSince ?? now) : null;
+    pinned && user.accountEnabled === false
+      ? (row?.disabledSince ?? (row?.accountEnabled === 1 ? now : null))
+      : null;
   const fields = {
     entraOid: user.id,
     jobTitle: user.jobTitle,
@@ -589,13 +625,16 @@ async function syncPhoto(
   entraId: string,
   result: PeopleSyncResultView,
   photos: { budget: number; storeDown: boolean },
+  ours: () => boolean,
   clock: () => number,
 ): Promise<void> {
   const held = photoOf(db, userId);
   const tag = await client.photoTag(entraId);
   if (tag.kind === 'skipped') return;
+  // Each write below follows an `await`: another tenant saved meanwhile (F2)
+  // is told nothing of this one, asked with no `await` before the write.
   if (tag.kind === 'none') {
-    if (held !== null) await removePhoto(db, store, userId, held.key, result, clock());
+    if (held !== null && ours()) await removePhoto(db, store, userId, held.key, result, clock());
     return;
   }
   if (held !== null && held.etag === tag.tag && tag.tag !== '') {
@@ -611,7 +650,7 @@ async function syncPhoto(
   const read = await client.photo(entraId, tag.size, PHOTO_MAX_BYTES);
   if (read.kind === 'skipped') return;
   if (read.kind === 'none') {
-    if (held !== null) await removePhoto(db, store, userId, held.key, result, clock());
+    if (held !== null && ours()) await removePhoto(db, store, userId, held.key, result, clock());
     return;
   }
   if (read.kind === 'too_large') {
@@ -636,6 +675,10 @@ async function syncPhoto(
     // photos this run, and the next one tries again.
     photos.storeDown = true;
     result.photos_deferred += 1;
+    return;
+  }
+  if (!ours()) {
+    await discard(store, key);
     return;
   }
   const now = clock();
@@ -708,7 +751,7 @@ async function reviewLeavers(
   for (const read of reads) {
     const who = { user_id: read.member.id, name: read.member.name, email: read.member.email };
     if (read.kind === 'changed') {
-      changed.push(who);
+      changed.push({ ...who, reason: read.why });
       continue;
     }
     if (read.kind !== 'found' && read.kind !== 'gone') continue;
@@ -722,6 +765,12 @@ async function reviewLeavers(
       .where(eq(userDirectory.userId, read.member.id))
       .get();
     if (row?.oid == null) continue;
+    // Disabled with no change seen (`saveProfile`): never a leaver, and named
+    // for a person to check rather than left unsaid (review round 2, M2).
+    if (read.kind === 'found' && read.user.accountEnabled === false && row.disabled === null) {
+      changed.push({ ...who, reason: 'disabled_at_match' });
+      continue;
+    }
     const confirmed = (since: number | null): boolean =>
       since !== null && now - since >= LEAVER_CONFIRM_MS;
     // `saveProfile` already keeps `disabled_since` only for a pinned read, so

@@ -2553,7 +2553,8 @@ export const emailInboundAttachments = sqliteTable(
  * not lose them and an address given to someone else does not become them.
  * `seen_at` is when the directory last answered for them; `missing_since`
  * when that read first answered `404`, and `disabled_since` when it first
- * said their account is disabled — each the first of the two sightings the
+ * said their account is disabled after the read before had it enabled (the
+ * change seen, review round 2) — each the first of the two sightings the
  * leaver rule needs, cleared when it stops being true. The photo's
  * four columns are all set or all null, and `photo_etag` is Microsoft's, so
  * an unchanged photo is never fetched twice.

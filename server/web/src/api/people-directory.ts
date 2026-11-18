@@ -56,6 +56,12 @@ let loaded = false;
 let version = 0;
 let failures = 0;
 let retry: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Which user's reads count: {@link forgetDirectory} moves it, and a read that
+ * began before then is dropped when it answers — an admin's titles must not
+ * land in a viewer's session signed in mid-read (review round 2).
+ */
+let generation = 0;
 
 /** The first wait before a failed read is tried again; each next one doubles, to the most. */
 export const DIRECTORY_RETRY_FIRST_MS = 2_000;
@@ -146,13 +152,16 @@ export function subscribeDirectory(listener: () => void): () => void {
  */
 export function loadDirectory(): Promise<void> {
   if (loaded) return Promise.resolve();
+  const mine = generation;
   loading ??= getPeopleDirectory()
     .then((view) => {
+      if (mine !== generation) return;
       rememberDirectory(view);
       loaded = true;
       failures = 0;
     })
     .catch((cause: unknown) => {
+      if (mine !== generation) return;
       if (!worthRetrying(cause) || failures >= DIRECTORY_RETRIES) {
         loaded = true;
         return;
@@ -169,7 +178,7 @@ export function loadDirectory(): Promise<void> {
       }, wait);
     })
     .finally(() => {
-      loading = null;
+      if (mine === generation) loading = null;
     });
   return loading;
 }
@@ -182,6 +191,7 @@ export function reloadDirectory(): Promise<void> {
 
 /** Forget everyone — on a change of user (`setStoreUser`, sign-out included), and between tests. */
 export function forgetDirectory(): void {
+  generation += 1;
   loaded = false;
   loading = null;
   failures = 0;
