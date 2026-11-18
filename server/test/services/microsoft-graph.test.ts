@@ -274,6 +274,28 @@ describe('a calendar', () => {
     expect(fake.of('calendarView')).toHaveLength(20);
   });
 
+  it('gives a backfill’s longer read twenty pages for each week it spans (LAI-1335)', async () => {
+    const fake = fakeGraph({ calendars: { [ADA]: [] } });
+    fake.intercept = (req) =>
+      req.kind === 'calendarView'
+        ? new Response(
+            JSON.stringify({
+              value: [],
+              '@odata.nextLink': `${req.url.href.split('&$skiptoken')[0] ?? ''}&$skiptoken=x`,
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        : undefined;
+    // 92 days, a 90-day backfill's: fourteen weeks begun.
+    const err = await refusal(client(fake).calendarView(ADA, TO - 92 * 86_400_000, TO));
+    expect(err).toBeInstanceOf(GraphAnswerError);
+    expect((err as GraphAnswerError).details).toEqual({
+      reason: 'graph_bad_answer',
+      why: 'calendarView: more than 280 pages',
+    });
+    expect(fake.of('calendarView')).toHaveLength(280);
+  });
+
   it('skips one person’s mailbox by reason — no calendar, not opened, not looked up — and keeps the token', async () => {
     const fake = fakeGraph({ calendars: { [ADA]: [], 'bea@kvelld.example': [] } });
     fake.denied.add('bea@kvelld.example');
