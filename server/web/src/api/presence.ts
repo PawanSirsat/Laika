@@ -227,6 +227,30 @@ export interface CapacityView {
   readonly people: readonly CapacityEntry[];
 }
 
+/** One person the header's *who's here* names (LAI-1348): online or away now. */
+export interface PresencePerson {
+  readonly user_id: string;
+  readonly name: string;
+  readonly status: 'online' | 'away';
+  readonly last_seen: number;
+  readonly last_seen_via: SeenVia;
+}
+
+/**
+ * `GET /presence/people` (SPEC §9.3, LAI-1348): Capacity's status for everyone
+ * online or away, read cheaply for the top bar. `enabled: false` is presence
+ * switched off — not an empty org, and never drawn as one.
+ */
+export interface PresencePeopleView {
+  readonly enabled: boolean;
+  /** Online first, then the most recently seen. */
+  readonly people: readonly PresencePerson[];
+}
+
+export function getPresencePeople(signal?: AbortSignal): Promise<PresencePeopleView> {
+  return request<PresencePeopleView>('/presence/people', signal === undefined ? {} : { signal });
+}
+
 export function getPresence(signal?: AbortSignal): Promise<PresenceView> {
   return request<PresenceView>('/presence', signal === undefined ? {} : { signal });
 }
